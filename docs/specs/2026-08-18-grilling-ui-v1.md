@@ -36,9 +36,9 @@ decision is *settled* once answered; the *frontier* is the set of decisions answ
 *fog* masks decisions whose prerequisites are unmet; a *thread* is a side conversation
 anchored to a decision or to the session itself, *parked* when set aside as a loose end
 that the human may return to, *closed* when the human is done with it, and *folded* when its
-conclusion is applied to the board — *fold-readiness* is the agent declaring that a thread
-has reached an applicable conclusion. A thread agent *proposes an answer* when the
-conversation has converged on what answers the thread's own decision: an offer the human
+conclusion is applied to the board — *fold-readiness* is the thread's last turn being an
+agent's, which is the turn a fold hands over (GUI-D41). A thread agent *proposes an answer*
+when the conversation has converged on what answers the thread's own decision: an offer the human
 arms, edits and takes, changing no map and settling nothing until they do. A *channel* is
 one conversational lane between the page and an agent: one for the map, one per thread. In
 the handoff file, *impetus* is why the grilling was requested, *posture* is how
@@ -528,6 +528,19 @@ board. It is told apart from the help thread by its kind and not by its anchor, 
 neither has: the help thread is handed the board's reference material and this one is not,
 because it is about the plan like every other thread.
 
+**GUI-D41 — Fold-readiness is read off the thread's turns, never declared by its agent.**
+An ordinary thread's fold control is enabled exactly when the thread's last turn is an
+agent's, and the human's next turn shuts it again until the agent answers. That is the
+backend's own reading of the thread: a folded thread's conclusion is its last turn's text,
+so the control opens when there is a conclusion to hand over and the preview quotes the
+turn that will actually cross. Waiting instead on an `impact` object the thread agent
+declares is refused, and its removal is this decision: the thread agent does not decide
+what a conclusion does to the map — the grill-master does (GUI-D25) — it already has the
+one convergence signal it may make (`proposed_answer`, GUI-D31), and a second one gates a
+human gesture on an agent's judgement of when the human is finished. Nothing on the backend
+ever wrote one, so the control it gated stayed shut for whole sessions, which is the shape
+of the failure a declared gate invites: a control nobody can open and no error anywhere.
+
 ## 5. The UI surface
 
 The binding reference is `docs/prototypes/grilling-ui/grilling-ui-prototype-r5.html`, read
@@ -568,9 +581,9 @@ follows, and changes nothing else.
 - **GUI-U29 — A board control opens the map thread.** The top row carries a control that
   opens the session's one map thread (GUI-D40), beside the map doctor, and opening it
   creates nothing: the first thing the human says is what opens the thread. Its fold
-  control is offered without waiting for a declared impact, unlike an ordinary thread's —
-  that thread's agent authors nothing to declare, so a fold gated on one would never open
-  and the request would never reach the grill-master.
+  arms on the one readiness every thread has (GUI-D41): the agent spoke last, so what
+  crosses is the agent's concrete statement of the change and never the human's own
+  request read back to the grill-master as a conclusion.
 - **GUI-U4 — Thread panels have a floating header and footer** — title with close and
   pop-out controls pinned at the top, prompt box and action buttons pinned at the bottom —
   so neither scrolls out of view in a long thread.
@@ -733,7 +746,8 @@ Everything else the reference page does — the map beside a single blended colu
 answerable and settled decisions, bidirectional focus sync, the auto-apply taxonomy drawn
 at "does this overwrite a human decision", the inbox/notification split, pending-update
 target locks, the softened conflict paint, agent-adjudicated reassessment, mandated
-threads without park, thread fold-readiness with impact preview, bubble overlays, and the
+threads without park, thread fold-readiness with its preview of what would cross, bubble
+overlays, and the
 scroll discipline of one scroll intent per human action — is carried forward as specified
 by the ledger and demonstrated by the reference page. Reimplementation is not licence to
 redesign.
@@ -1033,6 +1047,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D38 | GUI-A88 |
 | GUI-D39 | GUI-A89 |
 | GUI-D40 | GUI-A93, GUI-A94, GUI-A95, GUI-A98 |
+| GUI-D41 | GUI-A91, GUI-A99 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -1442,6 +1457,11 @@ Each criterion is mechanically checkable and convertible to a red test.
   last turn, showing the same seconds the header's clock shows for that channel and
   advancing in step with it. A thread nobody is answering carries none, and the marker is
   gone once the reply has landed. Verified in a browser.
+- **GUI-A91** An ordinary thread's fold control is enabled exactly when the thread's last
+  turn is an agent's — shut while the human's own turn is the last thing in it, open once
+  the agent answers, shut again on their next turn — and the page waits nowhere on a
+  declaration riding a turn's payload. What the preview offers is that same turn's text,
+  which is what the backend hands the grill-master as the conclusion.
 - **GUI-A93** A turn taken on the map thread is given that thread's mandate: name each
   decision that changes, say what happens to it and why, author nothing, and write the
   conclusion to be acted on by an agent that will not see the conversation.
@@ -1454,13 +1474,19 @@ Each criterion is mechanically checkable and convertible to a red test.
   thread, sends nothing when pressed, and mints that thread anchored to no decision and
   kinded `map` rather than `help`.
 - **GUI-A97** The map thread's fold control is offered unconditionally in the pane's foot,
-  while an ordinary thread's stays gated on a declared impact.
+  while an ordinary thread's stays gated on the turn it would hand over.
 - **GUI-A98** In a browser, against a running backend: the board's control opens the map
   thread and creates nothing; the first thing said opens one thread anchored to no decision
   and kinded `map`; its agent's reply leaves the board and the queue untouched; the fold
-  control is enabled with no declared impact; and folding it produces a grill-master turn
+  control is disabled while the human's turn is the last and enabled once its agent has
+  answered; and folding it produces a grill-master turn
   carrying that thread's conclusion whose `invalidate`s are in the pending queue, with the
   decisions they target not yet invalidated and the board saying two changes wait.
+- **GUI-A99** In a browser, against a running backend: a thread the human opens on a
+  decision offers a disabled fold while their own turn is the last one in it, saying why;
+  the agent's reply enables it and the preview quotes that reply; and pressing it produces
+  a grill-master turn carrying that reply verbatim as the thread's conclusion, whose
+  proposal waits in the queue with the thread folded. Verified in a browser.
 
 ## 10. Open questions for the implementing work
 
@@ -1546,6 +1572,8 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: The map thread — a session-level thread the human asks for a change to the map in,
   whose fold is a grill-master turn — AC: GUI-D40, GUI-U29, GUI-A93, GUI-A94, GUI-A95,
   GUI-A96, GUI-A97, GUI-A98.
+- bugfix: Fold-readiness read off a thread's own turns, in place of a declaration nothing
+  ever wrote — AC: GUI-D41, GUI-A91, GUI-A99.
 
 ## Evidence
 
@@ -1648,5 +1676,7 @@ opens one proves something else.
 - GUI-A94 | test: packages/grillui/tests/unit/test_tiers.py::test_the_map_thread_mandate_reaches_no_other_channel
 - GUI-A95 | test: packages/grillui/tests/unit/test_dispatch.py::test_the_map_thread_is_not_given_the_boards_reference_material
 - GUI-A96 | test: packages/grillui/tests/unit/test_page.py::test_the_board_carries_a_control_that_opens_the_one_map_thread
-- GUI-A97 | test: packages/grillui/tests/unit/test_page.py::test_the_map_threads_fold_is_not_held_behind_a_declared_impact
+- GUI-A97 | test: packages/grillui/tests/unit/test_page.py::test_the_map_threads_fold_arms_on_the_same_turn_an_ordinary_ones_does
 - GUI-A98 | probe: packages/grillui/tests/browser/map_thread_probe.py::main
+- GUI-A91 | test: packages/grillui/tests/unit/test_page.py::test_an_ordinary_threads_fold_arms_on_the_turn_it_would_hand_over
+- GUI-A99 | probe: packages/grillui/tests/browser/side_thread_fold_probe.py::main
