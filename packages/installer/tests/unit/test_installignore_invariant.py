@@ -147,13 +147,17 @@ def test_eval_corpora_never_deploy_for_any_tool() -> None:
     # tool through the overlay phase, out of a source tree no plan above names.
     # The manifest is what prunes a DIR item's interior either way, so every
     # corpus in the tree is checked against it directly.
-    corpora = sorted(_REPO_ROOT.glob("src/**/skills/*/evals"))
+    # Discovery is depth-agnostic, matching the unanchored entry it checks: the
+    # question is asked of the corpora the tree actually holds, wherever they
+    # sit, rather than of one depth the glob was shaped to expect. Paths are
+    # taken relative to the corpus's own parent, which is enough — the copy
+    # filter prunes at the ``evals`` component whatever ancestor it counts from.
+    corpora = sorted(_REPO_ROOT.glob("src/**/evals"))
     assert corpora, "no evals/ directory under src/ — this guard proves nothing"
     for corpus in corpora:
-        skill = corpus.parent
-        assert not [rel for rel in _deployed_relpaths(skill, ignore) if "evals" in rel.parts], (
-            f"{corpus.relative_to(_REPO_ROOT)} would deploy"
-        )
+        assert not _deployed_relpaths(corpus.parent, ignore) & {
+            path.relative_to(corpus.parent) for path in corpus.rglob("*") if path.is_file()
+        }, f"{corpus.relative_to(_REPO_ROOT)} would deploy"
 
 
 def test_excluding_evals_does_not_take_the_rest_of_the_skill_with_it() -> None:
