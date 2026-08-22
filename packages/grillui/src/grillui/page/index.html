@@ -121,6 +121,12 @@
      The recommendation stays a ring, because that is the agent asking rather
      than anything about where the channel is. */
   .btn.transfer.rec { box-shadow: 0 0 0 2px var(--stale-line); border-color: var(--stale-ink); }
+  /* The option a taken proposal built on, marked as the control that would
+     record it. A ring rather than a fill: the option is not chosen until the
+     human presses it, and a filled one would read as an answer already given.
+     The gap is what makes the ring visible on the recommended option, which is
+     already filled in the same colour. */
+  .btn.armed { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--accent); }
 
   /* The option's label is the handle the human, the free text and the threads
      all refer to it by, so it is on the button rather than in a tooltip. */
@@ -156,6 +162,9 @@
   .free textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
   .free .hint { font-size: 10.5px; color: var(--ink-faint); align-self: flex-end; padding-bottom: 8px; white-space: nowrap; }
   .prior { font-size: 12.5px; color: var(--ink-dim); border-left: 3px solid var(--line); padding-left: 10px; margin: 6px 0; }
+  /* What a turn offered, set apart from what it said: the answer is the
+     human's to give, so the offer never reads as part of the prose. */
+  .offer { border-left: 3px solid var(--accent); padding-left: 10px; margin: 8px 0 2px; }
   .muted { color: var(--ink-dim); font-size: 12.5px; }
   .did { font: 600 10px ui-monospace, Menlo, monospace; color: var(--ink-faint); letter-spacing: .08em; }
 
@@ -426,7 +435,7 @@
    JSON for that reason; keep the prose outside the fence. */
 //---PAGE-EMISSIONS-START---
 var EMISSIONS = {
-  "answer":         { "channel": "map",    "payload": ["target", "answer", "transfer"] },
+  "answer":         { "channel": "map",    "payload": ["target", "answer", "transfer", "from_thread"] },
   "thread-created": { "channel": "thread", "payload": ["turns", "decision", "kind", "title", "requires_action"] },
   "thread-turn":    { "channel": "thread", "payload": ["turns", "transfer"] },
   "thread-fold":    { "channel": "thread", "payload": [] },
@@ -466,6 +475,10 @@ var FAST_TIER = "fast";
 var HEAVY_TIER = "heavy";
 var RECOMMENDATION_KEY = "recommendation";
 var TRANSFER_FLAG = "transfer";
+// The key an answer names the thread it was armed from by. Payload content like
+// the three above, so nothing validates it on the way past: a stale spelling
+// here is an answer that settles the decision and leaves its thread open.
+var FROM_THREAD_KEY = "from_thread";
 //---BACKEND-VOCABULARY-END---
 // Named by position rather than restated, so this page cannot hold a claim
 // state the backend has no word for.
@@ -690,7 +703,11 @@ function markRead(id) {
   saveRead();
 }
 var UI = {
-  focus: null, open: {}, drafts: {}, panel: null, held: {},
+  // `armed` is what a taken proposal left behind, per decision: which thread
+  // offered it and which option it built on. It rides the next answer that
+  // decision sends and goes with the draft it filled -- nothing about it is on
+  // the log until the human presses an answer control.
+  focus: null, open: {}, drafts: {}, panel: null, held: {}, armed: {},
   lastFocus: null, lastPanelKey: null, centerNext: true, justSettled: null,
   fresh: [], touched: [], autoshut: {}, advanceFrom: null,
   bubbles: [], bubbleSeen: {}, bubbleSig: null, bubbleTick: 0, ptr: null,
@@ -1245,6 +1262,15 @@ function settledIds() {
 // Whether the board itself says this decision can be answered now. The frontier
 // is the backend's answer to that and the page does not compute a second one.
 function answerable(id) { return BOARD.frontier.indexOf(id) >= 0; }
+// Whether this decision takes an answer right now. The frontier is the board's
+// word on that, and a settled decision is off it -- but replacing an answer
+// already given is exactly what taking a proposal onto a settled decision is,
+// so an armed one takes an answer again. Only that decision, and only while the
+// arming stands: every other settled decision is still the agent's to reopen.
+function takesAnswer(id) {
+  var d = node(id);
+  return answerable(id) || !!(UI.armed[id] && d && d.status === "settled");
+}
 // What is holding this decision, and which of the two kinds of hold it is.
 // The board's own lock — a waiting change, or a blocking alert — comes back as
 // `locked`; the queue is what says which. An unfinished thread the agent
@@ -1493,12 +1519,56 @@ function answerOf(payload) {
   if (payload.free) return { option: null, text: payload.text };
   return { option: payload.option, text: payload.note || null };
 }
+// What stops a proposal arming this decision, in the words the control wears,
+// and null where nothing does. Arming a box the board will not accept from does
+// nothing the human can act on, so the reason is on the control rather than
+// behind a press that silently fails.
+function armBlock(id) {
+  var d = node(id);
+  if (!d) return "it is not on the board";
+  var lock = holdOn(id);
+  if (lock) return lock.kind === "pending" ? "a change is waiting on it" : "a thread must conclude first";
+  if (mandateOpen(d)) return "its mandated thread has to conclude first";
+  var st = statusOf(id);
+  if (st === "fogged") return "it is in the fog until " + d.fogUntil + " settles";
+  if (st === "invalidated") return "it has left the flow";
+  // Settled is not a block: the proposal replaces the answer, and the control
+  // says so rather than refusing.
+  if (d.status === "settled") return null;
+  if (!answerable(id)) return "it is waiting on " + waitingOn(id).list.join(", ");
+  return null;
+}
+// Taking a proposal fills the decision's own answer controls and does nothing
+// else. The text goes in after whatever the human has already written rather
+// than over it -- no draft of theirs is discarded by an agent's -- the option
+// the offer builds on is marked as the control that would record it, and the
+// thread's id is left on the decision to ride the next answer sent for it.
+// Nothing is appended: which control the human presses is what the answer
+// becomes, and firing it here would put words on the board they have not read.
+function armAnswer(tid, id) {
+  var t = thread(tid), d = node(id);
+  if (!t || !d || armBlock(id)) return;
+  // The live offer and no other: an earlier turn's proposal is retired, and a
+  // window drawn before the last turn arrived may still be showing its control.
+  var offer = (t.turns[t.turns.length - 1] || {}).proposal;
+  if (!offer || offer.decision !== id || t.state !== "open") return;
+  var draft = (UI.drafts[id] || "").trim();
+  UI.drafts[id] = draft ? draft + "\n\n" + offer.text : offer.text;
+  UI.armed[id] = { thread: tid, option: offer.option || null };
+  // The decision the human is about to answer, in view and open -- a settled one
+  // is collapsed, and arming it out of sight would fill a box nobody is looking at.
+  UI.panel = null;
+  UI.open[id] = true;
+  UI.autoshut[id] = false;
+  focusOn(id);
+  render();
+}
 function answerDecision(id, payload) {
   var d = node(id);
   // The frontier is the board's word on whether this can be answered, and a
   // hold is what the page will not answer around. Neither is re-derived: a
   // refusal the human never sees is the thing this page exists to avoid.
-  if (!d || !answerable(id) || holdOn(id)) return;
+  if (!d || !takesAnswer(id) || holdOn(id)) return;
   // A mandated decision holds the answer instead of sending it: concluding the
   // thread is the only thing that settles it, and nothing is asserted until
   // then.
@@ -1520,8 +1590,15 @@ function answerDecision(id, payload) {
     render();
     return;
   }
-  send(ev("answer", MAP, { target: id, answer: answerOf(payload) }));
+  // An answer armed from a thread carries where it came from, and that one
+  // entry settles the decision and closes the thread. The provenance goes with
+  // the draft it filled: it belongs to this answer and to no later one.
+  var armed = UI.armed[id];
+  var out = { target: id, answer: answerOf(payload) };
+  if (armed) out[FROM_THREAD_KEY] = armed.thread;
+  send(ev("answer", MAP, out));
   UI.drafts[id] = "";
+  delete UI.armed[id];
   settledFocus(id);
 }
 // The label an option answers to. Position, not the option's own id: a/b/c is
@@ -1812,6 +1889,8 @@ function answerControls(d, locked) {
   return h;
 }
 function optionButton(d, o, index, cls, lead, dis) {
+  var armed = UI.armed[d.id];
+  if (armed && armed.option === o.id) cls += " armed";
   return '<div class="optrow"><button class="' + cls + '" data-act="pick" data-id="' + esc(d.id) +
     '" data-opt="' + esc(o.id) + '" data-label="' + esc(labelAt(index)) + '"' + dis + ">" + lead +
     '<span class="olab">' + labelAt(index) + "</span>" + esc(o.text) + "</button>" +
@@ -2034,7 +2113,7 @@ function renderColumn() {
           : wait.conflict ? "Waiting on " + esc(wait.conflict) + ". Its answer is still here and still readable; it just cannot change until that disagreement is judged."
           : "Waiting on " + esc(wait.list.join(", ")) + ".") + "</div>";
       } else {
-        h += answerControls(d, !answerable(id) || !!lock);
+        h += answerControls(d, !takesAnswer(id) || !!lock);
       }
       if (d.rationale) h += '<div class="rationale"><strong>Why:</strong> ' + esc(d.rationale) + "</div>";
       noticesOn(id).forEach(function (n) { h += infoNote(n); });
@@ -2070,19 +2149,51 @@ function renderColumn() {
 //
 // An offer the turn made reads back as part of what was said. Every proposal a
 // thread carried renders, retired ones included, because the retired ones are
-// still things the agent put to the human. None of them carries a control here.
+// still things the agent put to the human. Only the live one carries a control:
+// which offer is live is position -- the thread's most recent turn -- and a
+// retired one is history the human can read and nothing they can take.
+//
+// The control renders on an open thread only. Parking or closing hides it while
+// the offer stays live in the log, so reopening the thread shows it again.
 function renderTurns(t) {
-  var h = "";
-  t.turns.forEach(function (turn) {
+  var h = "", last = t.turns.length - 1;
+  t.turns.forEach(function (turn, i) {
     h += '<div class="turn ' + esc(turn.who) + '"><div class="who">' +
       (turn.who === "human" ? "You" : turn.who === "backend" ? "Backend"
         : tierLabel(turn.tier) || "Agent") +
       (turn.timestamp ? ' <span class="did">' + esc(stamp(turn.timestamp)) + "</span>" : "") + "</div>" +
       "<p>" + esc(turn.text) + "</p>" +
-      (turn.proposal ? '<p>' + esc(turn.proposal.text) + '</p><div class="did">' +
-        esc(turn.proposal.because) + "</div>" : "") + "</div>";
+      (turn.proposal ? offerBlock(t, turn.proposal, i === last && t.state === "open") : "") + "</div>";
   });
   return h;
+}
+// What the turn proposed: the option it builds on, the answer in the human's
+// own words, the one line of why -- and, on the live one, the control that arms
+// it. The reason is shown beside the offer and is no part of the answer.
+function offerBlock(t, offer, live) {
+  var d = node(offer.decision), lab = d ? labelOf(d, offer.option) : "";
+  var chosen = offer.option && d
+    ? (d.options.filter(function (o) { return o.id === offer.option; })[0] || {}).text : "";
+  return '<div class="offer"><div class="did">proposed answer · ' + esc(offer.decision) + "</div>" +
+    (chosen ? '<div class="muted">builds on ' + esc(lab ? lab + ") " : "") + esc(chosen) + "</div>" : "") +
+    "<p>" + esc(offer.text) + "</p>" +
+    (offer.because ? '<div class="muted">' + esc(offer.because) + "</div>" : "") +
+    (live ? armControl(t, offer) : "") + "</div>";
+}
+// One control, naming the decision it would arm. Where that decision is settled
+// it says the answer it fills in would replace the one the human gave, and
+// where the board will not take an answer on it the control is inert and names
+// what is holding it -- a live control over a box nothing will accept from is
+// the press that appears to do nothing.
+function armControl(t, offer) {
+  var d = node(offer.decision), block = armBlock(offer.decision);
+  var label = block ? "Cannot take this — " + offer.decision + " " + block
+    : d && d.status === "settled"
+      ? "Take this answer — replaces your answer to " + offer.decision
+      : "Take this answer — fills in " + offer.decision;
+  return '<div style="margin-top:7px"><button class="btn sm' + (block ? "" : " primary") +
+    '" data-act="arm" data-tid="' + esc(t.id) + '" data-id="' + esc(offer.decision) + '"' +
+    (block ? " disabled" : "") + ">" + esc(label) + "</button></div>";
 }
 // A thread in three parts, and they are three parts rather than one column
 // because two of them are pinned. The head is what the thread is and how to
@@ -2616,6 +2727,10 @@ window.popAct = function (tid, act, text, field) {
   else if (act === "park") parkThread(tid);
   else if (act === "closethread") closeThread(tid);
   else if (act === "abandon") abandonAnswer((thread(tid) || {}).decision);
+  // The anchor is read off the thread this window is showing, like the seed's
+  // decision: the popped document is a copy of the pane, and the arming lands
+  // in the main window where the decision the human answers is.
+  else if (act === "arm") armAnswer(tid, (thread(tid) || {}).decision);
   // Asked of the thread this window is showing rather than of the last
   // discussion the main window opened: two discussions are two threads, and a
   // pop-out acting on whichever was opened last resolves the wrong change.
@@ -2683,7 +2798,12 @@ function sealSurface() {
 
 /* ---------- events ---------- */
 document.addEventListener("input", function (e) {
-  if (e.target.dataset && e.target.dataset.draft) UI.drafts[e.target.dataset.draft] = e.target.value;
+  if (!e.target.dataset || !e.target.dataset.draft) return;
+  var id = e.target.dataset.draft;
+  UI.drafts[id] = e.target.value;
+  // Provenance goes with the draft it filled: a box emptied by hand has no
+  // proposal left in it, so the next answer is the human's alone.
+  if (!e.target.value.trim() && UI.armed[id]) { delete UI.armed[id]; render(); }
 });
 function sendFrom(ta) {
   if (!ta || !ta.value.trim()) return;
@@ -2756,6 +2876,7 @@ document.addEventListener("click", function (e) {
     // about.
     case "pick": answerDecision(id, { option: el.dataset.opt, note: (UI.drafts[id] || "").trim() }); break;
     case "free": sendFrom(document.getElementById("ft-" + id)); break;
+    case "arm": armAnswer(tid, id); break;
     case "history": UI.open["hist-" + id] = !UI.open["hist-" + id]; render(); break;
     case "threads": {
       var ts = threadsOf(id);

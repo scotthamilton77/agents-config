@@ -501,13 +501,14 @@ follows, and changes nothing else.
   would arm. It appears on the thread's most recent turn only (GUI-D31); an earlier turn's
   retired proposal stays readable as part of what was said and carries no control. The
   control renders on an open thread only: parking or closing the thread (GUI-D29) hides it
-  while the proposal stays live in the log, so reopening shows it again, and a session
-  ended with a proposal nobody took carries it nowhere — the terminal result (§8.7) lists
-  decisions and threads, never offers. Activating it brings the anchor decision into view
-  with its own-words box filled and the named option's control marked (GUI-D33); the human
-  presses one of those two existing controls to answer.
-  Where that decision is already settled the control says so, because the
-  human is about to replace an answer they gave. Where the decision cannot be answered
+  while the proposal stays live in the log — though a closed thread reopens only on a
+  human turn, which retires the offer it follows (GUI-D31), so a fresh one is needed — and
+  a session ended with a proposal nobody took carries it nowhere — the terminal result
+  (§8.7) lists decisions and threads, never offers. Activating it brings the anchor
+  decision into view with its own-words box filled and the named option's control marked
+  (GUI-D33); the human presses one of those two existing controls to answer. Where that
+  decision is already settled the control says so, because the human is about to replace
+  an answer they gave. Where the decision cannot be answered
   right now — fogged, locked, or held behind another thread — the control is inert and
   names the hold, since arming a box the board will not accept from does nothing the human
   can act on.
@@ -1268,7 +1269,7 @@ opens one proves something else.
 - GUI-A64 | open
 - GUI-A65 | test: packages/grillui/tests/unit/test_convergence.py::test_a_proposal_riding_a_turn_records_the_prose_and_projects_onto_that_turn
 - GUI-A66 | test: packages/grillui/tests/unit/test_convergence.py::test_each_convergence_of_the_fixture_session_is_one_proposal_recording_what_it_carried
-- GUI-A67 | open
-- GUI-A68 | open
+- GUI-A67 | probe: packages/grillui/tests/browser/apply_decision_probe.py::main
+- GUI-A68 | test: packages/grillui/tests/unit/test_convergence.py::test_an_answer_carrying_from_thread_settles_and_closes_in_one_entry
 - GUI-A69 | test: packages/grillui/tests/unit/test_convergence.py::test_a_live_proposal_queues_nothing_and_holds_nothing
 - GUI-A70 | open

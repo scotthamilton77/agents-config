@@ -57,6 +57,7 @@ from grillui.schemas import (
     AGENT_ACTORS,
     ANSWERABLE_KINDS,
     FAST_TIER,
+    FROM_THREAD_KEY,
     HEAVY_TIER,
     KNOWN_KINDS,
     LIFECYCLE_KINDS,
@@ -2632,3 +2633,162 @@ def test_a_decision_block_pins_its_own_header_until_the_block_ends() -> None:
         "a focused block's pinned header shows the wrong colour"
     )
     assert ".item.collapsed .head { position: static; }" in source, "a collapsed block still pins"
+
+
+# ------------------------------------------------------ GUI-A67, GUI-A68
+
+
+def test_the_key_an_armed_answer_names_its_thread_by_is_the_backends_own() -> None:
+    """One spelling, in the table the page sends by and in the constant it
+    writes with.
+
+    Payload content like the tier keys beside it, so nothing validates it in
+    passing: a stale spelling settles the decision and silently leaves the
+    thread it came from open, which is the one thing the provenance exists to
+    prevent.
+    """
+    assert page_constants()["FROM_THREAD_KEY"] == FROM_THREAD_KEY
+    assert FROM_THREAD_KEY in emissions()["answer"]["payload"], (
+        "the page's own table refuses the key its answers carry"
+    )
+
+
+def test_an_answer_armed_from_a_thread_is_one_entry_that_settles_and_closes(
+    client: TestClient, log: Any
+) -> None:
+    """The page's own shape, on the wire, against the real backend.
+
+    Measured on the log's length as well as on the board: settling the decision
+    and closing its thread is one entry, and a page that sent a second gesture
+    to close the thread would leave the human looking at a settled decision
+    whose thread asks to be closed again.
+    """
+    node = seed_node(client, log.epoch)
+    post(
+        client,
+        log.epoch,
+        page_message(
+            "thread-created",
+            THREAD,
+            turns=turns("Does (a) really cover the migration?"),
+            decision=node,
+            kind="user",
+            title="On the storage layer",
+            requires_action=False,
+        ),
+    )
+    before = len(log_lines(log.directory))
+
+    receipt = post(
+        client,
+        log.epoch,
+        page_message(
+            "answer",
+            MAP_CHANNEL,
+            target=node,
+            answer={"option": "a", "text": "Only once the migration is written down."},
+            from_thread=THREAD,
+        ),
+    )[0]
+    assert receipt["status"] == "accepted", receipt
+
+    assert len(log_lines(log.directory)) == before + 1, "the answer was not one entry"
+    board = client.get("/state").json()["image1"]
+    settled = next(one for one in board["decisions"] if one["id"] == node)
+    assert settled["status"] == "settled", settled
+    assert thread_of(client, THREAD)["state"] == "closed"
+
+
+def test_only_the_live_offer_carries_a_control() -> None:
+    """Which offer is live is position, and the control is the whole difference.
+
+    A retired proposal still renders -- it is a thing the agent put to the human
+    -- so the liveness rule cannot be "render it or do not". It has to be the
+    control, on the most recent turn of an open thread and on nothing else: a
+    parked or closed thread hides it while the offer stays live in the log, and
+    reopening the thread shows it again.
+    """
+    body = balanced_body("renderTurns")
+    assert 'var h = "", last = t.turns.length - 1;' in body
+    assert 'offerBlock(t, turn.proposal, i === last && t.state === "open")' in body, (
+        "the control is not held to the last turn of an open thread"
+    )
+    offer = balanced_body("offerBlock")
+    assert 'live ? armControl(t, offer) : ""' in offer, "a retired offer carries a control"
+    assert page_source().count('data-act="arm"') == 1, "the arming control has a second author"
+    assert 'data-act="arm"' in balanced_body("armControl")
+
+
+def test_taking_an_offer_appends_nothing_and_writes_after_the_humans_own_words() -> None:
+    """Arming fills the answer controls and touches the log with nothing.
+
+    Both halves matter. An arming that appended would put an answer on the board
+    the human has not read, and on a settled decision it would overwrite their
+    own on one click. An arming that replaced the draft would discard what the
+    human was in the middle of writing in favour of an agent's sentence.
+    """
+    arming = balanced_body("armAnswer")
+    assert not reaches_send(arming), "arming puts something on the wire"
+    assert "arm" not in acts_that_write()
+    assert 'UI.drafts[id] = draft ? draft + "\\n\\n" + offer.text : offer.text;' in arming, (
+        "the offer is not written after what the human already had"
+    )
+    assert "UI.armed[id] = { thread: tid, option: offer.option || null };" in arming
+    # The live offer and no other, even from a window drawn before the last turn
+    # arrived: a control the human can still see is not a proposal still on offer.
+    assert "t.turns[t.turns.length - 1]" in arming
+    assert 'offer.decision !== id || t.state !== "open"' in arming
+
+
+def test_the_arming_rides_the_next_answer_and_goes_with_the_draft() -> None:
+    """Provenance belongs to the answer the human gives next on that decision,
+    and to no later one -- so it is cleared where the draft it filled is."""
+    answering = balanced_body("answerDecision")
+    assert "if (armed) out[FROM_THREAD_KEY] = armed.thread;" in answering
+    assert 'UI.drafts[id] = "";\n  delete UI.armed[id];' in answering, (
+        "the arming outlives the draft it filled"
+    )
+    # The option the offer built on is marked as the control that would record
+    # it -- marked, not pressed: the answer is still the human's to give.
+    assert 'if (armed && armed.option === o.id) cls += " armed";' in balanced_body("optionButton")
+    assert ".btn.armed { box-shadow:" in page_source()
+
+
+def test_a_decision_the_board_will_not_take_an_answer_on_names_what_holds_it() -> None:
+    """Inert, and saying why. Arming a box the board will not accept from does
+    nothing the human can act on, and a control that looked live would read as a
+    press that did nothing.
+
+    Settled is the one state that is not a block: the proposal replaces the
+    answer, which is what revisiting a decision does, so the control says that
+    rather than refusing.
+    """
+    block = balanced_body("armBlock")
+    for held in (
+        "a change is waiting on it",
+        "a thread must conclude first",
+        "its mandated thread has to conclude first",
+        "it is in the fog until",
+        "it has left the flow",
+        "it is waiting on ",
+    ):
+        assert held in block, f"no hold reads as {held!r}"
+    assert 'if (d.status === "settled") return null;' in block
+    control = balanced_body("armControl")
+    assert "Cannot take this — " in control
+    assert "replaces your answer to" in control
+    assert '(block ? " disabled" : "")' in control, "a blocked control is still pressable"
+    # Only the armed decision reopens, and only while the arming stands.
+    assert 'answerable(id) || !!(UI.armed[id] && d && d.status === "settled")' in balanced_body(
+        "takesAnswer"
+    )
+
+
+def test_emptying_an_armed_draft_discards_its_provenance() -> None:
+    """GUI-D33: the thread id rides the draft the proposal filled and is
+    discarded with it -- a box the human empties by hand carries no proposal,
+    so the next answer for that decision must not name the thread."""
+    source = page_source()
+    handler = source.split('document.addEventListener("input"', 1)[1].split("});", 1)[0]
+    assert "delete UI.armed[id]" in handler, "an emptied draft keeps its provenance"
+    assert "!e.target.value.trim()" in handler, "provenance is dropped on every keystroke"
