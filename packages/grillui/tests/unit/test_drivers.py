@@ -53,7 +53,9 @@ from grillui.lane import AgentUnreachableError
 from grillui.log import LOG_FILE, SessionLog
 from grillui.schemas import (
     EFFORT_KEY,
+    FAST_TIER,
     FOLLOWED_TRANSFER_KEY,
+    HEAVY_TIER,
     MODEL_KEY,
     RECOMMENDATION_KEY,
     TIER_KEY,
@@ -62,7 +64,7 @@ from grillui.schemas import (
     RejectedReceipt,
 )
 from grillui.session import open_session
-from grillui.tiers import API_KEY_ENV, FAST_TIER, HEAVY_TIER, TierConfig
+from grillui.tiers import API_KEY_ENV, TierConfig
 
 SOURCE = Path(__file__).resolve().parents[2] / "src" / "grillui"
 TARGET = "d1"

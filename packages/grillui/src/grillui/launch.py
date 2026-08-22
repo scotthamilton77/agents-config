@@ -24,9 +24,8 @@ who wants them.
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
-import os
-import signal
 import socket
 import sys
 import webbrowser
@@ -48,7 +47,7 @@ if TYPE_CHECKING:
 
     from starlette.types import ASGIApp, Receive, Scope, Send
 
-    Runner = Callable[[ASGIApp, int], None]
+    Runner = Callable[[ASGIApp, int, Callable[[], None], "RunStop"], None]
 
 DEFAULT_PORT = 8765
 LOOPBACK = "127.0.0.1"
@@ -135,19 +134,81 @@ def report(directory: Path, *, out: TextIO) -> int:
     return 0
 
 
-def serve_forever(app: ASGIApp, port: int) -> None:  # pragma: no cover
-    """Run the board until the process is stopped."""
-    uvicorn.run(app, host=LOOPBACK, port=port)
+class _ReadyServer(uvicorn.Server):
+    """A server that says when its socket is answering.
 
+    The main loop is the signal: it is entered once the listening socket exists
+    and is not entered at all by a server that failed to bind or whose startup
+    asked to exit, so a caller hooked here hears about a server a browser can
+    reach and never about one that could not start.
 
-def stop_this_process() -> None:  # pragma: no cover
-    """End the run, the way a Ctrl-C in the terminal would.
-
-    An interrupt rather than an exit: the server owns the shutdown, so in-flight
-    requests -- the human's own end-session gesture among them -- are answered
-    before the process goes.
+    The callback runs off the event loop, because handing a URL to the desktop
+    is blocking work and the board has to be answering by the time the tab asks.
     """
-    os.kill(os.getpid(), signal.SIGINT)
+
+    def __init__(self, config: uvicorn.Config, on_ready: Callable[[], None]) -> None:
+        super().__init__(config)
+        self._on_ready = on_ready
+
+    async def main_loop(self) -> None:
+        ready = asyncio.get_running_loop().run_in_executor(None, self._on_ready)
+        ready.add_done_callback(_report_ready_failure)
+        await super().main_loop()
+
+
+def _report_ready_failure(done: asyncio.Future[None]) -> None:
+    """A failed ready hook is said, not swallowed.
+
+    The hook runs off the loop and nothing awaits it, so without this its
+    exception would vanish; the server keeps serving either way, because a
+    browser that did not open is the human's problem to notice, not a reason
+    to end the session.
+    """
+    if not done.cancelled() and (error := done.exception()) is not None:
+        print(f"grillui: opening the browser failed: {error}", file=sys.stderr, flush=True)
+
+
+class RunStop:
+    """The board's way of ending the run that is serving it.
+
+    Held before there is a server to end. The board is built first and takes its
+    end-session hook then, so what it takes is this, and the server arms it on
+    the way up.
+
+    Ending is the server's own graceful exit rather than an interrupt. Both
+    drain in-flight requests -- the human's end-session gesture among them --
+    but a process that interrupts itself delivers that interrupt to its own
+    caller once the server has restored the handler it borrowed, so the launch
+    never gets to print the result it just wrote. A human's Ctrl-C is still an
+    interrupt and still aborts the run with nothing printed, which is what a
+    caller who abandoned the session wants.
+
+    Pressing an unarmed stop does nothing: no server means nothing to end.
+    """
+
+    def __init__(self) -> None:
+        self._end: Callable[[], None] | None = None
+
+    def arm(self, end: Callable[[], None]) -> None:
+        """Say how to end the run that is now up."""
+        self._end = end
+
+    def __call__(self) -> None:
+        if self._end is not None:
+            self._end()
+
+
+def serve_forever(app: ASGIApp, port: int, on_ready: Callable[[], None], stop: RunStop) -> None:
+    """Run the board until it is stopped, saying when it starts answering."""
+    server = _ReadyServer(uvicorn.Config(app, host=LOOPBACK, port=port), on_ready)
+
+    def end() -> None:
+        # Read by the server's own loop within its tick, off whichever thread
+        # answered the gesture; the same flag its signal handler would set.
+        server.should_exit = True
+
+    stop.arm(end)
+    server.run()
 
 
 def launch(
@@ -155,29 +216,41 @@ def launch(
     port: int = DEFAULT_PORT,
     handoff: Path | None = None,
     *,
+    open_browser: bool = False,
     run: Runner = serve_forever,
     open_url: Callable[[str], bool] = webbrowser.open,
-    stop: Callable[[], None] = stop_this_process,
+    stop: RunStop | None = None,
     out: TextIO | None = None,
 ) -> int:
     """Open the session, hand the human its URL, and return its result.
 
-    The order is what makes the URL useful: it is printed and opened before the
-    server takes the process over, so the human has it while the session is
-    running rather than after it ends. Everything after `run` returns is the
-    session being over.
+    The URL is printed before the server takes the process over, so the human
+    has it while the session is running rather than after it ends. Everything
+    after `run` returns is the session being over.
+
+    Opening a browser at that URL is opt-in, because a launch is usually driven
+    by an agent on the human's behalf and a tab nobody asked for is noise on
+    someone else's desktop. Asked for, it opens exactly once, and only once the
+    board can answer -- a tab opened before the socket exists renders a refused
+    connection, and a server that never started opens nothing at all.
 
     The human's end-session gesture is what ends the run: a session that has
     ended has nothing left to serve, and leaving the process up would leave the
     agent that launched it waiting on an exit that never comes.
     """
     stream = sys.stdout if out is None else out
+    ending = RunStop() if stop is None else stop
     log = open_session(directory, handoff)
-    board = create_app(log, FastDriver(TierConfig.from_env()), on_end=stop)
+    board = create_app(log, FastDriver(TierConfig.from_env()), on_end=ending)
     bound = free_port(port)
-    print(session_url(bound), file=stream, flush=True)
-    open_url(session_url(bound))
-    run(LoopbackOnly(board), bound)
+    url = session_url(bound)
+    print(url, file=stream, flush=True)
+
+    def hand_over() -> None:
+        if open_browser:
+            open_url(url)
+
+    run(LoopbackOnly(board), bound, hand_over, ending)
     return report(directory, out=stream)
 
 
@@ -189,6 +262,7 @@ def _client_host(scope: Scope) -> str:
 __all__ = [
     "DEFAULT_PORT",
     "LoopbackOnly",
+    "RunStop",
     "free_port",
     "is_loopback",
     "launch",

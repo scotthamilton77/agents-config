@@ -114,12 +114,12 @@
   .btn.wide { width: 100%; text-align: left; }
   .btn.sm { padding: 5px 9px; font-size: 12px; }
 
-  /* Which tier a channel is on is a standing fact about it, so the control
-     wears it rather than only saying it: the label names the switch, the fill
-     names where the channel is now. The recommendation is a ring instead of a
-     fill, because it is the agent asking and the fill is the human's answer —
-     one has to stay legible while the other is on. */
-  .btn.transfer.on { background: var(--mandate-bg); border-color: var(--mandate-line); color: var(--mandate-ink); font-weight: 500; }
+  /* The transfer control looks the same on either tier and carries no state
+     colouring: which tier a channel is on is already legible from the per-turn
+     labels, and a coloured word on a control reads as where the channel is now —
+     so a human seeing it filled infers the opposite of what pressing it does.
+     The recommendation stays a ring, because that is the agent asking rather
+     than anything about where the channel is. */
   .btn.transfer.rec { box-shadow: 0 0 0 2px var(--stale-line); border-color: var(--stale-ink); }
 
   /* The option's label is the handle the human, the free text and the threads
@@ -425,6 +425,11 @@ var CLAIM_STATES = ["granted", "refused", "superseded"];
 // key on the human's own turn that puts that channel on the expert tier, and
 // the backend reads the mode back off exactly this key.
 var TIER_KEY = "tier";
+// The two tiers, spelled as the log spells them. The page labels a turn by what
+// it finds under the key, so a stale spelling here is a turn the human is told
+// nothing about while the log says plainly which tier answered.
+var FAST_TIER = "fast";
+var HEAVY_TIER = "heavy";
 var RECOMMENDATION_KEY = "recommendation";
 var TRANSFER_FLAG = "transfer";
 //---BACKEND-VOCABULARY-END---
@@ -1110,6 +1115,25 @@ function loggedMode(channel) {
 function onExpert(channel) {
   return channel in TRANSFER ? TRANSFER[channel] : loggedMode(channel);
 }
+// What an agent turn is called, read off that turn's own attribution and never
+// off the channel it sits on. The channel's mode says where the channel is now;
+// reading it here would relabel every turn taken before a transfer as the tier
+// that came after it, and the transcript is the human's only evidence that the
+// transfer changed anything.
+//
+// A turn nobody attributed gets no label rather than a guessed one — the human's
+// turns, the backend's, and anything an older session recorded before tiers were
+// written down.
+function tierLabel(tier) {
+  return tier === HEAVY_TIER ? "expert agent" : tier === FAST_TIER ? "fast agent" : "";
+}
+// The tier an entry attributed itself to, for the map channel's turns: those
+// reach the page as queue items and notifications rather than as projected
+// turns, so the attribution is read back off the entry that authored them.
+function tierAt(seq) {
+  var e = entryAt(seq);
+  return (e && e.payload && e.payload[TIER_KEY]) || null;
+}
 function toggleTransfer(channel) { TRANSFER[channel] = !onExpert(channel); render(); }
 // The escalation advice on this channel's latest agent reply, or nothing. A
 // property of the last reply rather than of the session, so the next reply that
@@ -1332,8 +1356,12 @@ function nextFocus(justSettled) {
 // `at` is the log entry's clock, not this page's: a notification says when the
 // agent did the thing, and a page arriving late must not restamp a morning's
 // work with the moment it happened to read it.
-function noteFor(id, kind, target, text, type, at) {
-  return { id: id, kind: kind, type: type, target: target || null, text: text, at: at };
+// `seq` is the entry the message came out of, kept so the lane can name the tier
+// that said it: a map turn with nothing on the board to attach to is read here
+// and nowhere else, and an unlabelled one is an agent turn the human cannot tell
+// the tier of.
+function noteFor(id, kind, target, text, type, at, seq) {
+  return { id: id, kind: kind, type: type, target: target || null, text: text, at: at, seq: seq };
 }
 // Whether a human queue gesture arrived after this entry in the same batch.
 // The queue is read once per batch, so an agent's change that a later gesture
@@ -1371,7 +1399,7 @@ function observe(entry, batch, index) {
       var homes = noticeHomes({ target: u.target || null, authored_at: entry.seq });
       homes.forEach(function (id) { UI.touched.push(id); });
       if (!homes.length) {
-        NOTES.push(noteFor(u.uid, u.kind, u.target, u.text || "", "informational", entry.timestamp));
+        NOTES.push(noteFor(u.uid, u.kind, u.target, u.text || "", "informational", entry.timestamp, entry.seq));
       }
       return;
     }
@@ -1750,18 +1778,24 @@ function optionButton(d, o, index, cls, lead, dis) {
 // One control, on every channel anyone speaks on: the map's and each open
 // thread's. Never disabled — the moment the human most wants an expert is the
 // moment the fast tier is going badly, and a control that greys out while a turn
-// is in flight is unavailable exactly then. The label names the switch it makes,
-// which is what the human is choosing; where the channel is now is the fill.
+// is in flight is unavailable exactly then.
+//
+// The label names the action the press performs and never the state the channel
+// is in, and the control looks the same on either tier. A state word wearing a
+// colour reads as where the channel is now, so a human on the expert tier sees
+// the way back and takes it for confirmation they arrived. Where the channel is
+// now is the per-turn tier labels' to say, and they say it on the transcript
+// the human is already reading.
 function transferControl(channel) {
   var on = onExpert(channel), rec = recommended(channel);
   var why = rec ? "The agent recommends the expert tier — " + (rec.evidence || rec.condition)
     : on ? "This channel's next turn goes to the expert tier. Press to hand it back to the fast agent."
     : "Send this channel's next turn to the expert tier, carrying everything said here.";
-  return '<button class="btn sm transfer' + (on ? " on" : "") + (rec ? " rec" : "") +
+  return '<button class="btn sm transfer' + (rec ? " rec" : "") +
     '" data-act="transfer" data-channel="' + esc(channel) + '"' +
     ' data-mode="' + esc(on ? "expert" : "fast") + '"' +
     ' data-recommended="' + esc(rec ? "1" : "0") + '" title="' + esc(why) + '">' +
-    (on ? "⚡ Fast agent mode" : "⚡ Transfer to expert") + "</button>";
+    (on ? "⚡ Return to fast agent" : "⚡ Transfer to expert") + "</button>";
 }
 function isExpanded(id) {
   var st = statusOf(id);
@@ -1773,13 +1807,18 @@ function isExpanded(id) {
   if (UI.open[id] === false) return !!UI.autoshut[id] && open;
   return open;
 }
-// One agent message, wherever it is met on the column: the mark that says it is
-// unread, when it was said, and the two things to do with it. One reader,
-// because the same message written twice reads as two.
+// One agent message, wherever it is met on the column: which tier said it, the
+// mark that says it is unread, when it was said, and the two things to do with
+// it. One reader, because the same message written twice reads as two.
+//
+// The tier is read back off the entry that authored it rather than off a
+// projected turn: a map-channel turn reaches the page as a queue item, and the
+// queue names the sequence it came from.
 function infoNote(n) {
   var unread = !isRead(n.id);
   return '<div class="infonote">' + (unread ? '<span class="unreadmark">●</span> ' : "") +
-    "✉ <strong>Agent, " + esc(n.kind === "elicit-alert" ? "alert" : "informational") +
+    "✉ <strong>" + esc(tierLabel(tierAt(n.authored_at)) || "Agent") + ", " +
+    esc(n.kind === "elicit-alert" ? "alert" : "informational") +
     ":</strong> " + esc(summarise(n)) + ' <span class="did">' + esc(stampOf(n)) + "</span>" +
     '<div style="margin-top:6px"><button class="btn sm" data-act="discussnotice" data-uid="' + esc(n.id) + '">Discuss</button>' +
     (unread ? ' <button class="btn sm" data-act="marknote" data-nid="' + esc(n.id) + '">Mark as read</button>' : "") +
@@ -1981,11 +2020,17 @@ function renderColumn() {
 }
 
 /* ---------- slide-outs ---------- */
+// Who said each thing, and for an agent which tier said it. The tier comes off
+// the projected turn rather than off the channel, so a thread read back after a
+// transfer still shows which turns the fast agent took and which the expert did
+// — and a page that joined the session afterwards shows the same, because the
+// projection is where it read the board from.
 function renderTurns(t) {
   var h = "";
   t.turns.forEach(function (turn) {
     h += '<div class="turn ' + esc(turn.who) + '"><div class="who">' +
-      (turn.who === "human" ? "You" : turn.who === "backend" ? "Backend" : "Agent") +
+      (turn.who === "human" ? "You" : turn.who === "backend" ? "Backend"
+        : tierLabel(turn.tier) || "Agent") +
       (turn.timestamp ? ' <span class="did">' + esc(stamp(turn.timestamp)) + "</span>" : "") + "</div>" +
       "<p>" + esc(turn.text) + "</p></div>";
   });
@@ -2130,6 +2175,7 @@ function renderNotifications() {
     h += '<div class="inbox-item' + (read ? "" : " unread") + '"><span class="type t-' + n.type + '">' +
       n.type.replace(/-/g, " ") + "</span>" +
       '<div class="txt">' + (read ? "" : '<span class="unreadmark">●</span> ') +
+      (tierLabel(tierAt(n.seq)) ? "<strong>" + esc(tierLabel(tierAt(n.seq))) + "</strong> · " : "") +
       "<strong>" + esc(n.target || "—") + "</strong> · " + esc(n.text) +
       '<div class="did" style="margin-top:3px">' + esc(stamp(n.at)) + "</div>" +
       '<div style="margin-top:6px"><button class="btn sm" data-act="notify" data-nid="' + esc(n.id) + '">Go to it</button>' +

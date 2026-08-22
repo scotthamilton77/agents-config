@@ -11,11 +11,14 @@ anything watching a clock.
 from __future__ import annotations
 
 import io
+import os
+import signal
 import socket
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import httpx
 import pytest
 from conftest import SpyDriver, driven, event, handoff_doc, post, write_handoff
 
@@ -24,6 +27,7 @@ from grillui.launch import (
     LOOPBACK,
     NON_LOOPBACK_STATUS,
     LoopbackOnly,
+    RunStop,
     free_port,
     is_loopback,
     launch,
@@ -37,6 +41,8 @@ from grillui.session import open_session
 from fastapi.testclient import TestClient  # isort: skip
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from starlette.types import ASGIApp
 
 OFF_MACHINE = "10.11.12.13"
@@ -150,15 +156,19 @@ def test_the_preferred_port_is_kept_when_nothing_holds_it() -> None:
 # ── GUI-D28 / GUI-A51: the URL ──
 
 
-def test_the_url_is_printed_and_opened_before_the_session_runs(session_dir: Path) -> None:
+def test_the_url_is_printed_before_the_session_runs_and_no_browser_opens(
+    session_dir: Path,
+) -> None:
     """
-    Given a launch
+    Given a launch that was not asked to open anything
     When it starts serving
-    Then the URL it bound is on stdout and was handed to the browser, both
-         before the server took the process over.
+    Then the URL it bound is on stdout before the server took the process over,
+         and no browser was opened.
 
     The URL is only useful while the session is running, so printing it after
-    the run would be printing it after the human needed it.
+    the run would be printing it after the human needed it. Opening a tab is a
+    separate question, and its answer here is no: the caller is usually an agent
+    working on someone else's behalf, and the desktop is not its to interrupt.
     """
     opened: list[str] = []
     seen: list[str] = []
@@ -167,15 +177,165 @@ def test_the_url_is_printed_and_opened_before_the_session_runs(session_dir: Path
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda _app, _port: seen.append(stream.getvalue()),
+        run=lambda _app, _port, ready, _stop: (seen.append(stream.getvalue()), ready())[0],
         open_url=lambda url: bool(opened.append(url)),
         out=stream,
     )
 
     url = stream.getvalue().splitlines()[0]
     assert url.startswith(f"http://{LOOPBACK}:")
-    assert opened == [url]
     assert seen == [f"{url}\n"]
+    assert opened == []
+
+
+def test_the_browser_opens_once_the_board_answers_and_not_before(session_dir: Path) -> None:
+    """
+    Given a launch asked to open a browser
+    When the server reports it is accepting connections
+    Then the browser is opened at that point -- once, after the report and
+         before the run returns.
+
+    A tab opened before the socket exists renders a refused connection, so the
+    open has to wait on the server rather than on the launch having got as far
+    as calling it.
+    """
+    order: list[str] = []
+    stream = io.StringIO()
+
+    def run(_app: ASGIApp, _port: int, ready: Callable[[], None], _stop: RunStop) -> None:
+        order.append("accepting")
+        ready()
+        order.append("stopped")
+
+    launch(
+        session_dir,
+        handoff=started(session_dir),
+        open_browser=True,
+        run=run,
+        open_url=lambda url: bool(order.append(f"opened {url}")),
+        out=stream,
+    )
+
+    url = stream.getvalue().splitlines()[0]
+    assert order == ["accepting", f"opened {url}", "stopped"]
+
+
+def test_a_server_that_never_starts_opens_nothing(session_dir: Path) -> None:
+    """
+    Given a launch asked to open a browser whose server fails to start
+    When the failure surfaces
+    Then no browser was opened.
+
+    The port probe releases its bind before the server takes it, so a launch can
+    lose that race and fail at startup. A tab pointed at a server that never
+    bound is worse than no tab: it says the session is broken when it never ran.
+    """
+    opened: list[str] = []
+
+    def refuse(_app: ASGIApp, _port: int, _ready: Callable[[], None], _stop: RunStop) -> None:
+        lost = "address already in use"
+        raise OSError(lost)
+
+    with pytest.raises(OSError, match="address already in use"):
+        launch(
+            session_dir,
+            handoff=started(session_dir),
+            open_browser=True,
+            run=refuse,
+            open_url=lambda url: bool(opened.append(url)),
+            out=io.StringIO(),
+        )
+
+    assert opened == []
+
+
+def end_session(url: str) -> httpx.Response:
+    """The human's end-session gesture, over the wire the page uses."""
+    epoch = httpx.get(url + "status", timeout=10).json()["epoch"]
+    return httpx.post(
+        url + "events",
+        timeout=10,
+        json={
+            "epoch": epoch,
+            "events": [event(SESSION_END_KIND, actor="human", key="end", stop_reason="settled")],
+        },
+    )
+
+
+def test_a_real_server_hands_over_a_url_that_answers_and_ends_on_the_gesture(
+    session_dir: Path,
+) -> None:
+    """
+    Given a launch asked to open a browser, over the real server
+    When the opener is handed a URL and ends the session through it
+    Then the request is answered at that moment, the end-session receipt is an
+         acceptance the client is handed before the server goes, and the launch
+         returns the terminal result having succeeded.
+
+    Every other test here stubs the server, and none of them can see the two
+    failures this guards. A browser opened while the socket did not yet exist
+    puts a refused connection on screen; only a real bind settles that ordering.
+    And a backend that ends its own run by interrupting itself hands the
+    interrupt to its caller once the server gives the handler back, so the
+    launch dies on the line after the run instead of printing what it captured.
+    The interrupt is left armed here on purpose -- that is the arrangement under
+    which the process this test runs in is the one that would take it.
+    """
+    answered: list[int] = []
+    receipts: list[dict[str, Any]] = []
+
+    def open_and_end(url: str) -> bool:
+        answered.append(httpx.get(url, timeout=10).status_code)
+        ended = end_session(url)
+        answered.append(ended.status_code)
+        receipts.extend(ended.json())
+        return True
+
+    stream = io.StringIO()
+    status = launch(
+        session_dir,
+        handoff=started(session_dir),
+        open_browser=True,
+        open_url=open_and_end,
+        out=stream,
+    )
+
+    assert status == 0
+    assert answered == [200, 200]
+    assert [receipt["status"] for receipt in receipts] == ["accepted"]
+    assert "summary" in stream.getvalue()
+
+
+def test_a_ctrl_c_the_backend_did_not_send_aborts_without_a_result(session_dir: Path) -> None:
+    """
+    Given a real server that the human interrupts
+    When the interrupt is not the backend answering an end-session gesture
+    Then the run aborts and prints no result.
+
+    A Ctrl-C is someone abandoning the session, not finishing it. Ending the run
+    on the gesture must not turn every interrupt into a terminal result, which
+    would report a grilling as settled because the human walked away from it.
+    """
+    stream = io.StringIO()
+
+    def interrupt_the_run(url: str) -> bool:
+        assert httpx.get(url, timeout=10).status_code == 200
+        os.kill(os.getpid(), signal.SIGINT)
+        return True
+
+    with pytest.raises(KeyboardInterrupt):
+        launch(
+            session_dir,
+            handoff=started(session_dir),
+            open_browser=True,
+            open_url=interrupt_the_run,
+            out=stream,
+        )
+
+    printed = stream.getvalue()
+    assert printed.startswith(f"http://{LOOPBACK}:")
+    assert printed.splitlines()[1:] == [], "the URL was printed, and nothing after it"
+    assert not (session_dir / RESULT_FILE).exists()
 
 
 def test_the_port_the_server_is_given_is_the_port_in_the_url(session_dir: Path) -> None:
@@ -192,7 +352,7 @@ def test_the_port_the_server_is_given_is_the_port_in_the_url(session_dir: Path) 
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda _app, port: bound.append(port),
+        run=lambda _app, port, _ready, _stop: bound.append(port),
         open_url=lambda _url: True,
         out=stream,
     )
@@ -214,7 +374,7 @@ def test_the_board_the_server_is_handed_refuses_non_loopback(session_dir: Path) 
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port: apps.append(app),
+        run=lambda app, _port, _ready, _stop: apps.append(app),
         open_url=lambda _url: True,
         out=io.StringIO(),
     )
@@ -248,7 +408,7 @@ def test_the_launch_returns_on_backend_exit_and_never_on_a_timer(
     stream = io.StringIO()
     during: list[str] = []
 
-    def exit_now(_app: ASGIApp, _port: int) -> None:
+    def exit_now(_app: ASGIApp, _port: int, _ready: Callable[[], None], _stop: RunStop) -> None:
         during.append(stream.getvalue())
 
     assert launch(session_dir, handoff=started(session_dir), run=exit_now, out=stream) == 0
@@ -268,13 +428,15 @@ def test_the_human_ending_the_session_stops_the_run(session_dir: Path) -> None:
     """
     apps: list[ASGIApp] = []
     stopped: list[bool] = []
+    stop = RunStop()
+    stop.arm(lambda: stopped.append(True))
 
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port: apps.append(app),
+        run=lambda app, _port, _ready, _stop: apps.append(app),
         open_url=lambda _url: True,
-        stop=lambda: stopped.append(True),
+        stop=stop,
         out=io.StringIO(),
     )
     client = TestClient(apps[0], client=(LOOPBACK, 51000))
@@ -336,7 +498,7 @@ def test_what_the_launch_prints_is_the_result_and_never_the_transcript(
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda _app, _port: None,
+        run=lambda _app, _port, _ready, _stop: None,
         open_url=lambda _url: True,
         out=stream,
     )
@@ -403,9 +565,9 @@ def test_stdout_and_the_result_file_are_the_same_bytes(session_dir: Path) -> Non
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port: apps.append(app),
+        run=lambda app, _port, _ready, _stop: apps.append(app),
         open_url=lambda _url: True,
-        stop=lambda: None,
+        stop=RunStop(),
         out=io.StringIO(),
     )
     client = TestClient(apps[0], client=(LOOPBACK, 51000))
@@ -435,14 +597,17 @@ def test_a_failing_stop_hook_does_not_poison_the_end_receipt(
     """
     apps: list[ASGIApp] = []
 
-    def failing_stop() -> None:
+    def refuse_to_die() -> None:
         death = "the process refused to die"
         raise RuntimeError(death)
+
+    failing_stop = RunStop()
+    failing_stop.arm(refuse_to_die)
 
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port: apps.append(app),
+        run=lambda app, _port, _ready, _stop: apps.append(app),
         open_url=lambda _url: True,
         stop=failing_stop,
         out=io.StringIO(),
@@ -460,3 +625,36 @@ def test_a_failing_stop_hook_does_not_poison_the_end_receipt(
     assert ended.json()[0]["status"] == "accepted"
     assert (session_dir / RESULT_FILE).exists()
     assert "stop hook failed" in capsys.readouterr().err
+
+
+def test_a_failing_ready_hook_is_reported_and_does_not_stop_the_server(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Given the ready hook's future failed
+    When its completion is reported
+    Then the failure is printed to stderr and nothing is raised.
+
+    The hook runs off the loop and nothing awaits it; a swallowed failure
+    would leave the human waiting for a tab that was never going to open.
+    """
+    import asyncio
+
+    from grillui.launch import _report_ready_failure
+
+    loop = asyncio.new_event_loop()
+    try:
+        failed: asyncio.Future[None] = loop.create_future()
+        failed.set_exception(OSError("no desktop"))
+        _report_ready_failure(failed)
+        fine: asyncio.Future[None] = loop.create_future()
+        fine.set_result(None)
+        _report_ready_failure(fine)
+        cancelled: asyncio.Future[None] = loop.create_future()
+        cancelled.cancel()
+        _report_ready_failure(cancelled)
+    finally:
+        loop.close()
+    err = capsys.readouterr().err
+    assert "opening the browser failed: no desktop" in err
+    assert err.count("opening the browser failed") == 1
