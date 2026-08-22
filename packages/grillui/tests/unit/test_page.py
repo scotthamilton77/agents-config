@@ -2296,8 +2296,11 @@ def test_taking_the_caret_never_moves_the_page() -> None:
     assert "el.focus({ preventScroll: true });" in function_body("takeCaret")
     # Every caret the board takes goes through the one helper, and the caret
     # position rides with it -- restoring the selection is what made one of the
-    # sites a second call rather than a call to the same helper.
-    assert function_body("render").count("takeCaret(") == 4
+    # sites a second call rather than a call to the same helper. The count is a
+    # census: a site appearing without this number moving is a caret nobody
+    # declared. The fifth is the option control, which the render replaces under
+    # a human standing on it exactly as it replaces a text box.
+    assert function_body("render").count("takeCaret(") == 5
     assert "el.setSelectionRange(caret, caret)" in function_body("takeCaret")
 
 

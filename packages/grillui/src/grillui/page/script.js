@@ -1520,6 +1520,16 @@ function optionOf(target) {
   var control = target && target.closest ? target.closest('[data-act="pick"]') : null;
   return control ? { id: control.dataset.id, option: control.dataset.opt } : null;
 }
+// The same naming read the other way: the control an option answers to, on the
+// board as it stands now. Membership rather than a selector, because a decision
+// id is the plan author's string and a selector would be a query built out of it.
+function optionControl(hand) {
+  var all = document.querySelectorAll('[data-act="pick"]');
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].dataset.id === hand.id && all[i].dataset.opt === hand.option) return all[i];
+  }
+  return null;
+}
 // Newest-last, and only an entry that stands on an option: a free-text answer
 // held behind a mandate predicts nothing, because no option authored it.
 function lastOptionIn(map) {
@@ -2313,6 +2323,13 @@ function render() {
   var act = document.activeElement;
   var focusId = act && act.tagName === "TEXTAREA" ? act.id : null;
   var caret = focusId ? act.selectionStart : 0;
+  // The caret is on a control rather than in a box. The render replaces every
+  // control on the board, so an option the human tabbed to is destroyed under
+  // them and the caret falls to the body -- which the default below reads as
+  // nobody holding anything, and hands to the free-text box of whatever
+  // decision is focused. Held by what names the control rather than by the
+  // element, since the element this finds is not the one that comes back.
+  var focusOpt = focusId ? null : optionOf(act);
 
   noteCompletion();
   harvestBubbles();
@@ -2349,6 +2366,8 @@ function render() {
     takeCaret(document.getElementById("ft-say"));
   } else if (focusId) {
     takeCaret(document.getElementById(focusId), caret);
+  } else if (focusOpt) {
+    takeCaret(optionControl(focusOpt));
   } else if (UI.panel && UI.panel.kind === "thread") {
     takeCaret(document.getElementById("ft-say"));
   } else if (UI.focus !== UI.lastFocus || document.activeElement === document.body) {

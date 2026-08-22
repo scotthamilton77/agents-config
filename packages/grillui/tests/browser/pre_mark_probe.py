@@ -340,7 +340,27 @@ def main() -> None:
         away(page)
         assert marked(page) == ([], []), f"the marks outlived the hand: {marked(page)}"
 
-        # 10. And a reload taken while an option is in hand comes back to a
+        # 10. A caret on an option is a hand the page keeps across a render. Any
+        #     entry arriving redraws the whole board, which replaces every
+        #     control on it including the one the human is standing on -- so the
+        #     control is taken back, and the marks it raises stand. The pointer
+        #     is nowhere near the board here, so the caret is the only source
+        #     holding anything.
+        away(page)
+        page.locator(option("d1", "a")).focus()
+        page.wait_for_timeout(250)
+        assert marked(page) == (NAMED, NAMED), "the caret alone did not take the option"
+        before = unread(page)
+        post(base, entry("informational", "note-1", target=UNNAMED, text="A note on naming."))
+        wait_for(page, lambda: unread(page) > before, "the arriving entry never redrew the board")
+        page.wait_for_timeout(250)
+        held = page.evaluate(
+            "() => [document.activeElement.dataset.id, document.activeElement.dataset.opt]"
+        )
+        assert held == ["d1", "a"], f"the render took the caret off the option: {held}"
+        assert marked(page) == (NAMED, NAMED), f"the render dropped the marks: {marked(page)}"
+
+        # 11. And a reload taken while an option is in hand comes back to a
         #     board without them: the mark is page state and is in nothing the
         #     next page reads.
         page.hover(option("d1", "a"))
@@ -351,7 +371,7 @@ def main() -> None:
         page.wait_for_selector("#col-d1", timeout=10000)
         assert marked(page) == ([], []), f"a reload came back marked: {marked(page)}"
 
-        # 11. A marked decision really does still answer -- pressed while it is
+        # 12. A marked decision really does still answer -- pressed while it is
         #     marked, it settles like any other.
         page.hover(option("d1", "a"))
         page.wait_for_timeout(250)
@@ -363,7 +383,7 @@ def main() -> None:
             "a marked decision did not settle when it was answered",
         )
 
-        # 12. The answer landing clears the marks. After an answer the board
+        # 13. The answer landing clears the marks. After an answer the board
         #     says what the board says: the named decisions are not invalidated,
         #     and nothing is marked by an option nobody is holding any more.
         away(page)
