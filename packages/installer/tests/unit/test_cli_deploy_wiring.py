@@ -375,3 +375,78 @@ def test_no_tty_without_yes_at_cli_consent_exits_1(tmp_path: Path) -> None:
         cli_deploy=deploy,
     )
     assert rc == 1
+
+
+@pytest.mark.cli_deploy
+def test_sandboxed_home_never_reaches_the_real_uv_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a run whose home is a throwaway directory and whose cli_deploy is
+    left defaulted
+    When main(["--tools=claude", "--yes"]) runs
+    Then no uv subprocess is issued at all, and the transcript says the CLI
+    phases were skipped.
+
+    Pins the sandbox rule: uv resolves its tool dir and bin dir from the
+    ambient environment, which `home` cannot scope, so a home other than the
+    real one gets no live port rather than a system-wide mutation.
+    """
+    from installer.core.clis import UvCliDeploy
+
+    calls: list[list[str]] = []
+
+    def _record(_self: UvCliDeploy, cmd: list[str], _timeout: int) -> CommandResult:
+        calls.append(cmd)
+        return CommandResult(ok=False, output="")
+
+    monkeypatch.setattr(UvCliDeploy, "_run", _record)
+    repo = _hermetic_repo(tmp_path)
+    io = ScriptedIO(interactive=False)
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=tmp_path / "home",
+        io=io,
+        repo_root=repo,
+        cwd=tmp_path,
+    )
+    assert calls == []
+    assert rc == 0
+    assert any(e.channel == "warn" and "CLI deploys skipped" in e.message for e in io.transcript)
+
+
+@pytest.mark.cli_deploy
+def test_real_home_still_gets_the_live_uv_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a run whose home IS the real home and whose cli_deploy is left
+    defaulted
+    When main runs
+    Then the live uv port is used — the default is unchanged for the
+    installer's own invocation.
+
+    Pins the other half of the sandbox rule: the guard keys on the home being
+    real, not on the argument being omitted.
+    """
+    from installer.core.clis import UvCliDeploy
+
+    calls: list[list[str]] = []
+
+    def _record(_self: UvCliDeploy, cmd: list[str], _timeout: int) -> CommandResult:
+        calls.append(cmd)
+        return CommandResult(ok=False, output="")
+
+    monkeypatch.setattr(UvCliDeploy, "_run", _record)
+    repo = _hermetic_repo(tmp_path)
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+        cwd=tmp_path,
+    )
+    assert ["uv", "--version"] in calls
+    assert rc == 1  # the stubbed uv reports no version -> deploy half fails
