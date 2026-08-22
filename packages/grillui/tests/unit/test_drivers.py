@@ -35,6 +35,7 @@ from conftest import (
     write_handoff,
 )
 
+from grillui import drivers
 from grillui.dispatch import record_dispatch
 from grillui.drivers import (
     RESUME_FILE,
@@ -47,6 +48,7 @@ from grillui.drivers import (
     read_completion,
     request_body,
     run_claude_cli,
+    write_resume,
 )
 from grillui.escalation import CONDITION_COMMITMENT, CONDITION_IRREDUCIBLE, CONDITION_MULTIPLE
 from grillui.lane import AgentUnreachableError
@@ -475,6 +477,55 @@ def test_each_channel_resumes_its_own_chain(session_dir: Path) -> None:
     assert json.loads((session_dir / RESUME_FILE).read_text(encoding="utf-8")) == {
         "map": "map-chain",
         "t-compaction": "thread-chain",
+    }
+
+
+def test_two_channels_writing_their_chains_at_once_keep_both(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given two channels remembering their chains at the same moment
+    When both writes run
+    Then both records survive, and neither writer was inside the file while the
+         other still was.
+
+    Every channel keeps its own key in one shared file, so reading it and
+    rewriting it has to be one step. Interleaved, both writers read the same map
+    and the later rename drops the other channel's chain -- that channel then
+    pays for a cold start nothing recorded and nobody asked for.
+
+    The barrier is the proof, and it is meant to break: it releases only if a
+    second writer got inside the file while the first was still there, which is
+    exactly the interleaving that loses a chain.
+    """
+    session_dir.mkdir(parents=True, exist_ok=True)
+    inside = threading.Barrier(2)
+    overlapped = threading.Event()
+    read_whole = drivers._chains
+
+    def watched(path: Path) -> dict[str, Any]:
+        chains = read_whole(path)
+        try:
+            inside.wait(0.25)
+            overlapped.set()
+        except threading.BrokenBarrierError:
+            pass
+        return chains
+
+    monkeypatch.setattr(drivers, "_chains", watched)
+    writers = [
+        threading.Thread(target=write_resume, args=(session_dir, channel, f"{channel}-chain"))
+        for channel in ("map", "t-compaction")
+    ]
+    for writer in writers:
+        writer.start()
+    for writer in writers:
+        writer.join(TIMEOUT)
+
+    assert not overlapped.is_set()
+    assert json.loads((session_dir / RESUME_FILE).read_text(encoding="utf-8")) == {
+        "map": "map-chain",
+        "t-compaction": "t-compaction-chain",
     }
 
 

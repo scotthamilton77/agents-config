@@ -360,11 +360,25 @@ def read_resume(directory: Path, channel: str) -> str | None:
     return found if isinstance(found, str) else None
 
 
+# One lock over the resume file's read-modify-write. Every channel keeps its own
+# key but they share one file, so two rewrites at once would each read the whole
+# map and the later rename would drop the other channel's chain -- that channel
+# then pays for a cold start nothing recorded and nobody asked for. The heavy
+# tier's turn lock keeps two turns apart today, but that lock exists to stop two
+# processes talking over one chain, and this file's consistency must not rest on
+# a guarantee made for something else.
+#
+# ponytail: one lock for the process, which serves one session directory;
+# per-directory locks if a process ever serves several.
+_REWRITE = threading.Lock()
+
+
 def write_resume(directory: Path, channel: str, session_id: str) -> None:
     """Remember the chain, per channel: the map's and each thread's are separate
     conversations and must not resume into each other."""
     path = directory / RESUME_FILE
-    _write_chains(path, {**_chains(path), channel: session_id})
+    with _REWRITE:
+        _write_chains(path, {**_chains(path), channel: session_id})
 
 
 def forget_resume(directory: Path, channel: str) -> None:
@@ -376,9 +390,10 @@ def forget_resume(directory: Path, channel: str) -> None:
     to the one the cold turn was opened to get away from.
     """
     path = directory / RESUME_FILE
-    chains = _chains(path)
-    if chains.pop(channel, None) is not None:
-        _write_chains(path, chains)
+    with _REWRITE:
+        chains = _chains(path)
+        if chains.pop(channel, None) is not None:
+            _write_chains(path, chains)
 
 
 def _chains(path: Path) -> dict[str, Any]:
