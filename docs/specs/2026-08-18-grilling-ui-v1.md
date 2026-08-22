@@ -1262,7 +1262,7 @@ opens one proves something else.
 - GUI-A58 | open
 - GUI-A59 | open
 - GUI-A60 | open
-- GUI-A61 | open
+- GUI-A61 | probe: packages/grillui/tests/browser/sticky_header_probe.py::main
 - GUI-A62 | open
 - GUI-A63 | open
 - GUI-A64 | open
