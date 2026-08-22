@@ -1024,6 +1024,27 @@ def test_a_malformed_observed_row_is_refused() -> None:
     assert "observed: #614" in violations[0].reason
 
 
+def test_an_observed_row_with_trailing_tokens_is_refused() -> None:
+    """The attestation grammar is closed at both ends: a trailing remark is a
+    second claim riding a row that holds one."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    row = "AC1 | observed: #614 2026-08-22 scotthamilton77 extra"
+    violations = lint_spec_text(path, _with_ledger(row, "AC2 | open"))
+    assert len(violations) == 1
+    assert "observed: #614" in violations[0].reason
+
+
+def test_only_an_exact_level_two_evidence_heading_is_the_ledger() -> None:
+    """`### Evidence` or `## Evidence of need` is some other section; rows under
+    it discharge nothing, so the ledger is reported missing."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    for heading in ("### Evidence", "## Evidence of need"):
+        text = f"{_SPEC_HEAD}\n{heading}\n\n- AC1 | open\n- AC2 | open\n"
+        violations = lint_spec_text(path, text)
+        assert violations, heading
+        assert all("Evidence" in v.reason for v in violations), heading
+
+
 def test_a_ledger_row_naming_an_undefined_ac_is_refused_by_name() -> None:
     """A row for an ID the spec never stated is bookkeeping against nothing —
     usually a criterion that was renamed or deleted, leaving its row behind."""

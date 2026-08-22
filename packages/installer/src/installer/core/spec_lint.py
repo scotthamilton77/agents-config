@@ -205,7 +205,7 @@ _BROWSER_PHRASE = "in a browser"
 _EVIDENCE_HEADING = "## Evidence"
 _EVIDENCE_ROW_RE = re.compile(rf"^\s*-\s+({_AC_ID})\s*\|\s*(\S.*?)\s*$")
 _SYMBOL_ROW_RE = re.compile(r"^(test|probe):\s+(\S+)::(\S+)$")
-_OBSERVED_ROW_RE = re.compile(r"^observed:\s+#\d+\s+\d{4}-\d{2}-\d{2}\s+\S+")
+_OBSERVED_ROW_RE = re.compile(r"^observed:\s+#\d+\s+\d{4}-\d{2}-\d{2}\s+\S+$")
 _OPEN_ROW = "open"
 
 # (line_index, heading_level, heading_text)
@@ -448,8 +448,15 @@ def _cites_any(
     return citation_re.search("\n".join(span_lines)) is not None
 
 
+def _is_section(level: int, text: str, keyword: str) -> bool:
+    """A ledger or manifest heading is exactly ``## <Keyword>``: the `work`
+    facade reads the manifest by that heading, and a deeper or longer heading
+    that merely mentions the word is some other section."""
+    return level == 2 and text.strip().lower() == keyword
+
+
 def _has_heading(headings: list[_Heading], keyword: str) -> bool:
-    return any(keyword in text.lower() for _idx, _level, text in headings)
+    return any(_is_section(level, text, keyword) for _idx, level, text in headings)
 
 
 def _evidence_rows(
@@ -460,7 +467,7 @@ def _evidence_rows(
     claims, and both are checked."""
     rows: list[tuple[str, str]] = []
     for idx, (line_idx, level, text) in enumerate(headings):
-        if _EVIDENCE_HEADING_KEYWORD not in text.lower():
+        if not _is_section(level, text, _EVIDENCE_HEADING_KEYWORD):
             continue
         end = _section_end(headings, idx, level, len(lines))
         for offset, line in enumerate(lines[line_idx + 1 : end], start=line_idx + 1):
