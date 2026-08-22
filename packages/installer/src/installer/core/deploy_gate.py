@@ -15,11 +15,13 @@ is assembled and before any write. It:
    always-on surface per tool, which now includes the catalog entry of every
    skill that tool's runtime publishes to the model, the instruction file alone
    against the core sub-budget inside it, and each admitted skill body against
-   the cap that fits the target it is deploying to. Measuring after the rewrite
-   is the point twice over: the budget weighs what a reader actually loads
-   rather than the governance metadata that enforces it, and it reads the
-   projected front matter rather than the source, so a declaration the target's
-   loader cannot honour prices nothing;
+   the cap its source declaration picks. Measuring after the rewrite is what
+   makes the budget weigh what a reader actually loads rather than the
+   governance metadata that enforces it. Which front matter each number reads
+   is a separate question, answered separately: the catalog charge reads the
+   projected bytes, because a target that publishes an entry loads it, and the
+   body cap reads the source, because the ceiling prices the shape the author
+   committed to (``_judge`` states both);
 4. runs the **conflict audit** over the admitted artifacts' claims.
 
 The unit judged is the **contributor**, not the destination. A rule destination
