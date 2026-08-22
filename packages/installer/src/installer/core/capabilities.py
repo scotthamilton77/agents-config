@@ -36,24 +36,32 @@ capabilities is then a one-name edit, and a key nothing supports is visible as
 an empty set rather than as an absence from four lists.
 
 ``disable-model-invocation`` carries two consequences beyond projection, and
-both are read from the **projected** front matter rather than from the source:
-it decides which cap measures the artifact's body, and whether the artifact's
-catalog entry is charged to the always-on budget (see ``surface_budget``).
-Reading the source would price a claim the author made instead of a fact about
-the target — a shared skill declaring itself user-invoked is fully
-model-invocable on Gemini and OpenCode, where the projection strips the key
-and nothing replaces it, so there its description does load and its body
-arrives on the model's own judgement. On Codex the generated sidecar does
-keep the skill out of implicit invocation, while the budget still reads the
-projected front matter and prices the copy as model-invocable — an
-over-charge in the safe direction, never an under-charge.
+they read the front matter at different points (see ``surface_budget``).
 
-Reading after projection makes one artifact's numbers depend on which tool is
-being staged. That is the intent: the number prices the target, and the targets
-differ. The *verdict* stays uniform, because the repo-side content lint stages
-every known tool unconditionally on every run — so an artifact is judged against
-every target it can reach, and a per-machine deploy can only be looser than the
-gate the repository has already passed.
+Which cap measures the artifact's **body** is read from the **source**
+declaration, so it is the same on every target. The cap prices the shape its
+author committed to — a body reached only when a user names it may be longer
+than one the model may pull in mid-task — and a tool whose loader cannot
+express that declaration has not been handed a different artifact. Pricing the
+projection instead would charge the author the strict cap for a claim they did
+make, on the grounds that the weakest loader in the set cannot read it.
+
+Whether the artifact's **catalog entry** is charged to the always-on budget is
+read from the **projected** front matter, so it is a fact about the target. A
+shared skill declaring itself user-invoked is still published to the model on
+Gemini and OpenCode, where the projection strips the key and nothing replaces
+it: there the description genuinely does load into every session, and not
+charging it would understate what a reader cannot decline. Codex strips the key
+too, but the generated sidecar keeps the skill out of implicit invocation; its
+description is charged from the projected reading all the same, an over-charge
+in the safe direction rather than an under-charge.
+
+Reading the projection makes one artifact's catalog number depend on which tool
+is being staged. That is the intent: the number prices the target, and the
+targets differ. The *verdict* stays uniform, because the repo-side content lint
+stages every known tool unconditionally on every run — so an artifact is judged
+against every target it can reach, and a per-machine deploy can only be looser
+than the gate the repository has already passed.
 """
 
 from __future__ import annotations

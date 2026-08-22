@@ -11,8 +11,8 @@ write:
   adds around it — is capped at ``USER_CORE_TOKEN_CAP``;
 - each admitted **skill body** (the SKILL.md content after its front matter,
   the on-invoke payload) is capped at ``SKILL_BODY_TOKEN_CAP``, or at
-  ``USER_INVOKED_SKILL_BODY_TOKEN_CAP`` when the target it deploys to keeps
-  that skill out of the model's reach.
+  ``USER_INVOKED_SKILL_BODY_TOKEN_CAP`` when the skill declares itself
+  user-invoked.
 
 The core cap is a sub-budget rather than a second opinion about the same
 bytes. The surface cap prices what a session loads in total, and a surface
@@ -32,11 +32,13 @@ is asked for and lands at a moment chosen for it. That difference is what the
 second cap prices, and it is all it prices: the looser number is relief for a
 body that has already been split down, never permission to leave it whole.
 
-Both facts are per target, not per artifact, because the tools differ on whether
-a user-invoked declaration reaches their loader at all (see ``capabilities``).
-One skill is therefore charged on one tool and free on another, and measured
-against a different ceiling on each. Where a tool's skill loading is not modelled
-at all, it contributes to neither number.
+The two facts read the declaration at different points (see ``capabilities``).
+The cap follows the artifact: one skill carries one ceiling on every target,
+because the declaration prices the shape its author committed to. The catalog
+charge follows the target: the tools differ on whether a user-invoked
+declaration reaches their loader, so one skill is charged on a tool that
+publishes its description and free on a tool that hides it. Where a tool's skill
+loading is not modelled at all, it contributes to neither number.
 
 And one measurement with no ceiling: a skill's **reference payload**, the files
 that deploy beside its entry (``measure_skill_payload``). Reported, never
@@ -108,15 +110,12 @@ class SurfaceMeasure:
 class SkillBodySource:
     """One admitted skill body on its way to the scale.
 
-    ``user_invoked`` is read from the artifact's **projected** front matter, so
-    it is a property of the deploy target rather than of the source: a tool
-    the projection strips the key for measures the body against the strict
-    cap. Where nothing replaces the key (Gemini, OpenCode) that is the plain
-    truth — the model reaches the body on its own judgement whatever the
-    author wrote. Codex strips the key too but deploys the declaration as a
-    generated sidecar, and its copy is still priced from the projected
-    reading — an over-charge in the safe direction. One artifact can
-    therefore carry two numbers, one per target.
+    ``user_invoked`` is read from the artifact's **source** front matter, so it
+    is a property of the artifact rather than of the deploy target: a skill
+    declaring itself user-invoked is measured against the same cap on every
+    tool, including the tools whose projection strips the key. The ceiling
+    prices the shape the author committed to, and a loader that cannot express
+    the declaration has not been handed a different body to price.
     """
 
     label: str

@@ -346,7 +346,10 @@ class _Admitted:
     source: Path
     label: str
     text: str
-    user_invoked: bool
+    #: Read from the source front matter, so it is the same on every target.
+    declared_user_invoked: bool
+    #: Read from the deployed front matter, so it is a fact about this target.
+    hidden_from_catalog: bool
     claims: dict[str, str]
     record: AdmissionRecord
 
@@ -362,19 +365,21 @@ def _judge(
     and sanitization read the same bytes: what the bar judged is what deploys,
     minus only the governance metadata the bar itself consumed.
 
-    The invocation mode is read from the DEPLOYED front matter, after the
-    projection has removed the key for a tool whose loader does not define it.
-    That makes one artifact's cap depend on which tool is being staged, and it
-    is the point: on a tool that strips the key with nothing in its place the
-    skill is model-invocable whatever its author declared, so the strict cap is
-    the one that fits and the description does reach the catalog. Codex strips
-    the key too but deploys the declaration as a generated sidecar; its copy is
-    still priced from this projected reading, an over-charge in the safe
-    direction. The repository's verdict stays uniform
-    regardless, because the repo-side content lint stages every known tool on
-    every run — no artifact is ever judged against fewer targets than it can
-    reach, so a per-machine deploy can only be looser than the gate that
-    already passed.
+    The invocation mode is read twice, because it answers two questions that do
+    not share a source. Which cap measures the body is read from the SOURCE
+    front matter, so a skill declaring itself user-invoked carries one cap on
+    every target: the ceiling prices the shape the author committed to, and a
+    tool whose loader cannot express that declaration has not been handed a
+    different artifact to price. Whether the description is charged to the
+    always-on catalog is read from the DEPLOYED front matter, after the
+    projection has removed the key for a tool whose loader does not define it —
+    a target that publishes the entry genuinely loads it, whatever the author
+    declared, so that charge is a fact about the target and stays one.
+
+    The repository's verdict stays uniform regardless, because the repo-side
+    content lint stages every known tool on every run — no artifact is ever
+    judged against fewer targets than it can reach, so a per-machine deploy can
+    only be looser than the gate that already passed.
     """
     text = contribution.content.decode("utf-8", errors="replace")
     verdict = classify(text)
@@ -385,13 +390,15 @@ def _judge(
         if verdict.outcome is AdmissionOutcome.MALFORMED:
             return None, f"{label}: incomplete admission record — {verdict.detail}"
         return None, None
-    deployed = project_capabilities(sanitize_text(text), tool=tool.value)
+    sanitized = sanitize_text(text)
+    deployed = project_capabilities(sanitized, tool=tool.value)
     return (
         _Admitted(
             source=contribution.source_path,
             label=label,
             text=deployed,
-            user_invoked=is_user_invoked(deployed),
+            declared_user_invoked=is_user_invoked(sanitized),
+            hidden_from_catalog=is_user_invoked(deployed),
             claims=verdict.claims,
             record=record,
         ),
@@ -509,12 +516,12 @@ def run_admission_gate(
                     SkillBodySource(
                         label=part.label,
                         body=_skill_body(part.text),
-                        user_invoked=part.user_invoked,
+                        user_invoked=part.declared_user_invoked,
                     )
                     for part in admitted
                 ]
                 catalog[tool] += [
-                    _catalog_entry(part.text) for part in admitted if not part.user_invoked
+                    _catalog_entry(part.text) for part in admitted if not part.hidden_from_catalog
                 ]
 
         # Drop override bytes for any item the gate removed, then lay each

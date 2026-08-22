@@ -923,18 +923,17 @@ def test_a_skill_entry_file_is_not_charged_to_its_own_payload(tmp_path: Path) ->
     assert [(p.prose_files, p.prose_tokens) for p in result.payloads] == [(1, 1)]
 
 
-def test_a_user_invoked_shared_skill_reports_one_line_per_ceiling(tmp_path: Path) -> None:
-    """Grouping folds a repeated finding into one line naming its tools, but the
-    ceiling now varies by target — so folding on the token count alone would print
-    whichever cap arrived first and hide the tools it does not apply to."""
+def test_a_user_invoked_shared_skill_reports_one_ceiling_for_every_tool(tmp_path: Path) -> None:
+    """The ceiling follows the author's declaration, so the report names one cap
+    and every tool measured against it. A reader deciding whether a body has room
+    gets one number, not a per-target lottery over the same bytes."""
     flagged = _RECORD.replace("---\n", "---\ndisable-model-invocation: true\n", 1)
     repo = _repo(tmp_path, skills={"quiet": flagged + "short\n"})
     result = _lint(repo)
 
     assert result.ok
     assert [(body.cap, body.tools) for body in result.skills] == [
-        (SKILL_BODY_TOKEN_CAP, ("codex", "opencode")),
-        (USER_INVOKED_SKILL_BODY_TOKEN_CAP, ("claude",)),
+        (USER_INVOKED_SKILL_BODY_TOKEN_CAP, ("claude", "codex", "opencode")),
     ]
 
 

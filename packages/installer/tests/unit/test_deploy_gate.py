@@ -417,21 +417,18 @@ def test_an_unflagged_body_over_the_standard_cap_still_fails(tmp_path: Path) -> 
     assert any(f"{SKILL_BODY_TOKEN_CAP}-token cap" in v for v in result.violations)
 
 
-@pytest.mark.parametrize(
-    ("tool", "cap"),
-    [
-        (Tool.CLAUDE, USER_INVOKED_SKILL_BODY_TOKEN_CAP),
-        (Tool.CODEX, SKILL_BODY_TOKEN_CAP),
-        (Tool.OPENCODE, SKILL_BODY_TOKEN_CAP),
-    ],
-)
-def test_the_cap_is_the_target_s_and_not_the_source_s_claim(
-    tmp_path: Path, tool: Tool, cap: int
-) -> None:
-    """One shared skill declaring itself user-invoked, measured against the loose
-    cap on the one tool whose loader honours the declaration and the strict cap on
-    the tools that strip it. On those the model reaches the body on its own
-    judgement whatever the author wrote, so the cost was never asked for."""
+#: Every tool but Claude strips the user-invoked key on projection. Gemini's
+#: skill loading is unmodelled, so it is measured on neither count — it is in
+#: this list to prove the declaration is not what excuses it there.
+_KEY_STRIPPING_TOOLS = [Tool.CODEX, Tool.GEMINI, Tool.OPENCODE]
+
+
+@pytest.mark.parametrize("tool", [Tool.CLAUDE, *_KEY_STRIPPING_TOOLS])
+def test_the_cap_follows_the_source_declaration_on_every_target(tmp_path: Path, tool: Tool) -> None:
+    """One shared skill declaring itself user-invoked, with a body between the two
+    caps, is admitted on every tool. The declaration prices the shape its author
+    committed to, so a loader that cannot express it does not get to charge the
+    strict cap for a claim that was made."""
     body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
     item = _shared_skill(
         tmp_path,
@@ -440,32 +437,55 @@ def test_the_cap_is_the_target_s_and_not_the_source_s_claim(
     )
     result = run_admission_gate({tool: _plan(_instruction(b"laws"), item, tool=tool)})
 
-    assert [m.cap for m in result.skills] == [cap]
-    assert result.ok is (cap == USER_INVOKED_SKILL_BODY_TOKEN_CAP)
+    assert result.ok, result.violations
+    assert [m.cap for m in result.skills] == (
+        [] if tool is Tool.GEMINI else [USER_INVOKED_SKILL_BODY_TOKEN_CAP]
+    )
+
+
+@pytest.mark.parametrize("tool", [Tool.CLAUDE, Tool.CODEX, Tool.OPENCODE])
+def test_the_same_body_without_the_declaration_is_rejected_everywhere(
+    tmp_path: Path, tool: Tool
+) -> None:
+    """The sibling that keeps the loose cap honest: the body the declaration buys
+    room for is over the strict cap on every tool that measures it. Gemini is
+    absent because it measures no body at all, declared or not."""
+    body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
+    item = _shared_skill(tmp_path, "roomy", f"---\nname: roomy\n{_RECORD}---\n{body}")
+    result = run_admission_gate({tool: _plan(_instruction(b"laws"), item, tool=tool)})
+
+    assert not result.ok
+    assert [m.cap for m in result.skills] == [SKILL_BODY_TOKEN_CAP]
+    assert any(f"{SKILL_BODY_TOKEN_CAP}-token cap" in v for v in result.violations)
 
 
 def test_a_user_invoked_skill_is_a_catalog_entry_only_where_the_key_is_stripped(
     tmp_path: Path,
 ) -> None:
     """The same fact priced twice: Claude keeps the declaration and publishes
-    nothing, so the entry costs zero; Codex strips it and publishes the
+    nothing, so the entry costs zero; a tool that strips it publishes the
     description, so the entry is charged. A record claiming zero always-on cost
-    for a shared user-invoked skill is true on one tool and false on the others."""
+    for a shared user-invoked skill is true on one tool and false on the others.
+
+    The body cap is asserted alongside because the two answers come from
+    different readings of the same key — the catalog charge from the projection,
+    the cap from the source — and a change that collapsed them back into one
+    read would move exactly one of these assertions."""
     item = _shared_skill(
         tmp_path,
         "quiet",
         f"---\nname: quiet\ndescription: {'d' * 400}\n"
         f"disable-model-invocation: true\n{_RECORD}---\nbody\n",
     )
-    plans = {
-        tool: _plan(_instruction(b"laws"), item, tool=tool) for tool in (Tool.CLAUDE, Tool.CODEX)
-    }
-    result = run_admission_gate(plans)
+    tools = (Tool.CLAUDE, Tool.CODEX, Tool.OPENCODE)
+    result = run_admission_gate({t: _plan(_instruction(b"laws"), item, tool=t) for t in tools})
 
     charged = {s.tool: s.catalog_entries for s in result.surfaces}
-    assert charged == {"claude": 0, "codex": 1}
+    assert charged == {"claude": 0, "codex": 1, "opencode": 1}
     weights = {s.tool: s.tokens for s in result.surfaces}
     assert weights["codex"] > weights["claude"]
+    assert weights["opencode"] > weights["claude"]
+    assert {m.cap for m in result.skills} == {USER_INVOKED_SKILL_BODY_TOKEN_CAP}
 
 
 def test_an_oversized_skill_description_breaches_the_always_on_cap(tmp_path: Path) -> None:
