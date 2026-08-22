@@ -95,6 +95,20 @@ def _report_budgets(result: ContentLintResult) -> None:
                 f"{payload.other_tokens:>6} non-prose  {payload.label}\n"
             )
 
+    # The floor under every other number here. Each channel is a legitimate
+    # reason not to report a directory, and each is also a way for part of the
+    # check to disappear while the findings that survive keep printing — so the
+    # run says how much it declined to judge and which channel declined it.
+    # Counts rather than paths: the figure that changes when someone widens a
+    # pattern is the count, and a list long enough to bury it teaches the reader
+    # to skip the block.
+    if result.silenced:
+        sys.stdout.write(
+            "content-lint: directories not reported, by the channel that answered for them\n"
+        )
+        for channel, count in result.silenced.items():
+            sys.stdout.write(f"  {count:>6}  {channel}\n")
+
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)

@@ -15,6 +15,12 @@
 # only where staging would have pruned. Adding one for a deploy reason therefore
 # narrows what the gate measures, so say which of the two roles you mean.
 #
+# That is also the one bound on what a directory pattern may say: it has to name
+# something. A directory pattern with no alphanumeric character in it — '*/',
+# '.*/' — excludes by shape rather than by name, taking directories nobody has
+# written yet, and content-lint fails the run on it. A glob that keeps a name in
+# it ('*cache*/') is fine.
+#
 # scripts/install.sh is a thin exec stub that delegates to the Python
 # installer and never reads this file itself — there is no bash grammar to
 # keep in parity with.
