@@ -35,6 +35,7 @@ from grillui.tiers import (
     HEAVY_EFFORT_ENV,
     HEAVY_MODEL_ENV,
     HEAVY_TIER,
+    MOOTNESS_RULE,
     NO_BRIEFING,
     NO_MANUFACTURE_RULE,
     ONE_TURN_RULE,
@@ -475,3 +476,47 @@ def test_the_thread_agent_prompt_bars_an_offer_on_a_thread_anchoring_nothing(tie
     assert "on this thread's anchor decision and never on any other" in prompt
     assert "a thread anchored to no decision" in prompt
     assert "takes no `proposed_answer` at all" in prompt
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_grill_master_brief_obliges_an_invalidate_for_each_decision_an_answer_moots(
+    tier: str,
+) -> None:
+    """
+    Given the grill-master brief a driver composes for each tier
+    When it is read for what a killing answer obliges
+    Then it requires an `invalidate` per mooted decision carrying the answer as
+         its rationale, and bars narrating them as dead instead -- without which
+         the reply says d2 through d9 are dead code and the board goes on
+         offering them on the frontier. The thread agent is not told this: an
+         update from it is refused, so obliging it to send one is obliging it to
+         be refused.
+    """
+    brief = system_prompt(tier, GRILL_MASTER)
+
+    assert MOOTNESS_RULE in brief
+    assert "makes other decisions moot" in brief
+    assert "propose an `invalidate` for each of them in that same turn" in brief
+    assert "carrying their answer as its `why`" in brief
+    assert "Do not merely say that they are dead" in brief
+    assert MOOTNESS_RULE not in system_prompt(tier, THREAD_AGENT)
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_can(
+    tier: str,
+) -> None:
+    """
+    Given the thread-agent brief a driver composes for each tier
+    When it is read for what to do when the human asks it to change the map
+    Then it says plainly that it cannot, and names folding this thread as what
+         puts the conclusion in front of the grill-master who acts on it --
+         without which the agent agrees in prose to invalidate a run of
+         decisions and emits nothing, because only the grill-master may.
+    """
+    brief = system_prompt(tier, THREAD_AGENT)
+
+    assert "If the human asks you to change the map" in brief
+    assert "say plainly that you cannot" in brief
+    assert "folding this thread is what puts your conclusion in front of the grill-master" in brief
+    assert "Agreeing to do it is a promise nothing keeps" in brief

@@ -325,6 +325,19 @@ MUTATION_FORMAT_RULE = (
     "board has changed."
 )
 
+# What an answer costs the rest of the board. A killing answer is the easiest
+# thing to describe and the easiest to leave undone: saying that a run of
+# decisions is now dead reads, to the agent writing it, as having dealt with
+# them -- while the board goes on offering every one of them on the frontier for
+# the human to answer. Naming and proposing are not the same act, and only the
+# second moves anything.
+MOOTNESS_RULE = (
+    "When the human's answer makes other decisions moot, propose an `invalidate` for each of "
+    "them in that same turn, carrying their answer as its `why`. Do not merely say that they "
+    "are dead, dropped or no longer apply: naming a decision changes nothing, and the human "
+    "is left answering the ones your reply already called dead."
+)
+
 BASIS_RULE = (
     "Carry `basis`, the board's `seq` as you were given it, on each update. A proposal can "
     "wait while the human moves, and the basis is what lets the backend tell them your change "
@@ -376,7 +389,10 @@ THREAD_AGENT_MANDATE = (
     "thread's full body through the backend's read surface rather than guessing at it. "
     "You recommend and never author changes to the map: a conclusion you reach goes to "
     "the grill-master when the human folds this thread, and a map update from you is "
-    "refused."
+    "refused. If the human asks you to change the map -- to invalidate, revise or settle a "
+    "decision -- say plainly that you cannot, and that folding this thread is what puts "
+    "your conclusion in front of the grill-master, who acts on it. Agreeing to do it is a "
+    "promise nothing keeps."
 )
 
 # When a thread agent may offer its decision's answer, and how. The condition is
@@ -430,7 +446,13 @@ def system_prompt(tier: str, agent: str) -> str:
     role = (
         [THREAD_AGENT_MANDATE, SYSTEM_PROMPTS[tier], CONVERGENCE_RULE]
         if agent == THREAD_AGENT
-        else [SYSTEM_PROMPTS[tier], MUTATION_FORMAT_RULE, BASIS_RULE, SUPERSEDE_RULE]
+        else [
+            SYSTEM_PROMPTS[tier],
+            MUTATION_FORMAT_RULE,
+            MOOTNESS_RULE,
+            BASIS_RULE,
+            SUPERSEDE_RULE,
+        ]
     )
     return "\n\n".join([*role, REGISTER_RULE])
 
