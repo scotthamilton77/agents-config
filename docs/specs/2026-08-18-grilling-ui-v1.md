@@ -312,10 +312,11 @@ is a projection like every other: nothing in it is composed, summarised or infer
 and a catch-up naming an event the log does not carry is the same corruption a short image 2 is.
 
 **The interval is bounded by gestures, not by wall time**: it runs from the set-aside gesture to
-the next human turn on that thread — the turn that reopens it (GUI-D29) — so a thread the
-protocol offers no way to speak in again has no such turn, no interval and no dispatch this rule
-can fire on, which is a parked thread's position while reopening rides a human turn the surface
-offers on a closed thread alone.
+the next human turn on that thread — the turn that reopens it (GUI-D29). Today that turn exists
+for a closed thread alone: a parked thread is raised again only as a loose end the agent names,
+never by a turn, so it has no interval and no dispatch this rule can fire on. The rule is stated
+over the gesture rather than over `close` so that it holds unchanged should park ever take a
+reopening turn of its own.
 
 **A map event is an entry that moves a decision, and that is the whole of the definition**: an
 entry is one exactly when folding the log through it changes image 1's `decisions` (GUI-D3). A
@@ -1238,7 +1239,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   invoked with no resume identifier and its prompt carries the thread's turns in full beside the
   catch-up. Where that turn's driver returns a session id, that id — and no earlier one — is
   what the next turn on that channel resumes; where it returns none, the channel holds no resume
-  record, as after any turn. Asserted against the arguments the driver builds and against the
+  record — the record the cold turn set aside is discarded when the turn is opened, not kept
+  for a null to fall back on. Asserted against the arguments the driver builds and against the
   per-channel chain record, whose other channels are left as they were.
 - **GUI-A77** Where no entry in the interval moved a decision, the reopening dispatch carries no
   catch-up and the turn is invoked with the resume identifier the channel already held, exactly
