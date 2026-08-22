@@ -1,10 +1,5 @@
 # Rubric: design task class
 
-Status: calibrated against a fixture pass and a two-arm contest — the panel reproduced a
-shipped document's known verdict, separated two arms by two bands on every axis, and the
-quarantined checker caught a blind spot both arms shared and the seat missed. Validation
-condition 1's planted-false-claim step is the one still owed.
-
 You judge one or more design documents written to the same pinned brief, blind. The
 deliverable is a specification: prose that plans work nobody has done. Work through the
 phases in order. Score each arm completely and independently before comparing any two.
@@ -114,27 +109,4 @@ applies each one to every arm uniformly; if the majority preference is contradic
 verified ledger, the run is **flagged for human review** — the flag never silently flips the
 result, and ledger findings never mutate seat scores.
 
-## Validation (this rubric's standing red test)
-
-This rubric is untested until all four hold, and any material revision of it re-runs them:
-
-1. **Reference fixture.** The panel scores a document whose quality is independently
-   established — a shipped spec of this house's own pattern — and its verdict on that
-   document is inspected against what its author and reviewers concluded at the time. A
-   fixture is not an arm: it has no diff and no gate run, so the fixture pass runs Phase 2
-   and the ship verdict only, and Phases 0 and 1 are skipped rather than improvised. Tell
-   the seat which tree to verify against: a shipped document cites the tree as it stood
-   when it was written, so a seat handed today's checkout marks true claims unverifiable
-   and caps axis 1 for reasons that have nothing to do with the document. Contest arms
-   never have this problem — their checkout is the base they wrote against. A
-   shipped fixture also tends to pin axis 1 at the ceiling, which measures the fixture and
-   not the axis — plant at least one false load-bearing claim in a copy and confirm the
-   panel catches it and caps the axis.
-2. **Discrimination.** A cheap contest of at least two arms produces a preference the panel
-   can defend from Phase 1, not a wash of identical scores.
-3. **The checker fires.** The quarantined seat catches the planted probes in the task's
-   trap ledger.
-4. **Every seat's factual claims carry quoted verification** — a seat that scored axis 1
-   without reading the tree has not run this rubric.
-
-Until then, expensive arms are spent on an unmeasured instrument.
+Validation record for this rubric: `rubric-design-validation.md`.
