@@ -1855,6 +1855,11 @@ function renderColumn() {
 //
 // The control renders on an open thread only. Parking or closing hides it while
 // the offer stays live in the log, so reopening the thread shows it again.
+// Whether the thread's most recent turn is an agent's: what a fold hands over.
+function agentSpokeLast(t) {
+  var last = t.turns[t.turns.length - 1];
+  return !!last && last.who !== "human" && last.who !== "backend";
+}
 function renderTurns(t) {
   var h = "", last = t.turns.length - 1;
   t.turns.forEach(function (turn, i) {
@@ -2042,9 +2047,11 @@ function threadBody(tid, forPop, chrome) {
       // Handing the map thread over is the whole point of it, so its fold is
       // not held behind a declared impact the way an ordinary thread's is: its
       // agent proposes nothing, and a control gated on a proposal that agent
-      // may not make would never open.
+      // may not make would never open. It is held until the agent has spoken
+      // last, because the conclusion handed over is the thread's last turn,
+      // and the human's own request is not the statement the map owner acts on.
       (t.kind === "map"
-        ? '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '">Hand it to the agent that owns the map</button>'
+        ? '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (agentSpokeLast(t) ? "" : " disabled") + ">Hand it to the agent that owns the map</button>"
         : '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (ready ? "" : " disabled") + ">Fold it — conclude and hand it to the agent</button>");
   }
   if (ready) {

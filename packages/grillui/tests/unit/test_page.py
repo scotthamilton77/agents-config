@@ -2644,6 +2644,11 @@ def test_the_map_threads_fold_is_not_held_behind_a_declared_impact() -> None:
     assert gated in foot, "the ordinary fold is no longer gated, so this proves nothing"
     assert ungated in foot
     assert "Hand it to the agent that owns the map" in foot
+    # Not impact-gated, but held until the agent has spoken last: the fold hands
+    # over the thread's last turn, and the human's request is not a conclusion.
+    assert '(agentSpokeLast(t) ? "" : " disabled")' in foot
+    helper = function_body("agentSpokeLast")
+    assert 'last.who !== "human" && last.who !== "backend"' in helper
 
 
 def test_a_thread_with_no_decision_anchor_is_an_ordinary_thread(
