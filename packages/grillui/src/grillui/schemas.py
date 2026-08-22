@@ -36,7 +36,14 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence, Set
 from typing import Annotated, Any, Literal, cast, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    ValidationError,
+    model_serializer,
+)
 
 MAP_CHANNEL = "map"
 
@@ -235,6 +242,13 @@ STATUS_PHASES = frozenset(
 # heavy turn was taken because the human made that gesture, and `TRANSFER_FLAG`
 # is the key on their own turn that says so.
 TIER_KEY = "tier"
+# The two tiers an attribution may name, and the closed set they make. They
+# live beside the key rather than beside the drivers that spend them, because
+# the projection judges an attribution without knowing anything about how a
+# turn was driven -- and a second spelling is a turn the page labels as nothing.
+FAST_TIER = "fast"
+HEAVY_TIER = "heavy"
+TIERS: frozenset[str] = frozenset({FAST_TIER, HEAVY_TIER})
 MODEL_KEY = "model"
 EFFORT_KEY = "effort"
 RECOMMENDATION_KEY = "recommendation"
@@ -516,9 +530,34 @@ Receipt = Annotated[
 
 
 class ThreadTurn(Strict):
+    """One thing said on a channel, and -- when an agent said it -- which tier
+    said it.
+
+    `tier` is what carries the label past a reload. The page reads the board
+    from the projection rather than from log entries it was not there for, so a
+    turn projected without its tier could only be labelled by the channel's
+    current mode -- which would relabel every turn taken before a transfer as
+    the tier that came after it, erasing the human's only evidence that the
+    transfer changed anything.
+
+    A turn nobody attributed carries none, and is labelled as nothing rather
+    than as a guess: the human, the backend, and any turn recorded before tiers
+    were written down.
+    """
+
     who: Actor
     text: str
     timestamp: str
+    tier: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_absent_tier(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        """An unattributed turn has no `tier` key at all rather than a null one:
+        the field is present exactly when an agent's tier is known."""
+        dumped: dict[str, object] = handler(self)
+        if dumped.get(TIER_KEY) is None:
+            dumped.pop(TIER_KEY, None)
+        return dumped
 
 
 class Thread(Strict):
@@ -1151,25 +1190,52 @@ def read_turns(payload: Mapping[str, Any], actor: Actor, timestamp: str) -> list
     raising over something that already has a receipt would take the session
     down.
     """
+    tier = _tier(payload)
     raw = payload.get("turns")
     if isinstance(raw, list):
         return [
-            ThreadTurn(
-                who=_who(turn.get("who"), actor),
-                text=str(turn.get("text", "")),
-                timestamp=str(turn.get("timestamp", timestamp)),
+            _turn(
+                _who(turn.get("who"), actor),
+                str(turn.get("text", "")),
+                str(turn.get("timestamp", timestamp)),
+                tier,
             )
             for turn in raw
             if isinstance(turn, Mapping) and turn.get("text")
         ]
     text = payload.get("text")
     if isinstance(text, str) and text:
-        return [ThreadTurn(who=actor, text=text, timestamp=timestamp)]
+        return [_turn(actor, text, timestamp, tier)]
     return []
 
 
 def _who(raw: object, fallback: Actor) -> Actor:
     return cast("Actor", raw) if isinstance(raw, str) and raw in ACTORS else fallback
+
+
+def _tier(payload: Mapping[str, Any]) -> str | None:
+    """The tier the entry attributed itself to, if it named one this side knows.
+
+    An unrecognised spelling is dropped rather than carried: a label is only
+    worth showing if the page knows what it means, and passing an unknown
+    string through would put whatever the log happened to hold in front of the
+    human.
+    """
+    named = payload.get(TIER_KEY)
+    return named if isinstance(named, str) and named in TIERS else None
+
+
+def _turn(who: Actor, text: str, timestamp: str, tier: str | None) -> ThreadTurn:
+    """One turn, attributed to a tier only when an agent took it.
+
+    The entry's tier is a property of the entry, and a human turn never has
+    one -- but the page's own turn shape lets a client name a `who`, so the
+    attribution is gated on the actor of the turn rather than on the actor of
+    the entry that carried it.
+    """
+    return ThreadTurn(
+        who=who, text=text, timestamp=timestamp, tier=tier if who in AGENT_ACTORS else None
+    )
 
 
 def _lifecycle_problem(submission: EventSubmission) -> tuple[str, str] | None:

@@ -59,8 +59,10 @@ from grillui.lane import AgentUnreachableError
 from grillui.projector import fold
 from grillui.schemas import (
     EFFORT_KEY,
+    FAST_TIER,
     FOLD_KIND,
     FOLLOWED_TRANSFER_KEY,
+    HEAVY_TIER,
     MAP_CHANNEL,
     MODEL_KEY,
     RECOMMENDATION_KEY,
@@ -74,8 +76,6 @@ from grillui.tiers import (
     API_KEY_ENV,
     CLAUDE_CLI,
     DEFAULT_API_BASE,
-    FAST_TIER,
-    HEAVY_TIER,
     TierConfig,
     compose,
     system_prompt,

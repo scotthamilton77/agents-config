@@ -289,3 +289,97 @@ def test_an_unhashable_who_falls_back_to_the_entrys_actor() -> None:
     ]
 
     assert fold(EPOCH, entries).threads[0].turns[0].who == "human"
+
+
+# ------------------------------------------------------------ GUI-U21/GUI-A62
+
+
+def test_a_thread_turn_carries_the_tier_that_took_it_into_image_one() -> None:
+    """
+    Given a thread carrying a fast agent turn, a heavy one, and the human's
+    When the fold projects it
+    Then each agent turn carries the tier its own entry was attributed to,
+    And the human's carries none.
+
+    The page reads the board from this image rather than from log entries it
+    was not there for, so a tier dropped here is a label that cannot survive a
+    reload -- and a page with nothing to read it from would have only the
+    channel's current mode, which relabels every turn taken before a transfer.
+    """
+    entries = [
+        entry(1, "thread-created", actor="human", channel="t1", text="Why this one?"),
+        entry(2, "thread-turn", actor="thread-agent", channel="t1", text="Because.", tier="fast"),
+        entry(3, "thread-turn", actor="human", channel="t1", turns=[{"text": "Say more."}]),
+        entry(4, "thread-turn", actor="thread-agent", channel="t1", text="More.", tier="heavy"),
+    ]
+
+    turns = to_image1(fold(EPOCH, entries)).threads[0].turns
+
+    assert [(turn.who, turn.tier) for turn in turns] == [
+        ("human", None),
+        ("thread-agent", "fast"),
+        ("human", None),
+        ("thread-agent", "heavy"),
+    ]
+
+
+def test_an_unattributed_turn_has_no_tier_key_at_all() -> None:
+    """
+    Given a thread carrying the human's turn and an attributed agent turn
+    When the image is serialised as the page reads it
+    Then the tier is a key on the agent's turn and absent from the human's.
+
+    Absent rather than null, because the field means "this is who answered":
+    a null tier on a human turn invites a reader to render something for it.
+    """
+    entries = [
+        entry(1, "thread-created", actor="human", channel="t1", text="Why this one?"),
+        entry(2, "thread-turn", actor="thread-agent", channel="t1", text="Because.", tier="fast"),
+    ]
+
+    dumped = to_image1(fold(EPOCH, entries)).model_dump()["threads"][0]["turns"]
+
+    assert "tier" not in dumped[0]
+    assert dumped[1]["tier"] == "fast"
+
+
+def test_a_tier_the_log_names_but_this_side_does_not_know_is_dropped() -> None:
+    """
+    Given an agent turn attributed to a tier that is not one of the two
+    When the fold projects it
+    Then the turn carries no tier rather than the unrecognised spelling.
+    """
+    entries = [
+        entry(1, "thread-created", actor="human", channel="t1", text="Why this one?"),
+        entry(2, "thread-turn", actor="thread-agent", channel="t1", text="Hm.", tier="medium"),
+    ]
+
+    assert to_image1(fold(EPOCH, entries)).threads[0].turns[1].tier is None
+
+
+def test_a_human_turn_inside_an_attributed_entry_takes_no_tier_from_it() -> None:
+    """
+    Given an entry attributed to a tier that carries a turn the human said
+    When the fold projects it
+    Then that turn carries no tier.
+
+    The page\'s turn shape lets a client name a `who`, so the attribution is
+    gated on who took the turn rather than on what the entry claimed.
+    """
+    entries = [
+        entry(
+            1,
+            "thread-created",
+            actor="thread-agent",
+            channel="t1",
+            turns=[{"who": "human", "text": "mine"}, {"who": "thread-agent", "text": "theirs"}],
+            tier="heavy",
+        ),
+    ]
+
+    turns = fold(EPOCH, entries).threads[0].turns
+
+    assert [(turn.who, turn.tier) for turn in turns] == [
+        ("human", None),
+        ("thread-agent", "heavy"),
+    ]
