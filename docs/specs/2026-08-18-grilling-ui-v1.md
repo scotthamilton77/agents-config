@@ -221,9 +221,11 @@ agents may run concurrently with each other and with a grill-master turn.
 
 **GUI-D25 — The grill-master is the sole agent author of map mutations.** Thread agents
 recommend; they never emit map updates, and a map update arriving on a thread channel is
-rejected. When the human accepts a thread's conclusion, the backend dispatches the
-grill-master carrying that conclusion, and the grill-master returns the structured map
-mutation. Routing it that way is what keeps the grill-master's own conversational context
+rejected. When the human folds a thread's conclusion into the map, the backend dispatches
+the grill-master carrying that conclusion, and the grill-master returns the structured map
+mutation; taking a thread's proposed answer is not a fold but the human answering the
+decision (GUI-D33), and dispatches nothing. Routing
+it that way is what keeps the grill-master's own conversational context
 informed of how the map evolves — a mutation authored anywhere else changes the board
 behind the agent that has to reason about it next. Some thread conclusions fold as context
 or notification only, with no map update at all; the grill-master decides which, and says
@@ -497,10 +499,14 @@ follows, and changes nothing else.
   The agent's turn is followed by what it proposes — the option it builds on, the answer
   text, and its one-line reason — and an apply-decision control naming the decision it
   would arm. It appears on the thread's most recent turn only (GUI-D31); an earlier turn's
-  retired proposal stays readable as part of what was said and carries no control.
-  Activating it brings the anchor decision into view with its own-words box filled and the
-  named option's control marked (GUI-D33); the human presses one of those two existing
-  controls to answer. Where that decision is already settled the control says so, because the
+  retired proposal stays readable as part of what was said and carries no control. The
+  control renders on an open thread only: parking or closing the thread (GUI-D29) hides it
+  while the proposal stays live in the log, so reopening shows it again, and a session
+  ended with a proposal nobody took carries it nowhere — the terminal result (§8.7) lists
+  decisions and threads, never offers. Activating it brings the anchor decision into view
+  with its own-words box filled and the named option's control marked (GUI-D33); the human
+  presses one of those two existing controls to answer.
+  Where that decision is already settled the control says so, because the
   human is about to replace an answer they gave. Where the decision cannot be answered
   right now — fogged, locked, or held behind another thread — the control is inert and
   names the hold, since arming a box the board will not accept from does nothing the human
@@ -1091,7 +1097,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   work downstream, an answer that names its option only in its prose, and an answer
   standing on no option at all. The two that name an option record an answer carrying both
   `option` and `text`; the two that do not record `option` as null and `text` alone. A
-  fixture whose four cases are all clean option swaps fails the check.
+  clean option swap is an answer recording an `option` with empty `text`; a fixture whose
+  four cases are all clean option swaps fails the check.
 - **GUI-A67** The apply-decision control renders beneath the thread's most recent turn when
   that turn carries a proposal and nowhere else — not on an earlier turn whose proposal a
   later one retired, and not on a thread whose most recent turn is the human's. Activating
