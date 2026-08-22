@@ -301,6 +301,50 @@ agent to test for convergence explicitly, by asking each turn whether the thread
 reached an answer, is refused: it is fishing with a different question, and it trains the
 human to spend every turn saying no.
 
+**GUI-D36 — A thread picked back up after being set aside is caught up mechanically, and it
+does not resume a chain older than the interval.** A thread set aside by park or close
+(GUI-D29) and then reopened has been away while the board moved: decisions it reasoned from
+are settled, unsettled, invalidated, revised or newly added, another thread's conclusion among
+them where the grill-master turned one into a change (GUI-D25). Its first dispatch after the
+reopening carries a **catch-up** — the map events of the interval, in order, folded out of the
+log (§8.8) and placed in the dispatch context, so it reaches whichever tier takes that turn. It
+is a projection like every other: nothing in it is composed, summarised or inferred by a model,
+and a catch-up naming an event the log does not carry is the same corruption a short image 2 is.
+
+**The interval is bounded by gestures, not by wall time**: it runs from the set-aside gesture to
+the next human turn on that thread — the turn that reopens it (GUI-D29). Today that turn exists
+for a closed thread alone: a parked thread is raised again only as a loose end the agent names,
+never by a turn, so it has no interval and no dispatch this rule can fire on. The rule is stated
+over the gesture rather than over `close` so that it holds unchanged should park ever take a
+reopening turn of its own.
+
+**A map event is an entry that moves a decision, and that is the whole of the definition**: an
+entry is one exactly when folding the log through it changes image 1's `decisions` (GUI-D3). A
+settle, an add-node, and a revise, unsettle or invalidate that lands are map events at the
+sequence they land at; one that waits in the human's queue is a map event at the `apply` entry
+that lands it and never at the entry that queued it; and an entry moving no decision — a
+status-lane entry, a thread turn, a park, a close, a thread fold, a fold whose every sub-update
+queues — is not one, whatever it says. A catch-up entry therefore always names a decision, and an
+entry moving several contributes one catch-up entry per decision it moved. Enumerating kinds
+instead is refused: a list is a second definition of what changed the map, and it disagrees with
+the projector the first time a kind lands one way here and waits the other way there — the human
+would be reading a board the catch-up does not describe.
+
+**One fact governs both halves — the interval moved a decision, or it did not.** Where it did,
+the catch-up rides that dispatch and the channel's heavy-tier chain is not resumed: the turn
+opens a cold chain from the thread's full transcript, which crosses in the dispatch already,
+plus the catch-up, and the channel's later turns resume that new chain. Where the interval moved
+no decision there is no catch-up and the chain resumes as on any other turn. Resuming the older
+chain instead is refused: its accumulated reasoning was formed against a board that has since
+moved, and the board crossing whole on the next turn does not correct it — a snapshot states
+what is true and never what changed, so a chain already carrying a dozen older snapshots has no
+reason to read the newest as a correction rather than as more of the same. Opening a cold chain
+on every turn is refused for the opposite reason: it pays the cold-start tax on every thread
+turn in the session and forfeits the resume discount GUI-D15 is built to hold, to fix a chain
+that is not stale. **The human is told nothing.** No notification is raised (GUI-U15) and no
+board element appears; a cold turn on a channel the heavy tier drives is still an expert turn
+and still labelled one (GUI-U21), and that label is the whole of what any of this is visible as.
+
 ## 4. Protocol
 
 **GUI-D16 — Every write carries an idempotency key and gets a uniform typed receipt.** The
@@ -593,9 +637,6 @@ Each item below is deferred, not rejected, with the observation that would pull 
 - **Elision machinery.** Image 2 crosses whole (GUI-D4); there is no path that drops
   content from a dispatch and no marker vocabulary for one. Trigger: a real session whose
   image 2 approaches the context limit of a tier in use.
-- **Parked-thread drift mitigation.** A reopened parked thread's agent is stale relative
-  to the evolved map. Trigger: a session where a resumed parked thread asserts something
-  the board contradicts.
 - **A tracker bridge.** Separate artifacts, no shared data model, overlap in vocabulary
   only. Trigger: someone wants a session's unfinished map exported as tracker items.
 
@@ -794,6 +835,12 @@ Image 2, transformed for one thread's agent (GUI-D24):
 
 The projection is a pure fold with the same determinism guarantee as the images (GUI-D3).
 
+A dispatch reopening a set-aside thread additionally carries that interval's catch-up
+(GUI-D36): an ordered array of objects — `seq` (integer), `kind` (string), `target` (string, the
+decision the entry moved) and `why` (string, the rationale the entry carried and empty where it
+carried none) — one per decision moved, in log order, over the map events between the set-aside
+gesture and the reopening turn, folded from the log under the same determinism guarantee.
+
 ### 8.9 The converged-answer proposal
 
 Two shapes, fixed here rather than left to the implementing slice, because three readers
@@ -862,6 +909,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D33 | GUI-A67, GUI-A68 |
 | GUI-D34 | GUI-A69 |
 | GUI-D35 | GUI-A71, GUI-A72, GUI-A73, GUI-A74 |
+| GUI-D36 | GUI-A75, GUI-A76, GUI-A77, GUI-A78 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -1178,6 +1226,30 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A74** After an autonomous escalation the human's control still governs: activating
   it returns the next turn on that channel to the fast tier, and a later reply meeting a
   condition escalates that channel again.
+- **GUI-A75** A thread reopened after a set-aside gesture is dispatched with a catch-up exactly
+  when at least one entry in the interval between that gesture and the reopening turn changes
+  image 1's decisions, and the catch-up carries one entry per decision moved per such entry, in
+  log order, each naming that decision and the sequence, kind and rationale the log carries, with
+  nothing from outside the interval and nothing composed. Over a fixture whose interval carries
+  thread turns, status entries, a park, a thread fold and an update left waiting in the queue, no
+  catch-up is produced; applying that queued update inside the interval produces one carrying it
+  at the sequence of the apply. The check is mutation-tested: reading the queueing sequence
+  instead turns the suite red naming that case.
+- **GUI-A76** Where the interval moved a decision, the reopening turn on a heavy-tier channel is
+  invoked with no resume identifier and its prompt carries the thread's turns in full beside the
+  catch-up. Where that turn's driver returns a session id, that id — and no earlier one — is
+  what the next turn on that channel resumes; where it returns none, the channel holds no resume
+  record — the record the cold turn set aside is discarded when the turn is opened, not kept
+  for a null to fall back on. Asserted against the arguments the driver builds and against the
+  per-channel chain record, whose other channels are left as they were.
+- **GUI-A77** Where no entry in the interval moved a decision, the reopening dispatch carries no
+  catch-up and the turn is invoked with the resume identifier the channel already held, exactly
+  as an ordinary turn on a thread nobody set aside.
+- **GUI-A78** Reopening a thread raises nothing for the human: over a fixture reopening a thread
+  across an interval that moved a decision, no notification is produced, the board projects no
+  element it does not project over the same session without the interval, and the log grows by
+  the reopening turn, its status entries and the reply alone. The turn's tier label (GUI-U21) is
+  the whole of the difference the human can see.
 
 ## 10. Open questions for the implementing work
 
@@ -1248,6 +1320,9 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: Autonomous escalation as a session policy: the configured default, the backend-driven
   transfer on a met condition, its attribution, and the control that still returns the
   channel — AC: GUI-D35, GUI-U24, GUI-A71, GUI-A72, GUI-A73, GUI-A74.
+- feat: Catching up a reopened thread: the interval's catch-up in its first dispatch, and the
+  heavy-tier chain that is opened cold rather than resumed — AC: GUI-D36, GUI-A75, GUI-A76,
+  GUI-A77, GUI-A78.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
 
 ## Evidence
@@ -1330,3 +1405,7 @@ opens one proves something else.
 - GUI-A72 | open
 - GUI-A73 | open
 - GUI-A74 | open
+- GUI-A75 | open
+- GUI-A76 | open
+- GUI-A77 | open
+- GUI-A78 | open
