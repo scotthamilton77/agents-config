@@ -37,10 +37,13 @@ decision is *settled* once answered; the *frontier* is the set of decisions answ
 anchored to a decision or to the session itself, *parked* when set aside as a loose end
 that the human may return to, *closed* when the human is done with it, and *folded* when its
 conclusion is applied to the board — *fold-readiness* is the agent declaring that a thread
-has reached an applicable conclusion. A *channel* is one conversational lane between the
-page and an agent: one for the map, one per thread. In the handoff file, *impetus* is why
-the grilling was requested, *posture* is how adversarially to grill, and *stop_when* is the
-condition under which the grill-master should treat the grilling as complete.
+has reached an applicable conclusion. A thread agent *proposes an answer* when the
+conversation has converged on what answers the thread's own decision: an offer the human
+arms, edits and takes, changing no map and settling nothing until they do. A *channel* is
+one conversational lane between the page and an agent: one for the map, one per thread. In
+the handoff file, *impetus* is why the grilling was requested, *posture* is how
+adversarially to grill, and *stop_when* is the condition under which the grill-master
+should treat the grilling as complete.
 
 ---
 
@@ -234,6 +237,42 @@ the conversation moving is refused — it reads as the agent having nothing left
 it hands the human the work of ending every thread by declining an invitation. This binds
 the thread-agent prompt on both tiers.
 
+**GUI-D31 — A thread agent offers its decision's answer as a proposal riding the turn that
+reached it.** Where a thread converges on what answers its own anchor decision, the agent's
+reply document carries a `proposed_answer` object beside its prose (§8.9): the anchor
+decision, the option it builds on where one fits and null where none does, the answer text
+in the human's own words, and one line of why the thread reached it. The object rides the
+turn's own log entry as a payload key and the projection puts it on that turn (§8.5), the
+way superseding rides the turn that supersedes — an offer is something a turn makes while
+it says its piece, and the kind vocabulary of §8.3 stays closed. **A proposal is live when
+it rides the thread's most recent turn**, which is the whole of the staleness rule: a
+second proposal on a later turn retires the first, a human turn retires both, and a
+proposal on a thread nobody has spoken in since is the one on offer. Only a thread agent
+on a decision-anchored thread may make one, and only for that thread's own anchor: the
+grill-master already asserts answers through `settle` under the queue's rules, and a
+session-scoped thread (GUI-U16) anchors no decision, so a proposal from either — or one
+naming any decision other than the anchor — is dropped and the turn is recorded as prose,
+exactly as a half-shaped reply document is. **Dropping rather than rejecting is the rule
+here and only here**: refusing the write would throw away what the agent said to the human
+over a malformed offer nobody has seen yet. Carrying the proposal as an update inside the
+turn's `updates` list instead is refused, because that list is map mutations and a thread
+channel's map mutation is rejected outright (GUI-D25) — the offer would be unsendable from
+the only actor allowed to make it.
+
+**GUI-D32 — The thread agent proposes only what the human has already said, and never asks
+whether to.** Its prompt states the condition: the human's own turns carry the answer —
+they have stated the qualification themselves, or accepted in their own words one the agent
+put to them — and restating that is the whole of the drafting licence. Composing an answer
+the human has not endorsed is the agent deciding and calling it convergence. The offer is
+the affordance and never a question: the turn says what it takes the thread to have
+settled and stops, because *shall I write this back?* is the closing question GUI-D30
+refuses under another name, and it hands the human the work of declining. One proposal per
+turn, on the anchor decision, built on an option the decision already has or on none —
+proposing a new option is a map change and the grill-master's (GUI-D25). Prompting the
+agent to test for convergence explicitly, by asking each turn whether the thread has
+reached an answer, is refused: it is fishing with a different question, and it trains the
+human to spend every turn saying no.
+
 ## 4. Protocol
 
 **GUI-D16 — Every write carries an idempotency key and gets a uniform typed receipt.** The
@@ -314,6 +353,52 @@ to each channel — one for the map, one per thread: `idle`, `sending`, `awaitin
 `agent-owes`, `receiving`. Each channel manages its own idempotency and sequencing state,
 so one thread stalling says nothing about any other. What is fixed here is the layer split
 and the two vocabularies; the transition table is the implementing work's to state.
+
+**GUI-D33 — Taking a proposal arms the decision's answer; the human still answers it.**
+The apply-decision control fills the board's own answer controls and nothing else: it
+inserts the proposed text into that decision's own-words box after anything already there
+rather than over it, so no draft of the human's is discarded by an agent's, and where the
+proposal names an option it marks that option's control as the one that records it. Which
+control the human then presses is what the answer becomes, and both already exist
+(GUI-U5): the option's own control records that option with the box as its note, and the
+own-words control records the text alone. That is what lets a proposal built on an option
+be taken as the qualification without it, which is how a converged answer that cites its
+option only in prose gets recorded. It appends no event, settles nothing, and leaves the
+text editable — the answer is the human's statement of record, and every converged answer
+observed in practice is a qualification in the human's own idiom rather than the agent's
+sentence taken whole. Firing the answer directly on activation is refused: it puts words on
+the board the human has not read, and on a decision already settled it would overwrite
+their own answer on one click. What the arming leaves behind is provenance — the thread's
+id attached to that decision's draft, riding the next answer submitted for that decision as
+`from_thread` (§8.9) and discarded with the draft. **The answer that carries it settles the
+decision and closes its thread in one entry.** The decision settles by the ordinary answer
+path, so the frontier advances by the existing rule and no grill-master dispatch is
+involved; the thread reaches GUI-D29's closed state — a line item, not a loose end,
+reopening on a further human turn — and records the applied answer text as its conclusion,
+so the terminal result names what the thread produced instead of null. It is not GUI-D25's
+`folded`: that state is for a conclusion the grill-master turned into a map change, and
+this one changes no map. Emitting the close as a second event beside the answer is refused:
+two events half-land, and the human is left looking at a settled decision whose thread asks
+to be closed again. An answer citing a thread that does not exist is refused as an unknown
+thread id, and one citing a thread anchored to another decision is refused with a reason of
+its own, added to GUI-D16's closed vocabulary; both append nothing. A proposal taken onto
+an already-settled decision re-answers it by that same path, which is what revisiting a
+decision already does.
+
+**GUI-D34 — A converged answer is not a queue item.** It never enters the pending queue of
+GUI-D26, and there is no dismiss gesture for one: an offer nobody takes is retired by the
+next turn on its thread, and spending a log entry on declining it would need an undo the
+moment the human changed their mind mid-conversation. Routing it through the queue instead
+breaks four ways at once. A queued proposal places a hold on its target decision, so the
+offer would block the very answer it proposes — the human could not answer the decision
+while a proposal to answer it waited. The queue carries map mutations authored by the
+grill-master, so a thread agent's entry in it would arrive as a `settle` and violate the
+sole-author rule of GUI-D25 — an agent asserting an answer, where this is the human giving
+one. Applying a queue entry applies what the authoring agent wrote, unedited by design, and
+the qualification the human adds has no seat in that gesture. And every queue entry travels
+in every grill-master dispatch, so a conversational offer on one thread would reach the map
+channel as an outstanding board change the grill-master could reason about and supersede,
+when no board change was ever proposed.
 
 ## 5. The UI surface
 
@@ -408,6 +493,18 @@ follows, and changes nothing else.
   would move to, coloured like a mandate — is refused: a coloured state word on a control
   reads as *where the channel is now*, so the human infers the opposite of what activating
   it does.
+- **GUI-U23 — A live proposal renders beneath the turn that made it, with one control.**
+  The agent's turn is followed by what it proposes — the option it builds on, the answer
+  text, and its one-line reason — and an apply-decision control naming the decision it
+  would arm. It appears on the thread's most recent turn only (GUI-D31); an earlier turn's
+  retired proposal stays readable as part of what was said and carries no control.
+  Activating it brings the anchor decision into view with its own-words box filled and the
+  named option's control marked (GUI-D33); the human presses one of those two existing
+  controls to answer. Where that decision is already settled the control says so, because the
+  human is about to replace an answer they gave. Where the decision cannot be answered
+  right now — fogged, locked, or held behind another thread — the control is inert and
+  names the hold, since arming a box the board will not accept from does nothing the human
+  can act on.
 - **GUI-U12 — The map doctor is an explicit control** that dispatches the grill-master with
   a reassess-everything instruction over the full map and the pending queue. While it runs
   the page is in immutable mode behind a modal telling the human to wait; the board is
@@ -597,7 +694,10 @@ The current map snapshot: a pure fold, byte-identical for a given log.
   makes a turn's tier label (GUI-U21) survive a
   reload: a page rejoining a session reads the board from this image rather than from the
   log entries it was not there for, and a turn projected without its tier can no longer be
-  labelled by anything but the channel's current mode.
+  labelled by anything but the channel's current mode. A turn may additionally carry
+  `proposal` — the converged-answer object of §8.9, present only on a `thread-agent` turn
+  on a decision-anchored thread. Every proposal a turn made projects; which one is live is
+  position, not a field (GUI-D31).
 - `pending` — array of objects: `id`, `target` (decision id), `kind`, `superseded`
   (boolean), and `authored_at` (sequence integer). This is the queue GUI-D26 dispatches.
   `id` is derived from the authoring entry rather than minted beside it: for an entry
@@ -655,6 +755,33 @@ Image 2, transformed for one thread's agent (GUI-D24):
 
 The projection is a pure fold with the same determinism guarantee as the images (GUI-D3).
 
+### 8.9 The converged-answer proposal
+
+Two shapes, fixed here rather than left to the implementing slice, because three readers
+have to agree on them: the driver reading an agent's reply, the projector putting the offer
+on a turn, and the page arming an answer from it.
+
+**In the reply document**, `proposed_answer` is a third key beside `text` and `updates`, and
+a document carrying it and prose is a declaring reply like any other:
+
+- `decision` — string. The proposing thread's own anchor decision id; any other value, or
+  any value at all from a thread anchoring none, drops the proposal (GUI-D31).
+- `option` — string or null: an option id the anchor decision already carries, or null
+  where the converged answer stands on none. An id the decision does not carry drops the
+  proposal.
+- `text` — string, non-empty. The answer in the human's own words, as the thread reached it.
+- `because` — string, one line: why the thread converged here. It is shown to the human
+  beside the offer and is not part of the answer.
+
+An unusable proposal is dropped and the turn is recorded as prose; it is never a rejection
+of the write.
+
+**On the answer**, `from_thread` is an optional string on the `answer` gesture's payload,
+beside `target` and `answer`: the id of the thread the answer was armed from. It names a
+thread that exists and whose anchor decision is the answered decision, and it is what
+closes that thread in the same entry (GUI-D33). Absent, the answer is an ordinary one and
+closes nothing.
+
 ## 9. Acceptance criteria
 
 Every requirement this spec states is discharged by at least one criterion below.
@@ -691,6 +818,10 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D28 | GUI-A51 |
 | GUI-D29 | GUI-A55 |
 | GUI-D30 | GUI-A64 |
+| GUI-D31 | GUI-A65, GUI-A66 |
+| GUI-D32 | GUI-A70 |
+| GUI-D33 | GUI-A67, GUI-A68 |
+| GUI-D34 | GUI-A69 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -713,6 +844,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U20 | GUI-A61 |
 | GUI-U21 | GUI-A62 |
 | GUI-U22 | GUI-A63 |
+| GUI-U23 | GUI-A67 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -945,6 +1077,49 @@ Each criterion is mechanically checkable and convertible to a red test.
   a question is allowed in, asserted against the prompt the driver actually composes rather
   than against a constant read out of the source; and over one live session's thread turns,
   no turn ends in a question outside those two cases.
+- **GUI-A65** A thread agent's reply document carrying a `proposed_answer` records the
+  turn's prose and projects the proposal onto that turn with its decision, option, text and
+  reason. The same document drops its proposal — recording the prose, appending no
+  rejection and rendering no control — when it comes from the grill-master, from a thread
+  whose anchor decision is null, when it names any decision other than the thread's anchor,
+  or when it names an option that decision does not carry. The check is mutation-tested:
+  removing the anchor test turns the suite red naming that case.
+- **GUI-A66** Over a fixture of four converged threads taken from a real session, each
+  convergence is expressible as one proposal and taking it records exactly what the
+  proposal carried. The four are the shapes that occur: an existing option plus a
+  qualification narrowing what it means, an existing option plus a qualification adding
+  work downstream, an answer that names its option only in its prose, and an answer
+  standing on no option at all. The two that name an option record an answer carrying both
+  `option` and `text`; the two that do not record `option` as null and `text` alone. A
+  fixture whose four cases are all clean option swaps fails the check.
+- **GUI-A67** The apply-decision control renders beneath the thread's most recent turn when
+  that turn carries a proposal and nowhere else — not on an earlier turn whose proposal a
+  later one retired, and not on a thread whose most recent turn is the human's. Activating
+  it inserts the proposed text into the anchor decision's own-words box after text already
+  present rather than replacing it, marks the named option's control, leaves the text
+  editable, and appends no event — asserted by checking that the log grew by nothing.
+  Pressing the marked option then records option and text together; pressing the own-words
+  control records the text alone. Where the anchor decision is settled the control says so,
+  and where a hold is on it the control is inert and names the hold. Verified in a
+  browser.
+- **GUI-A68** Submitting an armed answer appends one `answer` entry carrying `from_thread`;
+  that single entry settles the decision, moves its thread to `closed`, and advances the
+  frontier by the ordinary rule, with no second event and no grill-master dispatch in the
+  log. The terminal result reports that thread's conclusion as the applied answer text
+  rather than null, on a live end-session and a capture run alike. Taking a proposal onto
+  an already-settled decision re-answers it by the same path. An answer whose `from_thread`
+  names no thread is rejected as an unknown thread id, and one naming a thread anchored to
+  another decision is rejected with its own typed reason; neither appends anything.
+- **GUI-A69** A live proposal creates no pending-queue entry, appears in no grill-master
+  dispatch context as a pending update, and places no hold on its anchor decision — the
+  decision stays answerable by every ordinary route while the proposal stands, verified by
+  answering it with an unrelated option while the offer is live. No dismiss gesture exists
+  for a proposal: over a fixture where one thread carries two agent turns each proposing,
+  only the later turn renders a control and no log entry declines the earlier one.
+- **GUI-A70** Every shipped thread-agent prompt states the convergence condition, the
+  restatement-only licence and that the offer is never put as a question — asserted against
+  the prompt the driver composes rather than a constant read out of the source. Over one
+  live session's thread turns, no turn carrying a proposal also asks whether to apply it.
 
 ## 10. Open questions for the implementing work
 
@@ -1006,4 +1181,10 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: Per-turn tier labelling on threads and on the map channel — AC: GUI-U21, GUI-A62.
 - feat: The transfer control's action labelling — AC: GUI-U22, GUI-A63.
 - feat: The thread agent's questioning rule — AC: GUI-D30, GUI-A64.
+- feat: The converged-answer proposal on a thread turn: the reply-document key, its
+  projection onto the turn, the liveness rule, and the thread-agent prompt that reaches one
+  — AC: GUI-D31, GUI-D32, GUI-D34, GUI-A65, GUI-A66, GUI-A69, GUI-A70.
+- feat: Applying a converged answer: the control beneath the turn, the armed answer
+  controls, and the answer that carries its provenance and closes its thread — AC: GUI-D33,
+  GUI-U23, GUI-A67, GUI-A68.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
