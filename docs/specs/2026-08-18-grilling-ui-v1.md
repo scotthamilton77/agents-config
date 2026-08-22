@@ -505,10 +505,10 @@ follows, and changes nothing else.
   human turn, which retires the offer it follows (GUI-D31), so a fresh one is needed — and
   a session ended with a proposal nobody took carries it nowhere — the terminal result
   (§8.7) lists decisions and threads, never offers. Activating it brings the anchor
-  decision into view with its own-words box filled and the named option's control marked (GUI-D33); the human
-  presses one of those two existing controls to answer.
-  Where that decision is already settled the control says so, because the
-  human is about to replace an answer they gave. Where the decision cannot be answered
+  decision into view with its own-words box filled and the named option's control marked
+  (GUI-D33); the human presses one of those two existing controls to answer. Where that
+  decision is already settled the control says so, because the human is about to replace
+  an answer they gave. Where the decision cannot be answered
   right now — fogged, locked, or held behind another thread — the control is inert and
   names the hold, since arming a box the board will not accept from does nothing the human
   can act on.
