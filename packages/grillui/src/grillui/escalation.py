@@ -152,9 +152,16 @@ def _moved_by(entries: Sequence[LogEntry], channel: str) -> LogEntry | None:
     escalation policy moving the channel itself -- is the other. Nothing else
     counts: an agent's reply carrying the same key is a model claiming a
     transfer, and a payload key is open surface, so one that could set this
-    would spend the human's subscription without being asked. A status entry is
-    backend-authored by construction, since the kind is outside the submission
-    registry and no client can offer one.
+    would spend the human's subscription without being asked.
+
+    Both branches name their author. The appender already refuses a client that
+    offers a `status` kind -- it is outside the submission registry, so the
+    rejection is `unknown event kind` -- which makes the actor test on the
+    status branch unreachable through the wire today. It is written anyway, so
+    that what this reader accepts and what the writer can produce are the same
+    statement rather than two that happen to agree: a reader whose gate is the
+    kind alone starts trusting agent-authored entries the moment the registry
+    changes, and it does so silently.
 
     Scanning backwards is what makes both directions work with no state kept: a
     human's return to the fast tier wins over an earlier policy transfer, and a
@@ -165,7 +172,11 @@ def _moved_by(entries: Sequence[LogEntry], channel: str) -> LogEntry | None:
             continue
         if entry.actor == "human" and TRANSFER_FLAG in entry.payload:
             return entry
-        if entry.kind == STATUS_KIND and entry.payload.get("phase") == STATUS_PHASE_TRANSFERRED:
+        if (
+            entry.actor == "backend"
+            and entry.kind == STATUS_KIND
+            and entry.payload.get("phase") == STATUS_PHASE_TRANSFERRED
+        ):
             return entry
     return None
 

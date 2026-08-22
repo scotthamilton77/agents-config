@@ -35,16 +35,17 @@ is read back out of the log file's bytes.
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from conftest import ScriptedCli, ScriptedFast, replies, run_turns, seed_node
+from conftest import TIMEOUT, ScriptedCli, ScriptedFast, driven, replies, run_turns, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.drivers import FastDriver, HeavyDriver
 from grillui.escalation import CONDITION_IRREDUCIBLE
 from grillui.lane import Lane
-from grillui.log import LOG_FILE
+from grillui.log import LOG_FILE, SessionLog
 from grillui.schemas import (
     EFFORT_KEY,
     FAST_TIER,
@@ -72,7 +73,10 @@ from grillui.tiers import (
 )
 
 if TYPE_CHECKING:
-    from grillui.log import SessionLog
+    from collections.abc import Callable, Sequence
+    from pathlib import Path
+
+    from grillui.schemas import Receipt
 
 NODE = "n1"
 MINE = "t-retention"
@@ -81,6 +85,11 @@ AGENTS = frozenset({"grill-master", "thread-agent"})
 
 FAST_MODEL = "vendor/fast-2"
 HEAVY_MODEL = "claude-configured"
+
+# How long a turn racing the transfer is given to land. It only has to reach an
+# append, so this is generous for what it measures -- and it is paid only when
+# the lock does its job and holds the racer off.
+RACE_WINDOW = 0.25
 
 # Every line is unique, so "the whole conversation crossed" and "only the last
 # message crossed" are told apart by looking for the words in the bytes the
@@ -152,6 +161,30 @@ def both_tiers(policy: str = POLICY_GATED) -> tuple[FastDriver, HeavyDriver, Scr
         HeavyDriver(TierConfig(heavy_model=HEAVY_MODEL), cli),
         cli,
     )
+
+
+class InterleavingLog(SessionLog):
+    """A log that gives one waiting turn its chance the instant a reply lands.
+
+    The hook fires after an agent's own append has returned, which is exactly
+    the moment between the reply and the transfer that follows it. A second
+    thread let in there is the race the append lock has to close: it finds the
+    reply on the record and has to find the transfer too, or it schedules the
+    turn the policy just bought against a channel it still reads as fast.
+
+    One shot, and only for an agent's append: the human's own turn goes through
+    this same door on its way in, and a hook that fired there would be testing
+    the window before the reply rather than the one after it.
+    """
+
+    hook: Callable[[], None] | None = None
+
+    def submit(self, batch: Sequence[EventSubmission], epoch: str) -> list[Receipt]:
+        receipts = super().submit(batch, epoch)
+        if self.hook is not None and any(event.actor in AGENTS for event in batch):
+            armed, self.hook = self.hook, None
+            armed()
+        return receipts
 
 
 def transfers(log: SessionLog, channel: str) -> list[str]:
@@ -621,3 +654,49 @@ def test_the_human_takes_a_policy_transfer_back_and_a_later_condition_escalates_
 
     assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, FAST_TIER, FAST_TIER, HEAVY_TIER]
     assert len(transfers(log, MAP_CHANNEL)) == 2
+
+
+def test_a_human_turn_arriving_the_instant_the_reply_lands_still_goes_to_the_expert(
+    session_dir: Path,
+) -> None:
+    """
+    Given an autonomous session whose fast reply meets a condition
+    When a human turn is accepted in the same instant that reply is appended
+    Then it is still composed by the heavy tier.
+
+    The reply and the transfer are two appends, and a turn accepted between them
+    reads a channel that is still fast -- so the human pays for an escalation and
+    the very next turn, the one they were escalated for, is answered by the tier
+    they were moved off. The lane already solves this for its own paired entries
+    by holding the append lock across both, and that is what is being asserted
+    here rather than a lucky ordering: the racing turn is let in at the one
+    moment that can go wrong, and has to come out heavy anyway.
+    """
+    log = InterleavingLog(session_dir)
+    seed_node(driven(log, None), log.epoch, NODE)
+    fast, heavy, _cli = both_tiers(POLICY_AUTONOMOUS)
+    lane = Lane(log, fast, heavy)
+    racing: list[threading.Thread] = []
+
+    def race() -> None:
+        """The next human turn, taken from a thread of its own so it contends
+        for the append lock rather than re-entering it."""
+        _receipts, scheduled = lane.accept([answered("raced", ESCALATED_ASKED)], log.epoch)
+        racing.extend(scheduled)
+
+    def interleave() -> None:
+        runner = threading.Thread(target=race, name="raced-turn")
+        racing.append(runner)
+        runner.start()
+        # Long enough that a driver holding no lock really would let the turn
+        # through, so the unguarded version fails here rather than by timing.
+        runner.join(RACE_WINDOW)
+
+    log.hook = interleave
+    run_turns(lane, answered("irreducible", IRREDUCIBLE_ASKED))
+    for thread in racing:
+        thread.join(TIMEOUT)
+        assert not thread.is_alive(), "a raced turn outlived its timeout"
+
+    assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, HEAVY_TIER]
+    assert len(transfers(log, MAP_CHANNEL)) == 1

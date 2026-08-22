@@ -263,17 +263,27 @@ class FastDriver:
         advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel)
         if advice is not None:
             attribution[RECOMMENDATION_KEY] = advice.as_payload()
-        record_reply(log, self.tier, channel, reply, attribution)
-        # Under the autonomous policy the met condition moves this one channel
-        # itself, and it is attributed on the lane rather than done in silence.
-        # After the reply lands, not before: a turn nobody could record is not a
-        # turn whose recommendation is worth spending the heavy tier on.
-        if advice is not None and self.config.autonomous:
-            log.emit_status(
-                STATUS_PHASE_TRANSFERRED,
-                f"the escalation policy moved this channel to the expert tier: {advice.condition}",
-                channel,
-            )
+        # The reply and the transfer it triggers land under one hold of the
+        # append lock -- the same discipline the lane uses to keep a turn and
+        # the word about it adjacent. Two separate appends leave a window: a
+        # human turn accepted inside it is scheduled against a log where this
+        # channel is still fast, so the turn the policy just bought is composed
+        # by the tier it moved off.
+        #
+        # The transfer is emitted second, and only if the reply landed: a turn
+        # nobody could record is not a turn whose recommendation is worth
+        # spending the heavy tier on. Under the lock that costs nothing --
+        # a refusal raises out of the block before the transfer is written, and
+        # nothing else could have read the log in between.
+        with log.appending():
+            record_reply(log, self.tier, channel, reply, attribution)
+            if advice is not None and self.config.autonomous:
+                log.emit_status(
+                    STATUS_PHASE_TRANSFERRED,
+                    "the escalation policy moved this channel to the expert tier: "
+                    f"{advice.condition}",
+                    channel,
+                )
 
 
 @dataclass
