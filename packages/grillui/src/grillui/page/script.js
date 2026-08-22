@@ -11,7 +11,7 @@
 //---PAGE-EMISSIONS-START---
 var EMISSIONS = {
   "answer":         { "channel": "map",    "payload": ["target", "answer", "transfer", "from_thread"] },
-  "thread-created": { "channel": "thread", "payload": ["turns", "decision", "kind", "title", "requires_action"] },
+  "thread-created": { "channel": "thread", "payload": ["turns", "decision", "kind", "title", "requires_action", "transfer"] },
   "thread-turn":    { "channel": "thread", "payload": ["turns", "transfer"] },
   "thread-fold":    { "channel": "thread", "payload": [] },
   "thread-park":    { "channel": "thread", "payload": [] },
@@ -1345,7 +1345,7 @@ function discussPending(id) {
 // Returns the thread it opened, so a caller that has to follow the new thread
 // -- a popped window, which cannot see the panel the main one moves -- learns
 // its name from the one place that mints it.
-function startThread(id, text) {
+function startThread(id, text, from) {
   if (!text || !text.trim()) return null;
   // No decision anchor is the session-scoped thread: the human is asking about
   // the board, not about a question on it. It gets the one name a session has
@@ -1353,6 +1353,11 @@ function startThread(id, text) {
   // a second one beside it.
   var help = !id;
   var tid = help ? HELP_THREAD : "t-" + id + "-" + KEYS + "-" + Math.random().toString(36).slice(2, 6);
+  // `from` is the draft's own channel, which is not the name the thread gets.
+  // The tier the human put the draft on is carried onto the minted name before
+  // the turn is built, so a transfer pressed before there was anything to say is
+  // the tier that first turn is taken on rather than a press that did nothing.
+  if (from && TRANSFER[from]) TRANSFER[tid] = TRANSFER[from];
   send(ev("thread-created", tid, {
     turns: [{ who: "human", text: text.trim() }],
     decision: help ? null : id,
@@ -1942,7 +1947,14 @@ function threadBody(tid, forPop, chrome) {
       '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
         '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
         '<button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button></div>' +
-        seedControls(anchor, null)
+        seedControls(anchor, null) +
+        // The tier control belongs to a thread that has not been opened yet as
+        // much as to one that has: the human decides who they are asking before
+        // they ask, and a control that arrives only with the first reply arrives
+        // one turn after the one turn it was wanted for. Park, close and fold are
+        // not offered beside it — the backend refuses a thread gesture naming no
+        // thread, and the head's ✕ is what closing a draft already means.
+        '<div class="thread-actions">' + transferControl(tid) + "</div>"
     );
   }
   var ready = foldReady(tid);
@@ -2450,7 +2462,7 @@ window.popAct = function (tid, anchor, act, text, field) {
   // on the anchor this window came with. A copy of the draft pane drawn before
   // that turn went out sends the same act again, and that is a turn in the
   // thread it opened rather than a second thread.
-  else if (act === "draftsay") return thread(tid) ? sayInThread(tid, text) : startThread(anchor, text);
+  else if (act === "draftsay") return thread(tid) ? sayInThread(tid, text) : startThread(anchor, text, tid);
   // The seed's decision is read from the thread this window is showing, not
   // from the button: the popped document is a copy of the pane, and the only
   // thing it can be trusted to name is which seed was pressed. On a draft there
@@ -2565,7 +2577,7 @@ function sendFrom(ta) {
     sayInThread(ta.dataset.tid, ta.value.trim());
     UI.drafts.__say = "";
   } else if (kind === "draftsay") {
-    startThread(ta.dataset.id, ta.value.trim());
+    startThread(ta.dataset.id, ta.value.trim(), UI.draftFor && UI.draftFor.thread);
     UI.drafts.__say = "";
   }
   render();
