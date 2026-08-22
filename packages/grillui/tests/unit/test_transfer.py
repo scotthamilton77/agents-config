@@ -35,6 +35,7 @@ from grillui.drivers import FastDriver, HeavyDriver
 from grillui.escalation import CONDITION_IRREDUCIBLE
 from grillui.lane import Lane
 from grillui.schemas import (
+    EFFORT_KEY,
     FOLLOWED_TRANSFER_KEY,
     MAP_CHANNEL,
     MODEL_KEY,
@@ -45,7 +46,7 @@ from grillui.schemas import (
     TRANSFER_FLAG,
     EventSubmission,
 )
-from grillui.tiers import FAST_TIER, HEAVY_TIER, TierConfig
+from grillui.tiers import DEFAULT_HEAVY_EFFORT, FAST_TIER, HEAVY_TIER, TierConfig
 
 if TYPE_CHECKING:
     from grillui.log import SessionLog
@@ -257,6 +258,7 @@ def test_activating_transfer_takes_the_next_map_turn_to_the_heavy_tier(
             "text": HEAVY_SAID,
             TIER_KEY: HEAVY_TIER,
             MODEL_KEY: HEAVY_MODEL,
+            EFFORT_KEY: DEFAULT_HEAVY_EFFORT,
             FOLLOWED_TRANSFER_KEY: True,
         },
     ]
@@ -293,6 +295,7 @@ def test_an_escalated_thread_hands_the_heavy_tier_its_own_accumulated_turns(
         "text": HEAVY_SAID,
         TIER_KEY: HEAVY_TIER,
         MODEL_KEY: HEAVY_MODEL,
+        EFFORT_KEY: DEFAULT_HEAVY_EFFORT,
         FOLLOWED_TRANSFER_KEY: True,
     }
 

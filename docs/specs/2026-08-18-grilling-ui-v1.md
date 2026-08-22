@@ -167,8 +167,10 @@ crosses into reasoning, decisioning or implied design, it stops short of decidin
 recommends a handoff to the heavy tier as metadata on its reply — **and the human decides
 whether to take it** (GUI-U11). Escalation is human-gated in v1: no agent escalates a turn
 on its own, and the transfer that activation triggers hands the heavy tier the channel's
-accumulated thread rather than only the last message. Both tiers' model ids are configuration; the
-escalation target is a Claude model and Fable is excluded from v1.
+accumulated thread rather than only the last message. Both tiers' model ids are
+configuration, and so is the effort the heavy tier thinks at; the escalation target is a
+Claude model, configured by default to think hard rather than to answer quickly, and Fable
+is excluded from v1.
 
 **GUI-D12 — The escalation recommendation is a criterion evaluated against the transcript,
 never a self-assessment of competence.** A fast model asked to judge whether a question exceeds its

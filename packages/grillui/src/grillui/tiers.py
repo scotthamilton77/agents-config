@@ -1,10 +1,10 @@
 """The two tiers: what each is told, which model it is, and what a turn is given.
 
-**Configuration owns the model ids.** Neither id is written into a driver: the
-fast tier is a non-Claude model reached over OpenRouter and the heavy tier is a
-Claude model driven as CLI turns, and which model each is comes from
-configuration so the choice can be re-made on cost-per-useful-turn without a
-code change.
+**Configuration owns the model ids, and the heavy tier's effort with them.**
+Nothing here is written into a driver: the fast tier is a non-Claude model
+reached over OpenRouter and the heavy tier is a Claude model driven as CLI
+turns, and what each is comes from configuration so the choice can be re-made on
+cost-per-useful-turn without a code change.
 
 **The prompts are the tiers' whole standing brief.** Both carry the same four
 rules -- never assert what the context does not support, keep it short, reply to
@@ -42,19 +42,27 @@ FAST_TIER = "fast"
 HEAVY_TIER = "heavy"
 
 # The defaults: a non-Claude fast tier reached over OpenRouter, a Claude heavy
-# tier driven through its own CLI. The heavy figure that makes a resumed chain
-# worth holding open is a floor for a heavier default, not a ceiling -- which is
-# the reason both ids are configuration rather than constants a session is stuck
-# with.
+# tier driven through its own CLI at its deepest routine effort. The heavy tier
+# is where the human sends a question the fast tier could not carry, so it is
+# configured to think rather than to be quick -- an expert that answers as
+# fast and as cheaply as the fast tier reads as a transfer that never happened.
+# All three remain configuration rather than constants a session is stuck with,
+# so the choice can be re-made on cost-per-useful-turn.
 DEFAULT_FAST_MODEL = "google/gemini-3.5-flash-lite"
-DEFAULT_HEAVY_MODEL = "claude-sonnet-5"
+DEFAULT_HEAVY_MODEL = "claude-opus-5"
+DEFAULT_HEAVY_EFFORT = "xhigh"
 
 FAST_MODEL_ENV = "GRILLUI_FAST_MODEL"
 HEAVY_MODEL_ENV = "GRILLUI_HEAVY_MODEL"
+HEAVY_EFFORT_ENV = "GRILLUI_HEAVY_EFFORT"
 API_KEY_ENV = "OPENROUTER_API_KEY"
 
 DEFAULT_API_BASE = "https://openrouter.ai/api/v1"
 CLAUDE_CLI = "claude"
+
+# The CLI's own closed vocabulary for `--effort`. An effort outside it is a
+# misconfiguration, and the CLI would refuse the turn rather than pick for us.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 
 class UnknownTierError(ValueError):
@@ -64,9 +72,19 @@ class UnknownTierError(ValueError):
         super().__init__(f"unknown tier: {tier!r}")
 
 
+class UnknownEffortError(ValueError):
+    """An effort level the CLI would not accept."""
+
+    def __init__(self, effort: str) -> None:
+        super().__init__(
+            f"unknown effort: {effort!r}; {HEAVY_EFFORT_ENV} must be one of "
+            f"{', '.join(EFFORT_LEVELS)}"
+        )
+
+
 @dataclass(frozen=True)
 class TierConfig:
-    """Which model each tier is.
+    """Which model each tier is, and how hard the heavy one thinks.
 
     Frozen because a turn must not be able to change the tier it is being
     attributed to halfway through: the id in the log is the id the request was
@@ -75,6 +93,14 @@ class TierConfig:
 
     fast_model: str = DEFAULT_FAST_MODEL
     heavy_model: str = DEFAULT_HEAVY_MODEL
+    heavy_effort: str = DEFAULT_HEAVY_EFFORT
+
+    def __post_init__(self) -> None:
+        # Refused here rather than at the first heavy turn: a session that got
+        # its effort wrong should fail while the human is still watching the
+        # launch, not silently run at an effort nobody chose.
+        if self.heavy_effort not in EFFORT_LEVELS:
+            raise UnknownEffortError(self.heavy_effort)
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> TierConfig:
@@ -87,6 +113,7 @@ class TierConfig:
         return cls(
             fast_model=source.get(FAST_MODEL_ENV) or DEFAULT_FAST_MODEL,
             heavy_model=source.get(HEAVY_MODEL_ENV) or DEFAULT_HEAVY_MODEL,
+            heavy_effort=source.get(HEAVY_EFFORT_ENV) or DEFAULT_HEAVY_EFFORT,
         )
 
     def model_for(self, tier: str) -> str:

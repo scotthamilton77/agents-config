@@ -52,6 +52,7 @@ from grillui.escalation import CONDITION_COMMITMENT, CONDITION_IRREDUCIBLE, COND
 from grillui.lane import AgentUnreachableError
 from grillui.log import LOG_FILE, SessionLog
 from grillui.schemas import (
+    EFFORT_KEY,
     FOLLOWED_TRANSFER_KEY,
     MODEL_KEY,
     RECOMMENDATION_KEY,
@@ -174,13 +175,14 @@ def test_a_heavy_turn_is_attributed_and_says_whether_it_followed_a_transfer(
     log = briefed(session_dir)
     human_turn(log, "Take this one to the expert.", **{TRANSFER_FLAG: True})
 
-    take_heavy_turn(log, ScriptedCli(), heavy_model="claude-configured")
+    take_heavy_turn(log, ScriptedCli(), heavy_model="claude-configured", heavy_effort="max")
 
     assert replies(log) == [
         {
             "text": REPLY,
             TIER_KEY: HEAVY_TIER,
             MODEL_KEY: "claude-configured",
+            EFFORT_KEY: "max",
             FOLLOWED_TRANSFER_KEY: True,
         }
     ]
@@ -635,15 +637,16 @@ def test_a_turn_that_reports_no_chain_identity_is_still_a_turn(session_dir: Path
     assert not (session_dir / RESUME_FILE).exists()
 
 
-def test_the_argv_carries_the_model_the_prompt_and_the_standing_brief() -> None:
+def test_the_argv_carries_the_model_the_effort_the_prompt_and_the_standing_brief() -> None:
     """
-    Given a model id, a system brief, a prompt and a chain to resume
+    Given a model id, an effort, a system brief, a prompt and a chain to resume
     When the argv is built
-    Then all four are on it, and the prompt is the last argument.
+    Then all five are on it, and the prompt is the last argument.
     """
-    argv = claude_argv("claude-configured", "be brief", "what now?", "chain-2")
+    argv = claude_argv("claude-configured", "xhigh", "be brief", "what now?", "chain-2")
 
     assert argv[argv.index("--model") + 1] == "claude-configured"
+    assert argv[argv.index("--effort") + 1] == "xhigh"
     assert argv[argv.index("--append-system-prompt") + 1] == "be brief"
     assert argv[argv.index("--resume") + 1] == "chain-2"
     assert argv[-1] == "what now?"

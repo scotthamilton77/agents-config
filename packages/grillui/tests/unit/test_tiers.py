@@ -20,10 +20,13 @@ from grillui.session import open_session
 from grillui.tiers import (
     CONCISION_RULE,
     DEFAULT_FAST_MODEL,
+    DEFAULT_HEAVY_EFFORT,
     DEFAULT_HEAVY_MODEL,
+    EFFORT_LEVELS,
     FACILITATION_MANDATE,
     FAST_MODEL_ENV,
     FAST_TIER,
+    HEAVY_EFFORT_ENV,
     HEAVY_MODEL_ENV,
     HEAVY_TIER,
     NO_BRIEFING,
@@ -58,16 +61,53 @@ def test_the_default_configuration_names_a_non_claude_fast_tier_and_a_claude_hea
     assert (config.fast_model, config.heavy_model) == (DEFAULT_FAST_MODEL, DEFAULT_HEAVY_MODEL)
 
 
-def test_both_model_ids_come_from_the_environment_when_it_states_them() -> None:
+def test_the_default_heavy_tier_is_opus_thinking_hard() -> None:
     """
-    Given an environment naming both model ids
+    Given no configuration at all
+    When the heavy tier is asked what it is
+    Then it is Opus at xhigh effort -- a transfer to the expert that answers as
+         fast and as cheaply as the fast tier reads to the human as a transfer
+         that never happened.
+    """
+    config = TierConfig()
+
+    assert config.model_for(HEAVY_TIER) == "claude-opus-5"
+    assert config.heavy_effort == "xhigh"
+
+
+def test_both_model_ids_and_the_heavy_effort_come_from_the_environment() -> None:
+    """
+    Given an environment naming both model ids and the heavy effort
     When configuration is read from it
-    Then both tiers take the stated ids, and each tier answers with its own.
+    Then both tiers take the stated ids, each tier answers with its own, and the
+         heavy tier takes the stated effort.
     """
-    config = TierConfig.from_env({FAST_MODEL_ENV: "vendor/fast-2", HEAVY_MODEL_ENV: "claude-x"})
+    config = TierConfig.from_env(
+        {
+            FAST_MODEL_ENV: "vendor/fast-2",
+            HEAVY_MODEL_ENV: "claude-x",
+            HEAVY_EFFORT_ENV: "low",
+        }
+    )
 
     assert config.model_for(FAST_TIER) == "vendor/fast-2"
     assert config.model_for(HEAVY_TIER) == "claude-x"
+    assert config.heavy_effort == "low"
+
+
+def test_an_effort_the_cli_does_not_accept_is_refused_at_load() -> None:
+    """
+    Given an environment naming an effort outside the CLI's vocabulary
+    When configuration is read from it
+    Then it raises, naming every level the CLI does accept.
+
+    Falling back to the default would leave the session running at an effort
+    nobody asked for, with the misconfiguration invisible until the bill.
+    """
+    with pytest.raises(ValueError, match="enormous") as raised:
+        TierConfig.from_env({HEAVY_EFFORT_ENV: "enormous"})
+
+    assert all(level in str(raised.value) for level in EFFORT_LEVELS)
 
 
 def test_an_unknown_tier_name_is_refused_rather_than_billed_as_heavy() -> None:
@@ -90,9 +130,10 @@ def test_an_empty_setting_is_not_a_model_id() -> None:
     Then the defaults stand, rather than a session being configured to reach a
          model with no name.
     """
-    config = TierConfig.from_env({FAST_MODEL_ENV: "", HEAVY_MODEL_ENV: ""})
+    config = TierConfig.from_env({FAST_MODEL_ENV: "", HEAVY_MODEL_ENV: "", HEAVY_EFFORT_ENV: ""})
 
     assert (config.fast_model, config.heavy_model) == (DEFAULT_FAST_MODEL, DEFAULT_HEAVY_MODEL)
+    assert config.heavy_effort == DEFAULT_HEAVY_EFFORT
 
 
 def test_configuration_falls_back_to_the_process_environment(

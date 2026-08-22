@@ -225,7 +225,10 @@ STATUS_PHASES = frozenset(
 # which model answered is content the log carries for whoever reads it back --
 # the human wondering what a reply cost, and the record of what was spent.
 #
-# `TIER_KEY` and `MODEL_KEY` ride every agent reply. `RECOMMENDATION_KEY` rides a
+# `TIER_KEY` and `MODEL_KEY` ride every agent reply, and `EFFORT_KEY` rides a
+# heavy one, where how hard the model was told to think is as much a part of what
+# produced the turn -- and of what it cost -- as which model it was.
+# `RECOMMENDATION_KEY` rides a
 # fast reply that met one of the escalation conditions, naming the condition and
 # its evidence; it is a recommendation and nothing more, because moving a channel
 # to another tier is the human's gesture. `FOLLOWED_TRANSFER_KEY` records that a
@@ -233,6 +236,7 @@ STATUS_PHASES = frozenset(
 # is the key on their own turn that says so.
 TIER_KEY = "tier"
 MODEL_KEY = "model"
+EFFORT_KEY = "effort"
 RECOMMENDATION_KEY = "recommendation"
 FOLLOWED_TRANSFER_KEY = "followed_transfer"
 TRANSFER_FLAG = "transfer"

@@ -58,6 +58,7 @@ from grillui.escalation import in_expert_mode, recommend, turns_of
 from grillui.lane import AgentUnreachableError
 from grillui.projector import fold
 from grillui.schemas import (
+    EFFORT_KEY,
     FOLD_KIND,
     FOLLOWED_TRANSFER_KEY,
     MAP_CHANNEL,
@@ -191,14 +192,15 @@ def read_completion(document: Any) -> str:
     return content
 
 
-def claude_argv(model: str, system: str, prompt: str, resume: str | None) -> list[str]:
+def claude_argv(model: str, effort: str, system: str, prompt: str, resume: str | None) -> list[str]:
     """One CLI turn's arguments.
 
     Structured output is asked for because the chain's identity comes back in
     it: the reply alone would leave the next turn no way to continue this
-    conversation rather than open a new one.
+    conversation rather than open a new one. The effort is passed on every turn
+    rather than only the first: a resumed chain does not inherit it.
     """
-    argv = [CLAUDE_CLI, "-p", "--output-format", "json", "--model", model]
+    argv = [CLAUDE_CLI, "-p", "--output-format", "json", "--model", model, "--effort", effort]
     argv += ["--append-system-prompt", system]
     if resume is not None:
         argv += ["--resume", resume]
@@ -278,10 +280,12 @@ class HeavyDriver:
         channel = context.channel
         entries = log.entries()
         model = self.config.heavy_model
+        effort = self.config.heavy_effort
         with self._turn:
             printed = self.cli(
                 claude_argv(
                     model,
+                    effort,
                     system_prompt(HEAVY_TIER, context.agent),
                     compose(recorded, context, entries),
                     read_resume(log.directory, channel),
@@ -298,6 +302,7 @@ class HeavyDriver:
             {
                 TIER_KEY: self.tier,
                 MODEL_KEY: model,
+                EFFORT_KEY: effort,
                 # Whether this heavy turn is one the human asked for, read off
                 # the same channel mode the lane routed it by: no agent
                 # escalates itself, and a heavy turn nobody asked for must not
