@@ -167,6 +167,29 @@ def test_the_fast_prompt_carries_the_facilitation_mandate_and_stops_short_of_dec
     assert "leave the decision with the human" in prompt
 
 
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_every_shipped_system_prompt_permits_exactly_two_kinds_of_question(tier: str) -> None:
+    """
+    Given each tier's shipped system prompt
+    When it is read for what it says about asking the human a question
+    Then a turn is a reply to what the human said, exactly two kinds of question
+         are permitted -- clarifying what is being asked, and raising what the
+         human is not considering -- and nothing licenses a trailing
+         continuation question.
+    """
+    prompt = SYSTEM_PROMPTS[tier]
+
+    assert "not a prompt for their next turn" in prompt
+    assert "Ask a question in two cases only" in prompt
+    assert "when you cannot answer without knowing what they are actually asking" in prompt
+    assert "when there is something they are not considering and should be" in prompt
+    assert "No other question belongs in a reply" in prompt
+    assert "asking whether there is anything else" in prompt
+    # No third licence anywhere in the prompt: the habit this rule ends was
+    # invited by one, and a survivor would be read as the exception.
+    assert "ordinary move" not in prompt
+
+
 def test_the_heavy_prompt_leaves_ending_the_grilling_to_the_human() -> None:
     """
     Given the heavy tier's system prompt

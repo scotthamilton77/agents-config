@@ -6,9 +6,10 @@ Claude model driven as CLI turns, and which model each is comes from
 configuration so the choice can be re-made on cost-per-useful-turn without a
 code change.
 
-**The prompts are the tiers' whole standing brief.** Both carry the same three
-rules -- never assert what the context does not support, keep it short, and say
-your piece in one turn and stop -- and the fast tier additionally carries the
+**The prompts are the tiers' whole standing brief.** Both carry the same four
+rules -- never assert what the context does not support, keep it short, reply to
+what the human said rather than fishing for what they say next, and say your
+piece in one turn and stop -- and the fast tier additionally carries the
 facilitation mandate: answer from the context you were given, and stop short of
 deciding. Whether a turn should have gone up a tier is not the model's own
 judgment to make and is not asked of it here; that is evaluated against the
@@ -117,12 +118,26 @@ ONE_TURN_RULE = (
     "and do not check for updates: nothing arrives while you are speaking."
 )
 
+# The reply is a reply. A model left to its own conversational instincts closes
+# every turn with a question, because a question reads as engagement -- and the
+# human, who came to think out loud, gets handed the work back each time. The two
+# cases below are the whole licence; a third would be read as a licence for the
+# trailing "which of these do you want?" this rule exists to end.
+DIALOGUE_RULE = (
+    "Your turn answers what the human just said; it is not a prompt for their next turn. "
+    "Engage with the statement itself -- agree, disagree, name what it costs, say what it "
+    "turns on. Ask a question in two cases only: when you cannot answer without knowing "
+    "what they are actually asking, and when there is something they are not considering "
+    "and should be. No other question belongs in a reply. Do not close by handing the "
+    "options back, asking which they prefer, or asking whether there is anything else. A "
+    "turn that ends on a statement is finished."
+)
+
 FACILITATION_MANDATE = (
     "You facilitate the discussion. Answer from the context you were given, quickly, and "
     "keep the human moving. The moment a question crosses into reasoning, decisioning or "
     "implied design, stop short of deciding it: say what the question turns on and leave "
-    "the decision with the human. Asking one sharpening question back is the ordinary "
-    "move."
+    "the decision with the human."
 )
 
 GRILL_MASTER_MANDATE = (
@@ -202,11 +217,11 @@ THREAD_AGENT_MANDATE = (
 )
 
 FAST_SYSTEM_PROMPT = "\n\n".join(
-    [FACILITATION_MANDATE, NO_MANUFACTURE_RULE, CONCISION_RULE, ONE_TURN_RULE]
+    [FACILITATION_MANDATE, NO_MANUFACTURE_RULE, CONCISION_RULE, DIALOGUE_RULE, ONE_TURN_RULE]
 )
 
 HEAVY_SYSTEM_PROMPT = "\n\n".join(
-    [GRILL_MASTER_MANDATE, NO_MANUFACTURE_RULE, CONCISION_RULE, ONE_TURN_RULE]
+    [GRILL_MASTER_MANDATE, NO_MANUFACTURE_RULE, CONCISION_RULE, DIALOGUE_RULE, ONE_TURN_RULE]
 )
 
 SYSTEM_PROMPTS: dict[str, str] = {
