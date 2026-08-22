@@ -1266,3 +1266,9 @@ opens one proves something else.
 - GUI-A62 | open
 - GUI-A63 | open
 - GUI-A64 | open
+- GUI-A65 | open
+- GUI-A66 | open
+- GUI-A67 | open
+- GUI-A68 | open
+- GUI-A69 | open
+- GUI-A70 | open
