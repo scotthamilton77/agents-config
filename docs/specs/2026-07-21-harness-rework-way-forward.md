@@ -365,7 +365,8 @@ run in parallel after S1.
   Re-evaluate the beads-installed git hooks once the loop owns explicit
   `work sync` call sites — retire them if redundant. (D10, D14)
 - **S10 — Instruments.** Pre-PR cycle-time reporting (AC8); size-distribution
-  tracking; the interventions number (AC7). (D19)
+  tracking; the interventions number (AC7); the config-prose convergence
+  comparison against the typed-package baseline (AC6). (D19)
 - **Close-out:** the AC9 observation window, then milestone close.
 
 ### Open verifications (first task of their slice)
