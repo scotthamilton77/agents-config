@@ -439,6 +439,31 @@ def _matching_label(message: str, sources: Mapping[str, Path]) -> str | None:
     return max(candidates, key=len) if candidates else None
 
 
+def _from_repository(
+    violations: list[str], *, sources: Mapping[str, Path], git_ignored: frozenset[Path]
+) -> list[str]:
+    """``violations`` minus every one attributable to a file git ignores.
+
+    The plans are pruned before the gate ever runs, so no *artifact* git ignores
+    is judged. This is the second half of that rule, for the files the gate finds
+    on its own: it walks a directory item's interior from disk, and a stray
+    markdown file there is read wherever it came from. Filtering the finding
+    rather than the walk keeps the deploy path exactly as it was — the gate runs
+    on a user's machine, where the source need not be a repository at all — and
+    reaches every finding the gate can attribute, not only the one scanner that
+    happens to walk.
+
+    A finding no label claims is a property of the tree rather than of a file —
+    the conflict audit reports across artifacts — and passes through untouched.
+    """
+    return [
+        v
+        for v in violations
+        if (label := _matching_label(v, sources)) is None
+        or not _is_git_ignored(sources[label], git_ignored)
+    ]
+
+
 def _collapse_findings(
     violations: list[str], *, sources: Mapping[str, Path], tool_values: frozenset[str]
 ) -> list[str]:
@@ -941,7 +966,11 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
         # them: it is keyed the same way and attributable to the same file, so a
         # separate pass would render one artifact's defects in two coordinate
         # systems.
-        gate.violations + _provenance_findings(staged.plans),
+        _from_repository(
+            gate.violations + _provenance_findings(staged.plans),
+            sources=sources,
+            git_ignored=staged.git_ignored,
+        ),
         sources=sources,
         tool_values=frozenset(tool.value for tool in known_tools()),
     )

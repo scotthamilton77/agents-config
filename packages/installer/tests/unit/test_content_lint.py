@@ -1067,3 +1067,43 @@ def test_a_git_ignored_directory_under_src_is_not_unaccounted(tmp_path: Path) ->
 
     assert result.ok
     assert result.violations == []
+
+
+def test_a_git_ignored_markdown_inside_a_skill_carries_no_verdict(tmp_path: Path) -> None:
+    """The interior scan walks a skill directory from disk rather than from the plan,
+    so a stray markdown file is read wherever it came from. A local note git refuses
+    to track is not an authoring defect in this repository, and failing the build over
+    one puts the verdict back on the working directory."""
+    repo = _git_tracked_repo(
+        _repo(
+            tmp_path,
+            skills={"tidy": _RECORD + "body\n"},
+            shared_skill_files={"tidy": {"references/keep.md": "plain prose\n"}},
+        ),
+        "scratch.md\n",
+    )
+    skill = repo / "src" / "user" / ".agents" / "skills" / "tidy"
+    (skill / "references" / "scratch.md").write_text(_RECORD + "notes\n", encoding="utf-8")
+
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_tracked_markdown_inside_a_skill_is_still_judged(tmp_path: Path) -> None:
+    """The floor under the interior skip: the same file under no ignore rule still
+    reports, so the filter never becomes a way to stop scanning skill interiors."""
+    repo = _git_tracked_repo(
+        _repo(
+            tmp_path,
+            skills={"tidy": _RECORD + "body\n"},
+            shared_skill_files={"tidy": {"references/scratch.md": _RECORD + "notes\n"}},
+        ),
+        "nothing-here\n",
+    )
+
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if "carries deploy-time metadata" in v]
