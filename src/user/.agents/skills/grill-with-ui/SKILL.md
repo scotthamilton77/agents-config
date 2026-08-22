@@ -34,8 +34,17 @@ fill it in.
     "decisions": [
       {"id": "d1", "short": "Store", "title": "Which storage layer?", "prereqs": [],
        "body": "the question as the human will read it",
-       "options": [{"id": "a", "text": "your recommendation"},
-                   {"id": "b", "text": "the alternative worth arguing"}]}
+       "options": [{"id": "a", "text": "your recommendation",
+                    "pcr": ["what it buys", "what it costs", "what it forces downstream"],
+                    "puts_in_question": ["d2"]},
+                   {"id": "b", "text": "the alternative worth arguing",
+                    "pcr": ["what it buys", "what it costs", "what it forces down"]}]},
+      {"id": "d2", "short": "Schema", "title": "Who owns the schema?", "prereqs": ["d1"],
+       "body": "the question as the human will read it",
+       "options": [{"id": "a", "text": "your recommendation",
+                    "pcr": ["what it buys", "what it costs", "what it forces down"]},
+                   {"id": "b", "text": "the alternative worth arguing",
+                    "pcr": ["what it buys", "what it costs", "what it forces down"]}]}
     ]
   },
   "help_reference": "<the whole text of references/help.md>"
@@ -52,6 +61,12 @@ Two to three options per decision, labelled `a`, `b`, `c` in order, the first on
 recommendation. Every id in `prereqs` names another decision in the same plan, and the
 graph may not cycle. `stop_when` is the load-bearing field: an agent asked to find
 weaknesses finds them indefinitely, so a session without a stated ending never has one.
+
+Give every option a `pcr` — what it buys, what it costs, what it forces downstream — since
+the trade-off icon it draws is the human's only route to that reasoning on the board.
+Where an option would reopen another decision, name that decision in `puts_in_question`:
+the board pre-marks those nodes when the human hovers the option, and an id matching no
+node in the plan is ignored.
 
 Put the file in a fresh directory named for the session — that directory *is* the session,
 and everything it produces stays there.
