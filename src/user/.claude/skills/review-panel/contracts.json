@@ -40,6 +40,31 @@
         }
       ]
     },
+    "spec-code": {
+      "lenses": [
+        {
+          "lens": "interface-quality",
+          "mandate": "Judge whether the declared interfaces are the right decisions: each signature, data shape, and contract judged as the commitment it pins — what it hides, what it exposes, what every implementation must honor. A finding names the declaration and the obligation it wrongly commits or fails to pin; a preference among equally sound shapes is not a finding.",
+          "acs_hint": "criteria describing the decisions the interfaces must pin",
+          "tier": "frontier",
+          "transport": "codex"
+        },
+        {
+          "lens": "contract-only-boundary",
+          "mandate": "Judge whether the artifact stays specification: signatures, data shapes, and deliberately failing tests, never implementation. A body, hardening, or optimization in the artifact promotes a consequence into a decision before the evidence for it exists. A finding names the code that exceeds the contract and the premature decision it embeds; a stub returning a constant to satisfy a type checker is not a finding.",
+          "acs_hint": "criteria bounding the artifact to declared contracts",
+          "tier": "mid",
+          "transport": "openrouter"
+        },
+        {
+          "lens": "pinning-adequacy",
+          "mandate": "Judge whether the artifact's deliberately failing tests pin the decisions the criteria enumerate — each enumerated behaviour has a red test that turns green only when the behaviour is honored. A finding names the enumerated decision no failing test pins; a test that could be added but pins no enumerated decision is not a finding.",
+          "acs_hint": "the criteria whose decisions the failing tests must pin",
+          "tier": "mid",
+          "transport": "openrouter"
+        }
+      ]
+    },
     "spec": {
       "lenses": [
         {
@@ -148,6 +173,14 @@
       "default_staffing": ["internal-consistency", "global-consistency", "standalone-read"],
       "force_ceiling": ["internal-consistency", "global-consistency", "standalone-read"],
       "preconditions": ["doc-lint", "cosmetic-pre-pass"],
+      "no_gate": false
+    },
+    {
+      "type": "spec-code",
+      "class": "spec-code",
+      "default_staffing": ["interface-quality", "contract-only-boundary", "pinning-adequacy"],
+      "force_ceiling": ["interface-quality", "contract-only-boundary", "pinning-adequacy"],
+      "preconditions": ["parse-gate"],
       "no_gate": false
     },
     {

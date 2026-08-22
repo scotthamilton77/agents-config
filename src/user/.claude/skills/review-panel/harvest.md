@@ -7,7 +7,10 @@ afterwards.
 ## The records a round runs on
 
 Three records exist before prompts are emitted, written by the invoker and retained afterwards as
-campaign records beside the verdicts — the trend analyst reads across them.
+campaign records beside the verdicts — the trend analyst reads across them. A mixed target adds a
+campaign-level record before any of them: the circuit plan — the ordered grouping of its class
+partitions into circuits, with rationale. `references/circuits.md` is its doctrine, including the
+re-arm cap and the spec-code class's cannot-ship rationale.
 
 **Gate evidence** — one execution record per profile precondition: gate name, exit status, the
 head SHA it ran at. Produce it by running the profile's gates and recording what actually
@@ -32,6 +35,14 @@ cites; if that authorization is ever withdrawn, the checkpoint resolves as escal
 Record the returned verdict with the evidence it cites; record a dispatch failure as origin
 `dispatch-failure` carrying the escalation verdict — the machine fails toward the human, never
 toward silent continuation.
+
+A checkpoint fired by the circuit re-arm cap admits only the terminate verdicts — a continue
+verdict from one is invalid and resolves as escalate-to-human. Every terminate verdict, from any
+checkpoint, carries a **churn diagnosis**: recommendations upstream (criteria, staffing, class
+contracts, the spec itself) and/or panel-side (lens selection, the circuit plan, sequencing) for
+reducing the churn observed. A terminate verdict without one is invalid exactly as an uncited
+verdict is, and resolves as escalate-to-human. The upstream-defect halt is exempt — its
+indictment already names the remediation.
 
 ## Transport is symmetric
 
