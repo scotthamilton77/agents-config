@@ -20,9 +20,10 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
-from conftest import SpyDriver, driven, event, handoff_doc, post, write_handoff
+from conftest import TIMEOUT, SpyDriver, driven, event, handoff_doc, post, write_handoff
 
 from grillui.api import create_app
+from grillui.drivers import FastDriver, HeavyDriver
 from grillui.launch import (
     LOOPBACK,
     NON_LOOPBACK_STATUS,
@@ -35,8 +36,9 @@ from grillui.launch import (
     session_url,
 )
 from grillui.log import RESULT_FILE, SessionLog
-from grillui.schemas import SESSION_END_KIND
+from grillui.schemas import FAST_TIER, HEAVY_TIER, SESSION_END_KIND, TRANSFER_FLAG
 from grillui.session import open_session
+from grillui.tiers import HEAVY_MODEL_ENV
 
 from fastapi.testclient import TestClient  # isort: skip
 
@@ -658,3 +660,117 @@ def test_a_failing_ready_hook_is_reported_and_does_not_stop_the_server(
     err = capsys.readouterr().err
     assert "opening the browser failed: no desktop" in err
     assert err.count("opening the browser failed") == 1
+
+
+# ── GUI-U11 / GUI-A34: the tiers a launched session actually has ──
+
+
+def test_the_launched_board_is_given_a_heavy_expert_tier_on_the_one_configuration(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a launch
+    When it builds the board
+    Then the board is handed a heavy expert tier beside the fast one, both on
+         the single configuration the launch read out of the environment.
+
+    A board launched without an expert tier has nowhere to escalate to: the
+    human's transfer lands in the log and the control flips, but every turn
+    still runs fast. The two tiers share one configuration object because they
+    are one session's settings -- a heavy tier built from a second read could be
+    billed to a model the launch never announced.
+    """
+    monkeypatch.setenv(HEAVY_MODEL_ENV, "claude-from-the-process")
+    built: list[dict[str, Any]] = []
+    real = create_app
+
+    def recording(log: SessionLog, driver: Any = None, **rest: Any) -> Any:
+        built.append({"driver": driver, **rest})
+        return real(log, driver, **rest)
+
+    monkeypatch.setattr("grillui.launch.create_app", recording)
+
+    launch(
+        session_dir,
+        handoff=started(session_dir),
+        run=lambda _app, _port, _ready, _stop: None,
+        open_url=lambda _url: True,
+        stop=RunStop(),
+        out=io.StringIO(),
+    )
+
+    assert len(built) == 1
+    fast, expert = built[0]["driver"], built[0]["expert"]
+    assert isinstance(fast, FastDriver)
+    assert isinstance(expert, HeavyDriver)
+    assert expert.config is fast.config
+    assert expert.config.heavy_model == "claude-from-the-process"
+
+
+def test_a_transfer_on_a_launched_board_takes_that_channels_next_turn_to_the_expert(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a launched session whose thread has already had a turn on the fast
+          tier
+    When the human transfers that channel to the expert
+    Then the next turn on it is taken by the expert tier, and the fast one is
+         not asked again.
+
+    Asserted through a board a launch built rather than through a lane a test
+    assembled: the tier selection was already right, and what was missing was
+    the launch ever handing it a tier to select.
+    """
+    fast, expert = SpyDriver(tier=FAST_TIER), SpyDriver(tier=HEAVY_TIER)
+    real = create_app
+
+    def spied(log: SessionLog, driver: Any = None, **rest: Any) -> Any:
+        """The board the launch asked for, with each tier it named stood in for
+        by a spy -- so a launch that named no expert tier gets a board with
+        none, and nothing here reaches a model."""
+        rest["expert"] = expert if rest.get("expert") is not None else None
+        return real(log, fast if driver is not None else None, **rest)
+
+    monkeypatch.setattr("grillui.launch.create_app", spied)
+    apps: list[ASGIApp] = []
+    launch(
+        session_dir,
+        handoff=started(session_dir),
+        run=lambda app, _port, _ready, _stop: apps.append(app),
+        open_url=lambda _url: True,
+        stop=RunStop(),
+        out=io.StringIO(),
+    )
+    client = TestClient(apps[0], client=(LOOPBACK, 51000))
+    epoch = client.get("/status").json()["epoch"]
+
+    post(
+        client,
+        epoch,
+        event(
+            "thread-created",
+            actor="human",
+            channel=THREAD,
+            key="open-thread",
+            decision="d1",
+            kind="mandate",
+            title="Compaction policy",
+            turns=[{"who": "human", "text": TURN_TEXT}],
+        ),
+    )
+    assert fast.started.wait(TIMEOUT)
+    post(
+        client,
+        epoch,
+        event(
+            "thread-turn",
+            actor="human",
+            channel=THREAD,
+            key="escalate",
+            turns=[{"text": "Weigh that against the archive cost."}],
+            **{TRANSFER_FLAG: True},
+        ),
+    )
+
+    assert expert.started.wait(TIMEOUT)
+    assert len(fast.dispatches) == 1
