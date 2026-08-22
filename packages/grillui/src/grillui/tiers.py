@@ -31,15 +31,13 @@ from typing import TYPE_CHECKING
 
 from grillui.dispatch import THREAD_AGENT
 from grillui.escalation import turns_of
-from grillui.schemas import SESSION_START_KIND
+from grillui.schemas import FAST_TIER, HEAVY_TIER, SESSION_START_KIND
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from grillui.schemas import DispatchContext, LogEntry
 
-FAST_TIER = "fast"
-HEAVY_TIER = "heavy"
 
 # The defaults: a non-Claude fast tier reached over OpenRouter, a Claude heavy
 # tier driven through its own CLI at its deepest routine effort. The heavy tier

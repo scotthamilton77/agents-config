@@ -56,6 +56,8 @@ from grillui.log import LOG_FILE
 from grillui.schemas import (
     AGENT_ACTORS,
     ANSWERABLE_KINDS,
+    FAST_TIER,
+    HEAVY_TIER,
     KNOWN_KINDS,
     LIFECYCLE_KINDS,
     MAP_CHANNEL,
@@ -1631,14 +1633,98 @@ def test_the_control_is_on_every_channel_and_is_never_disabled() -> None:
     """
     control = function_body("transferControl")
     assert "disabled" not in control
-    assert "⚡ Fast agent mode" in control, "the escalated channel does not offer the way back"
-    assert "⚡ Transfer to expert" in control
+    assert "Return to fast agent" in control, "the escalated channel does not offer the way back"
+    assert "Transfer to expert" in control
     assert 'data-mode="' in control
     assert "transferControl(MAP)" in function_body("renderShell")
     assert "transferControl(tid)" in function_body("threadBody")
     # The popped-out thread is the same pane, so its control has to reach the
     # same handler rather than being a button that does nothing in that window.
     assert 'act === "transfer"' in page_source()
+
+
+# ------------------------------------------------------ GUI-U22, GUI-A63
+
+
+def test_the_control_names_the_action_and_never_the_state() -> None:
+    """Two labels, each naming the press rather than where the channel is.
+
+    A label naming the tier the channel is on is the failure this pins against:
+    the human reads a state word on a control as where the channel is now, and
+    so infers the opposite of what pressing it does -- which is how a transfer
+    that did happen gets read as one that did not.
+    """
+    control = function_body("transferControl")
+    assert '(on ? "⚡ Return to fast agent" : "⚡ Transfer to expert")' in control
+    for state in ("Fast agent mode", "Expert mode", "Expert agent mode"):
+        assert state not in page_source(), f"the control wears {state!r} as a state"
+
+
+def test_the_control_carries_no_state_styling_in_either_position() -> None:
+    """Identical in both positions, so nothing about it reads as a tier.
+
+    Both halves are pinned because either alone passes while the control is
+    still coloured: a rule with nobody to apply it to is dead CSS, and a class
+    with no rule today is a fill one stylesheet edit away.
+    """
+    control = function_body("transferControl")
+    assert '" on"' not in control, "the control still wears a state class"
+    assert ".btn.transfer.on" not in page_source(), "the state fill is still in the stylesheet"
+    # The agent's recommendation is not state colouring: it is the agent asking,
+    # and GUI-U11 keeps it. A ring rather than a fill is what keeps the two
+    # legible apart, so it stays pinned as a ring.
+    assert ".btn.transfer.rec { box-shadow:" in page_source()
+
+
+# ------------------------------------------------------ GUI-U21, GUI-A62
+
+
+def test_the_page_spells_the_two_tiers_the_way_the_backend_does() -> None:
+    """The label is chosen by matching the log's own word, so the two spellings
+    are one contract: a page holding a stale one labels nothing at all while the
+    log says plainly which tier answered."""
+    constants = page_constants()
+    assert constants["FAST_TIER"] == FAST_TIER
+    assert constants["HEAVY_TIER"] == HEAVY_TIER
+
+
+def test_a_turn_is_labelled_by_its_own_tier_and_never_by_the_channels_mode() -> None:
+    """`tierLabel` takes a tier and nothing else, and every caller hands it one
+    read off the turn or off the entry that authored it.
+
+    Taking the channel would relabel every turn from before a transfer as the
+    tier that came after it -- and the transcript is the human's only evidence
+    that the transfer changed anything.
+    """
+    label = function_body("tierLabel")
+    assert "expert agent" in label
+    assert "fast agent" in label
+    assert "onExpert" not in label, "the label is read off the channel's current mode"
+    assert "TRANSFER" not in label
+    # Read off the projected turn on a thread, and off the authoring entry on the
+    # map channel -- where a turn reaches the page as a queue item instead.
+    assert "tierLabel(turn.tier)" in function_body("renderTurns")
+    assert "tierLabel(tierAt(n.authored_at))" in function_body("infoNote")
+    assert "tierLabel(tierAt(n.seq))" in function_body("renderNotifications")
+
+
+def test_an_unattributed_turn_is_labelled_as_nothing_rather_than_as_a_guess() -> None:
+    """A tier the page does not recognise, and none at all, both label nothing.
+
+    The human's turns and the backend's have no tier, and neither does an agent
+    turn an older session recorded before tiers were written down. Defaulting
+    such a turn to either tier would put a claim on screen that the log does not
+    make.
+    """
+    label = function_body("tierLabel")
+    assert label.count("return") == 1
+    assert (
+        'return tier === HEAVY_TIER ? "expert agent" : tier === FAST_TIER ? "fast agent" : "";'
+    ) in label
+    # Every caller falls back to something that is not a tier, so an
+    # unattributed turn still says who spoke without naming a tier for them.
+    for caller in ("renderTurns", "infoNote"):
+        assert '|| "Agent"' in function_body(caller), f"{caller} guesses a tier"
 
 
 def test_the_mode_and_the_highlight_are_read_from_the_log_the_page_already_holds() -> None:

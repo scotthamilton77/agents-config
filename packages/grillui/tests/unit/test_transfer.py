@@ -36,7 +36,9 @@ from grillui.escalation import CONDITION_IRREDUCIBLE
 from grillui.lane import Lane
 from grillui.schemas import (
     EFFORT_KEY,
+    FAST_TIER,
     FOLLOWED_TRANSFER_KEY,
+    HEAVY_TIER,
     MAP_CHANNEL,
     MODEL_KEY,
     RECOMMENDATION_KEY,
@@ -46,7 +48,7 @@ from grillui.schemas import (
     TRANSFER_FLAG,
     EventSubmission,
 )
-from grillui.tiers import DEFAULT_HEAVY_EFFORT, FAST_TIER, HEAVY_TIER, TierConfig
+from grillui.tiers import DEFAULT_HEAVY_EFFORT, TierConfig
 
 if TYPE_CHECKING:
     from grillui.log import SessionLog
