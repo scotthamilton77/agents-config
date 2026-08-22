@@ -665,6 +665,73 @@ def test_a_turn_the_current_tenure_is_taking_is_not_closed_out(session_dir: Path
     assert unclosed_turns(log.entries()) == {}
 
 
+def test_a_restart_closes_out_every_channel_the_dead_tenure_left_announced(
+    session_dir: Path,
+) -> None:
+    """
+    Given a dead tenure that left a turn announced on the map and on a thread
+         at once
+    When a successor process is opened against that directory
+    Then both channels are closed out, each naming the epoch that died holding
+         it and the tier that was taking it, and nothing is left owed.
+
+    Threads take their turns concurrently with each other and with the map, so
+    a kill lands on however many were in flight. A sweep that closed the one
+    channel it happened to reach first would leave the rest counting up, and a
+    thread is exactly where a human is least likely to notice a clock that
+    never stops.
+    """
+    first = _busy_session(session_dir)
+    first.emit_status(
+        STATUS_PHASE_COMPOSING, "the 'fast' tier is composing a reply", MAP_CHANNEL, tier="fast"
+    )
+    first.emit_status(
+        STATUS_PHASE_COMPOSING, "the 'heavy' tier is composing a reply", THREAD, tier="heavy"
+    )
+    assert set(unclosed_turns(first.entries())) == {MAP_CHANNEL, THREAD}
+
+    second = open_session(session_dir)
+
+    assert unclosed_turns(second.entries()) == {}
+    closing = {
+        entry.channel: entry
+        for entry in second.entries()
+        if entry.kind == STATUS_KIND and entry.payload["phase"] == STATUS_PHASE_ERROR
+    }
+    assert set(closing) == {MAP_CHANNEL, THREAD}
+    for channel, tier in ((MAP_CHANNEL, "fast"), (THREAD, "heavy")):
+        detail = closing[channel].payload["detail"]
+        assert first.epoch in detail
+        assert tier in detail
+
+
+def test_a_channel_announced_again_after_its_last_turn_closed_reads_as_owed(
+    session_dir: Path,
+) -> None:
+    """
+    Given a channel whose turn was announced and closed, and which was then
+         announced again
+    When the lane is read for what it owes
+    Then the channel is owed, against the second announcement rather than the
+         first.
+
+    A channel takes one turn after another all session. A reading that asked
+    only whether the channel had ever been closed would call a live turn
+    finished -- and the sweep, believing it, would close out a turn a tier is
+    still taking.
+    """
+    log = SessionLog(session_dir)
+    log.emit_status(
+        STATUS_PHASE_COMPOSING, "the 'fast' tier is composing", MAP_CHANNEL, tier="fast"
+    )
+    log.emit_status(STATUS_PHASE_REPLIED, "the 'fast' tier's turn is over", MAP_CHANNEL)
+    reopened = log.emit_status(
+        STATUS_PHASE_COMPOSING, "the 'fast' tier is composing", MAP_CHANNEL, tier="fast"
+    )
+
+    assert unclosed_turns(log.entries()) == {MAP_CHANNEL: reopened}
+
+
 def test_the_next_entry_after_a_restart_continues_the_sequence(session_dir: Path) -> None:
     """
     Given a restarted session
