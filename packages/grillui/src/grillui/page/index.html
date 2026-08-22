@@ -2415,13 +2415,28 @@ function takeCaret(el, caret) {
   el.focus({ preventScroll: true });
   if (caret !== undefined) { try { el.setSelectionRange(caret, caret); } catch (e) {} }
 }
+// A thread's turns scroll inside the panel rather than with the page, and that
+// element is replaced on every re-render — so a thread follows the rule a chat
+// log follows, or it follows none. Whoever is at the bottom is reading the
+// conversation as it happens and stays at the bottom, so an arriving turn is on
+// screen without a gesture; whoever has scrolled up is reading what is up there
+// and holds their place, because an arrival is not a reason to take it away
+// from them. A panel that has just opened counts as at the bottom: a thread
+// opens at its newest turn.
+var THREAD_STICK = 40;
+function threadScroller() { return document.querySelector("#overlay .tbody"); }
+function atThreadBottom(el) {
+  return !el || el.scrollHeight - el.scrollTop - el.clientHeight <= THREAD_STICK;
+}
 function render() {
   if (!document.getElementById("shell")) return;
   // The one gate on drawing the board, so there is no second path that can draw
   // it for a window the backend is not answering.
   if (!boardShown()) { renderNotice(); return; }
   var map = document.getElementById("mapscroll"), col = document.getElementById("column");
-  var keep = { mx: map ? map.scrollLeft : 0, my: map ? map.scrollTop : 0, cy: col ? col.scrollTop : 0 };
+  var tb = threadScroller();
+  var keep = { mx: map ? map.scrollLeft : 0, my: map ? map.scrollTop : 0, cy: col ? col.scrollTop : 0,
+               ty: tb ? tb.scrollTop : 0, tbottom: atThreadBottom(tb) };
   var act = document.activeElement;
   var focusId = act && act.tagName === "TEXTAREA" ? act.id : null;
   var caret = focusId ? act.selectionStart : 0;
@@ -2447,6 +2462,12 @@ function render() {
 
   var panelKey = UI.panel ? UI.panel.kind + ":" + (UI.panel.id || "") : null;
   var panelJustOpened = panelKey !== UI.lastPanelKey && UI.panel && UI.panel.kind === "thread";
+  // A place is only held for the panel it was measured in: switching threads
+  // starts the new one at its newest turn like any other opening.
+  var tb2 = threadScroller();
+  if (tb2) {
+    tb2.scrollTop = (panelKey === UI.lastPanelKey && !keep.tbottom) ? keep.ty : tb2.scrollHeight;
+  }
   UI.lastPanelKey = panelKey;
 
   // A thread claims the caret the moment it opens — but only then, so a later
@@ -2523,7 +2544,12 @@ function popOut(tid) {
     "try{html=window.opener.threadHTML(tid);}catch(e){document.getElementById('t').innerHTML='<p>The main window is gone. Close this one.</p>';return;}" +
     "if(html===last)return;last=html;" +
     "var ta=document.getElementById('pop-say');var v=ta?ta.value:'';var had=ta&&document.activeElement===ta;" +
+    // The popped pane's turns scroll in the same box as the slide-out's and
+    // follow the same rule, because it is the same pane in another window.
+    "var tb=document.querySelector('.tbody');var ty=tb?tb.scrollTop:0;" +
+    "var bot=!tb||tb.scrollHeight-tb.scrollTop-tb.clientHeight<=40;" +
     "document.getElementById('t').innerHTML=html;" +
+    "var tb2=document.querySelector('.tbody');if(tb2)tb2.scrollTop=bot?tb2.scrollHeight:ty;" +
     "var t2=document.getElementById('pop-say');if(t2){t2.value=v;if(had)t2.focus({preventScroll:true});}}" +
     "document.addEventListener('click',function(e){var el=e.target.closest('[data-act]');if(!el)return;" +
     "var ta=document.getElementById('pop-say');" +
