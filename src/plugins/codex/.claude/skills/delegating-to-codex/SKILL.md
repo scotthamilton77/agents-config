@@ -11,8 +11,9 @@ admission:
 
 Reach Codex by dispatching the `codex-rescue` agent through the Agent tool.
 This skill addresses the caller. If you *are* the `codex-rescue` agent, the
-dispatch has already happened: run the companion yourself and do not spawn
-another copy — a rescue agent that dispatches a rescue agent reviews nothing.
+dispatch has already happened: reach Codex through your own runtime, as your
+agent definition says, and do not dispatch another `codex-rescue` — a rescue
+agent that dispatches a rescue agent reviews nothing.
 That agent comes from the Claude Code plugin `codex`, published by the
 `openai-codex` marketplace — `codex@openai-codex` written in full — and not
 from the plugin that deployed this skill, which shares the short name and
