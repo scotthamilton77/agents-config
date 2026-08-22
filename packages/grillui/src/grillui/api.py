@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 
 from grillui.capture import default_summary
 from grillui.claim import Claim
@@ -68,7 +68,20 @@ if TYPE_CHECKING:
 STALE_EPOCH_STATUS = 409
 MALFORMED_PAYLOAD_STATUS = 422
 
-PAGE = Path(__file__).parent / "page" / "index.html"
+PAGE_DIR = Path(__file__).parent / "page"
+# The shell holds the markup and the two tokens the style and the script are put back into.
+# Splitting the source is what lets a style change and a script change be written, reviewed and
+# merged apart; the served document is still one file, assembled per request off these bytes.
+PAGE_PARTS = (("/*__STYLE__*/", "style.css"), ("//__SCRIPT__", "script.js"))
+
+
+def page_html() -> str:
+    """The served document: the shell with its stylesheet and its script put back in."""
+    document = (PAGE_DIR / "index.html").read_text(encoding="utf-8")
+    for token, part in PAGE_PARTS:
+        body = (PAGE_DIR / part).read_text(encoding="utf-8").rstrip("\n")
+        document = document.replace(token, body)
+    return document
 
 
 def create_app(
@@ -112,14 +125,14 @@ def create_app(
             )
 
     @app.get("/", include_in_schema=False)
-    def read_page() -> FileResponse:
+    def read_page() -> HTMLResponse:
         """The surface, from this package's own bytes.
 
         Serving it here rather than shipping it as an installed asset is what
         keeps a page and the protocol it speaks one version: there is no copy
         on disk that a backend restart can leave behind.
         """
-        return FileResponse(PAGE, media_type="text/html")
+        return HTMLResponse(page_html())
 
     @app.get("/status")
     def read_status() -> SessionStatus:

@@ -180,9 +180,13 @@ The modules, and the separation between them is load-bearing:
   is gone. The session token it answers with is derived from the session
   directory, so it outlives a restart the way the log entries the page scopes to
   it do.
-- `page/index.html` — the surface. One file, no build and no dependencies,
-  which is what the reference prototype was and what a page served off disk can
-  afford. Its board is the state read and nothing else: it never folds the log
+- `page/` — the surface, authored as `page/style.css`, `page/script.js` and a
+  `page/index.html` shell holding the markup and one token for each; `page_html()`
+  puts them back together per request, so what is served is still one document
+  with no build and no dependencies, which is what the reference prototype was
+  and what a page served off disk can afford. The split is so that a style
+  change and a script change are two diffs rather than one file two people are
+  queued on. Its board is the state read and nothing else: it never folds the log
   into decisions, statuses or a queue, and it never re-derives which of an
   agent's changes waited — that is the backend's answer, made when the change
   arrived, and the page renders the queue it is handed. It emits eight kinds

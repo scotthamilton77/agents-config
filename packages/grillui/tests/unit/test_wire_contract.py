@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 from pydantic import BaseModel
 
 from grillui import schemas
-from grillui.api import PAGE, create_app
+from grillui.api import create_app, page_html
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -185,7 +185,7 @@ def normative_schemas() -> str:
 
 
 def test_every_page_visible_field_has_a_page_reader(log: SessionLog) -> None:
-    script = page_script(PAGE.read_text(encoding="utf-8"))
+    script = page_script(page_html())
     paths = fetched_paths(script)
     assert paths, "the page fetches nothing this check can recognise"
     names = page_visible_fields(create_app(log), paths)

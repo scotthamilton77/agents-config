@@ -40,7 +40,7 @@ import pytest
 from conftest import apply_all, event, handoff_doc, post, seed_node
 from fastapi.testclient import TestClient
 
-import grillui
+from grillui.api import page_html
 from grillui.capture import capture
 from grillui.channels import (
     PROTOCOL_SEVERITY,
@@ -77,8 +77,6 @@ from grillui.schemas import (
     Handoff,
 )
 
-PAGE_PATH = Path(grillui.__file__).parent / "page" / "index.html"
-
 # The routes the page is allowed to touch, and what each one is for. The board
 # is the first two; the third is how anything reaches the log; the last two are
 # controls -- whether a reassessment is in flight, and which window this session
@@ -94,7 +92,13 @@ THREAD = "t-1"
 
 
 def page_source() -> str:
-    return PAGE_PATH.read_text(encoding="utf-8")
+    """The document the backend serves, assembled from the page's three sources.
+
+    Every check here reads this rather than one of the sources: what the browser
+    is handed is what the claims are about, and which file a line was authored in
+    is not something the page's contract has an opinion on.
+    """
+    return page_html()
 
 
 def _fenced(marker: str) -> str:
@@ -1832,6 +1836,17 @@ def test_the_backend_serves_the_page_it_ships(client: TestClient) -> None:
     assert served.status_code == 200
     assert served.headers["content-type"].startswith("text/html")
     assert served.text == page_source()
+
+
+def test_the_served_document_is_self_contained() -> None:
+    """Three sources, one document. The split is a source-side convenience, and a
+    page that reached for a file over the network would be a page that can render
+    before its own styles or its own script arrive -- or without them."""
+    document = page_source()
+    assert len(re.findall(r"^<style>$", document, re.MULTILINE)) == 1
+    assert len(re.findall(r"^<script>$", document, re.MULTILINE)) == 1
+    for external in ("<link", "src=", "@import", "url("):
+        assert external not in document, f"the served page fetches {external!r}"
 
 
 # ---------------------------------------------------------------- the page's sinks
