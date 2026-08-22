@@ -458,6 +458,11 @@ class ContentLintResult:
     surfaces: list[SurfaceMeasure] = field(default_factory=list)
     skills: list[SkillBody] = field(default_factory=list)
     payloads: list[SkillPayloadMeasure] = field(default_factory=list)
+    # How many directories each silencing channel answered for. Reported, never
+    # fatal: every channel here is legitimate, and what is not legitimate is a
+    # channel growing unremarked — the surviving findings keep printing, so a run
+    # that measures half the tree looks exactly like a run over a tidy one.
+    silenced: dict[str, int] = field(default_factory=dict)
 
     @property
     def fatal_unadmitted(self) -> list[Unadmitted]:
@@ -803,8 +808,8 @@ def _staged_dirs(
     return staged
 
 
-def _stale_exemptions(repo_root: Path) -> list[str]:
-    """Register entries naming a directory that is not there.
+def _stale_exemptions(repo_root: Path, *, reached: frozenset[Path]) -> list[str]:
+    """Register entries that exempt nothing.
 
     An exemption is a judgement about a body of content, so an entry with no
     content behind it has outlived whatever justified it — and it fails silent,
@@ -814,13 +819,92 @@ def _stale_exemptions(repo_root: Path) -> list[str]:
     precisely the check that does not run on every build. Retiring the entry
     without retiring the mechanism would leave the next one to be found the
     same way.
+
+    There are two ways to exempt nothing, and existence answers only one of
+    them. The accounting walk stops at a namespace, so an entry naming a path
+    inside one — ``src/user/.agents/skills/tidy``, say — is exempting a
+    directory from a question it was never going to be asked. It exists, it
+    never fires, and it is indistinguishable from a live exemption to a check
+    that asks only whether the path is there. ``reached`` is what the walk
+    actually offered a verdict on, which is the set an entry has to be in to
+    have done anything at all.
+    """
+    stale: list[str] = []
+    for path in UNGATED_ROOTS:
+        if not (repo_root / path).is_dir():
+            stale.append(
+                f"{path}: exempted by UNGATED_ROOTS, but no such directory exists — an "
+                "exemption outliving its content is a standing authorisation for whatever "
+                "lands there next"
+            )
+        elif path not in reached:
+            stale.append(
+                f"{path}: exempted by UNGATED_ROOTS, but the accounting walk never reaches "
+                "this path, so the exemption has never silenced anything — the walk stops "
+                "at a directory staging reads whole. Drop the entry, or name a path the "
+                "walk visits"
+            )
+    return sorted(stale)
+
+
+def _overbroad_ignores(ignore: InstallIgnore) -> list[str]:
+    """``.installignore`` directory patterns that name no directory.
+
+    The manifest is a register of directories this repo has decided are
+    source-side, and the accounting walk reads it as exactly that: a declaration
+    about named content. A directory pattern carrying no alphanumeric character
+    declares a *shape* instead — ``*/`` takes every directory the walk offers
+    it, and ``.*/`` takes every dot-directory that is not a staging root, which
+    is precisely the unregistered-tool-tree class this gate exists to catch.
+    Neither is exotic to write in a file whose stated job is keeping source out
+    of the install, and neither announces itself: the findings that survive keep
+    printing, so the run still reads healthy.
+
+    The test is the pattern's own text rather than a count of what it removed,
+    because what a shape pattern removes is a property of the tree it met. A
+    threshold on the count passes on a small tree and fails on a bigger one
+    later, and the defect is in the pattern either way. Keeping a name in the
+    pattern is all this asks: ``*cache*/`` stays legal, and so does anything
+    else bounded by something a reader can look for.
     """
     return sorted(
-        f"{path}: exempted by UNGATED_ROOTS, but no such directory exists — an exemption "
-        "outliving its content is a standing authorisation for whatever lands there next"
-        for path in UNGATED_ROOTS
-        if not (repo_root / path).is_dir()
+        f".installignore: {'/' if pattern.anchored else ''}{pattern.text}/ excludes "
+        "directories by shape rather than by name, so it silences every directory that "
+        "happens to match — including ones nobody has written yet, whose absence from the "
+        "report is the only trace. Name the directories it is meant to cover, or exempt "
+        "the one path in UNGATED_ROOTS with its reason"
+        for pattern in ignore.patterns
+        if pattern.is_dir and not any(char.isalnum() for char in pattern.text)
     )
+
+
+# The channels that can close the walk's verdict on a directory without a
+# finding, named as they are reported. Each is individually justified and all of
+# them stay; what none of them did before was say so, and a channel that removes
+# part of the check silently is indistinguishable from a tree with less to find.
+CH_UNGATED = "UNGATED_ROOTS"
+CH_GIT = "git ignore"
+CH_STAGED = "staging root or holder (descended)"
+CH_NAMESPACE = "namespace of a staged root"
+CH_BUILD = "BUILD_DIRS"
+CH_INSTALLIGNORE = ".installignore"
+
+
+@dataclass(frozen=True, slots=True)
+class AccountingWalk:
+    """What the walk under ``src/`` found, and what it passed over on whose
+    authority.
+
+    ``unaccounted`` is the finding. ``silenced`` is the floor under it: one entry
+    per channel that answered for a directory, so a green run says how much of
+    the tree it declined to judge and which channel declined it. ``reached`` is
+    every directory the walk offered a verdict on at all, which is the set an
+    ``UNGATED_ROOTS`` entry must be in to have ever fired.
+    """
+
+    unaccounted: list[Path]
+    silenced: dict[str, list[Path]]
+    reached: frozenset[Path]
 
 
 def _unaccounted_dirs(
@@ -829,8 +913,8 @@ def _unaccounted_dirs(
     staged: dict[Path, frozenset[str]],
     ignore: InstallIgnore,
     git_ignored: frozenset[Path],
-) -> list[Path]:
-    """Directories under ``src/`` that nothing accounts for, repo-relative.
+) -> AccountingWalk:
+    """Walk ``src/`` for directories that nothing accounts for, repo-relative.
 
     Staging not reading a directory is two different facts wearing one face. It
     can mean nobody wired the directory up — the defect this reports — or it can
@@ -873,10 +957,12 @@ def _unaccounted_dirs(
     makes ``.installignore`` a silencing channel — one of six, with the staged
     roots, the namespace names, ``UNGATED_ROOTS``, ``BUILD_DIRS`` and git's own
     ignore rules — and the only one editable by someone thinking about deploys
-    rather than about this gate. Nothing here bounds what a pattern may silence.
-    Git's rules are the one channel whose scope is bounded from outside: it
-    silences exactly what never reaches a clone, so what it hides is what no
-    other machine could have judged either.
+    rather than about this gate. What bounds a pattern is stated where the
+    patterns are read (``_overbroad_ignores``): a directory pattern has to name
+    something. What bounds every channel is that each one counts what it took
+    and the counts print on a pass. Git's rules are the one channel also bounded
+    from outside: it silences exactly what never reaches a clone, so what it
+    hides is what no other machine could have judged either.
 
     ``BUILD_DIRS`` is read from ``content_tests`` rather than restated. Failing
     the build over a directory the sibling gate refuses to walk would be the two
@@ -894,32 +980,51 @@ def _unaccounted_dirs(
     """
     src_root = repo_root / "src"
     if not src_root.is_dir():
-        return []
+        return AccountingWalk(unaccounted=[], silenced={}, reached=frozenset())
 
     unaccounted: list[Path] = []
+    silenced: dict[str, list[Path]] = {}
+    reached: set[Path] = set()
     pending = [src_root]
     while pending:
         current = pending.pop()
         read_from_here = staged.get(current)
         for child in sorted(p for p in current.iterdir() if p.is_dir() and not p.is_symlink()):
             relative = child.relative_to(repo_root)
-            if relative in UNGATED_ROOTS or _is_git_ignored(child, git_ignored):
-                continue
+            reached.add(relative)
+            # The branches are the channels, in the order they are allowed to
+            # answer, and each records what it took. Splitting the chain into one
+            # branch per channel is what makes the attribution exact: a directory
+            # two channels would both have silenced is charged to the one that
+            # actually decided, which is the only reading under which a count
+            # means anything.
+            if relative in UNGATED_ROOTS:
+                silenced.setdefault(CH_UNGATED, []).append(relative)
+            elif _is_git_ignored(child, git_ignored):
+                silenced.setdefault(CH_GIT, []).append(relative)
             # One test, not two: a root is trivially relative to itself, so this
             # covers "child IS a root staging reads" and "child merely holds one"
             # in a single predicate. Both descend, for different reasons — the
             # first to judge the names below it, the second to find the roots.
-            if any(root.is_relative_to(child) for root in staged):
+            # Counted with the rest because the directory itself gets no verdict
+            # either; what makes it the mildest channel is that it descends, so
+            # the check continues below rather than stopping here.
+            elif any(root.is_relative_to(child) for root in staged):
+                silenced.setdefault(CH_STAGED, []).append(relative)
                 pending.append(child)
-            elif (
-                (read_from_here is not None and child.name in read_from_here)
-                or child.name in BUILD_DIRS
-                or ignore.excludes(child.name, is_dir=True, at_root=read_from_here is not None)
-            ):
-                continue
+            elif read_from_here is not None and child.name in read_from_here:
+                silenced.setdefault(CH_NAMESPACE, []).append(relative)
+            elif child.name in BUILD_DIRS:
+                silenced.setdefault(CH_BUILD, []).append(relative)
+            elif ignore.excludes(child.name, is_dir=True, at_root=read_from_here is not None):
+                silenced.setdefault(CH_INSTALLIGNORE, []).append(relative)
             else:
                 unaccounted.append(relative)
-    return sorted(unaccounted)
+    return AccountingWalk(
+        unaccounted=sorted(unaccounted),
+        silenced={channel: sorted(paths) for channel, paths in sorted(silenced.items())},
+        reached=frozenset(reached),
+    )
 
 
 # What a self-authored header costs the reader, and the two ways out of it. Stated
@@ -1030,25 +1135,28 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
     # Appended after the gate's own findings, and never in place of them: an
     # unaccounted directory says nothing about the content that WAS staged, so
     # both reports have to survive the same run.
+    walk = _unaccounted_dirs(
+        repo_root,
+        staged=_staged_dirs(repo_root, plugins_root=staged.plugins_root, plugins=staged.plugins),
+        ignore=staged.ignore,
+        git_ignored=staged.git_ignored,
+    )
     violations.extend(
         f"{path}: staging never reads this directory, so nothing inside it is measured "
         "against the admission bar or the surface budget — and nothing inside it "
         "deploys. Wire it into staging; or, if it is source-side on purpose, declare "
         "it — a directory pattern in .installignore for a name that is always "
         "source-side, or UNGATED_ROOTS for this one path with the reason it is exempt"
-        for path in _unaccounted_dirs(
-            repo_root,
-            staged=_staged_dirs(
-                repo_root, plugins_root=staged.plugins_root, plugins=staged.plugins
-            ),
-            ignore=staged.ignore,
-            git_ignored=staged.git_ignored,
-        )
+        for path in walk.unaccounted
     )
-    violations.extend(_stale_exemptions(repo_root))
+    # Reachability, not existence: an entry the walk never offers a verdict on
+    # has never silenced anything, and the walk is the only thing that knows.
+    violations.extend(_stale_exemptions(repo_root, reached=walk.reached))
+    violations.extend(_overbroad_ignores(staged.ignore))
 
     return ContentLintResult(
         violations=violations,
+        silenced={channel: len(paths) for channel, paths in walk.silenced.items()},
         unadmitted=unadmitted,
         surfaces=list(gate.surfaces),
         skills=_group_skill_bodies(gate.skills, sources=sources),

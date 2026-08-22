@@ -294,3 +294,22 @@ def test_module_is_runnable_as_python_dash_m(
     with pytest.raises(SystemExit) as exc_info:
         runpy.run_module("installer.content_lint_cli", run_name="__main__")
     assert exc_info.value.code == 0
+
+
+def test_the_silencing_counts_print_on_a_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A green run has to say how much of the tree it declined to judge. Every
+    channel that answers for a directory is legitimate, so without the counts a run
+    that measures half the tree prints exactly like a run over a tidy one."""
+    from installer.core.content_lint import ContentLintResult
+
+    result = ContentLintResult(silenced={".installignore": 3, "BUILD_DIRS": 1})
+    monkeypatch.setattr("installer.content_lint_cli.lint_content", lambda *_a, **_k: result)
+
+    assert main([str(tmp_path)]) == 0
+
+    out = capsys.readouterr().out
+    assert ".installignore" in out
+    assert "3" in out
+    assert "BUILD_DIRS" in out

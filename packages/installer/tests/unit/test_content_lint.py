@@ -9,14 +9,20 @@ artifact as fatal or merely reportable according to which subtree it sits in.
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 
 import pytest
 
 from installer.core.capabilities import models_skill_loading
 from installer.core.content_lint import (
+    CH_BUILD,
+    CH_GIT,
+    CH_INSTALLIGNORE,
+    CH_NAMESPACE,
+    CH_STAGED,
+    CH_UNGATED,
     UNGATED_ROOTS,
     _staged_dirs,
     _unaccounted_dirs,
@@ -556,7 +562,9 @@ def test_a_plugins_bespoke_routes_are_accounted(tmp_path: Path) -> None:
     staged = _staged_dirs(repo, plugins_root=plugins_root, plugins=[plugin])
     ignore = load_installignore(repo / ".installignore")
 
-    assert _unaccounted_dirs(repo, staged=staged, ignore=ignore, git_ignored=frozenset()) == []
+    walk = _unaccounted_dirs(repo, staged=staged, ignore=ignore, git_ignored=frozenset())
+
+    assert walk.unaccounted == []
 
 
 def test_a_directory_beside_a_route_that_no_route_names_is_a_violation(tmp_path: Path) -> None:
@@ -575,8 +583,8 @@ def test_a_directory_beside_a_route_that_no_route_names_is_a_violation(tmp_path:
     staged = _staged_dirs(repo, plugins_root=plugins_root, plugins=[plugin])
     ignore = load_installignore(repo / ".installignore")
 
-    unaccounted = _unaccounted_dirs(repo, staged=staged, ignore=ignore, git_ignored=frozenset())
-    assert [p for p in unaccounted if p == Path("src/plugins/widget/.widget/notaroute")]
+    walk = _unaccounted_dirs(repo, staged=staged, ignore=ignore, git_ignored=frozenset())
+    assert [p for p in walk.unaccounted if p == Path("src/plugins/widget/.widget/notaroute")]
 
 
 def test_a_build_directory_is_not_reported(tmp_path: Path) -> None:
@@ -1107,3 +1115,221 @@ def test_a_tracked_markdown_inside_a_skill_is_still_judged(tmp_path: Path) -> No
 
     assert not result.ok
     assert [v for v in result.violations if "carries deploy-time metadata" in v]
+
+
+# ---------------------------------------------------------------------------
+# The silencing channels, as a set rather than one at a time. Each is
+# individually justified and each is a way for part of the check to vanish while
+# the findings that survive keep printing — which is why the fixture carries one
+# fail-open shape per place the walk can go quiet, and every channel is asked
+# what it took.
+# ---------------------------------------------------------------------------
+_FAIL_OPEN_SHAPES = (
+    Path("src/newtree"),  # nothing under src/ reaches it
+    Path("src/plugins/demo/.claude/hooks"),  # a plugin namespace no tool overlays
+    Path("src/plugins/demo/docs"),  # a plugin scope no overlay reads
+    Path("src/user/.agents/prompts"),  # a namespace no adapter stages
+    Path("src/user/.newtool"),  # a tool tree the registry does not know
+)
+
+# The one dot-directory in the fixture, which is what makes '.*/' measurable:
+# every other shape keeps firing under it, so the run still reads healthy.
+_DOTTED_SHAPE = Path("src/user/.newtool")
+
+
+def _fail_open_repo(tmp_path: Path, *, ignore_text: str = _INSTALLIGNORE) -> Path:
+    """A repo that stages cleanly and carries one directory per fail-open shape."""
+    repo = _repo(
+        tmp_path,
+        skills={"tidy": _RECORD + "body\n"},
+        plugin_rules={"demo/demo.md": _RECORD + "body\n"},
+    )
+    (repo / ".installignore").write_text(ignore_text, encoding="utf-8")
+    for shape in _FAIL_OPEN_SHAPES:
+        (repo / shape).mkdir(parents=True, exist_ok=True)
+    return repo
+
+
+def _walk_inputs(repo: Path) -> dict:
+    """The accounting walk's inputs, built the way ``lint_content`` builds them.
+
+    Driven directly rather than through ``lint_content`` because two of the six
+    channels — the namespace names and the staging roots themselves — are
+    answers the registry gives, and arranging one through the registry would mean
+    inventing a tool or an adapter to test a branch that is three lines long.
+    Handing the map in is the same seam the route tests use.
+    """
+    from installer.plugins.registry import discover
+
+    plugins_root = repo / "src" / "plugins"
+    return {
+        "staged": _staged_dirs(
+            repo, plugins_root=plugins_root, plugins=tuple(discover(plugins_root).values())
+        ),
+        "ignore": load_installignore(repo / ".installignore"),
+        "git_ignored": frozenset(),
+    }
+
+
+def test_every_fail_open_shape_fires_on_the_bare_fixture(tmp_path: Path) -> None:
+    """The control. A fixture that silences a shape it was never reporting proves
+    nothing about the channel that silenced it, so the shapes are pinned firing
+    before any channel is asked to remove one."""
+    repo = _fail_open_repo(tmp_path)
+    result = _lint(repo)
+
+    assert not result.ok
+    for shape in _FAIL_OPEN_SHAPES:
+        assert [v for v in result.violations if v.startswith(f"{shape}:")], shape
+    assert _unaccounted_dirs(repo, **_walk_inputs(repo)).unaccounted == sorted(_FAIL_OPEN_SHAPES)
+
+
+_Arranger = Callable[[Path, dict, pytest.MonkeyPatch], AbstractContextManager[None]]
+
+
+def _silence_ungated(repo: Path, inputs: dict, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    return _exemption({Path("src/newtree"): "a reason the test supplies"})
+
+
+def _silence_git(repo: Path, inputs: dict, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    inputs["git_ignored"] = frozenset({repo / "src" / "newtree"})
+    return nullcontext()
+
+
+def _silence_staged(repo: Path, inputs: dict, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    inputs["staged"][repo / "src" / "newtree" / "rules"] = frozenset()
+    return nullcontext()
+
+
+def _silence_namespace(repo: Path, inputs: dict, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    root = repo / "src" / "user" / ".agents"
+    inputs["staged"][root] = inputs["staged"][root] | {"prompts"}
+    return nullcontext()
+
+
+def _silence_build(repo: Path, inputs: dict, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    monkeypatch.setattr("installer.core.content_lint.BUILD_DIRS", frozenset({"newtree"}))
+    return nullcontext()
+
+
+def _silence_installignore(repo: Path, inputs: dict, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    (repo / ".installignore").write_text(_INSTALLIGNORE + "newtree/\n", encoding="utf-8")
+    inputs["ignore"] = load_installignore(repo / ".installignore")
+    return nullcontext()
+
+
+@pytest.mark.parametrize(
+    ("channel", "target", "arrange"),
+    [
+        (CH_UNGATED, Path("src/newtree"), _silence_ungated),
+        (CH_GIT, Path("src/newtree"), _silence_git),
+        (CH_STAGED, Path("src/newtree"), _silence_staged),
+        (CH_NAMESPACE, Path("src/user/.agents/prompts"), _silence_namespace),
+        (CH_BUILD, Path("src/newtree"), _silence_build),
+        (CH_INSTALLIGNORE, Path("src/newtree"), _silence_installignore),
+    ],
+    ids=["ungated", "git", "staged-root", "namespace", "build-dirs", "installignore"],
+)
+def test_a_channel_that_removes_a_finding_says_so_and_says_how_much(
+    channel: str,
+    target: Path,
+    arrange: _Arranger,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both halves of the same fact, per channel: the finding is gone, and the run
+    still says a directory went unreported and which channel answered for it.
+
+    Without the second half a green run cannot be read — every channel here is
+    legitimate, so the only thing distinguishing "the tree got tidier" from "a
+    channel got wider" is the count. The other four shapes are asserted still
+    firing because that is the shape of the defect: silence that leaves the rest
+    of the report intact looks like health."""
+    repo = _fail_open_repo(tmp_path)
+    before = len(_unaccounted_dirs(repo, **_walk_inputs(repo)).silenced.get(channel, []))
+
+    inputs = _walk_inputs(repo)
+    with arrange(repo, inputs, monkeypatch):
+        walk = _unaccounted_dirs(repo, **inputs)
+
+    assert walk.unaccounted == sorted(s for s in _FAIL_OPEN_SHAPES if s != target)
+    assert target in walk.silenced[channel]
+    assert len(walk.silenced[channel]) == before + 1
+
+
+def test_the_lint_carries_each_channels_count_out_to_its_caller(tmp_path: Path) -> None:
+    """The counts have to survive the walk's own boundary, or the floor exists only
+    where nobody reads it."""
+    repo = _fail_open_repo(tmp_path)
+    result = _lint(repo)
+
+    assert result.silenced[CH_NAMESPACE] > 0
+    assert result.silenced[CH_STAGED] > 0
+    assert CH_INSTALLIGNORE not in result.silenced  # nothing in the fixture matches one
+
+
+@pytest.mark.parametrize("pattern", ["*/", ".*/"])
+def test_a_directory_pattern_naming_nothing_fails_the_run(pattern: str, tmp_path: Path) -> None:
+    """The two measured over-broad patterns. ``*/`` takes every shape in the fixture
+    and ``.*/`` takes the one dot-directory — the unregistered-tool-tree class this
+    gate exists to catch — and under either the surviving output reads healthy. The
+    manifest declares directories by name, so a directory pattern with no name in it
+    is the violation, whatever it happened to match in this tree."""
+    repo = _fail_open_repo(tmp_path, ignore_text=_INSTALLIGNORE + pattern + "\n")
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith(f".installignore: {pattern}")]
+
+
+def test_the_widest_pattern_still_fails_after_it_has_silenced_everything(
+    tmp_path: Path,
+) -> None:
+    """``*/`` is the fail-open in its pure form: every finding gone, nothing left to
+    report, and before this the run was green. The pattern check is what stands in
+    for the findings it removed."""
+    repo = _fail_open_repo(tmp_path, ignore_text=_INSTALLIGNORE + "*/\n")
+    result = _lint(repo)
+
+    assert not [v for v in result.violations if "staging never reads" in v]
+    assert not result.ok
+
+
+def test_a_dotted_pattern_leaves_the_other_shapes_firing(tmp_path: Path) -> None:
+    """Why the pattern check is not a threshold on the count: ``.*/`` removes one
+    finding out of five, so any measure of "how much was silenced" reads this as
+    ordinary while the class it silenced is the one that matters."""
+    repo = _fail_open_repo(tmp_path, ignore_text=_INSTALLIGNORE + ".*/\n")
+    result = _lint(repo)
+
+    assert not [v for v in result.violations if v.startswith(f"{_DOTTED_SHAPE}:")]
+    assert len([v for v in result.violations if "staging never reads" in v]) == 4
+    assert [v for v in result.violations if v.startswith(".installignore: .*/")]
+
+
+def test_a_glob_that_still_names_something_is_left_alone(tmp_path: Path) -> None:
+    """The rule asks for a name, not for a literal. A pattern bounded by something a
+    reader can search for is a declaration about known content, which is what the
+    manifest is for."""
+    repo = _fail_open_repo(tmp_path, ignore_text=_INSTALLIGNORE + "*cache*/\n")
+    result = _lint(repo)
+
+    assert not [v for v in result.violations if v.startswith(".installignore:")]
+
+
+def test_an_exemption_the_walk_cannot_reach_is_reported_stale(tmp_path: Path) -> None:
+    """Existence is only half of "this exemption does nothing". The walk stops at a
+    directory staging reads whole, so an entry naming a path inside a namespace is
+    exempting a directory from a question it was never going to be asked — it exists,
+    it has never fired, and to a check that asks only whether the path is there it is
+    indistinguishable from a live exemption."""
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    unreachable = Path("src/user/.agents/skills/tidy/scripts")
+    (repo / unreachable).mkdir(parents=True)
+
+    with _exemption({unreachable: "an entry that has never silenced anything"}):
+        result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith(f"{unreachable}: ")]
+    assert [v for v in result.violations if "never reaches" in v]
