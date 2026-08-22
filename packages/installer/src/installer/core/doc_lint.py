@@ -276,8 +276,8 @@ _GLOB_CHARS = frozenset("*?[")
 _NOT_A_PATH = _NOT_A_CITATION - _GLOB_CHARS
 
 # The kinds of deployed artifact prose names, mapped to the installer namespace
-# each lives in. The four gated classes, and only those: prose also names hooks
-# and workflows, but neither is addressed by name the way a skill is.
+# each lives in. Not every deployed class is here: prose also names hooks and
+# workflows, but neither is addressed by name the way a skill is.
 ASSET_KINDS: dict[str, str] = {kind: kind + "s" for kind in ("skill", "rule", "command", "agent")}
 
 # ``the `x` skill`` and ``the skill `x` `` — both orders, because both are
