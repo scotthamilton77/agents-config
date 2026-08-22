@@ -65,6 +65,7 @@ from grillui.schemas import (
     HEAVY_TIER,
     MAP_CHANNEL,
     MODEL_KEY,
+    PROPOSED_ANSWER_KEY,
     RECOMMENDATION_KEY,
     SUPERSEDES_KEY,
     TIER_KEY,
@@ -350,13 +351,16 @@ def write_resume(directory: Path, channel: str, session_id: str) -> None:
     scratch.replace(path)
 
 
-def declared_updates(reply: str) -> tuple[str, list[dict[str, Any]], list[str]]:
-    """What the turn said, the map updates it declared, and what it withdrew.
+def declared_updates(
+    reply: str,
+) -> tuple[str, list[dict[str, Any]], list[str], dict[str, Any] | None]:
+    """What the turn said, the map updates it declared, what it withdrew, and
+    the answer it offered.
 
     A reply is prose unless it is an object carrying `text` and at least one of
-    the two -- anything else, including JSON that is not this shape, is what the
-    agent said and is recorded as such. Guessing at a half-shaped object would
-    author board changes out of a reply that never asked for any.
+    the three -- anything else, including JSON that is not this shape, is what
+    the agent said and is recorded as such. Guessing at a half-shaped object
+    would author board changes out of a reply that never asked for any.
 
     A markdown fence around that object is read through, because what the turn
     declared is a property of what it said and not of how the model chose to
@@ -366,26 +370,36 @@ def declared_updates(reply: str) -> tuple[str, list[dict[str, Any]], list[str]]:
 
     Withdrawing is separate from updating because the common case carries no
     board change at all: a turn that supersedes what it said last time and
-    nothing else is a turn whose whole effect is on the queue.
+    nothing else is a turn whose whole effect is on the queue. An offered answer
+    is separate from both for the same reason and one more: it is the only one
+    of the three a thread agent may make, so a reply carrying it and nothing
+    else is the ordinary declaring shape on a thread channel.
+
+    Whether the offer is usable is not judged here. This reads what the turn
+    said; the fold decides what the board can do with it, so an offer and the
+    prose it rode in on cannot be judged by two readers that disagree.
     """
     fenced = FENCED.match(reply.strip())
     try:
         document = json.loads(fenced.group("body") if fenced else reply)
     except ValueError:
-        return reply, [], []
+        return reply, [], [], None
     if not isinstance(document, dict):
-        return reply, [], []
+        return reply, [], [], None
     prose = document.get("text")
     updates = document.get("updates")
     superseded = document.get(SUPERSEDES_KEY)
+    offered = document.get(PROPOSED_ANSWER_KEY)
     declared = updates if isinstance(updates, list) else None
     withdrew = superseded if isinstance(superseded, list) else None
-    if not isinstance(prose, str) or (declared is None and withdrew is None):
-        return reply, [], []
+    proposal = offered if isinstance(offered, dict) else None
+    if not isinstance(prose, str) or (declared is None and withdrew is None and proposal is None):
+        return reply, [], [], None
     return (
         prose,
         [one for one in declared or [] if isinstance(one, dict)],
         [one for one in withdrew or [] if isinstance(one, str)],
+        proposal,
     )
 
 
@@ -409,11 +423,12 @@ def record_reply(
     function's question and must not become one: it is a property of the board
     at the moment the gesture arrives, answered once by the fold.
 
-    What the reply withdrew rides on the turn's own spoken entry, because that
-    is what it is: this turn replacing what a previous one told the human, in
-    the same breath as it says the new thing.
+    What the reply withdrew rides on the turn's own spoken entry, and so does
+    the answer it offered, because that is what each is: this turn replacing
+    what a previous one told the human, or putting to them what it takes the
+    thread to have settled, in the same breath as it says the new thing.
     """
-    prose, updates, superseded = declared_updates(text)
+    prose, updates, superseded, proposal = declared_updates(text)
     if not prose.strip():
         raise ReplyRefusedError(tier, "the completion was empty")
     spoken: dict[str, Any] = {
@@ -422,6 +437,8 @@ def record_reply(
     }
     if superseded:
         spoken[SUPERSEDES_KEY] = superseded
+    if proposal is not None:
+        spoken[PROPOSED_ANSWER_KEY] = proposal
     # The kind is the envelope's when the turn stands alone and the sub-update's
     # when it rides inside a gesture, so it is stripped from the one and kept on
     # the other -- everything else the turn said travels either way.

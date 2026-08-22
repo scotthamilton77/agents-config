@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE, LOG_FILE, RESULT_FILE, read_entries
-from grillui.projector import conclusion_of, fold
+from grillui.projector import answers_from_threads, conclusion_of, fold
 from grillui.schemas import (
     PROPOSABLE_KINDS,
     SESSION_END_KIND,
@@ -83,6 +83,7 @@ def capture(directory: Path, *, summarize: Summarizer = default_summary) -> Term
     """
     entries = read_entries(directory / LOG_FILE)
     image = fold(entries[-1].epoch if entries else "", entries)
+    applied = answers_from_threads(entries)
     start = _first(entries, SESSION_START_KIND)
     end = _last(entries, SESSION_END_KIND)
     settled = {item.id for item in image.settled}
@@ -101,7 +102,7 @@ def capture(directory: Path, *, summarize: Summarizer = default_summary) -> Term
                 id=thread.id,
                 title=thread.title,
                 state=thread.state,
-                conclusion=conclusion_of(thread),
+                conclusion=conclusion_of(thread, applied),
             )
             for thread in image.threads
         ],

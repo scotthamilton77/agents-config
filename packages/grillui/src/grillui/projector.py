@@ -30,6 +30,11 @@ on an accepted entry takes the session down with it.
 | `thread-park`   | its channel's thread is `parked`; no decision moves            |
 | `thread-close`  | its channel's thread is `closed`; no decision moves            |
 
+A human `answer` naming the thread it was armed from closes that thread in the
+same entry that settles the decision, and the thread's conclusion is the answer
+text. One entry rather than two: an answer and a close that half-land leave the
+human looking at a settled decision whose thread still asks to be closed.
+
 A human turn on a closed thread opens it again. Re-opening rides the turn path
 rather than a gesture of its own because saying something in a thread the human
 had finished with *is* picking it back up: a separate gesture would be a second
@@ -105,12 +110,16 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import ValidationError
+
 from grillui.schemas import (
     APPLY_KIND,
     DISMISS_KIND,
     FOLD_SHAPED,
+    FROM_THREAD_KEY,
     PENDING_KEY,
     PROPOSABLE_KINDS,
+    PROPOSED_ANSWER_KEY,
     SESSION_START_KIND,
     SUPERSEDES_KEY,
     THREAD_CLOSE_KIND,
@@ -118,6 +127,7 @@ from grillui.schemas import (
     THREAD_GESTURE_KINDS,
     THREAD_PARK_KIND,
     Answer,
+    ConvergedProposal,
     Decision,
     FoldedThreadStub,
     HistoryEntry,
@@ -313,6 +323,7 @@ def _apply(
         _settle(board, payload)
         if kind == "answer" and entry.actor == "human":
             _dealt_with(board, entry, payload)
+            _close_armed_thread(board, payload)
     elif kind == "unsettle":
         _unsettle(board, payload)
     elif kind == "resolve-stale":
@@ -340,18 +351,44 @@ def to_image1(image: Image2) -> Image1:
     return Image1(**image.model_dump(exclude={"history"}))
 
 
-def conclusion_of(thread: Thread) -> str | None:
-    """A folded thread's conclusion: the turn whose content was applied to the
-    board. A thread that is open, parked or closed has reached none.
+def conclusion_of(thread: Thread, applied: Mapping[str, str] | None = None) -> str | None:
+    """What a thread concluded, by the two ways a thread reaches one.
+
+    A folded thread's conclusion is the turn whose content was applied to the
+    board. A thread closed by the answer it was armed from concluded that
+    answer's text, which `applied` carries -- the answer is on the decision, not
+    in the thread, so it takes the log to say which thread produced it. A thread
+    the human simply closed produced nothing, and neither did an open or parked
+    one.
 
     One reader, because the conclusion is quoted in three places -- the stub a
     sibling thread's agent sees, the dispatch that hands it to the grill-master,
     and the terminal result -- and three readers is how they come to disagree
     about what a thread concluded.
     """
+    if thread.state == "closed":
+        return (applied or {}).get(thread.id)
     if thread.state != "folded" or not thread.turns:
         return None
     return thread.turns[-1].text
+
+
+def answers_from_threads(entries: Sequence[LogEntry]) -> dict[str, str]:
+    """The answer text each thread was armed to produce, by thread id.
+
+    Read off the log rather than off the image, because the image records the
+    answer against the decision and says nothing about where the human got it.
+    The last one wins: a thread reopened and answered again concluded what it
+    concluded the second time.
+    """
+    applied: dict[str, str] = {}
+    for entry in entries:
+        named = entry.payload.get(FROM_THREAD_KEY)
+        given = entry.payload.get("answer")
+        if entry.kind != "answer" or not isinstance(named, str) or not isinstance(given, Mapping):
+            continue
+        applied[named] = _or_none(given.get("text")) or _or_none(given.get("option")) or ""
+    return applied
 
 
 def project_thread(image: Image2, channel: str) -> ThreadProjection:
@@ -693,9 +730,60 @@ def _append_turns(board: _Board, entry: LogEntry) -> None:
     if thread is None:
         thread = Thread(id=thread_id)
         board.threads[thread_id] = thread
-    thread.turns = [*thread.turns, *read_turns(entry.payload, entry.actor, entry.timestamp)]
+    said = read_turns(entry.payload, entry.actor, entry.timestamp)
+    offer = _offer(board, entry, thread)
+    if offer is not None and said:
+        # On the turn that made it, which is the last thing this entry said:
+        # liveness is position, so an offer parked anywhere else in the entry
+        # would be retired by its own turn the moment it landed.
+        said[-1] = said[-1].model_copy(update={"proposal": offer})
+    thread.turns = [*thread.turns, *said]
     if thread.state == "closed" and entry.actor == "human":
         thread.state = "open"
+
+
+def _offer(board: _Board, entry: LogEntry, thread: Thread) -> ConvergedProposal | None:
+    """The converged answer this turn offered, or None where there is none to
+    make.
+
+    Dropped rather than refused, and only here: the write already carries what
+    the agent said to the human, and refusing it over a malformed offer nobody
+    has seen yet would throw away the turn to save the offer. Every reason to
+    drop is a reason the offer cannot be acted on -- the grill-master asserts
+    answers through the queue instead, a session-scoped thread anchors no
+    decision to answer, and an option or a decision the board does not carry
+    names nothing the page could arm.
+    """
+    raw = entry.payload.get(PROPOSED_ANSWER_KEY)
+    if not isinstance(raw, Mapping) or entry.actor != "thread-agent" or thread.decision is None:
+        return None
+    try:
+        offer = ConvergedProposal.model_validate(dict(raw))
+    except ValidationError:
+        return None
+    if offer.decision != thread.decision:
+        return None
+    node = board.decisions.get(offer.decision)
+    if node is None:
+        return None
+    if offer.option is not None and offer.option not in {one.id for one in node.options}:
+        return None
+    return offer
+
+
+def _close_armed_thread(board: _Board, payload: Mapping[str, object]) -> None:
+    """The thread the answer was armed from, closed by the answer itself.
+
+    One entry does both: the decision settles by the ordinary path above and
+    the thread reaches its closed state here, so the human never sees a settled
+    decision whose thread still asks to be closed. The appender has already
+    established that the thread exists and anchors this decision, so a miss
+    here is a log the board does not hold rather than a case to decide.
+    """
+    named = payload.get(FROM_THREAD_KEY)
+    thread = board.threads.get(named) if isinstance(named, str) else None
+    if thread is not None:
+        thread.state = "closed"
 
 
 _GESTURE_STATE: dict[str, ThreadState] = {

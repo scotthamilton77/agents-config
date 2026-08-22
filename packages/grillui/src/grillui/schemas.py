@@ -79,6 +79,13 @@ REASON_PENDING_CONFLICT = "pending update conflicts with the board"
 # vanishes without the sender learning the id was wrong.
 REASON_UNKNOWN_THREAD = "unknown thread id"
 
+# An answer says which thread it was armed from, and that provenance closes the
+# thread in the same entry. A thread anchored to some other decision is
+# well-formed and refused anyway: closing it would end a conversation about a
+# question this answer never touched, and the human would be looking at a
+# settled decision whose own thread is still open.
+REASON_FOREIGN_THREAD = "thread anchored to another decision"
+
 REJECTION_REASONS = frozenset(
     {
         REASON_MISSING_KEY,
@@ -91,6 +98,7 @@ REJECTION_REASONS = frozenset(
         REASON_UNKNOWN_PENDING,
         REASON_PENDING_CONFLICT,
         REASON_UNKNOWN_THREAD,
+        REASON_FOREIGN_THREAD,
     }
 )
 
@@ -263,6 +271,16 @@ TRANSFER_FLAG = "transfer"
 # had to spend a separate event on it would be telling the human two things
 # where it meant one, and the kind vocabulary is closed.
 SUPERSEDES_KEY = "supersedes"
+
+# The offer a thread agent's turn makes, and the provenance the answer that
+# takes it carries back. Both ride a payload key rather than a kind of their
+# own: an offer is something a turn makes while it says its piece, and the kind
+# vocabulary is closed. The reply document and the log entry spell it the same
+# way; the projection puts it on the turn under the shorter name, because on a
+# turn there is nothing else it could be an answer to.
+PROPOSED_ANSWER_KEY = "proposed_answer"
+PROPOSAL_KEY = "proposal"
+FROM_THREAD_KEY = "from_thread"
 
 # The kinds that are owed a reply: a human answering a decision, a human opening
 # a thread, a human speaking in one, and a human folding one -- the fold is owed
@@ -531,6 +549,23 @@ Receipt = Annotated[
 ]
 
 
+class ConvergedProposal(Strict):
+    """What a thread agent offers when its thread has reached the answer to its
+    own anchor decision.
+
+    Read out of the reply document and projected onto the turn that made it, so
+    the driver, the projection and the page all agree on one shape. `because` is
+    shown beside the offer and is never part of the answer: the answer is the
+    human's statement of record, and a reason folded into it would put the
+    agent's account of the conversation into what the board says they decided.
+    """
+
+    decision: str
+    option: str | None = None
+    text: str = Field(min_length=1)
+    because: str = ""
+
+
 class ThreadTurn(Strict):
     """One thing said on a channel, and -- when an agent said it -- which tier
     said it.
@@ -545,12 +580,18 @@ class ThreadTurn(Strict):
     A turn nobody attributed carries none, and is labelled as nothing rather
     than as a guess: the human, the backend, and any turn recorded before tiers
     were written down.
+
+    `proposal` is the offer this turn made, on the turn that made it. Every
+    proposal a thread ever carried projects; which one is live is position --
+    the thread's most recent turn -- and not a field here, because a flag would
+    be a second fact to keep in step with the turn order that already says it.
     """
 
     who: Actor
     text: str
     timestamp: str
     tier: Tier | None = None
+    proposal: ConvergedProposal | None = None
 
     @model_validator(mode="after")
     def _only_agents_carry_a_tier(self) -> ThreadTurn:
@@ -562,12 +603,16 @@ class ThreadTurn(Strict):
         return self
 
     @model_serializer(mode="wrap")
-    def _without_absent_tier(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
-        """An unattributed turn has no `tier` key at all rather than a null one:
-        the field is present exactly when an agent's tier is known."""
+    def _without_absent_optionals(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, object]:
+        """An unattributed turn has no `tier` key at all rather than a null one,
+        and a turn that proposed nothing has no `proposal` key: each field is
+        present exactly when there is something to say with it."""
         dumped: dict[str, object] = handler(self)
-        if dumped.get(TIER_KEY) is None:
-            dumped.pop(TIER_KEY, None)
+        for key in (TIER_KEY, PROPOSAL_KEY):
+            if dumped.get(key) is None:
+                dumped.pop(key, None)
         return dumped
 
 
@@ -1097,7 +1142,7 @@ def _sub_update_problem(
         ),
         nodes,
         # A fold carries no thread event, so no thread id is ever judged here.
-        frozenset(),
+        {},
     )
 
 
@@ -1126,7 +1171,7 @@ def mint_targets(payload: Mapping[str, Any], kind: str, seq: int) -> dict[str, A
 
 
 def rejection_reason(
-    submission: EventSubmission, known_nodes: Set[str], known_threads: Set[str]
+    submission: EventSubmission, known_nodes: Set[str], known_threads: Mapping[str, str | None]
 ) -> tuple[str, str] | None:
     """Judge one submission's content, returning `(reason, detail)` or None.
 
@@ -1181,8 +1226,41 @@ def rejection_reason(
         return (REASON_UNKNOWN_NODE, f"no decision node {target!r} exists in this session")
 
     if submission.kind in ANSWER_KINDS or "answer" in submission.payload:
-        return _answer_problem(submission.payload.get("answer"))
+        return _answer_problem(submission.payload.get("answer")) or _from_thread_problem(
+            submission, known_threads
+        )
 
+    return None
+
+
+def _from_thread_problem(
+    submission: EventSubmission, known_threads: Mapping[str, str | None]
+) -> tuple[str, str] | None:
+    """An answer's provenance, judged before it settles anything.
+
+    Refused rather than dropped, unlike the offer it came from: this entry is
+    the human's answer and closing their thread is half of what it does, so an
+    unusable provenance would settle the decision and leave the thread open --
+    a half-landed gesture, which is the state the one-entry rule exists to
+    prevent. Nothing is appended either way.
+    """
+    named = submission.payload.get(FROM_THREAD_KEY)
+    if named is None:
+        return None
+    if not isinstance(named, str) or named not in known_threads:
+        return (
+            REASON_UNKNOWN_THREAD,
+            f"the answer was armed from thread {named!r}, and no thread of that id was "
+            f"created in this session",
+        )
+    anchor = known_threads[named]
+    target = submission.payload.get("target")
+    if anchor != target:
+        return (
+            REASON_FOREIGN_THREAD,
+            f"thread {named!r} is anchored to {anchor!r} and this answer is for "
+            f"{target!r}, so taking it would close a conversation about another question",
+        )
     return None
 
 

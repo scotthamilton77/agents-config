@@ -2067,6 +2067,10 @@ function renderColumn() {
 // transfer still shows which turns the fast agent took and which the expert did
 // — and a page that joined the session afterwards shows the same, because the
 // projection is where it read the board from.
+//
+// An offer the turn made reads back as part of what was said. Every proposal a
+// thread carried renders, retired ones included, because the retired ones are
+// still things the agent put to the human. None of them carries a control here.
 function renderTurns(t) {
   var h = "";
   t.turns.forEach(function (turn) {
@@ -2074,7 +2078,9 @@ function renderTurns(t) {
       (turn.who === "human" ? "You" : turn.who === "backend" ? "Backend"
         : tierLabel(turn.tier) || "Agent") +
       (turn.timestamp ? ' <span class="did">' + esc(stamp(turn.timestamp)) + "</span>" : "") + "</div>" +
-      "<p>" + esc(turn.text) + "</p></div>";
+      "<p>" + esc(turn.text) + "</p>" +
+      (turn.proposal ? '<p>' + esc(turn.proposal.text) + '</p><div class="did">' +
+        esc(turn.proposal.because) + "</div>" : "") + "</div>";
   });
   return h;
 }
