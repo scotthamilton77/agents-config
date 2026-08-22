@@ -26,8 +26,6 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import os
-import signal
 import socket
 import sys
 import webbrowser
@@ -49,7 +47,7 @@ if TYPE_CHECKING:
 
     from starlette.types import ASGIApp, Receive, Scope, Send
 
-    Runner = Callable[[ASGIApp, int, Callable[[], None]], None]
+    Runner = Callable[[ASGIApp, int, Callable[[], None], "RunStop"], None]
 
 DEFAULT_PORT = 8765
 LOOPBACK = "127.0.0.1"
@@ -170,19 +168,47 @@ def _report_ready_failure(done: asyncio.Future[None]) -> None:
         print(f"grillui: opening the browser failed: {error}", file=sys.stderr, flush=True)
 
 
-def serve_forever(app: ASGIApp, port: int, on_ready: Callable[[], None]) -> None:
-    """Run the board until the process is stopped, saying when it starts answering."""
-    _ReadyServer(uvicorn.Config(app, host=LOOPBACK, port=port), on_ready).run()
+class RunStop:
+    """The board's way of ending the run that is serving it.
 
+    Held before there is a server to end. The board is built first and takes its
+    end-session hook then, so what it takes is this, and the server arms it on
+    the way up.
 
-def stop_this_process() -> None:  # pragma: no cover
-    """End the run, the way a Ctrl-C in the terminal would.
+    Ending is the server's own graceful exit rather than an interrupt. Both
+    drain in-flight requests -- the human's end-session gesture among them --
+    but a process that interrupts itself delivers that interrupt to its own
+    caller once the server has restored the handler it borrowed, so the launch
+    never gets to print the result it just wrote. A human's Ctrl-C is still an
+    interrupt and still aborts the run with nothing printed, which is what a
+    caller who abandoned the session wants.
 
-    An interrupt rather than an exit: the server owns the shutdown, so in-flight
-    requests -- the human's own end-session gesture among them -- are answered
-    before the process goes.
+    Pressing an unarmed stop does nothing: no server means nothing to end.
     """
-    os.kill(os.getpid(), signal.SIGINT)
+
+    def __init__(self) -> None:
+        self._end: Callable[[], None] | None = None
+
+    def arm(self, end: Callable[[], None]) -> None:
+        """Say how to end the run that is now up."""
+        self._end = end
+
+    def __call__(self) -> None:
+        if self._end is not None:
+            self._end()
+
+
+def serve_forever(app: ASGIApp, port: int, on_ready: Callable[[], None], stop: RunStop) -> None:
+    """Run the board until it is stopped, saying when it starts answering."""
+    server = _ReadyServer(uvicorn.Config(app, host=LOOPBACK, port=port), on_ready)
+
+    def end() -> None:
+        # Read by the server's own loop within its tick, off whichever thread
+        # answered the gesture; the same flag its signal handler would set.
+        server.should_exit = True
+
+    stop.arm(end)
+    server.run()
 
 
 def launch(
@@ -193,7 +219,7 @@ def launch(
     open_browser: bool = False,
     run: Runner = serve_forever,
     open_url: Callable[[str], bool] = webbrowser.open,
-    stop: Callable[[], None] = stop_this_process,
+    stop: RunStop | None = None,
     out: TextIO | None = None,
 ) -> int:
     """Open the session, hand the human its URL, and return its result.
@@ -213,8 +239,9 @@ def launch(
     agent that launched it waiting on an exit that never comes.
     """
     stream = sys.stdout if out is None else out
+    ending = RunStop() if stop is None else stop
     log = open_session(directory, handoff)
-    board = create_app(log, FastDriver(TierConfig.from_env()), on_end=stop)
+    board = create_app(log, FastDriver(TierConfig.from_env()), on_end=ending)
     bound = free_port(port)
     url = session_url(bound)
     print(url, file=stream, flush=True)
@@ -223,7 +250,7 @@ def launch(
         if open_browser:
             open_url(url)
 
-    run(LoopbackOnly(board), bound, hand_over)
+    run(LoopbackOnly(board), bound, hand_over, ending)
     return report(directory, out=stream)
 
 
@@ -235,6 +262,7 @@ def _client_host(scope: Scope) -> str:
 __all__ = [
     "DEFAULT_PORT",
     "LoopbackOnly",
+    "RunStop",
     "free_port",
     "is_loopback",
     "launch",

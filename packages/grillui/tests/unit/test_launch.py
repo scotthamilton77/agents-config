@@ -11,11 +11,12 @@ anything watching a clock.
 from __future__ import annotations
 
 import io
+import os
 import signal
 import socket
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
@@ -26,12 +27,12 @@ from grillui.launch import (
     LOOPBACK,
     NON_LOOPBACK_STATUS,
     LoopbackOnly,
+    RunStop,
     free_port,
     is_loopback,
     launch,
     report,
     session_url,
-    stop_this_process,
 )
 from grillui.log import RESULT_FILE, SessionLog
 from grillui.schemas import SESSION_END_KIND
@@ -176,7 +177,7 @@ def test_the_url_is_printed_before_the_session_runs_and_no_browser_opens(
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda _app, _port, ready: (seen.append(stream.getvalue()), ready())[0],
+        run=lambda _app, _port, ready, _stop: (seen.append(stream.getvalue()), ready())[0],
         open_url=lambda url: bool(opened.append(url)),
         out=stream,
     )
@@ -201,7 +202,7 @@ def test_the_browser_opens_once_the_board_answers_and_not_before(session_dir: Pa
     order: list[str] = []
     stream = io.StringIO()
 
-    def run(_app: ASGIApp, _port: int, ready: Callable[[], None]) -> None:
+    def run(_app: ASGIApp, _port: int, ready: Callable[[], None], _stop: RunStop) -> None:
         order.append("accepting")
         ready()
         order.append("stopped")
@@ -231,7 +232,7 @@ def test_a_server_that_never_starts_opens_nothing(session_dir: Path) -> None:
     """
     opened: list[str] = []
 
-    def refuse(_app: ASGIApp, _port: int, _ready: Callable[[], None]) -> None:
+    def refuse(_app: ASGIApp, _port: int, _ready: Callable[[], None], _stop: RunStop) -> None:
         lost = "address already in use"
         raise OSError(lost)
 
@@ -248,44 +249,93 @@ def test_a_server_that_never_starts_opens_nothing(session_dir: Path) -> None:
     assert opened == []
 
 
-def test_a_real_server_hands_the_browser_a_url_that_already_answers(session_dir: Path) -> None:
+def end_session(url: str) -> httpx.Response:
+    """The human's end-session gesture, over the wire the page uses."""
+    epoch = httpx.get(url + "status", timeout=10).json()["epoch"]
+    return httpx.post(
+        url + "events",
+        timeout=10,
+        json={
+            "epoch": epoch,
+            "events": [event(SESSION_END_KIND, actor="human", key="end", stop_reason="settled")],
+        },
+    )
+
+
+def test_a_real_server_hands_over_a_url_that_answers_and_ends_on_the_gesture(
+    session_dir: Path,
+) -> None:
     """
     Given a launch asked to open a browser, over the real server
-    When the opener is handed a URL
-    Then a request to that URL is answered at that moment, and the session ends
-         when the run is stopped.
+    When the opener is handed a URL and ends the session through it
+    Then the request is answered at that moment, the end-session receipt is an
+         acceptance the client is handed before the server goes, and the launch
+         returns the terminal result having succeeded.
 
-    Every other test here stubs the server, and none of them can see the failure
-    this guards: a browser opened while the socket did not yet exist puts a
-    refused connection on screen. Only a real bind settles the ordering.
-
-    The interrupt that ends the run is disarmed for the duration, because the
-    server re-raises it on the way out and the test runner is the process it
-    would otherwise reach.
+    Every other test here stubs the server, and none of them can see the two
+    failures this guards. A browser opened while the socket did not yet exist
+    puts a refused connection on screen; only a real bind settles that ordering.
+    And a backend that ends its own run by interrupting itself hands the
+    interrupt to its caller once the server gives the handler back, so the
+    launch dies on the line after the run instead of printing what it captured.
+    The interrupt is left armed here on purpose -- that is the arrangement under
+    which the process this test runs in is the one that would take it.
     """
     answered: list[int] = []
+    receipts: list[dict[str, Any]] = []
 
     def open_and_end(url: str) -> bool:
         answered.append(httpx.get(url, timeout=10).status_code)
-        stop_this_process()
+        ended = end_session(url)
+        answered.append(ended.status_code)
+        receipts.extend(ended.json())
         return True
 
     stream = io.StringIO()
-    interrupt = signal.signal(signal.SIGINT, lambda _signal, _frame: None)
-    try:
-        status = launch(
+    status = launch(
+        session_dir,
+        handoff=started(session_dir),
+        open_browser=True,
+        open_url=open_and_end,
+        out=stream,
+    )
+
+    assert status == 0
+    assert answered == [200, 200]
+    assert [receipt["status"] for receipt in receipts] == ["accepted"]
+    assert "summary" in stream.getvalue()
+
+
+def test_a_ctrl_c_the_backend_did_not_send_aborts_without_a_result(session_dir: Path) -> None:
+    """
+    Given a real server that the human interrupts
+    When the interrupt is not the backend answering an end-session gesture
+    Then the run aborts and prints no result.
+
+    A Ctrl-C is someone abandoning the session, not finishing it. Ending the run
+    on the gesture must not turn every interrupt into a terminal result, which
+    would report a grilling as settled because the human walked away from it.
+    """
+    stream = io.StringIO()
+
+    def interrupt_the_run(url: str) -> bool:
+        assert httpx.get(url, timeout=10).status_code == 200
+        os.kill(os.getpid(), signal.SIGINT)
+        return True
+
+    with pytest.raises(KeyboardInterrupt):
+        launch(
             session_dir,
             handoff=started(session_dir),
             open_browser=True,
-            open_url=open_and_end,
+            open_url=interrupt_the_run,
             out=stream,
         )
-    finally:
-        signal.signal(signal.SIGINT, interrupt)
 
-    assert status == 0
-    assert answered == [200]
-    assert "summary" in stream.getvalue()
+    printed = stream.getvalue()
+    assert printed.startswith(f"http://{LOOPBACK}:")
+    assert printed.splitlines()[1:] == [], "the URL was printed, and nothing after it"
+    assert not (session_dir / RESULT_FILE).exists()
 
 
 def test_the_port_the_server_is_given_is_the_port_in_the_url(session_dir: Path) -> None:
@@ -302,7 +352,7 @@ def test_the_port_the_server_is_given_is_the_port_in_the_url(session_dir: Path) 
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda _app, port, _ready: bound.append(port),
+        run=lambda _app, port, _ready, _stop: bound.append(port),
         open_url=lambda _url: True,
         out=stream,
     )
@@ -324,7 +374,7 @@ def test_the_board_the_server_is_handed_refuses_non_loopback(session_dir: Path) 
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port, _ready: apps.append(app),
+        run=lambda app, _port, _ready, _stop: apps.append(app),
         open_url=lambda _url: True,
         out=io.StringIO(),
     )
@@ -358,7 +408,7 @@ def test_the_launch_returns_on_backend_exit_and_never_on_a_timer(
     stream = io.StringIO()
     during: list[str] = []
 
-    def exit_now(_app: ASGIApp, _port: int, _ready: Callable[[], None]) -> None:
+    def exit_now(_app: ASGIApp, _port: int, _ready: Callable[[], None], _stop: RunStop) -> None:
         during.append(stream.getvalue())
 
     assert launch(session_dir, handoff=started(session_dir), run=exit_now, out=stream) == 0
@@ -378,13 +428,15 @@ def test_the_human_ending_the_session_stops_the_run(session_dir: Path) -> None:
     """
     apps: list[ASGIApp] = []
     stopped: list[bool] = []
+    stop = RunStop()
+    stop.arm(lambda: stopped.append(True))
 
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port, _ready: apps.append(app),
+        run=lambda app, _port, _ready, _stop: apps.append(app),
         open_url=lambda _url: True,
-        stop=lambda: stopped.append(True),
+        stop=stop,
         out=io.StringIO(),
     )
     client = TestClient(apps[0], client=(LOOPBACK, 51000))
@@ -446,7 +498,7 @@ def test_what_the_launch_prints_is_the_result_and_never_the_transcript(
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda _app, _port, _ready: None,
+        run=lambda _app, _port, _ready, _stop: None,
         open_url=lambda _url: True,
         out=stream,
     )
@@ -513,9 +565,9 @@ def test_stdout_and_the_result_file_are_the_same_bytes(session_dir: Path) -> Non
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port, _ready: apps.append(app),
+        run=lambda app, _port, _ready, _stop: apps.append(app),
         open_url=lambda _url: True,
-        stop=lambda: None,
+        stop=RunStop(),
         out=io.StringIO(),
     )
     client = TestClient(apps[0], client=(LOOPBACK, 51000))
@@ -545,14 +597,17 @@ def test_a_failing_stop_hook_does_not_poison_the_end_receipt(
     """
     apps: list[ASGIApp] = []
 
-    def failing_stop() -> None:
+    def refuse_to_die() -> None:
         death = "the process refused to die"
         raise RuntimeError(death)
+
+    failing_stop = RunStop()
+    failing_stop.arm(refuse_to_die)
 
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port, _ready: apps.append(app),
+        run=lambda app, _port, _ready, _stop: apps.append(app),
         open_url=lambda _url: True,
         stop=failing_stop,
         out=io.StringIO(),
