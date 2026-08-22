@@ -2409,3 +2409,27 @@ def test_the_ending_tries_the_tab_and_says_so_when_the_tab_stays() -> None:
     assert page_source().count("window.close()") == 1, "a second path closes the tab"
     ended = page_source().split('banners += \'<div class="banner">🏁', 1)[1].split("}", 1)[0]
     assert "close this tab" in ended
+
+
+def test_the_board_is_sized_by_the_window_rather_than_by_a_constant() -> None:
+    """Two panes that fill the window they are in, on both axes.
+
+    A pixel height is a guess about a window nobody has opened yet, and it is
+    wrong in both directions: it scrolls the whole page on a laptop and wastes
+    the bottom half of a tall monitor. The chain is what matters -- the shell
+    takes the viewport's height, the surface takes what the header leaves, its
+    single row is capped at that, and only the two scrolling panes absorb the
+    rest -- so each link is pinned. Whether the panes then move with the window
+    is the resize probe's answer; a stylesheet cannot give it.
+    """
+    source = page_source()
+    assert "height: 100vh; height: 100dvh; display: flex; flex-direction: column; }" in source
+    assert "grid-template-rows: minmax(0, 1fr);" in source
+    assert "flex: 1 1 auto; min-height: 360px; }" in source
+    assert "display: flex; flex-direction: column; min-height: 0; }" in source
+    for pane in (".mapscroll { position: relative;", ".column { position: relative;"):
+        assert f"{pane} flex: 1 1 auto; min-height: 0;" in source, f"{pane} is not window-sized"
+    # The chrome around the panes keeps its own size, or it is what shrinks.
+    for fixed in (".card > h3 { flex: none;", ".maplegend { flex: none;"):
+        assert fixed in source, f"{fixed} does not hold its height"
+    assert "640px" not in source, "a fixed pane height is back"
