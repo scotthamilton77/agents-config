@@ -1009,10 +1009,11 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A9** A rejected human action renders a page-level banner naming the reason and
   stating the message was not recorded, verified in a browser rather than by inspecting
   the code that constructs it.
-- **GUI-A10** Human turn accepted to status entry appended is under 10 ms measured from
-  the log's own timestamps, with no model call on the path, and the entries appear as
-  accepted then composing naming the dispatching tier; a run configured with an
-  unreachable agent still produces the accepted and error status entries in that window.
+- **GUI-A10** The accepted and composing status entries are appended under the same lock
+  as the human turn, at the two sequence numbers that follow it, before any driver is
+  invoked — the dispatching tier's own first sight of the log already holds them — with no
+  model call on the path, and composing names the dispatching tier; a run configured with
+  an unreachable agent still produces the accepted and error status entries the same way.
 - **GUI-A11** An agent-authored thread with no human turn produces no status lane entry
   and no dispatch, while a human turn in the same thread produces both.
 - **GUI-A12** For each of the three GUI-D12 conditions, a scripted transcript satisfying it
@@ -1418,7 +1419,7 @@ opens one proves something else.
 - GUI-A7 | open
 - GUI-A8 | open
 - GUI-A9 | open
-- GUI-A10 | open
+- GUI-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_lane_lands_with_the_human_turn_rather_than_with_the_reply
 - GUI-A11 | open
 - GUI-A12 | open
 - GUI-A13 | open
