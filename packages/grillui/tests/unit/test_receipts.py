@@ -27,6 +27,7 @@ from grillui.schemas import (
     REASON_THREAD_WITHOUT_TURN,
     REASON_UNKNOWN_KIND,
     REASON_UNKNOWN_NODE,
+    REASON_UNKNOWN_OPTION,
     REASON_UNKNOWN_PENDING,
     REASON_UNKNOWN_THREAD,
     REJECTION_REASONS,
@@ -150,6 +151,20 @@ def _refuse_empty_answer(client: TestClient, log: SessionLog) -> dict[str, Any]:
     )[0]
 
 
+def _refuse_unknown_option(client: TestClient, log: SessionLog) -> dict[str, Any]:
+    return post(
+        client,
+        log.epoch,
+        event(
+            "answer",
+            actor="human",
+            key="k1",
+            target=SEED_NODE,
+            answer={"option": "z", "text": None},
+        ),
+    )[0]
+
+
 def _refuse_thread_without_turn(client: TestClient, log: SessionLog) -> dict[str, Any]:
     return post(client, log.epoch, event("thread-turn", actor="human", channel="t1", key="k1"))[0]
 
@@ -242,6 +257,7 @@ REFUSALS: dict[str, Callable[[TestClient, SessionLog], dict[str, Any]]] = {
     REASON_UNKNOWN_KIND: _refuse_unknown_kind,
     REASON_UNKNOWN_NODE: _refuse_unknown_node,
     REASON_EMPTY_ANSWER: _refuse_empty_answer,
+    REASON_UNKNOWN_OPTION: _refuse_unknown_option,
     REASON_THREAD_WITHOUT_TURN: _refuse_thread_without_turn,
     REASON_THREAD_MAP_MUTATION: _refuse_thread_map_mutation,
     REASON_UNKNOWN_PENDING: _refuse_unknown_pending,
@@ -312,3 +328,128 @@ def test_a_map_mutation_on_the_map_channel_from_the_grill_master_is_accepted(
     receipt = post(client, log.epoch, event("revise", key="k1", target=SEED_NODE))[0]
 
     assert receipt["status"] == "accepted"
+
+
+def board_decision(client: TestClient, node_id: str = SEED_NODE) -> dict[str, Any]:
+    """One decision as image 1 states it -- what the human and the next agent
+    read, rather than what a receipt claimed."""
+    image = client.get("/image1").json()
+    return next(node for node in image["decisions"] if node["id"] == node_id)
+
+
+def test_an_answer_naming_an_option_the_decision_does_not_offer_leaves_the_board_open(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a decision offering the options `a` and `b`
+    When an answer names option `z`
+    Then the receipt names the unknown-option reason and both the id sent and
+         the ids offered, nothing is appended, and the decision is still open
+         with no answer against it.
+
+    The empty-answer refusal does not reach this one: the answer carries an
+    option, so without a check of its own the board settles onto a choice the
+    page cannot render, and image 1 shows a decision answered with nothing.
+    """
+    seed_node(client, log.epoch)
+    before = log.entries()
+
+    receipt = _refuse_unknown_option(client, log)
+
+    assert receipt["status"] == "rejected"
+    assert receipt["reason"] == REASON_UNKNOWN_OPTION
+    assert "'z'" in receipt["detail"]
+    assert "'a'" in receipt["detail"]
+    assert "'b'" in receipt["detail"]
+    assert log.entries() == before
+    assert board_decision(client)["status"] == "open"
+    assert board_decision(client)["answer"] is None
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        pytest.param({"option": "b", "text": None}, id="an-option-the-decision-offers"),
+        pytest.param({"option": None, "text": "neither of those"}, id="text-alone"),
+    ],
+)
+def test_an_answer_the_decision_can_carry_is_still_accepted(
+    answer: dict[str, Any], client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given the decision the unknown-option refusal is provoked against
+    When the answer names an offered option, or carries text alone
+    Then it is accepted and the decision settles.
+
+    The negative control for the option check: a refusal that fired for every
+    answer would look as correct as one that fired for the right one, and
+    answering in prose -- how a human says none of the options fits -- would
+    stop working.
+    """
+    seed_node(client, log.epoch)
+
+    receipt = post(
+        client,
+        log.epoch,
+        event("answer", actor="human", key="k1", target=SEED_NODE, answer=answer),
+    )[0]
+
+    assert receipt["status"] == "accepted", receipt
+    assert board_decision(client)["status"] == "settled"
+
+
+NEW_OPTIONS = [{"id": "c", "text": "A second log"}, {"id": "d", "text": "No store at all"}]
+
+
+def answer_with(client: TestClient, log: SessionLog, option: str, key: str) -> dict[str, Any]:
+    return post(
+        client,
+        log.epoch,
+        event(
+            "answer",
+            actor="human",
+            key=key,
+            target=SEED_NODE,
+            answer={"option": option, "text": None},
+        ),
+    )[0]
+
+
+def test_a_revise_waiting_on_the_human_does_not_change_which_options_an_answer_may_name(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a settled decision offering `a` and `b`, and an agent's revise
+          offering `c` and `d` that is waiting in the queue
+    When the human answers while it waits, and again after applying it
+    Then the options an answer may name are the ones image 1 shows: `a` and `b`
+         while the proposal waits, `c` and `d` once it lands.
+
+    The option check reads the board, not the log. An appender that took the
+    proposal's bytes as they arrived would refuse the option the human is
+    looking at and accept one only the agent has seen -- and a proposal the
+    human dismisses would change what the board accepts having changed nothing
+    the board shows.
+    """
+    seed_node(client, log.epoch)
+    assert answer_with(client, log, "b", "settling")["status"] == "accepted"
+    post(client, log.epoch, event("revise", key="proposal", target=SEED_NODE, options=NEW_OPTIONS))
+    assert proposed(client, SEED_NODE), "the revise must be waiting, not landed"
+    assert [option["id"] for option in board_decision(client)["options"]] == ["a", "b"]
+
+    assert answer_with(client, log, "a", "while-it-waits")["status"] == "accepted"
+    refused = answer_with(client, log, "c", "not-offered-yet")
+    assert refused["status"] == "rejected"
+    assert refused["reason"] == REASON_UNKNOWN_OPTION
+
+    # Those answers moved the board under the waiting proposal, so it is now in
+    # conflict and the agent sends it again -- the queue's own rule, not this
+    # test working around one.
+    post(client, log.epoch, event("revise", key="again", target=SEED_NODE, options=NEW_OPTIONS))
+    queue_gesture(client, log.epoch, APPLY_KIND, proposed(client, SEED_NODE)[-1], key="applying")
+
+    assert [option["id"] for option in board_decision(client)["options"]] == ["c", "d"]
+    assert answer_with(client, log, "c", "now-offered")["status"] == "accepted"
+    stale = answer_with(client, log, "a", "no-longer-offered")
+    assert stale["status"] == "rejected"
+    assert stale["reason"] == REASON_UNKNOWN_OPTION
