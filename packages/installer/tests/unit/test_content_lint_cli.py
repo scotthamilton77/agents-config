@@ -218,19 +218,34 @@ def test_src_that_is_not_a_directory_is_a_named_failure(
     assert str(tmp_path / "src") in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("root", "tree"),
+    [
+        ("src/plugins", ".agents"),
+        ("src/user/.agents", ".claude"),
+        ("src/user/.claude", ".agents"),
+    ],
+)
 def test_one_staging_root_that_is_not_a_directory_names_that_root(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], root: str, tree: str
 ) -> None:
     """The partial case is the dangerous one: the rest of the tree measures and
     passes while everything under the broken root vanishes from the plans, so the
-    verdict has to name the root that went unread rather than report a total."""
-    repo = _repo(tmp_path, skill=_RECORD + "short\n")
-    (repo / "src" / "plugins").write_text("not a tree\n", encoding="utf-8")
+    verdict has to name the root that went unread rather than report a total.
+
+    Every channel is covered, not one of them: the plugins root, the shared tree
+    and a tool's own tree each reach staging by a different route, and ``tree``
+    puts the surviving content somewhere other than the root being clobbered.
+    """
+    repo = _repo(tmp_path, skill=_RECORD + "short\n", tree=tree)
+    target = repo / root
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("not a tree\n", encoding="utf-8")
 
     assert main([str(repo)]) == 2
 
     captured = capsys.readouterr()
-    assert str(repo / "src" / "plugins") in captured.err
+    assert str(target) in captured.err
     # The measurements must not print: numbers over a tree the gate could not
     # read are the failure this names, not context for it.
     assert "always-on surface" not in captured.out
