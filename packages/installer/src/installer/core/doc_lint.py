@@ -114,6 +114,10 @@ EXEMPT_TREES: dict[Path, str] = {
     Path("docs/specs"): (
         "a spec is a point-in-time proposal and is supposed to name what does not exist yet"
     ),
+    Path("docs/research/spec-science"): (
+        "analyses converted from external sources, whose worked examples cite codebases "
+        "that are not this one"
+    ),
 }
 
 # The documents read in spite of the rules above, mapped to nothing because the
