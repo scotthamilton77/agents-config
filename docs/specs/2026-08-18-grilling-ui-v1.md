@@ -530,29 +530,28 @@ follows, and changes nothing else.
   block-sized target fires on every pass of the pointer towards a control inside it, so the
   overlay covers the options at the moment the human is reaching for one. The overlay obeys
   the hover discipline of GUI-U6.
-- **GUI-U25 — The option in hand marks what it would put in question, and the mark is the
-  page's alone.** While the human has an option in hand — the pointer or the keyboard on
-  that option's own control, an option a taken proposal marked (GUI-D33), or an option
-  standing as a held answer behind a mandated thread — every decision that option's
-  `puts_in_question` (§8.2) names wears a provisional mark, on the map and on its own block,
-  reading as *the option you are holding would put this in question*. The mark is
-  presentation state in the sense of GUI-U10: it crosses no wire, appends nothing, and a
-  reload with nothing in hand comes back to a board without it. One option is in hand at a
-  time, and the sources rank: the pointer on an option's control, else keyboard focus on
-  one, else an armed option, else a held one — the pointer leaving or focus moving falls
-  back to the next source that holds, and the marks are that one option's, replaced rather
-  than unioned. It clears when another option comes into hand, when none is, and when the
-  answer lands — after an answer the board says what image 1 says and nothing more. It is
-  drawn distinctly from both states it could be read as: a pending hold (GUI-D26), which is a change the agent authored and the
-  human must apply or dismiss, and `stale`, which is a decision already undermined. A
-  decision wearing only the pre-mark is on the frontier and answerable as it was, and no
-  notification is raised (GUI-U15). GUI-U19's small hover target is a rule about an overlay,
+- - **GUI-U25 — The option in hand marks what it would put in question, and the mark is the page's
+  alone.** While the human has an option in hand — the pointer or the keyboard on that option's own
+  control, an option a taken proposal marked (GUI-D33), or an option standing as a held answer
+  behind a mandated thread — every decision that option's `puts_in_question` (§8.2) names wears a
+  provisional mark, on the map and on its own block, reading as *the option you are holding would
+  put this in question*. The mark is presentation state in the sense of GUI-U10: it crosses no
+  wire, appends nothing, and a reload with nothing in hand comes back to a board without it. One
+  option is in hand at a time, and the sources rank: the pointer on an option's control, else
+  keyboard focus on one, else an armed option, else a held one — the pointer leaving or focus
+  moving falls back to the next source that holds, and the marks are that one option's, replaced
+  rather than unioned. It clears when another option comes into hand, when none is, and when the
+  answer lands — after an answer the board says what image 1 says and nothing more. It is drawn
+  distinctly from both states it could be read as: a pending hold (GUI-D26), which is a change the
+  agent authored and the human must apply or dismiss, and `stale`, which is a decision already
+  undermined. A decision wearing only the pre-mark is on the frontier and answerable as it was, and
+  no notification is raised (GUI-U15). GUI-U19's small hover target is a rule about an overlay,
   which occludes the options it is raised over; this mark is drawn away from the pointer and
-  occludes nothing, so the whole of an option's control is its target. Splitting the answer
-  into a select step and a send step, to give the mark a longer interval to live in, is
-  refused: the option's control *is* the answer control (GUI-U5) and GUI-D33 rests on that,
-  so the split adds a press to every answer on the board to lengthen a warning whose whole
-  value is that it arrives before the first one.
+  occludes nothing, so the whole of an option's control is its target. Splitting the answer into a
+  select step and a send step, to give the mark a longer interval to live in, is refused: the
+  option's control *is* the answer control (GUI-U5) and GUI-D33 rests on that, so the split adds a
+  press to every answer on the board to lengthen a warning whose whole value is that it arrives
+  before the first one.
 - **GUI-U20 — A decision taller than its pane keeps its header in view.** While any part of
   a decision is in view in the decisions pane, a floating header carrying that decision's id
   and title stays pinned at the top of the pane; it releases when the decision has scrolled
