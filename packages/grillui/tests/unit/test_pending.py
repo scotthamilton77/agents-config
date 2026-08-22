@@ -476,12 +476,12 @@ def test_a_reply_that_is_neither_an_update_nor_a_withdrawal_is_prose() -> None:
     Then it is what the agent said, and nothing was declared.
 
     Guessing at a half-shaped object would author board changes -- or clear a
-    queue -- out of a reply that asked for neither.
+    queue, or answer a decision -- out of a reply that asked for none of them.
     """
-    assert declared_updates('{"text": "just prose"}') == ('{"text": "just prose"}', [], [])
-    assert declared_updates("plain words") == ("plain words", [], [])
+    assert declared_updates('{"text": "just prose"}') == ('{"text": "just prose"}', [], [], None)
+    assert declared_updates("plain words") == ("plain words", [], [], None)
     half_shaped = '```json\n{"text": "just prose"}\n```'
-    assert declared_updates(half_shaped) == (half_shaped, [], [])
+    assert declared_updates(half_shaped) == (half_shaped, [], [], None)
 
 
 def test_a_fenced_object_reply_lands_as_the_updates_it_declared(log: SessionLog) -> None:

@@ -241,6 +241,26 @@ THREAD_AGENT_MANDATE = (
     "refused."
 )
 
+# When a thread agent may offer its decision's answer, and how. The condition is
+# stated as a property of the human's turns rather than as a judgment call,
+# because a licence to compose is a licence to decide -- and the offer is framed
+# as a thing the turn does rather than a thing it asks, so the human is never
+# handed the work of declining one.
+CONVERGENCE_RULE = (
+    "When the human's own turns already carry the answer to this thread's anchor decision -- "
+    "they stated the qualification themselves, or accepted in their own words one you put to "
+    "them -- write it back as a `proposed_answer` object beside `text`: `decision`, this "
+    "thread's anchor decision id; `option`, an option the decision already carries, or null "
+    "where the answer stands on none; `text`, the answer in their words; and `because`, one "
+    "line on why the thread reached it. Restating what they said is the whole of the licence. "
+    "Composing an answer they have not endorsed is you deciding and calling it convergence, "
+    "and proposing an option the decision does not carry is a change to the map, which is not "
+    "yours to make. One proposal per turn, on this thread's anchor decision, built on an "
+    "option the decision already carries, or none. Never ask whether to write one: say what "
+    "you take the thread to have settled and stop. The offer is the affordance, and putting "
+    "it as a question hands them the work of declining it."
+)
+
 FAST_SYSTEM_PROMPT = "\n\n".join(
     [FACILITATION_MANDATE, NO_MANUFACTURE_RULE, CONCISION_RULE, DIALOGUE_RULE, ONE_TURN_RULE]
 )
@@ -263,7 +283,7 @@ def system_prompt(tier: str, agent: str) -> str:
     sole-author rule cannot ride on the tier's prompt alone.
     """
     if agent == THREAD_AGENT:
-        return "\n\n".join([THREAD_AGENT_MANDATE, SYSTEM_PROMPTS[tier]])
+        return "\n\n".join([THREAD_AGENT_MANDATE, SYSTEM_PROMPTS[tier], CONVERGENCE_RULE])
     return "\n\n".join([SYSTEM_PROMPTS[tier], MUTATION_FORMAT_RULE, BASIS_RULE, SUPERSEDE_RULE])
 
 

@@ -20,6 +20,7 @@ from grillui.schemas import (
     APPLY_KIND,
     REASON_EMPTY_ANSWER,
     REASON_EPOCH_MISMATCH,
+    REASON_FOREIGN_THREAD,
     REASON_MISSING_KEY,
     REASON_PENDING_CONFLICT,
     REASON_THREAD_MAP_MUTATION,
@@ -169,6 +170,38 @@ def _refuse_unknown_thread(client: TestClient, log: SessionLog) -> dict[str, Any
     )[0]
 
 
+def _open_a_thread_on_another_decision(client: TestClient, log: SessionLog) -> None:
+    """A thread anchored to a decision that is not the one about to be answered."""
+    seed_node(client, log.epoch, "n2")
+    post(
+        client,
+        log.epoch,
+        event(
+            "thread-created",
+            actor="human",
+            channel="t-elsewhere",
+            key="opened",
+            decision="n2",
+            turns=[{"who": "human", "text": "Say more about compaction."}],
+        ),
+    )
+
+
+def _refuse_foreign_thread(client: TestClient, log: SessionLog) -> dict[str, Any]:
+    return post(
+        client,
+        log.epoch,
+        event(
+            "answer",
+            actor="human",
+            key="k1",
+            target=SEED_NODE,
+            answer={"text": "an append-only log"},
+            from_thread="t-elsewhere",
+        ),
+    )[0]
+
+
 def _refuse_unknown_pending(client: TestClient, log: SessionLog) -> dict[str, Any]:
     return queue_gesture(client, log.epoch, APPLY_KIND, "no-such-proposal#0", key="k1")
 
@@ -199,6 +232,7 @@ def _refuse_pending_conflict(client: TestClient, log: SessionLog) -> dict[str, A
 # before the log is snapshotted, and the refused write is the only thing after.
 SETUPS: dict[str, Callable[[TestClient, SessionLog], None]] = {
     REASON_PENDING_CONFLICT: _leave_a_conflicted_proposal,
+    REASON_FOREIGN_THREAD: _open_a_thread_on_another_decision,
 }
 
 
@@ -212,6 +246,7 @@ REFUSALS: dict[str, Callable[[TestClient, SessionLog], dict[str, Any]]] = {
     REASON_THREAD_MAP_MUTATION: _refuse_thread_map_mutation,
     REASON_UNKNOWN_PENDING: _refuse_unknown_pending,
     REASON_UNKNOWN_THREAD: _refuse_unknown_thread,
+    REASON_FOREIGN_THREAD: _refuse_foreign_thread,
     REASON_PENDING_CONFLICT: _refuse_pending_conflict,
 }
 

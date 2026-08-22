@@ -93,13 +93,19 @@ class LogIndex:
     last_seq: int = 0
     keys: dict[str, int] = field(default_factory=dict)
     nodes: set[str] = field(default_factory=set)
-    threads: set[str] = field(default_factory=set)
+    # Thread id to the decision it anchors, or None for a session-scoped one.
+    # The anchor is here rather than only in the fold because an answer's
+    # provenance is judged at append time: whether the thread this answer was
+    # armed from is the thread that asked this question decides whether the
+    # entry lands at all.
+    threads: dict[str, str | None] = field(default_factory=dict)
 
     def absorb(self, entry: LogEntry) -> None:
         self.last_seq = entry.seq
         self.keys[entry.idempotency_key] = entry.seq
         if entry.kind == "thread-created":
-            self.threads.add(entry.channel)
+            anchor = entry.payload.get("decision")
+            self.threads[entry.channel] = anchor if isinstance(anchor, str) else None
         elif entry.kind == "add-node":
             self._mint(entry.payload)
         elif entry.kind == SESSION_START_KIND:

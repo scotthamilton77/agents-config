@@ -1266,9 +1266,9 @@ opens one proves something else.
 - GUI-A62 | open
 - GUI-A63 | open
 - GUI-A64 | open
-- GUI-A65 | open
-- GUI-A66 | open
+- GUI-A65 | test: packages/grillui/tests/unit/test_convergence.py::test_a_proposal_riding_a_turn_records_the_prose_and_projects_onto_that_turn
+- GUI-A66 | test: packages/grillui/tests/unit/test_convergence.py::test_each_convergence_of_the_fixture_session_is_one_proposal_recording_what_it_carried
 - GUI-A67 | open
 - GUI-A68 | open
-- GUI-A69 | open
+- GUI-A69 | test: packages/grillui/tests/unit/test_convergence.py::test_a_live_proposal_queues_nothing_and_holds_nothing
 - GUI-A70 | open
