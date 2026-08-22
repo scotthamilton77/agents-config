@@ -79,6 +79,13 @@ REASON_PENDING_CONFLICT = "pending update conflicts with the board"
 # vanishes without the sender learning the id was wrong.
 REASON_UNKNOWN_THREAD = "unknown thread id"
 
+# An answer settles a decision onto one of the options that decision offers. One
+# naming an option id the decision never offered is well-formed and refused
+# anyway: it is not an empty answer -- it carries an option -- and taking it
+# would settle the board onto a choice nobody can read back, since the page
+# renders the answer against the options the node has.
+REASON_UNKNOWN_OPTION = "option the decision does not offer"
+
 # An answer says which thread it was armed from, and that provenance closes the
 # thread in the same entry. A thread anchored to some other decision is
 # well-formed and refused anyway: closing it would end a conversation about a
@@ -99,6 +106,7 @@ REJECTION_REASONS = frozenset(
         REASON_PENDING_CONFLICT,
         REASON_UNKNOWN_THREAD,
         REASON_FOREIGN_THREAD,
+        REASON_UNKNOWN_OPTION,
     }
 )
 
@@ -1081,23 +1089,26 @@ def batch_payload_problem(submissions: Sequence[EventSubmission]) -> str | None:
     return None
 
 
-def fold_outcomes(submission: EventSubmission, known_nodes: Set[str]) -> list[FoldOutcome]:
+def fold_outcomes(
+    submission: EventSubmission, known_nodes: Mapping[str, Set[str]]
+) -> list[FoldOutcome]:
     """Judge every sub-update of a fold together, all-or-none.
 
-    The sub-updates are judged in order against a node set that grows as they
-    go, so an add-node earlier in the gesture is a node the ones after it may
-    name. One refusal vetoes the gesture: the refused sub-update carries its own
-    reason and every other carries a veto naming it, so a reader of the receipt
-    can tell which sub-update was the problem from the receipt alone.
+    The sub-updates are judged in order against a board that grows as they go,
+    so an add-node earlier in the gesture is a node the ones after it may name,
+    and a revise earlier in it is the option trio the ones after it answer
+    against. One refusal vetoes the gesture: the refused sub-update carries its
+    own reason and every other carries a veto naming it, so a reader of the
+    receipt can tell which sub-update was the problem from the receipt alone.
     """
-    nodes = set(known_nodes)
+    nodes = dict(known_nodes)
     outcomes: list[FoldOutcome] = []
     for update in submission.payload.get("updates", []):
         kind = str(update.get("kind"))
         target = update.get("target")
         problem = _sub_update_problem(submission, kind, update, nodes)
-        if kind == "add-node" and isinstance(target, str):
-            nodes.add(target)
+        if isinstance(target, str) and (kind == "add-node" or update.get("options") is not None):
+            nodes[target] = option_ids(update)
         outcomes.append(
             FoldOutcome(
                 kind=kind,
@@ -1124,7 +1135,10 @@ def fold_outcomes(submission: EventSubmission, known_nodes: Set[str]) -> list[Fo
 
 
 def _sub_update_problem(
-    submission: EventSubmission, kind: str, update: Mapping[str, Any], nodes: Set[str]
+    submission: EventSubmission,
+    kind: str,
+    update: Mapping[str, Any],
+    nodes: Mapping[str, Set[str]],
 ) -> tuple[str, str] | None:
     """A sub-update is judged exactly as the same update would be on its own,
     once it is established that a fold may carry it at all. A fold does not
@@ -1143,6 +1157,22 @@ def _sub_update_problem(
         nodes,
         # A fold carries no thread event, so no thread id is ever judged here.
         {},
+    )
+
+
+def option_ids(payload: Mapping[str, Any]) -> frozenset[str]:
+    """The option ids a decision payload offers, read leniently.
+
+    Read from the payload rather than from the projected node so that an answer
+    is judged against the same bytes the appender already holds: the shape is
+    the same wherever a decision is stated -- an add-node, a handoff decision,
+    a revise that replaces the trio.
+    """
+    offered = payload.get("options")
+    return frozenset(
+        str(one["id"])
+        for one in (offered if isinstance(offered, list) else [])
+        if isinstance(one, Mapping) and one.get("id")
     )
 
 
@@ -1171,9 +1201,14 @@ def mint_targets(payload: Mapping[str, Any], kind: str, seq: int) -> dict[str, A
 
 
 def rejection_reason(
-    submission: EventSubmission, known_nodes: Set[str], known_threads: Mapping[str, str | None]
+    submission: EventSubmission,
+    known_nodes: Mapping[str, Set[str]],
+    known_threads: Mapping[str, str | None],
 ) -> tuple[str, str] | None:
     """Judge one submission's content, returning `(reason, detail)` or None.
+
+    `known_nodes` maps each decision on the board to the option ids it offers,
+    which is what lets an answer be judged against the question it settles.
 
     The missing-key and epoch-mismatch reasons are decided by the appender,
     which is what holds the key index and the epoch; everything else is a
@@ -1226,9 +1261,10 @@ def rejection_reason(
         return (REASON_UNKNOWN_NODE, f"no decision node {target!r} exists in this session")
 
     if submission.kind in ANSWER_KINDS or "answer" in submission.payload:
-        return _answer_problem(submission.payload.get("answer")) or _from_thread_problem(
-            submission, known_threads
-        )
+        return _answer_problem(
+            submission.payload.get("answer"),
+            known_nodes.get(target) if isinstance(target, str) else None,
+        ) or _from_thread_problem(submission, known_threads)
 
     return None
 
@@ -1404,10 +1440,24 @@ def _thread_turn_problem(submission: EventSubmission) -> tuple[str, str] | None:
     )
 
 
-def _answer_problem(answer: object) -> tuple[str, str] | None:
-    if isinstance(answer, Mapping) and (answer.get("option") or answer.get("text")):
-        return None
-    return (
-        REASON_EMPTY_ANSWER,
-        "an answer must carry an option id, answer text, or both",
-    )
+def _answer_problem(answer: object, offered: Set[str] | None) -> tuple[str, str] | None:
+    """An answer says something, and what it says is an option the decision has.
+
+    `offered` is None when the decision is not on the board -- the unknown-node
+    refusal has already spoken for that -- and an answer of text alone names no
+    option to check, which is how a human answers a question none of the
+    offered options fits.
+    """
+    if not isinstance(answer, Mapping) or not (answer.get("option") or answer.get("text")):
+        return (
+            REASON_EMPTY_ANSWER,
+            "an answer must carry an option id, answer text, or both",
+        )
+    option = answer.get("option")
+    if option and offered is not None and option not in offered:
+        return (
+            REASON_UNKNOWN_OPTION,
+            f"{option!r} is not an option this decision offers; it offers "
+            f"{sorted(offered) if offered else 'none'}",
+        )
+    return None

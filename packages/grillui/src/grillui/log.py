@@ -10,9 +10,9 @@ continues the sequence that directory already reached. Sequence numbers are
 never reset and never client-supplied.
 
 Nothing here folds a projection. The appender's own indexes -- the idempotency
-key index and the set of node ids that exist -- are the two questions a write
-has to be judged against, and they are maintained entry by entry so that judging
-a write never reads a file.
+key index, and the decisions that exist with the options each of them offers --
+are the questions a write has to be judged against, and they are maintained
+entry by entry so that judging a write never reads a file.
 
 One thing here does reach for the projector: an add-node's receipt echoes the
 node it minted, built by the same reader the fold will use on the same durable
@@ -56,6 +56,7 @@ from grillui.schemas import (
     RejectedReceipt,
     fold_outcomes,
     mint_targets,
+    option_ids,
     rejection_reason,
 )
 
@@ -86,13 +87,22 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
+# The two kinds that state what a decision is: one mints it, the other replaces
+# what it offers. Both are what the index reads a node's options from.
+NODE_STATING_KINDS = frozenset({"add-node", "revise"})
+
+
 @dataclass
 class LogIndex:
     """What a write is judged against, folded forward one entry at a time."""
 
     last_seq: int = 0
     keys: dict[str, int] = field(default_factory=dict)
-    nodes: set[str] = field(default_factory=set)
+    # Every decision the log has stated, mapped to the option ids it offers.
+    # The options are here rather than only in the fold because an answer's
+    # option is judged at append time: an answer onto an option the decision
+    # never offered settles the board onto a choice nobody can read back.
+    nodes: dict[str, frozenset[str]] = field(default_factory=dict)
     # Thread id to the decision it anchors, or None for a session-scoped one.
     # The anchor is here rather than only in the fold because an answer's
     # provenance is judged at append time: whether the thread this answer was
@@ -106,8 +116,8 @@ class LogIndex:
         if entry.kind == "thread-created":
             anchor = entry.payload.get("decision")
             self.threads[entry.channel] = anchor if isinstance(anchor, str) else None
-        elif entry.kind == "add-node":
-            self._mint(entry.payload)
+        elif entry.kind in NODE_STATING_KINDS:
+            self._state_node(entry.payload)
         elif entry.kind == SESSION_START_KIND:
             # A decision the briefing seeded is a decision on the board, so an
             # answer naming it is judged against the same node set as one
@@ -117,19 +127,23 @@ class LogIndex:
             decisions = plan.get("decisions", []) if isinstance(plan, dict) else []
             for decision in decisions:
                 if isinstance(decision, dict):
-                    self._mint(decision)
+                    self._state_node(decision)
         elif entry.kind in FOLD_SHAPED:
             # A node minted inside a fold is a node the board has, so an update
             # after the gesture may name it. Missing it here would refuse the
             # agent's next turn against a decision the human can already see.
             for update in entry.payload.get("updates", []):
-                if isinstance(update, dict) and update.get("kind") == "add-node":
-                    self._mint(update)
+                if isinstance(update, dict) and update.get("kind") in NODE_STATING_KINDS:
+                    self._state_node(update)
 
-    def _mint(self, payload: Mapping[str, Any]) -> None:
+    def _state_node(self, payload: Mapping[str, Any]) -> None:
+        """The node this payload states, with the options it offers. A revise
+        that supplies no options leaves the ones the decision already has."""
         minted = payload.get("target") or payload.get("id")
-        if isinstance(minted, str):
-            self.nodes.add(minted)
+        if isinstance(minted, str) and (
+            minted not in self.nodes or payload.get("options") is not None
+        ):
+            self.nodes[minted] = option_ids(payload)
 
 
 class SessionLog:
