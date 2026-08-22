@@ -387,7 +387,8 @@ follows, and changes nothing else.
   thread's, and it is always active. It is visually highlighted when the agent's reply
   metadata recommends escalation (GUI-D11), and the human decides. Activating it forces the
   next turn on that channel to the heavy tier, carrying the accumulated thread. While the
-  heavy tier is driving that channel, activating it returns the channel to the fast tier;
+  heavy tier is driving that channel, activating it sends the next turn on that channel to
+  the fast tier instead;
   what the control reads in either position is GUI-U22's.
 - **GUI-U21 — Every agent turn is labelled by the tier that produced it.** On a thread and
   on the map channel alike, an agent turn renders as *fast agent* or *expert agent*, read
@@ -587,8 +588,9 @@ The current map snapshot: a pure fold, byte-identical for a given log.
 - `threads` — array of objects: `id`, `decision` (decision id or null), `kind`, `title`,
   `requires_action` (boolean), `state` (`open`, `parked`, `closed` or `folded`), and
   `turns` — array of objects: `who` (the §8.3 actor enum), `text` (string), `timestamp`
-  (string), and `tier` — optional string, `fast` or `heavy`, carried on an agent-authored
-  turn and absent on a human one. It is what makes a turn's tier label (GUI-U21) survive a
+  (string), and `tier` — optional string, `fast` or `heavy`, present exactly when `who` is
+  `grill-master` or `thread-agent` and absent when it is `human` or `backend`. It is what
+  makes a turn's tier label (GUI-U21) survive a
   reload: a page rejoining a session reads the board from this image rather than from the
   log entries it was not there for, and a turn projected without its tier can no longer be
   labelled by anything but the channel's current mode.
