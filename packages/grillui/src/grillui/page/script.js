@@ -1308,8 +1308,11 @@ function discussPending(id) {
   UI.panel = { kind: "thread", id: tid };
   render();
 }
+// Returns the thread it opened, so a caller that has to follow the new thread
+// -- a popped window, which cannot see the panel the main one moves -- learns
+// its name from the one place that mints it.
 function startThread(id, text) {
-  if (!text || !text.trim()) return;
+  if (!text || !text.trim()) return null;
   // No decision anchor is the session-scoped thread: the human is asking about
   // the board, not about a question on it. It gets the one name a session has
   // for it, so a second visit finds the first conversation rather than opening
@@ -1325,6 +1328,7 @@ function startThread(id, text) {
   }));
   UI.panel = { kind: "thread", id: tid };
   render();
+  return tid;
 }
 // Open the session thread if it exists, and otherwise stand a draft of it up.
 // Opening one says nothing: nothing is created until the human types.
@@ -1345,9 +1349,9 @@ function sayInThread(tid, text) {
 // what opens the thread, which is the state most seeds are written for.
 function saySeed(tid, id, field) {
   var d = node(id), text = d && d.talk ? d.talk[field] : "";
-  if (!text) return;
-  if (tid && thread(tid)) sayInThread(tid, text);
-  else if (id) startThread(id, text);
+  if (!text) return null;
+  if (tid && thread(tid)) { sayInThread(tid, text); return tid; }
+  return id ? startThread(id, text) : null;
 }
 // Finished means every decision the board is actually carrying is settled, and
 // settled is the only status that counts. That is the same reading the terminal
@@ -1808,6 +1812,13 @@ function sayBox(sayId, tid) {
     '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
     '<button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button></div>';
 }
+// Which decision a thread that does not exist yet would be about. One reader,
+// because the pane that renders the draft and the popped window that sends its
+// first turn have to name the same decision -- and a popped document is a copy,
+// so the anchor is worked out here rather than read back off the button.
+function draftAnchor(tid) {
+  return UI.draftFor && UI.draftFor.thread === tid ? UI.draftFor.decision : null;
+}
 // `chrome` is what the surrounding window pins beside the title — the slide-out
 // has a close and a pop-out, the popped window has neither. It rides in the head
 // rather than outside the pane so that it is pinned by the same rule as the
@@ -1818,7 +1829,7 @@ function threadBody(tid, forPop, chrome) {
   chrome = chrome || "";
   if (!t) {
     // Nothing exists until something is said in it. Closing this creates nothing.
-    var anchor = UI.draftFor && UI.draftFor.thread === tid ? UI.draftFor.decision : null;
+    var anchor = draftAnchor(tid);
     var d = anchor ? node(anchor) : null;
     var help = tid === HELP_THREAD;
     return threadPane(
@@ -2290,14 +2301,37 @@ function centerOn(id) {
 }
 
 /* ---------- the pop-out window ---------- */
+// Which thread a popped window is on, and which decision the draft it opened on
+// stands against, are the window's own: handed to it when it opens, kept there,
+// never looked up here. Both used to be resolved out of this window's state at
+// the moment of the click -- the anchor out of the single draft slot, which the
+// main board overwrites the next time it opens a draft, and the created thread
+// out of a map keyed by the draft's name, which every window on that name
+// shares. One gesture on the board behind either back, and a popped Send landed
+// on another decision's thread or on no decision at all.
 window.threadHTML = function (tid) { return threadBody(tid, true); };
-window.popAct = function (tid, act, text, field) {
+// Returns the thread the act opened, when it opened one, so the window that
+// asked can follow it: the draft it was showing is that thread now, and nothing
+// else can tell it so.
+window.popAct = function (tid, anchor, act, text, field) {
+  // The ending is refused here as well as at the main window's own handler:
+  // this bridge is a second door into the same acts, and a gesture the page
+  // takes and drops is a gesture the human watched themselves make.
+  if (sessionOver() && WRITE_ACTS.indexOf(act) >= 0) return null;
   if (act === "transfer") toggleTransfer(tid);
   else if (act === "say") sayInThread(tid, text);
+  // The first turn of a thread that does not exist yet, which is the same act
+  // the pane's own Send is: it routes to the one function that opens a thread,
+  // on the anchor this window came with. A copy of the draft pane drawn before
+  // that turn went out sends the same act again, and that is a turn in the
+  // thread it opened rather than a second thread.
+  else if (act === "draftsay") return thread(tid) ? sayInThread(tid, text) : startThread(anchor, text);
   // The seed's decision is read from the thread this window is showing, not
   // from the button: the popped document is a copy of the pane, and the only
-  // thing it can be trusted to name is which seed was pressed.
-  else if (act === "seed") saySeed(tid, (thread(tid) || {}).decision, field);
+  // thing it can be trusted to name is which seed was pressed. On a draft there
+  // is no thread to read it off, and the anchor this window came with is the
+  // decision.
+  else if (act === "seed") return saySeed(tid, (thread(tid) || {}).decision || anchor, field);
   else if (act === "fold") foldThread(tid);
   else if (act === "park") parkThread(tid);
   else if (act === "closethread") closeThread(tid);
@@ -2322,8 +2356,12 @@ function popOut(tid) {
   // every tick replaced the button between mousedown and mouseup, so a real
   // click never became a click event.
   // The id is escaped for the script context it is written into as well: a
-  // closing script tag inside it would end the boot script where it sits.
-  var boot = "(function(){var tid=" + JSON.stringify(tid).replace(/</g, "\\u003c") + ";var last=null;" +
+  // closing script tag inside it would end the boot script where it sits. The
+  // anchor rides in beside it, an authored id on the same terms -- and this is
+  // the moment it is read, so what the window carries is the draft it was
+  // opened on rather than whichever draft the board is standing on later.
+  var boot = "(function(){var tid=" + JSON.stringify(tid).replace(/</g, "\\u003c") +
+    ";var anchor=" + JSON.stringify(draftAnchor(tid) || null).replace(/</g, "\\u003c") + ";var last=null;" +
     "function draw(){var html;" +
     "try{html=window.opener.threadHTML(tid);}catch(e){document.getElementById('t').innerHTML='<p>The main window is gone. Close this one.</p>';return;}" +
     "if(html===last)return;last=html;" +
@@ -2335,12 +2373,19 @@ function popOut(tid) {
     "document.getElementById('t').innerHTML=html;" +
     "var tb2=document.querySelector('.tbody');if(tb2)tb2.scrollTop=bot?tb2.scrollHeight:ty;" +
     "var t2=document.getElementById('pop-say');if(t2){t2.value=v;if(had)t2.focus({preventScroll:true});}}" +
+    // The ending is the opener's to declare and this window's to wear. It is
+    // applied on the tick rather than inside draw(), because draw() does
+    // nothing at all when the pane's html has not changed -- and a session
+    // ending changes the log, not necessarily the thread on screen.
+    "function seal(){try{window.opener.sealSurface(document);}catch(x){}}" +
     "document.addEventListener('click',function(e){var el=e.target.closest('[data-act]');if(!el)return;" +
     "var ta=document.getElementById('pop-say');" +
-    "try{window.opener.popAct(tid,el.dataset.act,ta?ta.value:'',el.dataset.field);}catch(x){}" +
-    "if(ta&&el.dataset.act==='say')ta.value='';setTimeout(draw,40);});" +
-    "document.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){var b=document.querySelector('[data-act=\"say\"]');if(b)b.click();}});" +
-    "setInterval(draw,600);draw();})();";
+    // The thread this window is on is this window's to keep: an act that opens
+    // one hands it back, and from then on this window is on that thread.
+    "var made=null;try{made=window.opener.popAct(tid,anchor,el.dataset.act,ta?ta.value:'',el.dataset.field);}catch(x){}if(made)tid=made;" +
+    "if(ta&&(el.dataset.act==='say'||el.dataset.act==='draftsay'))ta.value='';setTimeout(draw,40);});" +
+    "document.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){var b=document.querySelector('[data-act=\"say\"],[data-act=\"draftsay\"]');if(b)b.click();}});" +
+    "setInterval(function(){draw();seal();},600);draw();seal();})();";
   w.document.open();
   w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Thread — ' + esc(tid) + "</title>" + css +
     // The popped window is the pane and nothing else, full height, so its
@@ -2363,12 +2408,17 @@ var WRITE_ACTS = ["pick", "free", "say", "seed", "draftsay", "newthread", "discu
 // Reading stays: the board, the map, the history, the inbox, the notifications
 // and the read markers are all this window's own and go nowhere. What goes is
 // the ability to say anything more into a log that has been closed.
-function sealSurface() {
+// `doc` is which window is being sealed. A popped window is part of this
+// session and takes the same ending, and it is sealed by the same reader rather
+// than by a copy of this rule living over there: it draws its pane from here,
+// so every redraw would otherwise hand back live controls.
+function sealSurface(doc) {
   if (!sessionOver()) return;
-  document.querySelectorAll("[data-act]").forEach(function (el) {
+  doc = doc || document;
+  doc.querySelectorAll("[data-act]").forEach(function (el) {
     if (WRITE_ACTS.indexOf(el.dataset.act) >= 0) el.disabled = true;
   });
-  document.querySelectorAll("textarea").forEach(function (ta) { ta.disabled = true; });
+  doc.querySelectorAll("textarea").forEach(function (ta) { ta.disabled = true; });
 }
 
 /* ---------- events ---------- */
