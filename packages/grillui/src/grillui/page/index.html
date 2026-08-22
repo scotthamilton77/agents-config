@@ -291,9 +291,12 @@
      the decision was read from its top. The header's box bounds it, so it
      releases exactly as the decision leaves; a collapsed block never pins,
      since a settled decision has nothing under its header to read. The
-     background is the item's, whichever state coloured it. */
+     background is stated, not inherited: the touched flash animates the
+     item's own background through transparent, and a header that inherited
+     it would let the body show through for the tail of the flash. */
   .item .head { display: flex; align-items: baseline; gap: 8px;
-    position: sticky; top: 0; z-index: 2; background: inherit; padding: 4px 0 6px; }
+    position: sticky; top: 0; z-index: 2; background: var(--paper); padding: 4px 0 6px; }
+  .item.focused .head { background: var(--accent-soft); }
   .item.collapsed .head { position: static; }
   .item .head .t { font-weight: 600; font-size: 13.5px; }
   .item .head .bigmark { font-size: 22px; line-height: 1; align-self: center; }

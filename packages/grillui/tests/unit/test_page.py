@@ -2627,6 +2627,8 @@ def test_a_decision_block_pins_its_own_header_until_the_block_ends() -> None:
     sticky = source.split(".item .head {", 1)[1].split("}", 1)[0]
     assert "position: sticky" in sticky, f"the header is not pinned: {sticky!r}"
     assert "top: 0" in sticky, f"the header pins to nothing: {sticky!r}"
-    assert "background: inherit" in sticky, "the pinned header is see-through"
-    assert ".item { background: var(--paper);" in source, "the block has no background to inherit"
+    assert "background: var(--paper)" in sticky, "the pinned header is see-through"
+    assert ".item.focused .head { background: var(--accent-soft); }" in source, (
+        "a focused block's pinned header shows the wrong colour"
+    )
     assert ".item.collapsed .head { position: static; }" in source, "a collapsed block still pins"
