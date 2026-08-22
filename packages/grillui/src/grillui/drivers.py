@@ -39,6 +39,17 @@ the fold, not here. No driver may pre-empt that: one that decided for itself
 which of its updates were safe would be the agent applying its own turn again,
 by a longer route.
 
+**Every turn records what it was given, and a tier nearing its model's window
+says so out loud.** The reply entry carries the request's bytes always and the
+provider's own prompt count where the provider returned one; where it did not,
+the bytes stand in at a stated ratio and are reported as the estimate they are.
+Measured against the tier's context limit, a turn past three quarters of the
+window raises a notice on the board and a line on the launch's stdout, naming
+the tier, the model, what was measured and what the ceiling is. This is the
+instrument the deferred elision machinery waits on: without it, a session that
+outgrew its window would degrade with nothing to point at, and the decision to
+build elision would rest on nobody's measurement.
+
 **A reply that says nothing is a failure, not a turn.** Whatever the cause --
 transport, an empty completion, an appender that refused the reply -- it raises,
 and the lane surfaces it as an error in milliseconds rather than as silence the
@@ -51,6 +62,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,6 +75,8 @@ from grillui.escalation import in_expert_mode, recommend, transfer_source, turns
 from grillui.lane import AgentUnreachableError
 from grillui.projector import fold
 from grillui.schemas import (
+    CONTEXT_BYTES_KEY,
+    CONTEXT_LIMIT_KEY,
     EFFORT_KEY,
     FAST_TIER,
     FOLD_KIND,
@@ -70,6 +84,7 @@ from grillui.schemas import (
     HEAVY_TIER,
     MAP_CHANNEL,
     MODEL_KEY,
+    PROMPT_TOKENS_KEY,
     PROPOSED_ANSWER_KEY,
     RECOMMENDATION_KEY,
     STATUS_PHASE_TRANSFERRED,
@@ -82,7 +97,9 @@ from grillui.schemas import (
 )
 from grillui.tiers import (
     API_KEY_ENV,
+    BYTES_PER_TOKEN,
     CLAUDE_CLI,
+    CONTEXT_WARN_FRACTION,
     DEFAULT_API_BASE,
     TierConfig,
     compose,
@@ -91,6 +108,7 @@ from grillui.tiers import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from typing import TextIO
 
     from grillui.log import SessionLog
     from grillui.schemas import Receipt
@@ -127,9 +145,16 @@ class MalformedCompletionError(TypeError):
 
 
 class FastTransport(Protocol):
-    """One completion from a hosted model."""
+    """One completion from a hosted model, and what it counted the prompt at.
 
-    def __call__(self, *, model: str, system: str, prompt: str) -> str: ...
+    The count comes back beside the text rather than being asked for
+    afterwards, because it is a property of the response: a transport that
+    stashed it would have to be asked which call it was answering about, and a
+    second concurrent turn would get the wrong answer. `None` is the honest
+    reply from a provider that reported no usage.
+    """
+
+    def __call__(self, *, model: str, system: str, prompt: str) -> tuple[str, int | None]: ...
 
 
 class ClaudeCli(Protocol):
@@ -156,7 +181,7 @@ class OpenRouterTransport:
     client: httpx.Client | None = None
     environ: Mapping[str, str] | None = None
 
-    def __call__(self, *, model: str, system: str, prompt: str) -> str:
+    def __call__(self, *, model: str, system: str, prompt: str) -> tuple[str, int | None]:
         source = os.environ if self.environ is None else self.environ
         key = self.api_key or source.get(API_KEY_ENV)
         if not key:
@@ -192,12 +217,21 @@ def request_body(model: str, system: str, prompt: str) -> dict[str, Any]:
     }
 
 
-def read_completion(document: Any) -> str:
-    """The reply text out of a completion response."""
+def read_completion(document: Any) -> tuple[str, int | None]:
+    """The reply text out of a completion response, and its prompt token count.
+
+    The text is required and the count is not: a missing or oddly-typed `usage`
+    costs the turn its measurement and nothing else, because a response that
+    answered the human is not a failure just because it declined to say what it
+    cost. What must not happen is a zero standing in for an absent count -- the
+    warning would then read every unmeasured turn as roomy.
+    """
     content = document["choices"][0]["message"]["content"]
     if not isinstance(content, str):
         raise MalformedCompletionError
-    return content
+    usage = document.get("usage") if isinstance(document, dict) else None
+    counted = usage.get("prompt_tokens") if isinstance(usage, dict) else None
+    return content, counted if isinstance(counted, int) else None
 
 
 def claude_argv(model: str, effort: str, system: str, prompt: str, resume: str | None) -> list[str]:
@@ -226,8 +260,36 @@ def run_claude_cli(argv: Sequence[str], /) -> str:
     return finished.stdout
 
 
-def read_cli_reply(printed: str) -> tuple[str, str | None]:
-    """The reply and the chain's identity, out of what the CLI printed."""
+CLI_INPUT_TOKEN_KEYS = (
+    "input_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+)
+
+
+def cli_input_tokens(usage: Any) -> int | None:
+    """What the CLI turn was given, in tokens, out of its usage block.
+
+    All three input-side counts, summed. `input_tokens` alone is what the model
+    read that was not already cached, which on a resumed chain is the last
+    exchange and nothing else -- a few hundred tokens against a conversation of
+    two hundred thousand. Reporting that as the context would be reporting the
+    delta as the total, and the tier would read as empty right up to the turn
+    the chain overflowed.
+
+    Nothing is the answer when there is no usage to read, and a count this
+    cannot parse contributes nothing rather than a zero.
+    """
+    if not isinstance(usage, dict):
+        return None
+    counts = [usage.get(key) for key in CLI_INPUT_TOKEN_KEYS]
+    found = [one for one in counts if isinstance(one, int)]
+    return sum(found) if found else None
+
+
+def read_cli_reply(printed: str) -> tuple[str, str | None, int | None]:
+    """The reply, the chain's identity, and what the turn's prompt counted at,
+    out of what the CLI printed."""
     try:
         document = json.loads(printed)
         text = document["result"]
@@ -239,7 +301,107 @@ def read_cli_reply(printed: str) -> tuple[str, str | None]:
         # stringify into the log as if the model said it.
         raise AgentUnreachableError(HEAVY_TIER)
     session_id = document.get("session_id")
-    return text, session_id if isinstance(session_id, str) else None
+    return (
+        text,
+        session_id if isinstance(session_id, str) else None,
+        cli_input_tokens(document.get("usage")),
+    )
+
+
+def sent_bytes(system: str, prompt: str) -> int:
+    """How big this turn's request was, in bytes.
+
+    The standing brief counts: it crosses on every turn and is a real part of
+    what the model has to hold. Measured on the encoded bytes rather than on
+    the string's length, because a character is not a byte and the estimate
+    downstream is a bytes-per-token one.
+    """
+    return len(system.encode("utf-8")) + len(prompt.encode("utf-8"))
+
+
+@dataclass(frozen=True)
+class Measurement:
+    """What one turn's context came to, and what that is against its tier's model.
+
+    Kept as one value rather than as loose numbers because the three travel
+    together: what was measured, whether anybody counted it or it was estimated,
+    and the window it is being read against. Splitting them is how a report
+    ends up stating an estimate as a count.
+    """
+
+    tier: str
+    context_bytes: int
+    prompt_tokens: int | None
+    limit: int | None
+
+    @classmethod
+    def of(
+        cls, config: TierConfig, tier: str, context_bytes: int, prompt_tokens: int | None
+    ) -> Measurement:
+        return cls(tier, context_bytes, prompt_tokens, config.limit_for(tier))
+
+    @property
+    def counted(self) -> bool:
+        """Whether the provider counted this, as against it being estimated."""
+        return self.prompt_tokens is not None
+
+    @property
+    def tokens(self) -> int:
+        """The count where there is one, and the bytes estimate where there is not."""
+        if self.prompt_tokens is not None:
+            return self.prompt_tokens
+        return self.context_bytes // BYTES_PER_TOKEN
+
+    @property
+    def recorded(self) -> dict[str, Any]:
+        """What the reply entry carries about its own size.
+
+        The limit rides even when it is nothing, because "no warning was owed"
+        and "nobody knows this model's window" are different states and only one
+        of them is evidence that the session had room.
+        """
+        payload: dict[str, Any] = {
+            CONTEXT_BYTES_KEY: self.context_bytes,
+            CONTEXT_LIMIT_KEY: self.limit,
+        }
+        if self.prompt_tokens is not None:
+            payload[PROMPT_TOKENS_KEY] = self.prompt_tokens
+        return payload
+
+    @property
+    def pressed(self) -> bool:
+        """Whether this turn has taken the tier near the model's ceiling."""
+        return self.limit is not None and self.tokens >= self.limit * CONTEXT_WARN_FRACTION
+
+    def warn(self, log: SessionLog, model: str, out: TextIO | None = None) -> None:
+        """Say, in both places a human might be looking, that a tier is filling up.
+
+        Two surfaces because there are two humans: the one watching the board,
+        who gets a notice on the lane the board keeps for things it has nowhere
+        else to put, and the one who launched the session in a terminal and is
+        reading its stdout. Neither is a status entry -- the lane's mechanics
+        are hidden from the board on purpose, and a warning nobody sees is the
+        silent degradation this exists to prevent.
+
+        It is said on every turn that measures over the threshold rather than
+        once. A session that is three quarters of the way through its window is
+        not in a state one notice covers, and a lane the human has scrolled past
+        is one they have to be told again.
+        """
+        if not self.pressed:
+            return
+        said = (
+            f"The {self.tier!r} tier's context is at {self.tokens:,} tokens against "
+            f"{model}'s {self.limit:,}, over {int(CONTEXT_WARN_FRACTION * 100)}% of the window. "
+            + (
+                "The provider counted that."
+                if self.counted
+                else f"Nothing counted it; that is {self.context_bytes:,} bytes of prompt "
+                f"estimated at {BYTES_PER_TOKEN} bytes to the token."
+            )
+        )
+        log.record("informational", {"text": said})
+        print(f"grillui: {said}", file=sys.stdout if out is None else out, flush=True)
 
 
 @dataclass
@@ -256,12 +418,11 @@ class FastDriver:
         channel = context.channel
         entries = log.entries()
         model = self.config.fast_model
-        reply = self.transport(
-            model=model,
-            system=system_prompt(FAST_TIER, context.agent),
-            prompt=compose(recorded, context, entries),
-        )
-        attribution: dict[str, Any] = {TIER_KEY: self.tier, MODEL_KEY: model}
+        system = system_prompt(FAST_TIER, context.agent)
+        prompt = compose(recorded, context, entries)
+        reply, prompt_tokens = self.transport(model=model, system=system, prompt=prompt)
+        measured = Measurement.of(self.config, self.tier, sent_bytes(system, prompt), prompt_tokens)
+        attribution: dict[str, Any] = {TIER_KEY: self.tier, MODEL_KEY: model, **measured.recorded}
         advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel)
         if advice is not None:
             attribution[RECOMMENDATION_KEY] = advice.as_payload()
@@ -286,6 +447,10 @@ class FastDriver:
                     f"{advice.condition}",
                     channel,
                 )
+        # Outside the lock, because saying it writes to a stream this process
+        # does not own: a stdout nobody is draining would otherwise hold the
+        # append lock and stall every channel in the session.
+        measured.warn(log, model)
 
 
 @dataclass
@@ -317,6 +482,8 @@ class HeavyDriver:
         # same. The old record is discarded as the turn opens rather than kept
         # for a null session id to fall back on.
         cold = bool(context.catch_up)
+        system = system_prompt(HEAVY_TIER, context.agent)
+        prompt = compose(recorded, context, entries)
         with self._turn:
             if cold:
                 forget_resume(log.directory, channel)
@@ -324,18 +491,24 @@ class HeavyDriver:
                 claude_argv(
                     model,
                     effort,
-                    system_prompt(HEAVY_TIER, context.agent),
-                    compose(recorded, context, entries),
+                    system,
+                    prompt,
                     None if cold else read_resume(log.directory, channel),
                 )
             )
-            reply, session_id = read_cli_reply(printed)
+            reply, session_id, prompt_tokens = read_cli_reply(printed)
             if session_id is not None:
                 write_resume(log.directory, channel, session_id)
+        # The bytes are this turn's alone and the count is the whole resumed
+        # chain's, which is why the count is the one that matters here: what
+        # fills a heavy tier's window is the conversation it is resuming, and
+        # this turn's prompt is the smallest part of it.
+        measured = Measurement.of(self.config, self.tier, sent_bytes(system, prompt), prompt_tokens)
         attribution: dict[str, Any] = {
             TIER_KEY: self.tier,
             MODEL_KEY: model,
             EFFORT_KEY: effort,
+            **measured.recorded,
             # Whether this heavy turn followed a transfer, read off the same
             # channel mode the lane routed it by: no agent escalates itself, and
             # a heavy turn nobody moved the channel for must not be able to
@@ -348,6 +521,7 @@ class HeavyDriver:
         if source is not None:
             attribution[TRANSFER_SOURCE_KEY] = source
         record_reply(log, self.tier, channel, reply, attribution)
+        measured.warn(log, model)
 
 
 def read_resume(directory: Path, channel: str) -> str | None:

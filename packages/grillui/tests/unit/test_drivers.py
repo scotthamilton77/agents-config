@@ -27,6 +27,7 @@ from conftest import (
     TIMEOUT,
     ScriptedCli,
     ScriptedFast,
+    attributions,
     driven,
     event,
     handoff_doc,
@@ -41,6 +42,7 @@ from grillui.drivers import (
     RESUME_FILE,
     FastDriver,
     HeavyDriver,
+    Measurement,
     OpenRouterTransport,
     ReplyRefusedError,
     claude_argv,
@@ -53,12 +55,16 @@ from grillui.drivers import (
 from grillui.escalation import CONDITION_COMMITMENT, CONDITION_IRREDUCIBLE, CONDITION_MULTIPLE
 from grillui.lane import AgentUnreachableError
 from grillui.log import LOG_FILE, SessionLog
+from grillui.projector import fold
 from grillui.schemas import (
+    CONTEXT_BYTES_KEY,
+    CONTEXT_LIMIT_KEY,
     EFFORT_KEY,
     FAST_TIER,
     FOLLOWED_TRANSFER_KEY,
     HEAVY_TIER,
     MODEL_KEY,
+    PROMPT_TOKENS_KEY,
     RECOMMENDATION_KEY,
     TIER_KEY,
     TRANSFER_FLAG,
@@ -66,7 +72,16 @@ from grillui.schemas import (
     RejectedReceipt,
 )
 from grillui.session import open_session
-from grillui.tiers import API_KEY_ENV, TierConfig
+from grillui.tiers import (
+    API_KEY_ENV,
+    BYTES_PER_TOKEN,
+    CONTEXT_LIMITS,
+    DEFAULT_FAST_MODEL,
+    DEFAULT_HEAVY_MODEL,
+    FAST_CONTEXT_LIMIT_ENV,
+    FAST_MODEL_ENV,
+    TierConfig,
+)
 
 SOURCE = Path(__file__).resolve().parents[2] / "src" / "grillui"
 TARGET = "d1"
@@ -142,7 +157,7 @@ def test_a_fast_turn_lands_in_the_log_attributed_to_its_tier_and_model(
 
     take_fast_turn(log, ScriptedFast(), fast_model="vendor/fast-2")
 
-    assert replies(log) == [
+    assert attributions(log) == [
         {"text": REPLY, TIER_KEY: FAST_TIER, MODEL_KEY: "vendor/fast-2"},
     ]
 
@@ -181,7 +196,7 @@ def test_a_heavy_turn_is_attributed_and_says_whether_it_followed_a_transfer(
 
     take_heavy_turn(log, ScriptedCli(), heavy_model="claude-configured", heavy_effort="max")
 
-    assert replies(log) == [
+    assert attributions(log) == [
         {
             "text": REPLY,
             TIER_KEY: HEAVY_TIER,
@@ -565,7 +580,8 @@ def test_the_fast_transport_asks_for_a_completion_and_reads_the_reply() -> None:
     Given a hosted model answering one completion request
     When the transport calls it
     Then the standing brief travelled as a system message, the model id as
-         asked, and the reply comes back as text.
+         asked, and the reply comes back as text beside the provider's own
+         prompt count.
     """
     seen: dict[str, Any] = {}
 
@@ -573,13 +589,19 @@ def test_the_fast_transport_asks_for_a_completion_and_reads_the_reply() -> None:
         seen["url"] = str(request.url)
         seen["auth"] = request.headers["Authorization"]
         seen["body"] = json.loads(request.content)
-        return httpx.Response(200, json={"choices": [{"message": {"content": REPLY}}]})
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": REPLY}}],
+                "usage": {"prompt_tokens": 1234, "completion_tokens": 7},
+            },
+        )
 
     transport = OpenRouterTransport(
         api_key="k", client=httpx.Client(transport=httpx.MockTransport(handler))
     )
 
-    assert transport(model="vendor/fast", system="be brief", prompt="what now?") == REPLY
+    assert transport(model="vendor/fast", system="be brief", prompt="what now?") == (REPLY, 1234)
     assert seen["url"].endswith("/chat/completions")
     assert seen["auth"] == "Bearer k"
     assert seen["body"] == request_body("vendor/fast", "be brief", "what now?")
@@ -642,14 +664,14 @@ def test_the_cli_transport_returns_what_the_process_printed() -> None:
     """
     Given a process that prints a structured turn
     When the CLI transport runs it
-    Then what it printed comes back, and the reply and chain identity are read
-         out of it.
+    Then what it printed comes back, and the reply, chain identity and prompt
+         count are read out of it.
     """
-    printed = json.dumps({"session_id": "chain-3", "result": REPLY})
+    printed = json.dumps({"session_id": "chain-3", "result": REPLY, "usage": {"input_tokens": 40}})
 
     output = run_claude_cli([sys.executable, "-c", f"print({printed!r})"])
 
-    assert read_cli_reply(output) == (REPLY, "chain-3")
+    assert read_cli_reply(output) == (REPLY, "chain-3", 40)
 
 
 def test_a_cli_that_fails_or_prints_nonsense_reads_as_unreachable() -> None:
@@ -811,3 +833,207 @@ def test_the_dependency_on_a_real_process_runner_is_the_one_under_test() -> None
          a stub the tests wrote.
     """
     assert run_claude_cli([sys.executable, "-c", "print('ok')"]).strip() == "ok"
+
+
+# --- what a turn cost, and the tier that is filling its window up ---------------
+
+
+def warnings_in(log: SessionLog) -> list[str]:
+    """Every context warning the backend appended, read out of the log's bytes."""
+    lines = (log.directory / LOG_FILE).read_text(encoding="utf-8").splitlines()
+    entries = [json.loads(line) for line in lines if line.strip()]
+    return [
+        entry["payload"]["text"]
+        for entry in entries
+        if entry["kind"] == "informational" and entry["actor"] == "backend"
+    ]
+
+
+def queued_warnings(log: SessionLog) -> list[Any]:
+    """The context warnings the board itself is carrying.
+
+    Picked out by their authoring entry, because a grill-master's own prose is
+    an informational too and queues on the same lane -- which is the point: the
+    warning reaches the human by the surface the board already has for a message
+    with no decision to sit on.
+    """
+    entries = log.entries()
+    backend = {
+        entry.seq for entry in entries if entry.kind == "informational" and entry.actor == "backend"
+    }
+    return [one for one in fold(log.epoch, entries).pending if one.authored_at in backend]
+
+
+def test_a_fast_turn_records_its_size_and_the_count_the_provider_returned(
+    session_dir: Path,
+) -> None:
+    """
+    Given a hosted model that counted the prompt it was sent
+    When the fast tier takes a turn
+    Then the reply entry carries the request's bytes, the provider's own count
+         and the window that count is read against.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log, because recovery rests on it.")
+
+    take_fast_turn(log, ScriptedFast(prompt_tokens=1234), fast_model=DEFAULT_FAST_MODEL)
+
+    reply = replies(log)[0]
+    assert reply[PROMPT_TOKENS_KEY] == 1234
+    assert reply[CONTEXT_LIMIT_KEY] == CONTEXT_LIMITS[DEFAULT_FAST_MODEL]
+    assert reply[CONTEXT_BYTES_KEY] > 0
+
+
+def test_a_heavy_turn_records_the_whole_chain_the_cli_counted_not_this_turns_delta(
+    session_dir: Path,
+) -> None:
+    """
+    Given a CLI turn whose usage separates fresh input from what the cache
+          supplied
+    When the heavy tier takes it
+    Then the reply entry counts all three input-side figures, because what fills
+         a resumed chain's window is the conversation and not this turn's delta.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+    usage = {
+        "input_tokens": 300,
+        "cache_creation_input_tokens": 700,
+        "cache_read_input_tokens": 180_000,
+        "output_tokens": 42,
+    }
+
+    take_heavy_turn(log, ScriptedCli(usage=usage), heavy_model=DEFAULT_HEAVY_MODEL)
+
+    reply = replies(log)[0]
+    assert reply[PROMPT_TOKENS_KEY] == 181_000
+    assert reply[CONTEXT_LIMIT_KEY] == CONTEXT_LIMITS[DEFAULT_HEAVY_MODEL]
+    assert reply[CONTEXT_BYTES_KEY] > 0
+
+
+def test_a_turn_whose_provider_counted_nothing_is_recorded_in_bytes_alone(
+    session_dir: Path,
+) -> None:
+    """
+    Given providers that returned no usage at all
+    When each tier takes a turn
+    Then the bytes are recorded and no count is, so a reader can tell an
+         estimate from a measurement by the key's absence.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+
+    take_fast_turn(log, ScriptedFast())
+    take_heavy_turn(log, ScriptedCli())
+
+    for reply in replies(log):
+        assert reply[CONTEXT_BYTES_KEY] > 0
+        assert PROMPT_TOKENS_KEY not in reply
+
+
+def test_an_uncounted_turn_is_estimated_from_its_bytes_and_says_so() -> None:
+    """
+    Given a turn nobody counted
+    When its size is measured
+    Then the bytes stand in at the stated ratio, and the measurement knows it
+         was not counted.
+    """
+    estimated = Measurement("fast", context_bytes=4_000, prompt_tokens=None, limit=None)
+
+    assert estimated.tokens == 4_000 // BYTES_PER_TOKEN
+    assert not estimated.counted
+    counted = Measurement("fast", context_bytes=4_000, prompt_tokens=99, limit=None)
+    assert (counted.tokens, counted.counted) == (99, True)
+
+
+def test_a_tier_at_three_quarters_of_its_window_warns_on_the_board_and_on_stdout(
+    session_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a tier whose window the environment states as small enough to reach
+    When a turn measures at three quarters of it
+    Then the backend appends a notice the board carries in its pending queue --
+         the same lane the page renders informationals in -- and prints one line
+         naming the tier, the model, what was measured and the ceiling.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+    config = TierConfig.from_env({FAST_MODEL_ENV: "vendor/unknown", FAST_CONTEXT_LIMIT_ENV: "1000"})
+
+    FastDriver(config, ScriptedFast(prompt_tokens=750)).run(log, record_dispatch(log))
+
+    said = warnings_in(log)
+    assert len(said) == 1
+    assert "750" in said[0]
+    assert "1,000" in said[0]
+    assert "vendor/unknown" in said[0]
+    assert "'fast'" in said[0]
+    # The board is where the human meets it: a notice with no decision to sit on
+    # is a pending item, which is what the page's notification lane reads.
+    queued = queued_warnings(log)
+    assert [one.kind for one in queued] == ["informational"]
+    printed = capsys.readouterr().out
+    assert printed.startswith("grillui: ")
+    assert said[0] in printed
+
+
+def test_a_tier_just_under_the_threshold_says_nothing(
+    session_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given the same small window
+    When a turn measures at 74% of it
+    Then nothing is appended and nothing is printed, because a warning that
+         fires below its own threshold is one nobody reads.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+    config = TierConfig.from_env({FAST_MODEL_ENV: "vendor/unknown", FAST_CONTEXT_LIMIT_ENV: "1000"})
+
+    FastDriver(config, ScriptedFast(prompt_tokens=740)).run(log, record_dispatch(log))
+
+    assert warnings_in(log) == []
+    assert queued_warnings(log) == []
+    assert capsys.readouterr().out == ""
+
+
+def test_a_model_nothing_knows_the_window_of_warns_about_nothing(
+    session_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a model absent from the table and no override for it
+    When a turn measures at a size that would trip any plausible ceiling
+    Then no warning is raised and the reply records that no limit is known,
+         rather than recording a measurement that was found roomy.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+
+    take_fast_turn(log, ScriptedFast(prompt_tokens=50_000_000), fast_model="vendor/unknown")
+
+    assert warnings_in(log) == []
+    assert capsys.readouterr().out == ""
+    assert replies(log)[0][CONTEXT_LIMIT_KEY] is None
+
+
+def test_the_shipped_limits_leave_an_ordinary_session_quiet(
+    session_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given the models this package ships with and their table limits
+    When both tiers take a turn on a session of the size these fixtures build
+    Then neither warns, because the instrument is calibrated to fire on a
+         session that is actually filling a window rather than on every one.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+
+    take_fast_turn(log, ScriptedFast())
+    take_heavy_turn(log, ScriptedCli())
+
+    assert warnings_in(log) == []
+    assert capsys.readouterr().out == ""
+    assert [reply[CONTEXT_LIMIT_KEY] for reply in replies(log)] == [
+        CONTEXT_LIMITS[DEFAULT_FAST_MODEL],
+        CONTEXT_LIMITS[DEFAULT_HEAVY_MODEL],
+    ]

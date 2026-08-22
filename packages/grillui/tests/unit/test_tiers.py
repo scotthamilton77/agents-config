@@ -19,6 +19,7 @@ from grillui.schemas import LogEntry
 from grillui.session import open_session
 from grillui.tiers import (
     CONCISION_RULE,
+    CONTEXT_LIMITS,
     DEFAULT_FAST_MODEL,
     DEFAULT_HEAVY_EFFORT,
     DEFAULT_HEAVY_MODEL,
@@ -26,8 +27,10 @@ from grillui.tiers import (
     ESCALATION_POLICIES,
     ESCALATION_POLICY_ENV,
     FACILITATION_MANDATE,
+    FAST_CONTEXT_LIMIT_ENV,
     FAST_MODEL_ENV,
     FAST_TIER,
+    HEAVY_CONTEXT_LIMIT_ENV,
     HEAVY_EFFORT_ENV,
     HEAVY_MODEL_ENV,
     HEAVY_TIER,
@@ -38,6 +41,8 @@ from grillui.tiers import (
     POLICY_GATED,
     SYSTEM_PROMPTS,
     TierConfig,
+    UnknownTierError,
+    UnreadableLimitError,
     briefing,
     compose,
 )
@@ -356,3 +361,80 @@ def test_the_prompt_says_which_channel_it_is_and_that_nothing_has_been_said(
 
     assert "t-compaction" in prompt
     assert "Nothing has been said on this channel yet." in prompt
+
+
+# --- how much each tier's model holds -------------------------------------------
+
+
+def test_each_default_model_has_a_window_the_shipped_table_knows() -> None:
+    """
+    Given the models this package ships with
+    When each tier's limit is asked for
+    Then the table answers, so a session nobody configured is still measured.
+    """
+    config = TierConfig()
+
+    assert config.limit_for(FAST_TIER) == CONTEXT_LIMITS[DEFAULT_FAST_MODEL]
+    assert config.limit_for(HEAVY_TIER) == CONTEXT_LIMITS[DEFAULT_HEAVY_MODEL]
+
+
+def test_a_model_the_table_never_heard_of_has_no_known_window() -> None:
+    """
+    Given tiers configured with models absent from the table
+    When each limit is asked for
+    Then nothing comes back, because a window nobody knows must not be guessed
+         at -- an invented ceiling warns about the wrong thing all session.
+    """
+    config = TierConfig(fast_model="vendor/unknown", heavy_model="vendor/also-unknown")
+
+    assert config.limit_for(FAST_TIER) is None
+    assert config.limit_for(HEAVY_TIER) is None
+
+
+def test_the_environment_states_a_window_the_table_is_wrong_about() -> None:
+    """
+    Given per-tier overrides in the environment
+    When the configuration is read from it
+    Then each override wins over the table, so a window that moved is one env
+         var away rather than a release away.
+    """
+    config = TierConfig.from_env(
+        {FAST_CONTEXT_LIMIT_ENV: "4096", HEAVY_CONTEXT_LIMIT_ENV: "222222"}
+    )
+
+    assert config.limit_for(FAST_TIER) == 4096
+    assert config.limit_for(HEAVY_TIER) == 222_222
+
+
+def test_an_unset_override_leaves_the_table_answering() -> None:
+    """
+    Given an environment naming no limits
+    When the configuration is read from it
+    Then the overrides are absent rather than zero, which is what keeps the
+         table's answer from being replaced by a window of nothing.
+    """
+    config = TierConfig.from_env({FAST_CONTEXT_LIMIT_ENV: ""})
+
+    assert config.fast_context_limit is None
+    assert config.limit_for(FAST_TIER) == CONTEXT_LIMITS[DEFAULT_FAST_MODEL]
+
+
+def test_a_limit_that_is_not_a_count_is_refused_at_launch() -> None:
+    """
+    Given an override that is not a number of tokens
+    When the configuration is read
+    Then it raises while the human is still watching the launch, rather than
+         falling back to the table the operator was overriding on purpose.
+    """
+    with pytest.raises(UnreadableLimitError):
+        TierConfig.from_env({HEAVY_CONTEXT_LIMIT_ENV: "lots"})
+
+
+def test_a_tier_this_configuration_never_heard_of_has_no_limit_to_give() -> None:
+    """
+    Given a tier name outside the two
+    When its limit is asked for
+    Then it raises rather than answering with the heavy tier's window.
+    """
+    with pytest.raises(UnknownTierError):
+        TierConfig().limit_for("medium")

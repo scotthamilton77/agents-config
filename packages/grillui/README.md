@@ -40,6 +40,16 @@ tier takes a turn is a property of the channel: the map and each thread are on
 the tier the human last put them on, read back off their own turns, so
 escalating one thread moves nothing else.
 
+Every turn records what it was given. The reply carries the request's bytes
+always and the provider's own prompt count where it returned one; without a
+count the bytes stand in at four to the token, and the record says which it was.
+Measured against the tier's context window — a shipped table of model limits,
+overridable per tier with `GRILLUI_FAST_CONTEXT_LIMIT` and
+`GRILLUI_HEAVY_CONTEXT_LIMIT` — a turn at three quarters of the window raises a
+notice on the board and prints one line naming the tier, the model, what was
+measured and the ceiling. A model no limit is known for is recorded as such and
+warns about nothing, because an invented ceiling is worse than an absent one.
+
 Every side thread is its own channel with its own agent context. A thread agent
 is handed the whole board and its own thread's turns, with every other live
 thread reduced to a stub — anchor decision, title, state, and the conclusion if

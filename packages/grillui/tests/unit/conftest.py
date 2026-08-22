@@ -25,6 +25,9 @@ from grillui.lane import Lane
 from grillui.log import HANDOFF_FILE, LOG_FILE, SessionLog
 from grillui.schemas import (
     APPLY_KIND,
+    CONTEXT_BYTES_KEY,
+    CONTEXT_LIMIT_KEY,
+    PROMPT_TOKENS_KEY,
     PROPOSABLE_KINDS,
     TIER_KEY,
     DispatchContext,
@@ -158,6 +161,7 @@ class ScriptedCli:
 
     reply: str = "The log is the recovery source. Compaction is the next question."
     session_id: str = "chain-1"
+    usage: dict[str, Any] | None = None
     calls: list[list[str]] = field(default_factory=list)
     hold: float = 0.0
     overlapping: bool = False
@@ -169,19 +173,31 @@ class ScriptedCli:
         self.overlapping = self.overlapping or self._inside > 1
         time.sleep(self.hold)
         self._inside -= 1
-        return json.dumps({"session_id": self.session_id, "result": self.reply})
+        printed: dict[str, Any] = {"session_id": self.session_id, "result": self.reply}
+        # Absent by default: a CLI that printed no usage is the shape every
+        # check written before the measurement existed was written against.
+        if self.usage is not None:
+            printed["usage"] = self.usage
+        return json.dumps(printed)
 
 
 @dataclass
 class ScriptedFast:
-    """A fast model that answers to order and remembers what it was asked."""
+    """A fast model that answers to order and remembers what it was asked.
+
+    `prompt_tokens` is what the provider is scripted to have counted the prompt
+    at. It defaults to nothing, which is the shape of a provider that reported
+    no usage -- the case every check written before the measurement existed was
+    written against.
+    """
 
     reply: str = "The log is the recovery source. Compaction is the next question."
+    prompt_tokens: int | None = None
     calls: list[dict[str, str]] = field(default_factory=list)
 
-    def __call__(self, *, model: str, system: str, prompt: str) -> str:
+    def __call__(self, *, model: str, system: str, prompt: str) -> tuple[str, int | None]:
         self.calls.append({"model": model, "system": system, "prompt": prompt})
-        return self.reply
+        return self.reply, self.prompt_tokens
 
 
 def driven(log: SessionLog, driver: Any, expert: Any = None) -> TestClient:
@@ -209,6 +225,21 @@ def replies(log: SessionLog) -> list[dict[str, Any]]:
         entry["payload"]
         for entry in entries
         if entry["actor"] in {"grill-master", "thread-agent"} and TIER_KEY in entry["payload"]
+    ]
+
+
+# What every reply carries about its own context size. A check that pins an
+# attribution in full is about who took the turn; the measurement varies with
+# the prompt's length, so leaving it in would turn each of those into a check on
+# the wording of a fixture.
+SIZE_KEYS = (CONTEXT_BYTES_KEY, PROMPT_TOKENS_KEY, CONTEXT_LIMIT_KEY)
+
+
+def attributions(log: SessionLog) -> list[dict[str, Any]]:
+    """Every agent reply, with the size measurement taken off."""
+    return [
+        {key: value for key, value in reply.items() if key not in SIZE_KEYS}
+        for reply in replies(log)
     ]
 
 

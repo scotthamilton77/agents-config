@@ -290,6 +290,18 @@ Tier = Literal["fast", "heavy"]
 TIERS: frozenset[str] = frozenset(get_args(Tier))
 MODEL_KEY = "model"
 EFFORT_KEY = "effort"
+# What the turn's context cost, so a session that is filling one up says so
+# while it is still running rather than in the transcript afterwards.
+# `CONTEXT_BYTES_KEY` rides every agent reply, because the prompt was composed
+# here and its size is never in doubt. `PROMPT_TOKENS_KEY` rides one whose
+# provider counted the prompt for us -- OpenRouter's `usage.prompt_tokens`, the
+# claude CLI's input-side usage -- and is absent otherwise, so a reader can tell
+# a count from the estimate the absence implies. `CONTEXT_LIMIT_KEY` rides every
+# reply and may be null: a model nothing knows the window of is recorded as
+# having no known limit, rather than as one that was measured and found roomy.
+CONTEXT_BYTES_KEY = "context_bytes"
+PROMPT_TOKENS_KEY = "prompt_tokens"
+CONTEXT_LIMIT_KEY = "context_limit"
 RECOMMENDATION_KEY = "recommendation"
 FOLLOWED_TRANSFER_KEY = "followed_transfer"
 TRANSFER_FLAG = "transfer"

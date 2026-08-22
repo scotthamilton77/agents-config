@@ -39,7 +39,16 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from conftest import TIMEOUT, ScriptedCli, ScriptedFast, driven, replies, run_turns, seed_node
+from conftest import (
+    TIMEOUT,
+    ScriptedCli,
+    ScriptedFast,
+    attributions,
+    driven,
+    replies,
+    run_turns,
+    seed_node,
+)
 from fastapi.testclient import TestClient
 
 from grillui.drivers import FastDriver, HeavyDriver
@@ -336,7 +345,7 @@ def test_activating_transfer_takes_the_next_map_turn_to_the_heavy_tier(
     assert FIRST_ASKED in said_to_the_expert
     assert FAST_SAID in said_to_the_expert
     assert ESCALATED_ASKED in said_to_the_expert
-    assert replies(log) == [
+    assert attributions(log) == [
         {"text": FAST_SAID, TIER_KEY: FAST_TIER, MODEL_KEY: FAST_MODEL},
         {
             "text": HEAVY_SAID,
@@ -375,7 +384,7 @@ def test_an_escalated_thread_hands_the_heavy_tier_its_own_accumulated_turns(
     assert THREAD_OPENED in said_to_the_expert
     assert FAST_SAID in said_to_the_expert
     assert LATER_ASKED in said_to_the_expert
-    assert replies(log)[-1] == {
+    assert attributions(log)[-1] == {
         "text": HEAVY_SAID,
         TIER_KEY: HEAVY_TIER,
         MODEL_KEY: HEAVY_MODEL,
@@ -409,7 +418,7 @@ def test_deactivating_transfer_returns_the_next_turn_to_the_fast_tier(
     run_turns(lane, answered("returned", FIRST_ASKED, **{TRANSFER_FLAG: False}))
 
     assert waited_on(log, MAP_CHANNEL) == [HEAVY_TIER, FAST_TIER]
-    assert replies(log)[-1] == {"text": FAST_SAID, TIER_KEY: FAST_TIER, MODEL_KEY: FAST_MODEL}
+    assert attributions(log)[-1] == {"text": FAST_SAID, TIER_KEY: FAST_TIER, MODEL_KEY: FAST_MODEL}
 
 
 def test_one_channels_switches_leave_every_other_channel_where_it_was(
@@ -602,7 +611,7 @@ def test_a_policy_escalation_is_named_on_the_lane_and_on_the_turn_it_bought(
     assert transfers(log, MAP_CHANNEL) == [
         f"the escalation policy moved this channel to the expert tier: {CONDITION_IRREDUCIBLE}"
     ]
-    heavy_turns = [payload for payload in replies(log) if payload[TIER_KEY] == HEAVY_TIER]
+    heavy_turns = [payload for payload in attributions(log) if payload[TIER_KEY] == HEAVY_TIER]
     assert heavy_turns == [
         {
             "text": HEAVY_SAID,
