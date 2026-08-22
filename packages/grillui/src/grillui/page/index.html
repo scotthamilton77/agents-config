@@ -58,7 +58,13 @@
   button:disabled { cursor: default; opacity: .45; }
   code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-  .shell { max-width: 1560px; margin: 0 auto; padding: 20px 24px 40px; }
+  /* The board is a workspace, not an article: it fills the window it is given
+     on both axes, and the two scrolling panes take whatever height is left over
+     once the header, the banners and the diagnostic have had theirs. A floor
+     stops the panes collapsing to a sliver in a very short window — below it
+     the page scrolls, which is the lesser of the two failures. */
+  .shell { max-width: 1560px; margin: 0 auto; padding: 20px 24px 24px;
+           height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
   .intro { max-width: 88ch; }
   .intro h1 { font-size: 21px; margin-bottom: 6px; }
   .intro p { color: var(--ink-dim); margin: 0 0 8px; font-size: 14px; }
@@ -178,13 +184,15 @@
                     font-size: 11px; color: var(--ink-faint); }
 
   /* ---------- main surface ---------- */
-  .surface { display: grid; grid-template-columns: minmax(0, 1fr) 470px; gap: 16px; align-items: start; }
-  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; }
-  .card > h3 { padding: 11px 15px; border-bottom: 1px solid var(--line); font-size: 12px;
+  .surface { display: grid; grid-template-columns: minmax(0, 1fr) 470px; grid-template-rows: minmax(0, 1fr);
+             gap: 16px; align-items: stretch; flex: 1 1 auto; min-height: 360px; }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+          display: flex; flex-direction: column; min-height: 0; }
+  .card > h3 { flex: none; padding: 11px 15px; border-bottom: 1px solid var(--line); font-size: 12px;
                text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); display: flex; gap: 10px; align-items: center; }
   .card > h3 .spacer { flex: 1; }
 
-  .mapscroll { position: relative; height: 640px; overflow: auto; cursor: grab; }
+  .mapscroll { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; cursor: grab; }
   .mapscroll.grabbing { cursor: grabbing; }
   .mapcanvas { position: relative; }
   .mapcanvas svg { position: absolute; left: 0; top: 0; }
@@ -238,7 +246,7 @@
   .hovercard .pcr { margin-top: 5px; }
   .hovercard .pcr b { display: inline-block; min-width: 74px; opacity: .55; font-weight: 600;
                       font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
-  .maplegend { display: flex; gap: 13px; flex-wrap: wrap; padding: 9px 15px; border-top: 1px solid var(--line);
+  .maplegend { flex: none; display: flex; gap: 13px; flex-wrap: wrap; padding: 9px 15px; border-top: 1px solid var(--line);
                font-size: 11.5px; color: var(--ink-dim); }
   .maplegend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; }
   .lg-settled::before { background: #86efac; } .lg-open::before { background: var(--accent); }
@@ -248,7 +256,7 @@
   /* ---------- the one blended column ---------- */
   /* No scroll-behavior here: it would turn every render's scroll-restore into an
      animation that fights the previous one. Intentional scrolls opt in per call. */
-  .column { position: relative; height: 640px; overflow-y: auto; }
+  .column { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   .item { border-bottom: 1px solid var(--line); padding: 12px 15px; transition: padding .2s ease; }
   .item:last-child { border-bottom: 0; }
   .item.focused { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
