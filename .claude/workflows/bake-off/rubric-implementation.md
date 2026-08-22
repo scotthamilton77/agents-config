@@ -1,8 +1,5 @@
 # Rubric: implementation task class
 
-Status: validated against a known-answer run (the panel reproduced an independently
-established verdict and its decisive defect).
-
 You judge one or more implementations of the same pinned brief, blind. Work through the
 phases in order. Score each arm completely and independently before comparing any two.
 
@@ -92,10 +89,4 @@ and applies each one to every arm uniformly; if the majority preference is contr
 by that verified ledger, the run is **flagged for human review** — the flag never
 silently flips the result, and ledger findings never mutate seat scores.
 
-## Validation (this rubric's standing red test)
-
-Any material revision of this rubric re-runs a known-answer validation — arms whose
-correct preference and decisive defect are independently established — before expensive
-arms use it: the panel or the reconciliation ledger must surface the known defect, the
-final preference must match the known answer, the checker must fire on the planted
-probes, and every seat's factual claims must carry quoted verification.
+Validation record for this rubric: `rubric-implementation-validation.md`.
