@@ -1992,7 +1992,8 @@ def test_the_shipped_page_has_no_dark_theme_styles() -> None:
     # Reduced motion is the one preference the page answers; any other
     # preference query is a second presentation by another name.
     queries = re.findall(r"@media\s*\(([^)]*)\)", source)
-    assert queries and all(q.split(":")[0].strip() == "prefers-reduced-motion" for q in queries), queries
+    features = [q.split(":")[0].strip() for q in queries]
+    assert features and set(features) == {"prefers-reduced-motion"}, features
 
 
 # ---------------------------------------------------------------- serving
