@@ -43,6 +43,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     ValidationError,
     model_serializer,
+    model_validator,
 )
 
 MAP_CHANNEL = "map"
@@ -248,7 +249,8 @@ TIER_KEY = "tier"
 # turn was driven -- and a second spelling is a turn the page labels as nothing.
 FAST_TIER = "fast"
 HEAVY_TIER = "heavy"
-TIERS: frozenset[str] = frozenset({FAST_TIER, HEAVY_TIER})
+Tier = Literal["fast", "heavy"]
+TIERS: frozenset[str] = frozenset(get_args(Tier))
 MODEL_KEY = "model"
 EFFORT_KEY = "effort"
 RECOMMENDATION_KEY = "recommendation"
@@ -548,7 +550,16 @@ class ThreadTurn(Strict):
     who: Actor
     text: str
     timestamp: str
-    tier: str | None = None
+    tier: Tier | None = None
+
+    @model_validator(mode="after")
+    def _only_agents_carry_a_tier(self) -> ThreadTurn:
+        """A tier on a turn no agent took is a contradiction the type refuses,
+        so the invariant does not depend on every caller remembering it."""
+        if self.tier is not None and self.who not in AGENT_ACTORS:
+            contradiction = f"a {self.who} turn carries no tier"
+            raise ValueError(contradiction)
+        return self
 
     @model_serializer(mode="wrap")
     def _without_absent_tier(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
@@ -1213,7 +1224,7 @@ def _who(raw: object, fallback: Actor) -> Actor:
     return cast("Actor", raw) if isinstance(raw, str) and raw in ACTORS else fallback
 
 
-def _tier(payload: Mapping[str, Any]) -> str | None:
+def _tier(payload: Mapping[str, Any]) -> Tier | None:
     """The tier the entry attributed itself to, if it named one this side knows.
 
     An unrecognised spelling is dropped rather than carried: a label is only
@@ -1222,10 +1233,10 @@ def _tier(payload: Mapping[str, Any]) -> str | None:
     human.
     """
     named = payload.get(TIER_KEY)
-    return named if isinstance(named, str) and named in TIERS else None
+    return cast("Tier", named) if isinstance(named, str) and named in TIERS else None
 
 
-def _turn(who: Actor, text: str, timestamp: str, tier: str | None) -> ThreadTurn:
+def _turn(who: Actor, text: str, timestamp: str, tier: Tier | None) -> ThreadTurn:
     """One turn, attributed to a tier only when an agent took it.
 
     The entry's tier is a property of the entry, and a human turn never has

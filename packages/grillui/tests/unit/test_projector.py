@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+from pydantic import ValidationError
+
 from grillui.projector import fold, to_image1
-from grillui.schemas import Image1, Image2, LogEntry
+from grillui.schemas import Image1, Image2, LogEntry, ThreadTurn
 
 EPOCH = "tenure-1"
 
@@ -383,3 +386,22 @@ def test_a_human_turn_inside_an_attributed_entry_takes_no_tier_from_it() -> None
         ("human", None),
         ("thread-agent", "heavy"),
     ]
+
+
+@pytest.mark.parametrize("who", ["human", "backend"])
+def test_a_turn_no_agent_took_refuses_a_tier(who: str) -> None:
+    """
+    Given a turn whose actor is not an agent
+    When it is built carrying a tier
+    Then the type refuses it.
+
+    The invariant belongs to the type, not to the one caller that happens to
+    gate it today.
+    """
+    with pytest.raises(ValidationError):
+        ThreadTurn(who=who, text="x", timestamp="t", tier="fast")
+
+
+def test_a_tier_outside_the_two_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        ThreadTurn(who="grill-master", text="x", timestamp="t", tier="medium")
