@@ -205,12 +205,13 @@ a session where they are still learning what the heavy tier is worth has money s
 their behalf by a condition they never saw fire. **The escalation is attributed, not
 silent.** The status lane carries a backend-authored transfer entry on that channel — a
 phase on the lane's own status kind (GUI-D13) — naming the condition and that the policy
-moved it, and the heavy turn that follows names the policy in the same attribution field
-that names the human when the human moved it. Both are fields on what the log already
-records rather than a new event kind, because a transfer is a property of how a turn came
-to be taken and the kind vocabulary of §8.3 is closed. Per channel, as
-GUI-D11's transfers already are: an autonomous escalation on one thread leaves every other
-channel where it was.
+moved it, and the heavy turn that follows carries a transfer source beside its existing
+followed-transfer flag, naming the policy where a human gesture names the human. The flag
+keeps its shape: a session under `gated` writes the log it writes today. Both are fields
+on what the log already records rather than a new event kind, because a transfer is a
+property of how a turn came to be taken and the kind vocabulary of §8.3 is closed. Per
+channel, as GUI-D11's transfers already are: an autonomous escalation on one thread leaves
+every other channel where it was.
 
 **GUI-D13 — The status lane is mechanical and structurally cannot wait on a model.** The
 instant a human turn is accepted, and inside the same lock as the append, the backend
@@ -1169,7 +1170,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   a reply meeting no condition leaves its own channel on the fast tier.
 - **GUI-A73** An autonomous escalation is attributed in the log: a backend-authored status
   entry on that channel names the condition and the policy as what moved it, the heavy turn
-  that follows names the policy where a human-activated transfer names the human, an agent
+  that follows carries a transfer source naming the policy where a human-activated transfer
+  names the human while its followed-transfer flag is unchanged in shape, an agent
   reply asserting a transfer under either policy moves no channel, and the move appends no
   notification-bearing entry.
 - **GUI-A74** After an autonomous escalation the human's control still governs: activating
