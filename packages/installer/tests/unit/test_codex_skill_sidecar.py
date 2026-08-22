@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from installer.core.installignore import InstallIgnore
@@ -175,17 +176,54 @@ def test_overridden_entry_file_decides_not_the_source_tree(tmp_path: Path) -> No
     assert _sidecar_of(CodexAdapter().post_staging_transforms(swapped, ScriptedIO())) is None
 
 
-def test_authored_sidecar_is_left_alone(tmp_path: Path) -> None:
+def test_contradictory_authored_sidecar_aborts_staging(tmp_path: Path) -> None:
     """
-    Given a user-invoked skill whose source tree already ships its own
-    agents/openai.yaml
+    Given a user-invoked skill whose source tree ships its own
+    agents/openai.yaml that does NOT declare allow_implicit_invocation: false
+    When the Codex adapter's post-staging transform runs
+    Then staging aborts — the front matter says never fire unprompted, the
+    authored sidecar would deploy Codex the opposite, and neither file may
+    silently win over the other.
+    """
+    src = _skill_src(tmp_path, _USER_INVOKED)
+    (src / "agents").mkdir()
+    (src / "agents" / "openai.yaml").write_bytes(b"policy:\n  allow_implicit_invocation: true\n")
+    with pytest.raises(ValueError, match="disable-model-invocation"):
+        CodexAdapter().post_staging_transforms(_skill_plan(src, Tool.CODEX), ScriptedIO())
+
+
+def test_contradictory_override_sidecar_aborts_staging(tmp_path: Path) -> None:
+    """
+    Given a user-invoked skill whose dir_overrides already carry an
+    agents/openai.yaml (a carrier merge or extension patch) without the policy
+    When the Codex adapter's post-staging transform runs
+    Then staging aborts — override bytes are the ones that reach disk, so they
+    are judged by the same rule as an authored source file.
+    """
+    src = _skill_src(tmp_path, _USER_INVOKED)
+    plan = _skill_plan(src, Tool.CODEX)
+    plan.dir_overrides[Path("skills/s")] = {
+        SIDECAR_RELPATH: Contribution(
+            source_path=src / "agents" / "openai.yaml", content=b"interface: {}\n"
+        )
+    }
+    with pytest.raises(ValueError, match="disable-model-invocation"):
+        CodexAdapter().post_staging_transforms(plan, ScriptedIO())
+
+
+def test_consistent_authored_sidecar_is_left_alone(tmp_path: Path) -> None:
+    """
+    Given a user-invoked skill whose source tree already ships an
+    agents/openai.yaml declaring allow_implicit_invocation: false
     When the Codex adapter's post-staging transform runs
     Then no override is added — the authored file is the author's declaration,
     and a generated one silently replacing it would ship bytes nobody wrote.
     """
     src = _skill_src(tmp_path, _USER_INVOKED)
     (src / "agents").mkdir()
-    (src / "agents" / "openai.yaml").write_bytes(b"policy:\n  allow_implicit_invocation: true\n")
+    (src / "agents" / "openai.yaml").write_bytes(
+        b"interface:\n  display_name: S\npolicy:\n  allow_implicit_invocation: false\n"
+    )
     out = CodexAdapter().post_staging_transforms(_skill_plan(src, Tool.CODEX), ScriptedIO())
     assert _sidecar_of(out) is None
 

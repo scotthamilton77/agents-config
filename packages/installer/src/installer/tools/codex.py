@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import yaml
+
 from installer.core.admission import DIR_RECORD_FILE, entry_file_text
 from installer.core.capabilities import is_user_invoked
 from installer.core.model import Contribution, FileKind
@@ -27,6 +29,30 @@ def _entry_text(plan: StagingPlan, item: StagedItem) -> str | None:
     if override is not None:
         return override.content.decode("utf-8", errors="replace")
     return entry_file_text(item)
+
+
+def _authored_sidecar(plan: StagingPlan, item: StagedItem) -> bytes | None:
+    """Sidecar bytes the skill already supplies, override winning over the
+    source tree; ``None`` when nothing but the generated file would exist."""
+    override = plan.dir_overrides.get(item.dest_relpath, {}).get(SIDECAR_RELPATH)
+    if override is not None:
+        return override.content
+    authored = item.source_path / SIDECAR_RELPATH
+    return authored.read_bytes() if authored.is_file() else None
+
+
+def _disables_implicit_invocation(content: bytes) -> bool:
+    """True when ``content`` already declares the policy a user-invoked skill
+    requires — ``allow_implicit_invocation`` exactly ``False``, matching the
+    strict reading the boolean gets everywhere else."""
+    try:
+        parsed = yaml.safe_load(content)
+    except yaml.YAMLError:
+        return False
+    if not isinstance(parsed, dict):
+        return False
+    policy = parsed.get("policy")
+    return isinstance(policy, dict) and policy.get("allow_implicit_invocation") is False
 
 
 class CodexAdapter:
@@ -66,19 +92,29 @@ class CodexAdapter:
         a skill out of implicit invocation. The file rides ``dir_overrides``,
         the channel for bytes inside an opaque DIR item, so the sync writes it,
         the idempotency check expects it, and the receipt's directory digest
-        covers it for prune. A skill whose source tree ships its own sidecar,
-        or whose overrides already carry one, keeps the authored bytes.
+        covers it for prune. A user-invoked skill that supplies its own sidecar
+        keeps the authored bytes only when they already declare the policy; an
+        authored sidecar that does not is a contradiction in source — the front
+        matter says never fire unprompted, the sidecar would deploy Codex the
+        opposite — and it aborts the staging rather than letting either file
+        silently win.
         """
         logged = False
         for dest, item in plan.items.items():
             if item.kind is not FileKind.DIR or item.namespace != "skills":
                 continue
-            if SIDECAR_RELPATH in plan.dir_overrides.get(dest, {}):
-                continue
-            if (item.source_path / SIDECAR_RELPATH).is_file():
-                continue
             text = _entry_text(plan, item)
             if text is None or not is_user_invoked(text):
+                continue
+            authored = _authored_sidecar(plan, item)
+            if authored is not None:
+                if not _disables_implicit_invocation(authored):
+                    raise ValueError(  # noqa: TRY003  # single call-site; subclass not justified
+                        f"{dest}: skill declares disable-model-invocation but ships "
+                        f"its own {SIDECAR_RELPATH} without "
+                        "allow_implicit_invocation: false — resolve the "
+                        "contradiction in source"
+                    )
                 continue
             if not logged:
                 io.info("Emitting Codex skill-policy sidecars", verbose=True)
