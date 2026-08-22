@@ -304,26 +304,45 @@ human to spend every turn saying no.
 **GUI-D36 — A thread picked back up after being set aside is caught up mechanically, and it
 does not resume a chain older than the interval.** A thread set aside by park or close
 (GUI-D29) and then reopened has been away while the board moved: decisions it reasoned from
-are settled, unsettled, invalidated, revised or newly added, and other threads have folded
-their conclusions in. Its first dispatch after the reopening carries a **catch-up** — the map
-events of the interval, in order, folded out of the log (§8.8) and placed in the dispatch
-context, so it reaches whichever tier takes that turn. It is a projection like every other:
-nothing in it is composed, summarised or inferred by a model, and a catch-up naming an event
-the log does not carry is the same corruption a short image 2 is. **One fact governs both
-halves — the interval changed the map, or it did not.** Where it did, the catch-up rides that
-dispatch and the channel's heavy-tier chain is not resumed: the turn opens a cold chain from
-the thread's full transcript, which crosses in the dispatch already, plus the catch-up, and
-the channel's later turns resume that new chain. Where the interval changed nothing there is
-no catch-up and the chain resumes as on any other turn. Resuming the older chain instead is
-refused: its accumulated reasoning was formed against a board that has since moved, and the
-board crossing whole on the next turn does not correct it — a snapshot states what is true and
-never what changed, so a chain already carrying a dozen older snapshots has no reason to read
-the newest as a correction rather than as more of the same. Opening a cold chain on every turn
-is refused for the opposite reason: it pays the cold-start tax on every thread turn in the
-session and forfeits the resume discount GUI-D15 is built to hold, to fix a chain that is not
-stale. **The human is told nothing.** No notification is raised (GUI-U15) and no board element
-appears; a cold turn on a channel the heavy tier drives is still an expert turn and still
-labelled one (GUI-U21), and that label is the whole of what any of this is visible as.
+are settled, unsettled, invalidated, revised or newly added, another thread's conclusion among
+them where the grill-master turned one into a change (GUI-D25). Its first dispatch after the
+reopening carries a **catch-up** — the map events of the interval, in order, folded out of the
+log (§8.8) and placed in the dispatch context, so it reaches whichever tier takes that turn. It
+is a projection like every other: nothing in it is composed, summarised or inferred by a model,
+and a catch-up naming an event the log does not carry is the same corruption a short image 2 is.
+
+**The interval is bounded by gestures, not by wall time**: it runs from the set-aside gesture to
+the next human turn on that thread — the turn that reopens it (GUI-D29) — so a thread the
+protocol offers no way to speak in again has no such turn, no interval and no dispatch this rule
+can fire on, which is a parked thread's position while reopening rides a human turn the surface
+offers on a closed thread alone.
+
+**A map event is an entry that moves a decision, and that is the whole of the definition**: an
+entry is one exactly when folding the log through it changes image 1's `decisions` (GUI-D3). A
+settle, an add-node, and a revise, unsettle or invalidate that lands are map events at the
+sequence they land at; one that waits in the human's queue is a map event at the `apply` entry
+that lands it and never at the entry that queued it; and an entry moving no decision — a
+status-lane entry, a thread turn, a park, a close, a thread fold, a fold whose every sub-update
+queues — is not one, whatever it says. A catch-up entry therefore always names a decision, and an
+entry moving several contributes one catch-up entry per decision it moved. Enumerating kinds
+instead is refused: a list is a second definition of what changed the map, and it disagrees with
+the projector the first time a kind lands one way here and waits the other way there — the human
+would be reading a board the catch-up does not describe.
+
+**One fact governs both halves — the interval moved a decision, or it did not.** Where it did,
+the catch-up rides that dispatch and the channel's heavy-tier chain is not resumed: the turn
+opens a cold chain from the thread's full transcript, which crosses in the dispatch already,
+plus the catch-up, and the channel's later turns resume that new chain. Where the interval moved
+no decision there is no catch-up and the chain resumes as on any other turn. Resuming the older
+chain instead is refused: its accumulated reasoning was formed against a board that has since
+moved, and the board crossing whole on the next turn does not correct it — a snapshot states
+what is true and never what changed, so a chain already carrying a dozen older snapshots has no
+reason to read the newest as a correction rather than as more of the same. Opening a cold chain
+on every turn is refused for the opposite reason: it pays the cold-start tax on every thread
+turn in the session and forfeits the resume discount GUI-D15 is built to hold, to fix a chain
+that is not stale. **The human is told nothing.** No notification is raised (GUI-U15) and no
+board element appears; a cold turn on a channel the heavy tier drives is still an expert turn
+and still labelled one (GUI-U21), and that label is the whole of what any of this is visible as.
 
 ## 4. Protocol
 
@@ -816,11 +835,10 @@ Image 2, transformed for one thread's agent (GUI-D24):
 The projection is a pure fold with the same determinism guarantee as the images (GUI-D3).
 
 A dispatch reopening a set-aside thread additionally carries that interval's catch-up
-(GUI-D36): an ordered array of objects — `seq` (integer), `kind` (string), `target` (the
-decision the event moved, or the thread id where the event is another thread's fold) and `why`
-(string, the rationale the event carried and empty where it carried none) — one per map event
-between the set-aside gesture and the reopening turn, folded from the log under the same
-determinism guarantee.
+(GUI-D36): an ordered array of objects — `seq` (integer), `kind` (string), `target` (string, the
+decision the entry moved) and `why` (string, the rationale the entry carried and empty where it
+carried none) — one per decision moved, in log order, over the map events between the set-aside
+gesture and the reopening turn, folded from the log under the same determinism guarantee.
 
 ### 8.9 The converged-answer proposal
 
@@ -1208,25 +1226,28 @@ Each criterion is mechanically checkable and convertible to a red test.
   it returns the next turn on that channel to the fast tier, and a later reply meeting a
   condition escalates that channel again.
 - **GUI-A75** A thread reopened after a set-aside gesture is dispatched with a catch-up exactly
-  when the interval between that gesture and the reopening turn carries at least one map event,
-  and the catch-up's entries are that interval's map events — every settle, unsettle,
-  invalidate, revise and add-node, and every other thread's fold — in log order, each carrying
-  the sequence, kind, target and rationale the log carries, with nothing from outside the
-  interval and nothing composed. A fixture whose interval carries only turns on other threads
-  and status entries produces no catch-up at all.
-- **GUI-A76** Where the interval changed the map, the reopening turn on a heavy-tier channel is
+  when at least one entry in the interval between that gesture and the reopening turn changes
+  image 1's decisions, and the catch-up carries one entry per decision moved per such entry, in
+  log order, each naming that decision and the sequence, kind and rationale the log carries, with
+  nothing from outside the interval and nothing composed. Over a fixture whose interval carries
+  thread turns, status entries, a park, a thread fold and an update left waiting in the queue, no
+  catch-up is produced; applying that queued update inside the interval produces one carrying it
+  at the sequence of the apply. The check is mutation-tested: reading the queueing sequence
+  instead turns the suite red naming that case.
+- **GUI-A76** Where the interval moved a decision, the reopening turn on a heavy-tier channel is
   invoked with no resume identifier and its prompt carries the thread's turns in full beside the
-  catch-up, and the chain that turn opens is the one the channel's next turn resumes — asserted
-  against the arguments the driver builds and against the per-channel chain record, whose other
-  channels are left as they were.
-- **GUI-A77** Where the interval changed nothing, the reopening dispatch carries no catch-up and
-  the turn is invoked with the resume identifier the channel already held, exactly as an ordinary
-  turn on a thread nobody set aside.
+  catch-up. Where that turn's driver returns a session id, that id — and no earlier one — is
+  what the next turn on that channel resumes; where it returns none, the channel holds no resume
+  record, as after any turn. Asserted against the arguments the driver builds and against the
+  per-channel chain record, whose other channels are left as they were.
+- **GUI-A77** Where no entry in the interval moved a decision, the reopening dispatch carries no
+  catch-up and the turn is invoked with the resume identifier the channel already held, exactly
+  as an ordinary turn on a thread nobody set aside.
 - **GUI-A78** Reopening a thread raises nothing for the human: over a fixture reopening a thread
-  across a changed interval, no notification is produced, the board projects no element it does
-  not project over the same session without the interval, and the log grows by the reopening
-  turn, its status entries and the reply alone. The turn's tier label (GUI-U21) is the whole of
-  the difference the human can see.
+  across an interval that moved a decision, no notification is produced, the board projects no
+  element it does not project over the same session without the interval, and the log grows by
+  the reopening turn, its status entries and the reply alone. The turn's tier label (GUI-U21) is
+  the whole of the difference the human can see.
 
 ## 10. Open questions for the implementing work
 
