@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING
 from pydantic import ValidationError
 
 from grillui.capture import capture, default_summary, write_result
+from grillui.lane import close_dead_turns
 from grillui.log import HANDOFF_FILE, LOG_FILE, SessionLog, read_entries
 from grillui.persistence import project_and_persist, report_failure
 from grillui.schemas import SESSION_START_KIND, Handoff, HandoffDecision, fault_summary
@@ -90,6 +91,10 @@ def open_session(directory: Path, handoff_path: Path | None = None) -> SessionLo
     re-folded from that log and the handoff file is not read. A new directory is
     seeded from a validated briefing, and refusing one leaves nothing behind.
 
+    Any turn the previous tenure announced and never answered is closed out
+    here, before anything reads the directory: those turns died with the process
+    that was taking them, and nothing else will ever say so.
+
     The images are rewritten either way, before anything else can read them: any
     image file already present is a derived cache from a previous tenure, and
     discarding it is what makes the log the only recovery source. That is also
@@ -100,6 +105,7 @@ def open_session(directory: Path, handoff_path: Path | None = None) -> SessionLo
     if not _resumable(directory):
         handoff = read_handoff(handoff_path or (directory / HANDOFF_FILE))
     log = SessionLog(directory)
+    close_dead_turns(log)
     if handoff is not None:
         log.record(SESSION_START_KIND, handoff.model_dump(by_alias=True, exclude_none=True))
     project_and_persist(log)

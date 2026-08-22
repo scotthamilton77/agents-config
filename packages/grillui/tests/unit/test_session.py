@@ -18,7 +18,7 @@ import pytest
 from conftest import TIMEOUT, SpyDriver, driven, event, handoff_doc, run_turns, write_handoff
 
 from grillui.dispatch import DISPATCH_DIR
-from grillui.lane import Lane
+from grillui.lane import Lane, close_dead_turns, unclosed_turns
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE, LOG_FILE, SessionLog, read_entries
 from grillui.persistence import project_and_persist
 from grillui.projector import fold, to_image1
@@ -27,6 +27,7 @@ from grillui.schemas import (
     SESSION_START_KIND,
     STATUS_KIND,
     STATUS_PHASE_COMPOSING,
+    STATUS_PHASE_ERROR,
     STATUS_PHASE_REPLIED,
     EventSubmission,
     Image1,
@@ -587,6 +588,148 @@ def test_the_session_a_restart_resumes_has_no_turn_still_writing_into_it(
     assert phases.count(STATUS_PHASE_COMPOSING) == 2
     assert phases.count(STATUS_PHASE_REPLIED) == phases.count(STATUS_PHASE_COMPOSING)
     assert log.seq == len(entries)
+
+
+def test_a_restart_closes_out_the_turn_the_dead_tenure_never_answered(
+    session_dir: Path,
+) -> None:
+    """
+    Given a session whose log ends with a turn announced and never answered,
+         the way a backend killed mid-turn leaves it
+    When a successor process is opened against that directory
+    Then no channel is still owed a reply, and the turn is on the lane as
+         failed, named for the epoch that died holding it.
+
+    The turn was a thread inside the process that is gone, so nobody is
+    composing and no `replied` is ever coming. Left announced, the channel
+    reads as waiting for the rest of the session and the human watches a clock
+    that only counts up.
+    """
+    first = _busy_session(session_dir)
+    first.emit_status(
+        STATUS_PHASE_COMPOSING, "the 'fast' tier is composing a reply", MAP_CHANNEL, tier="fast"
+    )
+    assert MAP_CHANNEL in unclosed_turns(first.entries())
+
+    second = open_session(session_dir)
+
+    assert unclosed_turns(second.entries()) == {}
+    closing = second.entries()[-1]
+    assert closing.kind == STATUS_KIND
+    assert closing.channel == MAP_CHANNEL
+    assert closing.payload["phase"] == STATUS_PHASE_ERROR
+    assert first.epoch in closing.payload["detail"]
+    assert "fast" in closing.payload["detail"]
+
+
+def test_a_turn_the_current_tenure_is_taking_is_not_closed_out(session_dir: Path) -> None:
+    """
+    Given a turn in flight under this process's own epoch
+    When the dead-turn sweep runs
+    Then the turn is left announced, and the driver closes the lane itself when
+         it finishes.
+
+    A live turn is the one case the sweep must not touch. Closing it would tell
+    the human their reply failed while the tier composing it is still working,
+    and the `replied` that follows would reopen a channel the lane had already
+    reported closed.
+    """
+    log = open_session(session_dir, write_handoff(session_dir, handoff_doc()))
+    driver = SpyDriver(hold=True, reply="What does compaction cost you?")
+    _, turns = Lane(log, driver).accept(
+        [
+            EventSubmission(
+                kind="answer",
+                actor="human",
+                channel=MAP_CHANNEL,
+                idempotency_key="a1",
+                payload={"target": "d1", "answer": {"option": "a"}},
+            )
+        ],
+        log.epoch,
+    )
+    assert driver.started.wait(TIMEOUT)
+
+    close_dead_turns(log)
+
+    assert MAP_CHANNEL in unclosed_turns(log.entries())
+    assert not any(
+        entry.payload.get("phase") == STATUS_PHASE_ERROR
+        for entry in log.entries()
+        if entry.kind == STATUS_KIND
+    )
+    driver.release.set()
+    for turn in turns:
+        turn.join(TIMEOUT)
+        assert not turn.is_alive(), "a scheduled turn outlived its timeout"
+    assert unclosed_turns(log.entries()) == {}
+
+
+def test_a_restart_closes_out_every_channel_the_dead_tenure_left_announced(
+    session_dir: Path,
+) -> None:
+    """
+    Given a dead tenure that left a turn announced on the map and on a thread
+         at once
+    When a successor process is opened against that directory
+    Then both channels are closed out, each naming the epoch that died holding
+         it and the tier that was taking it, and nothing is left owed.
+
+    Threads take their turns concurrently with each other and with the map, so
+    a kill lands on however many were in flight. A sweep that closed the one
+    channel it happened to reach first would leave the rest counting up, and a
+    thread is exactly where a human is least likely to notice a clock that
+    never stops.
+    """
+    first = _busy_session(session_dir)
+    first.emit_status(
+        STATUS_PHASE_COMPOSING, "the 'fast' tier is composing a reply", MAP_CHANNEL, tier="fast"
+    )
+    first.emit_status(
+        STATUS_PHASE_COMPOSING, "the 'heavy' tier is composing a reply", THREAD, tier="heavy"
+    )
+    assert set(unclosed_turns(first.entries())) == {MAP_CHANNEL, THREAD}
+
+    second = open_session(session_dir)
+
+    assert unclosed_turns(second.entries()) == {}
+    closing = {
+        entry.channel: entry
+        for entry in second.entries()
+        if entry.kind == STATUS_KIND and entry.payload["phase"] == STATUS_PHASE_ERROR
+    }
+    assert set(closing) == {MAP_CHANNEL, THREAD}
+    for channel, tier in ((MAP_CHANNEL, "fast"), (THREAD, "heavy")):
+        detail = closing[channel].payload["detail"]
+        assert first.epoch in detail
+        assert tier in detail
+
+
+def test_a_channel_announced_again_after_its_last_turn_closed_reads_as_owed(
+    session_dir: Path,
+) -> None:
+    """
+    Given a channel whose turn was announced and closed, and which was then
+         announced again
+    When the lane is read for what it owes
+    Then the channel is owed, against the second announcement rather than the
+         first.
+
+    A channel takes one turn after another all session. A reading that asked
+    only whether the channel had ever been closed would call a live turn
+    finished -- and the sweep, believing it, would close out a turn a tier is
+    still taking.
+    """
+    log = SessionLog(session_dir)
+    log.emit_status(
+        STATUS_PHASE_COMPOSING, "the 'fast' tier is composing", MAP_CHANNEL, tier="fast"
+    )
+    log.emit_status(STATUS_PHASE_REPLIED, "the 'fast' tier's turn is over", MAP_CHANNEL)
+    reopened = log.emit_status(
+        STATUS_PHASE_COMPOSING, "the 'fast' tier is composing", MAP_CHANNEL, tier="fast"
+    )
+
+    assert unclosed_turns(log.entries()) == {MAP_CHANNEL: reopened}
 
 
 def test_the_next_entry_after_a_restart_continues_the_sequence(session_dir: Path) -> None:

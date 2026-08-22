@@ -1,6 +1,6 @@
 """The status lane, the answerability decision, and the seam a tier plugs into.
 
-Four rules meet here.
+Five rules meet here.
 
 **The lane is mechanical.** The instant a human turn is accepted, and inside the
 same lock that appended it, the backend emits `accepted` and then `composing`
@@ -25,6 +25,13 @@ authors map mutations and a conclusion nobody hands it changes nothing. The lane
 follows that routing rather than the click: the human's gesture is acknowledged
 where they made it, and the turn it schedules is announced, tiered and closed on
 the channel that turn actually runs on.
+
+**A turn dies with the process that announced it.** The turn is a thread inside
+one process, so a backend killed mid-turn leaves a `composing` nothing will ever
+close. A successor opening the same directory closes those out on the way in --
+the previous tenure's turns are over whatever else is true of them, and a
+channel left announced is a waiting clock that counts up for the rest of the
+session.
 
 **The tier is a property of the channel, not of the session.** Each turn's
 driver is chosen for the channel it is about to run on, so escalating one thread
@@ -53,11 +60,13 @@ from grillui.projector import supersede_conflicts
 from grillui.schemas import (
     ANSWERABLE_KINDS,
     MAP_CHANNEL,
+    STATUS_KIND,
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
     STATUS_PHASE_REPLIED,
     THREAD_FOLD_KIND,
+    TIER_KEY,
 )
 
 if TYPE_CHECKING:
@@ -65,7 +74,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillui.log import SessionLog
-    from grillui.schemas import EventSubmission, Receipt, SupersedeConflict
+    from grillui.schemas import EventSubmission, LogEntry, Receipt, SupersedeConflict
 
 
 class AgentUnreachableError(RuntimeError):
@@ -144,6 +153,51 @@ def is_answerable(event: EventSubmission) -> bool:
     actor test is what keeps the backend from answering itself.
     """
     return event.actor == "human" and event.kind in ANSWERABLE_KINDS
+
+
+def unclosed_turns(entries: Sequence[LogEntry]) -> dict[str, LogEntry]:
+    """The `composing` entry on each channel that no `replied` or `error` closed.
+
+    The same reading of the lane a page does, kept here because the lane's
+    pairing rule is this module's. One entry per channel, latest wins: a channel
+    takes one turn at a time, so a second `composing` on it replaces the first
+    rather than queueing behind it.
+    """
+    open_turns: dict[str, LogEntry] = {}
+    for entry in entries:
+        if entry.kind != STATUS_KIND:
+            continue
+        phase = entry.payload.get("phase")
+        if phase == STATUS_PHASE_COMPOSING:
+            open_turns[entry.channel] = entry
+        elif phase in (STATUS_PHASE_REPLIED, STATUS_PHASE_ERROR):
+            open_turns.pop(entry.channel, None)
+    return open_turns
+
+
+def close_dead_turns(log: SessionLog) -> None:
+    """Close out every turn a previous tenure announced and never answered.
+
+    A turn is a thread inside one process, so a process that died mid-turn took
+    the turn with it: nothing is composing, and nothing will ever write the
+    `replied` that turn owed. Left alone, the channel reads as owing a reply for
+    the rest of the session and the human watches a clock that counts up
+    forever.
+
+    Only a prior epoch's turn is closed. A turn this tenure announced is live,
+    and the driver taking it will close the lane itself.
+    """
+    for channel, opened in unclosed_turns(log.entries()).items():
+        if opened.epoch == log.epoch:
+            continue
+        tier = opened.payload.get(TIER_KEY)
+        whose = f"the {tier!r} tier's turn" if isinstance(tier, str) else "the turn"
+        log.emit_status(
+            STATUS_PHASE_ERROR,
+            f"{whose} died with the process holding epoch {opened.epoch!r}, "
+            f"which ended before it replied",
+            channel,
+        )
 
 
 class Lane:
