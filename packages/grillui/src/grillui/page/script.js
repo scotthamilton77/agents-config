@@ -439,6 +439,10 @@ function owed() {
 // browser's. A wait that reads as negative is a page saying the reply arrived
 // before it was asked for.
 function elapsed(since) { return Math.max(0, Math.round((Date.now() - since) / 1000)); }
+// One wording for one wait, whether the row is being drawn or ticked in place.
+// Two sites formatting the same clock drift, and a diagnostic disagreeing with
+// itself is the thing the per-channel row exists to rule out.
+function waitedText(st) { return elapsed(st.since) + "s" + (st.tier ? " · " + st.tier + " tier" : ""); }
 function outboxDepth() { return Object.keys(OUTBOX).length; }
 
 /* One event, built and checked against the table above rather than trusted
@@ -2175,8 +2179,8 @@ function renderDiagnostic() {
       '<span class="mono chan">' + esc(view.channel === MAP ? "map" : view.channel) + "</span>" +
       '<span class="lyr">connection <b class="mono">' + esc(view.connection) + "</b></span>" +
       '<span class="lyr">protocol <b class="mono' + (waiting ? " owes" : "") + '">' + esc(view.protocol) + "</b></span>" +
-      (waiting ? '<span class="lyr">waiting <b class="mono owes">' + elapsed(waiting.since) + "s" +
-        (waiting.tier ? " · " + esc(waiting.tier) + " tier" : "") + "</b></span>" : "") + "</div>";
+      (waiting ? '<span class="lyr">waiting <b class="mono owes wclock">' + esc(waitedText(waiting)) +
+        "</b></span>" : "") + "</div>";
   }).join("");
   return '<div class="diag" id="diagnostic"><div class="diaghead">Channels — one for the map, one per thread. ' +
     "The connection is the transport's and is the same for all of them; the protocol state is each channel's own.</div>" +
@@ -2184,6 +2188,22 @@ function renderDiagnostic() {
     " · seq " + WIRE.cursor + " · " + WIRE.sent + " sent, " + WIRE.got + " received" +
     " · outbox " + outboxDepth() +
     (WIRE.rejected ? " · " + WIRE.rejected + " refused" : "") + "</div></div>";
+}
+// The open diagnostic's clocks, rewritten in place on the lane's beat. The board
+// is only re-rendered when the log moves, and a channel waiting on an agent is
+// by definition a log that is not moving -- so a row drawn once shows the wait
+// it started at for the whole of the wait it exists to time. In place rather
+// than by re-rendering, for the same reason the lane's own clock is: a render
+// once a second destroys whatever control the human is holding.
+function tickDiagClocks() {
+  var rows = document.querySelectorAll("#diagnostic .diagrow");
+  for (var i = 0; i < rows.length; i++) {
+    var waiting = WIRE.status[rows[i].getAttribute("data-channel")];
+    var clock = rows[i].querySelector(".wclock");
+    if (!waiting || !clock) continue;
+    rows[i].setAttribute("data-waited", elapsed(waiting.since));
+    clock.textContent = waitedText(waiting);
+  }
 }
 
 /* ---------- the window that is not this session's ----------
@@ -2825,10 +2845,13 @@ setInterval(poll, 700);
 // keep being asked by a window that has stopped reading the board.
 setInterval(function () { claim(false); }, 1500);
 // The lane's timer ticks without a full render, so a running clock never steals
-// focus from the textbox that is meant to always hold it.
+// focus from the textbox that is meant to always hold it. Every clock on the
+// page moves on this one beat: the diagnostic's per-channel rows are the same
+// wait told per channel, and two beats would let them disagree with the header.
 setInterval(function () {
   var el = document.getElementById("lanetimer");
   if (el) el.textContent = agentSignal().text;
+  tickDiagClocks();
 }, 1000);
 // Browsers throttle timers in a background tab, so replies pile up while you
 // are elsewhere. Collect them the moment you are back.

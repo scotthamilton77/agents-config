@@ -850,6 +850,23 @@ def test_the_diagnostic_expansion_carries_each_channels_own_wait() -> None:
     assert "outboxDepth()" in diagnostic
 
 
+def test_each_channels_wait_ticks_on_the_beat_the_headers_clock_ticks_on() -> None:
+    """A channel waiting on an agent is a log that is not moving, and the board
+    is only re-rendered when it moves -- so a row drawn once would show the wait
+    it opened at for the whole of the wait it exists to time, beside a header
+    counting up. One beat drives both, through one wording: two formattings of
+    the same wait drift, and a diagnostic that disagrees with the header is what
+    the row is opened to settle.
+    """
+    beat = page_source().split('getElementById("lanetimer")', 1)[1].split("}, 1000);", 1)[0]
+    assert "tickDiagClocks()" in beat, "the diagnostic's clocks are on no beat at all"
+    ticker = function_body("tickDiagClocks")
+    assert "WIRE.status[" in ticker, "the row is ticked from something other than the lane"
+    assert "data-waited" in ticker
+    assert "waitedText(" in ticker
+    assert "waitedText(" in function_body("renderDiagnostic")
+
+
 # ---------------------------------------------------------------- GUI-A22
 
 
