@@ -116,11 +116,24 @@ if TYPE_CHECKING:
 RESUME_FILE = "heavy-resume.json"
 REQUEST_TIMEOUT = 60.0
 
+# What the human is told when an offer arrives in a shape nothing can read.
+# The offer's own bytes are deliberately not quoted back at them: an
+# unreadable object is not made readable by printing it.
+REFUSED_SHAPE = (
+    "The agent offered an answer in a shape the board cannot read, so nothing was taken from it."
+)
+
 # A hosted model asked for an object commonly sends it inside a markdown fence,
 # because that is how it was trained to present JSON to a reader. The fence is
 # presentation, not content: a turn whose updates were dropped over three
 # backticks is a turn the human watched arrive as prose with the board unmoved.
-FENCED = re.compile(r"\A```[^\n]*\n(?P<body>.*?)\n?```\Z", re.DOTALL)
+#
+# The opening line carries an info string and then, as often as not, the start
+# of the object itself -- a model writing the whole reply on one line is writing
+# the same object as one that broke after the backticks. So the info string is
+# matched for what it is, a bare language token, and everything after it is the
+# body whichever side of a newline it fell on.
+FENCED = re.compile(r"\A```[A-Za-z0-9_+.-]*[ \t]*(?P<body>.*?)\s*```\Z", re.DOTALL)
 
 
 class ReplyRefusedError(RuntimeError):
@@ -624,12 +637,8 @@ def declared_updates(
     said; the fold decides what the board can do with it, so an offer and the
     prose it rode in on cannot be judged by two readers that disagree.
     """
-    fenced = FENCED.match(reply.strip())
-    try:
-        document = json.loads(fenced.group("body") if fenced else reply)
-    except ValueError:
-        return reply, [], [], None
-    if not isinstance(document, dict):
+    document = _document(reply)
+    if document is None:
         return reply, [], [], None
     prose = document.get("text")
     updates = document.get("updates")
@@ -646,6 +655,48 @@ def declared_updates(
         [one for one in withdrew or [] if isinstance(one, str)],
         proposal,
     )
+
+
+def _document(reply: str) -> dict[str, Any] | None:
+    """The object a reply carries, fence and all read through, or None where the
+    reply is prose."""
+    fenced = FENCED.match(reply.strip())
+    try:
+        document = json.loads(fenced.group("body") if fenced else reply)
+    except ValueError:
+        return None
+    return document if isinstance(document, dict) else None
+
+
+def _proposal_refusal(
+    log: SessionLog, channel: str, reply: str, taken: dict[str, Any] | None
+) -> str | None:
+    """Why the answer this reply offered cannot be taken, in a line addressed to
+    the human, or None where there is nothing to refuse.
+
+    A reply that names `proposed_answer` at all has recognisably offered one, so
+    it is never left to arrive as its own raw bytes: the human reading a thread
+    is owed the sentence saying what the agent tried and why the board would not
+    take it. The anchor is asked first, because an offer aimed at a decision
+    this thread is not about is refused for that whatever else is wrong with it
+    -- and the map channel and the session-scoped thread anchor nothing, so an
+    offer arriving on either is answered by the same question.
+    """
+    document = _document(reply)
+    if document is None or PROPOSED_ANSWER_KEY not in document:
+        return None
+    offered = document[PROPOSED_ANSWER_KEY]
+    if not isinstance(offered, dict):
+        return REFUSED_SHAPE
+    anchor = log.anchor_of(channel)
+    named = offered.get("decision")
+    if named != anchor:
+        return (
+            f"The agent offered an answer to {named!r}, and this conversation "
+            f"{'anchors no decision' if anchor is None else f'is about {anchor!r}'}, "
+            f"so the board did not take it."
+        )
+    return None if taken is not None else REFUSED_SHAPE
 
 
 def record_reply(
@@ -674,6 +725,13 @@ def record_reply(
     thread to have settled, in the same breath as it says the new thing.
     """
     prose, updates, superseded, proposal = declared_updates(text)
+    refusal = _proposal_refusal(log, channel, text, proposal)
+    if refusal is not None:
+        # The agent's own words survive where the reply had any; where the
+        # object was the whole reply, the refusal is what there is to say, and
+        # it stands in for bytes no human should have been shown.
+        prose = f"{prose}\n\n{refusal}" if proposal is not None else refusal
+        proposal = None
     if not prose.strip():
         raise ReplyRefusedError(tier, "the completion was empty")
     spoken: dict[str, Any] = {

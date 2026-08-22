@@ -279,8 +279,11 @@ proposal on a thread nobody has spoken in since is the one on offer. Only a thre
 on a decision-anchored thread may make one, and only for that thread's own anchor: the
 grill-master already asserts answers through `settle` under the queue's rules, and a
 session-scoped thread (GUI-U16) anchors no decision, so a proposal from either — or one
-naming any decision other than the anchor — is dropped and the turn is recorded as prose,
-exactly as a half-shaped reply document is. **Dropping rather than rejecting is the rule
+naming any decision other than the anchor — is dropped, and the turn carries a line naming
+the decision offered and why the board did not take it, in place of the object's own bytes:
+a reply recognisably offering an answer is never shown to the human as raw JSON, and a
+half-shaped reply document carrying one is answered the same way.
+**Dropping rather than rejecting is the rule
 here and only here**: refusing the write would throw away what the agent said to the human
 over a malformed offer nobody has seen yet. Carrying the proposal as an update inside the
 turn's `updates` list instead is refused, because that list is map mutations and a thread
@@ -909,8 +912,11 @@ a document carrying it and prose is a declaring reply like any other:
 - `because` — string, one line: why the thread converged here. It is shown to the human
   beside the offer and is not part of the answer.
 
-An unusable proposal is dropped and the turn is recorded as prose; it is never a rejection
-of the write.
+An unusable proposal is dropped and the turn is recorded — carrying what the agent said
+where the document had prose, and, either way, one line naming the decision offered and why
+the board did not take it. The reply's own bytes are never what the human is shown, and the
+write is never rejected. The fence a model wraps the document in is presentation and is read
+through whether or not the opening line also carries the object's first characters.
 
 **On the answer**, `from_thread` is an optional string on the `answer` gesture's payload,
 beside `target` and `answer`: the id of the thread the answer was armed from. It names a
@@ -954,7 +960,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D28 | GUI-A51 |
 | GUI-D29 | GUI-A55 |
 | GUI-D30 | GUI-A64 |
-| GUI-D31 | GUI-A65, GUI-A66 |
+| GUI-D31 | GUI-A65, GUI-A66, GUI-A84, GUI-A85 |
 | GUI-D32 | GUI-A70 |
 | GUI-D33 | GUI-A67, GUI-A68 |
 | GUI-D34 | GUI-A69 |
@@ -1335,6 +1341,13 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A83** Every standing brief a driver composes — the grill-master's and a thread
   agent's, on the fast tier and on the heavy one — carries the register rule: plain
   sentences, the answer before the reasoning, and no term the decision does not need.
+- **GUI-A84** One declaring reply document reads the same in all three layouts a model
+  writes it in: the object alone, the object under a fence, and the object on the fence's
+  own opening line. All three yield the document's prose and the proposal it carried.
+- **GUI-A85** An offer the board cannot take reaches the human as a line naming the decision
+  it was for and why it was refused, never as the reply's own JSON. On a thread anchoring no
+  decision the line is the whole of the turn; on a thread anchored to another decision what
+  the agent said stands ahead of it. Neither entry carries the offer.
 
 ## 10. Open questions for the implementing work
 
@@ -1503,3 +1516,5 @@ opens one proves something else.
 - GUI-A81 | probe: packages/grillui/tests/browser/pre_mark_probe.py::main
 - GUI-A82 | probe: packages/grillui/tests/browser/pre_mark_probe.py::main
 - GUI-A83 | test: packages/grillui/tests/unit/test_tiers.py::test_every_brief_a_driver_composes_carries_the_register_rule
+- GUI-A84 | test: packages/grillui/tests/unit/test_drivers.py::test_a_declaring_reply_is_read_through_whatever_fence_it_arrived_in
+- GUI-A85 | test: packages/grillui/tests/unit/test_drivers.py::test_an_offer_on_a_thread_anchoring_nothing_is_a_notice_and_not_raw_bytes

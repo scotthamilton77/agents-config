@@ -48,6 +48,7 @@ from grillui.drivers import (
     OpenRouterTransport,
     ReplyRefusedError,
     claude_argv,
+    declared_updates,
     read_cli_reply,
     read_completion,
     request_body,
@@ -68,6 +69,7 @@ from grillui.schemas import (
     MAP_CHANNEL,
     MODEL_KEY,
     PROMPT_TOKENS_KEY,
+    PROPOSED_ANSWER_KEY,
     RECOMMENDATION_KEY,
     STATUS_PHASE_ACCEPTED,
     TIER_KEY,
@@ -1126,3 +1128,122 @@ def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
         )
 
     assert warnings_in(log) == []
+
+
+# --- an offer the board cannot take, arriving as an offer and not as bytes -----
+
+# The reply a fast agent actually sent on the session-scoped thread: one line,
+# fence and object together, and no prose beside the offer. Kept verbatim
+# because every part of it is what went wrong -- the layout the fence reader
+# missed, and the decision a thread anchoring nothing has no business naming.
+LIVE_ONE_LINE_OFFER = (
+    '```json { "proposed_answer": { "decision": "d1", "option": "b", "text": '
+    '"Close unactioned; the downstream questions fall away.", "because": "The human '
+    "settled decision d1 on option b, rendering the downstream decisions d2 through d9 "
+    'unnecessary." } } ```'
+)
+
+DECLARING = {
+    "text": "Retention follows from the log, then.",
+    "proposed_answer": {"decision": "d1", "option": "b", "text": "Forever", "because": "said so"},
+}
+
+
+def open_thread(log: SessionLog, thread: str, decision: str | None) -> None:
+    """One thread, anchored to a decision or to none -- which is what the thread
+    about the board itself is."""
+    receipt = log.submit(
+        [
+            EventSubmission(
+                kind="thread-created",
+                actor="human",
+                channel=thread,
+                idempotency_key=f"open-{thread}",
+                payload={
+                    "decision": decision,
+                    "kind": "user",
+                    "title": f"{decision or 'session'} — opened",
+                    "requires_action": False,
+                    "turns": [{"text": "Tell me about this."}],
+                },
+            )
+        ],
+        log.epoch,
+    )[0]
+    assert receipt.status == "accepted"
+
+
+@pytest.mark.parametrize(
+    ("layout", "reply"),
+    [
+        ("the object on the fence's own line", f"```json {json.dumps(DECLARING)} ```"),
+        ("the object under the fence", f"```json\n{json.dumps(DECLARING)}\n```"),
+        ("no fence at all", json.dumps(DECLARING)),
+    ],
+)
+def test_a_declaring_reply_is_read_through_whatever_fence_it_arrived_in(
+    layout: str, reply: str
+) -> None:
+    """
+    Given one declaring document presented in each of the three layouts a model
+         writes it in
+    When the driver reads what the turn declared
+    Then all three read as the same document, because where the model put its
+         newlines is presentation and not what the turn said.
+    """
+    prose, _, _, proposal = declared_updates(reply)
+
+    assert prose == DECLARING["text"], layout
+    assert proposal == DECLARING["proposed_answer"], layout
+
+
+def test_an_offer_on_a_thread_anchoring_nothing_is_a_notice_and_not_raw_bytes(
+    session_dir: Path,
+) -> None:
+    """
+    Given the session-scoped thread, which anchors no decision, and the fast
+         agent replying to it with the live one-line fenced offer on `d1`
+    When the turn is recorded
+    Then the thread carries a line saying which decision was offered and why the
+         board did not take it, the entry carries no offer, and none of the
+         reply's own JSON reaches the human.
+    """
+    log = briefed(session_dir)
+    open_thread(log, "t-help", None)
+    human_turn(log, "How does this board work?", channel="t-help")
+
+    driver = FastDriver(TierConfig(), ScriptedFast(reply=LIVE_ONE_LINE_OFFER))
+    driver.run(log, record_dispatch(log, channel="t-help"))
+
+    written = json.loads((log.directory / LOG_FILE).read_text(encoding="utf-8").splitlines()[-1])
+    said = written["payload"]["text"]
+    assert PROPOSED_ANSWER_KEY not in written["payload"]
+    assert "'d1'" in said
+    assert "anchors no decision" in said
+    assert "{" not in said
+    assert PROPOSED_ANSWER_KEY not in said
+
+
+def test_an_offer_on_another_decision_keeps_the_prose_and_says_why_it_was_refused(
+    session_dir: Path,
+) -> None:
+    """
+    Given a thread anchored to `d1` whose agent offers an answer to `d3`
+    When the turn is recorded
+    Then what the agent said to the human survives, the refusal is stated after
+         it, and no offer rides the entry for the page to arm.
+    """
+    log = briefed(session_dir)
+    open_thread(log, "t-compaction", TARGET)
+    human_turn(log, "Say more about retention.", channel="t-compaction")
+    offered = {"text": REPLY, "proposed_answer": {"decision": "d3", "text": "Forever"}}
+
+    driver = FastDriver(TierConfig(), ScriptedFast(reply=json.dumps(offered)))
+    driver.run(log, record_dispatch(log, channel="t-compaction"))
+
+    written = json.loads((log.directory / LOG_FILE).read_text(encoding="utf-8").splitlines()[-1])
+    said = written["payload"]["text"]
+    assert PROPOSED_ANSWER_KEY not in written["payload"]
+    assert said.startswith(REPLY)
+    assert "'d3'" in said
+    assert "is about 'd1'" in said

@@ -167,6 +167,12 @@ class SessionLog:
         """The position the log has reached, in memory."""
         return self._index.last_seq
 
+    def anchor_of(self, channel: str) -> str | None:
+        """The decision the channel's thread anchors, or None where it anchors
+        none -- the session-scoped thread and the map channel alike, which are
+        the same answer because neither is a conversation about one decision."""
+        return self._index.threads.get(channel)
+
     def entries(self) -> list[LogEntry]:
         """A stable snapshot: taken under the append lock, so a reader folding
         it never sees a batch half-landed."""
