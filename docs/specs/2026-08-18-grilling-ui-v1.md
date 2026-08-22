@@ -222,6 +222,14 @@ behind the agent that has to reason about it next. Some thread conclusions fold 
 or notification only, with no map update at all; the grill-master decides which, and says
 so in its response.
 
+**GUI-D30 — A thread agent dialogues with what the human said; it never fishes for
+continuation.** Its turn engages the statements the human actually made and stops there.
+It asks a question in two cases only: to clarify what the human is asking, and to surface
+something the human is not considering but should be. A closing question appended to keep
+the conversation moving is refused — it reads as the agent having nothing left to say, and
+it hands the human the work of ending every thread by declining an invitation. This binds
+the thread-agent prompt on both tiers.
+
 ## 4. Protocol
 
 **GUI-D16 — Every write carries an idempotency key and gets a uniform typed receipt.** The
@@ -330,6 +338,20 @@ follows, and changes nothing else.
   thread turns can reference them by label. Three is a ceiling, not a target. Alongside
   choosing an option and writing free text, the human can select an option *and* attach a
   note.
+- **GUI-U19 — Each option's trade-off rides behind that option's own icon.** Where an
+  option carries `pcr` (§8.2), a small icon sits beside that option and is the whole of the
+  hover target; hovering it raises an overlay carrying that option's three statements —
+  what it buys, what it costs, what it forces downstream. An option carrying no `pcr`
+  renders no icon and owns no overlay. The decision block is never itself the target: a
+  block-sized target fires on every pass of the pointer towards a control inside it, so the
+  overlay covers the options at the moment the human is reaching for one. The overlay obeys
+  the hover discipline of GUI-U6.
+- **GUI-U20 — A decision taller than its pane keeps its header in view.** While any part of
+  a decision is in view in the decisions pane, a floating header carrying that decision's id
+  and title stays pinned at the top of the pane; it releases when the decision has scrolled
+  fully out of view, and when the decision is settled and collapsed. Without it a human
+  reading an option list screens below the question it answers has nothing on the page
+  naming which decision they are about to answer.
 - **GUI-U6 — Hover overlays always hide on click**, and return only on a fresh mouse-enter
   of a zone that owns one.
 - **GUI-U7 — One main window per session, enforced by the backend.** The backend mints a
@@ -365,8 +387,22 @@ follows, and changes nothing else.
   thread's, and it is always active. It is visually highlighted when the agent's reply
   metadata recommends escalation (GUI-D11), and the human decides. Activating it forces the
   next turn on that channel to the heavy tier, carrying the accumulated thread. While the
-  heavy tier is driving that channel the control's label flips to *fast agent mode*, and
-  activating it returns the channel to the fast tier.
+  heavy tier is driving that channel, activating it returns the channel to the fast tier;
+  what the control reads in either position is GUI-U22's.
+- **GUI-U21 — Every agent turn is labelled by the tier that produced it.** On a thread and
+  on the map channel alike, an agent turn renders as *fast agent* or *expert agent*, read
+  from the tier attribution that turn itself carries (§8.3, §8.5). The channel's current
+  mode is never the source: reading the mode would relabel every turn taken before a
+  transfer as the tier that came after it, and the transcript is the human's only evidence
+  that the transfer changed anything.
+- **GUI-U22 — The transfer control names the action it performs, not a state.** Its label
+  is *Transfer to expert* while the channel is on the fast tier and *Return to fast agent*
+  while the heavy tier drives it, styled identically in both positions and carrying no state
+  colouring in either — the channel's tier is already legible from the per-turn labels of
+  GUI-U21. Rendering it as a state indicator instead — the label naming the tier the channel
+  would move to, coloured like a mandate — is refused: a coloured state word on a control
+  reads as *where the channel is now*, so the human infers the opposite of what activating
+  it does.
 - **GUI-U12 — The map doctor is an explicit control** that dispatches the grill-master with
   a reassess-everything instruction over the full map and the pending queue. While it runs
   the page is in immutable mode behind a modal telling the human to wait; the board is
@@ -551,7 +587,11 @@ The current map snapshot: a pure fold, byte-identical for a given log.
 - `threads` — array of objects: `id`, `decision` (decision id or null), `kind`, `title`,
   `requires_action` (boolean), `state` (`open`, `parked`, `closed` or `folded`), and
   `turns` — array of objects: `who` (the §8.3 actor enum), `text` (string), `timestamp`
-  (string).
+  (string), and `tier` — optional string, `fast` or `heavy`, carried on an agent-authored
+  turn and absent on a human one. It is what makes a turn's tier label (GUI-U21) survive a
+  reload: a page rejoining a session reads the board from this image rather than from the
+  log entries it was not there for, and a turn projected without its tier can no longer be
+  labelled by anything but the channel's current mode.
 - `pending` — array of objects: `id`, `target` (decision id), `kind`, `superseded`
   (boolean), and `authored_at` (sequence integer). This is the queue GUI-D26 dispatches.
   `id` is derived from the authoring entry rather than minted beside it: for an entry
@@ -644,6 +684,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D27 | GUI-A41 |
 | GUI-D28 | GUI-A51 |
 | GUI-D29 | GUI-A55 |
+| GUI-D30 | GUI-A64 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -662,6 +703,10 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U16 | GUI-A57 |
 | GUI-U17 | GUI-A58 |
 | GUI-U18 | GUI-A59 |
+| GUI-U19 | GUI-A60 |
+| GUI-U20 | GUI-A61 |
+| GUI-U21 | GUI-A62 |
+| GUI-U22 | GUI-A63 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -782,10 +827,9 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A34** Activating transfer-to-expert forces the next turn on that channel to the
   heavy tier, and the heavy dispatch contains the channel's accumulated thread rather than
   only the last message; the log attributes the turn to the heavy tier.
-- **GUI-A35** While a channel is in expert mode the control's label reads *fast agent
-  mode*, and activating it returns the next turn on that channel to the fast tier — both
-  verified in a browser. The control is present and active on the map channel and every
-  open thread channel, idle ones included.
+- **GUI-A35** While a channel is in expert mode, activating the control returns the next
+  turn on that channel to the fast tier — verified in a browser. The control is present and
+  active on the map channel and every open thread channel, idle ones included.
 - **GUI-A36** Two thread channels take turns concurrently while the map channel is also in
   flight; each thread agent's dispatch contains its own thread's turns and no other
   thread's; escalating one thread leaves the others on the fast tier; and the grill-master's
@@ -872,6 +916,29 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A59** A decision carrying `talk` renders one control per seed field on its thread
   pane, and activating one posts that seed text as a human turn on that thread; a decision
   carrying no `talk` renders no such control. Verified in a browser.
+- **GUI-A60** An option carrying `pcr` renders one icon beside that option, and hovering
+  the icon raises an overlay carrying that option's three statements; hovering the decision
+  block anywhere the icon is not raises none, and an option carrying no `pcr` renders no
+  icon. The overlay hides on click and returns only on a fresh mouse-enter of the icon.
+  Verified in a browser.
+- **GUI-A61** A decision taller than the decisions pane, scrolled until its own header is
+  above the pane's top edge, still renders a floating header carrying that decision's id and
+  title; scrolling the decision fully out of view releases it, and so does settling and
+  collapsing it. Verified in a browser.
+- **GUI-A62** Over a fixture log carrying one `fast` and one `heavy` agent turn on the same
+  channel, the page labels the first *fast agent* and the second *expert agent*, on a thread
+  and on the map channel alike, and the labels are identical when the same log is rendered
+  with the channel in each mode. A page joining that session after both turns renders the
+  same labels, which is what the projected turn's `tier` (§8.5) is for. Verified in a
+  browser.
+- **GUI-A63** The transfer control reads *Transfer to expert* on a channel driven by the
+  fast tier and *Return to fast agent* on one driven by the heavy tier, with the same
+  styling in both positions and no state colouring in either — verified in a browser and
+  against the shipped stylesheet.
+- **GUI-A64** Every shipped thread-agent prompt states the no-fishing rule and the two cases
+  a question is allowed in, asserted against the prompt the driver actually composes rather
+  than against a constant read out of the source; and over one live session's thread turns,
+  no turn ends in a question outside those two cases.
 
 ## 10. Open questions for the implementing work
 
@@ -926,4 +993,11 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: The session header and its help thread — AC: GUI-U16, GUI-A57.
 - feat: The completion overlay and end-session emphasis — AC: GUI-U17, GUI-A58.
 - bugfix: The decision seed-prompt controls — AC: GUI-U18, GUI-A59.
+- feat: The per-option trade-off overlay behind each option's own hover icon — AC: GUI-U19,
+  GUI-A60.
+- feat: The sticky decision header over a decision taller than its pane — AC: GUI-U20,
+  GUI-A61.
+- feat: Per-turn tier labelling on threads and on the map channel — AC: GUI-U21, GUI-A62.
+- feat: The transfer control's action labelling — AC: GUI-U22, GUI-A63.
+- feat: The thread agent's questioning rule — AC: GUI-D30, GUI-A64.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
