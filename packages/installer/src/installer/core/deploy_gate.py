@@ -365,9 +365,12 @@ def _judge(
     The invocation mode is read from the DEPLOYED front matter, after the
     projection has removed the key for a tool whose loader does not define it.
     That makes one artifact's cap depend on which tool is being staged, and it
-    is the point: on a tool that strips the key the skill is model-invocable
-    whatever its author declared, so the strict cap is the one that fits and the
-    description does reach the catalog. The repository's verdict stays uniform
+    is the point: on a tool that strips the key with nothing in its place the
+    skill is model-invocable whatever its author declared, so the strict cap is
+    the one that fits and the description does reach the catalog. Codex strips
+    the key too but deploys the declaration as a generated sidecar; its copy is
+    still priced from this projected reading, an over-charge in the safe
+    direction. The repository's verdict stays uniform
     regardless, because the repo-side content lint stages every known tool on
     every run — no artifact is ever judged against fewer targets than it can
     reach, so a per-machine deploy can only be looser than the gate that

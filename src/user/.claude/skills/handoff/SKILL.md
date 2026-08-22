@@ -15,7 +15,7 @@ Upstream: https://github.com/mattpocock/skills @ ed37663cc5fbef691ddfecd080dff42
 Local extensions: allowed-tools, !-command working-tree snapshot prelude, 8-section required document structure, redaction constraints. Upstream already carries argument-hint and disable-model-invocation; they are not ours.
 Last sync: 2026-05-23
 Drift policy: rewrite-and-divorce (project-extended, Claude-specific; do not re-sync from upstream)
-Placement: Claude tree, because the procedure needs Claude mechanisms. The working-tree snapshot is !-command expansion and the focus arrives as $ARGUMENTS; both are inert elsewhere, so a shared copy writes a document whose focus line reads "$ARGUMENTS" under a filename whose timestamp was never captured. The deploy-time projection would also strip disable-model-invocation, leaving a skill that writes an undeleted document of session contents into the temp directory on the model's own initiative.
+Placement: Claude tree, because the procedure needs Claude mechanisms. The working-tree snapshot is !-command expansion and the focus arrives as $ARGUMENTS; both are inert elsewhere, so a shared copy writes a document whose focus line reads "$ARGUMENTS" under a filename whose timestamp was never captured. The deploy-time projection would also strip disable-model-invocation where no tool-side equivalent replaces it, leaving a skill that writes an undeleted document of session contents into the temp directory on the model's own initiative.
 -->
 
 ## Working-tree snapshot

@@ -110,11 +110,13 @@ class SkillBodySource:
 
     ``user_invoked`` is read from the artifact's **projected** front matter, so
     it is a property of the deploy target rather than of the source: a tool
-    whose loader cannot honour the declaration measures the body against the
-    strict cap, because on that tool the model reaches the body on its own
-    judgement whatever the author wrote. One artifact can therefore carry two
-    numbers, one per target — the measurement telling the truth rather than
-    disagreeing with itself.
+    the projection strips the key for measures the body against the strict
+    cap. Where nothing replaces the key (Gemini, OpenCode) that is the plain
+    truth — the model reaches the body on its own judgement whatever the
+    author wrote. Codex strips the key too but deploys the declaration as a
+    generated sidecar, and its copy is still priced from the projected
+    reading — an over-charge in the safe direction. One artifact can
+    therefore carry two numbers, one per target.
     """
 
     label: str
