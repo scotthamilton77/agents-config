@@ -2991,6 +2991,34 @@ def test_the_pre_mark_has_no_kind_and_no_way_out_of_the_page() -> None:
     assert not re.search(r"(save|load)Window\([^)]*(overOpt|keyedOpt)", source)
 
 
+# ---------------------------------------------------------------- GUI-A92
+
+
+def test_the_send_chord_has_one_reader_the_popped_window_asks() -> None:
+    """GUI-A92's source half: the chord is decided in one place.
+
+    What each key does is measured in a browser. What cannot be measured there
+    is that the popped-out window is asking the same question rather than
+    passing on the same day -- two copies of a chord drift, and a board whose
+    two windows answer Enter differently is worse than either answer.
+    """
+    source = page_source()
+    body = function_body("chordSend")
+    assert "e.isComposing" in body, "an Enter mid-composition would send"
+    assert "e.shiftKey" in body and "e.metaKey" in body and "e.ctrlKey" in body
+    assert '=== "\\\\"' in body, "the backslash before Enter is not read"
+    assert 'new Event("input"' in body, "a consumed backslash never reaches the draft store"
+    # The popped window holds no chord of its own, and the send it does make is
+    # its own control's -- the opener cannot press a button in another document.
+    assert source.count("window.opener.chordSend(e)") == 1
+    popped = source.split("var boot =", 1)[1].split("w.document.open()", 1)[0]
+    for key in ("metaKey", "ctrlKey", "shiftKey", "isComposing"):
+        assert key not in popped, f"the popped window reads {key} itself"
+    # Nothing still tells the human the old chord.
+    assert "⌘↵" not in source, "the old chord is still on screen"
+    assert source.count('<span class="hint">↵ send<br>⇧↵ newline</span>') == 3
+
+
 @pytest.mark.parametrize(
     "shell",
     ["<style></style><script>//__SCRIPT__</script>", "/*__STYLE__*/ /*__STYLE__*/ //__SCRIPT__"],

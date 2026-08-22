@@ -22,6 +22,10 @@ first as the agent's recommendation. Pressing one settles the decision; whatever
 the decision's own text box at that moment rides along as a note on the answer. There is
 one box, and it is also how to answer in words instead of picking: type and send.
 
+Enter sends whatever is in a box, on a decision and in a thread alike. Shift+Enter puts
+in a newline instead, and so does a backslash typed right before Enter — the backslash
+is eaten, the way it works in the terminal. Cmd+Enter (Ctrl+Enter) still sends too.
+
 Settling a decision opens whatever was waiting on it. A decision greyed as **fog** is
 one whose prerequisite is not settled yet — settle that first and this one opens.
 

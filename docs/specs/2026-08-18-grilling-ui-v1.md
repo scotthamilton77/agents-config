@@ -520,6 +520,12 @@ follows, and changes nothing else.
   on the shipped system prompts, and it is stated to every role on both tiers rather than
   only to the tier that reasons longest: a rule copied per role is a rule that goes missing
   from the next one.
+- **GUI-U27 — Enter sends what is in a composer.** In every box that sends — a decision's
+  free text and a thread's turn, in the main window and in a thread popped into its own
+  window — Enter sends, Shift+Enter puts in a newline, and a backslash typed immediately
+  before Enter puts one in too and is itself eaten, as it is in the terminal the human is
+  driving this board beside. Cmd/Ctrl+Enter sends as well. An Enter arriving mid-IME
+  composition sends nothing, and the hint beside the box states the chord.
 - **GUI-U4 — Thread panels have a floating header and footer** — title with close and
   pop-out controls pinned at the top, prompt box and action buttons pinned at the bottom —
   so neither scrolls out of view in a long thread.
@@ -1000,6 +1006,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U24 | GUI-A73, GUI-A74 |
 | GUI-U25 | GUI-A81, GUI-A82 |
 | GUI-U26 | GUI-A83 |
+| GUI-U27 | GUI-A92 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1364,6 +1371,11 @@ Each criterion is mechanically checkable and convertible to a red test.
   the mode recorded under the draft's channel reaches the thread the turn opens, whose name
   the draft never had, and the backend reads it back off that thread's channel and off no
   other.
+- **GUI-A92** In a thread's box and in that same thread popped into its own window: Enter
+  posts the turn, Shift+Enter leaves the box holding a newline and posts nothing, a
+  backslash before Enter leaves a newline with the backslash gone, and Cmd/Ctrl+Enter
+  posts. An Enter arriving while an IME composition is in progress posts nothing. The hint
+  beside the box names Enter and Shift+Enter. Verified in a browser.
 
 ## 10. Open questions for the implementing work
 
@@ -1442,6 +1454,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   option the human has in hand — AC: GUI-D37, GUI-U25, GUI-A79, GUI-A80, GUI-A81, GUI-A82.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
 - chore: The register every agent turn is written in — AC: GUI-U26, GUI-A83.
+- feat: Enter as the send chord in every composer — AC: GUI-U27, GUI-A92.
 
 ## Evidence
 
@@ -1536,3 +1549,4 @@ opens one proves something else.
 - GUI-A85 | test: packages/grillui/tests/unit/test_drivers.py::test_an_offer_on_a_thread_anchoring_nothing_is_a_notice_and_not_raw_bytes
 - GUI-A86 | probe: packages/grillui/tests/browser/thread_controls_probe.py::main
 - GUI-A87 | test: packages/grillui/tests/unit/test_page.py::test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_takes
+- GUI-A92 | probe: packages/grillui/tests/browser/chord_probe.py::main
