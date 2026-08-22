@@ -1989,6 +1989,10 @@ def test_the_shipped_page_has_no_dark_theme_styles() -> None:
     source = page_source().lower()
     for absent in ("prefers-color-scheme", "color-scheme", "dark"):
         assert absent not in source, f"the shipped page carries {absent!r}"
+    # Reduced motion is the one preference the page answers; any other
+    # preference query is a second presentation by another name.
+    queries = re.findall(r"@media\s*\(([^)]*)\)", source)
+    assert queries and all(q.split(":")[0].strip() == "prefers-reduced-motion" for q in queries), queries
 
 
 # ---------------------------------------------------------------- serving
