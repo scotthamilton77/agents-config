@@ -18,6 +18,10 @@ What this cannot see, so that the limits are stated rather than discovered:
   The popped-out thread window's boot script is a JavaScript string inside that
   block, so its readers do count -- as ordinary text, indistinguishable from a
   mention in a comment.
+- Only three reader shapes are recognised: `.name`, `["name"]` and `"name":`.
+  The page uses no destructuring or computed keys today; a field read only that
+  way would fail here as unread -- loudly, and the fix is this list, not the
+  page.
 - Only endpoints the page fetches by literal path are walked. A path assembled
   at runtime is invisible, and so is every response model behind it.
 - Fields inside an untyped mapping have no declaration to walk. `talk`, `mandate`
