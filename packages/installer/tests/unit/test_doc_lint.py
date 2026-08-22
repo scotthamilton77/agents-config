@@ -114,13 +114,17 @@ def test_an_exemption_with_no_content_behind_it_is_reported(tmp_path: Path) -> N
     written, and this is what noticed."""
     for relpath in ALWAYS_IN_SCOPE:
         _write(tmp_path, str(relpath))
+    for tree in EXEMPT_TREES:
+        (tmp_path / tree).mkdir(parents=True, exist_ok=True)
     assert stale_exemptions(tmp_path) == []
 
     for relpath in ALWAYS_IN_SCOPE:
         (tmp_path / relpath).unlink()
-    (tmp_path / "docs" / "specs").rmdir()
+    for tree in EXEMPT_TREES:
+        (tmp_path / tree).rmdir()
     stale = stale_exemptions(tmp_path)
-    assert any("docs/specs: exempt from doc-lint" in message for message in stale)
+    for tree in EXEMPT_TREES:
+        assert any(f"{tree}: exempt from doc-lint" in message for message in stale)
 
 
 def test_every_exemption_states_a_reason() -> None:
@@ -170,7 +174,8 @@ def test_a_carve_out_with_no_document_behind_it_is_reported(tmp_path: Path) -> N
     retires at AC9, and this is what will notice."""
     for relpath in ALWAYS_IN_SCOPE:
         _write(tmp_path, str(relpath))
-    (tmp_path / "docs" / "specs").mkdir(parents=True, exist_ok=True)
+    for tree in EXEMPT_TREES:
+        (tmp_path / tree).mkdir(parents=True, exist_ok=True)
     assert stale_exemptions(tmp_path) == []
 
     for relpath in ALWAYS_IN_SCOPE:
