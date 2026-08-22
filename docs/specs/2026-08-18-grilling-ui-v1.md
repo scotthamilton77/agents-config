@@ -1268,7 +1268,7 @@ opens one proves something else.
 - GUI-A64 | open
 - GUI-A65 | test: packages/grillui/tests/unit/test_convergence.py::test_a_proposal_riding_a_turn_records_the_prose_and_projects_onto_that_turn
 - GUI-A66 | test: packages/grillui/tests/unit/test_convergence.py::test_each_convergence_of_the_fixture_session_is_one_proposal_recording_what_it_carried
-- GUI-A67 | open
-- GUI-A68 | open
+- GUI-A67 | probe: packages/grillui/tests/browser/apply_decision_probe.py::main
+- GUI-A68 | test: packages/grillui/tests/unit/test_convergence.py::test_an_answer_carrying_from_thread_settles_and_closes_in_one_entry
 - GUI-A69 | test: packages/grillui/tests/unit/test_convergence.py::test_a_live_proposal_queues_nothing_and_holds_nothing
-- GUI-A70 | open
+- GUI-A70 | test: packages/grillui/tests/unit/test_convergence.py::test_the_thread_agent_prompt_of_both_tiers_states_when_and_how_to_offer
