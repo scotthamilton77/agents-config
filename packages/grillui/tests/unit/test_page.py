@@ -1024,35 +1024,60 @@ def test_the_popped_window_can_open_the_thread_it_is_a_draft_of() -> None:
     Reaching nothing is the worst shape this can take: the human types the first
     turn, presses Send, and the window neither opens a thread nor says it did
     not. So the bridge routes that act to the one function that opens a thread,
-    on an anchor worked out in the main window rather than read back off the
-    popped copy -- the same rule the seed's decision is held to, and the same
-    reader the pane drew the box with, since a pane and a bridge naming
+    on the anchor the window came with -- and the pane the window is a copy of
+    drew its box from the same reader, since a pane and a bridge naming
     different decisions would open the thread on the wrong one.
     """
     bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
     assert 'act === "draftsay"' in bridge, "a popped draft's Send reaches nothing"
-    assert "startThread(draftAnchor(tid), text)" in bridge
+    assert "startThread(anchor, text)" in bridge
     assert "draftsay" in write_acts(), "the act that opens a thread is not a write"
     assert "draftAnchor(tid)" in balanced_body("threadBody"), "the pane reads its own anchor"
+    assert "draftAnchor(tid)" in function_body("popOut"), "the window is handed no anchor"
     # A seed is the same act with the words already written, and saySeed opens
     # the thread when there is none -- which on a draft is always.
-    assert "(thread(tid) || {}).decision || draftAnchor(tid)" in bridge
+    assert "(thread(tid) || {}).decision || anchor" in bridge
     assert "el.dataset.act==='draftsay'" in function_body("popOut"), "the box keeps the sent turn"
 
 
-def test_a_popped_draft_follows_the_thread_its_first_turn_opened() -> None:
-    """The window was opened under the draft's name, and that name is not what
-    the thread is called.
+def test_a_popped_window_carries_the_draft_it_was_opened_on() -> None:
+    """The anchor is read once, when the window opens, and travels with it.
 
-    Left alone it goes on showing an empty draft pane beside the thread it just
-    opened, and a second Send opens a second thread -- so the name it asks for
-    is mapped to what the turn made, in the one place that mints thread ids.
+    Read at the moment of the click instead, it comes out of the one draft slot
+    this window keeps -- and that slot holds whichever draft the board opened
+    last. Pop a draft on one decision out, open a draft on another on the board,
+    and the popped Send anchored to the second decision, or to none at all and
+    opened the session thread. Nothing the board does afterwards reaches a
+    window that was handed its own.
+    """
+    boot = function_body("popOut")
+    assert "var anchor=" in boot, "the popped window is not told which draft it is on"
+    assert r'JSON.stringify(draftAnchor(tid) || null).replace(/</g, "\\u003c")' in boot
+    assert "window.opener.popAct(tid,anchor," in boot, "the anchor is not what the act carries"
+    bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
+    assert "draftAnchor" not in bridge, "the bridge resolves the anchor for itself"
+    assert "UI.draftFor" not in bridge, "the bridge reads the board's own draft slot"
+
+
+def test_a_popped_window_follows_the_thread_its_own_first_turn_opened() -> None:
+    """The window was opened on a draft, and a draft's name is not what the
+    thread its first turn opens is called.
+
+    The window has to be told, and it is the only thing that may hold the
+    answer: kept for it here, under the draft's name, it is state every window
+    on that name shares -- so one window's turn moved another window onto a
+    thread it was never opened on. The act hands the new thread back instead,
+    and the window that asked keeps it.
     """
     assert "return tid;" in function_body("startThread"), "nothing learns the new thread's name"
-    assert "threadBody(UI.popFollow[tid] || tid, true)" in page_source()
+    assert "UI.popFollow" not in page_source(), "the shared follow map is gone"
+    assert "threadBody(tid, true)" in page_source(), "the window is not asking for its own thread"
     bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
-    assert 'if (act === "draftsay") act = "say";' in bridge, "a stale Send opens a second thread"
-    assert "popFollow(tid, startThread(" in bridge
+    assert "return thread(tid) ? sayInThread(tid, text) : startThread(anchor, text);" in bridge, (
+        "a Send from a pane drawn before the first turn opens a second thread"
+    )
+    boot = function_body("popOut")
+    assert "made=window.opener.popAct(" in boot and "if(made)tid=made;" in boot
 
 
 def test_a_closed_thread_keeps_the_box_that_opens_it_again() -> None:
@@ -2188,7 +2213,7 @@ def test_a_popped_window_ends_with_the_session_that_opened_it() -> None:
     assert "window.opener.sealSurface(document)" in boot, "the popped window is never sealed"
     assert "setInterval(function(){draw();seal();},600)" in boot, "the seal rides the redraw"
     bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
-    assert "if (sessionOver() && WRITE_ACTS.indexOf(act) >= 0) return;" in bridge
+    assert "if (sessionOver() && WRITE_ACTS.indexOf(act) >= 0) return null;" in bridge
 
 
 def test_every_act_that_writes_is_one_the_ended_surface_takes_away() -> None:

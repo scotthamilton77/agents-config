@@ -286,11 +286,7 @@ var UI = {
   lastFocus: null, lastPanelKey: null, centerNext: true, justSettled: null,
   fresh: [], touched: [], autoshut: {}, advanceFrom: null,
   bubbles: [], bubbleSeen: {}, bubbleSig: null, bubbleTick: 0, ptr: null,
-  // `popFollow` is where a draft a popped window opened ended up. A popped
-  // draft is named for a thread that does not exist, and the name does not
-  // change when the first turn creates one -- so without this the window would
-  // go on showing an empty draft and a second Send would open a second thread.
-  popped: {}, popFollow: {}, draftBase: {}, popFail: false, diag: false, discussing: {},
+  popped: {}, draftBase: {}, popFail: false, diag: false, discussing: {},
   // The completion offer, which is presentation and lives nowhere else: whether
   // the overlay is up, whether it was dismissed onto the pulsing control, and
   // what the board's finished-ness last read as. A reload starts all three back
@@ -2305,36 +2301,37 @@ function centerOn(id) {
 }
 
 /* ---------- the pop-out window ---------- */
-// A popped window asks for the pane by the name it was opened under, and gets
-// whatever that name became: a draft that has since taken its first turn is a
-// real thread now, and the window showing it follows it there.
-window.threadHTML = function (tid) { return threadBody(UI.popFollow[tid] || tid, true); };
-// What a popped window's first turn opened, so the window stops showing the
-// draft it was.
-function popFollow(tid, made) {
-  if (made && made !== tid) { UI.popFollow[tid] = made; }
-}
-window.popAct = function (tid, act, text, field) {
+// Which thread a popped window is on, and which decision the draft it opened on
+// stands against, are the window's own: handed to it when it opens, kept there,
+// never looked up here. Both used to be resolved out of this window's state at
+// the moment of the click -- the anchor out of the single draft slot, which the
+// main board overwrites the next time it opens a draft, and the created thread
+// out of a map keyed by the draft's name, which every window on that name
+// shares. One gesture on the board behind either back, and a popped Send landed
+// on another decision's thread or on no decision at all.
+window.threadHTML = function (tid) { return threadBody(tid, true); };
+// Returns the thread the act opened, when it opened one, so the window that
+// asked can follow it: the draft it was showing is that thread now, and nothing
+// else can tell it so.
+window.popAct = function (tid, anchor, act, text, field) {
   // The ending is refused here as well as at the main window's own handler:
   // this bridge is a second door into the same acts, and a gesture the page
   // takes and drops is a gesture the human watched themselves make.
-  if (sessionOver() && WRITE_ACTS.indexOf(act) >= 0) return;
-  // A draft this window's own first turn already opened is that thread now, so
-  // every act after it lands on the thread -- including a Send from a copy of
-  // the draft pane drawn before the turn went out, which is a turn in the
-  // thread it opened and not a second thread.
-  if (UI.popFollow[tid]) { tid = UI.popFollow[tid]; if (act === "draftsay") act = "say"; }
+  if (sessionOver() && WRITE_ACTS.indexOf(act) >= 0) return null;
   if (act === "transfer") toggleTransfer(tid);
   else if (act === "say") sayInThread(tid, text);
   // The first turn of a thread that does not exist yet, which is the same act
   // the pane's own Send is: it routes to the one function that opens a thread,
-  // on the anchor the pane drew the box for.
-  else if (act === "draftsay") popFollow(tid, startThread(draftAnchor(tid), text));
+  // on the anchor this window came with. A copy of the draft pane drawn before
+  // that turn went out sends the same act again, and that is a turn in the
+  // thread it opened rather than a second thread.
+  else if (act === "draftsay") return thread(tid) ? sayInThread(tid, text) : startThread(anchor, text);
   // The seed's decision is read from the thread this window is showing, not
   // from the button: the popped document is a copy of the pane, and the only
   // thing it can be trusted to name is which seed was pressed. On a draft there
-  // is no thread to read it off, and the anchor of the draft is the decision.
-  else if (act === "seed") popFollow(tid, saySeed(tid, (thread(tid) || {}).decision || draftAnchor(tid), field));
+  // is no thread to read it off, and the anchor this window came with is the
+  // decision.
+  else if (act === "seed") return saySeed(tid, (thread(tid) || {}).decision || anchor, field);
   else if (act === "fold") foldThread(tid);
   else if (act === "park") parkThread(tid);
   else if (act === "closethread") closeThread(tid);
@@ -2359,8 +2356,12 @@ function popOut(tid) {
   // every tick replaced the button between mousedown and mouseup, so a real
   // click never became a click event.
   // The id is escaped for the script context it is written into as well: a
-  // closing script tag inside it would end the boot script where it sits.
-  var boot = "(function(){var tid=" + JSON.stringify(tid).replace(/</g, "\\u003c") + ";var last=null;" +
+  // closing script tag inside it would end the boot script where it sits. The
+  // anchor rides in beside it, an authored id on the same terms -- and this is
+  // the moment it is read, so what the window carries is the draft it was
+  // opened on rather than whichever draft the board is standing on later.
+  var boot = "(function(){var tid=" + JSON.stringify(tid).replace(/</g, "\\u003c") +
+    ";var anchor=" + JSON.stringify(draftAnchor(tid) || null).replace(/</g, "\\u003c") + ";var last=null;" +
     "function draw(){var html;" +
     "try{html=window.opener.threadHTML(tid);}catch(e){document.getElementById('t').innerHTML='<p>The main window is gone. Close this one.</p>';return;}" +
     "if(html===last)return;last=html;" +
@@ -2379,7 +2380,9 @@ function popOut(tid) {
     "function seal(){try{window.opener.sealSurface(document);}catch(x){}}" +
     "document.addEventListener('click',function(e){var el=e.target.closest('[data-act]');if(!el)return;" +
     "var ta=document.getElementById('pop-say');" +
-    "try{window.opener.popAct(tid,el.dataset.act,ta?ta.value:'',el.dataset.field);}catch(x){}" +
+    // The thread this window is on is this window's to keep: an act that opens
+    // one hands it back, and from then on this window is on that thread.
+    "var made=null;try{made=window.opener.popAct(tid,anchor,el.dataset.act,ta?ta.value:'',el.dataset.field);}catch(x){}if(made)tid=made;" +
     "if(ta&&(el.dataset.act==='say'||el.dataset.act==='draftsay'))ta.value='';setTimeout(draw,40);});" +
     "document.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){var b=document.querySelector('[data-act=\"say\"],[data-act=\"draftsay\"]');if(b)b.click();}});" +
     "setInterval(function(){draw();seal();},600);draw();seal();})();";
