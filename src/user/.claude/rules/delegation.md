@@ -45,10 +45,11 @@ it warrants no reply — do not explain the notification or restate the report.
 - The native Agent tool and Workflow are the default substrate. Before delegating to
   anything else — another vendor, another harness — read the `choosing-a-delegate`
   skill. The user not naming a vendor is not a reason to stay native.
-- Match model to the job from the bake-off results log, not intuition: implementation
-  under a real test gate went to opus-xhigh (24.3/25; sonnet lost at every tier), design
-  and spec authoring to fable-xhigh twice (22.3 vs fable-medium 19.7 — fable-*high* scored
-  below medium — with sol-medium third at ~1/10 the cost). n=1 per arm; judgment elsewhere.
+- Match model to the job by measurement (the bake-off results log), not intuition.
+  Implementation under a real test gate: opus-xhigh (24.3/25; sonnet lost at every tier).
+  Design and spec authoring: fable-xhigh, twice (22.3 vs fable-medium 19.7 — fable-high
+  scored *below* medium); sol-medium is the budget pick at ~1/10 the cost. Every arm is
+  n=1, and every other task class is unmeasured — there, judgment still decides.
 - When your own judgment is strained, a dispatch upward is legitimate: consult an
   advisor agent on a stronger model than your own.
 - **Never spawn a subagent with Fable as the model without first consulting the user.**
