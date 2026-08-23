@@ -16,6 +16,8 @@ from grillui.escalation import (
     CONDITION_COMMITMENT,
     CONDITION_IRREDUCIBLE,
     CONDITION_MULTIPLE,
+    INVALIDATE_KIND,
+    REVISE_KIND,
     Turn,
     in_expert_mode,
     mootness_obligation,
@@ -329,3 +331,111 @@ def test_a_decision_with_an_invalidate_already_waiting_is_not_outstanding() -> N
     obligation = MootnessObligation(target=TARGET, answer="x", ids=["d2", "d3"])
 
     assert outstanding(image, obligation) == ["d3"]
+
+
+# ── What an invalidate the human applied owes what was resting on it ──
+
+
+def resting_board() -> Image2:
+    """`d2` and `d3` resting on a `d1` that has just left the flow."""
+    image = board("d2", "d3")
+    image.decisions[0].status = "invalidated"
+    return image
+
+
+def applied(target: str = TARGET, why: str = "the export was dropped") -> list[LogEntry]:
+    """The human applying the agent's invalidate, which is how one lands."""
+    return [
+        entry(
+            "apply",
+            "human",
+            MAP_CHANNEL,
+            pending=["p1"],
+            updates=[{"kind": INVALIDATE_KIND, "target": target, "why": why}],
+        )
+    ]
+
+
+def test_an_applied_invalidate_obliges_the_decisions_that_were_resting_on_it() -> None:
+    """
+    Given two decisions listing a third among their prereqs, and the human
+          applying the invalidate that took that third out of the flow
+    When the obligation is read
+    Then it names both, quotes the invalidation as the rationale to carry, and
+         says an invalidate is what made them moot.
+
+    A dead prereq holds nothing, so the board offers those two again -- on a
+    footing that has gone. Each is either dead with its prereq or standing
+    without it, and saying which is a map turn's job rather than something the
+    human should have to work out from a board that silently re-opened.
+    """
+    obliged = mootness_obligation(resting_board(), applied())
+
+    assert obliged is not None
+    assert obliged.ids == ["d2", "d3"]
+    assert obliged.target == TARGET
+    assert obliged.answer == "the export was dropped"
+    assert obliged.cause == INVALIDATE_KIND
+
+
+def test_an_invalidate_nothing_was_resting_on_obliges_nothing() -> None:
+    """
+    Given the same gesture on a board where no decision lists that id as a prereq
+    When the obligation is read
+    Then there is none.
+
+    The ordinary case: most invalidates strand nobody, and one that did would
+    cost a heavy turn and a notice for nothing.
+    """
+    image = board()
+    image.decisions[0].status = "invalidated"
+
+    assert mootness_obligation(image, applied()) is None
+
+
+def test_a_revise_waiting_on_a_stranded_decision_discharges_the_obligation() -> None:
+    """
+    Given the obligation an invalidate left on two decisions, one with a queued
+          `revise` and one with a queued `invalidate`
+    When what is still outstanding is read
+    Then neither is -- while a `revise` leaves an answer's own obligation intact.
+
+    A decision resting on one that died may still stand without it, so revising
+    its prereqs says as much about it as invalidating it does. An answer's list
+    is not the same: the human's own answer killed those questions, and a revise
+    there would leave the decision on the frontier to be answered.
+    """
+    image = resting_board()
+    image.pending = [
+        PendingUpdate(id="p1", target="d2", kind=REVISE_KIND, superseded=False, authored_at=9),
+        PendingUpdate(id="p2", target="d3", kind=INVALIDATE_KIND, superseded=False, authored_at=9),
+    ]
+    left = MootnessObligation(target=TARGET, answer="x", ids=["d2", "d3"], cause=INVALIDATE_KIND)
+
+    assert outstanding(image, left) == []
+    assert outstanding(image, MootnessObligation(target=TARGET, answer="x", ids=["d2"])) == ["d2"]
+
+
+def test_an_answer_owing_nothing_does_not_swallow_the_invalidates_obligation() -> None:
+    """
+    Given an applied invalidate and then an answer whose option names nothing,
+          with the agent yet to reply to either
+    When the obligation is read
+    Then the invalidate's is still there, narrowed to what the answer left
+         standing -- and it is gone once the agent has spoken.
+
+    The obligation belongs to the turn the gesture bought, and one gesture per
+    turn is not how a human uses the board: reading only the latest would drop
+    the obligation whenever they applied a change and then answered something.
+    """
+    image = resting_board()
+    next(one for one in image.decisions if one.id == "d2").status = "settled"
+    answered = entry("answer", "human", MAP_CHANNEL, target="d2", answer={"option": "a"})
+    spoken = entry("informational", "grill-master", MAP_CHANNEL, text="Noted.")
+
+    obliged = mootness_obligation(image, [*applied(), answered])
+
+    assert obliged is not None
+    assert obliged.ids == ["d3"]
+    assert obliged.cause == INVALIDATE_KIND
+    assert mootness_obligation(image, [*applied(), answered, spoken]) is None

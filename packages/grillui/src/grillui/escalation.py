@@ -26,20 +26,21 @@ human's own turn carrying the transfer key, or the backend's `transferred`
 status entry where the policy moved the channel itself. An agent asserting a
 transfer in its own reply is neither, and moves nothing.
 
-One hand-up is not a recommendation at all. When the human's answer takes an
-option that named the decisions it puts in question, what that turn owes is a
-list rather than a judgement -- an `invalidate` for each of those decisions the
-board is still offering -- and a list can be checked after the fact. So the
-obligation is stated here, the reply is measured against it here, and what is
-left standing is what the lane insists on. The condition markers above are read
-lexically and may miss; this one cannot, because nothing about it is read out of
-prose.
+One hand-up is not a recommendation at all. Where the human's gesture leaves
+decisions the board should stop offering, what the next turn owes is a list
+rather than a judgement, and a list can be checked after the fact. Two gestures
+leave one: an answer taking an option that named the decisions it puts in
+question, and an invalidate the human applied, which leaves whatever was resting
+on it standing on nothing. So the obligation is stated here, the reply is
+measured against it here, and what is left standing is what the lane insists on.
+The condition markers above are read lexically and may miss; this one cannot,
+because nothing about it is read out of prose.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from grillui.schemas import (
     AGENT_ACTORS,
@@ -266,7 +267,8 @@ def recommend(
 
 
 ANSWER_KIND = "answer"
-INVALIDATE_KIND = "invalidate"
+INVALIDATE_KIND: Final = "invalidate"
+REVISE_KIND = "revise"
 
 # A decision the board has stopped offering. Everything else -- open, locked,
 # stale, fogged -- is still a question the human can be asked, which is what
@@ -274,26 +276,58 @@ INVALIDATE_KIND = "invalidate"
 # their own answer killed it.
 DEAD_STATUSES = frozenset({"settled", "invalidated"})
 
+# What a queued proposal has to be to discharge the obligation, by what made the
+# decisions moot. An answer's list can only be invalidated -- the human's own
+# answer killed the question. A decision left resting on one that has gone may
+# still stand without it, so a `revise` dropping the dead prereq answers for it
+# just as well, and insisting on an invalidate there would press the agent to
+# kill work that survives.
+DISCHARGING = {
+    ANSWER_KIND: frozenset({INVALIDATE_KIND}),
+    INVALIDATE_KIND: frozenset({INVALIDATE_KIND, REVISE_KIND}),
+}
+
 
 def mootness_obligation(
     image: Image2, entries: Sequence[LogEntry], channel: str = MAP_CHANNEL
 ) -> MootnessObligation | None:
-    """What the answer this turn is being taken on owes the rest of the board.
+    """What the gesture this turn is being taken on owes the rest of the board.
 
-    Read off structure the board already carries rather than out of anything an
-    agent said: the option the human took names the decisions it puts in
-    question, so the obligation is the same fact the page pre-marked on hover.
+    Two gestures owe one. An answer taking an option that names what it puts in
+    question owes an `invalidate` for each of those still being offered. An
+    invalidate the human applied owes the decisions that were resting on it: the
+    board no longer holds them -- a prereq that has left the flow gates nothing,
+    or they would wait for the rest of the session -- so each is either dead with
+    it or standing without it, and saying which is a map turn's job.
+
+    Both are read off structure the board already carries rather than out of
+    anything an agent said. The answer's list is the option's own pre-marks; the
+    invalidate's is the `prereqs` edges pointing at a decision that has gone.
 
     Only the grill-master's channel has one, because it is the only agent that
-    may author a map mutation, and only while the answer is still the last thing
-    said there: an obligation that outlived its own turn would re-open on every
-    later turn and spend an expert turn per gesture for the rest of the session.
+    may author a map mutation, and only while the gesture is still unanswered
+    there: an obligation that outlived its own turn would re-open on every later
+    turn and spend an expert turn per gesture for the rest of the session. Where
+    both are outstanding the answer wins -- it is the turn the human is waiting
+    on a reply to, and the invalidate's dependents are already unblocked.
     """
     if channel != MAP_CHANNEL:
         return None
-    answered = _unanswered_answer(entries)
-    if answered is None:
-        return None
+    window = _unreplied(entries)
+    answered = next((one for one in window if one.kind == ANSWER_KIND), None)
+    obliged = None if answered is None else _answer_obligation(image, answered)
+    if obliged is not None:
+        return obliged
+    killed = next((one for one in window if _invalidations(one)), None)
+    return None if killed is None else _resting_obligation(image, killed)
+
+
+def _answer_obligation(image: Image2, answered: LogEntry) -> MootnessObligation | None:
+    """The decisions the option the human took named, still standing.
+
+    The same fact the page pre-marked on hover, which is why nothing here is
+    inferred from prose and nothing is a model's reading of a rule.
+    """
     target = answered.payload.get("target")
     answer = answered.payload.get(ANSWER_KIND)
     if not isinstance(target, str) or not isinstance(answer, dict):
@@ -314,23 +348,53 @@ def mootness_obligation(
     )
 
 
+def _resting_obligation(image: Image2, gesture: LogEntry) -> MootnessObligation | None:
+    """What an applied invalidate owes the decisions that were resting on it.
+
+    The list is read off the board after the gesture landed rather than off the
+    gesture itself: one apply may carry several invalidates and a dependent may
+    rest on more than one, so what the turn owes is a proposal per decision left
+    standing on something that has gone -- which is a property of the board and
+    not of the payload. A gesture that stranded nobody owes nothing, which is
+    the ordinary case and costs no turn.
+    """
+    dead = _invalidations(gesture)
+    gone = {one.id for one in image.decisions if one.status == "invalidated"}
+    standing = _still_standing(
+        image,
+        [one.id for one in image.decisions if gone.intersection(one.prereqs)],
+        DISCHARGING[INVALIDATE_KIND],
+    )
+    if not standing:
+        return None
+    # Which of the gesture's invalidates to quote as the rationale: one that a
+    # decision still standing was actually resting on, rather than whichever of
+    # them the apply happened to carry first.
+    held = {p for one in image.decisions if one.id in standing for p in one.prereqs}
+    blamed = next((one for one in dead if one.get("target") in held), dead[0])
+    return MootnessObligation(
+        target=str(blamed.get("target")),
+        answer=str(blamed.get("why")),
+        ids=standing,
+        cause=INVALIDATE_KIND,
+    )
+
+
 def outstanding(image: Image2, obligation: MootnessObligation) -> list[str]:
     """Which of the obligation's decisions the board is still offering.
 
     The whole of the check on a reply, and the reason it needs no prose parsing:
-    an agent's `invalidate` always waits in the human's queue, so a decision the
+    an agent's map mutation always waits in the human's queue, so a decision the
     turn proposed one for is in the queue whether or not they have applied it,
     and one the turn only narrated is still on the frontier being offered.
     """
-    return _still_standing(image, obligation.ids)
+    return _still_standing(image, obligation.ids, DISCHARGING[obligation.cause])
 
 
-def _still_standing(image: Image2, ids: Sequence[str]) -> list[str]:
-    proposed = {
-        item.target
-        for item in image.pending
-        if item.kind == INVALIDATE_KIND and not item.superseded
-    }
+def _still_standing(
+    image: Image2, ids: Sequence[str], kinds: frozenset[str] = frozenset({INVALIDATE_KIND})
+) -> list[str]:
+    proposed = {item.target for item in image.pending if item.kind in kinds and not item.superseded}
     # An id resolving to no node is dropped rather than carried: a pre-mark may
     # name a decision nobody wrote, and an invalidate on one would be an update
     # with no target.
@@ -338,21 +402,42 @@ def _still_standing(image: Image2, ids: Sequence[str]) -> list[str]:
     return [one for one in dict.fromkeys(ids) if one in live and one not in proposed]
 
 
-def _unanswered_answer(entries: Sequence[LogEntry]) -> LogEntry | None:
-    """The human's answer no agent has replied to yet, on the map.
+def _invalidations(entry: LogEntry) -> list[dict[str, object]]:
+    """The invalidates this entry put on the board, and nothing for any other.
 
-    Scanning backwards and stopping at the first agent turn is what bounds the
-    obligation to the turn the answer bought. The backend's own lane entries are
+    An invalidate the human applied arrives as a sub-update of their `apply`,
+    which is how every one of them arrives: the proposal is the agent's and the
+    gesture is theirs. One they authored themselves would arrive as the entry,
+    and is read the same way rather than being a second shape to miss.
+    """
+    if entry.actor != "human":
+        return []
+    updates = entry.payload.get("updates")
+    carried = updates if isinstance(updates, list) else [{**entry.payload, "kind": entry.kind}]
+    return [
+        one
+        for one in carried
+        if isinstance(one, dict) and one.get("kind") == INVALIDATE_KIND and one.get("target")
+    ]
+
+
+def _unreplied(entries: Sequence[LogEntry]) -> list[LogEntry]:
+    """The human's map gestures since the last thing an agent said there, latest
+    first.
+
+    Scanning backwards and stopping at the first agent turn is what bounds an
+    obligation to the turn it was made on. The backend's own lane entries are
     passed over: they say a turn was announced, not that one was taken.
     """
+    window = []
     for entry in reversed(entries):
         if entry.channel != MAP_CHANNEL:
             continue
         if entry.actor in AGENT_ACTORS:
-            return None
-        if entry.actor == "human" and entry.kind == ANSWER_KIND:
-            return entry
-    return None
+            break
+        if entry.actor == "human":
+            window.append(entry)
+    return window
 
 
 def _answer_turn(entry: LogEntry) -> Turn:

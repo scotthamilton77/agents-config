@@ -46,9 +46,13 @@ re-open.
 Two of those rules are this projector's to state rather than the protocol's.
 *Dependent staleness*: unsettling a decision makes every settled decision that
 reaches it through `prereqs` stale, transitively, because an answer resting on a
-withdrawn answer is exactly as unsupported at one remove as at none. *Fog*: an
-open decision whose `fogUntil` is unsettled reads as `fogged`, so the status is
-derived from the board rather than asserted by anyone.
+withdrawn answer is exactly as unsupported at one remove as at none. It stops at
+an invalidated dependent, which rests on nothing any more. *Fog*: an open
+decision whose `fogUntil` is unsettled reads as `fogged`, so the status is
+derived from the board rather than asserted by anyone. Both gates -- `prereqs`
+and `fogUntil` -- are cleared by a decision that is settled or invalidated: one
+that has left the flow will never settle, and a dependent held for it is held
+for good.
 
 The board is seeded through the log and never by re-reading the handoff file.
 `session-start` carries the validated briefing, so a fresh process folding
@@ -266,8 +270,15 @@ def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
         if node.status == "settled"
     ]
     settled_ids = {item.id for item in settled}
+    # A prereq that has left the flow holds nothing, and neither does a fog rule
+    # pointing at one. An invalidated decision never settles, so a dependent
+    # gated on it waits for the rest of the session: the board deadlocks and no
+    # gesture finishes it. What clears a gate is therefore settled *or* gone.
+    cleared_ids = settled_ids | {
+        node.id for node in board.decisions.values() if node.status == "invalidated"
+    }
     for node in board.decisions.values():
-        if node.status == "open" and node.fog_until and node.fog_until not in settled_ids:
+        if node.status == "open" and node.fog_until and node.fog_until not in cleared_ids:
             node.status = "fogged"
     # A decision with a change waiting on it is not a decision anyone should be
     # answering: the frontier already skips a locked node, so the queue's hold
@@ -280,7 +291,7 @@ def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
     frontier = [
         node.id
         for node in board.decisions.values()
-        if node.status == "open" and not node.locked and all(p in settled_ids for p in node.prereqs)
+        if node.status == "open" and not node.locked and all(p in cleared_ids for p in node.prereqs)
     ]
 
     return Image2(
