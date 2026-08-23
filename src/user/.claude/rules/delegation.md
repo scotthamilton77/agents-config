@@ -49,7 +49,8 @@ it warrants no reply — do not explain the notification or restate the report.
   Implementation under a real test gate: opus-xhigh (24.3/25; sonnet lost at every tier).
   Design and spec authoring: fable-xhigh, twice (22.3 vs fable-medium 19.7 — fable-high
   scored *below* medium); sol-medium is the budget pick at ~1/10 the cost. Every arm is
-  n=1, and every other task class is unmeasured — there, judgment still decides.
+  n=1, and every other task class is unmeasured — there, judgment still decides. Effort
+  is a Workflow `agent()` knob; the Agent tool pins only the model.
 - When your own judgment is strained, a dispatch upward is legitimate: consult an
   advisor agent on a stronger model than your own.
 - **Never spawn a subagent with Fable as the model without first consulting the user.**

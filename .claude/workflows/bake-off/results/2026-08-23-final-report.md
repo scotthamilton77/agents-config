@@ -186,7 +186,8 @@ high effort** (22.33), with sol-medium (21.33) close behind.
 the judgment is in the content — the measured pick is fable at xhigh effort.** It won the
 15-arm matrix unanimously (22.33 against fable-medium's 19.67 and sol-medium's 18.00) and
 then won again on an unrelated design task against those same two runners-up. **The
-cost-effective pick on this class is sol-medium**: third place both times, at $4.85 against
+cost-effective pick on this class is sol-medium**: third on the matrix and second on the
+gm-role run (where one seat put it first), at $4.85 against
 fable-xhigh's $35.51 on the matrix, and at $2.30 against $24.49 on the gm-role run — about
 one-tenth the price for roughly 80% of the winner's score. Note also that raising fable
 from medium to high effort *lowered* its score on the matrix (19.67 → 15.33); only xhigh
