@@ -22,9 +22,9 @@ tier; every map turn is a document with a closed shape, in which a ruling of *st
 first-class, credited answer; the grill-master is given the one part of the house grilling
 method the board does not already mechanise; the seat that takes a channel's first-rung
 turn — transport, model and effort — is configured per channel, and the map's is a
-mid-weight reasoning model on the Codex transport; the map channel, which no human
-converses with, escalates on three mechanical triggers instead of on a gesture nobody
-makes; `puts_in_question` means what it says — a prediction the grill-master rules on —
+mid-weight reasoning model on the Codex transport; the map channel gains three escalation
+triggers that need no human text, since its only conversation with the human is an apply
+and a dismiss; `puts_in_question` means what it says — a prediction the grill-master rules on —
 everywhere it appears; and a thread agent is told how to read a board that moved.
 
 ## 1. What the spec makes the grill-master for
@@ -312,8 +312,13 @@ human reads (GUI-U3 bounds it; it may be empty when the board already says every
 GUI-U15), `updates` are the map mutations, `supersedes` the withdrawals, `rulings` the
 turn's judgement on decisions a gesture put in question, and `stop` whether the stop
 condition is met. A reply that does not validate is refused and retried once
-on the same seat with the refusal quoted, then handed to the expert once, then recorded as
-a backend `informational` naming the failure; it is never shown to the human as prose. A
+on the same seat with the refusal quoted. From a first-rung seat the turn is then handed to
+the expert once. **From the expert seat there is no rung above it**, whether the channel is
+in expert mode or the gesture classed as judgment (GUI-D48): the failure is recorded as a
+backend `informational` naming it, and nothing is handed anywhere. Coverage ends the same
+way — a valid reply leaving a named id unruled hands a first-rung turn up once (GUI-D42),
+and on the expert seat raises the unmet notice directly. A reply is never shown to the
+human as prose. A
 seat's transport asks the provider for the shape where it can — a JSON schema on the
 request, `--output-schema` on the Codex transport — and every driver validates what comes
 back regardless of what it asked for. A ruling names a decision, one of `invalidate`,
@@ -458,22 +463,22 @@ configuration for every channel — the configured Claude model at the configure
 the `claude` transport. Each is configuration, so a session may seat any of them
 differently, and no session gets a third rung.
 
-Because the seat occupies the fast rung structurally, everything keyed to the rung is
-untouched: the lane names `fast` and `heavy` as it does today, the map's transfer control
-reads *Transfer to expert* at first paint like every other channel's (GUI-U22), the turn's
-attribution carries its `tier` beside the seat's `model` and `effort`, and the recorded
-dispatch is the bytes it always was.
+The seat occupies the fast rung, so the rung stays what every other surface keys on: the
+lane names `fast` and `heavy`, the map's transfer control reads *Transfer to expert* at
+first paint like every other channel's (GUI-U22), the turn's attribution carries its `tier`
+beside the seat's `model` and `effort`, and the recorded dispatch carries the same bytes on
+every transport.
 
-**The Codex transport is a resumed chain, as the heavy tier's is.** A cold turn opens a
-thread and the reply names it; every later turn on that channel resumes that thread by id,
-which the backend keeps the way it keeps the heavy chain's session id — and GUI-D15's
-one-process rule binds it identically. Three properties belong to the transport rather
-than to the model: the standing brief crosses on every turn through the transport's
-per-turn instruction channel, and the reply schema of §8.10 crosses on every turn too,
-because a resumed chain inherits neither; the process runs with its standard input closed,
-since it otherwise blocks reading a stream nobody is writing; and the turn's reported usage
-— input, cached input, output and reasoning tokens — is what the context measurement reads,
-in place of the byte estimate a transport that counts nothing leaves it with.
+**The Codex transport is a resumed chain.** Proven on codex-cli 0.146.0: the driver
+invokes `codex exec --json`, and the thread id is the `thread_id` carried by the
+`thread.started` event that opens the stream; every later turn on that channel is `codex
+exec resume <thread_id> --json`, the id kept the way the heavy chain's session id is, and
+GUI-D15's one-process rule binds it identically. The standing brief is supplied on every
+invocation as `-c developer_instructions=…` and the §8.10 schema as `--output-schema
+<file>`, cold turn and resumed turn alike. The process runs with its standard input closed,
+since it otherwise blocks reading a stream nobody is writing. The turn's usage — the token
+counts on the `turn.completed` event — is what the context measurement reads, in place of a
+byte estimate.
 
 **Latency is the currency here, not price.** The map seat rides the owner's OpenAI
 subscription and the expert seat the owner's Anthropic one, so neither is API-denominated
@@ -491,38 +496,45 @@ with it. Up: GUI-D48's distrust signal fires in two sessions of three — then t
 
 ### 5.5 What thread agents are told about board changes
 
-**GUI-D47 — A thread agent is told how to read a board that moved.** Its brief carries a
-board legend, on both tiers: a decision's `status`, `rationale` and `history` are the
-record of what happened to it and why, and a question about why the board moved is
-answered by quoting them or by saying the record does not say — never by inferring a
-cause; `prereqs` is what a decision waits on, and `puts_in_question` on an option is the
-plan author's prediction that taking the option puts those decisions in question, which
-the grill-master rules on — a mark, not a dependency; `pending` is what the human has not
-dealt with, including a notice this thread may have been opened from; a map change in
-`history` carries `proposed_by` — the agent whose queued update the human's apply landed —
-and, where a ruling produced it, that `verdict` and its why (§8.6's entry gains both
-fields), so who proposed a move and what was ruled is quoted, never inferred. A thread opened
-from a notice is kinded `notice` and anchors to the decision the notice targeted, null
-where the notice targeted none; §8.5's kind list gains `notice`. `help_reference` crosses
-to the `help` kind and to no other — not to a `notice` thread anchoring nothing.
+**GUI-D47 — A thread agent is told how to read a board that moved.** Its brief carries a board
+legend, on both tiers: a decision's `status`, `rationale` and `history` are the record of what
+happened to it and why, and a question about why the board moved is answered by quoting them or
+by saying the record does not say — never by inferring a cause; `prereqs` is what a decision
+waits on, and `puts_in_question` on an option is the plan author's prediction that taking the
+option puts those decisions in question, which the grill-master rules on — a mark, not a
+dependency; `pending` is what the human has not dealt with, including a notice this thread may
+have been opened from; a map change in `history` carries `proposed_by` — the agent whose queued
+update the human's apply landed — and, where a ruling produced it, that `verdict` and its why
+(§8.6's entry gains both fields), so who proposed a move and what was ruled is quoted, never
+inferred. A thread opened from a notice is kinded `notice` and anchors to the decision the
+notice targeted, null where the notice targeted none; §8.5's kind list gains `notice`.
+`help_reference` crosses to the `help` kind and to no other — not to a `notice` thread anchoring
+nothing. **What would show the legend is not enough** is an observation rather than a test: a
+thread agent in the first live session, asked why a decision was invalidated over a board whose
+`rationale` and `history` state it, answering with a cause the record does not carry. Prompt
+text cannot be asserted to have been read; the session that watches one is what confirms the
+legend or reverts it.
 
-### 5.6 Escalating a channel nobody talks to
+### 5.6 Escalating on what a transcript condition cannot see
 
-**GUI-D48 — The map channel's escalation is mechanical, in three triggers with three
-persistences.** GUI-D35's policy and GUI-D12's conditions are built for a channel the human
-converses on: the conditions read the human's own turns, and the `gated` default waits for
-them to press a control. The map channel is not that. The human makes gestures there — an
-answer, an apply, a dismiss — and the only text any of them carries is the note riding an
-answer, so the conditions have almost nothing to read, and the gestures that say most about
-whether the seat is working carry no text at all. Nobody presses *Transfer to expert* at an
-agent they never talk to. GUI-D12's conditions are left exactly as they are — a note that
-meets one still fires — and these three triggers are what those conditions cannot see.
+**GUI-D48 — The map channel escalates on three triggers that need no human text, each with
+its own persistence.** GUI-D35's policy and GUI-D12's conditions reach every channel, the
+map's included, and they stay exactly as they are: the note riding an answer is a human
+turn, so a note meeting a condition fires there like anywhere else and, under `autonomous`,
+writes its own `transferred` entry without this decision's help. That route is the whole of
+what the map has today, and it is thin — the human's other gestures on that channel, an
+apply and a dismiss, carry no text for a condition to read, and nobody presses *Transfer to
+expert* at an agent they never talk to. The three triggers below are what a transcript
+condition cannot see, and they are what GUI-D48 owns; the human-text route stays GUI-D12's
+and GUI-D35's.
 
 1. **Post-reply press**, per gesture. A reply leaving a named decision unruled, or a
    document still invalid after its one retry, is re-asked on the expert seat for that
    gesture alone (GUI-D42, GUI-D45). It checks coverage — every decision the dispatch named
    is ruled — and never correctness: a ruling the backend would disagree with is not a
-   ruling missing. Nothing is written that outlives the gesture.
+   ruling missing. A gesture already on the expert seat has no rung to press onto, so
+   GUI-D45's terminal ladder applies instead and the unmet notice is raised directly.
+   Nothing is written that outlives the gesture.
 2. **Pre-dispatch turn classing**, per gesture. A gesture whose class is judgment
    dispatches to the expert seat directly: no first-rung turn is recorded for it, and no
    failure is round-tripped to reach a seat the class already named. The judgment classes
@@ -575,7 +587,7 @@ still valid; the field in the plan in evidence, read under this wording:
 }
 ```
 
-The schema docstring on `Option` says the same thing as §8.2, which it does not today.
+The schema's own `Option` documentation carries that same sentence.
 
 ## 6. The incident, replayed under the ruling
 
@@ -724,15 +736,14 @@ skill's text, and each names what a red test would assert.
   has one, beside the tier; and the map's transfer control reads *Transfer to expert* at
   first paint. Seating the map channel on the threads' seat makes its first turn take that
   transport and model and changes nothing else about the channel.
-- **GMR-A6** Every composed thread-agent prompt carries the board legend, on both tiers; a
-  scripted turn asked why a decision was invalidated, over a board whose `rationale` and
-  `history` state it, replies quoting that rationale and asserts no cause outside it.
+- **GMR-A6** Every composed thread-agent prompt carries the board legend, on both tiers.
 - **GMR-A7** A thread created from a notice targeting a decision anchors to that decision and
   is kinded `notice`; a `notice` thread's recorded dispatch carries no `help_reference` and
   the help thread's still does; the page-derived kind check (GUI-A13) admits `notice`.
-- **GMR-A8** §8.2's `puts_in_question` text, the schema's own `Option` documentation and the
-  handoff-assembling skill's sentence state the same semantics — a prediction the grill-master
-  rules on — asserted by the phrase "rules on" being present in all three.
+- **GMR-A8** Each of the three surfaces that say what `puts_in_question` is — §8.2, the
+  schema's own `Option` documentation and the handoff-assembling skill's sentence — names
+  the field as something the grill-master rules on, asserted by the phrase "rules on" being
+  present in all three. Agreement beyond that phrase is reviewed, not tested.
 - **GMR-A9** A gesture of each judgment class — an answer taking an option whose mark
   resolves to a live node, an applied `invalidate` leaving an open dependent, a
   `thread-fold`, a withdrawal conflict and the doctor — is composed by the expert seat with
@@ -744,12 +755,13 @@ skill's text, and each names what a red test would assert.
   — writes exactly one policy `transferred` entry on the map channel, and every map turn
   after it is the expert seat's; a third signal writes no second entry; and the human's
   transfer control returns the channel to its first-rung seat.
-- **GMR-A11** The Codex driver's cold turn records the thread id the reply names and every
-  later turn on that channel resumes that thread by id; the process is run with its standard
-  input closed; the standing brief and the reply schema are passed on the resumed turn as
-  well as on the cold one; a reply that does not validate is refused under GMR-A2 rather than
-  shown to the human; and the turn's reported usage, not the byte estimate, is what the
-  context measurement records.
+- **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
+  the `thread.started` event, then resumes that thread on every later turn on the channel as
+  `codex exec resume <thread_id>`; `-c developer_instructions=…` and `--output-schema
+  <file>` are passed on the resumed turn as well as on the cold one; the process is run with
+  its standard input closed; a reply that does not validate is refused under GMR-A2 rather
+  than shown to the human; and the token counts on `turn.completed`, not the byte estimate,
+  are what the context measurement records.
 
 ## 9. The changes, in order
 
