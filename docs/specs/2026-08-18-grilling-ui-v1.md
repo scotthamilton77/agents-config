@@ -1592,10 +1592,11 @@ Each criterion is mechanically checkable and convertible to a red test.
   on the frontier and a fourth resting on the first, pressing the board's next-open control
   walks the focus along the frontier in the frontier's own order and wraps back to its
   head, scrolling the decision column so the decision it lands on is on screen; once the
-  first is invalidated and the other two settled, leaving the fourth open and unreachable,
-  the control is dead and the reason on screen says the board is waiting; and once the
-  fourth is invalidated too the same control is dead giving a different reason, which does
-  not say the board is waiting. Verified in a browser.
+  first is invalidated and the other two settled, the fourth is the whole frontier; a
+  queued change against the fourth then locks it, the control is dead, and the reason on
+  screen says the board is waiting; and once that change lands and the fourth is
+  invalidated too, the same control is dead giving a different reason, which does not say
+  the board is waiting. Verified in a browser.
 - **GUI-A108** A decision whose `prereqs` are one settled decision and one invalidated by a
   change the human applied is on the frontier, and the invalidated one is `invalidated`.
 - **GUI-A109** Where two decisions rest on a third and the human applies the agent's

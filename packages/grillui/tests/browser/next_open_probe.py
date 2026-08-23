@@ -83,10 +83,10 @@ def decision(node: str, title: str, prereqs: list[str]) -> dict[str, Any]:
 def handoff() -> dict[str, Any]:
     """Three decisions nothing rests on, and a fourth resting on the first.
 
-    The fourth is the whole of the stalled case: once the first is invalidated
-    rather than settled, its prerequisite is never satisfied and it can never
-    reach the frontier, so a board can run out of answerable decisions while
-    still carrying one nobody has closed.
+    The fourth is the whole of the stalled case: once the first has left the
+    flow and the other two are settled it is all the frontier holds, and a
+    queued change against it locks it until the human rules -- a board out of
+    answerable decisions while still carrying one nobody has closed.
     """
     return {
         "handoff_version": 1,
@@ -264,11 +264,14 @@ def main() -> None:
 
         # 2. A board that has run out of answerable decisions while still
         #    carrying an open one says it is waiting, not that it is finished.
-        #    d1 is invalidated rather than settled, so d4's prerequisite is
-        #    never met and d4 can never reach the frontier.
+        #    d1 leaving the flow holds d4 no longer, so d4 reaches the frontier;
+        #    a queued change against d4 then locks it until the human rules.
         human_applies(page, base, agent_proposes_invalidate(base, "d1"), "d1")
         settle(page, base, "d2")
         settle(page, base, "d3")
+        assert frontier(base) == ["d4"], frontier(base)
+        queued = agent_proposes_invalidate(base, "d4")
+        page.wait_for_timeout(600)
         assert frontier(base) == [], frontier(base)
         assert statuses(base)["d4"] == "open", statuses(base)
         assert page.locator("#completion").count() == 0, "an unfinished board announced completion"
@@ -281,7 +284,7 @@ def main() -> None:
         # 3. Closing the last open decision leaves the same dead control saying
         #    something else. Same control, same board, different answer -- which
         #    is the whole of what it is for.
-        human_applies(page, base, agent_proposes_invalidate(base, "d4"), "d4")
+        human_applies(page, base, queued, "d4")
         assert page.locator("#completion").count() == 1, "the finished board announced nothing"
         page.click('#completion [data-act="dismiss-completion"]')
         page.wait_for_timeout(400)
