@@ -188,6 +188,10 @@
   .card > h3 { flex: none; padding: 11px 15px; border-bottom: 1px solid var(--line); font-size: 12px;
                text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); display: flex; gap: 10px; align-items: center; }
   .card > h3 .spacer { flex: 1; }
+  /* The reason a dead "next open" gives is the whole point of the dead control,
+     so it reads as the sentence it is rather than as more heading, and the
+     heading's hint gives way before the reason does. */
+  .card > h3 .nextwhy { flex: none; text-transform: none; letter-spacing: normal; }
 
   .mapscroll { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; cursor: grab; }
   .mapscroll.grabbing { cursor: grabbing; }
