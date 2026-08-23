@@ -17,23 +17,31 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
-from conftest import TIMEOUT, SpyDriver, driven, event, seed_node
+from conftest import TIMEOUT, SpyDriver, driven, event, run_turns, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.dispatch import DISPATCH_DIR
-from grillui.lane import UnreachableDriver
+from grillui.lane import Lane, UnreachableDriver
 from grillui.log import SessionLog
+from grillui.projector import fold
 from grillui.schemas import (
+    FAST_TIER,
+    FOLD_KIND,
+    HEAVY_TIER,
     STATUS_KIND,
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
     STATUS_PHASE_REPLIED,
+    DispatchContext,
+    EventSubmission,
     LogEntry,
 )
 
@@ -535,3 +543,208 @@ def test_a_turn_that_could_not_be_taken_closes_the_lane_where_it_opened(log: Ses
         (STATUS_PHASE_COMPOSING, "map"),
         (STATUS_PHASE_ERROR, "map"),
     ]
+
+
+# ── An answer that kills other decisions, and what the lane does about it ──
+
+KILLED = ["d2", "d3"]
+KILLING_OPTION = {"id": "b", "text": "Close it unactioned", "puts_in_question": KILLED}
+
+
+def _seed(log: SessionLog) -> None:
+    """A board whose first decision offers an option naming the other two.
+
+    Seeded through the appender rather than through the lane, so nothing here
+    schedules a turn of its own: what these tests are about is the one turn the
+    human's answer buys.
+    """
+    for node, options in (
+        ("d1", [{"id": "a", "text": "Build the export"}, KILLING_OPTION]),
+        ("d2", [{"id": "a", "text": "Yes"}, {"id": "b", "text": "No"}]),
+        ("d3", [{"id": "a", "text": "Yes"}, {"id": "b", "text": "No"}]),
+    ):
+        receipt = log.submit(
+            [
+                EventSubmission(
+                    kind="add-node",
+                    actor="grill-master",
+                    idempotency_key=f"seed-{node}",
+                    payload={
+                        "target": node,
+                        "short": node,
+                        "title": f"Which {node}?",
+                        "body": "Decide.",
+                        "prereqs": [],
+                        "options": options,
+                    },
+                )
+            ],
+            log.epoch,
+        )[0]
+        assert receipt.status == "accepted"
+
+
+def _answer(lane: Lane, option: str = "b") -> None:
+    """The human answering the first decision, and the turn it buys, run out."""
+    run_turns(
+        lane,
+        EventSubmission(
+            kind="answer",
+            actor="human",
+            idempotency_key="human-answer",
+            payload={"target": "d1", "answer": {"option": option}},
+        ),
+    )
+
+
+def _notices(log: SessionLog) -> list[str]:
+    """What the backend said to the human in its own voice."""
+    return [
+        str(entry.payload.get("text"))
+        for entry in log.entries()
+        if entry.kind == "informational" and entry.actor == "backend"
+    ]
+
+
+def _obligations(driver: Any) -> list[Any]:
+    """The mootness obligation on each dispatch this tier was handed."""
+    return [
+        DispatchContext.model_validate_json(path.read_text(encoding="utf-8")).mootness
+        for path in driver.dispatches
+    ]
+
+
+@dataclass
+class ProposingDriver:
+    """A tier that proposes an `invalidate` for every id its dispatch named.
+
+    The turn a model is supposed to take, standing in for one: it reads the
+    obligation out of the context it was handed rather than off the board, so a
+    dispatch carrying none proposes nothing.
+    """
+
+    tier: str = FAST_TIER
+    dispatches: list[Path] = field(default_factory=list)
+
+    def run(self, log: SessionLog, dispatch: Path, /) -> None:
+        context = DispatchContext.model_validate_json(dispatch.read_text(encoding="utf-8"))
+        self.dispatches.append(dispatch)
+        named = [] if context.mootness is None else context.mootness.ids
+        log.submit(
+            [
+                EventSubmission(
+                    kind=FOLD_KIND,
+                    actor="grill-master",
+                    idempotency_key=f"reply-{uuid4().hex}",
+                    payload={
+                        "updates": [
+                            {"kind": "informational", "text": "Those are dead."},
+                            *(
+                                {"kind": "invalidate", "target": one, "why": "the answer kills it"}
+                                for one in named
+                            ),
+                        ]
+                    },
+                )
+            ],
+            log.epoch,
+        )
+
+
+def test_a_prose_reply_to_a_killing_answer_is_pressed_on_the_expert_carrying_the_ids(
+    log: SessionLog,
+) -> None:
+    """
+    Given a board whose answered option names two other decisions, and a fast
+          tier that replies in prose
+    When the human takes that option
+    Then the expert tier is handed the same turn, its dispatch names both
+         decisions and the answer that puts them in question, and the lane
+         closes naming the tier that ended up taking the turn.
+
+    The fast tier is briefed on the rule and does not honour it -- the live
+    session's reply was two sentences against an answer that put eight decisions
+    in question. So the check is not on the prose: what the reply proposed is
+    read off the board, and a turn that left the decisions standing is handed up
+    once rather than believed.
+    """
+    fast = SpyDriver(tier=FAST_TIER, reply="d2 and d3 are dead now.")
+    expert = SpyDriver(tier=HEAVY_TIER, reply="Agreed, both are moot.")
+    lane = Lane(log, fast, expert=expert)
+    _seed(log)
+
+    _answer(lane)
+
+    obliged = _obligations(expert)
+    assert len(obliged) == 1, "the expert was not handed the turn"
+    assert obliged[0] is not None
+    assert obliged[0].ids == KILLED
+    assert obliged[0].target == "d1"
+    assert obliged[0].answer == KILLING_OPTION["text"]
+    assert _lane(log)[-1] == (STATUS_PHASE_REPLIED, "map")
+    assert (
+        statuses(log, STATUS_PHASE_REPLIED)[-1]
+        .payload["detail"]
+        .startswith(f"the {HEAVY_TIER!r} tier")
+    )
+
+
+def test_an_expert_that_proposes_nothing_either_leaves_the_ids_named_to_the_human(
+    log: SessionLog,
+) -> None:
+    """
+    Given both tiers replying in prose to an answer that kills two decisions
+    When the human takes that option
+    Then one backend notice names both decisions, and nothing on the board was
+         invalidated by anything but a human gesture.
+
+    Insisting is as far as the backend goes. Minting the invalidates itself
+    would be the sole-author rule broken by the code enforcing it, so what is
+    left is telling the human which decisions are still being offered -- which
+    they can act on through the thread the map is steered from.
+    """
+    fast = SpyDriver(tier=FAST_TIER, reply="Both are dead.")
+    expert = SpyDriver(tier=HEAVY_TIER, reply="Yes, dead.")
+    lane = Lane(log, fast, expert=expert)
+    _seed(log)
+
+    _answer(lane)
+
+    said = _notices(log)
+    assert len(said) == 1, said
+    assert ", ".join(KILLED) in said[0]
+    assert [entry for entry in log.entries() if entry.kind == "invalidate"] == []
+
+
+def test_an_obligation_met_or_never_created_presses_nobody(log: SessionLog, tmp_path: Path) -> None:
+    """
+    Given one session whose fast tier proposes an `invalidate` for each id it
+          was given, and another whose human takes the option naming nothing
+    When each answer's turn is taken
+    Then neither hands the expert a turn and neither says anything to the human,
+         and the first has both invalidates waiting in the queue.
+
+    Both halves are about what the press costs when it should not fire. A
+    proposal waiting in the queue is the obligation met, whether or not the
+    human has applied it yet -- a check reading the decision's status alone
+    would press every honoured turn. And every session log written before this
+    existed carries no pre-marks at all, so each has to go on costing exactly
+    what it cost: the obligation is a property of the option the human took.
+    """
+    honoured, expert = ProposingDriver(), SpyDriver(tier=HEAVY_TIER)
+    _seed(log)
+    _answer(Lane(log, honoured, expert=expert))
+
+    assert expert.dispatches == []
+    assert _notices(log) == []
+    queued = fold(log.epoch, log.entries()).pending
+    assert sorted(str(one.target) for one in queued if one.kind == "invalidate") == KILLED
+
+    plain = SessionLog(tmp_path / "unmarked")
+    prose, unused = SpyDriver(tier=FAST_TIER, reply="Noted."), SpyDriver(tier=HEAVY_TIER)
+    _seed(plain)
+    _answer(Lane(plain, prose, expert=unused), option="a")
+
+    assert unused.dispatches == []
+    assert _notices(plain) == []
+    assert _obligations(prose) == [None]

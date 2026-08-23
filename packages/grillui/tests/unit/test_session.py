@@ -1028,7 +1028,11 @@ def _drive(session_dir: Path, document: dict[str, Any]) -> SessionLog:
     log = open_session(session_dir, write_handoff(session_dir, document))
     client = driven(log, SpyDriver())
     for body in (
-        event("answer", actor="human", key="a1", target="d1", answer={"option": "a"}, why="audit"),
+        # The option nobody pre-marked. Taking a marked one is the one gesture
+        # that does reach the log -- the answer's obligation goes to the turn
+        # that has to propose the invalidates -- and this is the claim about
+        # every other gesture.
+        event("answer", actor="human", key="a1", target="d1", answer={"option": "b"}, why="audit"),
         event(
             "add-node",
             key="add-1",
@@ -1114,11 +1118,13 @@ def test_two_sessions_driven_alike_log_the_same_entries_with_the_pre_mark_or_wit
     """
     Given two sessions on the same handoff, one carrying a pre-mark on every
           first option and one carrying none
-    When both are driven through the same answer, add-node and invalidate
+    When both are driven through the same answer on an unmarked option, add-node
+         and invalidate
     Then the two logs carry the same entries in the same order, and the two
          boards differ in nothing but that field.
 
-    The pre-mark is display data. If it reached anything -- an appended entry, a
+    The pre-mark is display data everywhere but on the answer that takes the
+    option carrying it. If it reached anything else -- an appended entry, a
     status, an ordering -- the difference would show up here as two logs that
     are not the same log.
     """

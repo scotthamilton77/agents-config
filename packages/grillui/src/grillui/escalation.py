@@ -25,6 +25,15 @@ module answers, and it is read back off the log one channel at a time: the
 human's own turn carrying the transfer key, or the backend's `transferred`
 status entry where the policy moved the channel itself. An agent asserting a
 transfer in its own reply is neither, and moves nothing.
+
+One hand-up is not a recommendation at all. When the human's answer takes an
+option that named the decisions it puts in question, what that turn owes is a
+list rather than a judgement -- an `invalidate` for each of those decisions the
+board is still offering -- and a list can be checked after the fact. So the
+obligation is stated here, the reply is measured against it here, and what is
+left standing is what the lane insists on. The condition markers above are read
+lexically and may miss; this one cannot, because nothing about it is read out of
+prose.
 """
 
 from __future__ import annotations
@@ -33,12 +42,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from grillui.schemas import (
+    AGENT_ACTORS,
     MAP_CHANNEL,
     STATUS_KIND,
     STATUS_PHASE_TRANSFERRED,
     THREAD_KINDS,
     TRANSFER_FLAG,
     TRANSFER_SOURCE_POLICY,
+    MootnessObligation,
     read_turns,
 )
 
@@ -251,6 +262,96 @@ def recommend(
             condition=CONDITION_MULTIPLE,
             evidence=f"the turn puts {', '.join(weighed)} in play at once",
         )
+    return None
+
+
+ANSWER_KIND = "answer"
+INVALIDATE_KIND = "invalidate"
+
+# A decision the board has stopped offering. Everything else -- open, locked,
+# stale, fogged -- is still a question the human can be asked, which is what
+# makes an unproposed invalidate on it a decision they are left answering after
+# their own answer killed it.
+DEAD_STATUSES = frozenset({"settled", "invalidated"})
+
+
+def mootness_obligation(
+    image: Image2, entries: Sequence[LogEntry], channel: str = MAP_CHANNEL
+) -> MootnessObligation | None:
+    """What the answer this turn is being taken on owes the rest of the board.
+
+    Read off structure the board already carries rather than out of anything an
+    agent said: the option the human took names the decisions it puts in
+    question, so the obligation is the same fact the page pre-marked on hover.
+
+    Only the grill-master's channel has one, because it is the only agent that
+    may author a map mutation, and only while the answer is still the last thing
+    said there: an obligation that outlived its own turn would re-open on every
+    later turn and spend an expert turn per gesture for the rest of the session.
+    """
+    if channel != MAP_CHANNEL:
+        return None
+    answered = _unanswered_answer(entries)
+    if answered is None:
+        return None
+    target = answered.payload.get("target")
+    answer = answered.payload.get(ANSWER_KIND)
+    if not isinstance(target, str) or not isinstance(answer, dict):
+        return None
+    decision = next((one for one in image.decisions if one.id == target), None)
+    taken = None if decision is None else answer.get("option")
+    option = next((one for one in (decision.options if decision else []) if one.id == taken), None)
+    if option is None or not option.puts_in_question:
+        return None
+    standing = _still_standing(image, option.puts_in_question)
+    if not standing:
+        return None
+    note = answer.get("text")
+    return MootnessObligation(
+        target=target,
+        answer=note if isinstance(note, str) and note else option.text,
+        ids=standing,
+    )
+
+
+def outstanding(image: Image2, obligation: MootnessObligation) -> list[str]:
+    """Which of the obligation's decisions the board is still offering.
+
+    The whole of the check on a reply, and the reason it needs no prose parsing:
+    an agent's `invalidate` always waits in the human's queue, so a decision the
+    turn proposed one for is in the queue whether or not they have applied it,
+    and one the turn only narrated is still on the frontier being offered.
+    """
+    return _still_standing(image, obligation.ids)
+
+
+def _still_standing(image: Image2, ids: Sequence[str]) -> list[str]:
+    proposed = {
+        item.target
+        for item in image.pending
+        if item.kind == INVALIDATE_KIND and not item.superseded
+    }
+    # An id resolving to no node is dropped rather than carried: a pre-mark may
+    # name a decision nobody wrote, and an invalidate on one would be an update
+    # with no target.
+    live = {one.id for one in image.decisions if one.status not in DEAD_STATUSES}
+    return [one for one in dict.fromkeys(ids) if one in live and one not in proposed]
+
+
+def _unanswered_answer(entries: Sequence[LogEntry]) -> LogEntry | None:
+    """The human's answer no agent has replied to yet, on the map.
+
+    Scanning backwards and stopping at the first agent turn is what bounds the
+    obligation to the turn the answer bought. The backend's own lane entries are
+    passed over: they say a turn was announced, not that one was taken.
+    """
+    for entry in reversed(entries):
+        if entry.channel != MAP_CHANNEL:
+            continue
+        if entry.actor in AGENT_ACTORS:
+            return None
+        if entry.actor == "human" and entry.kind == ANSWER_KIND:
+            return entry
     return None
 
 

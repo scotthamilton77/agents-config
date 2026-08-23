@@ -20,6 +20,7 @@ from grillui.schemas import (
     MAP_THREAD_KIND,
     DispatchContext,
     LogEntry,
+    MootnessObligation,
     Thread,
     ThreadProjection,
 )
@@ -42,6 +43,7 @@ from grillui.tiers import (
     HEAVY_MODEL_ENV,
     HEAVY_TIER,
     MAP_THREAD_MANDATE,
+    MOOTNESS_OBLIGATION_RULE,
     MOOTNESS_RULE,
     NO_BRIEFING,
     NO_MANUFACTURE_RULE,
@@ -590,3 +592,34 @@ def test_the_map_thread_as_another_threads_stub_mandates_nothing(
          every turn taken for the rest of the session.
     """
     assert MAP_THREAD_MANDATE not in compose("{}", map_thread_context(channel="t-d1"), entries)
+
+
+def test_a_turn_owed_invalidates_is_given_the_ids_and_the_answer_in_a_section_of_its_own(
+    entries: list[LogEntry],
+) -> None:
+    """
+    Given a grill-master dispatch carrying the obligation an answer left
+    When the turn's prompt is assembled
+    Then it names each decision the answer put in question, quotes the answer to
+         carry as the rationale, and states the obligation in a section of its
+         own -- while a dispatch carrying none says nothing about mootness.
+
+    The standing brief already carries the rule and the fast tier reads past it:
+    the live evidence is two sentences of prose against an answer that put eight
+    decisions in question. A paragraph about a case is something an agent has to
+    recognise its own turn in; a list of ids is not.
+    """
+    context = dispatch_context().model_copy(
+        update={
+            "mootness": MootnessObligation(
+                target="d1", answer="Close it unactioned", ids=["d2", "d8"]
+            )
+        }
+    )
+
+    prompt = compose("{}", context, entries)
+
+    assert "d2, d8" in prompt
+    assert "Close it unactioned" in prompt
+    assert MOOTNESS_OBLIGATION_RULE in prompt
+    assert MOOTNESS_OBLIGATION_RULE not in compose("{}", dispatch_context(), entries)
