@@ -1020,6 +1020,29 @@ function nextFocus(justSettled) {
   }
   return f[0];
 }
+// The next answerable decision after the one in focus, wrapping at the end. The
+// frontier is the board's own word on what can be answered and its own order,
+// so this walks it rather than computing a second answer; a focus sitting off
+// the frontier starts the walk at its head.
+function nextOpen() {
+  var f = BOARD.frontier;
+  if (!f.length) return null;
+  return f[(f.indexOf(UI.focus) + 1) % f.length];
+}
+// Why there is nowhere to go, told apart. A board with nothing left to answer
+// has either finished or stalled, and a human told only that the control is
+// dead cannot tell whether to end the session or go unblock something. The
+// finished reading is the board's one reading, not a second one written here.
+function nextOpenWhy() {
+  return boardFinished() ? "nothing is left open" : "everything still open is waiting";
+}
+// The walk itself. There is no bare-key shortcut beside it: every focus move
+// hands the caret to the focused decision's note box, so a second press of a
+// bare letter would land in what the human is writing rather than on the board.
+function goNextOpen() {
+  var id = nextOpen();
+  if (id) { focusOn(id); render(); }
+}
 
 /* ---------------- what landed, observed as it lands ---------------- */
 
@@ -1749,8 +1772,12 @@ function renderMap() {
       '<span class="badges">' + badges + "</span></button>";
   });
 
-  var fogX = X0 + fogCol * COL - 50;
-  return '<div class="card"><h3>The board <span class="spacer"></span>' +
+  var fogX = X0 + fogCol * COL - 50, walkable = nextOpen();
+  return '<div class="card"><h3>The board ' +
+    '<button class="btn sm" data-act="nextopen" title="Focus the next decision that can be ' +
+    'answered" ' + (walkable ? "" : "disabled") + ">Next open</button>" +
+    (walkable ? "" : '<span class="muted nextwhy">' + esc(nextOpenWhy()) + "</span>") +
+    '<span class="spacer"></span>' +
     '<span class="muted">drag to pan · click a node to focus it · hover an icon to see what it is</span></h3>' +
     '<div class="mapscroll" id="mapscroll"><div class="mapcanvas" style="width:' + W + "px;height:" + H + 'px">' +
     '<svg width="' + W + '" height="' + H + '">' + edges + "</svg>" + nodes +
@@ -2735,6 +2762,7 @@ document.addEventListener("click", function (e) {
     // claim. Never inferred from silence: a window that is merely slow is
     // indistinguishable from one that is gone, and only the human can tell.
     case "takeover": claim(true); break;
+    case "nextopen": goNextOpen(); break;
     case "mapnode": focusOn(id); render(); break;
     case "focusnode": focusOn(id); UI.panel = null; render(); break;
     // "Show me" is a navigation intent — it lands the decision open so there is

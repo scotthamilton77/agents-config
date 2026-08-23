@@ -3153,6 +3153,37 @@ def test_the_inbox_offers_the_batch_control_before_the_list_it_applies() -> None
     assert ".inbox-head {" in source, "the panel head is unstyled, so its control has no place"
 
 
+# ---------------------------------------------------------------- GUI-A110
+
+
+def test_the_boards_next_open_control_walks_the_frontier_and_says_why_it_cannot() -> None:
+    """GUI-U31's source half: one reader for the walk, and one reading of why it
+    is dead.
+
+    Whether a human sees the control, and whether the board scrolls when it is
+    pressed, are a browser's answers. What is measurable here is that the walk is
+    the frontier's own order rather than a second one computed on the page, that
+    it wraps, and that the disabled reason is `boardFinished`'s reading -- a
+    second hand-written condition is how a control comes to call a stalled board
+    finished, which is the one distinction it exists to draw. That the header
+    control is the walk's only caller is measured too: every focus move hands the
+    caret to the focused decision's note box, so a bare-key shortcut into this
+    would type into what the human is writing rather than move the board.
+    """
+    source = page_source()
+    walk = function_body("nextOpen")
+    assert "BOARD.frontier" in walk, "the walk does not read the frontier"
+    assert "% f.length" in walk, "the walk never wraps"
+    assert "boardFinished()" in function_body("nextOpenWhy"), "finished-ness is read twice"
+    assert 'case "nextopen": goNextOpen()' in source, "the header control reaches nothing"
+    assert source.count("goNextOpen") == 2, "the walk has a caller besides the header control"
+    head = function_body("renderMap")
+    assert 'data-act="nextopen"' in head, "the board's heading carries no control"
+    assert '(walkable ? "" : "disabled")' in head, "the control never goes dead"
+    assert "nextOpenWhy()" in head, "a dead control gives no reason"
+    assert ".nextwhy {" in source, "the reason is unstyled, so it reads as more heading"
+
+
 @pytest.mark.parametrize(
     "shell",
     ["<style></style><script>//__SCRIPT__</script>", "/*__STYLE__*/ /*__STYLE__*/ //__SCRIPT__"],

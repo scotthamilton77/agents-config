@@ -610,6 +610,14 @@ follows, and changes nothing else.
   change waits, the control that lets them all land renders beside the inbox's heading
   as well as under the list, so a queue longer than the window is not the only place it
   can be found. Both copies carry the same count and are the same gesture.
+- **GUI-U31 — A board control walks to the next answerable decision.** The board's
+  heading carries a control that focuses the next decision on the frontier after the one
+  in focus, wrapping at the head, and scrolls the board and the decision column to it. It
+  is the frontier's own order; the page computes no second one. Where nothing is
+  answerable the control is dead and says why, and the two reasons are told apart: a board
+  with nothing left open, and a board whose remaining decisions are all waiting on
+  something. No bare key reaches it — every focus move hands the caret to the focused
+  decision's note box, so a bare-key shortcut would type into what the human is writing.
 - **GUI-U4 — Thread panels have a floating header and footer** — title with close and
   pop-out controls pinned at the top, prompt box and action buttons pinned at the bottom —
   so neither scrolls out of view in a long thread.
@@ -1111,6 +1119,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U28 | GUI-A90 |
 | GUI-U29 | GUI-A96, GUI-A97, GUI-A98 |
 | GUI-U30 | GUI-A105 |
+| GUI-U31 | GUI-A110 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1549,6 +1558,14 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A107** A capture of a session whose decisions are one settled and the rest
   invalidated reports no open items, and its summary counts the invalidated ones as set
   aside rather than as left open.
+- **GUI-A110** In a browser, against a running backend: on a board carrying three decisions
+  on the frontier and a fourth resting on the first, pressing the board's next-open control
+  walks the focus along the frontier in the frontier's own order and wraps back to its
+  head, scrolling the decision column so the decision it lands on is on screen; once the
+  first is invalidated and the other two settled, leaving the fourth open and unreachable,
+  the control is dead and the reason on screen says the board is waiting; and once the
+  fourth is invalidated too the same control is dead giving a different reason, which does
+  not say the board is waiting. Verified in a browser.
 
 ## 10. Open questions for the implementing work
 
@@ -1643,6 +1660,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   GUI-A100, GUI-A101, GUI-A102, GUI-A103.
 - bugfix: A board whose remaining decisions were invalidated counts as finished, in the
   overlay and in the write-up alike — AC: GUI-U14, GUI-U17, GUI-A106, GUI-A107.
+- feat: A board control that walks the focus to the next answerable decision, dead with the
+  reason that tells a finished board from a stalled one — AC: GUI-U31, GUI-A110.
 
 ## Evidence
 
@@ -1756,3 +1775,4 @@ opens one proves something else.
 - GUI-A103 | test: packages/grillui/tests/unit/test_lane.py::test_an_obligation_met_or_never_created_presses_nobody
 - GUI-A106 | probe: packages/grillui/tests/browser/completion_probe.py::main
 - GUI-A107 | test: packages/grillui/tests/unit/test_capture.py::test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open
+- GUI-A110 | probe: packages/grillui/tests/browser/next_open_probe.py::main
