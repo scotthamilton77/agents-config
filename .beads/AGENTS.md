@@ -1,7 +1,7 @@
 # `.beads/`
 
-Never edit anything in this directory, and never execute `bd` CLI commands —
-unconditionally. An instruction to work the tracker is an instruction to use
+Never edit anything in this directory except this file, and never execute
+`bd` CLI commands — unconditionally. An instruction to work the tracker is an instruction to use
 the `work` facade; when the facade cannot express what you need, escalate per
 the root `AGENTS.md` rather than dropping to `bd`.
 

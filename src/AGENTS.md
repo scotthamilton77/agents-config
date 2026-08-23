@@ -1,8 +1,10 @@
 # AGENTS.md — `src/`
 
-The deployed surface: everything installed into user space is authored here.
-Most content is documentation and templates with no build step — changes follow
-existing formatting conventions per file type. Shared content lives under
+The deployed configuration surface: every rule, skill, command, hook and
+instruction template the installer deploys is authored here; the CLIs it puts
+on PATH are built from `packages/`. Most content is documentation and templates
+with no build step — changes follow existing formatting conventions per file
+type. Shared content lives under
 `src/user/.agents/` (staged into every active tool; see that directory's
 `AGENTS.md` for the install model and the name-collision rules), per-tool
 content under `src/user/.claude/`, `src/user/.codex/`, `src/user/.gemini/` and
