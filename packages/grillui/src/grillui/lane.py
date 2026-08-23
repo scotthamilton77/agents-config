@@ -62,7 +62,7 @@ import threading
 from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from grillui.dispatch import record_dispatch
-from grillui.escalation import in_expert_mode, outstanding
+from grillui.escalation import INVALIDATE_KIND, in_expert_mode, outstanding
 from grillui.projector import fold, supersede_conflicts
 from grillui.schemas import (
     ANSWERABLE_KINDS,
@@ -400,17 +400,7 @@ class Lane:
             driver = self._insist(self.expert, turn, obligation, standing) or driver
             standing = outstanding(self._board(), obligation)
         if standing:
-            self.log.record(
-                "informational",
-                {
-                    "text": f"The answer to {obligation.target} put "
-                    f"{', '.join(standing)} in question and no turn proposed an "
-                    f"invalidate for {'it' if len(standing) == 1 else 'them'}, so the "
-                    f"board is still offering "
-                    f"{'it' if len(standing) == 1 else 'them'}. Ask on the map thread "
-                    f"if that is wrong."
-                },
-            )
+            self.log.record("informational", {"text": _unmet(obligation, standing)})
         return driver
 
     def _insist(
@@ -485,3 +475,24 @@ class Lane:
         for conflict in self._conflicts():
             if conflict.update.id not in known:
                 self._take_turn(driver, Turn(MAP_CHANNEL, conflict=conflict))
+
+
+def _unmet(obligation: MootnessObligation, standing: Sequence[str]) -> str:
+    """What the human is told when no tier proposed what the gesture obliged.
+
+    Named by id and by the gesture that left them there, because the human's
+    move from here is to ask for the change on the map thread and a notice that
+    described the case would leave them working out which decisions it meant.
+    """
+    named, them = ", ".join(standing), "it" if len(standing) == 1 else "them"
+    if obligation.cause == INVALIDATE_KIND:
+        return (
+            f"{obligation.target} left the flow and {named} rested on it. No turn proposed "
+            f"an invalidate or a revise for {them}, so the board is offering {them} again. "
+            f"Ask on the map thread if that is wrong."
+        )
+    return (
+        f"The answer to {obligation.target} put {named} in question and no turn proposed an "
+        f"invalidate for {them}, so the board is still offering {them}. Ask on the map thread "
+        f"if that is wrong."
+    )

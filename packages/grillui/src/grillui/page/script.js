@@ -875,6 +875,14 @@ function settledIds() {
   BOARD.settled.forEach(function (s) { m[s.id] = s.answer; });
   return m;
 }
+// Whether a prereq has stopped holding what rests on it: answered, or gone from
+// the flow. An invalidated prereq never settles, so a dependent still shown as
+// waiting on it waits for the rest of the session. The board's own frontier
+// reads it the same way, and this is the page saying the same thing rather than
+// a second rule.
+function cleared(p, done) {
+  return (p in done) || (node(p) || {}).status === "invalidated";
+}
 // Whether the board itself says this decision can be answered now. The frontier
 // is the backend's answer to that and the page does not compute a second one.
 function answerable(id) { return BOARD.frontier.indexOf(id) >= 0; }
@@ -960,7 +968,7 @@ function statusOf(id) {
 }
 function waitingOn(id) {
   var d = node(id), done = settledIds();
-  var open = d.prereqs.filter(function (p) { return !(p in done); });
+  var open = d.prereqs.filter(function (p) { return !cleared(p, done); });
   var stuck = open.filter(function (p) { return conflictOn(p); })[0];
   return { list: open, conflict: stuck || null };
 }
@@ -1732,7 +1740,7 @@ function renderMap() {
     d.prereqs.forEach(function (p) {
       var a = POS[p], b = POS[d.id];
       if (!a || !b) return;
-      var fixed = p in done;
+      var fixed = cleared(p, done);
       edges += '<path d="M' + (a.x + NW) + "," + (a.y + NH / 2) + " C" + (a.x + NW + 40) + "," + (a.y + NH / 2) +
         " " + (b.x - 40) + "," + (b.y + NH / 2) + " " + b.x + "," + (b.y + NH / 2) +
         '" fill="none" stroke="' + (fixed ? "#94a3b8" : "#e2e8f0") + '" stroke-width="' + (fixed ? 1.4 : 1) + '"' +

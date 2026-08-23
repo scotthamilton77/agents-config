@@ -44,6 +44,7 @@ from grillui.tiers import (
     HEAVY_TIER,
     MAP_THREAD_MANDATE,
     MOOTNESS_OBLIGATION_RULE,
+    MOOTNESS_RESTING_RULE,
     MOOTNESS_RULE,
     NO_BRIEFING,
     NO_MANUFACTURE_RULE,
@@ -623,3 +624,35 @@ def test_a_turn_owed_invalidates_is_given_the_ids_and_the_answer_in_a_section_of
     assert "Close it unactioned" in prompt
     assert MOOTNESS_OBLIGATION_RULE in prompt
     assert MOOTNESS_OBLIGATION_RULE not in compose("{}", dispatch_context(), entries)
+
+
+def test_a_turn_owed_a_verdict_on_stranded_decisions_is_told_which_gesture_stranded_them(
+    entries: list[LogEntry],
+) -> None:
+    """
+    Given a grill-master dispatch carrying the obligation an applied invalidate
+          left
+    When the turn's prompt is assembled
+    Then it names each decision left resting on the dead prereq, quotes the
+         invalidation, and states the rule that a revise discharges as well as
+         an invalidate.
+
+    The two obligations do not owe the same thing. A turn told only "propose an
+    invalidate for each" would kill decisions that survive their prereq, and one
+    told nothing would leave the human answering questions whose footing has
+    gone -- so the section says which gesture it is about.
+    """
+    context = dispatch_context().model_copy(
+        update={
+            "mootness": MootnessObligation(
+                target="d1", answer="the export was dropped", ids=["d4", "d5"], cause="invalidate"
+            )
+        }
+    )
+
+    prompt = compose("{}", context, entries)
+
+    assert "d4, d5" in prompt
+    assert "the export was dropped" in prompt
+    assert MOOTNESS_RESTING_RULE in prompt
+    assert MOOTNESS_OBLIGATION_RULE not in prompt
