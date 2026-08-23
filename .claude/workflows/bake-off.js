@@ -477,12 +477,14 @@ async function runCodexLadder(arm) {
     let state = await agent(rungPrompt(arm, attempt, sessionId), { label: `arm:${arm.label}:a${attempt}`, phase: 'Arms', model: 'haiku', effort: 'low', schema: RUNG_SCHEMA })
     // A guard exit is a deliberate stop the script already explained — probe
     // only when the transport itself failed to deliver a rung state.
-    if (!state || (state.rung_error && state.guard_exit == null)) {
+    if (!state || (state.rung_error && !state.guard_exit)) {
       log(`ARM ${arm.label}: attempt ${attempt} transport ${state ? `error (${state.rung_error})` : 'lost'} — probing disk state`)
       state = await agent(probePrompt(arm), { label: `probe:${arm.label}:a${attempt}`, phase: 'Arms', model: 'haiku', effort: 'low', schema: RUNG_SCHEMA })
     }
     if (!state) { outcome = 'state_unrecoverable'; history.push({ attempt, kind, outcome }); break }
-    if (state.guard_exit != null) {
+    // The runner's guard codes are all nonzero; the transport agent fills the
+    // optional field with 0 on an ordinary rung, and that is not a guard stop.
+    if (state.guard_exit) {
       log(`ARM ${arm.label}: runner guard stop (exit ${state.guard_exit}): ${state.rung_error}`)
       outcome = `guard_stop_${state.guard_exit}`
       history.push({ attempt, kind, guard_exit: state.guard_exit, outcome })
