@@ -69,9 +69,11 @@
       "claude-opus-5": { "input": 10.0, "output": 50.0 }
     }
   },
+  "settled": {
+    "reasoning_output_tokens": "Subset of output_tokens, priced once. Codex's own total_tokens equals input_tokens + output_tokens with reasoning_output_tokens inside output (rollout 01a02ae1, 2026-08-22: 938,661 + 13,224 = 951,885 with 1,357 reasoning)."
+  },
   "open_questions": {
     "openai_cache_write": "OpenAI publishes input, cached input and output only; no cache-write rate appears on the pricing page. Codex records cache_write_input_tokens, so a cost calculation must state what it charges those at rather than defaulting them to zero. Null here means undetermined, not free.",
-    "reasoning_output_tokens": "Codex reports reasoning_output_tokens beside output_tokens. Whether it is a subset of output_tokens or additive is unconfirmed; on a heavy-reasoning arm the difference is a doubled output charge.",
     "token_comparability": "Claude 4.7 and later use a tokenizer producing roughly 30% more tokens for the same text than earlier Claude models, and OpenAI tokenizes differently again. Token counts are therefore not comparable across arms of different families. Cost is the comparable axis; token counts are diagnostic only."
   }
 }

@@ -1,13 +1,14 @@
 export const meta = {
   name: 'bake-off',
   description: 'Parameterized model×effort bake-off: reset worktrees, run contestant arms, audit+gate, sanitize, blind-judge, synthesize',
-  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
+  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price; collect_usage.py beside it prices every arm into the result's usage field), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
   phases: [
     { title: 'Preflight', detail: 'place the pinned brief where arms and seats read it' },
     { title: 'Reset', detail: 'archive then reset each arm worktree to the pinned base' },
     { title: 'Arms', detail: 'contestants implement the pinned brief in isolated worktrees' },
     { title: 'Audit', detail: 'commit check, diff capture, gate run per arm' },
     { title: 'Sanitize', detail: 'strip environment tells from arm reports for blind judging' },
+    { title: 'Usage', detail: 'wall time, exact tokens and priced cost per arm, from the harness transcripts' },
     { title: 'Judge', detail: 'blind rubric seats over all arms' },
     { title: 'Synthesize', detail: 'decision inventory across arms (optional)' },
   ],
@@ -47,6 +48,10 @@ const BRIEF_PATH = IN.briefPath || null
 // this check and the run stops on an expired entry, so a human re-verifies the table
 // against the vendor rather than a later reader trusting a number nobody checked.
 const PRICING_CHECK = IN.pricingCheckPath || null
+// The usage collector lives beside the pricing check and reads the same table. Its
+// output is the run's cost axis and goes only into the final result: price tracks
+// model tier, so a seat holding it is partly unblinded.
+const USAGE_COLLECTOR = PRICING_CHECK ? PRICING_CHECK.replace(/check_pricing\.py$/, 'collect_usage.py') : null
 const MAX_ATTEMPTS = IN.maxAttempts || 4
 const WATCHDOG_S = IN.watchdogSeconds || 1200
 const RUNG_TIMEOUT_MS = IN.rungTimeoutMs || 1740000
@@ -282,6 +287,18 @@ END-PROMPT`
 
 // ---------- schemas ----------
 
+function usagePrompt() {
+  const armArgs = IN.arms.filter(a => a.kind !== 'reference')
+    .map(a => `--arm ${a.label},${a.kind},${a.worktree}${a.codexModel ? `,${a.codexModel}` : ''}`).join(' ')
+  return `You are a mechanical usage collector for a bake-off run. Execute with Bash exactly one command and change nothing: python3 ${USAGE_COLLECTOR} --dir ${DIR} ${armArgs} > ${DIR}/usage.json; echo "USAGE_EXIT=$?" — then cat ${DIR}/usage.json. Return the structured result: ok = (USAGE_EXIT was 0); report = the file's JSON text verbatim (the empty string if the command failed); notes = stderr or anything unexpected. Do not summarize, price, or compare anything yourself.`
+}
+
+const USAGE_SCHEMA = {
+  type: 'object',
+  properties: { ok: { type: 'boolean' }, report: { type: 'string' }, notes: { type: 'string' } },
+  required: ['ok', 'report', 'notes'],
+}
+
 const PREFLIGHT_SCHEMA = {
   type: 'object',
   properties: {
@@ -320,7 +337,6 @@ const RUNG_SCHEMA = {
     report_exists: { type: 'boolean' },
     report_copied: { type: 'boolean' },
     worktree_touched: { type: 'boolean' },
-    tokens_used: { type: 'integer' },
     wall_seconds: { type: 'integer' },
     total_wall_seconds: { type: 'integer' },
     log_tail: { type: 'string' },
@@ -533,6 +549,7 @@ if (!preflight.pricing_ok) {
 
 // Per arm: (reset →) contestant → audit → sanitize, no cross-arm barrier until judging.
 let arms = []
+let usage = null
 if (!JUDGE_ONLY) {
 phase('Arms')
 log(`Dispatching ${IN.arms.length} arm(s); reset=${RESET}`)
@@ -568,6 +585,18 @@ log(`Arms complete: ${arms.length}/${IN.arms.length}. Gates: ${arms.map(a => `${
 const ladderSummary = arms.filter(a => a.contestant && a.contestant.ladder)
   .map(a => `${a.arm}=${a.contestant.ladder.outcome}:${a.contestant.ladder.attempts}att/${a.contestant.ladder.resumed}res`)
 if (ladderSummary.length) log(`Codex ladders (outcome:attempts/resumes): ${ladderSummary.join(', ')}`)
+
+// Collected once every arm has finished writing its transcript. Kept out of
+// gateSummary and every seat prompt on purpose — see USAGE_COLLECTOR.
+phase('Usage')
+const usageRaw = await agent(usagePrompt(), { label: 'usage:collect', phase: 'Usage', model: 'haiku', effort: 'low', schema: USAGE_SCHEMA })
+try {
+  usage = usageRaw && usageRaw.ok ? JSON.parse(usageRaw.report) : { error: usageRaw ? usageRaw.notes : 'collector agent lost' }
+} catch (e) {
+  usage = { error: `collector output is not JSON: ${e.message}`, raw: usageRaw.report }
+}
+if (usage.arms) log(`Usage (wall s / USD): ${usage.arms.map(u => `${u.label}=${u.error ? 'ERR' : `${u.wall_seconds}s/$${u.cost && u.cost.usd != null ? u.cost.usd : '?'}`}`).join(', ')}`)
+else log(`Usage collection failed: ${usage.error}`)
 } else {
   log(`Judge-only: judging retained artifacts in ${DIR} — ${IN.labels.length} arm(s), ${CACHED_SEATS.length} cached seat(s)${CACHED_CHECKER ? ', cached checker' : ''}`)
 }
@@ -703,4 +732,5 @@ return {
   escalation,
   reconciliation,
   inversion_flag,
+  usage,
 }

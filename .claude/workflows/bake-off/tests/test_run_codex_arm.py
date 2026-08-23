@@ -89,7 +89,7 @@ def test_clean_pass(env):
     assert s["kind"] == "initial" and s["attempt"] == 1
     assert s["session_id"] == "deadbeef-0000-0000-0000-000000000000"
     assert s["report_exists"] is True and s["report_copied"] is True
-    assert s["tokens_used"] == 1234
+    assert "tokens_used" not in s  # the exec log's figure is the last turn, not the run; the rollout is the source
     assert s["worktree_touched"] is False
     log = (env["dir"] / "X.exec.log").read_text()
     assert "CODEX_EXIT=0" in log
