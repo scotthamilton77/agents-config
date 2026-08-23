@@ -205,6 +205,13 @@ is reached only when the user names it, a cost asked for at a moment chosen for
 it. The raised ceiling is relief for a body already split down to its residue,
 never permission to leave one whole.
 
+*Amended 2026-08-23:* "everything loading before the user types" binds the
+**installer-deployed surface only** — the always-on content this repo ships.
+A host project's own AGENTS.md, rules, and skills load beside the deployed
+surface and cannot be predicted or budgeted from here; they are outside the
+cap's scope, each project's own responsibility. `content-lint` measuring only
+the staged tree is therefore the intended enforcement, not a gap.
+
 **D17 — User-scoped AGENTS.md is zero-based.** A line earns always-on status
 only if all four hold: universal across projects; not model-default behavior;
 not owned by pipeline code/contract; fits the ~800-token sub-budget.

@@ -1,6 +1,6 @@
 # gitclean redesign — sweep what merged, report the rest
 
-**Status:** approved, not started
+**Status:** implemented — shipped as `packages/gitclean/`, on PATH, driven by the `/clean-up-git` command
 **Parent:** `agents-config-9k9.53`
 **Supersedes:** the fix slices `agents-config-9k9.53.2` – `.53.5`, all closed wont-fix.
 **Evidence:** `SAVEPOINTS/gitclean-9k9-53/review-round-3/FINDINGS-REVISED.md`, in the

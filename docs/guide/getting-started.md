@@ -81,9 +81,10 @@ unbounded pile of near-identical siblings.
 
 The installer also puts this repo's CLIs on your PATH via `uv tool install`
 (receipt-tracked, pruned on retirement). They are `prgroom`, `grind`,
-`executor` and `gitclean`; `CLI_PACKAGES` in
+`executor`, `gitclean` and `grillui`; `CLI_PACKAGES` in
 `packages/installer/src/installer/core/clis.py` is the authoritative list. Of
-those four, `gitclean` is the one the installed skills actually reach for.
+those five, `gitclean` and `grillui` are the ones the installed skills
+actually reach for.
 `work`, the separate tracker CLI that five other skills reach for (see above),
 ships and installs independently of this list.
 

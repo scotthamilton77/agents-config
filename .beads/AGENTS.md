@@ -1,7 +1,9 @@
 # `.beads/`
 
-Do NOT edit or read contents in this file without EXPLICIT instruction from the user.
-Do NOT attempt to execute `bd` CLI commands without EXPLICIT instruction from the user.
+Never edit anything in this directory, and never execute `bd` CLI commands —
+unconditionally. An instruction to work the tracker is an instruction to use
+the `work` facade; when the facade cannot express what you need, escalate per
+the root `AGENTS.md` rather than dropping to `bd`.
 
 Work tracking for this project is addressed through the **`work` CLI**. Run
 `work --help` for the verb list; every verb returns a JSON envelope.
