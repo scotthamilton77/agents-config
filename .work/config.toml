@@ -15,7 +15,7 @@
 config-schema = 1
 
 [tracks]
-names = ["installer", "prgroom", "workcli", "pdlc-orchestrator", "holding-place", "review-and-merge", "pipeline-discipline", "grind-runtime", "ops-meta", "grilling"]
+names = ["installer", "prgroom", "review-and-merge", "pipeline-discipline", "grind-runtime", "ops-meta", "grilling"]
 organizing-only = ["pipeline-discipline", "ops-meta"]
 enforcement = "required"
 
