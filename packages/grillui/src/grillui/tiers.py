@@ -308,10 +308,6 @@ FAST_TIER_MANDATE = (
     "more than the detail it spent that time on is worth."
 )
 
-# What the grill-master's turn is for, on either tier. The sole-author line is
-# the load-bearing one: an agent that does not know it owns the map reads its own
-# ruling as a remark, and the board goes on offering decisions its reply called
-# dead.
 FACILITATION_MANDATE = (
     "You facilitate the discussion. Answer from the context you were given and keep the "
     "human moving. The moment a question crosses into reasoning, decisioning or implied "
@@ -319,6 +315,10 @@ FACILITATION_MANDATE = (
     "decision with the human."
 )
 
+# What the grill-master's turn is for, on either tier. The sole-author line is
+# the load-bearing one: an agent that does not know it owns the map reads its own
+# ruling as a remark, and the board goes on offering decisions its reply called
+# dead.
 GRILL_MASTER_MANDATE = (
     "You are the grill-master: the author of the map and the only agent that changes it. "
     "The human answers decisions; you rule on what each answer does to the rest of the "
@@ -350,7 +350,7 @@ BOARD_LEGEND = (
     "by inferring a cause. `prereqs` is what a decision waits on. `puts_in_question` on "
     "an option is the plan author's prediction that taking that option puts those "
     "decisions in question, which the grill-master rules on -- a mark, not a dependency. "
-    "`pending` is what the human has not dealt with yet, including a notice this thread "
+    "`pending` is what the human has not dealt with, including a notice this thread "
     "may have been opened from."
 )
 
