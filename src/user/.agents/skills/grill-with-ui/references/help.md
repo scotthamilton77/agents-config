@@ -29,6 +29,10 @@ is eaten, the way it works in the terminal. Cmd+Enter (Ctrl+Enter) still sends t
 Settling a decision opens whatever was waiting on it. A decision greyed as **fog** is
 one whose prerequisite is not settled yet — settle that first and this one opens.
 
+Holding an option — hovering it, or reaching it with the keyboard — marks the decisions
+that taking it would put in question; nothing has happened to them yet, and the agent
+that owns the map rules on each one once you take the option.
+
 Some decisions carry prepared prompts (💬). Pressing one says those exact words as the
 human's own turn in that decision's thread. It is a shortcut for their hands, not a
 second kind of message.

@@ -64,9 +64,10 @@ weaknesses finds them indefinitely, so a session without a stated ending never h
 
 Give every option a `pcr` — what it buys, what it costs, what it forces downstream — since
 the trade-off icon it draws is the human's only route to that reasoning on the board.
-Where an option would reopen another decision, name that decision in `puts_in_question`:
-the board pre-marks those nodes when the human hovers the option, and an id matching no
-node in the plan is ignored.
+Where taking an option would put another decision in question — kill it, change what it
+asks, or shift what it turns on — name that decision in `puts_in_question`: the board
+pre-marks it while the human holds the option, and the grill-master rules on it when they
+take it.
 
 Put the file in a fresh directory named for the session — that directory *is* the session,
 and everything it produces stays there.
