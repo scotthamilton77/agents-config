@@ -381,11 +381,12 @@ def test_a_blocked_decision_names_the_block_rather_than_its_prerequisites(
     Given a session ended with one decision invalidated and one locked by a
          blocking alert
     When capture runs
-    Then each open item names what is actually holding it.
+    Then the locked one is the open item, and it names the lock.
 
     A locked decision is fogged as well here, and what the human needs is the
     lock: the fog lifts on its own when the prerequisite settles, and the lock
-    does not.
+    does not. The invalidated decision is no open item at all -- it came to
+    rest when the invalidate landed.
 
     The invalidation reaches the board the only way an agent's does -- proposed,
     then applied by the human -- because a capture run over a board an agent
@@ -413,8 +414,43 @@ def test_a_blocked_decision_names_the_block_rather_than_its_prerequisites(
     end(client, log.epoch)
 
     blockers = {item.id: item.blocker for item in capture(session_dir).open_items}
-    assert blockers["d1"] == "the premise moved"
+    assert "d1" not in blockers, "an invalidated decision was written up as open work"
     assert blockers["d2"] == "locked by a blocking alert"
+
+
+def test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open(
+    session_dir: Path,
+) -> None:
+    """
+    Given a session ended with one decision answered and the rest invalidated
+         by proposals the human applied
+    When capture runs
+    Then it reports no open items and counts the invalidated ones as set aside.
+
+    This is the board a whole session can end on: one answer that killed the
+    questions under it, and nothing anybody still has to move. Reporting the
+    killed ones as left open would send the human back to a board that is
+    finished, and would disagree with the page, which announces that board as
+    complete.
+    """
+    log = started(session_dir)
+    client = driven(log, SpyDriver())
+    answer(client, log.epoch)
+    client.post(
+        "/events",
+        json={
+            "epoch": log.epoch,
+            "events": [event("invalidate", key="inv", target="d2", why="the answer killed it")],
+        },
+    )
+    apply_all(client, log.epoch)
+    end(client, log.epoch)
+
+    result = capture(session_dir)
+
+    assert [one.status for one in result.decisions] == ["settled", "invalidated"]
+    assert result.open_items == []
+    assert "1 of 2 decisions settled, 1 set aside, 0 left open" in result.summary
 
 
 def test_a_decision_the_human_never_got_to_says_a_change_is_waiting_on_it(

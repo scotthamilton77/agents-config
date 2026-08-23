@@ -755,11 +755,15 @@ follows, and changes nothing else.
   of the extension the thread model needs for it. The orchestrator primes that thread's
   agent with the UI-behaviour reference material the skill ships (GUI-P1), so it answers
   how to drive the board rather than grilling the design.
-- **GUI-U17 — Completion is announced, not assumed.** When every decision is settled the
-  page presents an overlay stating that the human has answered every open question, and
-  offering an end-session action and a dismiss action. Dismissing returns the human to the
-  board and pulses the main end-session control's border, so the offer stays findable
-  without a second overlay. End-session attempts to close the tab; where the browser
+- **GUI-U17 — Completion is announced, not assumed.** A board is finished when it carries
+  at least one decision and every decision on it has come to rest: settled by the human, or
+  invalidated by an answer that mooted it (GUI-D38). Stale and fogged decisions are not at
+  rest and hold the board open. When the board is finished the page presents an overlay
+  stating that nothing on the board is waiting on the human, naming how many decisions were
+  answered and how many set aside, and offering an end-session action and a dismiss action.
+  The same reading is what the terminal result writes up (GUI-U14). Dismissing returns the
+  human to the board and pulses the main end-session control's border, so the offer stays
+  findable without a second overlay. End-session attempts to close the tab; where the browser
   refuses to close a tab the page did not open, the page falls back to its inert
   session-over state, carrying a line telling the human the tab can now be closed. Ending
   the session remains the human's gesture (GUI-D10).
@@ -967,8 +971,10 @@ receives beside file references (GUI-D8).
 - `decisions` — array of objects: `id`, `title`, `answer` (string or null), `status` (the
   §8.2 status enum), and `rationale` (string, drawn from the log). Pure code produces this
   array (GUI-D23).
-- `open_items` — array of objects: `id` and `blocker` (string) for every decision unsettled
-  at end.
+- `open_items` — array of objects: `id` and `blocker` (string) for every decision that is
+  not at rest at end — neither settled nor invalidated, the same finished-board reading
+  GUI-U17 takes. A decision the log invalidated is a closed question, so it is no open
+  item, and `summary` counts it as set aside rather than as left open.
 - `threads` — array of objects: `id`, `title`, `state` (the §8.5 state enum), and
   `conclusion` (string or null). A parked thread is one of the session's open loose ends
   and a closed thread is a line item only (GUI-D29).
@@ -1091,7 +1097,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U14 | GUI-A49 |
 | GUI-U15 | GUI-A56 |
 | GUI-U16 | GUI-A57 |
-| GUI-U17 | GUI-A58 |
+| GUI-U17 | GUI-A58, GUI-A106, GUI-A107 |
 | GUI-U18 | GUI-A59 |
 | GUI-U19 | GUI-A60 |
 | GUI-U20 | GUI-A61 |
@@ -1535,6 +1541,14 @@ Each criterion is mechanically checkable and convertible to a red test.
   reply proposing an `invalidate` per named id leaves the expert untouched, the human unsaid
   to, and both proposals in the queue; and an answer on an option carrying no
   `puts_in_question` produces a dispatch with no obligation, no expert turn and no notice.
+- **GUI-A106** In a browser, against a running backend: on a board whose one open decision
+  is left invalidated by a proposal the human applies, every other decision being settled,
+  the completion overlay appears carrying both actions, its copy names how many decisions
+  were answered and how many set aside, and dismissing it leaves the main end-session
+  control's border pulsing over a board that is not sealed. Verified in a browser.
+- **GUI-A107** A capture of a session whose decisions are one settled and the rest
+  invalidated reports no open items, and its summary counts the invalidated ones as set
+  aside rather than as left open.
 
 ## 10. Open questions for the implementing work
 
@@ -1627,6 +1641,8 @@ Each criterion is mechanically checkable and convertible to a red test.
 - bugfix: A killing answer's obligation carried to the turn as ids and checked in code, with
   one hand-up to the expert tier and a notice where neither tier proposes — AC: GUI-D42,
   GUI-A100, GUI-A101, GUI-A102, GUI-A103.
+- bugfix: A board whose remaining decisions were invalidated counts as finished, in the
+  overlay and in the write-up alike — AC: GUI-U14, GUI-U17, GUI-A106, GUI-A107.
 
 ## Evidence
 
@@ -1738,3 +1754,5 @@ opens one proves something else.
 - GUI-A101 | test: packages/grillui/tests/unit/test_lane.py::test_a_prose_reply_to_a_killing_answer_is_pressed_on_the_expert_carrying_the_ids
 - GUI-A102 | test: packages/grillui/tests/unit/test_lane.py::test_an_expert_that_proposes_nothing_either_leaves_the_ids_named_to_the_human
 - GUI-A103 | test: packages/grillui/tests/unit/test_lane.py::test_an_obligation_met_or_never_created_presses_nobody
+- GUI-A106 | probe: packages/grillui/tests/browser/completion_probe.py::main
+- GUI-A107 | test: packages/grillui/tests/unit/test_capture.py::test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open

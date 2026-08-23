@@ -2760,18 +2760,28 @@ def test_a_finished_board_is_one_the_terminal_result_would_leave_nothing_open_on
     """
     Given a board carrying one settled decision and one invalidated one
     When the session is captured
-    Then the invalidated decision is one of the result's open items.
+    Then the result leaves nothing open.
 
-    The page announces completion off its own reading of the board, and the one
-    reading it is allowed is the one the write-up takes: settled, and nothing
-    else. A page that counted an invalidated or a stale decision as finished
-    would congratulate the human on a board whose own result lists work left to
-    do -- so the page's test is pinned to the string, and the string's meaning
-    is pinned to the backend here.
+    The page announces completion off its own reading of the board, and that
+    reading has to be the one the write-up takes, or the page congratulates the
+    human on a board whose own result lists work left to do -- or, the way it
+    went wrong, holds the offer back on a board the result would call finished.
+    A decision comes to rest two ways: the human settles it, or an answer moots
+    it and the invalidate lands. Stale and fogged are neither. So the page's
+    test is pinned to the string, and the string's meaning is pinned to the
+    backend here.
     """
-    body = function_body("allSettled")
-    assert 'd.status === "settled"' in body
+    body = function_body("boardFinished")
+    assert 'd.status === "settled" || d.status === "invalidated"' in body
+    assert '"stale"' not in body and '"fogged"' not in body, "a decision nobody moved read as rest"
     assert "BOARD.decisions.length > 0" in body, "an empty board would read as finished"
+
+    # And the offer says which is which, so a human is not left reading one
+    # answer and eight killed questions as nine answered ones.
+    tally = function_body("completionTally")
+    assert '"invalidated"' in tally and '" set aside"' in tally
+    assert '" answered, "' in tally
+    assert "completionTally()" in function_body("completionOffer")
 
     seed_node(client, log.epoch, "n1")
     seed_node(client, log.epoch, "n2")
@@ -2788,7 +2798,7 @@ def test_a_finished_board_is_one_the_terminal_result_would_leave_nothing_open_on
     assert sorted(one["status"] for one in board) == ["invalidated", "settled"]
 
     result = capture(session_dir)
-    assert [one.id for one in result.open_items] == ["n2"]
+    assert result.open_items == []
 
 
 def test_the_completion_overlay_announces_arriving_at_that_state_rather_than_sitting_in_it() -> (
@@ -2804,7 +2814,7 @@ def test_the_completion_overlay_announces_arriving_at_that_state_rather_than_sit
     poll tick that finds the same finished board.
     """
     body = function_body("noteCompletion")
-    assert "var done = !sessionOver() && allSettled();" in body
+    assert "var done = !sessionOver() && boardFinished();" in body
     assert "if (done && !UI.wasDone) { UI.done = true; UI.pulse = false; }" in body
     assert "if (!done) { UI.done = false; UI.pulse = false; }" in body
     assert "UI.wasDone = done;" in body
