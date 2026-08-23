@@ -393,6 +393,24 @@ def test_an_invalidate_nothing_was_resting_on_obliges_nothing() -> None:
     assert mootness_obligation(image, applied()) is None
 
 
+def test_a_later_unrelated_invalidate_does_not_press_an_older_strandings_dependents() -> None:
+    """
+    Given `d2` resting on a `d1` that left the flow on an earlier gesture, and
+          the human now applying an invalidate of `d3`, which nothing rests on
+    When the obligation is read
+    Then there is none.
+
+    The dependents of the earlier invalidation were obliged when it landed;
+    pressing them again on every later invalidate would spend a heavy turn per
+    gesture for the rest of the session on a question already put.
+    """
+    image = board("d2")
+    image.decisions[0].status = "invalidated"
+    image.decisions[2].status = "invalidated"
+
+    assert mootness_obligation(image, applied(target="d3")) is None
+
+
 def test_a_revise_waiting_on_a_stranded_decision_discharges_the_obligation() -> None:
     """
     Given the obligation an invalidate left on two decisions, one with a queued

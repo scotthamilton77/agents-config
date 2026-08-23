@@ -351,15 +351,15 @@ def _answer_obligation(image: Image2, answered: LogEntry) -> MootnessObligation 
 def _resting_obligation(image: Image2, gesture: LogEntry) -> MootnessObligation | None:
     """What an applied invalidate owes the decisions that were resting on it.
 
-    The list is read off the board after the gesture landed rather than off the
-    gesture itself: one apply may carry several invalidates and a dependent may
-    rest on more than one, so what the turn owes is a proposal per decision left
-    standing on something that has gone -- which is a property of the board and
-    not of the payload. A gesture that stranded nobody owes nothing, which is
-    the ordinary case and costs no turn.
+    The list is read off the board after the gesture landed, scoped to what the
+    gesture itself killed: one apply may carry several invalidates, so what the
+    turn owes is a proposal per decision left standing on one of them. Decisions
+    resting on an older invalidation were obliged when that one landed, and are
+    not pressed again on every later one. A gesture that stranded nobody owes
+    nothing, which is the ordinary case and costs no turn.
     """
     dead = _invalidations(gesture)
-    gone = {one.id for one in image.decisions if one.status == "invalidated"}
+    gone = {one.get("target") for one in dead}
     standing = _still_standing(
         image,
         [one.id for one in image.decisions if gone.intersection(one.prereqs)],
