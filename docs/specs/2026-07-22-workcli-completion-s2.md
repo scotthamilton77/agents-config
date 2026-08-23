@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-22
 **Status:** Child spec of `docs/specs/2026-07-21-harness-rework-way-forward.md` (S2 slice; discharges open verification V2, implements D11 with D10 park semantics)
-**Supersedes where they conflict:** `docs/specs/2026-07-04-work-facade-cli-contract.md` (predates the rework; audited, not inherited)
+**Supersedes where they conflict:** the 2026-07-04 work-facade CLI contract spec (predates the rework; audited, not inherited; it now lives in the `scotthamilton77/agents-config-ARCHIVE` repository at its original path)
 
 The harness of tomorrow addresses the tracker exclusively through the `work`
 facade (D11). This spec records the V2 gap audit of workcli's implemented
