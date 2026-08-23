@@ -1414,17 +1414,33 @@ function saySeed(tid, id, field) {
   if (tid && thread(tid)) { sayInThread(tid, text); return tid; }
   return id ? startThread(id, text) : null;
 }
-// Finished means every decision the board is actually carrying is settled, and
-// settled is the only status that counts. That is the same reading the terminal
-// result takes -- anything not settled is one of its open items -- so a board
-// this page calls finished is a board that would be written up with nothing
-// left open. Invalidated and stale are decisions somebody still has to move,
-// and fog lifts on its own once what it waits for is answered. An empty board
-// is not a finished one; it is a board nothing has been put on yet.
-function allSettled() {
+// Finished means every decision the board is carrying has come to rest: either
+// the human settled it, or an answer mooted it and the invalidate that says so
+// has landed. An invalidated decision is a closed question, not a loose end --
+// invalidation is how a killing answer closes what it kills -- so a board of
+// one answer and eight set aside is a finished board. Stale is a decision
+// somebody still has to move, and fog lifts on its own once what it waits for
+// is answered, so both hold the board open. That is the same reading the
+// terminal result takes -- its open items are the decisions neither settled nor
+// invalidated -- so a board this page calls finished is a board that would be
+// written up with nothing left open. An empty board is not a finished one; it
+// is a board nothing has been put on yet.
+function boardFinished() {
   return BOARD.decisions.length > 0 && BOARD.decisions.every(function (d) {
-    return d.status === "settled";
+    return d.status === "settled" || d.status === "invalidated";
   });
+}
+// How the finished board reads in the offer's own words: what was answered and
+// what was set aside, counted, because a human told only that the board is
+// clear cannot tell an answered question from a mooted one.
+function completionTally() {
+  var all = BOARD.decisions.length;
+  var aside = BOARD.decisions.filter(function (d) {
+    return d.status === "invalidated";
+  }).length;
+  if (!aside) return "Every decision on this board is settled";
+  return all + (all === 1 ? " decision: " : " decisions: ") + (all - aside) + " answered, " +
+    aside + " set aside";
 }
 // The overlay announces the board *arriving* at that state rather than sitting
 // in it, so it is armed on the crossing and disarmed by leaving. An agent
@@ -1433,7 +1449,7 @@ function allSettled() {
 // is remembered anywhere but this page, so a reload into an unfinished board
 // carries neither.
 function noteCompletion() {
-  var done = !sessionOver() && allSettled();
+  var done = !sessionOver() && boardFinished();
   if (done && !UI.wasDone) { UI.done = true; UI.pulse = false; }
   if (!done) { UI.done = false; UI.pulse = false; }
   UI.wasDone = done;
@@ -1444,8 +1460,9 @@ function noteCompletion() {
 // session and this is a second place to reach it rather than a second way.
 function completionOffer() {
   return '<div class="scrim" id="completion"><div class="box"><h3>🏁 Every question is answered</h3>' +
-    "<p>Every decision on this board is settled. Ending the session writes the result beside the log and " +
-    "hands it back. Nothing forces that now — the board is yours to go back over.</p>" +
+    "<p>" + completionTally() + ". Nothing on this board is waiting on you. Ending the session " +
+    "writes the result beside the log and hands it back. Nothing forces that now — the board is " +
+    "yours to go back over.</p>" +
     '<div class="acts"><button class="btn primary" data-act="endsession">End the session</button>' +
     '<button class="btn" data-act="dismiss-completion">Back to the board</button></div></div></div>';
 }
