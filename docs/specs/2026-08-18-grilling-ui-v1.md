@@ -1094,10 +1094,10 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U11 | GUI-A33, GUI-A34, GUI-A35, GUI-A86, GUI-A87 |
 | GUI-U12 | GUI-A40 |
 | GUI-U13 | GUI-A50 |
-| GUI-U14 | GUI-A49, GUI-A107 |
+| GUI-U14 | GUI-A49 |
 | GUI-U15 | GUI-A56 |
 | GUI-U16 | GUI-A57 |
-| GUI-U17 | GUI-A58, GUI-A106 |
+| GUI-U17 | GUI-A58, GUI-A106, GUI-A107 |
 | GUI-U18 | GUI-A59 |
 | GUI-U19 | GUI-A60 |
 | GUI-U20 | GUI-A61 |
