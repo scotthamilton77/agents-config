@@ -165,7 +165,8 @@ for (const id of AC_IDS) embedded.push([`acId ${id}`, id])
 for (const s of JUDGES) {
   embedded.push([`judge ${s.id} id`, s.id])
   if (s.codexModel) embedded.push([`judge ${s.id} codexModel`, s.codexModel])
-  if (s.kind === 'openrouter') embedded.push([`judge ${s.id} model`, s.model], [`judge ${s.id} effort`, s.effort])
+  if (s.kind === 'openrouter') embedded.push([`judge ${s.id} model`, s.model], [`judge ${s.id} effort`, s.effort],
+    [`judge ${s.id} fallback model`, s.fallback.model || s.fallback.codexModel], [`judge ${s.id} fallback effort`, s.fallback.effort])
 }
 for (const [name, value] of embedded) {
   if (!SHELL_INERT.test(String(value))) throw new Error(`bake-off: ${name} contains shell-active characters or spaces: ${JSON.stringify(value)}`)
@@ -367,7 +368,7 @@ function openrouterSessionPrompt(seat, fileTag, promptText, shapeText) {
 Step 1 — write the session prompt to ${DIR}/seat-${fileTag}.prompt.md using a quoted heredoc so nothing expands, then append this exact final instruction to the file: "Respond with ONLY a JSON object, no prose, shaped as ${shapeText.replace(/"/g, '\\"')}." The session prompt content is everything between BEGIN-PROMPT and END-PROMPT below.
 
 Step 2 — run as ONE FOREGROUND Bash call with timeout 1200000:
-cd ${IN.contextCheckout} && node ${OR_LAUNCHER} --model ${seat.model} --effort ${seat.effort} --permission-mode dontAsk --allowedTools Read Grep Glob "Bash(git *)" --add-dir ${DIR} --output-format json -p < ${DIR}/seat-${fileTag}.prompt.md > ${DIR}/seat-${fileTag}.out.json 2> ${DIR}/seat-${fileTag}.exec.log; echo "LAUNCH_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log
+cd ${IN.contextCheckout} && node ${OR_LAUNCHER} --model ${seat.model} --effort ${seat.effort} --permission-mode dontAsk --allowedTools Read Grep Glob "Bash(git status*)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" --add-dir ${DIR} --output-format json -p < ${DIR}/seat-${fileTag}.prompt.md > ${DIR}/seat-${fileTag}.out.json 2> ${DIR}/seat-${fileTag}.exec.log; echo "LAUNCH_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log
 
 Step 3 — if LAUNCH_EXIT is 78 the launcher refused to start (no key, or a refused model): return seat_exit 78 with the required fields empty and the exec log's last lines in notes. Otherwise read ${DIR}/seat-${fileTag}.out.json, take its "result" string, extract the JSON object from it, and return that object as the structured result with seat_exit set to LAUNCH_EXIT. If a key differs only in wording from the pinned keys, rename it and record the rename in notes — never alter a value. If the output is missing or holds no parseable JSON object, return seat_exit -1 with the required fields empty and the raw tail in notes. Report only observed values.
 
