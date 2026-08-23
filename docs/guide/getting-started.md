@@ -64,12 +64,13 @@ tool.
 | `src/user/.opencode/` | `~/.config/opencode/` | OpenCode instruction file + settings |
 | `src/plugins/<name>/` | matching active tools, if the plugin is itself active | optional plugin content |
 
-Two things decide whether a given skill, rule, command, or agent actually lands.
-It has to be in the source tree, and its front matter has to carry a complete
+Three things decide whether a given skill, rule, command, or agent actually
+lands. It has to be in the source tree, its front matter has to carry a complete
 **admission record** — what it prevents or provides, what it costs, and what
-observation would remove it. Anything missing that record is dropped at install
-and pruned on the next run, so the source directory is the upper bound on what
-you get rather than a promise. `src/user/.agents/rules/` is empty today for
+observation would remove it — and it has to clear the installer's mechanical
+staging checks. Anything missing that record, or failing a check, is dropped at
+install and pruned on the next run, so the source directory is the upper bound
+on what you get rather than a promise. `src/user/.agents/rules/` is empty today for
 exactly this reason.
 
 `*.md.template` files install with the `.template` suffix stripped (e.g.
@@ -81,9 +82,10 @@ unbounded pile of near-identical siblings.
 
 The installer also puts this repo's CLIs on your PATH via `uv tool install`
 (receipt-tracked, pruned on retirement). They are `prgroom`, `grind`,
-`executor` and `gitclean`; `CLI_PACKAGES` in
+`executor`, `gitclean` and `grillui`; `CLI_PACKAGES` in
 `packages/installer/src/installer/core/clis.py` is the authoritative list. Of
-those four, `gitclean` is the one the installed skills actually reach for.
+those five, `gitclean` and `grillui` are the ones the installed skills
+actually reach for.
 `work`, the separate tracker CLI that five other skills reach for (see above),
 ships and installs independently of this list.
 

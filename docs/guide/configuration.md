@@ -181,11 +181,13 @@ when either of you reaches for it, not a habit the configuration enforces.
 
 ## Optional: the CLIs on your PATH
 
-A normal install puts four CLIs from this repo on your PATH via `uv tool
-install` — `prgroom`, `grind`, `executor` and `gitclean` — no separate step
-needed. Only `gitclean` is reached for by an installed skill
-(`post-merge-cleanup`, which uses it to decide safely which branches and
-worktrees a merged PR made disposable) and by the `/clean-up-git` slash command.
+A normal install puts five CLIs from this repo on your PATH via `uv tool
+install` — `prgroom`, `grind`, `executor`, `gitclean` and `grillui` — no
+separate step needed. Two are reached for by installed skills: `gitclean` by
+`post-merge-cleanup` (which uses it to decide safely which branches and
+worktrees a merged PR made disposable) and by the `/clean-up-git` slash command,
+and `grillui` by `grill-with-ui` and `grill-capture`, which run a grilling
+session in your browser and capture its result.
 
 The other three are components of the rebuild rather than finished user tools.
 `prgroom` grooms a PR deterministically but the skills that drove it were

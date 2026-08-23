@@ -58,7 +58,8 @@ packages/                           # Real Python packages (standalone uv projec
 ├── prgroom/                        # PR-grooming CLI (carved, not finished)
 ├── grind/                          # Event-sourced runtime: event schema + FSM fold
 ├── executor/                       # Verb→event→tracker pairing layer (no dispatch loop yet)
-└── gitclean/                       # Provably-merged branch and worktree sweeper
+├── gitclean/                       # Provably-merged branch and worktree sweeper
+└── grillui/                        # Grilling-session backend: serves the board, folds the log, drives the tiers
 docs/
 ├── guide/                          # User guide — how to configure a project & run the SDLC
 ├── architecture/                   # Evergreen HLD artifacts (C4, sequence, state machines) per subsystem

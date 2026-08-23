@@ -1,7 +1,7 @@
 # S4 — Instruction-Surface Teardown
 
 **Date:** 2026-07-22
-**Status:** Implementing
+**Status:** Implemented
 **Parent:** `docs/specs/2026-07-21-harness-rework-way-forward.md` (D17, slice S4)
 
 Child spec for slice S4 of the harness-rework charter. S0 already extracted
