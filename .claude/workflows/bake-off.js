@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bake-off',
   description: 'Parameterized model×effort bake-off: reset worktrees, run contestant arms, audit+gate, sanitize, blind-judge, synthesize',
-  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, axisKeys (first = factual grounding), acIds (the brief\'s criterion ids), arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price; collect_usage.py beside it prices every arm into the result\'s usage field), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary (one "Arm <label>: ..." line per arm), rubricText, axisKeys, acIds, judges[], rankReads?, cachedSeats?, cachedChecker?}.',
+  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, axisKeys (first = factual grounding), acIds (the brief\'s criterion ids), arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price; collect_usage.py beside it prices every arm into the result\'s usage field), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?, armsOnly? (end after Sanitize/Usage with no judging — the complement of judgeOnly)}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary (one "Arm <label>: ..." line per arm), rubricText, axisKeys, acIds, judges[], rankReads?, cachedSeats?, cachedChecker?}.',
   phases: [
     { title: 'Preflight', detail: 'place the pinned brief where arms and seats read it' },
     { title: 'Reset', detail: 'archive then reset each arm worktree to the pinned base' },
@@ -80,6 +80,12 @@ const ESCALATION = IN.escalation || null
 // plus any surviving seat verdicts ({seat, kind, verdict}) and checker findings,
 // which join the panel unchanged.
 const JUDGE_ONLY = !!IN.judgeOnly
+// Arms-only: the run ends after Sanitize and Usage, spawning no seat, checker or
+// reconciler. It is judgeOnly's complement — a partial-cohort re-run whose judging
+// belongs to a later full-cohort judgeOnly pass, which would otherwise burn a
+// throwaway panel and leave a partial verdict artifact in the run dir.
+const ARMS_ONLY = !!IN.armsOnly
+if (ARMS_ONLY && JUDGE_ONLY) throw new Error('bake-off: armsOnly and judgeOnly are complements of one split run — pass one, not both')
 // The brief's acceptance-criterion ids, pinned by the caller. A seat audits one arm
 // at a time and must return one row per id; the script checks the set, so a sampled
 // audit cannot read as complete.
@@ -667,6 +673,10 @@ try {
 }
 if (usage.arms) log(`Usage (wall s / USD): ${usage.arms.map(u => `${u.label}=${u.error ? 'ERR' : `${u.wall_seconds}s/$${u.cost && u.cost.usd != null ? u.cost.usd : '?'}`}`).join(', ')}`)
 else log(`Usage collection failed: ${usage.error}`)
+if (ARMS_ONLY) {
+  log(`Arms-only: ending after Sanitize — no seat was spawned; judge these arms later with judgeOnly`)
+  return { task: IN.task || null, base: BASE, arms_only: true, arms, usage }
+}
 } else {
   log(`Judge-only: judging retained artifacts in ${DIR} — ${IN.labels.length} arm(s), ${CACHED_SEATS.length} cached seat(s)${CACHED_CHECKER ? ', cached checker' : ''}`)
 }
