@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bake-off',
   description: 'Parameterized model×effort bake-off: reset worktrees, run contestant arms, audit+gate, sanitize, blind-judge, synthesize',
-  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price; collect_usage.py beside it prices every arm into the result's usage field), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
+  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, axisKeys (first = factual grounding), acIds (the brief\'s criterion ids), arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price; collect_usage.py beside it prices every arm into the result's usage field), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary (one "Arm <label>: ..." line per arm), rubricText, axisKeys, acIds, judges[], rankReads?, cachedSeats?, cachedChecker?}.',
   phases: [
     { title: 'Preflight', detail: 'place the pinned brief where arms and seats read it' },
     { title: 'Reset', detail: 'archive then reset each arm worktree to the pinned base' },
@@ -9,7 +9,7 @@ export const meta = {
     { title: 'Audit', detail: 'commit check, diff capture, gate run per arm' },
     { title: 'Sanitize', detail: 'strip environment tells from arm reports for blind judging' },
     { title: 'Usage', detail: 'wall time, exact tokens and priced cost per arm, from the harness transcripts' },
-    { title: 'Judge', detail: 'blind rubric seats over all arms' },
+    { title: 'Judge', detail: 'per seat: audit and score one arm per session, then rank the seat\'s own table' },
     { title: 'Synthesize', detail: 'decision inventory across arms (optional)' },
   ],
 }
@@ -59,6 +59,7 @@ const RUNG_TIMEOUT_MS = IN.rungTimeoutMs || 1740000
 // and the judge schema pins them — without this, seats derive keys from the rubric's
 // prose axis titles and drift (fit_and_scope vs fit_scope), splitting the axis means.
 const AXES = IN.axisKeys && IN.axisKeys.length ? IN.axisKeys : null
+if (!AXES || AXES.length < 2) throw new Error('bake-off: axisKeys is required — the first key is the factual-grounding axis the audit session scores; the rest are scored by the score session')
 // Per-task trap ledger, quarantined to a dedicated checker seat. Main judge seats
 // never see it: a key in a judge's context becomes an attention map, and its floor
 // becomes the panel's ceiling.
@@ -79,6 +80,13 @@ const ESCALATION = IN.escalation || null
 // plus any surviving seat verdicts ({seat, kind, verdict}) and checker findings,
 // which join the panel unchanged.
 const JUDGE_ONLY = !!IN.judgeOnly
+// The brief's acceptance-criterion ids, pinned by the caller. A seat audits one arm
+// at a time and must return one row per id; the script checks the set, so a sampled
+// audit cannot read as complete.
+const AC_IDS = IN.acIds || []
+if (!AC_IDS.length) throw new Error('bake-off: acIds is required — the brief\'s acceptance-criterion ids (e.g. ["AC1", ..., "AC17"]); every seat must audit each one per arm')
+// How many of a seat's own top-scored documents the rank session re-reads whole.
+const RANK_READS = IN.rankReads || 3
 const CACHED_SEATS = IN.cachedSeats || []
 const CACHED_CHECKER = IN.cachedChecker || null
 if (JUDGE_ONLY && !(IN.labels && IN.labels.length && IN.gateSummary)) {
@@ -136,6 +144,7 @@ for (const a of IN.arms || []) {
   if (a.reportPath) embedded.push([`arm ${a.label} reportPath`, a.reportPath])
 }
 for (const l of (JUDGE_ONLY ? IN.labels : [])) embedded.push([`label ${l}`, l])
+for (const id of AC_IDS) embedded.push([`acId ${id}`, id])
 for (const s of JUDGES) {
   embedded.push([`judge ${s.id} id`, s.id])
   if (s.codexModel) embedded.push([`judge ${s.id} codexModel`, s.codexModel])
@@ -237,51 +246,98 @@ If the Write tool refuses the output path, write it with Bash instead (a quoted 
 Return the structured result.`
 }
 
-function judgeHarnessPrompt(gateSummary, armLabels, runTags) {
-  return `You are a blind judge (run tag ${runTags}) for a ${armLabels.length}-arm comparison. Independent implementations of the same task exist as diffs against the same base commit. You do not know, and must not try to infer or state, who or what produced any arm.
+const BLIND = `You do not know, and must not try to infer or state, who or what produced any arm. Redaction markers like "[environment detail removed for blind judging]" are the harness's blinding edits, not the arm's writing — draw no inference from their presence, placement, or any incoherence they introduce. Read nothing under ${DIR} beyond the files named here — other files there would unblind the comparison. For surrounding-code context read the repository checkout at ${IN.contextCheckout} (it sits at the same base commit); change nothing anywhere.`
 
-The task brief every arm received is at ${DIR}/brief.md — read it first.
+// Session 1 of a seat's work on one arm: is the document true? Every criterion
+// audited and the factual-grounding axis scored, against the tree. One arm per
+// session is the point — a seat holding the whole field samples the audit and the
+// schema cannot tell; a seat holding one arm returns the rows or is refused.
+function auditPrompt_(seat, label, gateLine, runTags) {
+  return `You are a blind judge (seat ${seat.id}, run tag ${runTags}) auditing ONE arm, ${label}, of a multi-arm comparison. Other arms exist; you will not see them and must not speculate about them. ${BLIND}
 
-The rubric (read it and follow it exactly):
+The task brief this arm received is at ${DIR}/brief.md — read it first, in full. Then read ${DIR}/diffs/${label}.diff and ${DIR}/judged/report-${label}.md.
+
+The rubric (read it and follow it exactly; this session does Phase 0, Phase 1, and axis 1 of Phase 2 only):
 
 ${IN.rubricText}
 
 Harness rules that apply regardless of the rubric text:
-- An arm whose diff is EMPTY is no-contest: do not score it — omit it from scores entirely — and name it in disqualified.
-- An arm whose gate exited non-zero is disqualified: name it in disqualified instead of scoring it.
-- Redaction markers like "[environment detail removed for blind judging]" are the harness's blinding edits, not the arm's writing — draw no inference against an arm from their presence, placement, or any apparent incoherence they introduce.
+- Gate result, already measured mechanically (do not re-run anything): ${gateLine}
+- An EMPTY diff is no-contest; a non-zero gate exit is disqualified. Either way set standing accordingly, give the reason, return an empty ac_audit and factual_grounding 0, and stop.
+- Otherwise standing is "scored" and you audit EVERY one of these criteria, by id, in this order, one row each, no omissions and no extras: ${AC_IDS.join(', ')}. A row is {ac, class, verdict, evidence}; evidence quotes the document, report, or code line the verdict rests on, and for an unmet justification-class criterion states what the truth is.
+- Verify the load-bearing claims yourself against the checkout before ruling — that is this session's whole job. Record every claim you found false in false_claims as {claim, truth, load_bearing}; an empty list means you checked and found none, not that you did not check.
+- Score factual_grounding 0-5 per the rubric, applying its cap rule from your own false_claims.
 
-${MEASURE_CODE ? 'Gate, size and complexity results, already measured mechanically (gate exits feed the disqualification rules; LOC and complexity are evidence for the engineering-quality axis, never targets; do not re-run anything)' : 'Gate results, already measured mechanically (gate exits feed the disqualification rules; do not re-run anything). Size was deliberately not measured for this task class — a longer deliverable is not a worse one, so draw no inference from length'}:
-${gateSummary}
-
-Read ONLY these files, with the Read tool:
-- ${DIR}/brief.md
-${armLabels.map(l => `- ${DIR}/diffs/${l}.diff and ${DIR}/judged/report-${l}.md`).join('\n')}
-
-Do not read anything else under ${DIR} — other files there would unblind the comparison. For surrounding-code context you may read the repository checkout at ${IN.contextCheckout} (it sits at the same base commit); change nothing anywhere.
-
-Score each arm on every rubric axis independently before comparing, then give the pairwise preference (with more than two arms: name the single arm you would ship). ${AXES ? `Use EXACTLY these JSON keys for the axes, one integer 0-5 per axis per scored arm: ${AXES.join(', ')}. ` : ''}Set preference to exactly one arm label, or "tie" only under the rubric's tie conditions (or when no arm is scorable — explain in notes). Return the rubric's Phase 1 audit as ac_audit: one entry per acceptance criterion per arm ({ac, arm, class, verdict, evidence} — evidence quotes the test, code, or report line the verdict rests on). Return the structured result; put scoring reasoning per axis in rationale and any caveats in notes.`
+Return the structured result; put the per-criterion reasoning in the rows, not in notes.`
 }
 
-function codexJudgePrompt(seat, judgeText, labels) {
-  const axesShape = AXES ? AXES.map(k => `\\"${k}\\": int 0-5`).join(', ') : '<axis>: int 0-5, ...'
-  const prefShape = labels.map(l => `\\"${l}\\"`).join('|') + '|\\"tie\\"'
-  return `You are a mechanical harness runner for judge seat ${seat.id}. Execute with Bash; do not improvise and do not judge anything yourself.
+// Session 2: is the document good? Axes 2-5, fed the audit ledger so axis 4 carries
+// the verdicts across instead of re-verifying.
+function scorePrompt(seat, label, audit, runTags) {
+  const ledger = audit.false_claims && audit.false_claims.length
+    ? audit.false_claims.map(c => `- ${c.load_bearing ? 'LOAD-BEARING: ' : ''}${c.claim} — truth: ${c.truth}`).join('\n')
+    : '- none found'
+  const unmet = audit.ac_audit.filter(r => r.verdict === 'unmet' || r.verdict === 'unpinned' || r.verdict === 'partially-pinned').map(r => `- ${r.ac} ${r.verdict}: ${r.evidence}`).join('\n') || '- none'
+  return `You are a blind judge (seat ${seat.id}, run tag ${runTags}) scoring ONE arm, ${label}, of a multi-arm comparison. Other arms exist; you will not see them and must not speculate about them. ${BLIND}
 
-Step 1 — write the judge prompt to ${DIR}/judge-${seat.id}.prompt.md using a quoted heredoc so nothing expands, then append this exact final instruction to the file: "Respond with ONLY a JSON object, no prose, shaped as {\\"scores\\": {<label>: {${axesShape}}, ...}, \\"ac_audit\\": [{\\"ac\\": string, \\"arm\\": <label>, \\"class\\": \\"test-expressible\\"|\\"justification\\", \\"verdict\\": \\"pinned\\"|\\"partially-pinned\\"|\\"unpinned\\"|\\"met\\"|\\"unmet\\", \\"evidence\\": string}, ...], \\"preference\\": ${prefShape}, \\"rationale\\": string, \\"disqualified\\": [labels], \\"notes\\": string}. Use those axis keys EXACTLY." The judge prompt content is everything between BEGIN-PROMPT and END-PROMPT below.
+The task brief this arm received is at ${DIR}/brief.md — read it first, in full. Then read ${DIR}/diffs/${label}.diff and ${DIR}/judged/report-${label}.md.
+
+The rubric (read it and follow it exactly; this session scores axes 2, 3, 4 and 5 of Phase 2 only — axis 1 and the criterion audit are already done and their results are below):
+
+${IN.rubricText}
+
+Results of this arm's audit session (treat as settled; do not re-verify, and do not score the same finding twice):
+Factual grounding: ${audit.factual_grounding}/5.
+Claims found false:
+${ledger}
+Criteria not met or not pinned:
+${unmet}
+
+Score ${AXES.slice(1).join(', ')} as integers 0-5 per the rubric bands, each arm-independently — you are scoring this document against the bands, not against other arms. Return the structured result with the reasoning per axis in rationale.`
+}
+
+// Session 3, once per seat: which ships? The seat's own complete table plus a whole
+// re-read of its leading documents.
+function rankPrompt(seat, rows, runTags) {
+  const table = rows.map(r => `Arm ${r.label}: standing ${r.standing}${r.standing !== 'scored' ? ` (${r.reason})` : ''}; ${AXES.map(k => `${k}=${r.scores ? r.scores[k] : '-'}`).join(', ')}; criteria met ${r.met}/${AC_IDS.length}; false claims ${r.false_claims}${r.load_bearing ? ' (load-bearing)' : ''}\n  audit: ${r.audit_rationale}\n  scoring: ${r.score_rationale}`).join('\n')
+  const top = rows.filter(r => r.standing === 'scored').sort((a, b) => b.total - a.total).slice(0, RANK_READS).map(r => r.label)
+  return `You are a blind judge (seat ${seat.id}, run tag ${runTags}) ranking a ${rows.length}-arm comparison. ${BLIND}
+
+Every arm was audited and scored by this seat, one arm per session, against the rubric below. The rubric's Phase 3 is yours now; Phases 0-2 are done and their results are the table.
+
+${IN.rubricText}
+
+The seat's table:
+${table}
+
+Read ${DIR}/brief.md, then the documents of the leading arms in full — ${top.map(l => `${DIR}/diffs/${l}.diff and ${DIR}/judged/report-${l}.md`).join('; ')} — and any other arm's documents you need to settle a close call. Scores are this seat's own, produced without cross-arm comparison, so two arms at the same total may not be equivalent: the rubric's tie conditions govern. Return preference (exactly one arm label, or "tie" only under the rubric's tie conditions), ordering (every scored arm, best first), rationale citing the audit results, and notes.`
+}
+
+// The quarantined checker, per arm: it alone reads the trap ledger.
+function checkerPrompt(label, runTags) {
+  return `You are the trap-ledger checker (run tag ${runTags}) for ONE arm, ${label}, of a blind multi-arm comparison. Facts only — never score quality, never state a preference, never infer who produced any arm.
+
+Read ${TRAP_LEDGER}, then ${DIR}/judged/report-${label}.md and ${DIR}/diffs/${label}.diff. Read nothing else under ${DIR}. You may consult the repository checkout at ${IN.contextCheckout} read-only to confirm a ledger fact; change nothing.
+
+For each ledger probe: quote the exact report sentence(s) bearing on it (or write "silent"), and rule caught (the arm correctly states the fact), repeated (the arm asserts the false version), silent (no claim either way), or n/a. Every finding carries arm "${label}". Markers reading "[environment detail removed for blind judging]" are the harness's edits — draw no inference from them. Return the structured result.`
+}
+
+// A codex seat's session runs through codex exec under a haiku transport agent.
+// The JSON shape is spelled out because codex returns prose unless told not to.
+function codexSessionPrompt(seat, fileTag, promptText, shapeText) {
+  return `You are a mechanical harness runner for judge seat ${seat.id}, session ${fileTag}. Execute with Bash; do not improvise and do not judge anything yourself.
+
+Step 1 — write the session prompt to ${DIR}/seat-${fileTag}.prompt.md using a quoted heredoc so nothing expands, then append this exact final instruction to the file: "Respond with ONLY a JSON object, no prose, shaped as ${shapeText.replace(/"/g, '\\"')}." The session prompt content is everything between BEGIN-PROMPT and END-PROMPT below.
 
 Step 2 — run as ONE FOREGROUND Bash call with timeout 600000:
-codex exec -C ${IN.contextCheckout} -m ${seat.codexModel} -c model_reasoning_effort=${seat.effort} -s read-only --add-dir ${DIR} -o ${DIR}/judge-${seat.id}.out.md - < ${DIR}/judge-${seat.id}.prompt.md > ${DIR}/judge-${seat.id}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/judge-${seat.id}.exec.log
+codex exec -C ${IN.contextCheckout} -m ${seat.codexModel} -c model_reasoning_effort=${seat.effort} -s read-only --add-dir ${DIR} -o ${DIR}/seat-${fileTag}.out.md - < ${DIR}/seat-${fileTag}.prompt.md > ${DIR}/seat-${fileTag}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log
 
-Step 2b — completion ladder (a large comparison can outlast one call):
-(a) If the harness reports the Step 2 command was moved to the background on timeout, WAIT for its completion notification — never start another codex process while one may still be running for this seat.
-(b) Only after the command has fully ended, check whether ${DIR}/judge-${seat.id}.out.md exists. If it does NOT, the runner was killed mid-flight: extract the bare session UUID with: grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/judge-${seat.id}.exec.log | cut -d' ' -f3 — then run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/judge-${seat.id}.out.md - <<< "Continue where you left off and finish the judging task; your final message must be ONLY the JSON object exactly as specified." >> ${DIR}/judge-${seat.id}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/judge-${seat.id}.exec.log
-Apply rules (a) and (b) to each resume call too, resuming the SAME session id, at most 3 resumes total. If no session id is found in the log, note it and go to Step 3.
+Step 2b — if the harness reports the command was moved to the background on timeout, WAIT for its completion notification; never start another codex process for this session while one may be running. Only after it has fully ended, if ${DIR}/seat-${fileTag}.out.md does NOT exist, extract the session UUID with: grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/seat-${fileTag}.exec.log | cut -d' ' -f3 — and run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/seat-${fileTag}.out.md - <<< "Continue where you left off and finish; your final message must be ONLY the JSON object exactly as specified." >> ${DIR}/seat-${fileTag}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log — at most 3 resumes, same session id.
 
-Step 3 — read ${DIR}/judge-${seat.id}.out.md, extract the JSON object, and return it as the structured result with seat_exit set to the recorded CODEX_EXIT. If an axis key in the judge's JSON differs only in wording from the pinned keys, rename it to the pinned key and record the rename in notes — never alter a score. If the output is missing or not parseable JSON, return seat_exit -1, empty scores, preference "tie", and put the raw tail in notes. Report only observed values.
+Step 3 — read ${DIR}/seat-${fileTag}.out.md, extract the JSON object, and return it as the structured result with seat_exit set to the recorded CODEX_EXIT. If a key differs only in wording from the pinned keys, rename it and record the rename in notes — never alter a value. If the output is missing or not parseable JSON, return seat_exit -1 with the required fields empty and the raw tail in notes. Report only observed values.
 
 BEGIN-PROMPT
-${judgeText}
+${promptText}
 END-PROMPT`
 }
 
@@ -378,46 +434,58 @@ const SANITIZE_SCHEMA = {
 
 // Built per run: labels pin the preference enum; AXES (when set) pin the score keys.
 // A disqualified or no-contest arm is simply omitted from scores, so no label is required.
-function judgeSchema(labels) {
-  const axesSchema = AXES
-    ? {
-        type: 'object',
-        properties: Object.fromEntries(AXES.map(k => [k, { type: 'integer', minimum: 0, maximum: 5 }])),
-        required: AXES,
-        additionalProperties: false,
-      }
-    : { type: 'object' }
-  return {
-    type: 'object',
-    properties: {
-      scores: {
-        type: 'object',
-        properties: Object.fromEntries(labels.map(l => [l, axesSchema])),
-        additionalProperties: false,
-      },
-      ac_audit: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            ac: { type: 'string' },
-            arm: { type: 'string', enum: labels },
-            class: { type: 'string', enum: ['test-expressible', 'justification'] },
-            verdict: { type: 'string', enum: ['pinned', 'partially-pinned', 'unpinned', 'met', 'unmet'] },
-            evidence: { type: 'string' },
-          },
-          required: ['ac', 'arm', 'class', 'verdict', 'evidence'],
-        },
-      },
-      preference: { type: 'string', enum: [...labels, 'tie'] },
-      rationale: { type: 'string' },
-      disqualified: { type: 'array', items: { type: 'string' } },
-      notes: { type: 'string' },
-      seat_exit: { type: 'integer' },
-    },
-    required: ['scores', 'ac_audit', 'preference', 'rationale', 'disqualified', 'notes'],
-  }
+const AC_ROW = {
+  type: 'object',
+  properties: {
+    ac: { type: 'string', enum: AC_IDS },
+    class: { type: 'string', enum: ['test-expressible', 'justification'] },
+    verdict: { type: 'string', enum: ['pinned', 'partially-pinned', 'unpinned', 'met', 'unmet'] },
+    evidence: { type: 'string' },
+  },
+  required: ['ac', 'class', 'verdict', 'evidence'],
 }
+const AUDIT_SESSION_SCHEMA = {
+  type: 'object',
+  properties: {
+    standing: { type: 'string', enum: ['scored', 'no-contest', 'disqualified'] },
+    reason: { type: 'string' },
+    ac_audit: { type: 'array', items: AC_ROW },
+    false_claims: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { claim: { type: 'string' }, truth: { type: 'string' }, load_bearing: { type: 'boolean' } },
+        required: ['claim', 'truth', 'load_bearing'],
+      },
+    },
+    factual_grounding: { type: 'integer', minimum: 0, maximum: 5 },
+    rationale: { type: 'string' },
+    notes: { type: 'string' },
+    seat_exit: { type: 'integer' },
+  },
+  required: ['standing', 'reason', 'ac_audit', 'false_claims', 'factual_grounding', 'rationale', 'notes'],
+}
+const SCORE_SESSION_SCHEMA = {
+  type: 'object',
+  properties: {
+    ...Object.fromEntries(AXES.slice(1).map(k => [k, { type: 'integer', minimum: 0, maximum: 5 }])),
+    rationale: { type: 'string' },
+    notes: { type: 'string' },
+    seat_exit: { type: 'integer' },
+  },
+  required: [...AXES.slice(1), 'rationale', 'notes'],
+}
+const rankSchema = labels => ({
+  type: 'object',
+  properties: {
+    preference: { type: 'string', enum: [...labels, 'tie'] },
+    ordering: { type: 'array', items: { type: 'string', enum: labels } },
+    rationale: { type: 'string' },
+    notes: { type: 'string' },
+    seat_exit: { type: 'integer' },
+  },
+  required: ['preference', 'ordering', 'rationale', 'notes'],
+})
 
 const CHECKER_SCHEMA = {
   type: 'object',
@@ -603,43 +671,108 @@ else log(`Usage collection failed: ${usage.error}`)
   log(`Judge-only: judging retained artifacts in ${DIR} — ${IN.labels.length} arm(s), ${CACHED_SEATS.length} cached seat(s)${CACHED_CHECKER ? ', cached checker' : ''}`)
 }
 
-// Barrier: every judge seat needs all arms.
+// Barrier: every seat's rank session needs all of that seat's arms.
 phase('Judge')
 const labels = JUDGE_ONLY ? IN.labels : arms.map(a => a.arm)
 const runTags = JUDGE_ONLY ? (IN.runTags || 'judge-only') : IN.arms.map(a => `${a.label}${tag(a)}`).join('/')
 const gateSummary = JUDGE_ONLY ? IN.gateSummary : arms.map(a =>
   `Arm ${a.arm}: gate exit ${a.audit ? a.audit.gate_exit : 'unknown'}, ${a.audit ? a.audit.files_changed : '?'} files changed${MEASURE_CODE ? ` (+${a.audit ? a.audit.loc_added : '?'}/-${a.audit ? a.audit.loc_removed : '?'} LOC), complexity: ${a.audit ? a.audit.complexity_summary : 'unknown'}` : ''}, committed by ${a.audit && a.audit.committed_by_audit ? 'the audit (arm left work uncommitted)' : 'the arm itself'}${a.kind === 'reference' ? ' [commit pre-existed this run; "committed by the arm" reflects the audit finding a clean tree, not authorship during this dispatch]' : ''}`
 ).join('\n')
-const judgeText = judgeHarnessPrompt(gateSummary, labels, runTags)
-const JUDGE_SCHEMA = judgeSchema(labels)
+const gateLines = Object.fromEntries(gateSummary.split('\n').map(line => [(line.match(/^Arm (\S+):/) || [])[1], line]).filter(([l]) => l))
 
-// Claude seats persist the verdict to disk before returning it: a connection drop
-// mid-structured-response otherwise loses a completed judgment with no artifact.
-const claudeSeatSuffix = seat => `\n\nDelivery hardening for this seat (${seat.id}): FIRST write your complete verdict as a single JSON object to ${DIR}/audits/seat-${seat.id}.json with the Write tool — the same object you will return: {scores, ac_audit, preference, rationale, disqualified, notes}. THEN return exactly that object as your structured result. The scores object must carry every scored arm label, each with exactly the five pinned axis keys, integer 0-5 — no other keys anywhere in scores.`
-const seatThunks = JUDGES.map(seat => () =>
-  seat.kind === 'codex'
-    ? agent(codexJudgePrompt(seat, judgeText, labels), { label: `judge:${seat.id}`, phase: 'Judge', model: 'haiku', effort: 'low', schema: JUDGE_SCHEMA })
-        .then(v => ({ seat: seat.id, kind: seat.kind, verdict: v }))
-    : agent(judgeText + claudeSeatSuffix(seat), { label: `judge:${seat.id}`, phase: 'Judge', model: seat.model, effort: seat.effort, schema: JUDGE_SCHEMA })
-        .then(v => ({ seat: seat.id, kind: seat.kind, verdict: v }))
-)
+// Every audit row must be present exactly once. A short or padded audit is refused
+// here, in code, and the session re-run once; a second failure fails the seat-arm.
+function auditComplete(a) {
+  if (!a) return false
+  if (a.standing !== 'scored') return true
+  const seen = a.ac_audit.map(r => r.ac)
+  return seen.length === AC_IDS.length && AC_IDS.every(id => seen.filter(x => x === id).length === 1)
+}
+
+const auditShape = `{"standing": "scored"|"no-contest"|"disqualified", "reason": string, "ac_audit": [{"ac": ${AC_IDS.map(i => `"${i}"`).join('|')}, "class": "test-expressible"|"justification", "verdict": "pinned"|"partially-pinned"|"unpinned"|"met"|"unmet", "evidence": string}, ... one per criterion], "false_claims": [{"claim": string, "truth": string, "load_bearing": bool}], "factual_grounding": int 0-5, "rationale": string, "notes": string}`
+const scoreShape = `{${AXES.slice(1).map(k => `"${k}": int 0-5`).join(', ')}, "rationale": string, "notes": string}`
+const rankShape = `{"preference": ${labels.map(l => `"${l}"`).join('|')}|"tie", "ordering": [labels best first], "rationale": string, "notes": string}`
+
+const persist = (seat, file) => `\n\nDelivery hardening (seat ${seat.id}): FIRST write your complete result as a single JSON object to ${DIR}/audits/${file} with the Write tool (mkdir -p ${DIR}/audits first if needed) — the same object you will return. THEN return exactly that object as your structured result.`
+
+function runSession(seat, fileTag, promptText, shapeText, schema, phaseName) {
+  const opts = { label: `${phaseName}:${seat.id}:${fileTag.split('-').pop()}`, phase: 'Judge' }
+  return seat.kind === 'codex'
+    ? agent(codexSessionPrompt(seat, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema })
+    : agent(promptText + persist(seat, `seat-${fileTag}.json`), { ...opts, model: seat.model, effort: seat.effort, schema })
+}
+
+async function auditArm(seat, label) {
+  let a = await runSession(seat, `${seat.id}-audit-${label}`, auditPrompt_(seat, label, gateLines[label] || 'unknown', runTags), auditShape, AUDIT_SESSION_SCHEMA, 'audit')
+  if (!auditComplete(a)) {
+    log(`Seat ${seat.id} arm ${label}: audit incomplete (${a ? a.ac_audit.length : 'no'} rows of ${AC_IDS.length}) — re-running once`)
+    a = await runSession(seat, `${seat.id}-audit2-${label}`, auditPrompt_(seat, label, gateLines[label] || 'unknown', runTags) + `\n\nA previous attempt returned ${a ? a.ac_audit.length : 'no'} rows; this comparison requires exactly one row per criterion listed above.`, auditShape, AUDIT_SESSION_SCHEMA, 'audit')
+  }
+  if (!auditComplete(a)) { log(`Seat ${seat.id} arm ${label}: audit incomplete twice — this seat-arm is dropped`); return null }
+  return a
+}
+
+// Seat work: for each seat, every arm through audit → score (pipeline, no barrier
+// between arms), then one rank session over the seat's own complete table.
+async function runSeat(seat) {
+  const rows = (await pipeline(
+    labels,
+    label => auditArm(seat, label),
+    async (audit, label) => {
+      if (!audit) return null
+      if (audit.standing !== 'scored') return { label, audit, score: null }
+      const score = await runSession(seat, `${seat.id}-score-${label}`, scorePrompt(seat, label, audit, runTags), scoreShape, SCORE_SESSION_SCHEMA, 'score')
+      return { label, audit, score }
+    },
+  )).filter(Boolean)
+  const table = rows.map(r => {
+    const scores = r.score ? { [AXES[0]]: r.audit.factual_grounding, ...Object.fromEntries(AXES.slice(1).map(k => [k, r.score[k]])) } : null
+    return {
+      label: r.label, standing: r.audit.standing, reason: r.audit.reason, scores,
+      total: scores ? Object.values(scores).reduce((x, y) => x + y, 0) : -1,
+      met: r.audit.ac_audit.filter(x => x.verdict === 'met' || x.verdict === 'pinned').length,
+      false_claims: r.audit.false_claims.length, load_bearing: r.audit.false_claims.some(c => c.load_bearing),
+      audit_rationale: r.audit.rationale, score_rationale: r.score ? r.score.rationale : '',
+    }
+  })
+  const scoredLabels = table.filter(r => r.standing === 'scored').map(r => r.label)
+  const rank = scoredLabels.length
+    ? await runSession(seat, `${seat.id}-rank`, rankPrompt(seat, table, runTags), rankShape, rankSchema(scoredLabels), 'rank')
+    : { preference: 'tie', ordering: [], rationale: 'no scorable arm', notes: '' }
+  if (!rank) { log(`Seat ${seat.id}: rank session returned nothing — seat dropped`); return { seat: seat.id, kind: seat.kind, verdict: null } }
+  // Assemble the seat's verdict in the panel shape aggregation, reconcile and
+  // escalation already consume.
+  const verdict = {
+    scores: Object.fromEntries(table.filter(r => r.scores).map(r => [r.label, r.scores])),
+    ac_audit: rows.flatMap(r => r.audit.ac_audit.map(x => ({ ...x, arm: r.label }))),
+    false_claims: Object.fromEntries(rows.map(r => [r.label, r.audit.false_claims])),
+    preference: rank.preference,
+    ordering: rank.ordering,
+    rationale: rank.rationale,
+    disqualified: table.filter(r => r.standing !== 'scored').map(r => `${r.label}: ${r.standing} — ${r.reason}`),
+    notes: [rank.notes, ...rows.map(r => r.audit.notes ? `${r.label} audit: ${r.audit.notes}` : ''), ...rows.map(r => r.score && r.score.notes ? `${r.label} score: ${r.score.notes}` : '')].filter(Boolean).join('\n'),
+    arms_dropped: labels.filter(l => !rows.some(r => r.label === l)),
+  }
+  return { seat: seat.id, kind: seat.kind, verdict }
+}
+
+const seatThunks = JUDGES.map(seat => () => runSeat(seat))
 // The checker seat is quarantined: it alone reads the trap ledger, and its output
 // never enters a main judge's context. A cached checker result suppresses a re-run.
 if (TRAP_LEDGER && !CACHED_CHECKER) seatThunks.push(() =>
-  agent(`You are the trap-ledger checker (run tag ${runTags}) for a blind ${labels.length}-arm comparison. Facts only — never score quality, never state a preference, never infer who produced any arm.
-
-Read ${TRAP_LEDGER}, then for each arm label (${labels.join(', ')}): ${DIR}/judged/report-<label>.md and ${DIR}/diffs/<label>.diff. Read nothing else under ${DIR}. You may consult the repository checkout at ${IN.contextCheckout} read-only to confirm a ledger fact; change nothing.
-
-For each ledger probe crossed with each arm: quote the exact report sentence(s) bearing on the probe (or write "silent"), and rule caught (the arm correctly states the fact), repeated (the arm asserts the false version), silent (no claim either way), or n/a. Markers reading "[environment detail removed for blind judging]" are the harness's edits — draw no inference from them. Return the structured result.`,
-    { label: 'checker', phase: 'Judge', model: 'haiku', effort: 'low', schema: CHECKER_SCHEMA })
-    .then(v => ({ checkerResult: v })))
+  parallel(labels.map(label => () =>
+    agent(checkerPrompt(label, runTags), { label: `checker:${label}`, phase: 'Judge', model: 'haiku', effort: 'low', schema: CHECKER_SCHEMA })))
+    .then(parts => ({ checkerResult: {
+      findings: parts.filter(Boolean).flatMap(p => p.findings),
+      notes: parts.map((p, i) => p ? p.notes : `arm ${labels[i]}: checker returned nothing`).filter(Boolean).join('\n'),
+    } })))
 const seatResults = (await parallel(seatThunks)).filter(Boolean)
-// A seat whose agent died terminally resolves with verdict: null — drop it from the
-// panel and report it, rather than letting a null verdict poison later stages.
+// A seat whose sessions died resolves with verdict: null — drop it from the panel
+// and report it, rather than letting a null verdict poison later stages.
 // Cached seat verdicts join the panel unchanged and count in every later stage.
 const judges = [...seatResults.filter(r => !r.checkerResult && r.verdict), ...CACHED_SEATS.filter(s => s && s.verdict)]
 const judges_failed = seatResults.filter(r => !r.checkerResult && !r.verdict).map(r => r.seat)
-if (judges_failed.length) log(`Seat(s) returned no verdict (agent died): ${judges_failed.join(', ')} — panel proceeds with ${judges.length} seat(s)`)
+if (judges_failed.length) log(`Seat(s) returned no verdict: ${judges_failed.join(', ')} — panel proceeds with ${judges.length} seat(s)`)
 const checker = (seatResults.find(r => r.checkerResult) || {}).checkerResult || CACHED_CHECKER
 
 // Aggregate in plain code: per-axis means and preference tally across seats.
