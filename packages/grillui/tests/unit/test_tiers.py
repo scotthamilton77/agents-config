@@ -26,6 +26,7 @@ from grillui.schemas import (
 )
 from grillui.session import open_session
 from grillui.tiers import (
+    BOARD_LEGEND,
     CONCISION_RULE,
     CONTEXT_LIMITS,
     DEFAULT_FAST_MODEL,
@@ -38,6 +39,8 @@ from grillui.tiers import (
     FAST_CONTEXT_LIMIT_ENV,
     FAST_MODEL_ENV,
     FAST_TIER,
+    FAST_TIER_MANDATE,
+    GRILL_MASTER_MANDATE,
     HEAVY_CONTEXT_LIMIT_ENV,
     HEAVY_EFFORT_ENV,
     HEAVY_MODEL_ENV,
@@ -52,6 +55,8 @@ from grillui.tiers import (
     POLICY_AUTONOMOUS,
     POLICY_GATED,
     REGISTER_RULE,
+    RESHAPE_STEP,
+    ROLE_PROMPTS,
     SYSTEM_PROMPTS,
     TierConfig,
     UnknownTierError,
@@ -250,18 +255,109 @@ def test_every_shipped_system_prompt_carries_the_no_manufacture_rule(tier: str) 
     assert "say what you lack" in prompt
 
 
-def test_the_fast_prompt_carries_the_facilitation_mandate_and_stops_short_of_deciding() -> None:
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+@pytest.mark.parametrize("agent", [GRILL_MASTER, THREAD_AGENT])
+def test_every_composed_brief_opens_with_its_agents_role(tier: str, agent: str) -> None:
     """
-    Given the fast tier's system prompt
-    When it is read
-    Then it mandates facilitation and tells the tier to stop short of deciding
-         once a question crosses into reasoning or design.
-    """
-    prompt = SYSTEM_PROMPTS[FAST_TIER]
+    Given the brief a driver composes for one role on one tier
+    When it is read from its first byte
+    Then it opens with that agent's role part, the same part on either tier.
 
-    assert FACILITATION_MANDATE in prompt
-    assert "stop short of deciding" in prompt
-    assert "leave the decision with the human" in prompt
+    A role keyed to the tier is the defect this is here to catch: it puts the
+    map's author under "stop short of deciding" on the one turn whose whole work
+    is a ruling, and hands the sole-author line to a thread agent the moment the
+    human transfers its thread.
+    """
+    assert system_prompt(tier, agent).startswith(ROLE_PROMPTS[agent])
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_grill_master_is_briefed_as_the_maps_author_on_either_tier(tier: str) -> None:
+    """
+    Given the grill-master's brief on each tier
+    When it is read for what the turn is for
+    Then it names it the author of the map, carries the reshape step, and leaves
+         ending the session to the human -- identically on both tiers, because
+         which model takes the turn does not change what the turn is.
+    """
+    brief = system_prompt(tier, GRILL_MASTER)
+
+    assert GRILL_MASTER_MANDATE in brief
+    assert "the author of the map and the only agent that changes it" in brief
+    assert "Push on the axis the posture names" in brief
+    assert "leave ending the session to them" in brief
+    assert RESHAPE_STEP in brief
+    assert "Rule on every decision the dispatch names" in brief
+    assert "Say whether the stop condition is met" in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_thread_agent_facilitates_on_either_tier_and_carries_no_line_of_the_grill_masters(
+    tier: str,
+) -> None:
+    """
+    Given the thread agent's brief on each tier
+    When it is read for what the turn is for
+    Then it facilitates and stops short of deciding on both tiers, and carries
+         no sentence of the grill-master's -- a thread agent told it authors the
+         map agrees to changes it cannot make.
+    """
+    brief = system_prompt(tier, THREAD_AGENT)
+
+    assert FACILITATION_MANDATE in brief
+    assert "stop short of deciding" in brief
+    assert "leave the decision with the human" in brief
+    assert GRILL_MASTER_MANDATE not in brief
+    assert RESHAPE_STEP not in brief
+    assert "the author of the map" not in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_thread_agent_is_told_how_to_read_a_board_that_moved(tier: str) -> None:
+    """
+    Given the thread agent's brief on each tier
+    When it is read for what the board's own fields mean
+    Then it carries the legend: the record says what happened and why, a
+         question about why the board moved is answered by quoting it or by
+         saying it does not say, and a pre-mark is a prediction rather than a
+         dependency -- without which the agent invents a cause for a move it can
+         read verbatim in front of it.
+    """
+    brief = system_prompt(tier, THREAD_AGENT)
+
+    assert BOARD_LEGEND in brief
+    assert "`status`, `rationale` and `history`" in brief
+    assert "quoting them" in brief
+    assert "never by inferring a cause" in brief
+    assert "a mark, not a dependency" in brief
+    assert "including a notice this thread may have been opened from" in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_neither_tiers_own_part_briefs_a_role(tier: str) -> None:
+    """
+    Given each tier's own part of the standing brief
+    When it is read for what the turn is for
+    Then it says nothing: a tier is how a turn is taken, and the moment a
+         mandate rides on it, whichever role runs on that tier inherits it.
+    """
+    prompt = SYSTEM_PROMPTS[tier].lower()
+
+    assert "facilitate" not in prompt
+    assert "stop short of deciding" not in prompt
+    assert "grill-master" not in prompt
+
+
+def test_the_fast_tier_is_told_to_be_quick_and_the_heavy_one_is_not() -> None:
+    """
+    Given both tiers' own parts
+    When they are read for what distinguishes them
+    Then the fast tier is told to answer fast and the heavy tier is not -- the
+         expert the human transferred to is worth the wait, and an expert
+         hurried is a transfer that never happened.
+    """
+    assert FAST_TIER_MANDATE in SYSTEM_PROMPTS[FAST_TIER]
+    assert FAST_TIER_MANDATE not in SYSTEM_PROMPTS[HEAVY_TIER]
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
@@ -302,15 +398,6 @@ def test_every_shipped_system_prompt_permits_exactly_two_kinds_of_question(tier:
     # No third licence anywhere in the prompt: the habit this rule ends was
     # invited by one, and a survivor would be read as the exception.
     assert "ordinary move" not in prompt
-
-
-def test_the_heavy_prompt_leaves_ending_the_grilling_to_the_human() -> None:
-    """
-    Given the heavy tier's system prompt
-    When it is read
-    Then it may say the stop condition is met and may not end the session.
-    """
-    assert "ending the grilling is theirs" in SYSTEM_PROMPTS[HEAVY_TIER]
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
@@ -530,6 +617,11 @@ def test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_ca
     assert "say plainly that you cannot" in brief
     assert "folding this thread is what puts your conclusion in front of the grill-master" in brief
     assert "Agreeing to do it is a promise nothing keeps" in brief
+    # And no line naming it the map's author, on either tier: a brief that both
+    # refuses a map change and claims sole authorship of the map is one the
+    # refusal test alone would pass.
+    assert "the author of the map" not in brief
+    assert "You are the grill-master" not in brief
 
 
 def map_thread_context(kind: str = MAP_THREAD_KIND, channel: str = "t-map") -> DispatchContext:
