@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bake-off',
   description: 'Parameterized model×effort bake-off: reset worktrees, run contestant arms, audit+gate, sanitize, blind-judge, synthesize',
-  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind; a judge seat is {id, kind: claude|codex|openrouter, ...}, and an openrouter seat ({model, effort, fallback: {kind, model|codexModel, effort}}) needs openrouterLauncherPath (absolute run.js of the openrouter-claude-subagent skill). Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, axisKeys (first = factual grounding), acIds (the brief\'s criterion ids), arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price; collect_usage.py beside it prices every arm into the result\'s usage field), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?, armsOnly? (end after Sanitize/Usage with no judging — the complement of judgeOnly)}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary (one "Arm <label>: ..." line per arm), rubricText, axisKeys, acIds, judges[], rankReads?, cachedSeats?, cachedChecker?}.',
+  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind; a judge seat is {id, kind: claude|codex|openrouter, model|codexModel, effort?}, where effort defaults per session (audit high, score medium, rank high) and overrides as one level or {audit, score, rank}; an openrouter seat ({model, effort?, fallback: {kind, model|codexModel, effort?}}) needs openrouterLauncherPath (absolute run.js of the openrouter-claude-subagent skill). Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, axisKeys (first = factual grounding), acIds (the brief\'s criterion ids), arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price; collect_usage.py beside it prices every arm into the result\'s usage field), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?, armsOnly? (end after Sanitize/Usage with no judging — the complement of judgeOnly)}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary (one "Arm <label>: ..." line per arm), rubricText, axisKeys, acIds, judges[], rankReads?, cachedSeats?, cachedChecker?}.',
   phases: [
     { title: 'Preflight', detail: 'place the pinned brief where arms and seats read it' },
     { title: 'Reset', detail: 'archive then reset each arm worktree to the pinned base' },
@@ -25,7 +25,18 @@ try {
 const DIR = IN.dir
 const BASE = IN.base
 const RESET = IN.reset !== false
-const JUDGES = IN.judges && IN.judges.length ? IN.judges : [{ id: 'J1', kind: 'claude', model: 'sonnet', effort: 'high' }]
+const JUDGES = IN.judges && IN.judges.length ? IN.judges : [{ id: 'J1', kind: 'claude', model: 'sonnet' }]
+// A seat's effort per session, by what the session does: the audit pins every
+// criterion and catches false claims — the calibration-bearing work; the score reads
+// a finished ledger; the rank is the one judgment over the whole field. A seat's
+// `effort` overrides this as one level for all three or as {audit, score, rank};
+// an openrouter model may not offer every level, so its caller checks the list.
+const SESSION_EFFORT = { audit: 'high', score: 'medium', rank: 'high' }
+const SESSIONS = Object.keys(SESSION_EFFORT)
+const effortFor = (seat, session) => typeof seat.effort === 'string' ? seat.effort : { ...SESSION_EFFORT, ...(seat.effort || {}) }[session]
+for (const s of JUDGES) {
+  if (s.effort && typeof s.effort !== 'string' && Object.keys(s.effort).some(k => !SESSIONS.includes(k))) throw new Error(`bake-off: judge ${s.id} effort keys must be among ${SESSIONS.join('/')}`)
+}
 const GATE_CMD = IN.gateCmd || 'make ci'
 // Size and cyclomatic complexity are evidence for a code deliverable's
 // engineering-quality axis and meaningless for a prose one, where a longer
@@ -45,7 +56,7 @@ const RUNNER = IN.runnerPath || null
 // session returns nothing parseable twice; the result records which seat ran.
 const OR_LAUNCHER = IN.openrouterLauncherPath || null
 for (const s of JUDGES.filter(j => j.kind === 'openrouter')) {
-  if (!s.model || !s.effort) throw new Error(`bake-off: openrouter seat ${s.id} needs model (vendor/model-id) and effort`)
+  if (!s.model) throw new Error(`bake-off: openrouter seat ${s.id} needs model (vendor/model-id)`)
   if (!s.fallback || !s.fallback.kind || s.fallback.kind === 'openrouter') throw new Error(`bake-off: openrouter seat ${s.id} needs a fallback seat of another kind ({kind, model|codexModel, effort})`)
   if (!OR_LAUNCHER || !OR_LAUNCHER.startsWith('/')) throw new Error('bake-off: openrouterLauncherPath (absolute path to the openrouter-claude-subagent run.js) is required when an openrouter seat is configured')
 }
@@ -165,8 +176,11 @@ for (const id of AC_IDS) embedded.push([`acId ${id}`, id])
 for (const s of JUDGES) {
   embedded.push([`judge ${s.id} id`, s.id])
   if (s.codexModel) embedded.push([`judge ${s.id} codexModel`, s.codexModel])
-  if (s.kind === 'openrouter') embedded.push([`judge ${s.id} model`, s.model], [`judge ${s.id} effort`, s.effort],
-    [`judge ${s.id} fallback model`, s.fallback.model || s.fallback.codexModel], [`judge ${s.id} fallback effort`, s.fallback.effort])
+  for (const k of SESSIONS) embedded.push([`judge ${s.id} ${k} effort`, effortFor(s, k)])
+  if (s.kind === 'openrouter') {
+    embedded.push([`judge ${s.id} model`, s.model], [`judge ${s.id} fallback model`, s.fallback.model || s.fallback.codexModel])
+    for (const k of SESSIONS) embedded.push([`judge ${s.id} fallback ${k} effort`, effortFor(s.fallback, k)])
+  }
 }
 for (const [name, value] of embedded) {
   if (!SHELL_INERT.test(String(value))) throw new Error(`bake-off: ${name} contains shell-active characters or spaces: ${JSON.stringify(value)}`)
@@ -343,13 +357,13 @@ For each ledger probe: quote the exact report sentence(s) bearing on it (or writ
 
 // A codex seat's session runs through codex exec under a haiku transport agent.
 // The JSON shape is spelled out because codex returns prose unless told not to.
-function codexSessionPrompt(seat, fileTag, promptText, shapeText) {
+function codexSessionPrompt(seat, effort, fileTag, promptText, shapeText) {
   return `You are a mechanical harness runner for judge seat ${seat.id}, session ${fileTag}. Execute with Bash; do not improvise and do not judge anything yourself.
 
 Step 1 — write the session prompt to ${DIR}/seat-${fileTag}.prompt.md using a quoted heredoc so nothing expands, then append this exact final instruction to the file: "Respond with ONLY a JSON object, no prose, shaped as ${shapeText.replace(/"/g, '\\"')}." The session prompt content is everything between BEGIN-PROMPT and END-PROMPT below.
 
 Step 2 — run as ONE FOREGROUND Bash call with timeout 600000:
-codex exec -C ${IN.contextCheckout} -m ${seat.codexModel} -c model_reasoning_effort=${seat.effort} -s read-only --add-dir ${DIR} -o ${DIR}/seat-${fileTag}.out.md - < ${DIR}/seat-${fileTag}.prompt.md > ${DIR}/seat-${fileTag}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log
+codex exec -C ${IN.contextCheckout} -m ${seat.codexModel} -c model_reasoning_effort=${effort} -s read-only --add-dir ${DIR} -o ${DIR}/seat-${fileTag}.out.md - < ${DIR}/seat-${fileTag}.prompt.md > ${DIR}/seat-${fileTag}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log
 
 Step 2b — if the harness reports the command was moved to the background on timeout, WAIT for its completion notification; never start another codex process for this session while one may be running. Only after it has fully ended, if ${DIR}/seat-${fileTag}.out.md does NOT exist, extract the session UUID with: grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/seat-${fileTag}.exec.log | cut -d' ' -f3 — and run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/seat-${fileTag}.out.md - <<< "Continue where you left off and finish; your final message must be ONLY the JSON object exactly as specified." >> ${DIR}/seat-${fileTag}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log — at most 3 resumes, same session id.
 
@@ -362,13 +376,13 @@ END-PROMPT`
 
 // An openrouter seat's session runs the launcher under a haiku transport agent:
 // read-only tools, rooted at the context checkout, prompt on stdin, result as JSON.
-function openrouterSessionPrompt(seat, fileTag, promptText, shapeText) {
+function openrouterSessionPrompt(seat, effort, fileTag, promptText, shapeText) {
   return `You are a mechanical harness runner for judge seat ${seat.id}, session ${fileTag}. Execute with Bash; do not improvise and do not judge anything yourself.
 
 Step 1 — write the session prompt to ${DIR}/seat-${fileTag}.prompt.md using a quoted heredoc so nothing expands, then append this exact final instruction to the file: "Respond with ONLY a JSON object, no prose, shaped as ${shapeText.replace(/"/g, '\\"')}." The session prompt content is everything between BEGIN-PROMPT and END-PROMPT below.
 
 Step 2 — run as ONE FOREGROUND Bash call with timeout 1200000:
-cd ${IN.contextCheckout} && node ${OR_LAUNCHER} --model ${seat.model} --effort ${seat.effort} --permission-mode dontAsk --allowedTools Read Grep Glob "Bash(git status*)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" --add-dir ${DIR} --output-format json -p < ${DIR}/seat-${fileTag}.prompt.md > ${DIR}/seat-${fileTag}.out.json 2> ${DIR}/seat-${fileTag}.exec.log; echo "LAUNCH_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log
+cd ${IN.contextCheckout} && node ${OR_LAUNCHER} --model ${seat.model} --effort ${effort} --permission-mode dontAsk --allowedTools Read Grep Glob "Bash(git status*)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" --add-dir ${DIR} --output-format json -p < ${DIR}/seat-${fileTag}.prompt.md > ${DIR}/seat-${fileTag}.out.json 2> ${DIR}/seat-${fileTag}.exec.log; echo "LAUNCH_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log
 
 Step 3 — if LAUNCH_EXIT is 78 the launcher refused to start (no key, or a refused model): return seat_exit 78 with the required fields empty and the exec log's last lines in notes. Otherwise read ${DIR}/seat-${fileTag}.out.json, take its "result" string, extract the JSON object from it, and return that object as the structured result with seat_exit set to LAUNCH_EXIT. If a key differs only in wording from the pinned keys, rename it and record the rename in notes — never alter a value. If the output is missing or holds no parseable JSON object, return seat_exit -1 with the required fields empty and the raw tail in notes. Report only observed values.
 
@@ -735,10 +749,11 @@ const rankShape = `{"preference": ${labels.map(l => `"${l}"`).join('|')}|"tie", 
 
 const persist = (seat, file) => `\n\nDelivery hardening (seat ${seat.id}): FIRST write your complete result as a single JSON object to ${DIR}/audits/${file} with the Write tool (mkdir -p ${DIR}/audits first if needed) — the same object you will return. THEN return exactly that object as your structured result.`
 
-function transportSession(seat, fileTag, promptText, shapeText, schema, opts) {
-  if (seat.kind === 'codex') return agent(codexSessionPrompt(seat, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema })
-  if (seat.kind === 'openrouter') return agent(openrouterSessionPrompt(seat, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema })
-  return agent(promptText + persist(seat, `seat-${fileTag}.json`), { ...opts, model: seat.model, effort: seat.effort, schema })
+function transportSession(seat, session, fileTag, promptText, shapeText, schema, opts) {
+  const effort = effortFor(seat, session)
+  if (seat.kind === 'codex') return agent(codexSessionPrompt(seat, effort, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema })
+  if (seat.kind === 'openrouter') return agent(openrouterSessionPrompt(seat, effort, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema })
+  return agent(promptText + persist(seat, `seat-${fileTag}.json`), { ...opts, model: seat.model, effort, schema })
 }
 
 // `st` is the seat's runtime state: the declared seat plus `active`, the seat its
@@ -749,7 +764,7 @@ function transportSession(seat, fileTag, promptText, shapeText, schema, opts) {
 async function runSession(st, fileTag, promptText, shapeText, schema, phaseName) {
   const opts = { label: `${phaseName}:${st.id}:${fileTag.split('-').pop()}`, phase: 'Judge' }
   const ran = st.active
-  const r = await transportSession(ran, fileTag, promptText, shapeText, schema, opts)
+  const r = await transportSession(ran, phaseName, fileTag, promptText, shapeText, schema, opts)
   if (ran.kind !== 'openrouter') return r
   const refused = !!r && r.seat_exit === 78
   const unparsed = !r || r.seat_exit === -1
@@ -777,7 +792,7 @@ async function auditArm(seat, label) {
 // between arms), then one rank session over the seat's own complete table.
 async function runSeat(seat) {
   const st = { ...seat, active: seat, no_parse: 0, fell_back: null }
-  const ranOf = () => ({ kind: st.active.kind, model: st.active.model || st.active.codexModel || null, effort: st.active.effort, fell_back: st.fell_back })
+  const ranOf = () => ({ kind: st.active.kind, model: st.active.model || st.active.codexModel || null, effort: Object.fromEntries(SESSIONS.map(k => [k, effortFor(st.active, k)])), fell_back: st.fell_back })
   const rows = (await pipeline(
     labels,
     label => auditArm(st, label),
