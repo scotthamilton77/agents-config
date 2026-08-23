@@ -2760,18 +2760,28 @@ def test_a_finished_board_is_one_the_terminal_result_would_leave_nothing_open_on
     """
     Given a board carrying one settled decision and one invalidated one
     When the session is captured
-    Then the invalidated decision is one of the result's open items.
+    Then the result leaves nothing open.
 
-    The page announces completion off its own reading of the board, and the one
-    reading it is allowed is the one the write-up takes: settled, and nothing
-    else. A page that counted an invalidated or a stale decision as finished
-    would congratulate the human on a board whose own result lists work left to
-    do -- so the page's test is pinned to the string, and the string's meaning
-    is pinned to the backend here.
+    The page announces completion off its own reading of the board, and that
+    reading has to be the one the write-up takes, or the page congratulates the
+    human on a board whose own result lists work left to do -- or, the way it
+    went wrong, holds the offer back on a board the result would call finished.
+    A decision comes to rest two ways: the human settles it, or an answer moots
+    it and the invalidate lands. Stale and fogged are neither. So the page's
+    test is pinned to the string, and the string's meaning is pinned to the
+    backend here.
     """
-    body = function_body("allSettled")
-    assert 'd.status === "settled"' in body
+    body = function_body("boardFinished")
+    assert 'd.status === "settled" || d.status === "invalidated"' in body
+    assert '"stale"' not in body and '"fogged"' not in body, "a decision nobody moved read as rest"
     assert "BOARD.decisions.length > 0" in body, "an empty board would read as finished"
+
+    # And the offer says which is which, so a human is not left reading one
+    # answer and eight killed questions as nine answered ones.
+    tally = function_body("completionTally")
+    assert '"invalidated"' in tally and '" set aside"' in tally
+    assert '" answered, "' in tally
+    assert "completionTally()" in function_body("completionOffer")
 
     seed_node(client, log.epoch, "n1")
     seed_node(client, log.epoch, "n2")
@@ -2788,7 +2798,7 @@ def test_a_finished_board_is_one_the_terminal_result_would_leave_nothing_open_on
     assert sorted(one["status"] for one in board) == ["invalidated", "settled"]
 
     result = capture(session_dir)
-    assert [one.id for one in result.open_items] == ["n2"]
+    assert result.open_items == []
 
 
 def test_the_completion_overlay_announces_arriving_at_that_state_rather_than_sitting_in_it() -> (
@@ -2804,7 +2814,7 @@ def test_the_completion_overlay_announces_arriving_at_that_state_rather_than_sit
     poll tick that finds the same finished board.
     """
     body = function_body("noteCompletion")
-    assert "var done = !sessionOver() && allSettled();" in body
+    assert "var done = !sessionOver() && boardFinished();" in body
     assert "if (done && !UI.wasDone) { UI.done = true; UI.pulse = false; }" in body
     assert "if (!done) { UI.done = false; UI.pulse = false; }" in body
     assert "UI.wasDone = done;" in body
@@ -3141,6 +3151,37 @@ def test_the_inbox_offers_the_batch_control_before_the_list_it_applies() -> None
     source = page_source()
     assert source.count("Let all ") == 1, "the batch label has more than one reader"
     assert ".inbox-head {" in source, "the panel head is unstyled, so its control has no place"
+
+
+# ---------------------------------------------------------------- GUI-A110
+
+
+def test_the_boards_next_open_control_walks_the_frontier_and_says_why_it_cannot() -> None:
+    """GUI-U31's source half: one reader for the walk, and one reading of why it
+    is dead.
+
+    Whether a human sees the control, and whether the board scrolls when it is
+    pressed, are a browser's answers. What is measurable here is that the walk is
+    the frontier's own order rather than a second one computed on the page, that
+    it wraps, and that the disabled reason is `boardFinished`'s reading -- a
+    second hand-written condition is how a control comes to call a stalled board
+    finished, which is the one distinction it exists to draw. That the header
+    control is the walk's only caller is measured too: every focus move hands the
+    caret to the focused decision's note box, so a bare-key shortcut into this
+    would type into what the human is writing rather than move the board.
+    """
+    source = page_source()
+    walk = function_body("nextOpen")
+    assert "BOARD.frontier" in walk, "the walk does not read the frontier"
+    assert "% f.length" in walk, "the walk never wraps"
+    assert "boardFinished()" in function_body("nextOpenWhy"), "finished-ness is read twice"
+    assert 'case "nextopen": goNextOpen()' in source, "the header control reaches nothing"
+    assert source.count("goNextOpen") == 2, "the walk has a caller besides the header control"
+    head = function_body("renderMap")
+    assert 'data-act="nextopen"' in head, "the board's heading carries no control"
+    assert '(walkable ? "" : "disabled")' in head, "the control never goes dead"
+    assert "nextOpenWhy()" in head, "a dead control gives no reason"
+    assert ".nextwhy {" in source, "the reason is unstyled, so it reads as more heading"
 
 
 @pytest.mark.parametrize(

@@ -33,12 +33,13 @@ asked of it.
 agent that authors changes to it. A *thread agent* serves one side thread. The *backend*
 (equivalently, the *orchestrator*) is the coded process — never an agent. On the board: a
 decision is *settled* once answered; the *frontier* is the set of decisions answerable now;
-*fog* masks decisions whose prerequisites are unmet; a *thread* is a side conversation
-anchored to a decision or to the session itself, *parked* when set aside as a loose end
-that the human may return to, *closed* when the human is done with it, and *folded* when its
-conclusion is applied to the board — *fold-readiness* is the thread's last turn being an
-agent's, which is the turn a fold hands over (GUI-D41). A thread agent *proposes an answer*
-when the conversation has converged on what answers the thread's own decision: an offer the human
+*fog* masks decisions whose prerequisites are unmet — a prerequisite that has been invalidated is
+not unmet, since it will never settle and so holds nothing (GUI-D43); a *thread* is a side
+conversation anchored to a decision or to the session itself, *parked* when set aside as a loose
+end that the human may return to, *closed* when the human is done with it, and *folded* when its
+conclusion is applied to the board — *fold-readiness* is the thread's last turn being an agent's,
+which is the turn a fold hands over (GUI-D41). A thread agent *proposes an answer* when the
+conversation has converged on what answers the thread's own decision: an offer the human
 arms, edits and takes, changing no map and settling nothing until they do. A *channel* is
 one conversational lane between the page and an agent: one for the map, one per thread. In
 the handoff file, *impetus* is why the grilling was requested, *posture* is how
@@ -509,6 +510,15 @@ itself called dead. The obligation reaches the grill-master on both tiers and no
 agent, which authors nothing (GUI-D25). Each `invalidate` still queues for the human like
 every other withdrawal (GUI-D26) — the turn proposes, and the board moves when they apply.
 
+**An invalidate the human applies obliges the same kind of turn.** A decision listing the
+invalidated one in its `prereqs` is no longer held by it (GUI-D43), so the board offers it
+again on a footing that has gone. The grill-master's next map turn therefore proposes an
+`invalidate` for each such decision, or a `revise` dropping the dead prereq where the
+decision still stands without it, carrying that invalidation as the rationale. The second
+way out belongs to this obligation alone: an answer kills the question outright, while a
+decision resting on one that died may well survive the loss, and insisting on an invalidate
+there would press the agent to kill work that stands.
+
 **GUI-D39 — A thread agent asked for a map change says it cannot, and names the route that
 can.** A thread agent authors no map mutation (GUI-D25); what its brief did not say was
 what to do when the human asks it for one. It now says: state plainly that you cannot
@@ -563,6 +573,24 @@ The structure is already on the board, so the obligation does not need a model t
 map before it: one that outlived its turn would spend an expert turn and a notice on every
 later gesture, over decisions the human may have deliberately left alone.
 
+The same carriage and the same check serve an applied `invalidate`: the dispatch names the
+decisions left resting on a decision that has left the flow and quotes the invalidation, and
+the reply is measured against that list, where a queued `revise` discharges it as fully as a
+queued `invalidate`. It ends with the turn in the same way. Where the human's own answer is
+also waiting on a reply, that turn's obligation is the answer's — the stranded decisions are
+answerable either way, and the answer is what the human is waiting to hear about.
+
+**GUI-D43 — A prereq that has left the flow holds nothing.** A decision is answerable when
+it is open, unlocked, and every id in its `prereqs` is settled *or* invalidated; a `fogUntil`
+lifts the same two ways. Reading `settled` as the only way through deadlocks the board: an
+invalidated decision never settles, so every dependent of one is gated for the rest of the
+session and no gesture the human can make finishes the board. The evidence is a live session
+whose three applied invalidates locked three other decisions permanently. Staleness does not
+travel through an invalidated decision either — it rests on nothing and supports nothing, so
+withdrawing an answer past it says nothing about what was built beyond it. The page says the
+same thing rather than computing a second answer: the frontier is the board's word on what is
+answerable, and the *waiting on* text names only the prereqs actually holding.
+
 ## 5. The UI surface
 
 The binding reference is `docs/prototypes/grilling-ui/grilling-ui-prototype-r5.html`, read
@@ -610,6 +638,14 @@ follows, and changes nothing else.
   change waits, the control that lets them all land renders beside the inbox's heading
   as well as under the list, so a queue longer than the window is not the only place it
   can be found. Both copies carry the same count and are the same gesture.
+- **GUI-U31 — A board control walks to the next answerable decision.** The board's
+  heading carries a control that focuses the next decision on the frontier after the one
+  in focus, wrapping at the head, and scrolls the board and the decision column to it. It
+  is the frontier's own order; the page computes no second one. Where nothing is
+  answerable the control is dead and says why, and the two reasons are told apart: a board
+  with nothing left open, and a board whose remaining decisions are all waiting on
+  something. No bare key reaches it — every focus move hands the caret to the focused
+  decision's note box, so a bare-key shortcut would type into what the human is writing.
 - **GUI-U4 — Thread panels have a floating header and footer** — title with close and
   pop-out controls pinned at the top, prompt box and action buttons pinned at the bottom —
   so neither scrolls out of view in a long thread.
@@ -755,11 +791,15 @@ follows, and changes nothing else.
   of the extension the thread model needs for it. The orchestrator primes that thread's
   agent with the UI-behaviour reference material the skill ships (GUI-P1), so it answers
   how to drive the board rather than grilling the design.
-- **GUI-U17 — Completion is announced, not assumed.** When every decision is settled the
-  page presents an overlay stating that the human has answered every open question, and
-  offering an end-session action and a dismiss action. Dismissing returns the human to the
-  board and pulses the main end-session control's border, so the offer stays findable
-  without a second overlay. End-session attempts to close the tab; where the browser
+- **GUI-U17 — Completion is announced, not assumed.** A board is finished when it carries
+  at least one decision and every decision on it has come to rest: settled by the human, or
+  invalidated by an answer that mooted it (GUI-D38). Stale and fogged decisions are not at
+  rest and hold the board open. When the board is finished the page presents an overlay
+  stating that nothing on the board is waiting on the human, naming how many decisions were
+  answered and how many set aside, and offering an end-session action and a dismiss action.
+  The same reading is what the terminal result writes up (GUI-U14). Dismissing returns the
+  human to the board and pulses the main end-session control's border, so the offer stays
+  findable without a second overlay. End-session attempts to close the tab; where the browser
   refuses to close a tab the page did not open, the page falls back to its inert
   session-over state, carrying a line telling the human the tab can now be closed. Ending
   the session remains the human's gesture (GUI-D10).
@@ -915,7 +955,8 @@ The current map snapshot: a pure fold, byte-identical for a given log.
 - `epoch` — string; `seq` — integer, the log position this image folds.
 - `decisions` — array of decision nodes (§8.2) in board order, carrying their image-only
   status and answer fields.
-- `frontier` — array of decision ids answerable now.
+- `frontier` — array of decision ids answerable now: open, unlocked, and every `prereqs` id
+  either settled or invalidated (GUI-D43). A `fogUntil` clears the same two ways.
 - `settled` — array of objects: `id` (string) and `answer` (string, the answer text).
 - `threads` — array of objects: `id`, `decision` (decision id or null), `kind`, `title`,
   `requires_action` (boolean), `state` (`open`, `parked`, `closed` or `folded`), and
@@ -967,8 +1008,10 @@ receives beside file references (GUI-D8).
 - `decisions` — array of objects: `id`, `title`, `answer` (string or null), `status` (the
   §8.2 status enum), and `rationale` (string, drawn from the log). Pure code produces this
   array (GUI-D23).
-- `open_items` — array of objects: `id` and `blocker` (string) for every decision unsettled
-  at end.
+- `open_items` — array of objects: `id` and `blocker` (string) for every decision that is
+  not at rest at end — neither settled nor invalidated, the same finished-board reading
+  GUI-U17 takes. A decision the log invalidated is a closed question, so it is no open
+  item, and `summary` counts it as set aside rather than as left open.
 - `threads` — array of objects: `id`, `title`, `state` (the §8.5 state enum), and
   `conclusion` (string or null). A parked thread is one of the session's open loose ends
   and a closed thread is a line item only (GUI-D29).
@@ -1070,11 +1113,12 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D35 | GUI-A71, GUI-A72, GUI-A73, GUI-A74 |
 | GUI-D36 | GUI-A75, GUI-A76, GUI-A77, GUI-A78 |
 | GUI-D37 | GUI-A79, GUI-A80, GUI-A81, GUI-A82 |
-| GUI-D38 | GUI-A88 |
+| GUI-D38 | GUI-A88, GUI-A109 |
 | GUI-D39 | GUI-A89 |
 | GUI-D40 | GUI-A93, GUI-A94, GUI-A95, GUI-A98 |
 | GUI-D41 | GUI-A91, GUI-A99 |
-| GUI-D42 | GUI-A100, GUI-A101, GUI-A102, GUI-A103 |
+| GUI-D42 | GUI-A100, GUI-A101, GUI-A102, GUI-A103, GUI-A109 |
+| GUI-D43 | GUI-A108 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -1091,7 +1135,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U14 | GUI-A49 |
 | GUI-U15 | GUI-A56 |
 | GUI-U16 | GUI-A57 |
-| GUI-U17 | GUI-A58 |
+| GUI-U17 | GUI-A58, GUI-A106, GUI-A107 |
 | GUI-U18 | GUI-A59 |
 | GUI-U19 | GUI-A60 |
 | GUI-U20 | GUI-A61 |
@@ -1105,6 +1149,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U28 | GUI-A90 |
 | GUI-U29 | GUI-A96, GUI-A97, GUI-A98 |
 | GUI-U30 | GUI-A105 |
+| GUI-U31 | GUI-A110 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1535,6 +1580,31 @@ Each criterion is mechanically checkable and convertible to a red test.
   reply proposing an `invalidate` per named id leaves the expert untouched, the human unsaid
   to, and both proposals in the queue; and an answer on an option carrying no
   `puts_in_question` produces a dispatch with no obligation, no expert turn and no notice.
+- **GUI-A106** In a browser, against a running backend: on a board whose one open decision
+  is left invalidated by a proposal the human applies, every other decision being settled,
+  the completion overlay appears carrying both actions, its copy names how many decisions
+  were answered and how many set aside, and dismissing it leaves the main end-session
+  control's border pulsing over a board that is not sealed. Verified in a browser.
+- **GUI-A107** A capture of a session whose decisions are one settled and the rest
+  invalidated reports no open items, and its summary counts the invalidated ones as set
+  aside rather than as left open.
+- **GUI-A110** In a browser, against a running backend: on a board carrying three decisions
+  on the frontier and a fourth resting on the first, pressing the board's next-open control
+  walks the focus along the frontier in the frontier's own order and wraps back to its
+  head, scrolling the decision column so the decision it lands on is on screen; once the
+  first is invalidated and the other two settled, the fourth is the whole frontier; a
+  queued change against the fourth then locks it, the control is dead, and the reason on
+  screen says the board is waiting; and once that change lands and the fourth is
+  invalidated too, the same control is dead giving a different reason, which does not say
+  the board is waiting. Verified in a browser.
+- **GUI-A108** A decision whose `prereqs` are one settled decision and one invalidated by a
+  change the human applied is on the frontier, and the invalidated one is `invalidated`.
+- **GUI-A109** Where two decisions rest on a third and the human applies the agent's
+  `invalidate` on it, both are answerable, and the next map turn carries an obligation naming
+  the one still standing, the decision that left the flow and the rationale it carried; a fast
+  tier replying in prose is handed to the expert once; and where the expert proposes nothing
+  either, exactly one backend `informational` notice names that decision and the backend
+  authored no map mutation.
 
 ## 10. Open questions for the implementing work
 
@@ -1627,6 +1697,12 @@ Each criterion is mechanically checkable and convertible to a red test.
 - bugfix: A killing answer's obligation carried to the turn as ids and checked in code, with
   one hand-up to the expert tier and a notice where neither tier proposes — AC: GUI-D42,
   GUI-A100, GUI-A101, GUI-A102, GUI-A103.
+- bugfix: A board whose remaining decisions were invalidated counts as finished, in the
+  overlay and in the write-up alike — AC: GUI-U14, GUI-U17, GUI-A106, GUI-A107.
+- feat: A board control that walks the focus to the next answerable decision, dead with the
+  reason that tells a finished board from a stalled one — AC: GUI-U31, GUI-A110.
+- bugfix: A prereq that has left the flow holds nothing, and the invalidate that killed it
+  obliges the decisions left resting on it — AC: GUI-D43, GUI-D38, GUI-A108, GUI-A109.
 
 ## Evidence
 
@@ -1738,3 +1814,8 @@ opens one proves something else.
 - GUI-A101 | test: packages/grillui/tests/unit/test_lane.py::test_a_prose_reply_to_a_killing_answer_is_pressed_on_the_expert_carrying_the_ids
 - GUI-A102 | test: packages/grillui/tests/unit/test_lane.py::test_an_expert_that_proposes_nothing_either_leaves_the_ids_named_to_the_human
 - GUI-A103 | test: packages/grillui/tests/unit/test_lane.py::test_an_obligation_met_or_never_created_presses_nobody
+- GUI-A106 | probe: packages/grillui/tests/browser/completion_probe.py::main
+- GUI-A107 | test: packages/grillui/tests/unit/test_capture.py::test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open
+- GUI-A110 | probe: packages/grillui/tests/browser/next_open_probe.py::main
+- GUI-A108 | test: packages/grillui/tests/unit/test_projector.py::test_a_prereq_that_has_been_invalidated_holds_nothing
+- GUI-A109 | test: packages/grillui/tests/unit/test_lane.py::test_an_invalidate_the_human_applied_is_pressed_on_the_next_map_turn

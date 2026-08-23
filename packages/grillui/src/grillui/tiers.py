@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from grillui.dispatch import THREAD_AGENT
-from grillui.escalation import turns_of
+from grillui.escalation import INVALIDATE_KIND, turns_of
 from grillui.schemas import (
     FAST_TIER,
     HEAVY_TIER,
@@ -46,7 +46,7 @@ from grillui.schemas import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from grillui.schemas import DispatchContext, LogEntry
+    from grillui.schemas import DispatchContext, LogEntry, MootnessObligation
 
 
 # The defaults: a non-Claude fast tier reached over OpenRouter, a Claude heavy
@@ -356,6 +356,21 @@ MOOTNESS_OBLIGATION_RULE = (
     "dead is not proposing it."
 )
 
+# The same obligation for the other gesture that leaves decisions the board
+# should stop offering. What differs is the way out: a decision resting on one
+# that died may still stand without it, so revising its prereqs discharges this
+# as fully as invalidating it -- and choosing between the two is the judgement
+# the turn is being asked for. Insisting on the invalidate alone would press the
+# agent to kill work that survives its prereq.
+MOOTNESS_RESTING_RULE = (
+    "For each decision named above, in this turn, either propose an `invalidate` for it, "
+    "carrying that invalidation as its `why`, or propose a `revise` dropping the dead prereq "
+    "where the decision still stands without it. A prereq that has left the flow holds "
+    "nothing, so the board is offering every one of them again: any you leave, the human is "
+    "asked to answer a question that may have died with its footing. Saying they are moot is "
+    "not proposing it."
+)
+
 BASIS_RULE = (
     "Carry `basis`, the board's `seq` as you were given it, on each update. A proposal can "
     "wait while the human moves, and the basis is what lets the backend tell them your change "
@@ -627,19 +642,37 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
                 ]
             ),
             *(["## The map doctor", REASSESS_RULE] if context.reassess else []),
-            *(
-                []
-                if context.mootness is None
-                else [
-                    "## What the answer you are replying to puts in question",
-                    f"The human answered {context.mootness.target} with "
-                    f"{context.mootness.answer!r}. That option names "
-                    f"{', '.join(context.mootness.ids)}, and the board is still offering "
-                    f"{'it' if len(context.mootness.ids) == 1 else 'them'}.",
-                    MOOTNESS_OBLIGATION_RULE,
-                ]
-            ),
+            *_mootness_section(context.mootness),
             "## Your turn",
             "Answer the last thing the human said, under the rules you were given.",
         ]
     )
+
+
+def _mootness_section(obligation: MootnessObligation | None) -> list[str]:
+    """The decisions this turn owes a proposal for, named by id.
+
+    Two gestures leave one and they do not owe the same thing, so the section
+    says which gesture it is about and what discharges it. Both name the ids
+    rather than describing the case: the standing brief already states the rule,
+    and what the fast tier does not do is find the structure in the board and
+    work out that the rule is about this turn.
+    """
+    if obligation is None:
+        return []
+    named = ", ".join(obligation.ids)
+    them = "it" if len(obligation.ids) == 1 else "them"
+    if obligation.cause == INVALIDATE_KIND:
+        return [
+            "## What the invalidate the human just applied left standing",
+            f"{obligation.target} has left the flow: {obligation.answer!r}. {named} "
+            f"list a decision that has left the flow among their prereqs, and the board is "
+            f"offering {them} again -- a dead prereq holds nothing.",
+            MOOTNESS_RESTING_RULE,
+        ]
+    return [
+        "## What the answer you are replying to puts in question",
+        f"The human answered {obligation.target} with {obligation.answer!r}. That option "
+        f"names {named}, and the board is still offering {them}.",
+        MOOTNESS_OBLIGATION_RULE,
+    ]
