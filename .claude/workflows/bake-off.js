@@ -35,7 +35,9 @@ const SESSION_EFFORT = { audit: 'high', score: 'medium', rank: 'high' }
 const SESSIONS = Object.keys(SESSION_EFFORT)
 const effortFor = (seat, session) => typeof seat.effort === 'string' ? seat.effort : { ...SESSION_EFFORT, ...(seat.effort || {}) }[session]
 for (const s of JUDGES) {
-  if (s.effort && typeof s.effort !== 'string' && Object.keys(s.effort).some(k => !SESSIONS.includes(k))) throw new Error(`bake-off: judge ${s.id} effort keys must be among ${SESSIONS.join('/')}`)
+  for (const [who, e] of [[`judge ${s.id}`, s.effort], [`judge ${s.id} fallback`, s.fallback && s.fallback.effort]]) {
+    if (e && typeof e !== 'string' && Object.keys(e).some(k => !SESSIONS.includes(k))) throw new Error(`bake-off: ${who} effort keys must be among ${SESSIONS.join('/')}`)
+  }
 }
 const GATE_CMD = IN.gateCmd || 'make ci'
 // Size and cyclomatic complexity are evidence for a code deliverable's
