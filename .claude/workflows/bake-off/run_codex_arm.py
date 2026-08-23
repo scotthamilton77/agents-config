@@ -74,7 +74,6 @@ def emit_guard(state: dict, message: str, code: int) -> int:
         report_exists=False,
         report_copied=False,
         worktree_touched=False,
-        tokens_used=0,
         wall_seconds=0,
         total_wall_seconds=-1,
         log_tail="",
@@ -95,13 +94,6 @@ def first_session_id(log: Path) -> str:
         return ""
     m = re.search(r"session id: ([0-9a-f-]+)", log.read_text(errors="replace"))
     return m.group(1) if m else ""
-
-
-def last_tokens_used(log: Path) -> int:
-    if not log.exists():
-        return 0
-    hits = re.findall(r"tokens used[:= ]+([0-9,]+)", log.read_text(errors="replace"))
-    return int(hits[-1].replace(",", "")) if hits else 0
 
 
 def git(worktree: str, *args: str) -> str:
@@ -225,7 +217,6 @@ def main(argv: list[str]) -> int:
         report_exists=report.exists(),
         report_copied=report_copied,
         worktree_touched=worktree_touched(a.worktree, a.base),
-        tokens_used=last_tokens_used(exec_log),
         wall_seconds=ended - started,
         total_wall_seconds=total_wall,
         log_tail=tail(exec_log),
