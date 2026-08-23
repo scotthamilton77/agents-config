@@ -67,7 +67,7 @@ the trade-off icon it draws is the human's only route to that reasoning on the b
 Where taking an option would put another decision in question — kill it, change what it
 asks, or shift what it turns on — name that decision in `puts_in_question`: the board
 pre-marks it while the human holds the option, and the grill-master rules on it when they
-take it.
+take it; an id resolving to no node is ignored.
 
 Put the file in a fresh directory named for the session — that directory *is* the session,
 and everything it produces stays there.
