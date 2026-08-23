@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bake-off',
   description: 'Parameterized model×effort bake-off: reset worktrees, run contestant arms, audit+gate, sanitize, blind-judge, synthesize',
-  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, axisKeys (first = factual grounding), acIds (the brief\'s criterion ids), arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price; collect_usage.py beside it prices every arm into the result\'s usage field), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?, armsOnly? (end after Sanitize/Usage with no judging — the complement of judgeOnly)}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary (one "Arm <label>: ..." line per arm), rubricText, axisKeys, acIds, judges[], rankReads?, cachedSeats?, cachedChecker?}.',
+  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind; a judge seat is {id, kind: claude|codex|openrouter, ...}, and an openrouter seat ({model, effort, fallback: {kind, model|codexModel, effort}}) needs openrouterLauncherPath (absolute run.js of the openrouter-claude-subagent skill). Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, axisKeys (first = factual grounding), acIds (the brief\'s criterion ids), arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price; collect_usage.py beside it prices every arm into the result\'s usage field), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?, armsOnly? (end after Sanitize/Usage with no judging — the complement of judgeOnly)}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary (one "Arm <label>: ..." line per arm), rubricText, axisKeys, acIds, judges[], rankReads?, cachedSeats?, cachedChecker?}.',
   phases: [
     { title: 'Preflight', detail: 'place the pinned brief where arms and seats read it' },
     { title: 'Reset', detail: 'archive then reset each arm worktree to the pinned base' },
@@ -38,6 +38,17 @@ const MEASURE_CODE = IN.measureCode !== false
 // in-code watchdog stays strictly below the rung's Bash-call timeout, so the
 // harness's background-on-timeout branch is unreachable inside a rung.
 const RUNNER = IN.runnerPath || null
+// An openrouter seat runs its sessions through the openrouter-claude-subagent
+// launcher (its only supported entry point: a direct claude call against
+// openrouter.ai returns empty with exit 0 and bills the tokens). The seat names
+// a fallback seat, taken seat-wide when the launcher refuses (exit 78) or a
+// session returns nothing parseable twice; the result records which seat ran.
+const OR_LAUNCHER = IN.openrouterLauncherPath || null
+for (const s of JUDGES.filter(j => j.kind === 'openrouter')) {
+  if (!s.model || !s.effort) throw new Error(`bake-off: openrouter seat ${s.id} needs model (vendor/model-id) and effort`)
+  if (!s.fallback || !s.fallback.kind || s.fallback.kind === 'openrouter') throw new Error(`bake-off: openrouter seat ${s.id} needs a fallback seat of another kind ({kind, model|codexModel, effort})`)
+  if (!OR_LAUNCHER || !OR_LAUNCHER.startsWith('/')) throw new Error('bake-off: openrouterLauncherPath (absolute path to the openrouter-claude-subagent run.js) is required when an openrouter seat is configured')
+}
 // The pinned brief is a file, not a string: codex arms are handed its path on the
 // command line and every seat reads it for the criteria. Passing the text inline as
 // well would give the run two sources of truth for its one pinned input, so it does
@@ -154,6 +165,7 @@ for (const id of AC_IDS) embedded.push([`acId ${id}`, id])
 for (const s of JUDGES) {
   embedded.push([`judge ${s.id} id`, s.id])
   if (s.codexModel) embedded.push([`judge ${s.id} codexModel`, s.codexModel])
+  if (s.kind === 'openrouter') embedded.push([`judge ${s.id} model`, s.model], [`judge ${s.id} effort`, s.effort])
 }
 for (const [name, value] of embedded) {
   if (!SHELL_INERT.test(String(value))) throw new Error(`bake-off: ${name} contains shell-active characters or spaces: ${JSON.stringify(value)}`)
@@ -341,6 +353,23 @@ codex exec -C ${IN.contextCheckout} -m ${seat.codexModel} -c model_reasoning_eff
 Step 2b — if the harness reports the command was moved to the background on timeout, WAIT for its completion notification; never start another codex process for this session while one may be running. Only after it has fully ended, if ${DIR}/seat-${fileTag}.out.md does NOT exist, extract the session UUID with: grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/seat-${fileTag}.exec.log | cut -d' ' -f3 — and run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/seat-${fileTag}.out.md - <<< "Continue where you left off and finish; your final message must be ONLY the JSON object exactly as specified." >> ${DIR}/seat-${fileTag}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log — at most 3 resumes, same session id.
 
 Step 3 — read ${DIR}/seat-${fileTag}.out.md, extract the JSON object, and return it as the structured result with seat_exit set to the recorded CODEX_EXIT. If a key differs only in wording from the pinned keys, rename it and record the rename in notes — never alter a value. If the output is missing or not parseable JSON, return seat_exit -1 with the required fields empty and the raw tail in notes. Report only observed values.
+
+BEGIN-PROMPT
+${promptText}
+END-PROMPT`
+}
+
+// An openrouter seat's session runs the launcher under a haiku transport agent:
+// read-only tools, rooted at the context checkout, prompt on stdin, result as JSON.
+function openrouterSessionPrompt(seat, fileTag, promptText, shapeText) {
+  return `You are a mechanical harness runner for judge seat ${seat.id}, session ${fileTag}. Execute with Bash; do not improvise and do not judge anything yourself.
+
+Step 1 — write the session prompt to ${DIR}/seat-${fileTag}.prompt.md using a quoted heredoc so nothing expands, then append this exact final instruction to the file: "Respond with ONLY a JSON object, no prose, shaped as ${shapeText.replace(/"/g, '\\"')}." The session prompt content is everything between BEGIN-PROMPT and END-PROMPT below.
+
+Step 2 — run as ONE FOREGROUND Bash call with timeout 1200000:
+cd ${IN.contextCheckout} && node ${OR_LAUNCHER} --model ${seat.model} --effort ${seat.effort} --permission-mode dontAsk --allowedTools Read Grep Glob "Bash(git *)" --add-dir ${DIR} --output-format json -p < ${DIR}/seat-${fileTag}.prompt.md > ${DIR}/seat-${fileTag}.out.json 2> ${DIR}/seat-${fileTag}.exec.log; echo "LAUNCH_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log
+
+Step 3 — if LAUNCH_EXIT is 78 the launcher refused to start (no key, or a refused model): return seat_exit 78 with the required fields empty and the exec log's last lines in notes. Otherwise read ${DIR}/seat-${fileTag}.out.json, take its "result" string, extract the JSON object from it, and return that object as the structured result with seat_exit set to LAUNCH_EXIT. If a key differs only in wording from the pinned keys, rename it and record the rename in notes — never alter a value. If the output is missing or holds no parseable JSON object, return seat_exit -1 with the required fields empty and the raw tail in notes. Report only observed values.
 
 BEGIN-PROMPT
 ${promptText}
@@ -705,11 +734,32 @@ const rankShape = `{"preference": ${labels.map(l => `"${l}"`).join('|')}|"tie", 
 
 const persist = (seat, file) => `\n\nDelivery hardening (seat ${seat.id}): FIRST write your complete result as a single JSON object to ${DIR}/audits/${file} with the Write tool (mkdir -p ${DIR}/audits first if needed) — the same object you will return. THEN return exactly that object as your structured result.`
 
-function runSession(seat, fileTag, promptText, shapeText, schema, phaseName) {
-  const opts = { label: `${phaseName}:${seat.id}:${fileTag.split('-').pop()}`, phase: 'Judge' }
-  return seat.kind === 'codex'
-    ? agent(codexSessionPrompt(seat, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema })
-    : agent(promptText + persist(seat, `seat-${fileTag}.json`), { ...opts, model: seat.model, effort: seat.effort, schema })
+function transportSession(seat, fileTag, promptText, shapeText, schema, opts) {
+  if (seat.kind === 'codex') return agent(codexSessionPrompt(seat, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema })
+  if (seat.kind === 'openrouter') return agent(openrouterSessionPrompt(seat, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema })
+  return agent(promptText + persist(seat, `seat-${fileTag}.json`), { ...opts, model: seat.model, effort: seat.effort, schema })
+}
+
+// `st` is the seat's runtime state: the declared seat plus `active`, the seat its
+// sessions currently run on. An openrouter seat falls back seat-wide — every later
+// session, and this one re-run — when the launcher refuses or two sessions return
+// nothing parseable; sessions already in flight on the old transport re-run on the
+// new one when they come back. The seat id stays; `ran` records what produced it.
+async function runSession(st, fileTag, promptText, shapeText, schema, phaseName) {
+  const opts = { label: `${phaseName}:${st.id}:${fileTag.split('-').pop()}`, phase: 'Judge' }
+  const ran = st.active
+  const r = await transportSession(ran, fileTag, promptText, shapeText, schema, opts)
+  if (ran.kind !== 'openrouter') return r
+  const refused = !!r && r.seat_exit === 78
+  const unparsed = !r || r.seat_exit === -1
+  if (unparsed) st.no_parse++
+  if (st.active === ran && (refused || st.no_parse >= 2)) {
+    st.fell_back = refused ? 'launcher refused (exit 78)' : 'no parseable result twice'
+    st.active = { ...ran.fallback, id: st.id }
+    log(`Seat ${st.id}: ${st.fell_back} — falling back seat-wide to ${st.active.kind}/${st.active.model || st.active.codexModel}`)
+  }
+  if (st.active !== ran && (refused || unparsed)) return runSession(st, fileTag.replace(/^([^-]+)-/, '$1-fb-'), promptText, shapeText, schema, phaseName)
+  return r
 }
 
 async function auditArm(seat, label) {
@@ -725,13 +775,15 @@ async function auditArm(seat, label) {
 // Seat work: for each seat, every arm through audit → score (pipeline, no barrier
 // between arms), then one rank session over the seat's own complete table.
 async function runSeat(seat) {
+  const st = { ...seat, active: seat, no_parse: 0, fell_back: null }
+  const ranOf = () => ({ kind: st.active.kind, model: st.active.model || st.active.codexModel || null, effort: st.active.effort, fell_back: st.fell_back })
   const rows = (await pipeline(
     labels,
-    label => auditArm(seat, label),
+    label => auditArm(st, label),
     async (audit, label) => {
       if (!audit) return null
       if (audit.standing !== 'scored') return { label, audit, score: null }
-      const score = await runSession(seat, `${seat.id}-score-${label}`, scorePrompt(seat, label, audit, runTags), scoreShape, SCORE_SESSION_SCHEMA, 'score')
+      const score = await runSession(st, `${seat.id}-score-${label}`, scorePrompt(seat, label, audit, runTags), scoreShape, SCORE_SESSION_SCHEMA, 'score')
       return { label, audit, score }
     },
   )).filter(Boolean)
@@ -747,9 +799,9 @@ async function runSeat(seat) {
   })
   const scoredLabels = table.filter(r => r.standing === 'scored').map(r => r.label)
   const rank = scoredLabels.length
-    ? await runSession(seat, `${seat.id}-rank`, rankPrompt(seat, table, runTags), rankShape, rankSchema(scoredLabels), 'rank')
+    ? await runSession(st, `${seat.id}-rank`, rankPrompt(seat, table, runTags), rankShape, rankSchema(scoredLabels), 'rank')
     : { preference: 'tie', ordering: [], rationale: 'no scorable arm', notes: '' }
-  if (!rank) { log(`Seat ${seat.id}: rank session returned nothing — seat dropped`); return { seat: seat.id, kind: seat.kind, verdict: null } }
+  if (!rank) { log(`Seat ${seat.id}: rank session returned nothing — seat dropped`); return { seat: seat.id, kind: seat.kind, ran: ranOf(), verdict: null } }
   // Assemble the seat's verdict in the panel shape aggregation, reconcile and
   // escalation already consume.
   const verdict = {
@@ -763,7 +815,7 @@ async function runSeat(seat) {
     notes: [rank.notes, ...rows.map(r => r.audit.notes ? `${r.label} audit: ${r.audit.notes}` : ''), ...rows.map(r => r.score && r.score.notes ? `${r.label} score: ${r.score.notes}` : '')].filter(Boolean).join('\n'),
     arms_dropped: labels.filter(l => !rows.some(r => r.label === l)),
   }
-  return { seat: seat.id, kind: seat.kind, verdict }
+  return { seat: seat.id, kind: seat.kind, ran: ranOf(), verdict }
 }
 
 const seatThunks = JUDGES.map(seat => () => runSeat(seat))
