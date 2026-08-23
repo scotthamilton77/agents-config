@@ -702,22 +702,20 @@ the session that watches one is what confirms the legend or reverts it.
 
 **GUI-D48 — The map channel escalates on three triggers that need no human text, each with
 its own persistence.** GUI-D35's policy and GUI-D12's conditions reach every channel, the
-map's included, and they stay exactly as they are: the note riding an answer is a human
-turn, so a note meeting a condition fires there like anywhere else and, under `autonomous`,
-writes its own `transferred` entry without this decision's help. That route is the whole of
-what the map has today, and it is thin — the human's other gestures on that channel, an
+map's included, through the note riding an answer: the note is a human turn, so a note
+meeting a condition fires, and under `autonomous` writes its own `transferred` entry. That
+is the map's only human-text route, and it is thin — the human's other gestures there, an
 apply and a dismiss, carry no text for a condition to read, and nobody presses *Transfer to
 expert* at an agent they never talk to. The three triggers below are what a transcript
-condition cannot see, and they are what GUI-D48 owns; the human-text route stays GUI-D12's
-and GUI-D35's.
+condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note.
 
 1. **Post-reply press**, per gesture. A reply leaving a named decision unruled, or a
    document still invalid after its one retry, is re-asked on the expert seat for that
    gesture alone (GUI-D42, GUI-D45). It checks coverage — every decision the dispatch named
    is ruled — and never correctness: a ruling the backend would disagree with is not a
-   ruling missing. A gesture already on the expert seat has no rung to press onto, so
-   GUI-D45's terminal ladder applies instead and the unmet notice is raised directly.
-   Nothing is written that outlives the gesture.
+   ruling missing. A gesture already on the expert seat has no rung to press onto, and
+   GUI-D45's terminal ladder is what applies instead. Nothing is written that outlives the
+   gesture.
 2. **Pre-dispatch turn classing**, per gesture. A gesture whose class is judgment
    dispatches to the expert seat directly: no first-rung turn is recorded for it, and no
    failure is round-tripped to reach a seat the class already named. The judgment classes
@@ -730,14 +728,15 @@ and GUI-D35's.
    supersede-only reconciliation. Classing writes no status entry, because there is nothing
    to fall back from — the next clerical gesture goes to the first rung again, with no entry
    to undo.
-3. **The distrust signal**, per session and sticky. Apply and dismiss are the whole of the
-   human's conversation with the map channel, and a dismissal is them saying that seat's
-   proposal was wrong. One per-session counter counts two events as the same signal: the
-   human dismissing a first-rung seat's proposal, and a post-reply press. At the second the
-   backend writes a policy `transferred` status entry on the map channel — GUI-D35's own
-   machinery, unchanged: such an entry only ever moves a channel up, and the way back down
-   is the human's transfer control. One signal writes nothing, because one is noise; a third
-   writes nothing new, because the channel is already there.
+3. **The distrust signal**, per session and sticky. Apply and dismiss are the human's only
+   gestures on the map channel that carry no text — the note riding an answer is the exception,
+   and GUI-D12 reads it — so a dismissal is the one way they say, wordlessly, that the seat's
+   proposal was wrong. One per-session counter counts two events as the same signal: the human
+   dismissing a first-rung seat's proposal, and a post-reply press. At the second the backend
+   writes a policy `transferred` status entry on the map channel — GUI-D35's own machinery,
+   unchanged: such an entry only ever moves a channel up, and the way back down is the human's
+   transfer control. One signal writes nothing, because one is noise; a third writes nothing
+   new, because the channel is already there.
 
 Two is a threshold nobody has defended under fire, and the observation that lowers the
 claim is a session where the second signal is followed by expert rulings a replay on the
@@ -1912,7 +1911,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   returns the channel to its first-rung seat.
 - **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
   the `thread.started` event, then resumes that thread on every later turn on the channel as
-  `codex exec resume <thread_id>`; `-c developer_instructions=…` and `--output-schema
+  `codex exec resume <thread_id> --json`; `-c developer_instructions=…` and `--output-schema
   <file>` are passed on the resumed turn as well as on the cold one; the process is run with
   its standard input closed; a reply that does not validate is refused under GMR-A2 rather
   than shown to the human; and the token counts on `turn.completed`, not the byte estimate,
