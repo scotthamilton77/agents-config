@@ -386,7 +386,7 @@ Step 1 — write the session prompt to ${DIR}/seat-${fileTag}.prompt.md using a 
 Step 2 — run as ONE FOREGROUND Bash call with timeout 1200000:
 cd ${IN.contextCheckout} && node ${OR_LAUNCHER} --model ${seat.model} --effort ${effort} --permission-mode dontAsk --allowedTools Read Grep Glob "Bash(git status*)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" --add-dir ${DIR} --output-format json -p < ${DIR}/seat-${fileTag}.prompt.md > ${DIR}/seat-${fileTag}.out.json 2> ${DIR}/seat-${fileTag}.exec.log; echo "LAUNCH_EXIT=$?" >> ${DIR}/seat-${fileTag}.exec.log
 
-Step 3 — if LAUNCH_EXIT is 78 the launcher refused to start (no key, or a refused model): return seat_exit 78 with the required fields empty and the exec log's last lines in notes. Otherwise read ${DIR}/seat-${fileTag}.out.json, take its "result" string, extract the JSON object from it, and return that object as the structured result with seat_exit set to LAUNCH_EXIT. If a key differs only in wording from the pinned keys, rename it and record the rename in notes — never alter a value. If the output is missing or holds no parseable JSON object, return seat_exit -1 with the required fields empty and the raw tail in notes. Report only observed values.
+Step 3 — read LAUNCH_EXIT from the last line of ${DIR}/seat-${fileTag}.exec.log. seat_exit is that number, copied literally — never a value you chose. No LAUNCH_EXIT line means the Bash call timed out or was killed with the launcher still running: return seat_exit -1 with the required fields empty and notes "transport timeout: no LAUNCH_EXIT recorded". If LAUNCH_EXIT is 78 the launcher refused to start (no key, or a refused model): return seat_exit 78 with the required fields empty and the exec log's last lines in notes. Otherwise read ${DIR}/seat-${fileTag}.out.json, take its "result" string, extract the JSON object from it, and return that object as the structured result with seat_exit set to LAUNCH_EXIT. If a key differs only in wording from the pinned keys, rename it and record the rename in notes — never alter a value. If the output is missing or holds no parseable JSON object, return seat_exit -1 with the required fields empty and the raw tail in notes. A verdict field (standing, preference, a score) comes only from the out.json result; a missing, partial or timed-out output never yields one. Report only observed values.
 
 BEGIN-PROMPT
 ${promptText}
@@ -753,8 +753,11 @@ const persist = (seat, file) => `\n\nDelivery hardening (seat ${seat.id}): FIRST
 
 function transportSession(seat, session, fileTag, promptText, shapeText, schema, opts) {
   const effort = effortFor(seat, session)
-  if (seat.kind === 'codex') return agent(codexSessionPrompt(seat, effort, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema })
-  if (seat.kind === 'openrouter') return agent(openrouterSessionPrompt(seat, effort, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema })
+  // A transported seat's verdict is only as real as the recorded launcher exit,
+  // so the transport must report one; the schema refuses a result without it.
+  const transported = { ...schema, required: [...schema.required, 'seat_exit'] }
+  if (seat.kind === 'codex') return agent(codexSessionPrompt(seat, effort, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema: transported })
+  if (seat.kind === 'openrouter') return agent(openrouterSessionPrompt(seat, effort, fileTag, promptText, shapeText), { ...opts, model: 'haiku', effort: 'low', schema: transported })
   return agent(promptText + persist(seat, `seat-${fileTag}.json`), { ...opts, model: seat.model, effort, schema })
 }
 
@@ -768,16 +771,21 @@ async function runSession(st, fileTag, promptText, shapeText, schema, phaseName)
   const ran = st.active
   const r = await transportSession(ran, phaseName, fileTag, promptText, shapeText, schema, opts)
   if (ran.kind !== 'openrouter') return r
-  const refused = !!r && r.seat_exit === 78
-  const unparsed = !r || r.seat_exit === -1
+  // Only a launcher that exited 0 produced a verdict. A transport that timed out
+  // waiting on the launcher can still return a well-formed object — it once
+  // returned 'no-contest: subagent still executing' — so any other exit, or a
+  // missing one, is treated as no result at all rather than as this seat's judgment.
+  const exit = r && Number.isInteger(r.seat_exit) ? r.seat_exit : -1
+  const refused = exit === 78
+  const unparsed = !refused && exit !== 0
   if (unparsed) st.no_parse++
   if (st.active === ran && (refused || st.no_parse >= 2)) {
-    st.fell_back = refused ? 'launcher refused (exit 78)' : 'no parseable result twice'
+    st.fell_back = refused ? 'launcher refused (exit 78)' : 'no usable result twice'
     st.active = { ...ran.fallback, id: st.id }
     log(`Seat ${st.id}: ${st.fell_back} — falling back seat-wide to ${st.active.kind}/${st.active.model || st.active.codexModel}`)
   }
   if (st.active !== ran && (refused || unparsed)) return runSession(st, fileTag.replace(/^([^-]+)-/, '$1-fb-'), promptText, shapeText, schema, phaseName)
-  return r
+  return unparsed ? null : r
 }
 
 async function auditArm(seat, label) {
