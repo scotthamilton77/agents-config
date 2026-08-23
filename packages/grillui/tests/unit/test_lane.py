@@ -748,3 +748,91 @@ def test_an_obligation_met_or_never_created_presses_nobody(log: SessionLog, tmp_
     assert unused.dispatches == []
     assert _notices(plain) == []
     assert _obligations(prose) == [None]
+
+
+def _seed_resting(log: SessionLog) -> None:
+    """`d2` and `d3` resting on `d1`, the shape a dead prereq strands."""
+    for node, prereqs in (("d1", []), ("d2", ["d1"]), ("d3", ["d1"])):
+        receipt = log.submit(
+            [
+                EventSubmission(
+                    kind="add-node",
+                    actor="grill-master",
+                    idempotency_key=f"rest-{node}",
+                    payload={
+                        "target": node,
+                        "short": node,
+                        "title": f"Which {node}?",
+                        "body": "Decide.",
+                        "prereqs": prereqs,
+                        "options": [{"id": "a", "text": "Yes"}, {"id": "b", "text": "No"}],
+                    },
+                )
+            ],
+            log.epoch,
+        )[0]
+        assert receipt.status == "accepted"
+
+
+def test_an_invalidate_the_human_applied_is_pressed_on_the_next_map_turn(
+    log: SessionLog,
+) -> None:
+    """
+    Given two decisions resting on a third, the agent's invalidate on that third
+          applied by the human, and both tiers then replying in prose
+    When the human answers one of the two on the next turn
+    Then both were answerable at all, the expert is handed that turn carrying
+         the other one and the invalidation as its rationale, one notice names
+         it, and the backend authored no map mutation.
+
+    The two halves of the same failure. A dead prereq that still gated its
+    dependents left them locked for the rest of the session, so the answer here
+    could not have been given at all; and dependents that only made sense given
+    the dead prereq are now offered again on a footing that has gone, which is
+    what the turn is being asked to rule on.
+    """
+    fast = SpyDriver(tier=FAST_TIER, reply="Understood.")
+    expert = SpyDriver(tier=HEAVY_TIER, reply="Yes, noted.")
+    lane = Lane(log, fast, expert=expert)
+    _seed_resting(log)
+    log.submit(
+        [
+            EventSubmission(
+                kind="invalidate",
+                actor="grill-master",
+                idempotency_key="kill-d1",
+                payload={"target": "d1", "why": "the export was dropped"},
+            )
+        ],
+        log.epoch,
+    )
+    queued = fold(log.epoch, log.entries()).pending[0].id
+
+    run_turns(
+        lane,
+        EventSubmission(
+            kind="apply", actor="human", idempotency_key="apply-d1", payload={"pending": [queued]}
+        ),
+    )
+    run_turns(
+        lane,
+        EventSubmission(
+            kind="answer",
+            actor="human",
+            idempotency_key="answer-d2",
+            payload={"target": "d2", "answer": {"option": "a"}},
+        ),
+    )
+
+    obliged = _obligations(expert)
+    assert len(obliged) == 1, "the expert was not handed the turn"
+    assert obliged[0] is not None
+    assert obliged[0].ids == ["d3"]
+    assert obliged[0].target == "d1"
+    assert obliged[0].answer == "the export was dropped"
+    assert obliged[0].cause == "invalidate"
+    said = _notices(log)
+    assert len(said) == 1, said
+    assert "d3" in said[0]
+    authored = [one for one in log.entries() if one.actor == "backend" and one.kind == "invalidate"]
+    assert authored == []

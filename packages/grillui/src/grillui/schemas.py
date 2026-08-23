@@ -913,11 +913,19 @@ class MootnessObligation(Strict):
 
     `ids` is what the board is still offering of that list, so an obligation
     exists only where there is something outstanding to propose.
+
+    `cause` is which gesture left them moot, and it is what the turn owes them
+    that differs. An answer's list can only be invalidated: the human's own
+    answer killed the question. An applied invalidate's dependents may instead
+    survive without the prereq that died, so a `revise` dropping it discharges
+    the obligation as well -- and `target` there is the decision that left the
+    flow, with `answer` the rationale it carried.
     """
 
     target: str
     answer: str
     ids: list[str] = Field(min_length=1)
+    cause: Literal["answer", "invalidate"] = "answer"
 
 
 class DispatchContext(Strict):

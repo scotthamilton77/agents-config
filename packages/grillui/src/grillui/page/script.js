@@ -875,6 +875,14 @@ function settledIds() {
   BOARD.settled.forEach(function (s) { m[s.id] = s.answer; });
   return m;
 }
+// Whether a prereq has stopped holding what rests on it: answered, or gone from
+// the flow. An invalidated prereq never settles, so a dependent still shown as
+// waiting on it waits for the rest of the session. The board's own frontier
+// reads it the same way, and this is the page saying the same thing rather than
+// a second rule.
+function cleared(p, done) {
+  return (p in done) || (node(p) || {}).status === "invalidated";
+}
 // Whether the board itself says this decision can be answered now. The frontier
 // is the backend's answer to that and the page does not compute a second one.
 function answerable(id) { return BOARD.frontier.indexOf(id) >= 0; }
@@ -960,7 +968,7 @@ function statusOf(id) {
 }
 function waitingOn(id) {
   var d = node(id), done = settledIds();
-  var open = d.prereqs.filter(function (p) { return !(p in done); });
+  var open = d.prereqs.filter(function (p) { return !cleared(p, done); });
   var stuck = open.filter(function (p) { return conflictOn(p); })[0];
   return { list: open, conflict: stuck || null };
 }
@@ -1019,6 +1027,29 @@ function nextFocus(justSettled) {
     if (child) return child;
   }
   return f[0];
+}
+// The next answerable decision after the one in focus, wrapping at the end. The
+// frontier is the board's own word on what can be answered and its own order,
+// so this walks it rather than computing a second answer; a focus sitting off
+// the frontier starts the walk at its head.
+function nextOpen() {
+  var f = BOARD.frontier;
+  if (!f.length) return null;
+  return f[(f.indexOf(UI.focus) + 1) % f.length];
+}
+// Why there is nowhere to go, told apart. A board with nothing left to answer
+// has either finished or stalled, and a human told only that the control is
+// dead cannot tell whether to end the session or go unblock something. The
+// finished reading is the board's one reading, not a second one written here.
+function nextOpenWhy() {
+  return boardFinished() ? "nothing is left open" : "everything still open is waiting";
+}
+// The walk itself. There is no bare-key shortcut beside it: every focus move
+// hands the caret to the focused decision's note box, so a second press of a
+// bare letter would land in what the human is writing rather than on the board.
+function goNextOpen() {
+  var id = nextOpen();
+  if (id) { focusOn(id); render(); }
 }
 
 /* ---------------- what landed, observed as it lands ---------------- */
@@ -1414,17 +1445,33 @@ function saySeed(tid, id, field) {
   if (tid && thread(tid)) { sayInThread(tid, text); return tid; }
   return id ? startThread(id, text) : null;
 }
-// Finished means every decision the board is actually carrying is settled, and
-// settled is the only status that counts. That is the same reading the terminal
-// result takes -- anything not settled is one of its open items -- so a board
-// this page calls finished is a board that would be written up with nothing
-// left open. Invalidated and stale are decisions somebody still has to move,
-// and fog lifts on its own once what it waits for is answered. An empty board
-// is not a finished one; it is a board nothing has been put on yet.
-function allSettled() {
+// Finished means every decision the board is carrying has come to rest: either
+// the human settled it, or an answer mooted it and the invalidate that says so
+// has landed. An invalidated decision is a closed question, not a loose end --
+// invalidation is how a killing answer closes what it kills -- so a board of
+// one answer and eight set aside is a finished board. Stale is a decision
+// somebody still has to move, and fog lifts on its own once what it waits for
+// is answered, so both hold the board open. That is the same reading the
+// terminal result takes -- its open items are the decisions neither settled nor
+// invalidated -- so a board this page calls finished is a board that would be
+// written up with nothing left open. An empty board is not a finished one; it
+// is a board nothing has been put on yet.
+function boardFinished() {
   return BOARD.decisions.length > 0 && BOARD.decisions.every(function (d) {
-    return d.status === "settled";
+    return d.status === "settled" || d.status === "invalidated";
   });
+}
+// How the finished board reads in the offer's own words: what was answered and
+// what was set aside, counted, because a human told only that the board is
+// clear cannot tell an answered question from a mooted one.
+function completionTally() {
+  var all = BOARD.decisions.length;
+  var aside = BOARD.decisions.filter(function (d) {
+    return d.status === "invalidated";
+  }).length;
+  if (!aside) return "Every decision on this board is settled";
+  return all + (all === 1 ? " decision: " : " decisions: ") + (all - aside) + " answered, " +
+    aside + " set aside";
 }
 // The overlay announces the board *arriving* at that state rather than sitting
 // in it, so it is armed on the crossing and disarmed by leaving. An agent
@@ -1433,7 +1480,7 @@ function allSettled() {
 // is remembered anywhere but this page, so a reload into an unfinished board
 // carries neither.
 function noteCompletion() {
-  var done = !sessionOver() && allSettled();
+  var done = !sessionOver() && boardFinished();
   if (done && !UI.wasDone) { UI.done = true; UI.pulse = false; }
   if (!done) { UI.done = false; UI.pulse = false; }
   UI.wasDone = done;
@@ -1444,8 +1491,9 @@ function noteCompletion() {
 // session and this is a second place to reach it rather than a second way.
 function completionOffer() {
   return '<div class="scrim" id="completion"><div class="box"><h3>🏁 Every question is answered</h3>' +
-    "<p>Every decision on this board is settled. Ending the session writes the result beside the log and " +
-    "hands it back. Nothing forces that now — the board is yours to go back over.</p>" +
+    "<p>" + completionTally() + ". Nothing on this board is waiting on you. Ending the session " +
+    "writes the result beside the log and hands it back. Nothing forces that now — the board is " +
+    "yours to go back over.</p>" +
     '<div class="acts"><button class="btn primary" data-act="endsession">End the session</button>' +
     '<button class="btn" data-act="dismiss-completion">Back to the board</button></div></div></div>';
 }
@@ -1692,7 +1740,7 @@ function renderMap() {
     d.prereqs.forEach(function (p) {
       var a = POS[p], b = POS[d.id];
       if (!a || !b) return;
-      var fixed = p in done;
+      var fixed = cleared(p, done);
       edges += '<path d="M' + (a.x + NW) + "," + (a.y + NH / 2) + " C" + (a.x + NW + 40) + "," + (a.y + NH / 2) +
         " " + (b.x - 40) + "," + (b.y + NH / 2) + " " + b.x + "," + (b.y + NH / 2) +
         '" fill="none" stroke="' + (fixed ? "#94a3b8" : "#e2e8f0") + '" stroke-width="' + (fixed ? 1.4 : 1) + '"' +
@@ -1732,8 +1780,12 @@ function renderMap() {
       '<span class="badges">' + badges + "</span></button>";
   });
 
-  var fogX = X0 + fogCol * COL - 50;
-  return '<div class="card"><h3>The board <span class="spacer"></span>' +
+  var fogX = X0 + fogCol * COL - 50, walkable = nextOpen();
+  return '<div class="card"><h3>The board ' +
+    '<button class="btn sm" data-act="nextopen" title="Focus the next decision that can be ' +
+    'answered" ' + (walkable ? "" : "disabled") + ">Next open</button>" +
+    (walkable ? "" : '<span class="muted nextwhy">' + esc(nextOpenWhy()) + "</span>") +
+    '<span class="spacer"></span>' +
     '<span class="muted">drag to pan · click a node to focus it · hover an icon to see what it is</span></h3>' +
     '<div class="mapscroll" id="mapscroll"><div class="mapcanvas" style="width:' + W + "px;height:" + H + 'px">' +
     '<svg width="' + W + '" height="' + H + '">' + edges + "</svg>" + nodes +
@@ -2718,6 +2770,7 @@ document.addEventListener("click", function (e) {
     // claim. Never inferred from silence: a window that is merely slow is
     // indistinguishable from one that is gone, and only the human can tell.
     case "takeover": claim(true); break;
+    case "nextopen": goNextOpen(); break;
     case "mapnode": focusOn(id); render(); break;
     case "focusnode": focusOn(id); UI.panel = null; render(); break;
     // "Show me" is a navigation intent — it lands the decision open so there is

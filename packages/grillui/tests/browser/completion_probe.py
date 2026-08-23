@@ -1,11 +1,14 @@
 """The completion offer, measured in a browser.
 
-Four rendered facts live here and nowhere else. Whether settling the last open
+Five rendered facts live here and nowhere else. Whether settling the last open
 decision actually puts an overlay on screen carrying both actions; whether
 dismissing it leaves a board that can still be written to, with the control it
-was offering visibly marked; whether an agent putting an open node back on the
-board takes the announcement away and settling that node brings it back; and
-what the human is left looking at when the browser refuses to close the tab.
+was offering visibly marked; whether letting an agent's invalidate land on the
+last open decision finishes the board too, in an overlay that says how many
+decisions were answered and how many set aside; whether an agent putting an
+open node back on the board takes the announcement away and settling that node
+brings it back; and what the human is left looking at when the browser refuses
+to close the tab.
 The source can say which branch builds which string -- it cannot say that a
 human saw one, that the board underneath still took a message, or that the tab
 survived `window.close()`.
@@ -152,6 +155,48 @@ def agent_adds(base: str, node: str) -> None:
     assert reply.json()[0]["status"] == "accepted", reply.text
 
 
+def agent_proposes_invalidate(base: str, node: str) -> str:
+    """One killing change, queued against a decision the way an agent's arrives.
+
+    An `invalidate` is never applied by the agent that wrote it -- undermining a
+    decision is the human's call -- so this leaves a proposal in the queue and
+    the board untouched, which is the state the human's press acts on.
+    """
+    reply = httpx.post(
+        base + "/events",
+        json={
+            "epoch": board(base)["epoch"],
+            "events": [
+                {
+                    "kind": "invalidate",
+                    "actor": "grill-master",
+                    "channel": "map",
+                    "idempotency_key": f"kill-{node}",
+                    "payload": {"target": node, "why": "the answer above it killed the question"},
+                }
+            ],
+        },
+    )
+    assert reply.json()[0]["status"] == "accepted", reply.text
+    waiting = [one for one in board(base)["pending"] if not one["superseded"]]
+    assert len(waiting) == 1, waiting
+    queued: str = waiting[0]["id"]
+    return queued
+
+
+def human_applies(page: Any, base: str, queued: str, node: str) -> None:
+    """The human letting a queued change land, from the inbox they open."""
+    page.click(".pendbtn")
+    page.wait_for_timeout(400)
+    page.click(f'.slide [data-act="applyone"][data-uid="{queued}"]')
+    for _ in range(50):
+        if statuses(base).get(node) == "invalidated":
+            page.wait_for_timeout(600)
+            return
+        page.wait_for_timeout(200)
+    assert statuses(base).get(node) == "invalidated", f"{node} never went invalidated"
+
+
 def settle(page: Any, base: str, node: str) -> None:
     """Answer one decision the way a human does, and wait for the board to say so."""
     page.click(f'[data-act="pick"][data-id="{node}"][data-opt="a"]')
@@ -237,21 +282,44 @@ def main() -> None:
         page.click('.slide [data-act="closepanel"]')
         page.wait_for_timeout(300)
 
-        # 4. An agent putting an open decision back on the board takes both the
-        #    overlay and the pulse away, and settling it announces again.
+        # 4. A decision nobody answers can still come to rest: the human applies
+        #    the invalidate an agent proposed, and the board is finished by that
+        #    press. The offer says which decisions were answered and which were
+        #    set aside, and dismissing it pulses the control as it always did.
         agent_adds(base, "d3")
         wait_for_board(page, base, "d3")
         assert statuses(base)["d3"] == "open", statuses(base)
         assert page.locator(OVERLAY).count() == 0, "a reopened board still announced completion"
+        queued = agent_proposes_invalidate(base, "d3")
+        assert page.locator(OVERLAY).count() == 0, "a queued change finished the board by itself"
+        human_applies(page, base, queued, "d3")
+        assert statuses(base) == {"d1": "settled", "d2": "settled", "d3": "invalidated"}
+        assert page.locator(OVERLAY).count() == 1, (
+            "a board whose last question was set aside announced nothing"
+        )
+        said = page.locator(f"{OVERLAY} .box").inner_text()
+        assert "3 decisions: 2 answered, 1 set aside" in said, said
+        page.click(f'{OVERLAY} [data-act="dismiss-completion"]')
+        page.wait_for_timeout(400)
+        assert "pulsing" in (page.locator(f".topbar {END}").get_attribute("class") or ""), (
+            "the set-aside board left no pulsing control behind"
+        )
+
+        # 5. An agent putting an open decision back on the board takes both the
+        #    overlay and the pulse away, and settling it announces again.
+        agent_adds(base, "d4")
+        wait_for_board(page, base, "d4")
+        assert statuses(base)["d4"] == "open", statuses(base)
+        assert page.locator(OVERLAY).count() == 0, "a reopened board still announced completion"
         assert "pulsing" not in (page.locator(f".topbar {END}").get_attribute("class") or ""), (
             "the pulse outlived the finished board"
         )
-        settle(page, base, "d3")
+        settle(page, base, "d4")
         assert page.locator(OVERLAY).count() == 1, (
             "re-entering the finished state announced nothing"
         )
 
-        # 5. Ending from the overlay is the ending. The browser refuses to close
+        # 6. Ending from the overlay is the ending. The browser refuses to close
         #    a tab it did not open, silently -- so what is measured is that the
         #    tab is still here, and that what is on it says so.
         page.click(f"{OVERLAY} {END}")

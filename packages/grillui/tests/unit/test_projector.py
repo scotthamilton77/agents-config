@@ -405,3 +405,85 @@ def test_a_turn_no_agent_took_refuses_a_tier(who: str) -> None:
 def test_a_tier_outside_the_two_is_refused() -> None:
     with pytest.raises(ValidationError):
         ThreadTurn(who="grill-master", text="x", timestamp="t", tier="medium")
+
+
+# -- What a decision that has left the flow still holds --
+
+
+def applied(seq: int, *updates: dict[str, Any]) -> LogEntry:
+    """The human applying the agent's proposals, which is how one lands."""
+    return entry(seq, "apply", actor="human", pending=[], updates=list(updates))
+
+
+def test_a_prereq_that_has_been_invalidated_holds_nothing() -> None:
+    """
+    Given a decision resting on two prereqs, one settled and one invalidated
+    When the log is folded
+    Then it is on the frontier.
+
+    An invalidated decision never settles, so a frontier reading "settled" as
+    the only way through gates its dependents for the rest of the session: the
+    board deadlocks and no gesture the human can make finishes it.
+    """
+    entries = [
+        NODE,
+        entry(2, "add-node", target="n2", short="Format", prereqs=[]),
+        entry(3, "add-node", target="n3", short="Codec", prereqs=["n1", "n2"]),
+        entry(4, "answer", actor="human", target="n1", answer={"option": "a"}),
+        applied(5, {"kind": "invalidate", "target": "n2", "why": "the export was dropped"}),
+    ]
+
+    image = fold(EPOCH, entries)
+
+    assert image.frontier == ["n3"]
+    assert [one.status for one in image.decisions if one.id == "n2"] == ["invalidated"]
+
+
+def test_a_fog_rule_pointing_at_an_invalidated_decision_lifts() -> None:
+    """
+    Given a decision fogged until another settles, and that other one invalidated
+    When the log is folded
+    Then the fog is gone and the decision is answerable.
+
+    The same deadlock as the prereq one and the same reason: a decision waiting
+    to sharpen once a dead question settles waits forever, and the board can
+    never be finished.
+    """
+    entries = [
+        NODE,
+        entry(2, "add-node", target="n2", short="Codec", prereqs=[], fogUntil="n1"),
+        applied(3, {"kind": "invalidate", "target": "n1", "why": "no store is needed"}),
+    ]
+
+    image = fold(EPOCH, entries)
+
+    assert [one.status for one in image.decisions if one.id == "n2"] == ["open"]
+    assert image.frontier == ["n2"]
+
+
+def test_staleness_does_not_travel_through_an_invalidated_dependent() -> None:
+    """
+    Given a settled decision resting on an invalidated one, which rests in turn
+          on a decision the agent then unsettles
+    When the log is folded
+    Then the settled decision at the far end is untouched.
+
+    Staleness is an answer resting on a withdrawn one. An invalidated decision
+    rests on nothing and supports nothing -- it has left the flow -- so a
+    withdrawal on its own prereq says nothing about what was built past it, and
+    propagating through it would re-open decisions on the strength of a question
+    nobody is asking any more.
+    """
+    entries = [
+        NODE,
+        entry(2, "add-node", target="n2", short="Format", prereqs=["n1"]),
+        entry(3, "add-node", target="n3", short="Codec", prereqs=["n2"]),
+        entry(4, "answer", actor="human", target="n1", answer={"option": "a"}),
+        entry(5, "answer", actor="human", target="n3", answer={"option": "a"}),
+        applied(6, {"kind": "invalidate", "target": "n2", "why": "the format is fixed by law"}),
+        applied(7, {"kind": "unsettle", "target": "n1", "why": "the store question is back"}),
+    ]
+
+    statuses = {one.id: one.status for one in fold(EPOCH, entries).decisions}
+
+    assert statuses == {"n1": "open", "n2": "invalidated", "n3": "settled"}

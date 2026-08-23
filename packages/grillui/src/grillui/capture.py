@@ -48,6 +48,15 @@ if TYPE_CHECKING:
 ENDED_BY_HUMAN = "ended by the human"
 NOT_FORMALLY_ENDED = "captured from a log carrying no session-end entry"
 
+# The two ways a decision comes to rest, and the whole of what "nothing left
+# open" means. Settled is the human answering it; invalidated is an answer
+# elsewhere mooting it, which closes the question rather than leaving it for
+# somebody to move. Stale and fogged are neither: one rests on an answer that
+# was withdrawn and the other waits on one that has not landed. The page reads
+# a finished board the same way, so a board it congratulates the human on is a
+# board this result writes up with nothing open.
+AT_REST = frozenset({"settled", "invalidated"})
+
 
 def default_summary(result: TerminalResult) -> str:
     """A briefing built from the structured parts, and never a transcript.
@@ -55,6 +64,11 @@ def default_summary(result: TerminalResult) -> str:
     Deterministic on purpose: the v1 default has to hold the seam open without
     making the result depend on a model being reachable, so what it says is
     counted rather than composed.
+
+    A decision set aside is counted apart from one settled and from one left
+    open, because the three are different news: the human answered it, an
+    answer elsewhere mooted it, or it is still waiting. Rolling the set-aside
+    ones in with the open ones would report work nobody has to do.
 
     A parked thread is named here and a closed one is not, which is the whole
     difference between the two gestures at the end of a session: parking says
@@ -64,12 +78,14 @@ def default_summary(result: TerminalResult) -> str:
     in `threads` and is never woven into what is still open.
     """
     settled = [decision for decision in result.decisions if decision.status == "settled"]
+    aside = [decision for decision in result.decisions if decision.status == "invalidated"]
     parked = [thread.title or thread.id for thread in result.threads if thread.state == "parked"]
     loose = f" Still open to come back to: {', '.join(parked)}." if parked else ""
     return (
         f"{result.session.title or result.session.id}: "
         f"{len(settled)} of {len(result.decisions)} decisions settled, "
-        f"{len(result.open_items)} left open, "
+        + (f"{len(aside)} set aside, " if aside else "")
+        + f"{len(result.open_items)} left open, "
         f"{len(result.threads)} side threads. {result.stop_reason}.{loose}"
     )
 
@@ -95,7 +111,7 @@ def capture(directory: Path, *, summarize: Summarizer = default_summary) -> Term
         open_items=[
             OpenItem(id=node.id, blocker=_blocker(node, settled, _waiting_on(image)))
             for node in image.decisions
-            if node.status != "settled"
+            if node.status not in AT_REST
         ],
         threads=[
             CapturedThread(
@@ -175,10 +191,10 @@ def _blocker(node: Decision, settled: set[str], waiting: set[str]) -> str:
 
     A decision can be blocked several ways at once -- fogged behind an
     unanswered prerequisite it also lists -- and the human reading the result
-    needs the reason that actually has to move first, not a list.
+    needs the reason that actually has to move first, not a list. Nothing here
+    answers for an invalidated decision, because an invalidated decision is not
+    one of the open items this runs over.
     """
-    if node.status == "invalidated":
-        return node.rationale or "invalidated"
     if node.status == "stale":
         return "rests on an answer that was withdrawn"
     if node.id in waiting:
