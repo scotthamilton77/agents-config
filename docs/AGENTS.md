@@ -7,7 +7,11 @@ What each subtree is, and how staleness is judged there.
 - `specs/` — dated point-in-time design proposals; status varies from draft
   through implemented. A spec describes its full intent, and partial per-PR
   implementation is expected — a spec that describes code nobody has written
-  yet is working as designed, not a defect to file or annotate.
+  yet is working as designed, not a defect to file or annotate. The dated
+  filename is what puts a file in `spec-lint`'s scope, and the lint has no
+  allowlist by design — so a companion record that is not a spec (a rationale
+  or evidence file beside one) stays undated on purpose; dating it demands
+  acceptance criteria it cannot honestly carry.
 - `architecture/` — evergreen HLD artifacts (C4 levels, sequence diagrams,
   state machines, data-flow views), grouped per subsystem with an `index.md`
   orientation file. Amended in place; filenames are undated and describe
