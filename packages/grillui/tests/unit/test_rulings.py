@@ -110,7 +110,15 @@ def seed(log: SessionLog) -> None:
 
 
 def answer(lane: Lane, option: str = "b") -> None:
-    """The human answering the first decision, and the turn it buys, run out."""
+    """The human answering the first decision, and the turn it buys, run out.
+
+    Which option they take decides which seat composes the turn, so it is the
+    fixture choice every check here turns on. `b` carries the pre-mark, which
+    classes the gesture as judgment and seats it on the expert directly
+    (GUI-D48); `a` carries none and stays on the first rung. A check about the
+    first rung's own ladder takes `a`, or there is no first-rung turn in it to
+    be about.
+    """
     run_turns(
         lane,
         EventSubmission(
@@ -226,7 +234,7 @@ def test_a_withdrawal_with_nothing_to_ride_on_is_refused_and_retried_then_handed
     """
     Given a first-rung seat withdrawing a pending item in a document that says
           nothing else, and an expert that answers properly
-    When the map turn is taken
+    When a clerical map turn is taken
     Then the first rung is asked twice with the fault quoted, the expert is
          handed the turn once, and the expert's document is what lands.
 
@@ -245,7 +253,8 @@ def test_a_withdrawal_with_nothing_to_ride_on_is_refused_and_retried_then_handed
             log,
             FastDriver(TierConfig(), first),
             expert=FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
-        )
+        ),
+        option="a",
     )
 
     assert len(first.calls) == 2, "the seat was not given its retry"
@@ -350,7 +359,7 @@ def test_a_first_rung_seat_that_will_not_validate_hands_the_turn_to_the_expert_o
     """
     Given a first-rung seat that never returns a document and an expert seat
           that does
-    When the map turn is taken
+    When a clerical map turn is taken
     Then the first rung was asked twice, the expert once, and the expert's
          document is the turn.
     """
@@ -363,7 +372,8 @@ def test_a_first_rung_seat_that_will_not_validate_hands_the_turn_to_the_expert_o
             log,
             FastDriver(TierConfig(), first),
             expert=FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
-        )
+        ),
+        option="a",
     )
 
     assert len(first.calls) == 2
@@ -377,7 +387,7 @@ def test_the_expert_seat_has_no_rung_above_it_and_the_failure_is_recorded(
 ) -> None:
     """
     Given both seats replying in prose
-    When the map turn is taken
+    When a clerical map turn is taken
     Then the first rung was asked twice and the expert twice, exactly one
          backend notice names the failure and the tier that could not be handed
          anywhere, and nothing the seats said reached the human.
@@ -395,7 +405,8 @@ def test_the_expert_seat_has_no_rung_above_it_and_the_failure_is_recorded(
             log,
             FastDriver(TierConfig(), first),
             expert=FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
-        )
+        ),
+        option="a",
     )
 
     assert (len(first.calls), len(expert.calls)) == (2, 2)
@@ -454,16 +465,21 @@ def test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_deci
     log: SessionLog,
 ) -> None:
     """
-    Given a first-rung seat ruling `stands` with a why on each named decision
+    Given the seat the gesture's class names, ruling `stands` with a why on each
+          named decision
     When the human takes the option naming them
-    Then no expert turn is taken, no notice is raised, one informational carries
+    Then no second turn is taken, no notice is raised, one informational carries
          each why on its own decision, and both are still on the frontier.
 
     `stands` is a credited answer rather than a silence. What the board does
     with it is show it, on the decision it rules on, so a human reading that
     decision reads the argument for its survival.
+
+    The seat under test is the expert one because the gesture is a judgment
+    class: an answer whose option carries a live mark is composed there
+    directly, and the first rung is here only to be shown untouched.
     """
-    only = ScriptedFast(
+    ruled = ScriptedFast(
         replies=[
             document(
                 text="Both survive it.",
@@ -474,18 +490,19 @@ def test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_deci
             )
         ]
     )
-    expert = ScriptedFast()
+    untouched = ScriptedFast()
     seed(log)
 
     answer(
         Lane(
             log,
-            FastDriver(TierConfig(), only),
-            expert=FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
+            FastDriver(TierConfig(), untouched),
+            expert=FastDriver(TierConfig(), ruled, tier=HEAVY_TIER),
         )
     )
 
-    assert expert.calls == [], "the expert was pressed on a turn that ruled on both"
+    assert untouched.calls == [], "a judgment gesture was round-tripped through the first rung"
+    assert len(ruled.calls) == 1, "a turn that ruled on both was followed by a second"
     assert notices(log) == []
     board = fold(log.epoch, log.entries())
     targeted = {
@@ -503,39 +520,48 @@ def test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_deci
     ]
 
 
-def test_a_reply_ruling_nothing_hands_the_turn_up_narrowed_and_then_says_so_once(
+def test_a_reply_ruling_on_one_of_two_says_so_once_and_names_only_the_other(
     log: SessionLog,
 ) -> None:
     """
-    Given a first-rung seat ruling on only one of the two named decisions, and
-          an expert that rules on neither
-    When the human takes the option naming both
-    Then the expert is handed the turn once, its dispatch's obligation names
-         only the decision left unruled, and exactly one backend notice reports
-         that decision as not ruled on.
+    Given the seat the gesture's class names, ruling on only one of the two
+          decisions the option named
+    When the human takes that option
+    Then no second turn is taken and exactly one backend notice reports the
+         other decision, and only it, as not ruled on.
 
-    Narrowed, because re-asking for a ruling already made asks the human to read
-    the same verdict twice; and said once, because a second press would spend an
-    expert turn per gesture for the rest of the session.
+    Said once, because a second turn per gesture would spend an expert turn on
+    every gesture for the rest of the session; and naming only what is left,
+    because reporting a decision the same turn ruled on sends the human to argue
+    about a verdict that was made.
+
+    There is no rung above the seat this gesture is classed onto, so the ladder
+    is terminal here rather than one that hands anything up (GUI-D45).
     """
-    first = ScriptedFast(
+    unused = ScriptedFast()
+    ruled = ScriptedFast(
         replies=[document(text="d2 survives.", rulings=[ruling("d2", why="a different question")])]
     )
-    expert = ScriptedFast(replies=[document(text="Noted.")])
-    expert_seat = FastDriver(TierConfig(), expert, tier=HEAVY_TIER)
     seed(log)
 
-    answer(Lane(log, FastDriver(TierConfig(), first), expert=expert_seat))
+    answer(
+        Lane(
+            log,
+            FastDriver(TierConfig(), unused),
+            expert=FastDriver(TierConfig(), ruled, tier=HEAVY_TIER),
+        )
+    )
 
-    assert len(expert.calls) == 1
+    assert unused.calls == [], "a judgment gesture was round-tripped through the first rung"
+    assert len(ruled.calls) == 1, "the classed seat was asked twice for one gesture"
     handed = obligations(log)[-1]
     assert handed is not None
-    assert handed.ids == ["d3"], "the expert was re-asked for a ruling already made"
+    assert handed.ids == KILLED
     said = notices(log)
     assert len(said) == 1, said
     assert "not ruled on" in said[0]
     assert "d3" in said[0]
-    assert "d2" not in said[0], "a decision the first rung ruled on was reported as unruled"
+    assert "d2" not in said[0], "a decision the turn ruled on was reported as unruled"
 
 
 @pytest.mark.parametrize(
@@ -570,25 +596,25 @@ def test_the_expert_seat_raises_the_unmet_notice_directly(log: SessionLog, said:
     assert "not ruled on" in raised[0]
 
 
-def test_an_empty_document_on_the_first_rung_is_handed_up_once_and_credits_nothing(
+def test_an_empty_document_credits_nothing_an_earlier_turn_ruled(
     log: SessionLog,
 ) -> None:
     """
-    Given a first-rung seat answering with a wholly empty document, and an
-          expert that rules `stands` on both named decisions
+    Given the seat the gesture's class names, answering with a wholly empty
+          document, and an earlier map turn that ruled `stands` on both
     When the human takes the option naming them
-    Then the expert is handed the turn once carrying both ids, nothing is said
-         to the human, and no lane error is raised.
+    Then one notice names both decisions as not ruled on, and no lane error is
+         raised.
 
     The empty document is valid and therefore walks the coverage ladder, not the
     refusal one. It appends no entry at all, which is why coverage is read from
     the window this turn opened: a backward scan over the whole log would find
-    whatever spoke last on the map and credit this turn with its rulings.
+    whatever spoke last on the map and credit this turn with its rulings --
+    discharging an obligation nobody answered, and saying nothing to the human
+    about two decisions the board is still offering.
     """
-    first = ScriptedFast(replies=[document(text="")])
-    expert = ScriptedFast(
-        replies=[document(text="Both hold.", rulings=[ruling(one) for one in KILLED])]
-    )
+    unused = ScriptedFast()
+    empty = ScriptedFast(replies=[document(text="")])
     seed(log)
     # An earlier map turn that did rule on both. The empty turn appends nothing,
     # so a coverage check reading the log whole would find this entry and credit
@@ -609,16 +635,18 @@ def test_an_empty_document_on_the_first_rung_is_handed_up_once_and_credits_nothi
     answer(
         Lane(
             log,
-            FastDriver(TierConfig(), first),
-            expert=FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
+            FastDriver(TierConfig(), unused),
+            expert=FastDriver(TierConfig(), empty, tier=HEAVY_TIER),
         )
     )
 
-    assert len(expert.calls) == 1, "the empty document was not handed up"
+    assert unused.calls == [], "a judgment gesture was round-tripped through the first rung"
     handed = obligations(log)[-1]
     assert handed is not None
     assert handed.ids == KILLED
-    assert notices(log) == []
+    said = notices(log)
+    assert len(said) == 1, said
+    assert "d2, d3" in said[0], "the empty turn was credited with an earlier turn's rulings"
     assert errors(log) == []
 
 
@@ -630,47 +658,48 @@ def test_a_ruling_whose_document_carries_no_matching_update_is_not_credited(
     log: SessionLog, verdict: str
 ) -> None:
     """
-    Given a first-rung seat ruling `invalidate` -- or `revise` -- on both named
-          decisions while its document queues neither update
+    Given the seat the gesture's class names, ruling `invalidate` -- or
+          `revise` -- on both named decisions while its document queues neither
+          update
     When the human takes the option naming them
-    Then the turn is handed up as unruled on both.
+    Then both are reported to the human as unruled.
 
     Naming a decision changes nothing. A verdict that says a decision is dead
     and does not queue its death is the failure this whole slice is about, and
     crediting it on the word alone would put the check back where it started.
     """
-    first = ScriptedFast(
+    unused = ScriptedFast()
+    said_only = ScriptedFast(
         replies=[document(text="Both are dead.", rulings=[ruling(one, verdict) for one in KILLED])]
     )
-    expert = ScriptedFast(replies=[document(text="Noted.")])
     seed(log)
 
     answer(
         Lane(
             log,
-            FastDriver(TierConfig(), first),
-            expert=FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
+            FastDriver(TierConfig(), unused),
+            expert=FastDriver(TierConfig(), said_only, tier=HEAVY_TIER),
         )
     )
 
-    assert len(expert.calls) == 1, "the uncredited ruling was taken as a ruling"
+    assert unused.calls == [], "a judgment gesture was round-tripped through the first rung"
     said = notices(log)
     assert len(said) == 1, said
-    assert "d2, d3" in said[0]
+    assert "d2, d3" in said[0], "the uncredited ruling was taken as a ruling"
 
 
 def test_a_ruling_carrying_its_update_is_credited_and_the_change_waits_for_the_human(
     log: SessionLog,
 ) -> None:
     """
-    Given a seat ruling `invalidate` on one named decision with the update to
-          match, and `stands` on the other
+    Given the seat the gesture's class names, ruling `invalidate` on one named
+          decision with the update to match, and `stands` on the other
     When the human takes the option naming both
-    Then nobody is pressed, nothing is said to the human, the invalidate waits
-         in their queue and the standing decision is on the frontier under a
-         why of its own.
+    Then no second turn is taken, nothing is said to the human, the invalidate
+         waits in their queue and the standing decision is on the frontier under
+         a why of its own.
     """
-    only = ScriptedFast(
+    credited = ScriptedFast(
         replies=[
             document(
                 text="One dies, one stands.",
@@ -682,18 +711,19 @@ def test_a_ruling_carrying_its_update_is_credited_and_the_change_waits_for_the_h
             )
         ]
     )
-    expert = ScriptedFast()
+    unused = ScriptedFast()
     seed(log)
 
     answer(
         Lane(
             log,
-            FastDriver(TierConfig(), only),
-            expert=FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
+            FastDriver(TierConfig(), unused),
+            expert=FastDriver(TierConfig(), credited, tier=HEAVY_TIER),
         )
     )
 
-    assert expert.calls == []
+    assert unused.calls == [], "a judgment gesture was round-tripped through the first rung"
+    assert len(credited.calls) == 1, "the classed seat was asked twice for one gesture"
     assert notices(log) == []
     board = fold(log.epoch, log.entries())
     assert [one.target for one in board.pending if one.kind == "invalidate"] == ["d2"]

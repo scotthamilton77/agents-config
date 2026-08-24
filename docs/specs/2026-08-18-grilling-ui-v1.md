@@ -1846,20 +1846,21 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A100** A grill-master dispatch carrying a mootness obligation assembles a prompt that
   names each decision the answer put in question, quotes that answer, and states the three
   rulings; a dispatch carrying none states nothing about mootness.
-- **GUI-A101** On a board whose answered option names two other decisions, a first-rung seat
-  that rules on neither is followed by an expert turn on the same gesture whose recorded
-  dispatch names both decisions, the decision answered and the option's own text — and the
-  lane closes naming the tier that ended up taking the turn; a first-rung seat that rules
-  `stands` on both, each with a why, is followed by no expert turn.
-- **GUI-A102** Where the expert replies in prose too, exactly one backend `informational`
+- **GUI-A101** On a board whose answered option names two other decisions still on offer,
+  the gesture is composed by the expert seat directly (GUI-D48): its recorded dispatch names
+  both decisions, the decision answered and the option's own text, the first-rung seat is
+  never asked, and the lane closes naming the seat that took the turn. A seat ruling
+  `stands` on both, each with a why, is followed by no second turn.
+- **GUI-A102** Where the expert seat replies in prose, exactly one backend `informational`
   notice names both decisions, and no `invalidate` entry exists that no human gesture asked
   for.
-- **GUI-A103** Neither an obligation already met nor one never created presses anything: a
-  reply ruling on each named id — an `invalidate` queued for one and `stands` with a why for
-  the other — leaves the expert untouched, the human unsaid to, the invalidate in the queue
-  and the standing decision on the frontier under an informational targeted at it; and an
-  answer on an option carrying no `puts_in_question` produces a dispatch with no obligation,
-  no expert turn and no notice.
+- **GUI-A103** Neither an obligation already met nor one never created buys a second turn: a
+  reply ruling on each named id, each verdict credited by the update the same document
+  carries — an `invalidate` queued for one and `stands` with a why for the other — takes one
+  turn and no more, says nothing to the human, and leaves the invalidate in the queue and the
+  standing decision on the frontier under an informational targeted at it; and an answer on
+  an option carrying no `puts_in_question` stays on the first-rung seat, producing a dispatch
+  with no obligation, no expert turn and no notice.
 - **GUI-A106** In a browser, against a running backend: on a board whose one open decision
   is left invalidated by a proposal the human applies, every other decision being settled,
   the completion overlay appears carrying both actions, its copy names how many decisions
@@ -1880,11 +1881,11 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A108** A decision whose `prereqs` are one settled decision and one invalidated by a
   change the human applied is on the frontier, and the invalidated one is `invalidated`.
 - **GUI-A109** Where two decisions rest on a third and the human applies the agent's
-  `invalidate` on it, both are answerable, and the next map turn carries an obligation naming
-  the one still standing, the decision that left the flow and the rationale it carried; a fast
-  tier replying in prose is handed to the expert once; and where the expert proposes nothing
-  and rules nothing, exactly one backend `informational` notice names that decision and the
-  backend authored no map mutation.
+  `invalidate` on it, both are answerable, and the map turn that apply buys carries an
+  obligation naming those still standing, the decision that left the flow and the rationale
+  it carried; that turn is the expert's by its class (GUI-D48); and where it proposes nothing
+  and rules nothing, exactly one backend `informational` notice names them and the backend
+  authored no map mutation.
 
 - **GMR-A1** For all four tier-agent pairs, the composed system prompt opens with that
   agent's role part: the grill-master's names it the map's author and carries the reshape
@@ -2159,14 +2160,16 @@ opens one proves something else.
 - GUI-A99 | probe: packages/grillui/tests/browser/side_thread_fold_probe.py::main
 - GUI-A105 | probe: packages/grillui/tests/browser/inbox_batch_probe.py::main
 - GUI-A100 | test: packages/grillui/tests/unit/test_tiers.py::test_a_turn_owed_invalidates_is_given_the_ids_and_the_answer_in_a_section_of_its_own
-- GUI-A101 | test: packages/grillui/tests/unit/test_lane.py::test_a_reply_ruling_on_neither_named_decision_is_pressed_on_the_expert_carrying_the_ids
+- GUI-A101 | test: packages/grillui/tests/unit/test_lane.py::test_a_gesture_owed_rulings_is_composed_by_the_expert_carrying_the_ids
+- GUI-A101 | test: packages/grillui/tests/unit/test_rulings.py::test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision
 - GUI-A102 | test: packages/grillui/tests/unit/test_lane.py::test_an_expert_that_rules_on_nothing_either_leaves_the_ids_named_to_the_human
 - GUI-A103 | test: packages/grillui/tests/unit/test_lane.py::test_an_obligation_met_or_never_created_presses_nobody
+- GUI-A103 | test: packages/grillui/tests/unit/test_rulings.py::test_a_ruling_carrying_its_update_is_credited_and_the_change_waits_for_the_human
 - GUI-A106 | probe: packages/grillui/tests/browser/completion_probe.py::main
 - GUI-A107 | test: packages/grillui/tests/unit/test_capture.py::test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open
 - GUI-A110 | probe: packages/grillui/tests/browser/next_open_probe.py::main
 - GUI-A108 | test: packages/grillui/tests/unit/test_projector.py::test_a_prereq_that_has_been_invalidated_holds_nothing
-- GUI-A109 | test: packages/grillui/tests/unit/test_lane.py::test_an_invalidate_the_human_applied_is_pressed_on_the_next_map_turn
+- GUI-A109 | test: packages/grillui/tests/unit/test_lane.py::test_an_invalidate_the_human_applied_obliges_the_map_turn_it_buys
 - GMR-A1 | open
 - GMR-A2 | test: packages/grillui/tests/unit/test_rulings.py::test_a_reply_that_is_not_the_document_is_refused_and_never_reaches_the_human
 - GMR-A3 | test: packages/grillui/tests/unit/test_rulings.py::test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision
@@ -2175,6 +2178,19 @@ opens one proves something else.
 - GMR-A6 | open
 - GMR-A7 | open
 - GMR-A8 | test: packages/grillui/tests/unit/test_rulings.py::test_the_option_shape_says_the_grill_master_rules_on_the_mark
-- GMR-A9 | open
-- GMR-A10 | open
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_answer_whose_mark_resolves_to_a_live_node_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_applied_invalidate_that_strands_a_dependent_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_apply_that_strands_nothing_buys_no_turn
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_thread_fold_is_composed_by_the_expert_on_the_map
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_withdrawal_the_human_got_in_front_of_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_the_doctor_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_clerical_answer_is_composed_by_the_first_rung
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_clerical_gesture_after_a_judgment_one_is_first_rung_again
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_mark_resolving_to_a_dead_node_stays_on_the_first_rung
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_one_dismissal_of_a_first_rung_proposal_moves_nothing
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_second_distrust_signal_writes_one_transfer_and_the_channel_stays_up
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_two_presses_racing_write_one_transfer_between_them
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_a_third_signal_writes_no_second_entry
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_a_restart_over_the_same_session_writes_no_second_transfer
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_humans_transfer_control_returns_the_channel_to_the_first_rung
 - GMR-A11 | test: packages/grillui/tests/unit/test_seats.py::test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter

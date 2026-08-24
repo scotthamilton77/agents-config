@@ -607,7 +607,6 @@ def test_the_map_doctor_dispatches_the_grill_master_over_the_whole_board(
     notice(log, OTHER_NOTICE, OTHER)
     driver = ScriptedMap(replies=[document(text="Reassessed; d-compaction no longer follows.")])
     lane = Lane(log, driver)
-    expected = image(log)
 
     thread = lane.call_doctor()
 
@@ -617,6 +616,12 @@ def test_the_map_doctor_dispatches_the_grill_master_over_the_whole_board(
     context = driver.recorded(0)
     assert context.agent == GRILL_MASTER
     assert context.reassess is True
+    # Folded independently of the dispatch, from the log as it stood when the
+    # dispatch was taken: the lane announces the turn before scheduling it, so a
+    # snapshot from before the call is a board one entry behind. Pinning it to
+    # the recorded seq keeps this a tripwire on what crossed rather than a
+    # restatement of what the dispatch says about itself.
+    expected = fold(log.epoch, [one for one in log.entries() if one.seq <= context.seq])
     assert expected.model_dump_json() in body
     assert [one.id for one in context.image2.pending] == [OTHER_NOTICE]
     assert REASSESS_RULE in compose(body, context, log.entries())
