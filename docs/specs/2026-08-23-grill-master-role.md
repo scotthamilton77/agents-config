@@ -479,9 +479,10 @@ resumed thread inherits none of it. Every invocation also carries `--skip-git-re
 without which the CLI refuses the turn on a trust check about its working directory. The
 process runs with its standard input closed, since it otherwise blocks reading a stream
 nobody is writing. The turn's usage — the token counts on the `turn.completed` event — is
-what the context measurement reads, in place of a byte estimate; the count is the thread's
+what the context measurement reads, in place of a byte estimate. The count is the thread's
 running input total rather than one turn's, so what a turn records is the growth in that
-total.
+total; the last total is held in memory, and a restarted backend therefore over-reports
+exactly one turn, which errs toward warning early rather than never.
 
 **The seat is given no tool and no working tree.** The CLI otherwise hands its agent a
 shell and a sandbox in the directory the backend was launched from, and a turn whose whole
@@ -791,8 +792,9 @@ skill's text, and each names what a red test would assert.
   rather than the launch directory; the process is run with its standard input closed; no
   `--output-schema` is passed, and a reply that does not validate is refused under GMR-A2
   rather than shown to the human; and the growth in the `turn.completed` input count, not
-  the byte estimate, is what the context measurement records. Pinned by tests that fail
-  under the plausible wrong implementations: the brief, the effort or the tool closure on
+  the byte estimate, is what the context measurement records — the deliberate exception
+  being the one turn a restarted backend over-reports, having no earlier total to subtract.
+  Pinned by tests that fail under the plausible wrong implementations: the brief, the effort or the tool closure on
   the cold turn only; stdin left open; the launch directory left in place; the running total
   recorded raw; the last completed item taken as the reply.
 

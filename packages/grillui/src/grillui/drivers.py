@@ -356,7 +356,7 @@ def run_claude_cli(argv: Sequence[str], /) -> str:
             list(argv), capture_output=True, text=True, check=True, timeout=REQUEST_TIMEOUT
         )
     except (OSError, subprocess.SubprocessError) as error:
-        raise AgentUnreachableError(HEAVY_TIER, _process_fault(error)) from error
+        raise AgentUnreachableError(HEAVY_TIER, fault_of(error)) from error
     return finished.stdout
 
 
@@ -473,19 +473,38 @@ def run_codex_cli(argv: Sequence[str], directory: Path, /) -> str:
             cwd=directory,
         )
     except (OSError, subprocess.SubprocessError) as error:
-        # A non-zero exit, a timeout and a binary that is not there are three
-        # different mornings, and the process said which on its standard error.
-        # Carried through bounded rather than dropped: the lane's error phase is
-        # the only place anybody looks, and "could not be reached" on its own
-        # sends them to reproduce it by hand.
-        raise AgentUnreachableError(FAST_TIER, _process_fault(error)) from error
+        raise AgentUnreachableError(FAST_TIER, fault_of(error)) from error
     return finished.stdout
 
 
-def _process_fault(error: BaseException) -> str:
-    """What the transport said about its own failure, as far as it said anything."""
-    said = getattr(error, "stderr", None)
-    return said if isinstance(said, str) and said.strip() else f"{type(error).__name__}: {error}"
+# What a failed transport is allowed to say on the board. A non-zero exit, a
+# timeout and a binary that is not there are three different mornings, and the
+# lane's error phase is the only place anybody looks -- so it names which.
+#
+# It names nothing else. The status entry is persisted and rendered to the
+# human, and the transport's own bytes are not ours to publish there: `stderr`
+# carries whatever the provider felt like printing, an error item carries
+# whatever it was told, and a timeout's argv carries the composed prompt. A
+# category and an exit status cannot carry a secret, and that is the whole of
+# what leaves here.
+TIMED_OUT = "it timed out"
+NOT_STARTED = "it could not be started"
+NO_TURN = "it printed no turn"
+
+
+def fault_of(error: BaseException) -> str:
+    """Which failure this was, out of the closed set the board may be told.
+
+    Deliberately lossy. The transport's account of itself goes nowhere rather
+    than into a log nobody reads or a status entry nobody may see -- the
+    category is what the human acts on, and reproducing the turn is what the
+    dispatch file is for.
+    """
+    if isinstance(error, subprocess.TimeoutExpired):
+        return TIMED_OUT
+    if isinstance(error, subprocess.CalledProcessError):
+        return f"it exited {error.returncode}"
+    return NOT_STARTED
 
 
 def codex_input_tokens(usage: Any) -> int | None:
@@ -506,7 +525,7 @@ def codex_input_tokens(usage: Any) -> int | None:
     return counted if isinstance(counted, int) else None
 
 
-def read_codex_reply(printed: str, tier: str) -> tuple[str, str | None, int | None]:
+def read_codex_reply(printed: str) -> tuple[str | None, str | None, int | None]:
     """The reply, the thread's identity, and what the turn counted at, out of
     the JSONL stream `codex exec --json` printed.
 
@@ -515,14 +534,16 @@ def read_codex_reply(printed: str, tier: str) -> tuple[str, str | None, int | No
     reader taking whatever finished last would put a hook warning into the log
     as the agent's turn.
 
-    A line that will not parse is skipped rather than fatal. What must not be
-    skipped is the absence of any agent message at all -- that is a turn nobody
-    took, and it surfaces as an unreachable seat rather than as an empty reply.
+    A line that will not parse is skipped rather than fatal, and a stream with
+    no agent message in it returns none rather than raising: the turn's own
+    counted total is in the same stream, and a reader that raised on the way
+    past it would leave that total to be billed to whatever landed next. What to
+    do about a turn nobody took is the caller's, once it has banked what the
+    provider counted.
     """
     thread_id: str | None = None
     said: str | None = None
     counted: int | None = None
-    faults: list[str] = []
     for line in printed.splitlines():
         try:
             event = json.loads(line)
@@ -539,15 +560,8 @@ def read_codex_reply(printed: str, tier: str) -> tuple[str, str | None, int | No
             if isinstance(item, dict) and item.get("type") == "agent_message":
                 text = item.get("text")
                 said = text if isinstance(text, str) else said
-            elif isinstance(item, dict) and item.get("type") == "error":
-                message = item.get("message")
-                faults.append(message if isinstance(message, str) else "an unreadable error item")
         elif kind == "turn.completed":
             counted = codex_input_tokens(event.get("usage"))
-    if said is None:
-        # The stream's own error items are what it carried instead of a turn,
-        # and they are the only account of why there is nothing to record.
-        raise AgentUnreachableError(tier, "; ".join(faults) or "the stream carried no turn")
     return said, thread_id, counted
 
 
@@ -868,7 +882,9 @@ class CodexDriver:
     tier: str = FAST_TIER
     seat: Seat | None = None
     _turn: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
-    _counted: dict[str, int] = field(default_factory=dict, repr=False, init=False)
+    _counted: dict[str, tuple[str | None, int]] = field(
+        default_factory=dict, repr=False, init=False
+    )
 
     def run(self, log: SessionLog, dispatch: Path, /) -> None:
         recorded = dispatch.read_text(encoding="utf-8")
@@ -894,14 +910,18 @@ class CodexDriver:
                 ),
                 log.directory,
             )
-            said, thread, total = read_codex_reply(printed, self.tier)
+            said, thread, total = read_codex_reply(printed)
+            # Banked before anything else can raise, and against the baseline
+            # here rather than on the accepted reply. Every attempt the provider
+            # counted spent tokens -- a refused document, a stream that carried
+            # no turn at all -- and a baseline that moved only when a turn landed
+            # bills the next accepted one for all of them.
+            read = self._read_since(channel, thread, total)
             if thread is not None:
                 write_resume(log.directory, channel, thread, CODEX_RESUME_FILE)
-            # Read against the baseline here rather than on the accepted reply,
-            # because a refused attempt still ran: the provider's total counts
-            # it, and a baseline that only moved on the attempt that landed
-            # would bill the accepted turn for every rejected one before it.
-            return said, thread, self._read_since(channel, total)
+            if said is None:
+                raise AgentUnreachableError(self.tier, NO_TURN)
+            return said, thread, read
 
         with self._turn:
             if cold:
@@ -928,7 +948,7 @@ class CodexDriver:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, seat.model)
 
-    def _read_since(self, channel: str, total: int | None) -> int | None:
+    def _read_since(self, channel: str, thread: str | None, total: int | None) -> int | None:
         """What this turn was given, out of the running total the thread reports.
 
         The count on `turn.completed` is the thread's input so far and not this
@@ -949,8 +969,14 @@ class CodexDriver:
         """
         if total is None:
             return None
-        read = total - self._counted.get(channel, 0)
-        self._counted[channel] = total
+        seen, previous = self._counted.get(channel, (thread, 0))
+        # A total belongs to the thread that reported it. Where the channel has
+        # rotated onto another thread the count starts again from nothing, since
+        # subtracting one conversation's total from another's is arithmetic
+        # about two different windows.
+        base = previous if seen == thread else 0
+        self._counted[channel] = (thread, total)
+        read = total - base
         return read if read > 0 else None
 
 

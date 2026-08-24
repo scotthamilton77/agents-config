@@ -38,14 +38,18 @@ from grillui.dispatch import GRILL_MASTER, record_dispatch
 from grillui.drivers import (
     CODEX_RESUME_FILE,
     FIRST_RUNG_RESUME_FILE,
+    NOT_STARTED,
     RESUME_FILE,
+    TIMED_OUT,
     CodexDriver,
     FastDriver,
     HeavyDriver,
     codex_argv,
     codex_input_tokens,
+    fault_of,
     read_codex_reply,
     read_resume,
+    run_claude_cli,
     run_codex_cli,
     seat_driver,
 )
@@ -110,6 +114,7 @@ class ScriptedCodex:
     thread_id: str | None = "thread-1"
     totals: Sequence[int] = ()
     trailing_noise: bool = False
+    silent: bool = False
     calls: list[list[str]] = field(default_factory=list)
     directories: list[Path] = field(default_factory=list)
 
@@ -122,9 +127,13 @@ class ScriptedCodex:
             lines.append({"type": "thread.started", "thread_id": self.thread_id})
         lines.append({"type": "item.completed", "item": {"type": "error", "message": "a warning"}})
         lines.append({"type": "turn.started"})
-        lines.append(
-            {"type": "item.completed", "item": {"type": "agent_message", "text": self._said(turn)}}
-        )
+        if not self.silent:
+            lines.append(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": self._said(turn)},
+                }
+            )
         if self.trailing_noise:
             lines.append(
                 {"type": "item.completed", "item": {"type": "error", "message": "a late warning"}}
@@ -530,34 +539,75 @@ def test_a_refused_attempt_is_not_billed_to_the_turn_that_lands(session_dir: Pat
     assert replies(log)[0][PROMPT_TOKENS_KEY] == 11_000
 
 
-def test_a_transport_that_failed_says_what_it_said_about_it(session_dir: Path) -> None:
+def test_a_failed_transport_names_its_category_and_publishes_no_provider_bytes() -> None:
     """
-    Given a process that exits non-zero with something on its standard error, and
-          a stream carrying error items and no turn
-    When each is surfaced
-    Then the fault travels with the tier's name, bounded to one line: a
-         non-zero exit, a timeout and a stream with no turn are three different
-         mornings, and one sentence for all three throws away the only evidence
-         anybody had.
+    Given a process that exits non-zero with a secret on its standard error, one
+          that cannot be started, one that times out, and a stream whose only
+          content is an error item carrying a secret
+    When each is surfaced to the lane
+    Then the human is told which of the four it was and nothing else: the status
+         entry is persisted and rendered, `stderr` carries whatever the provider
+         printed, an error item carries whatever it was told, and a timeout's
+         argv carries the composed prompt.
     """
+    here = Path(__file__).parent
+    leaked = "sk-SENTINEL-TOKEN"
+
     with pytest.raises(AgentUnreachableError) as exited:
         run_codex_cli(
             [
                 sys.executable,
                 "-c",
-                "import sys; print('boom', file=sys.stderr); raise SystemExit(2)",
+                f"import sys; print({leaked!r}, file=sys.stderr); raise SystemExit(2)",
             ],
-            session_dir.parent,
+            here,
         )
-    assert "boom" in str(exited.value)
+    with pytest.raises(AgentUnreachableError) as missing:
+        run_codex_cli(["/nonexistent/codex", "exec"], here)
+    with pytest.raises(AgentUnreachableError) as claude:
+        run_claude_cli(
+            [
+                sys.executable,
+                "-c",
+                f"import sys; print({leaked!r}, file=sys.stderr); raise SystemExit(2)",
+            ]
+        )
 
-    with pytest.raises(AgentUnreachableError) as unread:
+    assert "exited 2" in str(exited.value)
+    assert str(missing.value).endswith(NOT_STARTED)
+    assert "exited 2" in str(claude.value)
+    for raised in (exited, missing, claude):
+        assert leaked not in str(raised.value)
+    assert fault_of(subprocess.TimeoutExpired("codex", 1.0)).endswith(TIMED_OUT)
+    # The stream's own error items are the fourth case, and they are read for a
+    # turn rather than for a message to publish.
+    assert leaked not in str(
         read_codex_reply(
-            json.dumps({"type": "item.completed", "item": {"type": "error", "message": "no auth"}}),
-            FAST_TIER,
+            json.dumps({"type": "item.completed", "item": {"type": "error", "message": leaked}})
         )
-    assert "no auth" in str(unread.value)
-    assert len(str(AgentUnreachableError(FAST_TIER, "x" * 500))) < 300
+    )
+
+
+def test_no_provider_bytes_reach_a_status_entry(session_dir: Path) -> None:
+    """
+    Given a Codex seat whose transport fails with a secret in what it printed
+    When the lane records the failure
+    Then no status entry the board renders carries it.
+    """
+    log = briefed(session_dir)
+    leaked = "sk-SENTINEL-TOKEN"
+
+    def exploding(_argv: Sequence[str], _directory: Path, /) -> str:
+        raise AgentUnreachableError(
+            FAST_TIER, fault_of(subprocess.CalledProcessError(3, "codex", stderr=leaked))
+        )
+
+    lane = Lane(log, CodexDriver(TierConfig(), exploding))
+    run_turns(lane, answered("h1", "The log is the recovery source."))
+
+    said = [json.dumps(entry.payload) for entry in log.entries()]
+    assert any("exited 3" in one for one in said), "the category never reached the lane"
+    assert not any(leaked in one for one in said)
 
 
 def test_the_standing_brief_crosses_as_one_toml_value(session_dir: Path) -> None:
@@ -623,17 +673,15 @@ def test_the_reply_is_the_last_agent_message_and_not_the_last_item(session_dir: 
     assert replies(log)[0]["text"] == MAP_SAID
 
 
-def test_a_stream_with_no_agent_message_is_an_unreachable_seat() -> None:
+def test_a_stream_with_no_turn_still_reports_what_it_counted(session_dir: Path) -> None:
     """
-    Given a stream that carries diagnostics and no turn
+    Given a stream that carries a counted total and no agent message
     When it is read
-    Then it is a seat that could not be reached rather than an empty reply, and a
-         line that will not parse is skipped rather than fatal.
+    Then the reader says there was no turn rather than raising past the total,
+         and the turn that lands next is not billed for the one that did not:
+         the tokens were spent either way.
     """
-    with pytest.raises(AgentUnreachableError):
-        read_codex_reply('{"type": "thread.started", "thread_id": "t"}', FAST_TIER)
-    with pytest.raises(AgentUnreachableError):
-        read_codex_reply("not json at all\n[]", FAST_TIER)
+    assert read_codex_reply('{"type": "thread.started", "thread_id": "t"}') == (None, "t", None)
     said, thread, counted = read_codex_reply(
         "\n".join(
             [
@@ -642,15 +690,41 @@ def test_a_stream_with_no_agent_message_is_an_unreachable_seat() -> None:
                 json.dumps(
                     {"type": "item.completed", "item": {"type": "agent_message", "text": 1}}
                 ),
-                json.dumps(
-                    {"type": "item.completed", "item": {"type": "agent_message", "text": "ok"}}
-                ),
                 json.dumps({"type": "turn.completed", "usage": {"input_tokens": "many"}}),
             ]
-        ),
-        FAST_TIER,
+        )
     )
-    assert (said, thread, counted) == ("ok", None, None)
+    assert (said, thread, counted) == (None, None, None)
+
+    log = briefed(session_dir)
+    turnless = ScriptedCodex(replies=[document(text=MAP_SAID)], totals=[8_000, 15_000])
+    turnless.silent = True
+    driver = CodexDriver(TierConfig(), turnless)
+    with pytest.raises(AgentUnreachableError):
+        a_turn(log, driver)
+    turnless.silent = False
+    a_turn(log, driver)
+
+    assert replies(log)[0][PROMPT_TOKENS_KEY] == 7_000
+
+
+def test_a_channel_that_rotates_onto_another_thread_counts_from_nothing(
+    session_dir: Path,
+) -> None:
+    """
+    Given a channel whose next turn opens a different thread
+    When that turn is measured
+    Then it counts from nothing rather than subtracting the old thread's total:
+         two conversations are two windows, and the difference between them is
+         arithmetic about neither.
+    """
+    log = briefed(session_dir)
+    driver = CodexDriver(TierConfig(), ScriptedCodex(thread_id="first", totals=[30_000]))
+    a_turn(log, driver)
+    driver.cli = ScriptedCodex(thread_id="second", totals=[9_000])
+    a_turn(log, driver)
+
+    assert [one[PROMPT_TOKENS_KEY] for one in replies(log)] == [30_000, 9_000]
 
 
 def test_the_process_runs_with_stdin_closed_in_the_sessions_own_directory(
