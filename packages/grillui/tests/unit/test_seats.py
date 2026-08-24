@@ -18,6 +18,7 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -77,7 +78,6 @@ from grillui.tiers import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from grillui.log import SessionLog
 
@@ -104,9 +104,11 @@ class ScriptedCodex:
     totals: Sequence[int] = ()
     trailing_noise: bool = False
     calls: list[list[str]] = field(default_factory=list)
+    directories: list[Path] = field(default_factory=list)
 
-    def __call__(self, argv: Sequence[str], /) -> str:
+    def __call__(self, argv: Sequence[str], directory: Path, /) -> str:
         self.calls.append(list(argv))
+        self.directories.append(directory)
         turn = len(self.calls)
         lines: list[dict[str, Any]] = []
         if self.thread_id is not None:
@@ -403,6 +405,32 @@ def test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter(session_di
         assert "--json" in cli.calls[turn - 1]
 
 
+def test_the_seat_is_given_no_way_to_run_a_command_or_write_anything(session_dir: Path) -> None:
+    """
+    Given a map channel on the Codex seat taking two turns
+    When each is composed
+    Then both invocations disable the CLI's two execution features and pin the
+         read-only sandbox and the never-approve policy, and both run in the
+         session's own directory: a turn that rules on a plan has no tool for
+         the human's working tree, and a resumed turn that inherited the
+         defaults would have one again.
+    """
+    log = briefed(session_dir)
+    cli = ScriptedCodex()
+    driver = CodexDriver(TierConfig(), cli)
+
+    a_turn(log, driver)
+    a_turn(log, driver)
+
+    for turn in (1, 2):
+        settings = cli.settings(turn)
+        assert "features.shell_tool=false" in settings, turn
+        assert "features.unified_exec=false" in settings, turn
+        assert 'sandbox_mode="read-only"' in settings, turn
+        assert 'approval_policy="never"' in settings, turn
+    assert cli.directories == [session_dir, session_dir]
+
+
 def test_the_standing_brief_crosses_as_one_toml_value(session_dir: Path) -> None:
     """
     Given a standing brief carrying newlines, quotes and braces
@@ -496,12 +524,17 @@ def test_a_stream_with_no_agent_message_is_an_unreachable_seat() -> None:
     assert (said, thread, counted) == ("ok", None, None)
 
 
-def test_the_process_runs_with_its_standard_input_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_process_runs_with_stdin_closed_in_the_sessions_own_directory(
+    monkeypatch: pytest.MonkeyPatch, session_dir: Path
+) -> None:
     """
     Given the real process runner
     When a turn is run
     Then standard input is closed, because `codex exec` otherwise waits on a
-         stream nobody is writing for as long as the session lasts.
+         stream nobody is writing for as long as the session lasts; and the
+         process runs in the session's directory rather than wherever the
+         backend was launched, because the CLI reads its working directory into
+         the turn.
     """
     seen: dict[str, Any] = {}
 
@@ -510,9 +543,10 @@ def test_the_process_runs_with_its_standard_input_closed(monkeypatch: pytest.Mon
         return subprocess.CompletedProcess(argv, 0, stdout="{}", stderr="")
 
     monkeypatch.setattr(drivers.subprocess, "run", spy)
-    run_codex_cli(["codex", "exec"])
+    run_codex_cli(["codex", "exec"], session_dir)
 
     assert seen["stdin"] is subprocess.DEVNULL
+    assert seen["cwd"] == session_dir
 
 
 def test_a_cli_that_is_not_there_or_fails_reads_as_unreachable() -> None:
@@ -521,11 +555,12 @@ def test_a_cli_that_is_not_there_or_fails_reads_as_unreachable() -> None:
     When each is run
     Then both are an unreachable seat rather than a turn that happened.
     """
-    assert run_codex_cli([sys.executable, "-c", "print('{}')"]).strip() == "{}"
+    here = Path(__file__).parent
+    assert run_codex_cli([sys.executable, "-c", "print('{}')"], here).strip() == "{}"
     with pytest.raises(AgentUnreachableError):
-        run_codex_cli(["/nonexistent/codex", "exec"])
+        run_codex_cli(["/nonexistent/codex", "exec"], here)
     with pytest.raises(AgentUnreachableError):
-        run_codex_cli([sys.executable, "-c", "raise SystemExit(3)"])
+        run_codex_cli([sys.executable, "-c", "raise SystemExit(3)"], here)
 
 
 def test_a_reply_that_is_not_the_document_is_refused_after_one_retry(session_dir: Path) -> None:

@@ -140,6 +140,26 @@ RESUME_FILE = "heavy-resume.json"
 CODEX_RESUME_FILE = "codex-resume.json"
 REQUEST_TIMEOUT = 60.0
 
+# What the map's seat may do, and it is nothing but answer. The CLI hands its
+# agent a shell and a sandbox in whatever directory the backend was launched
+# from, and a turn composing a ruling has no business in the human's working
+# tree: left with the tool, it reads whatever repository the session happened to
+# start in -- context nobody put in the dispatch, and latency nobody asked for.
+# Both execution features are named because either alone leaves the other's tool
+# on the turn. The sandbox and the approval policy ride behind them rather than
+# instead of them: a tool that does not exist cannot be approved, and a
+# configuration that stops naming one of these must still not be able to write.
+CODEX_NO_TOOLS = [
+    "-c",
+    "features.shell_tool=false",
+    "-c",
+    "features.unified_exec=false",
+    "-c",
+    'sandbox_mode="read-only"',
+    "-c",
+    'approval_policy="never"',
+]
+
 # What the human is told when an offer arrives in a shape nothing can read.
 # The offer's own bytes are deliberately not quoted back at them: an
 # unreadable object is not made readable by printing it.
@@ -203,9 +223,14 @@ class ClaudeCli(Protocol):
 
 
 class CodexCli(Protocol):
-    """One `codex exec` invocation, returning the JSONL stream it printed."""
+    """One `codex exec` invocation, returning the JSONL stream it printed.
 
-    def __call__(self, argv: Sequence[str], /) -> str: ...
+    The directory is the one the process runs in, and it is part of the call
+    rather than the caller's ambient state: the CLI reads its working directory
+    into the turn, and `resume` takes no flag for it.
+    """
+
+    def __call__(self, argv: Sequence[str], directory: Path, /) -> str: ...
 
 
 @dataclass
@@ -402,18 +427,28 @@ def codex_argv(seat: Seat, system: str, prompt: str, resume: str | None) -> list
     # Nothing is watching a desktop notification for a turn the board is already
     # showing a waiting clock for.
     argv += ["-c", "notify=[]"]
+    argv += CODEX_NO_TOOLS
     if seat.effort is not None:
         argv += ["-c", f"model_reasoning_effort={json.dumps(seat.effort)}"]
     return [*argv, prompt]
 
 
-def run_codex_cli(argv: Sequence[str], /) -> str:
-    """The Codex seat's transport: one process, run to completion, stdin closed.
+def run_codex_cli(argv: Sequence[str], directory: Path, /) -> str:
+    """The Codex seat's transport: one process, run to completion, stdin closed,
+    in the session's own directory.
 
     Closed rather than inherited: `codex exec` reads its prompt from standard
     input when one is piped, so a process with an open stream nobody is writing
     waits on it for as long as the session lasts. The prompt is an argument
     here, and the closed stream is what says so.
+
+    The directory is the session's rather than the one the backend was launched
+    in, because the CLI reads its working directory into the turn -- the
+    instructions it finds there and what it says about the tree. A grilling is
+    about the plan in the dispatch and not about whichever repository the human
+    happened to start the session from. It is set on the process rather than
+    passed as a flag: `exec` takes one and `resume` does not, and the two turns
+    have to run in the same place.
     """
     try:
         finished = subprocess.run(  # noqa: S603 -- argv is built here, never a shell string
@@ -423,6 +458,7 @@ def run_codex_cli(argv: Sequence[str], /) -> str:
             check=True,
             timeout=REQUEST_TIMEOUT,
             stdin=subprocess.DEVNULL,
+            cwd=directory,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise AgentUnreachableError(FAST_TIER) from error
@@ -819,7 +855,8 @@ class CodexDriver:
             printed = self.cli(
                 codex_argv(
                     seat, system, text, read_resume(log.directory, channel, CODEX_RESUME_FILE)
-                )
+                ),
+                log.directory,
             )
             outcome = read_codex_reply(printed, self.tier)
             if outcome[1] is not None:
