@@ -22,8 +22,10 @@ transfer and whose third writes nothing new.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Iterator
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -31,7 +33,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from conftest import TIMEOUT, SpyDriver, driven, event, run_turns, seed_node
+from conftest import RACE_WINDOW, TIMEOUT, SpyDriver, driven, event, run_turns, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.dispatch import DISPATCH_DIR
@@ -39,6 +41,7 @@ from grillui.lane import DocumentRefusedError, Lane, UnreachableDriver
 from grillui.log import SessionLog
 from grillui.projector import fold
 from grillui.schemas import (
+    APPLY_KIND,
     DISMISS_KIND,
     FAST_TIER,
     FOLD_KIND,
@@ -806,22 +809,27 @@ def _seed_resting(log: SessionLog) -> None:
         assert receipt.status == "accepted"
 
 
-def test_an_invalidate_the_human_applied_is_pressed_on_the_next_map_turn(
+def test_an_invalidate_the_human_applied_obliges_the_map_turn_it_buys(
     log: SessionLog,
 ) -> None:
     """
     Given two decisions resting on a third, the agent's invalidate on that third
-          applied by the human, and both tiers then ruling on nothing
-    When the human answers one of the two on the next turn
-    Then both were answerable at all, the expert is handed that turn carrying
-         the other one and the invalidation as its rationale, one notice names
-         it, and the backend authored no map mutation.
+          applied by the human, and the seat ruling on nothing
+    When the apply lands and the human then answers one of the two
+    Then the map turn the apply bought carries both stranded decisions and the
+         invalidation as its rationale, both are answerable at all, one notice
+         names them, and the backend authored no map mutation.
 
     The two halves of the same failure. A dead prereq that still gated its
     dependents left them locked for the rest of the session, so the answer here
     could not have been given at all; and dependents that only made sense given
     the dead prereq are now offered again on a footing that has gone, which is
     what the turn is being asked to rule on.
+
+    The turn the obligation rides is the apply's own (GUI-D48). The answer that
+    follows names no decisions and strands none, so it is clerical and stays on
+    the first rung -- which is what shows the obligation did not outlive the
+    gesture that made it.
     """
     fast = SpyDriver(tier=FAST_TIER, reply="Understood.")
     expert = SpyDriver(tier=HEAVY_TIER, reply="Yes, noted.")
@@ -857,15 +865,16 @@ def test_an_invalidate_the_human_applied_is_pressed_on_the_next_map_turn(
     )
 
     obliged = _obligations(expert)
-    assert len(obliged) == 1, "the expert was not handed the turn"
+    assert len(obliged) == 1, "the apply bought no map turn"
     assert obliged[0] is not None
-    assert obliged[0].ids == ["d3"]
+    assert obliged[0].ids == ["d2", "d3"]
     assert obliged[0].target == "d1"
     assert obliged[0].answer == "the export was dropped"
     assert obliged[0].cause == "invalidate"
+    assert len(fast.dispatches) == 1, "the clerical answer did not stay on the first rung"
     said = _notices(log)
     assert len(said) == 1, said
-    assert "d3" in said[0]
+    assert "d2, d3" in said[0]
     authored = [one for one in log.entries() if one.actor == "backend" and one.kind == "invalidate"]
     assert authored == []
 
@@ -885,9 +894,16 @@ class RefusingDriver:
 
     tier: str = FAST_TIER
     dispatches: list[Path] = field(default_factory=list)
+    gate: threading.Barrier | None = None
 
     def run(self, _log: SessionLog, dispatch: Path, /) -> None:
         self.dispatches.append(dispatch)
+        # Held until every racing turn has arrived, so two presses reach the
+        # counter together rather than whenever the scheduler happens to run
+        # them. Without it the race is real but rarely observed, and a check
+        # that only sometimes sees the bug is not a check.
+        if self.gate is not None:
+            self.gate.wait(TIMEOUT)
         raise DocumentRefusedError(self.tier, "prose")
 
 
@@ -1037,45 +1053,68 @@ def test_an_answer_whose_mark_resolves_to_a_live_node_is_composed_by_the_expert(
     assert _transfers(log) == [], "classing wrote a status entry"
 
 
+def _apply(lane: Lane, *ids: str) -> None:
+    """The human taking queued proposals onto the board, and any turn that
+    gesture buys, run out."""
+    run_turns(
+        lane,
+        EventSubmission(
+            kind=APPLY_KIND,
+            actor="human",
+            idempotency_key=f"apply-{uuid4().hex}",
+            payload={PENDING_KEY: list(ids)},
+        ),
+    )
+
+
 def test_an_applied_invalidate_that_strands_a_dependent_is_composed_by_the_expert(
     log: SessionLog,
 ) -> None:
     """
-    Given two decisions resting on a third and the agent's invalidate on that
-          third applied by the human
-    When the next map gesture is made
-    Then the expert composes it and the first rung is never asked.
+    Given two decisions resting on a third and the agent's invalidate on it
+    When the human applies that invalidate
+    Then that gesture alone is composed by the expert, carrying both stranded
+         decisions, with the first rung never asked and nothing written.
 
-    The gesture that classes is the apply: it strands whatever was resting on
-    what it killed, and saying which of them dies with it is a judgment.
+    The apply is the gesture that classes, so it is the gesture that gets the
+    turn. Left to buy nothing, the class would name a seat for a turn nobody
+    scheduled and the rulings it owes would fall on whatever the human happened
+    to do next -- or on nothing at all, if they did nothing.
     """
     first, expert = _two_seats()
     lane = Lane(log, first, expert=expert)
     _seed_resting(log)
-    log.submit(
-        [
-            EventSubmission(
-                kind="invalidate",
-                actor="grill-master",
-                idempotency_key="kill-d1",
-                payload={"target": "d1", "why": "the export was dropped"},
-            )
-        ],
-        log.epoch,
-    )
-    queued = fold(log.epoch, log.entries()).pending[0].id
-    run_turns(
-        lane,
-        EventSubmission(
-            kind="apply", actor="human", idempotency_key="apply-d1", payload={"pending": [queued]}
-        ),
-    )
 
-    _answer_at(lane, "d2")
+    _apply(lane, _proposal(log, "kill-d1", target="d1"))
 
     assert first.dispatches == [], "a judgment gesture went through the first rung"
-    assert len(expert.dispatches) == 1
+    assert len(expert.dispatches) == 1, "the apply bought no expert turn of its own"
+    obliged = _obligations(expert)[0]
+    assert obliged is not None
+    assert obliged.ids == ["d2", "d3"], "the turn was not owed both stranded decisions"
+    assert obliged.target == "d1"
     assert _seats(log) == [HEAVY_TIER]
+    assert _transfers(log) == []
+
+
+def test_an_apply_that_strands_nothing_buys_no_turn(log: SessionLog) -> None:
+    """
+    Given an invalidate on a decision nothing rests on
+    When the human applies it
+    Then no turn is scheduled at all and the lane opens nothing.
+
+    Applying is not conversation and is owed no reply. Only the strand makes it
+    a gesture the board owes rulings on, so the ordinary apply -- which is most
+    of them -- must go on costing nothing.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+
+    _apply(lane, _proposal(log, "kill-d3", target="d3"))
+
+    assert (first.dispatches, expert.dispatches) == ([], []), "an idle apply bought a turn"
+    assert _seats(log) == []
     assert _transfers(log) == []
 
 
@@ -1130,6 +1169,10 @@ def test_a_withdrawal_the_human_got_in_front_of_is_composed_by_the_expert(
     Both halves matter. The conflict is a judgment class, so it does not inherit
     the seat of whoever raised it; and the answer that raised it named no
     decisions, so it was clerical and stayed cheap.
+
+    The hand-back is announced like any other turn. Nobody spoke a gesture to
+    start it, which is exactly why it would otherwise close a turn the page
+    never saw open.
     """
     first = WithdrawingDriver(tier=FAST_TIER, withdraws="notice-d1")
     expert = SpyDriver(tier=HEAVY_TIER, reply="Understood.")
@@ -1144,7 +1187,14 @@ def test_a_withdrawal_the_human_got_in_front_of_is_composed_by_the_expert(
     handed = DispatchContext.model_validate_json(expert.dispatches[0].read_text(encoding="utf-8"))
     assert handed.conflict is not None
     assert handed.conflict.update.id == "notice-d1"
-    assert _seats(log) == [FAST_TIER], "the gesture that raised the conflict was not clerical"
+    assert _seats(log) == [FAST_TIER, HEAVY_TIER], "the hand-back was never announced"
+    assert phases(statuses(log)) == [
+        STATUS_PHASE_ACCEPTED,
+        STATUS_PHASE_COMPOSING,
+        STATUS_PHASE_COMPOSING,
+        STATUS_PHASE_REPLIED,
+        STATUS_PHASE_REPLIED,
+    ], "the hand-back closed a turn it never opened"
     assert _transfers(log) == []
 
 
@@ -1184,6 +1234,10 @@ def test_the_doctor_is_composed_by_the_expert(log: SessionLog) -> None:
 
     Reassessing the whole board is the escape hatch, and asking the cheap seat
     to do it first would spend the turn the hatch exists to avoid.
+
+    Nobody spoke a gesture to start this turn either, so it is announced the
+    way an accepted gesture's turn is: the human pressed a control and is owed
+    the same clock, naming the same seat.
     """
     first, expert = _two_seats()
     lane = Lane(log, first, expert=expert)
@@ -1196,6 +1250,8 @@ def test_the_doctor_is_composed_by_the_expert(log: SessionLog) -> None:
     assert not turn.is_alive()
     assert first.dispatches == [], "the doctor went through the first rung"
     assert len(expert.dispatches) == 1
+    assert _seats(log) == [HEAVY_TIER], "the doctor turn was never announced"
+    assert phases(statuses(log)) == [STATUS_PHASE_COMPOSING, STATUS_PHASE_REPLIED]
     assert _transfers(log) == []
 
 
@@ -1524,3 +1580,111 @@ def test_a_dismissal_the_queue_refuses_is_no_signal(log: SessionLog) -> None:
     _dismiss(lane, _proposal(log, "prop-1"))
 
     assert _transfers(log) == []
+
+
+class RacingLog(SessionLog):
+    """A log that holds the first policy transfer inside its own append until a
+    second writer has decided to make one too.
+
+    The interleave the counter's critical section has to close, made
+    deterministic. The guard is a read of the record, so a writer that has not
+    appended yet is invisible to the next reader: held here, the second signal
+    asks the question while the first answer is still in flight. That is the
+    window two turn threads race through on their own -- but only for the few
+    microseconds of pure Python between the read and the write, which no barrier
+    placed outside the lane can reliably land in.
+
+    The wait is bounded and its expiry is the passing shape: where the two steps
+    are one critical section the second writer never arrives, because it is
+    still waiting on the lock the first is holding.
+    """
+
+    gate: threading.Barrier | None = None
+
+    def emit_status(
+        self, phase: str, detail: str, channel: str = MAP_CHANNEL, *, tier: str | None = None
+    ) -> LogEntry:
+        if phase == STATUS_PHASE_TRANSFERRED and self.gate is not None:
+            with suppress(threading.BrokenBarrierError):
+                self.gate.wait(RACE_WINDOW)
+        return super().emit_status(phase, detail, channel, tier=tier)
+
+
+def test_two_presses_racing_write_one_transfer_between_them(session_dir: Path) -> None:
+    """
+    Given one dismissal already counted, and two clerical map gestures in one
+          batch whose first-rung turns run concurrently and are held until both
+          are ready to be pressed
+    When both presses reach the counter together
+    Then exactly one policy transfer is on the lane.
+
+    Turn threads race by design, so "at most one entry" has to hold against the
+    racing pair and not only against the sequential one. The first signal is
+    spent up front deliberately: below the threshold a signal returns before it
+    reaches the guard at all, so a pair racing from zero has only one of them in
+    the window. From one, both cross the threshold together -- and counting,
+    asking whether the policy has already moved this channel, and writing are
+    three separate reads and a write over shared state. Split apart, both see an
+    empty guard and both append, and the entry is sticky, so the second is not
+    something a later pass could tidy up.
+    """
+    log = RacingLog(session_dir)
+    log.gate = threading.Barrier(2)
+    first = RefusingDriver(tier=FAST_TIER, gate=threading.Barrier(2))
+    expert = SpyDriver(tier=HEAVY_TIER, reply="Noted.")
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+    _dismiss(lane, _proposal(log, "prop-0"))
+    assert _transfers(log) == [], "the first signal wrote an entry"
+
+    _receipts, turns = lane.accept(
+        [
+            EventSubmission(
+                kind="answer",
+                actor="human",
+                idempotency_key=f"racing-{node}",
+                payload={"target": node, "answer": {"option": "a"}},
+            )
+            for node in ("d2", "d3")
+        ],
+        log.epoch,
+    )
+    for turn in turns:
+        turn.join(TIMEOUT)
+        assert not turn.is_alive(), "a racing turn outlived its timeout"
+
+    assert len(first.dispatches) == 2, "the two turns did not both reach the first rung"
+    assert len(_transfers(log)) == 1, "two racing presses wrote two transfers"
+
+
+def test_a_restart_over_the_same_session_writes_no_second_transfer(
+    log: SessionLog, session_dir: Path
+) -> None:
+    """
+    Given a channel the policy has already moved, and a successor process
+          opening the same session directory
+    When two further dismissals land on the fresh lane
+    Then no second entry joins the first, and the map is still the expert's.
+
+    The count is one tenure's and starts again; the move is the log's and does
+    not. A successor that asked its own counter alone would reach the threshold
+    a second time and buy a channel it is already on -- which is why the guard
+    reads the record rather than the tally.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+    for index in range(2):
+        _dismiss(lane, _proposal(log, f"prop-{index}"))
+    assert len(_transfers(log)) == 1
+
+    successor = SessionLog(session_dir)
+    later_first, later_expert = _two_seats()
+    later = Lane(successor, later_first, expert=later_expert)
+    for index in range(2):
+        _dismiss(later, _proposal(successor, f"after-{index}"))
+
+    assert len(_transfers(successor)) == 1, "a restarted tenure bought the transfer again"
+    _answer_at(later, "d2")
+    assert _seats(successor)[-1] == HEAVY_TIER, "the move did not survive the restart"
+    assert later_first.dispatches == []

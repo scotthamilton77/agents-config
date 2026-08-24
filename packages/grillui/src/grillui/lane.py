@@ -95,6 +95,7 @@ from grillui.escalation import (
 from grillui.projector import fold, supersede_conflicts
 from grillui.schemas import (
     ANSWERABLE_KINDS,
+    APPLY_KIND,
     DISMISS_KIND,
     MAP_CHANNEL,
     PENDING_KEY,
@@ -438,9 +439,9 @@ class Lane:
                     continue
                 if refusing:
                     self._signal()
-                if not is_answerable(event):
-                    continue
                 turn = turn_of(event)
+                if not is_answerable(event) and not self._owes_rulings(event, turn):
+                    continue
                 # The tier is the dispatched channel's, and it is read after the
                 # gesture landed: a turn carrying the human's transfer is itself
                 # the escalation, and must not be composed by the tier they just
@@ -461,13 +462,44 @@ class Lane:
                     f"{event.kind} from the human accepted on channel {event.channel!r}",
                     event.channel,
                 )
-                self.log.emit_status(
-                    STATUS_PHASE_COMPOSING,
-                    f"the {driver.tier!r} tier is composing a reply",
-                    turn.channel,
-                    tier=driver.tier,
-                )
+                self._announce(driver, turn)
         return receipts, [self._schedule(driver, turn) for driver, turn in turns]
+
+    def _announce(self, driver: TurnDriver, turn: Turn) -> None:
+        """Open the lane on a turn about to be taken, naming the seat taking it.
+
+        Every turn is announced, including the two nobody spoke a gesture to
+        start: the lane's pairing rule reads a `composing` and its closing
+        `replied` as one turn, so a turn that closed without opening reads as a
+        `replied` for a turn the page never saw begin -- and while it runs the
+        human is waiting on a clock nobody wound.
+        """
+        self.log.emit_status(
+            STATUS_PHASE_COMPOSING,
+            f"the {driver.tier!r} tier is composing a reply",
+            turn.channel,
+            tier=driver.tier,
+        )
+
+    def _owes_rulings(self, event: EventSubmission, turn: Turn) -> bool:
+        """Whether this gesture is owed a turn it is not conversation for.
+
+        Applying is the one. It is no message and the backend answers it with
+        nothing -- unless it stranded a decision, which leaves rulings owed on
+        that gesture and makes it one of the judgment classes. Without this the
+        class names a seat for a turn nobody scheduled, and the rulings fall to
+        whatever the human happens to do next, or to nothing at all if they do
+        nothing.
+
+        Scoped to the human's own apply on the map: no other channel has a queue
+        to apply from, and an agent's entry is never a gesture.
+        """
+        return (
+            event.actor == "human"
+            and event.kind == APPLY_KIND
+            and event.channel == MAP_CHANNEL
+            and self._judgment(turn) is not None
+        )
 
     def _distrusts(self, event: EventSubmission) -> bool:
         """Whether this gesture, once it lands, says the first rung got it wrong.
@@ -504,13 +536,22 @@ class Lane:
         can still move it themselves. What must survive the restart is the move
         itself, and that does -- the entry is in the log, and it is the log this
         asks before writing another.
+
+        Counting, asking and writing are one critical section, under the append
+        lock the write takes anyway. Presses arrive from turn threads that run
+        concurrently by design, and split apart these three steps let two of
+        them read the same count and the same empty guard and both append: the
+        entry is sticky, so "at most one" has to hold against the racing pair
+        and not only against the sequential one. The lock is re-entrant, so the
+        accepted path already holding it counts a dismissal at no extra cost.
         """
-        self._distrust += 1
-        if self._distrust < DISTRUST_THRESHOLD:
-            return
-        if policy_transferred(self.log.entries(), MAP_CHANNEL):
-            return
-        self.log.emit_status(STATUS_PHASE_TRANSFERRED, DISTRUST_MOVED, MAP_CHANNEL)
+        with self.log.appending():
+            self._distrust += 1
+            if self._distrust < DISTRUST_THRESHOLD:
+                return
+            if policy_transferred(self.log.entries(), MAP_CHANNEL):
+                return
+            self.log.emit_status(STATUS_PHASE_TRANSFERRED, DISTRUST_MOVED, MAP_CHANNEL)
 
     @property
     def doctor_outstanding(self) -> bool:
@@ -539,7 +580,9 @@ class Lane:
             return None
         self._doctor = True
         turn = Turn(MAP_CHANNEL, reassess=True)
-        return self._schedule(self.tier_for(MAP_CHANNEL, self.driver, turn), turn)
+        driver = self.tier_for(MAP_CHANNEL, self.driver, turn)
+        self._announce(driver, turn)
+        return self._schedule(driver, turn)
 
     def _schedule(self, driver: TurnDriver, turn: Turn) -> threading.Thread:
         thread = threading.Thread(
@@ -685,12 +728,7 @@ class Lane:
         reachability failure into the turn's own failure would report an answer
         they can read as an error.
         """
-        self.log.emit_status(
-            STATUS_PHASE_COMPOSING,
-            f"the {expert.tier!r} tier is composing a reply",
-            turn.channel,
-            tier=expert.tier,
-        )
+        self._announce(expert, turn)
         narrowed = (
             None
             if obligation is None
@@ -742,7 +780,9 @@ class Lane:
                 # A conflict is one of the judgment classes, so the seat is read
                 # for it too rather than inherited from whoever raised it.
                 turn = Turn(MAP_CHANNEL, conflict=conflict)
-                self._take_turn(self.tier_for(MAP_CHANNEL, driver, turn), turn)
+                seat = self.tier_for(MAP_CHANNEL, driver, turn)
+                self._announce(seat, turn)
+                self._take_turn(seat, turn)
 
 
 def _unmet(obligation: MootnessObligation, standing: Sequence[str]) -> str:
