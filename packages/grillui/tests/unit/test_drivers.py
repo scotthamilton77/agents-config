@@ -756,14 +756,17 @@ def test_a_completion_that_is_not_text_is_refused() -> None:
 def test_an_empty_completion_is_a_failed_turn_not_a_silent_one(session_dir: Path) -> None:
     """
     Given a model that answers with whitespace, and one whose document is
-          well-formed and says nothing at all -- no notice, no update, no ruling
+          well-formed and withdraws a notice while giving nothing to record the
+          withdrawal on
     When each turn is taken
     Then each fails loudly and nothing is written into the log as a reply.
 
-    The two are the same failure at different depths. Whitespace never reaches
-    the shape; an empty document passes every key and still leaves the human
-    with a turn that happened and a board that did not move, which is not a turn
-    the log should carry.
+    Whitespace never reaches the shape at all. The withdrawal is the one empty
+    document that is still a failure: `supersedes` rides on an entry, so a turn
+    with no entry to put it on has lost the gesture, and losing it silently is
+    worse than saying the turn failed. An empty document that withdraws nothing
+    is not here -- it is a turn that ruled on nothing, which the coverage ladder
+    answers rather than the log refusing it.
     """
     log = briefed(session_dir)
     human_turn(log, "The log.")
@@ -771,7 +774,29 @@ def test_an_empty_completion_is_a_failed_turn_not_a_silent_one(session_dir: Path
     with pytest.raises(DocumentRefusedError):
         take_fast_turn(log, ScriptedFast(reply="   "))
     with pytest.raises(ReplyRefusedError):
-        take_fast_turn(log, ScriptedFast(reply=document(text="")))
+        take_fast_turn(log, ScriptedFast(reply=document(text="", supersedes=["p1"])))
+
+    assert replies(log) == []
+
+
+def test_a_document_that_carries_nothing_records_nothing_and_fails_nothing(
+    session_dir: Path,
+) -> None:
+    """
+    Given a well-formed document with no notice, no update and no ruling
+    When the turn is taken
+    Then no reply is appended and no error is raised.
+
+    §8.10 permits every field to be empty, so this is a valid turn and must not
+    be raised as a transport failure -- doing so skips the ladder that owes a
+    turn ruling on nothing a hand-up and then a notice. Nothing is appended
+    because every entry shape here holds content; the turn stays on the record
+    in its own dispatch file and in the lane's pair.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+
+    take_fast_turn(log, ScriptedFast(reply=document(text="")))
 
     assert replies(log) == []
 
@@ -1135,8 +1160,9 @@ def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
     human_turn(log, "The log.")
     config = TierConfig.from_env({FAST_MODEL_ENV: "vendor/unknown", FAST_CONTEXT_LIMIT_ENV: "1000"})
 
+    refused = document(text="Proposing this.", updates=[{"kind": "not-a-kind", "target": "d1"}])
     with pytest.raises(ReplyRefusedError):
-        FastDriver(config, ScriptedFast(reply=document(text=""), prompt_tokens=750)).run(
+        FastDriver(config, ScriptedFast(reply=refused, prompt_tokens=750)).run(
             log, record_dispatch(log)
         )
 

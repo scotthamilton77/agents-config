@@ -9,11 +9,12 @@ channel: every turn is a document of one shape, and a document that does not
 validate is refused, retried once on the same seat, handed up once, and finally
 recorded as a failure rather than shown to the human as the bytes it arrived in.
 
-**A turn with only one legal move.** The obligation used to admit an
-`invalidate` and nothing else, so a decision that survived the answer had no way
-to be answered for: the reply either killed work that stood or said nothing the
-checker credited. `stands` is the third ruling, credited by its `why`, which the
-driver puts on the decision itself.
+**A turn with more than one legal move.** Three rulings discharge an
+obligation, not one. `invalidate` where the gesture leaves a decision no
+question to ask, `revise` where it changes what it asks, `stands` where it
+survives intact — and `stands` is a credited answer rather than a silence,
+credited by its `why`, which the driver puts on the decision itself. A
+vocabulary of one verdict presses the agent to kill work that stands.
 
 The two are checked here together because the second is measured off the first:
 coverage is read from the document's own `rulings`, so a ruling exists where it
@@ -449,26 +450,88 @@ def test_a_reply_ruling_nothing_hands_the_turn_up_narrowed_and_then_says_so_once
     assert "d2" not in said[0], "a decision the first rung ruled on was reported as unruled"
 
 
-def test_the_expert_seat_raises_the_unmet_notice_directly(log: SessionLog) -> None:
+@pytest.mark.parametrize(
+    "said",
+    [
+        pytest.param(document(text="Noted."), id="a-notice-and-no-ruling"),
+        pytest.param(document(text=""), id="an-empty-document"),
+    ],
+)
+def test_the_expert_seat_raises_the_unmet_notice_directly(log: SessionLog, said: str) -> None:
     """
     Given a channel whose only seat is the expert one, replying with a document
-          that rules on nothing
+          that rules on nothing -- once with a notice in it, once wholly empty
     When the human takes the option naming two decisions
     Then no second turn is taken and one notice names both as not ruled on.
 
     Coverage ends where validity does: a seat with no rung above it raises the
-    notice rather than pressing itself.
+    notice rather than pressing itself. The empty document is the same case and
+    not a failure -- every field of it is one §8.10 permits to be empty, so what
+    it needs is the coverage answer rather than a transport error.
     """
-    only = ScriptedFast(replies=[document(text="Noted.")])
+    only = ScriptedFast(replies=[said])
     seed(log)
 
     answer(Lane(log, FastDriver(TierConfig(), only, tier=HEAVY_TIER)))
 
     assert len(only.calls) == 1
-    said = notices(log)
-    assert len(said) == 1, said
-    assert "d2, d3" in said[0]
-    assert "not ruled on" in said[0]
+    assert errors(log) == []
+    raised = notices(log)
+    assert len(raised) == 1, raised
+    assert "d2, d3" in raised[0]
+    assert "not ruled on" in raised[0]
+
+
+def test_an_empty_document_on_the_first_rung_is_handed_up_once_and_credits_nothing(
+    log: SessionLog,
+) -> None:
+    """
+    Given a first-rung seat answering with a wholly empty document, and an
+          expert that rules `stands` on both named decisions
+    When the human takes the option naming them
+    Then the expert is handed the turn once carrying both ids, nothing is said
+         to the human, and no lane error is raised.
+
+    The empty document is valid and therefore walks the coverage ladder, not the
+    refusal one. It appends no entry at all, which is why coverage is read from
+    the window this turn opened: a backward scan over the whole log would find
+    whatever spoke last on the map and credit this turn with its rulings.
+    """
+    first = ScriptedFast(replies=[document(text="")])
+    expert = ScriptedFast(
+        replies=[document(text="Both hold.", rulings=[ruling(one) for one in KILLED])]
+    )
+    seed(log)
+    # An earlier map turn that did rule on both. The empty turn appends nothing,
+    # so a coverage check reading the log whole would find this entry and credit
+    # the empty turn with its verdicts -- discharging an obligation nobody
+    # answered. It is here to make that failure visible rather than latent.
+    log.submit(
+        [
+            EventSubmission(
+                kind="informational",
+                actor="grill-master",
+                idempotency_key="an-earlier-turn",
+                payload={"text": "Both hold.", RULINGS_KEY: [ruling(one) for one in KILLED]},
+            )
+        ],
+        log.epoch,
+    )
+
+    answer(
+        Lane(
+            log,
+            FastDriver(TierConfig(), first),
+            expert=FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
+        )
+    )
+
+    assert len(expert.calls) == 1, "the empty document was not handed up"
+    handed = obligations(log)[-1]
+    assert handed is not None
+    assert handed.ids == KILLED
+    assert notices(log) == []
+    assert errors(log) == []
 
 
 # --- GMR-A4: a ruling is credited by what the same document carries ----------

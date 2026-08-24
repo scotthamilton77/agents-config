@@ -418,7 +418,13 @@ class Lane:
                 conflict=turn.conflict,
                 reassess=turn.reassess,
             )
-            took = self._press(driver, turn, dispatch, _run(driver, self.log, dispatch))
+            # Where the log stood before this turn spoke. Coverage is read from
+            # the window after it, never from the log whole: a turn whose
+            # document validated and carried nothing appends no entry, and a
+            # backward scan over everything would then credit it with the
+            # previous turn's rulings.
+            cursor = self.log.seq
+            took = self._press(driver, turn, dispatch, _run(driver, self.log, dispatch), cursor)
             if self._watching(turn):
                 self._hand_back(took, standing)
             self.log.emit_status(
@@ -440,7 +446,7 @@ class Lane:
                 self._doctor = False
 
     def _press(
-        self, driver: TurnDriver, turn: Turn, dispatch: Path, refusal: str | None
+        self, driver: TurnDriver, turn: Turn, dispatch: Path, refusal: str | None, cursor: int
     ) -> TurnDriver:
         """Press a turn that did not answer, and say so when no seat will.
         Returns whichever seat ended up taking it.
@@ -472,15 +478,16 @@ class Lane:
         # did -- and the human is sent to argue about a verdict that was made.
         standing = [] if obligation is None else list(obligation.ids)
         if refusal is None:
-            standing = self._unruled(standing)
+            standing = self._unruled(standing, cursor)
         if refusal is None and not standing:
             return driver
         if self.expert is not None and self.expert is not driver:
+            handed = self.log.seq
             pressed = self._insist(self.expert, turn, obligation, standing)
             if pressed is not None:
                 driver, refusal = self.expert, pressed.refusal
                 if refusal is None:
-                    standing = self._unruled(standing)
+                    standing = self._unruled(standing, handed)
         if refusal is not None:
             self.log.record("informational", {"text": _lost(driver.tier)})
             raise DocumentRefusedError(driver.tier, refusal)
@@ -490,9 +497,14 @@ class Lane:
             self.log.record("informational", {"text": _unmet(obligation, standing)})
         return driver
 
-    def _unruled(self, owed: Sequence[str]) -> list[str]:
-        """Which of these decisions the turn just taken left unruled."""
-        return unruled(owed, *rulings_of(self.log.entries(), MAP_CHANNEL))
+    def _unruled(self, owed: Sequence[str], cursor: int) -> list[str]:
+        """Which of these decisions the turn just taken left unruled.
+
+        Read from the entries after `cursor`, which is where the log stood
+        before that turn spoke. A turn that appended nothing then credits
+        nothing, instead of inheriting the rulings of whatever spoke last.
+        """
+        return unruled(owed, *rulings_of(self.log.entries_after(cursor), MAP_CHANNEL))
 
     def _insist(
         self,

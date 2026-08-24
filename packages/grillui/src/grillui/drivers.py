@@ -25,13 +25,16 @@ a thread whose board moved while it was set aside, whose chain reasoned from a
 board that no longer holds.
 
 **A reply may declare map updates, and only the grill-master's are heard at
-all.** A turn answers in prose, or in an object carrying prose and the updates
-it wants made; the second is submitted as one gesture, so what the human is
-told and what the turn declared arrive together or not at all. The gesture is
-submitted on the channel the turn ran on, through the same appender the page
-writes through, which is what makes the sole-author rule structural: a thread
-agent's updates are refused there, and no driver holds a second way to the
-board.
+all.** The two roles answer in different shapes. A grill-master turn is the
+reply document and nothing else -- notice, updates, withdrawals, rulings and
+the stop judgement in one object, validated here, retried once on this seat
+when it does not, and handed up rather than shown to the human as the bytes it
+arrived in. A thread agent's turn is prose, optionally carrying the one offer
+it may make. Either way the turn is submitted as a single gesture, so what the
+human is told and what the turn declared arrive together or not at all, on the
+channel the turn ran on, through the same appender the page writes through --
+which is what makes the sole-author rule structural: a thread agent's updates
+are refused there, and no driver holds a second way to the board.
 
 Declaring is not applying. What an agent's update does on arrival -- land, or
 wait in the human's queue for their gesture -- is decided against the board by
@@ -854,10 +857,21 @@ def record_document(
         *stop_notice(document.stop),
     ]
     if not updates:
-        # Every key was well-formed and the turn still said nothing: no notice,
-        # no proposal, no ruling. That is a failed turn like any other, and the
-        # human is owed the lane's error rather than an empty entry.
-        raise ReplyRefusedError(tier, "the completion was empty")
+        # Every key validated and the turn still carries nothing: no notice, no
+        # proposal, no ruling. Nothing is appended, because every entry shape
+        # here holds content and inventing some would put words in the agent's
+        # mouth. This is not a failed turn and must not be raised as one -- the
+        # turn is on the record in its own dispatch file and in the lane's
+        # pair, and a turn that ruled on nothing is exactly what the coverage
+        # check upstream exists to decide about. Raising here would skip the
+        # ladder that owes this case a hand-up and then a notice.
+        #
+        # A withdrawal is the exception: `supersedes` rides on an entry, so a
+        # turn that withdrew something and gave nothing to record it on has
+        # lost the gesture. That is a failed turn rather than a silent drop.
+        if document.supersedes:
+            raise ReplyRefusedError(tier, "it withdrew items with nothing to record them on")
+        return
     if document.supersedes:
         updates[0] = {**updates[0], SUPERSEDES_KEY: document.supersedes}
     judgement = {
