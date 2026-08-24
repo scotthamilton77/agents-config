@@ -17,13 +17,15 @@ gave the model nothing else to say and the checker would not have credited it if
 Ruling (b) fails its own test — it cannot show, per incident step, how the unchanged spec
 would have produced a different outcome — so (b) is not taken.
 
-What changes, in one line each: the grill-master is briefed as the map's author on either
-tier; every map turn is a document with a closed shape, in which a ruling of *stands* is a
+What changes, in one line each: the grill-master is briefed as the map's author on either tier;
+every map turn is a document with a closed shape, in which a ruling of *stands* is a
 first-class, credited answer; the grill-master is given the one part of the house grilling
-method the board does not already mechanise; the map channel's default tier is configured
-apart from the threads' and defaults to the heavy tier; `puts_in_question` means what it
-says — a prediction the grill-master rules on — everywhere it appears; and a thread agent
-is told how to read a board that moved.
+method the board does not already mechanise; the seat that takes a channel's first-rung turn —
+transport, model and effort — is configured per channel, and the map's is a mid-weight reasoning
+model on the Codex transport; the map channel gains three escalation triggers that need no human
+text, since the human's other gestures there — an apply and a dismiss — carry none;
+`puts_in_question` means what it says — a prediction the grill-master rules on — everywhere it
+appears; and a thread agent is told how to read a board that moved.
 
 ## 1. What the spec makes the grill-master for
 
@@ -278,8 +280,9 @@ agent did exactly what a prompt with no other legal answer asked, in one second.
 observations on the fast tier on the map channel stand beside it (GUI-D42's two-sentence
 reply to eight moots, GUI-D12's generous self-judgement, this one), and none separates
 weight from prompt. Weight becomes testable once `stands` exists: replay the recorded
-dispatches through both tiers and compare rulings. Until then the map's author defaults to
-the heavy tier (§5.4), and the fast tier gains an effort setting for the turns it keeps.
+dispatches through both seats and compare rulings. Until then the map's author sits on a
+seat of its own — a mid-weight reasoning model at a deliberate effort, on the same rung a
+thread's lite model occupies (§5.4) — and effort is a property of every seat.
 
 ## 5. The amendment
 
@@ -309,12 +312,19 @@ human reads (GUI-U3 bounds it; it may be empty when the board already says every
 GUI-U15), `updates` are the map mutations, `supersedes` the withdrawals, `rulings` the
 turn's judgement on decisions a gesture put in question, and `stop` whether the stop
 condition is met. A reply that does not validate is refused and retried once
-on the same tier with the refusal quoted, then handed to the expert once, then recorded as
-a backend `informational` naming the failure; it is never shown to the human as prose. The fast
-transport asks the provider for the shape where it can, and both drivers validate what
-comes back. A ruling names a decision, one of `invalidate`, `revise` or `stands`, and a
-`why`. An `invalidate` or `revise` ruling is credited only when the same document carries
-that update targeting that decision; a `stands` ruling is credited by its `why`, which the
+on the same seat with the refusal quoted. From a first-rung seat the turn is then handed to
+the expert once. **From the expert seat there is no rung above it**, whether the channel is
+in expert mode or the gesture classed as judgment (GUI-D48): the failure is recorded as a
+backend `informational` naming it, and nothing is handed anywhere. Coverage ends the same
+way — a valid reply leaving a named id unruled hands a first-rung turn up once (GUI-D42),
+and on the expert seat raises the unmet notice directly. A reply is never shown to the
+human as prose. A
+seat's transport asks the provider for the shape where it can — a JSON schema on the
+request, `--output-schema` on the Codex transport — and every driver validates what comes
+back regardless of what it asked for. A ruling names a decision, one of `invalidate`,
+`revise` or `stands`, and a `why`. An `invalidate` or `revise` ruling is credited only when
+the same document carries that update targeting that decision; a `stands` ruling is
+credited by its `why`, which the
 driver records as an `informational` targeted at that decision, so it renders on the
 decision (GUI-U15) and a Discuss from it anchors there. Rulings may name decisions the
 dispatch did not; the check is only that every decision the dispatch named is ruled.
@@ -397,7 +407,9 @@ the notice, the targeted informational minted from the ruling, and the ruling it
        "why": "(a) fixes the evidence contract, not what ships it; d2 asks what is portable."}
     ],
     "stop": {"met": false, "why": ""},
-    "tier": "heavy"
+    "tier": "heavy",
+    "model": "claude-opus-5",
+    "effort": "xhigh"
   }
 }
 ```
@@ -411,9 +423,15 @@ three rulings — `stands` is the way out GUI-D38 ¶2 describes for a dependent 
 the dead prereq and survives, and `revise` stays the way out for one that drops it.
 
 **GUI-D38 is amended** to oblige a ruling per decision the answer puts in question, with
-`invalidate` where it is moot; narrating a decision as dead without ruling it remains
-refused, and so does ruling it dead while saying it must be answered: the `why` of an
-`invalidate` is shown on the decision and has to justify a death.
+`invalidate` where it is moot and `invalidate` or `revise` where an applied invalidate
+stranded it. Narrating a decision as dead without ruling it stays refused, and that refusal
+is now checked against the document rather than against prose (GMR-A2, GMR-A3). The
+incident's category error — a rationale saying the decision must now be answered, carried
+by an `invalidate` — is answered by `stands` existing as a credited ruling, and not by any
+check on what a `why` means: no code reads the sense of a sentence, and a rule that asked
+one to would be unimplementable. What the amendment adds beside the ruling is exposure — an
+`invalidate`'s `why` renders on the decision it kills (GUI-U15), so the human deciding
+whether to apply it reads the argument, including one that argues against its own ruling.
 
 ### 5.3 The method
 
@@ -426,44 +444,124 @@ condition is met.* Nothing else of the `grilling` skill crosses: the tree, the
 frontier, the round and the recommendation are the board's, fact-finding is impossible in
 one call, and the acceptance-criteria exit is not this session's.
 
-### 5.4 Per-agent model and effort
+### 5.4 Per-channel seats
 
-**GUI-D46 — Which tier takes a channel's first turn is configured per agent, and the map's
-author defaults to the heavy tier.** Beside the two model ids, the heavy effort and the
-escalation policy sit two more settings: the map channel's default tier, `heavy` unless
-set, and the thread channels' default tier, `fast` unless set. A fast-tier effort setting
-is passed to the provider where the model takes one, unset by default. The transfer
-control already reads the channel's mode (GUI-U22), so a map that starts on the heavy tier
-offers *Return to fast agent* from its first paint and the human can take it there. The
-grill-master's heavy turns use the configured heavy model and effort; a separate effort
-for the map is not added until a session shows the shared one wrong in one direction —
-a human naming the map's latency as why they stopped answering, or a ruling at lower
-effort that a replay at higher effort reverses. Cost, stated so the default can be
-re-made: a resumed heavy map turn runs about $0.054 and 12–34 seconds per human gesture,
-against roughly $0.0005 and a second on the fast tier; a five-decision board pays under a
-dollar, and the waiting clock is what the human sees while it thinks. The observation
-that reverts the default:
-over the recorded dispatches of three sessions, the fast tier's rulings replayed against
-the heavy tier's agree on every decision named.
+**GUI-D46 — A channel's first rung is occupied by a seat configured per channel, and the
+map's is a mid-weight reasoning model on the Codex transport.** Two words, kept apart. A
+*tier* is a rung — `fast` first, `heavy` as the expert, exactly the two the spec already
+has. A *seat* is the transport, model and effort configured to occupy a rung on one
+channel. What becomes per-channel configuration is the seat on the first rung, never the
+number of rungs: a channel whose first rung was already the expert has nowhere to hand a
+turn up to, and GUI-D45's retry-then-expert and GUI-D42's single hand-up would both
+resolve to the seat that has just failed.
+
+A seat is a transport, a model and an effort, where the transport is one of the closed set
+`openrouter | codex | claude`. The defaults: thread channels keep the OpenRouter seat
+`google/gemini-3.5-flash-lite`, which takes no effort; the map channel's first-rung seat is
+`gpt-5.6-luna` at `medium` effort on the Codex transport; and the expert seat is one shared
+configuration for every channel — the configured Claude model at the configured effort, on
+the `claude` transport. Each is configuration, so a session may seat any of them
+differently, and no session gets a third rung.
+
+The seat occupies the fast rung, so the rung stays what every other surface keys on: the
+lane names `fast` and `heavy`, the map's transfer control reads *Transfer to expert* at
+first paint like every other channel's (GUI-U22), the turn's attribution carries its `tier`
+beside the seat's `model` and `effort`, and the recorded dispatch carries the same bytes on
+every transport.
+
+**The Codex transport is a resumed chain.** Proven on codex-cli 0.146.0: the driver
+invokes `codex exec --json`, and the thread id is the `thread_id` carried by the
+`thread.started` event that opens the stream; every later turn on that channel is `codex
+exec resume <thread_id> --json`, the id kept the way the heavy chain's session id is, and
+GUI-D15's one-process rule binds it identically. The standing brief is supplied on every
+invocation as `-c developer_instructions=…` and the §8.10 schema as `--output-schema
+<file>`, cold turn and resumed turn alike. The process runs with its standard input closed,
+since it otherwise blocks reading a stream nobody is writing. The turn's usage — the token
+counts on the `turn.completed` event — is what the context measurement reads, in place of a
+byte estimate.
+
+**Latency is the currency here, not price.** The map seat rides the owner's OpenAI
+subscription and the expert seat the owner's Anthropic one, so neither is API-denominated
+and a per-turn dollar figure for either would be a fiction. What the human spends is the
+waiting clock: a resumed turn on the map seat measured about 6 s wall against 12–34 s for
+an expert turn (probe, 2026-08-23).
+
+**The step-up is a model, not a rung.** Where the map seat's rulings prove inadequate, that
+seat's model becomes `gpt-5.6-terra` — a configuration change, and still two rungs. Two
+observations decide it, one in each direction. Down: over the recorded dispatches of three
+sessions, the map seat's rulings replayed against the expert seat agree on every decision
+named — then the map seat may drop to the threads' seat and the per-channel configuration
+with it. Up: GUI-D48's distrust signal fires in two sessions of three — then the seat takes
+`gpt-5.6-terra`.
 
 ### 5.5 What thread agents are told about board changes
 
-**GUI-D47 — A thread agent is told how to read a board that moved.** Its brief carries a
-board legend, on both tiers: a decision's `status`, `rationale` and `history` are the
-record of what happened to it and why, and a question about why the board moved is
-answered by quoting them or by saying the record does not say — never by inferring a
-cause; `prereqs` is what a decision waits on, and `puts_in_question` on an option is the
-plan author's prediction that taking the option puts those decisions in question, which
-the grill-master rules on — a mark, not a dependency; `pending` is what the human has not
-dealt with, including a notice this thread may have been opened from; a map change in
-`history` carries `proposed_by` — the agent whose queued update the human's apply landed —
-and, where a ruling produced it, that `verdict` and its why (§8.6's entry gains both
-fields), so who proposed a move and what was ruled is quoted, never inferred. A thread opened
-from a notice is kinded `notice` and anchors to the decision the notice targeted, null
-where the notice targeted none; §8.5's kind list gains `notice`. `help_reference` crosses
-to the `help` kind and to no other — not to a `notice` thread anchoring nothing.
+**GUI-D47 — A thread agent is told how to read a board that moved.** Its brief carries a board
+legend, on both tiers: a decision's `status`, `rationale` and `history` are the record of what
+happened to it and why, and a question about why the board moved is answered by quoting them or
+by saying the record does not say — never by inferring a cause; `prereqs` is what a decision
+waits on, and `puts_in_question` on an option is the plan author's prediction that taking the
+option puts those decisions in question, which the grill-master rules on — a mark, not a
+dependency; `pending` is what the human has not dealt with, including a notice this thread may
+have been opened from; a map change in `history` carries `proposed_by` — the agent whose queued
+update the human's apply landed — and, where a ruling produced it, that `verdict` and its why
+(§8.6's entry gains both fields), so who proposed a move and what was ruled is quoted, never
+inferred. A thread opened from a notice is kinded `notice` and anchors to the decision the
+notice targeted, null where the notice targeted none; §8.5's kind list gains `notice`.
+`help_reference` crosses to the `help` kind and to no other — not to a `notice` thread anchoring
+nothing. **What would show the legend is not enough** is an observation rather than a test: a
+thread agent in the first live session, asked why a decision was invalidated over a board whose
+`rationale` and `history` state it, answering with a cause the record does not carry. Prompt
+text cannot be asserted to have been read; the session that watches one is what confirms the
+legend or reverts it.
 
-### 5.6 The handoff field
+### 5.6 Escalating on what a transcript condition cannot see
+
+**GUI-D48 — The map channel escalates on three triggers that need no human text, each with
+its own persistence.** GUI-D35's policy and GUI-D12's conditions reach every channel, the
+map's included, through the note riding an answer: the note is a human turn, so a note
+meeting a condition fires, and under `autonomous` writes its own `transferred` entry. That
+is the map's only human-text route, and it is thin — the human's other gestures there, an
+apply and a dismiss, carry no text for a condition to read, and nobody presses *Transfer to
+expert* at an agent they never talk to. The three triggers below are what a transcript
+condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note.
+
+1. **Post-reply press**, per gesture. A reply leaving a named decision unruled, or a
+   document still invalid after its one retry, is re-asked on the expert seat for that
+   gesture alone (GUI-D42, GUI-D45). It checks coverage — every decision the dispatch named
+   is ruled — and never correctness: a ruling the backend would disagree with is not a
+   ruling missing. A gesture already on the expert seat has no rung to press onto, and
+   GUI-D45's terminal ladder is what applies instead. Nothing is written that outlives the
+   gesture.
+2. **Pre-dispatch turn classing**, per gesture. A gesture whose class is judgment
+   dispatches to the expert seat directly: no first-rung turn is recorded for it, and no
+   failure is round-tripped to reach a seat the class already named. The judgment classes
+   are closed, and each is readable off the board before any model is called — an answer
+   whose taken option carries a `puts_in_question` mark resolving to a live node; an
+   applied `invalidate` that strands a dependent, meaning a decision whose `prereqs` name
+   the invalidated one and which is itself still open; a `thread-fold`; a withdrawal
+   conflict (GUI-D26); and the doctor (GUI-U12). Everything else is clerical and stays on
+   the first-rung seat: an answer whose option carries no mark and strands nothing, and a
+   supersede-only reconciliation. Classing writes no status entry, because there is nothing
+   to fall back from — the next clerical gesture goes to the first rung again, with no
+   entry to undo.
+3. **The distrust signal**, per session and sticky. Apply and dismiss are the human's only
+   gestures on the map channel that carry no text — the note riding an answer is the exception,
+   and GUI-D12 reads it — so a dismissal is the one way they say, wordlessly, that the seat's
+   proposal was wrong. One per-session counter counts two events as the same signal: the human
+   dismissing a first-rung seat's proposal, and a post-reply press (trigger 1). At the second
+   signal the backend writes a policy `transferred` status entry on the map channel — GUI-D35's
+   own machinery, unchanged: such an entry only ever moves a channel up, and the way back down
+   is the human's transfer control. One signal writes nothing, because one is noise; a third
+   writes nothing new, because the channel is already there.
+
+**N=2 is a default nobody has defended under fire.** Its revert observation is a session
+where the second signal is followed by expert rulings that a replay on the first-rung seat
+reproduces: that says the threshold is too low. Self-flagging by the model stays refused
+for the reason GUI-D12 gives — a model asked whether a question exceeds its own reach
+judges generously and answers anyway.
+
+### 5.7 The handoff field
 
 §8.2's `puts_in_question` reads: *optional array of decision ids that taking this option
 puts in question — decisions that may die, change or turn on something else once it is
@@ -488,17 +586,18 @@ still valid; the field in the plan in evidence, read under this wording:
 }
 ```
 
-The schema docstring on `Option` says the same thing as §8.2, which it does not today.
+The schema's own `Option` documentation carries that same sentence.
 
 ## 6. The incident, replayed under the ruling
 
 1. **The handoff marks d1.a with `puts_in_question: ["d2"]`.** Nothing changes in the
-   handoff: the mark was right under §5.6 — (a) shifts what d2 turns on. The skill's
+   handoff: the mark was right under §5.7 — (a) shifts what d2 turns on. The skill's
    sentence now tells the author what the mark obliges, so the intent and the mechanism
    agree. Acceptable as is.
 2. **The human answers d1 = a with a note.** Nothing changes; the gesture is the same.
-3. **The backend computes the obligation and briefs the grill-master.** The dispatch goes
-   to the heavy tier by default (GUI-D46); its system prompt opens with the role and the
+3. **The backend computes the obligation and briefs the grill-master.** d1.a's mark
+   resolves to a live node, so the gesture classes as judgment and dispatches to the expert
+   seat with no first-rung turn (GUI-D48); its system prompt opens with the role and the
    reshape step (GUI-D44, §5.3); the obligation section names d2, quotes the answer and
    states the three rulings (GUI-D42 as amended). The section can no longer say "killed".
 4. **The agent replies.** The reply is a document (GUI-D45) and must rule on d2. The agent
@@ -525,11 +624,12 @@ The schema docstring on `Option` says the same thing as §8.2, which it does not
    document's `rulings` and the queued update, never by a prose phrase or by any
    informational that happens to target the id — that last would credit "d2 is dead" as a
    ruling, which is the narration GUI-D38 refuses.
-2. **Reword the skill's `puts_in_question` line.** A consequence: the wording is §5.6, and
+2. **Reword the skill's `puts_in_question` line.** A consequence: the wording is §5.7, and
    it is the same sentence §8.2 and the `Option` docstring now carry.
-3. **Add a fast-tier reasoning knob.** Independent of the ruling's core and a consequence
-   of GUI-D46 only: under the heavy default the map's author does not use it, and the
-   thread agents that keep the fast tier may. It does not address the incident on its own.
+3. **Add a fast-tier reasoning knob.** A consequence of GUI-D46, which makes effort a
+   property of every seat rather than of one rung: the map's seat runs at `medium` and the
+   threads' lite seat takes none. As a patch on its own it addresses nothing in the
+   incident — the reply obeyed every rule it was given, and would have at any effort.
 
 ## 8. The criteria, dispositioned
 
@@ -550,7 +650,9 @@ carries the replacement; *suspect* names what would settle it.
 - **GUI-D11.** Changes: the first sentence becomes "The fast tier answers from the context
   it was given, fast, and never manufactures information." The facilitation mandate —
   "stop short of deciding" — moves to the thread agent's role part (GUI-D44) and is no
-  longer a property of the tier. The rest of GUI-D11 stands.
+  longer a property of the tier. The sentence naming the fast tier a non-Claude model over
+  OpenRouter becomes a statement about the rung's default seat rather than about the rung,
+  which GUI-D46 seats per channel. The rest of GUI-D11 stands.
 - **GUI-D12, GUI-D14, GUI-D15, GUI-D19, GUI-D22, GUI-D24, GUI-D26, GUI-D29, GUI-D30,
   GUI-D39, GUI-D40, GUI-D41, GUI-D43.** Stand.
 - **GUI-D25.** Stands, and GUI-D44 restates it as the role.
@@ -565,9 +667,12 @@ carries the replacement; *suspect* names what would settle it.
 - **GUI-U9, GUI-U12, GUI-U15, GUI-U16, GUI-U26, GUI-U29.** Stand. GUI-U15 is what a
   `stands` ruling's targeted notice relies on.
 - **§8.1 `help_reference`.** Stands; the code drifts from it (GUI-D47 restates).
-- **§8.2 `puts_in_question`.** Changes as §5.6.
+- **§8.2 `puts_in_question`.** Changes as §5.7.
 - **§8.5 thread `kind`.** Changes: `notice` is added — "for a thread opened from an
   agent's notice, anchored to the decision the notice targeted or to none".
+- **§8.6 `history`.** Changes: each entry gains `proposed_by` — the agent whose queued
+  update the human's apply landed, absent where no agent authored the move — and, where a
+  ruling produced it, `verdict` and the `why` that ruling carried.
 - **§8.10 (new).** The grill-master reply document, §5.2.
 - **GUI-A37, GUI-A38, GUI-A39, GUI-A40, GUI-A57, GUI-A64, GUI-A70, GUI-A79–A82,
   GUI-A93, GUI-A94, GUI-A102, GUI-A106, GUI-A107, GUI-A108.** Stand.
@@ -593,10 +698,13 @@ carries the replacement; *suspect* names what would settle it.
   targeted at it".
 - **GUI-A109.** Changes: "the expert proposes nothing and rules nothing" in place of
   "proposes nothing either".
-- **GUI-D46's default (map on the heavy tier).** Suspect, by design: settled by the replay
-  named in §5.4, which is the observation that reverts it.
-- **GUI-D11's cost and latency figures.** Suspect for the map's author under GUI-D46: they
-  were measured at a lighter weight; a session on the heavy default reports its own.
+- **GUI-D46's map seat (`gpt-5.6-luna` at `medium`).** Suspect by design in both
+  directions: §5.4 names the replay that drops it to the threads' seat and the distrust
+  rate that raises it to `gpt-5.6-terra`.
+- **GUI-D48's N=2.** Suspect: §5.6 names the observation that says it is too low.
+- **GUI-D11's cost and latency figures.** They describe the two default transports and
+  stand for them. They say nothing about the map's seat, which is subscription-priced on a
+  third transport and measured in wall time (§5.4).
 
 ## Acceptance criteria
 
@@ -605,72 +713,102 @@ skill's text, and each names what a red test would assert.
 
 - **GMR-A1** For all four tier-agent pairs, the composed system prompt opens with that
   agent's role part: the grill-master's names it the map's author and carries the reshape
-  step on both tiers; the thread agent's carries the facilitation mandate and no sentence
-  of the grill-master's on both tiers. Mutation-tested: keying either role to a tier turns
-  the suite red naming the pair.
+  step on both tiers; the thread agent's carries the facilitation mandate and no sentence of
+  the grill-master's, on both tiers. Mutation-tested: keying either role to a tier turns the
+  suite red naming the pair.
 - **GMR-A2** A grill-master reply validates against §8.10 or is refused: a prose reply, a
   document missing `text` or `rulings`, and a ruling outside the three kinds each surface
   as the lane's error phase naming the tier, and none reaches the log as a notice.
 - **GMR-A3** A dispatch carrying an obligation names the ids, quotes the gesture and states
   the three rulings; a reply ruling `stands` with a why on each named id presses no expert,
-  raises no unmet notice, records one informational targeted at each decision carrying
-  that why, and leaves each on the frontier; a reply ruling nothing on a named id hands the
-  turn up once, narrowed to the unruled ids, and a second such reply raises one notice
-  saying those decisions were not ruled on.
+  raises no unmet notice, records one `informational` targeted at each of those decisions
+  carrying that why, and leaves each on the frontier; a reply ruling nothing on a named id
+  hands the turn up once, narrowed to the unruled ids, and a second such reply raises exactly
+  one notice saying those decisions were not ruled on.
 - **GMR-A4** An `invalidate` or `revise` ruling whose document carries no matching update
   targeting that decision is not credited, and the turn is handed up as unruled;
   mutation-tested by crediting the ruling alone.
-- **GMR-A5** With no tier configuration set, the first map turn is composed by the heavy
-  tier and the first thread turn by the fast tier, the lane names each, and the map's
-  transfer control reads *Return to fast agent* at first paint; setting the map's default
-  to `fast` makes its first turn fast with the control reading *Transfer to expert*. A
-  fast-tier effort, where set, appears in the request body and in the turn's attribution.
-- **GMR-A6** Every composed thread-agent prompt carries the board legend, on both tiers; a
-  scripted turn asked why a decision was invalidated, over a board whose `rationale` and
-  `history` state it, replies quoting that rationale and asserts no cause outside it.
-- **GMR-A7** A thread created from a notice targeting a decision anchors to that decision
-  and is kinded `notice`; a `notice` thread's recorded dispatch carries no
-  `help_reference` and the help thread's still does; the page-derived kind check admits
-  `notice`.
-- **GMR-A8** §8.2's `puts_in_question` text, the `Option` docstring and the skill's
-  sentence state the same semantics — a prediction the grill-master rules on — asserted by
-  the phrase "rules on" being present in all three.
+- **GMR-A5** With no seat configuration set, the map channel's first-rung turn is composed
+  on the Codex transport by `gpt-5.6-luna` at `medium` effort and a thread's by the
+  OpenRouter seat `google/gemini-3.5-flash-lite` at no effort; the lane names the `fast`
+  tier on both; each turn's attribution carries that seat's model and its effort where it
+  has one, beside the tier; and the map's transfer control reads *Transfer to expert* at
+  first paint. Seating the map channel on the threads' seat makes its first turn take that
+  transport and model and changes nothing else about the channel.
+- **GMR-A6** Every composed thread-agent prompt carries the board legend, on both tiers.
+- **GMR-A7** A thread created from a notice targeting a decision anchors to that decision and
+  is kinded `notice`; a `notice` thread's recorded dispatch carries no `help_reference` and
+  the help thread's still does; the page-derived kind check (GUI-A13) admits `notice`.
+- **GMR-A8** Each of the three surfaces that say what `puts_in_question` is — §8.2, the
+  schema's own `Option` documentation and the handoff-assembling skill's sentence — names
+  the field as something the grill-master rules on, asserted by the phrase "rules on" being
+  present in all three. Agreement beyond that phrase is reviewed, not tested.
+- **GMR-A9** A gesture of each judgment class — an answer taking an option whose mark
+  resolves to a live node, an applied `invalidate` leaving an open dependent, a
+  `thread-fold`, a withdrawal conflict and the doctor — is composed by the expert seat with
+  no first-rung turn recorded for it; a clerical answer, whose option carries no mark and
+  strands nothing, is composed by the first-rung seat; and neither writes a `transferred`
+  entry, so a clerical gesture following a judgment one is first-rung again.
+- **GMR-A10** One dismissal of a first-rung seat's proposal moves nothing and writes no
+  status entry; a second distrust signal — a dismissal or a post-reply press, counted alike
+  — writes exactly one policy `transferred` entry on the map channel, and every map turn
+  after it is the expert seat's; a third signal writes no second entry; and the human's
+  transfer control returns the channel to its first-rung seat.
+- **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
+  the `thread.started` event, then resumes that thread on every later turn on the channel as
+  `codex exec resume <thread_id> --json`; `-c developer_instructions=…` and `--output-schema
+  <file>` are passed on the resumed turn as well as on the cold one; the process is run with
+  its standard input closed; a reply that does not validate is refused under GMR-A2 rather
+  than shown to the human; and the token counts on `turn.completed`, not the byte estimate,
+  are what the context measurement records.
 
 ## 9. The changes, in order
 
-No tracker items are minted here. Each change names its target and the observation that
-would show it was wrong to make.
+Seven slices, minted as `agents-config-9k9.294.1` through `agents-config-9k9.294.7` under
+the epic `agents-config-9k9.294`. Each names its target and the observation that would show
+it was wrong to make.
 
-1. **Spec text** — `docs/specs/2026-08-18-grilling-ui-v1.md`: the Vocabulary, GUI-D10,
-   D11, D37, D38, D42 and U3 as §8 states; new GUI-D44–D47; §8.2, §8.5 and the new §8.10;
-   the criteria of §8 and GMR-A1–A8 into the table and the evidence ledger. Wrong if: a
-   reader of the amended spec can still find a sentence briefing an agent by its tier.
-2. **Prompt** — `packages/grillui/src/grillui/tiers.py`: `system_prompt` joins a role part
-   to a tier part; the grill-master's role part carries §5.1 and §5.3; the thread agent's
-   carries the facilitation mandate and the legend of §5.5; the obligation sections state
-   the three rulings; the mutation-format rule becomes the document rule. Wrong if: a
-   replay of the recorded incident dispatch through the amended prompt on either tier
-   still returns an `invalidate` whose why says the decision must be answered.
-3. **Code** — `packages/grillui/src/grillui/schemas.py` (the reply document and ruling
-   types; the `Option` docstring; `notice` in the thread-kind note),
-   `packages/grillui/src/grillui/drivers.py` (validate the document; ask the fast
-   provider for the shape; mint the targeted informational per `stands`; carry `rulings`
-   and `stop` on the entry), `packages/grillui/src/grillui/escalation.py`
-   (`outstanding` credits a ruling with its update, or `stands`),
-   `packages/grillui/src/grillui/lane.py` (press on unruled ids; the notice wording),
-   `packages/grillui/src/grillui/dispatch.py` (`help_reference` on the `help` kind only),
-   and `tiers.py`'s configuration (per-channel default tier, fast effort). The page needs
-   no change: it already anchors a Discuss thread on the notice's target. Wrong if: a
-   session's log shows a grill-master turn refused for shape more than once in ten, which
-   says the fast provider's structured output is not holding and the soft parser must
-   return as a fallback.
-4. **Skill** — `src/user/.agents/skills/grill-with-ui/SKILL.md`, the `puts_in_question`
-   sentence (§5.6); `src/user/.agents/skills/grill-with-ui/references/help.md` gains one
-   line saying a pre-marked decision is one the grill-master will rule on when the option
-   is taken. Wrong if: a handoff written under the new sentence still marks a decision the
-   author meant only as "related", which says the sentence needs an example of a mark
-   that is not warranted.
-5. **Tests** — `packages/grillui/tests/unit/test_tiers.py` and `test_lane.py`: the two
-   tier-keyed prompt tests become role-keyed; the obligation tests take the three rulings.
-   Wrong if: a test has to assert a tier to pass, which says the role part leaked back
-   into the tier part.
+1. **The spec** (`.1`) — this document, and `docs/specs/2026-08-18-grilling-ui-v1.md`: the
+   Vocabulary, GUI-D10, D11, D37, D38, D42 and U3 as §8 states; new GUI-D44–D48; §8.2,
+   §8.5, §8.6 and the new §8.10; the criteria of §8 and GMR-A1–A11 into the table and the
+   evidence ledger. Wrong if: a reader of the amended spec can still find a sentence
+   briefing an agent by its tier.
+2. **The prompts** (`.2` — GMR-A1, GMR-A6) — `system_prompt` joins a role part to a tier
+   part; the grill-master's role part carries §5.1 and §5.3; the thread agent's carries the
+   facilitation mandate and the board legend of §5.5; the obligation sections state the
+   three rulings; the mutation-format rule becomes the document rule; the two tier-keyed
+   prompt tests become role-keyed. Wrong if: a replay of the recorded incident dispatch
+   through the amended prompt on either seat still returns an `invalidate` whose why says
+   the decision must be answered — or a test has to assert a tier to pass, which says the
+   role part leaked back into the tier part.
+3. **The reply document** (`.3` — GMR-A2, GMR-A3, GMR-A4) — the document and ruling types
+   in the schemas, with the `Option` docstring and the `notice` thread kind beside them;
+   the drivers validate the document, ask the transport for the shape, mint one
+   `informational` targeted at each `stands` ruling, and carry `rulings` and `stop` on the
+   turn's entry; the outstanding check credits a ruling by its matching update or by
+   `stands`; the lane presses on unruled ids and rewords the notice. Wrong if: a session's
+   log shows a grill-master turn refused for shape more than once in ten, which says the
+   transport's structured output is not holding and a fallback parser is owed.
+4. **Per-channel seats and the Codex driver** (`.4` — GMR-A5, GMR-A11) — the tier
+   configuration gains a per-channel first-rung seat of transport, model and effort; a
+   Codex driver mirrors the heavy one over a resumed thread id, with standard input closed,
+   the standing brief and the reply schema on every turn, and the turn's own usage feeding
+   the context measurement; attribution carries the seat's model and effort. Wrong if:
+   GUI-D46's downward observation lands — three sessions' rulings replayed on the threads'
+   seat agree on every named decision — which says one seat was enough all along.
+5. **Mechanical escalation** (`.5` — GMR-A9, GMR-A10) — pre-dispatch turn classing over the
+   closed judgment set, and the per-session distrust counter writing the policy
+   `transferred` entry at its second signal. Wrong if: a session reaches the expert seat on
+   the distrust signal and its rulings replay identically on the first-rung seat, which
+   says N=2 is too low.
+6. **Notice threads and the history record** (`.6` — GMR-A7) — the `notice` thread kind
+   anchored to the decision the notice targeted, `help_reference` routed to the `help` kind
+   alone, and §8.6's history entry gaining `proposed_by` and, where a ruling produced the
+   move, that verdict and its why. Wrong if: a thread agent asked why the board moved still
+   infers a cause with the record in its context, which says the legend rather than the
+   fields was the binding constraint.
+7. **The skill** (`.7` — GMR-A8) — the `grill-with-ui` skill's `puts_in_question` sentence
+   (§5.7), and one line in its help reference saying a pre-marked decision is one the
+   grill-master rules on when the option is taken. Wrong if: a handoff written under the
+   new sentence still marks a decision the author meant only as "related", which says the
+   sentence needs an example of a mark that is not warranted.

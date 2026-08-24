@@ -29,8 +29,9 @@ of implementation work claiming the requirements it discharges.
 contract; the reference page demonstrates the surface, and the ledger states what the owner
 asked of it.
 
-**Vocabulary.** The *grill-master* is the driving agent: it owns the map and is the only
-agent that authors changes to it. A *thread agent* serves one side thread. The *backend*
+**Vocabulary.** The *grill-master* is the map's author: it rules on what every human
+gesture does to the rest of the plan, and is the only agent that authors changes to the
+map. A *thread agent* serves one side thread. The *backend*
 (equivalently, the *orchestrator*) is the coded process — never an agent. On the board: a
 decision is *settled* once answered; the *frontier* is the set of decisions answerable now;
 *fog* masks decisions whose prerequisites are unmet — a prerequisite that has been invalidated is
@@ -41,7 +42,8 @@ conclusion is applied to the board — *fold-readiness* is the thread's last tur
 which is the turn a fold hands over (GUI-D41). A thread agent *proposes an answer* when the
 conversation has converged on what answers the thread's own decision: an offer the human
 arms, edits and takes, changing no map and settling nothing until they do. A *channel* is
-one conversational lane between the page and an agent: one for the map, one per thread. In
+one lane between the page and an agent: the map's, on which the human makes gestures and
+the grill-master returns documents, and one conversational lane per thread. In
 the handoff file, *impetus* is why the grilling was requested, *posture* is how
 adversarially to grill, and *stop_when* is the condition under which the grill-master
 should treat the grilling as complete.
@@ -131,7 +133,8 @@ handoff.
 The page carries an explicit end-session action. On it the backend appends a terminal
 entry, invokes the capture step, and writes the terminal result into the session directory
 alongside the log and the images. An agent that judges `stop_when` satisfied says so to
-the human; it does not end the session itself.
+the human — the grill-master as the `stop` field of its document (§8.10), which the page
+raises as a notice — and it does not end the session itself.
 
 **GUI-D29 — Park and close are the two thread-lifecycle gestures, and both are
 non-destructive.** Parking a thread sets it aside as a loose end: it is carried to the end
@@ -162,15 +165,17 @@ usually driven by an agent on the human's behalf, and a tab nobody asked for is 
 
 ## 3. Agent drive
 
-**GUI-D11 — The fast tier facilitates discussion; it never manufactures information.** The
-fast tier is a non-Claude model over OpenRouter, at roughly one second and $0.0002–$0.0008
-per turn. The heavy tier is a Claude model driven as `claude -p --resume` CLI turns, which
-bills the owner's subscription, at $0.576 for the cold first turn and $0.054 thereafter,
-6.5 s standalone and 12–34 s under load; those figures are a floor for a heavier default,
-not a ceiling. The fast tier's mandate is quick discussion: answer from the context it was
-given, fast, and never assert anything that context does not support. The moment a question
-crosses into reasoning, decisioning or implied design, it stops short of deciding and
-recommends a handoff to the heavy tier as metadata on its reply — **and who acts on that
+**GUI-D11 — The fast tier answers from the context it was given, fast, and never
+manufactures information.** Its default seat is a non-Claude model over OpenRouter, at
+roughly one second and $0.0002–$0.0008 per turn; which seat occupies this rung on a given
+channel is GUI-D46's to say, not this decision's. The heavy tier is a Claude model driven
+as `claude -p --resume` CLI turns, which bills the owner's subscription, at $0.576 for the
+cold first turn and $0.054 thereafter, 6.5 s standalone and 12–34 s under load; those
+figures are a floor for a heavier default, not a ceiling. That one sentence is the whole of
+what a tier says about a turn: what the turn is *for* belongs to the role's part of the
+standing brief (GUI-D44) and never to the tier's, so no agent's mandate arrives with its
+weight. Where a turn meets an escalation condition, the backend attaches a recommendation
+to hand the channel to the heavy tier as metadata on that reply — **and who acts on that
 recommendation is the session's escalation policy** (GUI-D35). No agent escalates itself
 under either policy: the recommendation is a condition the backend evaluates against the
 transcript (GUI-D12), never the model's opinion of its own reach, and an agent asserting a
@@ -478,12 +483,12 @@ when no board change was ever proposed.
 
 **GUI-D37 — An option may name the decisions it would put in question, and that naming is
 display data.** An option in the map data may carry `puts_in_question`, an array of decision
-ids the grill-master expects that option to put in question downstream, authored when it
-adds or revises the node and absent from an option that predicts nothing. Until the human
+ids the grill-master expects that option, if taken, to put in question downstream, authored
+when it adds or revises the node and absent from an option that predicts nothing. Until the human
 answers with that option, the page is its only reader: it changes no status, places no hold,
 enters no projection but the option it rides on, and reaches a dispatch as nothing but the
-bytes of that node. Taking it is what makes it more than display data, and what that
-obliges is GUI-D42's, not this one's. What moves a
+bytes of that node. Taking it is what obliges a ruling on each, and what that
+obliges is GUI-D45's, not this one's. What moves a
 decision on the board is still `invalidate` carrying its rationale (GUI-D19), queued like
 every other withdrawal and applied by the human (GUI-D26) — the board never shows a decision
 invalidated by a pre-mark. Ids resolving to no node are ignored rather than refused, in a
@@ -501,23 +506,32 @@ the warning is worth something only before the answer, and a turn is not that fa
 lands on a board that has already moved, having put an invalidate in the log for an option
 nobody took.
 
-**GUI-D38 — An answer that moots other decisions obliges an `invalidate` for each of
-them.** When the human's answer to one decision makes others moot, the grill-master's turn
-proposes an `invalidate` per mooted decision, carrying that answer as its rationale.
-Narrating them as dead, dropped or no longer applying is not that: their status is
-untouched and the frontier goes on offering them, so the human answers decisions the reply
-itself called dead. The obligation reaches the grill-master on both tiers and no thread
-agent, which authors nothing (GUI-D25). Each `invalidate` still queues for the human like
-every other withdrawal (GUI-D26) — the turn proposes, and the board moves when they apply.
+**GUI-D38 — An answer that puts other decisions in question obliges a ruling on each of
+them.** When the human's answer to one decision bears on others, the grill-master's turn
+rules on each: `invalidate` where the answer moots it, carrying that answer as the
+rationale; `revise` where the answer changes what it asks; `stands` where it survives the
+answer intact. A ruling is a key of the turn's document and is credited there (GUI-D45).
+Narrating a decision as dead, dropped or no longer applying in place of ruling it is not
+that: its status is untouched and the frontier goes on offering it, so the human answers a
+decision the reply itself called dead. `stands` is what a turn says instead when the
+decision is alive, and it is a credited answer rather than a silence — which is what the
+incident behind this rule lacked: a reply whose only legal move was `invalidate` returned
+one whose rationale said the decision must now be answered. No check reads what a `why`
+means. What the board does instead is show it, on the decision it rules on (GUI-U15), so a
+human applying an `invalidate` reads the argument for the death they are applying. The
+obligation reaches the grill-master on both tiers and no thread agent, which authors nothing
+(GUI-D25). Each `invalidate` and each `revise` still queues for the human like every other
+withdrawal (GUI-D26) — the turn proposes, and the board moves when they apply.
 
 **An invalidate the human applies obliges the same kind of turn.** A decision listing the
 invalidated one in its `prereqs` is no longer held by it (GUI-D43), so the board offers it
-again on a footing that has gone. The grill-master's next map turn therefore proposes an
-`invalidate` for each such decision, or a `revise` dropping the dead prereq where the
-decision still stands without it, carrying that invalidation as the rationale. The second
-way out belongs to this obligation alone: an answer kills the question outright, while a
-decision resting on one that died may well survive the loss, and insisting on an invalidate
-there would press the agent to kill work that stands.
+again on a footing that has gone. The grill-master's next map turn therefore rules on each such
+decision, carrying that invalidation as the rationale: `invalidate` where it dies with its
+prereq, `revise` where it survives once the dead prereq is dropped, and `stands` where it
+keeps the dead prereq and survives the loss anyway. The same three rulings serve both
+lists, and the last two are why there are three: an answer may kill a question outright,
+while a decision resting on one that died may well survive it, and a vocabulary of one
+verdict would press the agent to kill work that stands.
 
 **GUI-D39 — A thread agent asked for a map change says it cannot, and names the route that
 can.** A thread agent authors no map mutation (GUI-D25); what its brief did not say was
@@ -553,30 +567,32 @@ human gesture on an agent's judgement of when the human is finished. Nothing on 
 ever wrote one, so the control it gated stayed shut for whole sessions, which is the shape
 of the failure a declared gate invites: a control nobody can open and no error anywhere.
 
-**GUI-D42 — A killing answer's obligation is carried as ids and checked in code.** When the
-human answers with an option carrying `puts_in_question` (GUI-D37), that turn's grill-master
-dispatch names, in a section of its own, the decisions on that list the board is still
-offering, quotes the answer to carry as their rationale, and states GUI-D38's obligation
-against that list. The reply is then measured against the same list in code: an agent's
-`invalidate` always waits in the queue (GUI-D26), so a decision the turn proposed one for is
-in the queue whether or not the human has applied it, and one the turn only narrated is
-still on the frontier. A reply leaving any of them standing hands the same turn to the
-expert tier once, carrying the list narrowed to what is left; a second reply that proposes
-nothing raises an `informational` notice naming those decisions, which the human acts on
-through the map thread (GUI-D40). The backend authors no map mutation at any point — minting
-the invalidates itself would be the sole-author rule (GUI-D25) broken by the code enforcing
-it. **The prose rule alone is refused as sufficient.** It rode in the fast tier's system
-prompt through a live session whose answer put eight decisions in question, and the reply
-was two sentences and no updates, leaving those decisions on the frontier to be answered.
-The structure is already on the board, so the obligation does not need a model to find it.
-**The obligation ends with the turn the answer bought**, which is the last agent turn on the
-map before it: one that outlived its turn would spend an expert turn and a notice on every
-later gesture, over decisions the human may have deliberately left alone.
+**GUI-D42 — An answer's obligation is carried as ids and checked in code.** When the human
+answers with an option carrying `puts_in_question` (GUI-D37), that turn's grill-master dispatch
+names, in a section of its own, the decisions on that list the board is still offering, quotes
+the answer to carry as their rationale, and states GUI-D38's obligation against that list
+together with the three rulings that discharge it. The reply is then measured against the same
+list in code, off the document's own `rulings` (GUI-D45): every id the dispatch named must be
+ruled, where an `invalidate` or `revise` ruling counts only when the same document queues that
+update against that decision (GUI-D26) and a `stands` ruling counts on its `why`. A reply
+leaving any named id unruled hands the same turn to the expert tier once, carrying the list
+narrowed to what is unruled; a second reply that rules on nothing raises an `informational`
+notice naming those decisions as not ruled on, which the human acts on through the map thread
+(GUI-D40). The backend authors no map mutation at any point — minting the invalidates itself
+would be the sole-author rule (GUI-D25) broken by the code enforcing it. **The prose rule alone
+is refused as sufficient.** It rode in the fast tier's system prompt through a live session
+whose answer put eight decisions in question, and the reply was two sentences and no updates,
+leaving those decisions on the frontier to be answered. The structure is already on the board,
+so the obligation does not need a model to find it. **The obligation ends with the turn the
+answer bought**, which is the last agent turn on the map before it: one that outlived its turn
+would spend an expert turn and a notice on every later gesture, over decisions the human may
+have deliberately left alone.
 
 The same carriage and the same check serve an applied `invalidate`: the dispatch names the
 decisions left resting on a decision that has left the flow and quotes the invalidation, and
-the reply is measured against that list, where a queued `revise` discharges it as fully as a
-queued `invalidate`. It ends with the turn in the same way. Where the human's own answer is
+the reply is measured against that list, where a `revise` ruling discharges it as fully as
+an `invalidate` and a `stands` ruling discharges it too. It ends with the turn in the same
+way. Where the human's own answer is
 also waiting on a reply, that turn's obligation is the answer's — the stranded decisions are
 answerable either way, and the answer is what the human is waiting to hear about.
 
@@ -590,6 +606,143 @@ travel through an invalidated decision either — it rests on nothing and suppor
 withdrawing an answer past it says nothing about what was built beyond it. The page says the
 same thing rather than computing a second answer: the frontier is the board's word on what is
 answerable, and the *waiting on* text names only the prereqs actually holding.
+
+**GUI-D44 — The grill-master is briefed as the map's author, on either tier.** A standing
+brief has two parts and they vary independently. The tier's part says how a turn is taken —
+answer from the context given, assert nothing it does not support, write for one reading,
+take one turn and stop. The role's part says what the turn is for, and the grill-master's
+is stated to it first, identically on both tiers: *You are the grill-master: the author of
+the map and the only agent that changes it. The human answers decisions; you rule on what
+each answer does to the rest of the plan and keep the map honest after every gesture. Push
+on the axis the posture names. You speak to the human only in notices; when you judge the
+stop condition met, say so, and leave ending the session to them.* A thread agent's role
+part is GUI-D24's and GUI-D39's, on both tiers, and carries no sentence of the
+grill-master's — including the facilitation mandate, which is a thread agent's role and not
+a property of the fast tier. **Keying either role to a tier is refused.** It puts the map's
+author under *stop short of deciding* on the turn whose whole work is a ruling, and it
+hands the sole-author line to a thread agent the moment the human transfers that thread.
+
+**GUI-D45 — Every grill-master turn is a document of one shape, and a ruling is a first-class
+answer.** The shape is §8.10. There is no prose mode: `text` is the notice the human reads
+(GUI-U3 bounds it, and it may be empty where the board already says everything, GUI-U15),
+`updates` are the map mutations, `supersedes` the withdrawals, `rulings` the turn's judgement on
+the decisions a gesture put in question, and `stop` whether the stop condition is met. A reply
+that does not validate is refused and retried once on the same seat with the refusal quoted.
+From a first-rung seat the turn is then handed to the expert once. **From the expert seat there
+is no rung above it**, whether the channel is in expert mode or the gesture classed as judgment
+(GUI-D48): the failure is recorded as a backend `informational` naming it, and nothing is handed
+anywhere. Coverage ends the same way — a valid reply leaving a named id unruled hands a
+first-rung turn up once (GUI-D42), and on the expert seat raises the unmet notice directly. A
+reply is never shown to the human as prose. A seat's transport asks the provider for the shape
+where it can, and every driver validates what comes back regardless of what it asked for. A
+ruling names a decision, one of `invalidate`, `revise` or `stands`, and a `why`. An `invalidate`
+or `revise` ruling is credited only when the same document carries that update targeting that
+decision; a `stands` ruling is credited by its `why`, which the driver records as an
+`informational` targeted at that decision, so the why renders on the decision (GUI-U15) and a
+Discuss from it anchors there. Rulings may name decisions the dispatch did not; the check is
+only that every decision the dispatch named is ruled. The turn's own log entry carries `rulings`
+and `stop` as payload keys, the way a thread turn carries `proposed_answer` (GUI-D31), so the
+kind vocabulary of §8.3 stays closed.
+
+**GUI-D46 — A channel's first rung is occupied by a seat configured per channel, and the
+map's is a mid-weight reasoning model on the Codex transport.** A *tier* is a rung — `fast`
+first, `heavy` as the expert, the two this spec already has. A *seat* is the transport,
+model and effort configured to occupy a rung on one channel, and it is the first rung's
+seat that is per-channel configuration, never the number of rungs: a channel whose first
+rung was already the expert has nowhere to hand a turn up to, and GUI-D45's
+retry-then-expert and GUI-D42's single hand-up would both resolve to the seat that has just
+failed. A seat's transport is one of the closed set `openrouter | codex | claude`. The
+defaults: a thread channel keeps the OpenRouter seat `google/gemini-3.5-flash-lite`, which
+takes no effort; the map channel's first-rung seat is `gpt-5.6-luna` at `medium` effort on
+the Codex transport, because the map's author rules where a thread's discusses; and the
+expert seat is one shared configuration for every channel — the configured Claude model at
+the configured effort. Each is a default, and a session may seat any of them
+differently. The seat occupies the fast rung, so the rung stays what every other surface
+keys on: the lane names `fast` and `heavy`, the map's transfer control reads *Transfer to
+expert* at first paint like every other channel's (GUI-U22), the turn's attribution carries
+its tier beside the seat's model and effort, and the recorded dispatch carries the same
+bytes on every transport.
+
+**The Codex transport is a resumed chain.** Proven on codex-cli 0.146.0: the driver
+invokes `codex exec --json`, and the thread id is the `thread_id` carried by the
+`thread.started` event that opens the stream; every later turn on that channel is `codex
+exec resume <thread_id> --json`, the id kept the way the heavy chain's session id is, and
+GUI-D15's one-process rule binds it identically. The standing brief is supplied on every
+invocation as `-c developer_instructions=…` and the §8.10 schema as `--output-schema
+<file>`, cold turn and resumed turn alike. The process runs with its standard input closed,
+since it otherwise blocks reading a stream nobody is writing. The turn's usage — the token
+counts on the `turn.completed` event — is what the context measurement reads, in place of a
+byte estimate.
+
+**Latency is the currency here, not price**: the map seat and the expert seat both ride
+subscriptions, so a per-turn dollar figure for either is a fiction, and what the human
+spends is the waiting clock — about 6 s for a resumed map turn against 12–34 s for an
+expert one. A seat whose rulings prove
+inadequate takes a heavier model — `gpt-5.6-terra` for the map's — which is a configuration
+change; a third rung is refused.
+
+**GUI-D47 — A thread agent is told how to read a board that moved.** Its brief carries a
+board legend, on both tiers: a decision's `status`, `rationale` and `history` are the record
+of what happened to it and why, and a question about why the board moved is answered by
+quoting them or by saying the record does not say — never by inferring a cause. `prereqs`
+is what a decision waits on. `puts_in_question` on an option is the plan author's prediction
+that taking that option puts those decisions in question, which the grill-master rules on
+(GUI-D45) — a mark, not a dependency. `pending` is what the human has not dealt with,
+including a notice this thread may have been opened from. A map change in `history` carries
+`proposed_by`, the agent whose queued update the human's apply landed, and, where a ruling
+produced it, that verdict and its why (§8.6), so who proposed a move and what was ruled is
+quoted rather than inferred. A thread opened from a notice is kinded `notice` and anchors
+to the decision that notice targeted, or to none where it targeted none (§8.5).
+`help_reference` crosses to the `help` kind and to no other — not to a `notice` thread that
+anchors nothing. **What would show the legend is not enough** is an
+observation rather than a test: a thread agent in the first live session, asked why a
+decision was invalidated over a board whose `rationale` and `history` state it, answering
+with a cause the record does not carry. Prompt text cannot be asserted to have been read;
+the session that watches one is what confirms the legend or reverts it.
+
+**GUI-D48 — The map channel escalates on three triggers that need no human text, each with
+its own persistence.** GUI-D35's policy and GUI-D12's conditions reach every channel, the
+map's included, through the note riding an answer: the note is a human turn, so a note
+meeting a condition fires, and under `autonomous` writes its own `transferred` entry. That
+is the map's only human-text route, and it is thin — the human's other gestures there, an
+apply and a dismiss, carry no text for a condition to read, and nobody presses *Transfer to
+expert* at an agent they never talk to. The three triggers below are what a transcript
+condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note.
+
+1. **Post-reply press**, per gesture. A reply leaving a named decision unruled, or a
+   document still invalid after its one retry, is re-asked on the expert seat for that
+   gesture alone (GUI-D42, GUI-D45). It checks coverage — every decision the dispatch named
+   is ruled — and never correctness: a ruling the backend would disagree with is not a
+   ruling missing. A gesture already on the expert seat has no rung to press onto, and
+   GUI-D45's terminal ladder is what applies instead. Nothing is written that outlives the
+   gesture.
+2. **Pre-dispatch turn classing**, per gesture. A gesture whose class is judgment
+   dispatches to the expert seat directly: no first-rung turn is recorded for it, and no
+   failure is round-tripped to reach a seat the class already named. The judgment classes
+   are closed, and each is readable off the board before any model is called — an answer
+   whose taken option carries a `puts_in_question` mark resolving to a live node; an applied
+   `invalidate` that strands a dependent, meaning a decision whose `prereqs` name the
+   invalidated one and which is itself still open; a `thread-fold`; a withdrawal conflict
+   (GUI-D26); and the doctor (GUI-U12). Everything else is clerical and stays on the
+   first-rung seat: an answer whose option carries no mark and strands nothing, and a
+   supersede-only reconciliation. Classing writes no status entry, because there is nothing
+   to fall back from — the next clerical gesture goes to the first rung again, with no entry
+   to undo.
+3. **The distrust signal**, per session and sticky. Apply and dismiss are the human's only
+   gestures on the map channel that carry no text — the note riding an answer is the exception,
+   and GUI-D12 reads it — so a dismissal is the one way they say, wordlessly, that the seat's
+   proposal was wrong. One per-session counter counts two events as the same signal: the human
+   dismissing a first-rung seat's proposal, and a post-reply press. At the second the backend
+   writes a policy `transferred` status entry on the map channel — GUI-D35's own machinery,
+   unchanged: such an entry only ever moves a channel up, and the way back down is the human's
+   transfer control. One signal writes nothing, because one is noise; a third writes nothing
+   new, because the channel is already there.
+
+Two is a threshold nobody has defended under fire, and the observation that lowers the
+claim is a session where the second signal is followed by expert rulings a replay on the
+first-rung seat reproduces. **Self-flagging by the model stays refused** for the reason
+GUI-D12 gives: a model asked whether a question exceeds its own reach judges generously and
+answers anyway.
 
 ## 5. The UI surface
 
@@ -615,7 +768,9 @@ follows, and changes nothing else.
   zone**, thread turns and notifications alike.
 - **GUI-U3 — Agent responses are concise by default**, two or three sentences, with
   verbosity only when the human asks for detail. This is a constraint on the grill-master's
-  and the thread agents' system prompts as much as on the page.
+  and the thread agents' system prompts as much as on the page — on the `text` of the
+  grill-master's document (§8.10) and on a thread agent's turn alike. It does not reach a
+  ruling's `why`, which renders on its own decision rather than in the lane.
 - **GUI-U26 — Agent turns are written for a human reading once.** Plain, professional
   sentences, the answer before the reasoning, and no term the decision does not need — where
   one is unavoidable it is explained in the same sentence. Like GUI-U3 this is a constraint
@@ -892,9 +1047,11 @@ only in the images.
   - `text` — string. The answer, in the human's voice.
   - `pcr` — optional array of exactly three strings: what the option buys, what it costs,
     what it forces downstream.
-  - `puts_in_question` — optional array of decision ids the option is expected to put in
-    question downstream; the page's to render (GUI-D37), and an id resolving to no node in
-    the plan is ignored rather than refused.
+  - `puts_in_question` — optional array of decision ids that taking this option puts in
+    question: decisions that may die, change, or turn on something else once it is taken.
+    The page pre-marks them while the option is in hand (GUI-U25); the grill-master rules on
+    each when the human takes the option (GUI-D45); an id resolving to no node in the plan
+    is ignored rather than refused.
 - `mandate` — optional object declaring that any answer opens a side thread whose
   conclusion is the only way to settle the decision: `threadId`, `scope`, `title`, `notice`,
   all strings.
@@ -971,10 +1128,12 @@ The current map snapshot: a pure fold, byte-identical for a given log.
   on a decision-anchored thread. Every proposal a turn made projects; which one is live is
   position, not a field (GUI-D31). `kind` is what opened the thread: `user` on a decision,
   `mandate` where an agent opened one that holds its decision, `help` for the thread about
-  the board, and `map` for the session-level thread the human asks for a map change in
-  (GUI-D40). The last two both carry a null `decision`, so the kind is the only thing that
-  tells them apart — which is what decides whether a dispatch carries `help_reference` and
-  which mandate its turns are given.
+  the board, `map` for the session-level thread the human asks for a map change in
+  (GUI-D40), and `notice` for one opened from an agent's notice, anchored to the decision
+  that notice targeted or to none where it targeted none (GUI-D47). `help` and `map` both
+  carry a null `decision`, so the kind is the only thing that tells them apart — which is
+  what decides whether a dispatch carries `help_reference` and which mandate its turns are
+  given.
 - `pending` — array of objects: `id`, `target` (decision id), `kind`, `superseded`
   (boolean), and `authored_at` (sequence integer). This is the queue GUI-D26 dispatches.
   `id` is derived from the authoring entry rather than minted beside it: for an entry
@@ -993,7 +1152,12 @@ Image 1 in full, plus one field:
 
 - `history` — object keyed by decision id; each value is an ordered array of objects:
   `seq` (integer), `timestamp` (string), `kind` (string), `actor` (string), `why` (string,
-  the rationale carried by the event that caused the change).
+  the rationale carried by the event that caused the change), `proposed_by` (optional
+  string, the agent whose queued update the human's apply landed, absent where no agent
+  authored the move) and `verdict` (optional string, the ruling that produced the move —
+  `invalidate`, `revise` or `stands` — absent where no ruling did). The last two are what
+  let a thread agent say who proposed a move and what was ruled instead of inferring a
+  cause (GUI-D47).
 
 Image 2 is the reverse handoff and crosses to the grill-master whole (GUI-D4).
 
@@ -1070,6 +1234,92 @@ thread that exists and whose anchor decision is the answered decision, and it is
 closes that thread in the same entry (GUI-D33). Absent, the answer is an ordinary one and
 closes nothing.
 
+### 8.10 The grill-master reply document
+
+One object, every map turn, under §8's rule that an unknown key is a rejection (GUI-D45).
+
+- `text` — string; may be empty. The notice to the human, bounded by GUI-U3.
+- `updates` — array; may be empty. Each entry is one GUI-D19 update: `kind`, `target` where
+  the kind has one, `basis` (the board's `seq` as dispatched) and `why` where the kind
+  carries a rationale — `invalidate` always does.
+- `supersedes` — array of pending ids; may be empty.
+- `rulings` — array; may be empty on a dispatch naming nothing. Each entry: `decision`
+  (string, a decision on the board), `ruling` (`invalidate`, `revise` or `stands`) and `why`
+  (string, one line, non-empty). Every id the dispatch's obligation section names must
+  appear exactly once; ids it does not name may appear.
+- `stop` — object: `met` (boolean) and `why` (string, empty while `met` is false).
+
+The driver records `rulings` and `stop` as keys on the turn's own log entry, the way a
+thread turn carries `proposed_answer` (§8.9), and mints one `informational` targeted at each
+`stands` ruling's decision inside that same entry — which is how a standing decision's why
+reaches the board (GUI-U15) and how a Discuss from it anchors there.
+
+A turn ruling that a decision named by the answer survives it:
+
+```json
+{
+  "text": "Option (a) fixes what a gate must report; d2 is now the central question.",
+  "updates": [],
+  "supersedes": [],
+  "rulings": [
+    {
+      "decision": "d2",
+      "ruling": "stands",
+      "why": "(a) fixes the evidence contract, not what ships it; d2 asks what is portable."
+    }
+  ],
+  "stop": {"met": false, "why": ""}
+}
+```
+
+The same gesture where the answer did kill the named decision — an option that subsumes it:
+
+```json
+{
+  "text": "A declarative kind schema owns scope, so d3 has no separate answer left.",
+  "updates": [
+    {
+      "kind": "invalidate",
+      "target": "d3",
+      "basis": 12,
+      "why": "d2 answered with (c): the kind declaration owns scope, which is all of d3."
+    }
+  ],
+  "supersedes": [],
+  "rulings": [
+    {"decision": "d3", "ruling": "invalidate", "why": "subsumed by the kind declaration"}
+  ],
+  "stop": {"met": false, "why": ""}
+}
+```
+
+What the driver records for the first document, as the turn's own log entry — the notice,
+the targeted informational minted from the ruling, and the ruling itself:
+
+```json
+{
+  "kind": "fold",
+  "actor": "grill-master",
+  "channel": "map",
+  "payload": {
+    "updates": [
+      {"kind": "informational",
+       "text": "Option (a) fixes what a gate must report; d2 is now the central question."},
+      {"kind": "informational", "target": "d2",
+       "text": "d2 stands: (a) fixes the evidence contract; d2 asks what is portable."}
+    ],
+    "rulings": [
+      {"decision": "d2", "ruling": "stands",
+       "why": "(a) fixes the evidence contract, not what ships it; d2 asks what is portable."}
+    ],
+    "stop": {"met": false, "why": ""},
+    "tier": "heavy",
+    "model": "claude-opus-5",
+    "effort": "xhigh"
+  }
+}
+```
+
 ## 9. Acceptance criteria
 
 Every requirement this spec states is discharged by at least one criterion below.
@@ -1112,13 +1362,18 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D34 | GUI-A69 |
 | GUI-D35 | GUI-A71, GUI-A72, GUI-A73, GUI-A74 |
 | GUI-D36 | GUI-A75, GUI-A76, GUI-A77, GUI-A78 |
-| GUI-D37 | GUI-A79, GUI-A80, GUI-A81, GUI-A82 |
-| GUI-D38 | GUI-A88, GUI-A109 |
+| GUI-D37 | GUI-A79, GUI-A80, GUI-A81, GUI-A82, GMR-A8 |
+| GUI-D38 | GUI-A88, GUI-A109, GMR-A3, GMR-A4 |
 | GUI-D39 | GUI-A89 |
 | GUI-D40 | GUI-A93, GUI-A94, GUI-A95, GUI-A98 |
 | GUI-D41 | GUI-A91, GUI-A99 |
-| GUI-D42 | GUI-A100, GUI-A101, GUI-A102, GUI-A103, GUI-A109 |
+| GUI-D42 | GUI-A100, GUI-A101, GUI-A102, GUI-A103, GUI-A109, GMR-A3 |
 | GUI-D43 | GUI-A108 |
+| GUI-D44 | GMR-A1 |
+| GUI-D45 | GMR-A2, GMR-A3, GMR-A4 |
+| GUI-D46 | GMR-A5, GMR-A11 |
+| GUI-D47 | GMR-A6, GMR-A7 |
+| GUI-D48 | GMR-A9, GMR-A10 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -1303,8 +1558,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   returns when the backend process exits rather than on a timer. A test that stubs the
   backend's exit proves the main agent was waiting on it.
 - **GUI-A43** Every shipped agent system prompt carries the concision constraint, and a
-  scripted turn under it returns at most three sentences absent an explicit request for
-  detail.
+  scripted turn under it returns a `text` of at most three sentences absent an explicit
+  request for detail.
 - **GUI-A44** A thread panel scrolled to the bottom of a long thread still shows its title
   with close and pop-out controls and its prompt box with action buttons, verified in a
   browser.
@@ -1522,12 +1777,14 @@ Each criterion is mechanically checkable and convertible to a red test.
   posts. An Enter arriving while an IME composition is in progress posts nothing. The hint
   beside the box names Enter and Shift+Enter. Verified in a browser.
 - **GUI-A88** The grill-master's standing brief, on the fast tier and on the heavy one,
-  obliges an `invalidate` per decision the human's answer moots, carrying that answer as its
-  rationale, and refuses narrating them as dead instead. A thread agent's brief carries no
-  such obligation, since an update from it is refused.
+  obliges a ruling per decision the human's answer puts in question — `invalidate` where it
+  moots the decision, carrying that answer as its rationale — and refuses narrating a
+  decision as dead in place of ruling it. A thread agent's brief carries no such obligation
+  and no sentence of the grill-master's role.
 - **GUI-A89** A thread agent's standing brief, on either tier, says that it cannot change
   the map and that folding the thread is what puts its conclusion in front of the
-  grill-master who acts on it — rather than leaving it to agree to a change it cannot make.
+  grill-master who acts on it — rather than leaving it to agree to a change it cannot make —
+  and carries no line naming it the map's author, on either tier.
 - **GUI-A90** A thread whose channel is owed a turn carries a marker in its body below the
   last turn, showing the same seconds the header's clock shows for that channel and
   advancing in step with it. A thread nobody is answering carries none, and the marker is
@@ -1544,7 +1801,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   not the map channel — and a dispatch whose board merely carries the map thread as another
   thread is not either. The mandate is a property of the channel a turn runs on.
 - **GUI-A95** The map thread's dispatch carries no `help_reference`, though it anchors no
-  decision, and the help thread's still carries it.
+  decision, and the help thread's still carries it; a `notice` thread's carries none.
 - **GUI-A96** The shipped page carries a board control that opens the session's one map
   thread, sends nothing when pressed, and mints that thread anchored to no decision and
   kinded `map` rather than `help`.
@@ -1567,19 +1824,22 @@ Each criterion is mechanically checkable and convertible to a red test.
   wholly inside the viewport before anything is scrolled; the control under the list is
   still there; both name the eight; and pressing the one on screen empties the queue.
 - **GUI-A100** A grill-master dispatch carrying a mootness obligation assembles a prompt that
-  names each decision the answer put in question, quotes that answer, and states the
-  obligation; a dispatch carrying none states nothing about mootness.
-- **GUI-A101** On a board whose answered option names two other decisions, a fast tier that
-  replies in prose is followed by an expert turn on the same gesture whose recorded dispatch
-  names both decisions, the decision answered and the option's own text — and the lane closes
-  naming the tier that ended up taking the turn.
+  names each decision the answer put in question, quotes that answer, and states the three
+  rulings; a dispatch carrying none states nothing about mootness.
+- **GUI-A101** On a board whose answered option names two other decisions, a first-rung seat
+  that rules on neither is followed by an expert turn on the same gesture whose recorded
+  dispatch names both decisions, the decision answered and the option's own text — and the
+  lane closes naming the tier that ended up taking the turn; a first-rung seat that rules
+  `stands` on both, each with a why, is followed by no expert turn.
 - **GUI-A102** Where the expert replies in prose too, exactly one backend `informational`
   notice names both decisions, and no `invalidate` entry exists that no human gesture asked
   for.
 - **GUI-A103** Neither an obligation already met nor one never created presses anything: a
-  reply proposing an `invalidate` per named id leaves the expert untouched, the human unsaid
-  to, and both proposals in the queue; and an answer on an option carrying no
-  `puts_in_question` produces a dispatch with no obligation, no expert turn and no notice.
+  reply ruling on each named id — an `invalidate` queued for one and `stands` with a why for
+  the other — leaves the expert untouched, the human unsaid to, the invalidate in the queue
+  and the standing decision on the frontier under an informational targeted at it; and an
+  answer on an option carrying no `puts_in_question` produces a dispatch with no obligation,
+  no expert turn and no notice.
 - **GUI-A106** In a browser, against a running backend: on a board whose one open decision
   is left invalidated by a proposal the human applies, every other decision being settled,
   the completion overlay appears carrying both actions, its copy names how many decisions
@@ -1603,8 +1863,59 @@ Each criterion is mechanically checkable and convertible to a red test.
   `invalidate` on it, both are answerable, and the next map turn carries an obligation naming
   the one still standing, the decision that left the flow and the rationale it carried; a fast
   tier replying in prose is handed to the expert once; and where the expert proposes nothing
-  either, exactly one backend `informational` notice names that decision and the backend
-  authored no map mutation.
+  and rules nothing, exactly one backend `informational` notice names that decision and the
+  backend authored no map mutation.
+
+- **GMR-A1** For all four tier-agent pairs, the composed system prompt opens with that
+  agent's role part: the grill-master's names it the map's author and carries the reshape
+  step on both tiers; the thread agent's carries the facilitation mandate and no sentence of
+  the grill-master's, on both tiers. Mutation-tested: keying either role to a tier turns the
+  suite red naming the pair.
+- **GMR-A2** A grill-master reply validates against §8.10 or is refused: a prose reply, a
+  document missing `text` or `rulings`, and a ruling outside the three kinds each surface as
+  the lane's error phase naming the tier, and none reaches the log as a notice.
+- **GMR-A3** A dispatch carrying an obligation names the ids, quotes the gesture and states
+  the three rulings; a reply ruling `stands` with a why on each named id presses no expert,
+  raises no unmet notice, records one `informational` targeted at each of those decisions
+  carrying that why, and leaves each on the frontier; a reply ruling nothing on a named id
+  hands the turn up once, narrowed to the unruled ids, and a second such reply raises exactly
+  one notice saying those decisions were not ruled on.
+- **GMR-A4** An `invalidate` or `revise` ruling whose document carries no matching update
+  targeting that decision is not credited, and the turn is handed up as unruled;
+  mutation-tested by crediting the ruling alone.
+- **GMR-A5** With no seat configuration set, the map channel's first-rung turn is composed
+  on the Codex transport by `gpt-5.6-luna` at `medium` effort and a thread's by the
+  OpenRouter seat `google/gemini-3.5-flash-lite` at no effort; the lane names the `fast`
+  tier on both; each turn's attribution carries that seat's model and its effort where it
+  has one, beside the tier; and the map's transfer control reads *Transfer to expert* at
+  first paint. Seating the map channel on the threads' seat makes its first turn take that
+  transport and model and changes nothing else about the channel.
+- **GMR-A6** Every composed thread-agent prompt carries the board legend, on both tiers.
+- **GMR-A7** A thread created from a notice targeting a decision anchors to that decision and
+  is kinded `notice`; a `notice` thread's recorded dispatch carries no `help_reference` and
+  the help thread's still does; the page-derived kind check (GUI-A13) admits `notice`.
+- **GMR-A8** Each of the three surfaces that say what `puts_in_question` is — §8.2, the
+  schema's own `Option` documentation and the handoff-assembling skill's sentence — names
+  the field as something the grill-master rules on, asserted by the phrase "rules on" being
+  present in all three. Agreement beyond that phrase is reviewed, not tested.
+- **GMR-A9** A gesture of each judgment class — an answer taking an option whose mark resolves
+  to a live node, an applied `invalidate` leaving an open dependent, a `thread-fold`, a
+  withdrawal conflict and the doctor — is composed by the expert seat with no first-rung turn
+  recorded for it; a clerical answer, whose option carries no mark and strands nothing, is
+  composed by the first-rung seat; and neither writes a `transferred` entry, so a clerical
+  gesture following a judgment one is first-rung again.
+- **GMR-A10** One dismissal of a first-rung seat's proposal moves nothing and writes no status
+  entry; a second distrust signal — a dismissal or a post-reply press, counted alike — writes
+  exactly one policy `transferred` entry on the map channel, and every map turn after it is
+  the expert seat's; a third signal writes no second entry; and the human's transfer control
+  returns the channel to its first-rung seat.
+- **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
+  the `thread.started` event, then resumes that thread on every later turn on the channel as
+  `codex exec resume <thread_id> --json`; `-c developer_instructions=…` and `--output-schema
+  <file>` are passed on the resumed turn as well as on the cold one; the process is run with
+  its standard input closed; a reply that does not validate is refused under GMR-A2 rather
+  than shown to the human; and the token counts on `turn.completed`, not the byte estimate,
+  are what the context measurement records.
 
 ## 10. Open questions for the implementing work
 
@@ -1627,7 +1938,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   isolation — AC: GUI-D3, GUI-D4, GUI-D5, GUI-A1, GUI-A2, GUI-A3, GUI-A24.
 - feat: Status lane and answerability, including the agent-authored-thread case — AC: GUI-D13,
   GUI-D14, GUI-A10, GUI-A11.
-- feat: Two-tier agent drive: the fast tier's facilitation mandate, criterion-based escalation,
+- feat: Two-tier agent drive: the two tier prompts, criterion-based escalation,
   the grill-master's single-process resume chain, and orchestrator-scheduled turns — AC:
   GUI-D11, GUI-D12, GUI-D15, GUI-D22, GUI-A12, GUI-A42, GUI-A43, GUI-A53, GUI-A54.
 - feat: Update kinds: add-node with echo, invalidate with rationale, the thinking indicator,
@@ -1703,6 +2014,20 @@ Each criterion is mechanically checkable and convertible to a red test.
   reason that tells a finished board from a stalled one — AC: GUI-U31, GUI-A110.
 - bugfix: A prereq that has left the flow holds nothing, and the invalidate that killed it
   obliges the decisions left resting on it — AC: GUI-D43, GUI-D38, GUI-A108, GUI-A109.
+- feat: A role part joined to a tier part: the grill-master briefed as the map's author with
+  the reshape step, and the thread agent carrying the facilitation mandate and the board
+  legend — AC: GUI-D44, GUI-D47, GMR-A1, GMR-A6.
+- feat: The grill-master reply document: its validated shape, a ruling credited by its update
+  or by `stands`, the targeted notice a `stands` mints, and the press on unruled ids — AC:
+  GUI-D45, GUI-D38, GUI-D42, GMR-A2, GMR-A3, GMR-A4.
+- feat: Per-channel first-rung seats and the Codex resume-chain driver, with the seat's model
+  and effort on every turn's attribution — AC: GUI-D46, GMR-A5, GMR-A11.
+- feat: Mechanical escalation on the map channel: pre-dispatch turn classing and the distrust
+  signal's sticky transfer — AC: GUI-D48, GMR-A9, GMR-A10.
+- feat: A notice thread anchored to the decision it was opened about, `help_reference` on the
+  help kind alone, and the history entry's `proposed_by` and verdict — AC: GUI-D47, GMR-A7.
+- feat: `puts_in_question` stated as a prediction the grill-master rules on, in the schema,
+  the spec and the handoff-assembling skill alike — AC: GUI-D37, GMR-A8.
 
 ## Evidence
 
@@ -1819,3 +2144,14 @@ opens one proves something else.
 - GUI-A110 | probe: packages/grillui/tests/browser/next_open_probe.py::main
 - GUI-A108 | test: packages/grillui/tests/unit/test_projector.py::test_a_prereq_that_has_been_invalidated_holds_nothing
 - GUI-A109 | test: packages/grillui/tests/unit/test_lane.py::test_an_invalidate_the_human_applied_is_pressed_on_the_next_map_turn
+- GMR-A1 | open
+- GMR-A2 | open
+- GMR-A3 | open
+- GMR-A4 | open
+- GMR-A5 | open
+- GMR-A6 | open
+- GMR-A7 | open
+- GMR-A8 | open
+- GMR-A9 | open
+- GMR-A10 | open
+- GMR-A11 | open
