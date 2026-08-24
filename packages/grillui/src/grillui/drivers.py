@@ -1227,10 +1227,19 @@ def sub_updates(document: GrillMasterDocument) -> list[dict[str, Any]]:
     place because two readers ask the same question of it: the validator, which
     refuses a withdrawal with nothing to ride on, and the recorder, which needs
     at least one of these to have an entry at all.
+
+    The verdict stamp is the backend's word, so it is stripped from what the
+    model wrote and put back only on the notice minted below. A turn is free to
+    write an update that looks like anything it likes; what it must not do is
+    write one that says the backend ruled on it. This is the only place a
+    model's updates reach an entry, so it is the only place that can say so.
     """
     notice = [{"kind": "informational", "text": document.text}] if document.text.strip() else []
+    authored = [
+        {key: value for key, value in one.items() if key != VERDICT_KEY} for one in document.updates
+    ]
     minted = [stands_notice(one) for one in document.rulings if one.ruling == RULING_STANDS]
-    return [*notice, *document.updates, *minted, *stop_notice(document.stop)]
+    return [*notice, *authored, *minted, *stop_notice(document.stop)]
 
 
 def stands_notice(one: Ruling) -> dict[str, Any]:

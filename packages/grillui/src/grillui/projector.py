@@ -125,7 +125,7 @@ from grillui.schemas import (
     PENDING_KEY,
     PROPOSABLE_KINDS,
     PROPOSED_ANSWER_KEY,
-    RULING_KINDS,
+    RULING_STANDS,
     RULINGS_KEY,
     SESSION_START_KIND,
     SET_ASIDE_KINDS,
@@ -971,13 +971,12 @@ def _ruling_on(
     a decision the turn did not rule on carries no verdict, which is the record
     saying so rather than the record being silent.
     """
-    # The vocabulary is closed and the fold is a pure read of whatever the log
-    # holds, so a word outside it names no verdict rather than putting one image
-    # 2 cannot be built from into the record. Membership in the closed set is
-    # what each cast below rests on: the set is derived from the type.
-    stamped = payload.get(VERDICT_KEY)
-    if stamped in RULING_KINDS:
-        return cast("RulingKind", stamped), _text(payload, "why")
+    # One stamped form is minted and therefore one is read: a `stands` on an
+    # informational. Anything else wearing the stamp was not minted here -- the
+    # driver strips it from what a model wrote -- and a reader that took the
+    # stamp on trust would let a turn record a verdict nobody ruled.
+    if kind == "informational" and payload.get(VERDICT_KEY) == RULING_STANDS:
+        return cast("RulingKind", RULING_STANDS), _text(payload, "why")
     target = payload.get("target")
     raw = entry.payload.get(RULINGS_KEY)
     if not isinstance(target, str) or not isinstance(raw, list):

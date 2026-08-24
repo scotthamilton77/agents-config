@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from grillui.drivers import stands_notice
 from grillui.projector import fold, to_image1
-from grillui.schemas import Image1, Image2, LogEntry, Ruling, ThreadTurn
+from grillui.schemas import VERDICT_KEY, Image1, Image2, LogEntry, Ruling, ThreadTurn
 
 EPOCH = "tenure-1"
 
@@ -814,3 +814,42 @@ def test_a_stands_verdict_lands_only_on_the_notice_that_ruling_minted() -> None:
     assert recorded[1].why == ""
     assert recorded[2].verdict == "stands"
     assert recorded[2].why == "the audit need is unchanged"
+
+
+def test_the_fold_credits_a_stamp_only_on_the_one_form_the_backend_mints() -> None:
+    """
+    Given a log whose entry carries stamped updates the driver would never write
+          -- a `revise` wearing a verdict, an informational wearing one that is
+          not `stands`, and a `revise` wearing `stands` -- and no rulings at all
+    When it is folded
+    Then none of them records a verdict.
+
+    The driver strips the stamp off what a model wrote, so these shapes do not
+    come from it. The log is still the fold's trust boundary: it is bytes on
+    disk, read by a future backend, and one stripping bug upstream would
+    otherwise be a verdict on the record that nobody ruled. So the reader
+    credits exactly what is minted -- a `stands` on an informational -- and
+    treats the stamp on anything else as the noise it is.
+    """
+    entries = [
+        NODE,
+        entry(2, "add-node", target="n2", short="Format", prereqs=[]),
+        queued(
+            3,
+            {"kind": "revise", "target": "n1", "why": "claimed", VERDICT_KEY: "revise"},
+            {
+                "kind": "informational",
+                "target": "n1",
+                "text": "about n1",
+                "why": "claimed",
+                VERDICT_KEY: "invalidate",
+            },
+            {"kind": "revise", "target": "n2", "why": "claimed", VERDICT_KEY: "stands"},
+        ),
+    ]
+
+    history = fold(EPOCH, entries).history
+
+    assert [one.kind for one in history["n1"]] == ["add-node", "revise", "informational"]
+    assert [one.verdict for one in history["n1"]] == [None, None, None]
+    assert [one.verdict for one in history["n2"]] == [None, None]
