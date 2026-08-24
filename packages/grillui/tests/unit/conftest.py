@@ -11,6 +11,7 @@ import copy
 import json
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -29,6 +30,8 @@ from grillui.schemas import (
     CONTEXT_LIMIT_KEY,
     PROMPT_TOKENS_KEY,
     PROPOSABLE_KINDS,
+    RULINGS_KEY,
+    STOP_KEY,
     TIER_KEY,
     DispatchContext,
     EventSubmission,
@@ -122,6 +125,47 @@ def write_handoff(directory: Path, document: dict[str, Any], name: str = HANDOFF
     return path
 
 
+# What the scripted seats say by default, and what every check that is not
+# about the notice's wording reads back out of the log.
+REPLY_TEXT = "The log is the recovery source. Compaction is the next question."
+
+
+class _Absent:
+    """The sentinel that takes a key out of a document, since `None` is itself a
+    shape a document may carry wrongly."""
+
+
+_ABSENT = _Absent()
+
+
+def document(
+    text: Any = REPLY_TEXT,
+    updates: Any = (),
+    supersedes: Any = (),
+    rulings: Any = (),
+    stop: Any = None,
+    **broken: Any,
+) -> str:
+    """One grill-master reply document, defaulting to the turn that proposes
+    nothing and rules on nothing.
+
+    Every field is loosely typed and `broken` takes any extra key, because half
+    of what this builds is documents that are wrong on purpose: a builder that
+    only produced valid ones could not state the invalid case at all. Passing
+    `_ABSENT` for a field leaves that key out. Building the invalid case out of
+    the valid one is what keeps it invalid for the stated reason and no other.
+    """
+    body: dict[str, Any] = {
+        "text": text,
+        "updates": [dict(one) for one in updates] if isinstance(updates, Iterable) else updates,
+        "supersedes": list(supersedes) if isinstance(supersedes, Iterable) else supersedes,
+        "rulings": [dict(one) for one in rulings] if isinstance(rulings, Iterable) else rulings,
+        "stop": {"met": False, "why": ""} if stop is None else stop,
+        **broken,
+    }
+    return json.dumps({key: value for key, value in body.items() if value is not _ABSENT})
+
+
 @dataclass
 class SpyDriver:
     """A tier that records what the log already said when it was handed a turn.
@@ -170,7 +214,7 @@ class ScriptedCli:
     whether a second turn was ever inside this call while a first still was.
     """
 
-    reply: str = "The log is the recovery source. Compaction is the next question."
+    reply: str = field(default_factory=document)
     session_id: str = "chain-1"
     usage: dict[str, Any] | None = None
     calls: list[list[str]] = field(default_factory=list)
@@ -200,15 +244,35 @@ class ScriptedFast:
     at. It defaults to nothing, which is the shape of a provider that reported
     no usage -- the case every check written before the measurement existed was
     written against.
+
+    Replies default to a well-formed grill-master document, which is what the
+    map channel takes and the only shape it takes. A thread channel reads the
+    same bytes as the `text` inside them, so one default serves both.
+
+    `replies` is the script for a seat that has to answer more than once -- the
+    retry a refused document buys, and the second turn a press asks for. The
+    last one stands once the script runs out, so a seat that always answers the
+    same way states it once.
     """
 
-    reply: str = "The log is the recovery source. Compaction is the next question."
+    reply: str | None = None
+    replies: Sequence[str] = ()
     prompt_tokens: int | None = None
     calls: list[dict[str, str]] = field(default_factory=list)
 
-    def __call__(self, *, model: str, system: str, prompt: str) -> tuple[str, int | None]:
-        self.calls.append({"model": model, "system": system, "prompt": prompt})
-        return self.reply, self.prompt_tokens
+    def __call__(
+        self, *, model: str, system: str, prompt: str, shaped: bool = False
+    ) -> tuple[str, int | None]:
+        self.calls.append(
+            {"model": model, "system": system, "prompt": prompt, "shaped": str(shaped)}
+        )
+        return self._said, self.prompt_tokens
+
+    @property
+    def _said(self) -> str:
+        if self.replies:
+            return self.replies[min(len(self.calls) - 1, len(self.replies) - 1)]
+        return document() if self.reply is None else self.reply
 
 
 def driven(log: SessionLog, driver: Any, expert: Any = None) -> TestClient:
@@ -271,11 +335,16 @@ def replies(log: SessionLog) -> list[dict[str, Any]]:
 # the wording of a fixture.
 SIZE_KEYS = (CONTEXT_BYTES_KEY, PROMPT_TOKENS_KEY, CONTEXT_LIMIT_KEY)
 
+# The two keys every grill-master turn carries whether or not it ruled on
+# anything. A check that pins an attribution in full is about who took the turn;
+# the rulings are their own subject and have their own checks.
+DOCUMENT_KEYS = (RULINGS_KEY, STOP_KEY)
+
 
 def attributions(log: SessionLog) -> list[dict[str, Any]]:
-    """Every agent reply, with the size measurement taken off."""
+    """Every agent reply, with the size measurement and the ruling keys off."""
     return [
-        {key: value for key, value in reply.items() if key not in SIZE_KEYS}
+        {key: value for key, value in reply.items() if key not in SIZE_KEYS + DOCUMENT_KEYS}
         for reply in replies(log)
     ]
 

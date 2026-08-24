@@ -32,11 +32,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import TIMEOUT, SpyDriver, driven
+from conftest import TIMEOUT, SpyDriver, document, driven
 from fastapi.testclient import TestClient
 
 from grillui.dispatch import DISPATCH_DIR, GRILL_MASTER, record_dispatch
-from grillui.drivers import declared_updates, record_reply
+from grillui.drivers import declared_updates, document_problem, record_reply
 from grillui.lane import Lane, UnreachableDriver
 from grillui.log import SessionLog
 from grillui.projector import fold, supersede_conflicts
@@ -83,7 +83,7 @@ class ScriptedMap:
     def run(self, log: SessionLog, dispatch: Path, /) -> None:
         self.dispatches.append(dispatch)
         context = DispatchContext.model_validate_json(dispatch.read_text(encoding="utf-8"))
-        reply = self.replies.pop(0) if self.replies else "Nothing further."
+        reply = self.replies.pop(0) if self.replies else document(text="Nothing further.")
         try:
             record_reply(log, self.tier, context.channel, reply, {})
         finally:
@@ -97,7 +97,7 @@ class ScriptedMap:
 
 def withdrawing(text: str, *ids: str) -> str:
     """A reply that withdraws pending notices and changes nothing else."""
-    return json.dumps({"text": text, SUPERSEDES_KEY: list(ids)})
+    return document(text=text, supersedes=list(ids))
 
 
 def submit(
@@ -264,7 +264,7 @@ def test_every_grill_master_dispatch_the_lane_raises_carries_the_queue(
     seed(log)
     seed(log, OTHER)
     notice(log, OTHER_NOTICE, OTHER)
-    driver = ScriptedMap(replies=["Noted."])
+    driver = ScriptedMap(replies=[document(text="Noted.")])
 
     run_turns(Lane(log, driver), answering())
 
@@ -365,7 +365,9 @@ def test_a_withdrawal_the_human_got_in_front_of_goes_back_to_the_grill_master(
     """
     seed(log)
     notice(log)
-    driver = ScriptedMap(replies=[withdrawing("That no longer holds.", NOTICE), "Understood."])
+    driver = ScriptedMap(
+        replies=[withdrawing("That no longer holds.", NOTICE), document(text="Understood.")]
+    )
 
     run_turns(Lane(log, driver), answering())
 
@@ -392,7 +394,9 @@ def test_the_conflict_dispatch_rewrites_nothing_on_the_board(log: SessionLog) ->
     """
     seed(log)
     notice(log)
-    driver = ScriptedMap(replies=[withdrawing("That no longer holds.", NOTICE), "Understood."])
+    driver = ScriptedMap(
+        replies=[withdrawing("That no longer holds.", NOTICE), document(text="Understood.")]
+    )
 
     run_turns(Lane(log, driver), answering())
 
@@ -423,9 +427,9 @@ def test_a_conflict_already_handed_back_is_not_handed_back_again(log: SessionLog
     driver = ScriptedMap(
         replies=[
             withdrawing("The store notice no longer holds.", NOTICE),
-            "Understood.",
+            document(text="Understood."),
             withdrawing("Nor does the compaction one.", OTHER_NOTICE),
-            "Understood.",
+            document(text="Understood."),
         ]
     )
 
@@ -484,13 +488,20 @@ def test_a_reply_that_is_neither_an_update_nor_a_withdrawal_is_prose() -> None:
     assert declared_updates(half_shaped) == (half_shaped, [], [], None)
 
 
-def test_a_fenced_object_reply_lands_as_the_updates_it_declared(log: SessionLog) -> None:
+FENCED_SAID = "Decision d1 is settled on option a (the whole spec, four parts)."
+FENCED_REVISE = {"kind": "revise", "target": "d1", "basis": 4}
+
+
+@pytest.mark.parametrize("fence", ["```json\n{body}\n```", "```\n{body}```", "{body}"])
+def test_a_document_lands_as_the_updates_it_declared_through_whatever_fence(
+    log: SessionLog, fence: str
+) -> None:
     """
-    Given the reply a hosted model actually sent in a live session -- the update
-         object wrapped in a markdown fence
-    When the driver records it
-    Then the turn lands as a fold carrying the update it declared, and the fence
-         is nowhere in what the human is told.
+    Given one document sent fenced as a hosted model presents JSON, fenced with
+          no info string, and bare
+    When the driver records each
+    Then each lands as a fold carrying the update it declared, with the fence
+         nowhere in what the human is told.
 
     A fence is how a model presents JSON to a reader, not something the turn
     said. Read as prose, every update it declared is discarded without a word:
@@ -499,40 +510,41 @@ def test_a_fenced_object_reply_lands_as_the_updates_it_declared(log: SessionLog)
     """
     seed(log, "d1")
 
-    record_reply(log, "fast", MAP_CHANNEL, LIVE_FENCED_REPLY, {})
+    record_reply(
+        log,
+        "fast",
+        MAP_CHANNEL,
+        fence.format(body=document(text=FENCED_SAID, updates=[FENCED_REVISE])),
+        {},
+    )
 
     spoken = log.entries()[-1]
     assert spoken.kind == FOLD_KIND
     said, declared = spoken.payload["updates"][0], spoken.payload["updates"][1]
     assert said["kind"] == "informational"
-    assert said["text"].startswith("Decision d1 is settled on option a")
+    assert said["text"] == FENCED_SAID
     assert "```" not in said["text"]
     assert (declared["kind"], declared["target"]) == ("revise", "d1")
 
 
-def test_a_bare_object_folds_and_prose_is_still_what_the_agent_said(log: SessionLog) -> None:
+def test_the_reply_one_live_session_sent_is_refused_by_the_shape() -> None:
     """
-    Given the same reply unfenced, and a reply that is plain prose
-    When the driver records each
-    Then the first folds its update and the second is informational, said
-         verbatim.
+    Given the reply a hosted model actually sent in a live session
+    When it is judged against the document shape
+    Then it is refused, naming the keys it is missing and the one it carried
+         outside the shape.
 
-    Reading through a fence must cost neither of the two shapes that already
-    worked: the unfenced object is what the format rule asks for, and prose is
-    what a turn proposing nothing is told to send.
+    Kept as the bytes that arrived rather than corrected into the shape: the
+    fault is what a model does unprompted -- three keys dropped and a `basis`
+    hoisted to the top level -- and it is why the shape is closed rather than
+    read leniently for whatever it happens to carry.
     """
-    seed(log, "d1")
-    bare = LIVE_FENCED_REPLY.strip().removeprefix("```json\n").removesuffix("\n```")
+    problem = document_problem(LIVE_FENCED_REPLY)
 
-    record_reply(log, "fast", MAP_CHANNEL, bare, {})
-    folded = log.entries()[-1]
-    record_reply(log, "fast", MAP_CHANNEL, "No proposal; what is the retention window?", {})
-    plain = log.entries()[-1]
-
-    assert folded.kind == FOLD_KIND
-    assert [one["kind"] for one in folded.payload["updates"]] == ["informational", "revise"]
-    assert plain.kind == "informational"
-    assert plain.payload["text"] == "No proposal; what is the retention window?"
+    assert problem is not None
+    for missing in ("supersedes", "rulings", "stop"):
+        assert missing in problem
+    assert "basis" in problem
 
 
 def test_the_conflict_dispatch_tells_the_turn_why_it_was_called(log: SessionLog) -> None:
@@ -593,7 +605,7 @@ def test_the_map_doctor_dispatches_the_grill_master_over_the_whole_board(
     seed(log, OTHER)
     answer(log)
     notice(log, OTHER_NOTICE, OTHER)
-    driver = ScriptedMap(replies=["Reassessed; d-compaction no longer follows."])
+    driver = ScriptedMap(replies=[document(text="Reassessed; d-compaction no longer follows.")])
     lane = Lane(log, driver)
     expected = image(log)
 

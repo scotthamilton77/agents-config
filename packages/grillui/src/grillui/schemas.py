@@ -333,6 +333,32 @@ PROPOSED_ANSWER_KEY = "proposed_answer"
 PROPOSAL_KEY = "proposal"
 FROM_THREAD_KEY = "from_thread"
 
+# The grill-master's judgement on the decisions a gesture put in question, and
+# whether it takes the grilling to be over. Both ride payload keys on the turn's
+# own entry, the way `proposed_answer` rides a thread turn's: a ruling is
+# something a turn makes while it says its piece, and the kind vocabulary is
+# closed. The obligation check reads coverage off `RULINGS_KEY` rather than off
+# the board, so a ruling is credited where it was made rather than inferred from
+# what happened to be queued.
+RULINGS_KEY = "rulings"
+STOP_KEY = "stop"
+
+# The three rulings a turn may make on a decision. `stands` is why there are
+# three: an answer may kill a question outright, a decision resting on one that
+# died may survive it once the dead prereq is dropped, and one may survive the
+# gesture intact. A vocabulary of one verdict presses the agent to kill work
+# that stands, which is the incident this set answers.
+RULING_INVALIDATE = "invalidate"
+RULING_REVISE = "revise"
+RULING_STANDS = "stands"
+RulingKind = Literal["invalidate", "revise", "stands"]
+RULING_KINDS: frozenset[str] = frozenset(get_args(RulingKind))
+# The two rulings that are credited by an update rather than by their own `why`:
+# a turn that says a decision is dead has changed nothing until it queues the
+# change. They double as what already-queued proposal takes a decision off an
+# obligation before the turn is even dispatched.
+DISCHARGING_KINDS: frozenset[str] = frozenset({RULING_INVALIDATE, RULING_REVISE})
+
 # The kinds that are owed a reply: a human answering a decision, a human opening
 # a thread, a human speaking in one, and a human folding one -- the fold is owed
 # the grill-master's routing answer, which is a reply on the map channel rather
@@ -389,12 +415,16 @@ class LogEntry(Strict):
 class Option(Strict):
     """An answer on offer, and what its author expects it to cost downstream.
 
-    `puts_in_question` is display data and nothing else: the page marks those
-    decisions while the human has this option in hand, and what actually moves a
-    decision is still an applied invalidate. Nothing checks the ids against the
-    board, deliberately -- a pre-mark naming no node marks nothing, while a
-    dangling prereq strands a decision the frontier can never reach, so refusing
-    one of these would let a stale hint reject a whole plan.
+    `puts_in_question` is the plan author's prediction that taking this option
+    puts those decisions in question, which the grill-master rules on -- a mark,
+    not a dependency. Until the human takes the option the page is its only
+    reader: it changes no status, places no hold and enters no projection but
+    the option it rides on. Taking it is what obliges a ruling on each named
+    decision, and what actually moves one is still an applied invalidate.
+    Nothing checks the ids against the board, deliberately -- a pre-mark naming
+    no node marks nothing, while a dangling prereq strands a decision the
+    frontier can never reach, so refusing one of these would let a stale hint
+    reject a whole plan.
     """
 
     id: str
@@ -914,18 +944,68 @@ class MootnessObligation(Strict):
     `ids` is what the board is still offering of that list, so an obligation
     exists only where there is something outstanding to propose.
 
-    `cause` is which gesture left them moot, and it is what the turn owes them
-    that differs. An answer's list can only be invalidated: the human's own
-    answer killed the question. An applied invalidate's dependents may instead
-    survive without the prereq that died, so a `revise` dropping it discharges
-    the obligation as well -- and `target` there is the decision that left the
-    flow, with `answer` the rationale it carried.
+    `cause` is which gesture left them moot. Both lists take the same three
+    rulings -- an answer may kill a question outright, and a decision resting on
+    one that died may survive it -- and what differs is only what the dispatch
+    quotes as the rationale: for an answer, the option the human took; for an
+    applied invalidate, `target` is the decision that left the flow and `answer`
+    the rationale it carried.
     """
 
     target: str
     answer: str
     ids: list[str] = Field(min_length=1)
     cause: Literal["answer", "invalidate"] = "answer"
+
+
+class Ruling(Strict):
+    """One decision's verdict, and the line of reasoning behind it.
+
+    `why` is non-empty because it is what a `stands` ruling is credited on:
+    there is no update behind that verdict, so the sentence is the whole of the
+    answer. No check reads what it means -- what the board does instead is show
+    it, on the decision it rules on, so a human applying an `invalidate` reads
+    the argument for the death they are applying.
+    """
+
+    decision: str = Field(min_length=1)
+    ruling: RulingKind
+    why: str = Field(min_length=1)
+
+
+class Stop(Strict):
+    """Whether the turn judges the grilling's stop condition met.
+
+    Saying so is as far as an agent goes: ending the session is the human's
+    gesture, and `why` is what they are told so they can disagree with it.
+    """
+
+    met: bool
+    why: str = ""
+
+
+class GrillMasterDocument(Strict):
+    """Every map turn, in the one shape there is.
+
+    There is no prose mode. `text` is the notice the human reads and may be
+    empty where the board already says everything; `updates` are the map
+    mutations; `supersedes` the withdrawals; `rulings` the turn's judgement on
+    the decisions a gesture put in question; and `stop` whether the grilling is
+    over. Every key is required and an unknown one is a refusal, because the
+    alternative is a turn whose rulings went missing into a typo -- the failure
+    this shape exists to end is a reply that narrated three decisions as dead
+    and moved none of them.
+
+    `updates` stays untyped here: each entry is judged as its own kind by the
+    appender, against the board at the moment it arrives, and a second schema
+    over the same bytes is a second answer to what an update is.
+    """
+
+    text: str
+    updates: list[dict[str, Any]]
+    supersedes: list[str]
+    rulings: list[Ruling]
+    stop: Stop
 
 
 class DispatchContext(Strict):

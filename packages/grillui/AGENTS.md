@@ -35,8 +35,13 @@ Current state, by area:
   capture.
 - **Agent drive** — two tiers: a fast OpenRouter tier with code-evaluated
   escalation criteria, and a heavy `claude -p --resume` tier on a
-  single-process resume chain. Thread agents run on per-thread contexts; the
-  grill-master is the sole author of map mutations; pending-queue
+  single-process resume chain. Every grill-master turn is a document of one
+  closed shape — notice, updates, withdrawals, rulings, stop — refused and
+  retried once on the same seat, handed up once, then recorded as a failure;
+  no map reply is ever shown to the human as prose. A ruling of `stands` is a
+  credited answer beside `invalidate` and `revise`, and the obligation check
+  reads coverage off the turn's own rulings. Thread agents run on per-thread
+  contexts; the grill-master is the sole author of map mutations; pending-queue
   supersede/conflict handling, the map doctor's backend flow, and the
   transfer-to-expert flow are pinned end to end. An agent's map mutation is a
   proposal until the human applies it — classified at arrival, with

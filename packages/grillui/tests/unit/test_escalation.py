@@ -21,10 +21,11 @@ from grillui.escalation import (
     Turn,
     in_expert_mode,
     mootness_obligation,
-    outstanding,
     recommend,
+    rulings_of,
     transfer_source,
     turns_of,
+    unruled,
 )
 from grillui.schemas import (
     MAP_CHANNEL,
@@ -310,17 +311,19 @@ def test_an_obligation_ends_with_the_turn_the_answer_bought() -> None:
     assert mootness_obligation(killing_board(), answered(option="a")) is None
 
 
-def test_a_decision_with_an_invalidate_already_waiting_is_not_outstanding() -> None:
+def test_a_decision_with_a_change_already_waiting_is_not_obliged_again() -> None:
     """
-    Given an obligation on two decisions, one of which already has a proposed
-          invalidate in the human's queue
-    When what is still outstanding is read
-    Then only the other one is.
+    Given a board where one of the two decisions an answer puts in question
+          already has a proposed invalidate in the human's queue, and the other
+          a withdrawn one
+    When the obligation is read
+    Then only the second is named.
 
     An agent's invalidate always waits for the human's gesture, so the decision
-    it targets is still open while it waits. A check that read the status alone
-    would press every turn that honoured the obligation, and ask the human to
-    deal with the same withdrawal twice.
+    it targets is still open while it waits. An obligation that read the status
+    alone would ask for the change a previous turn already proposed, and put the
+    same withdrawal in front of the human twice. A superseded proposal is not
+    one: its author took it back.
     """
     image = killing_board()
     image.pending = [
@@ -328,9 +331,93 @@ def test_a_decision_with_an_invalidate_already_waiting_is_not_outstanding() -> N
         PendingUpdate(id="p2", target="d3", kind="invalidate", superseded=True, authored_at=9),
     ]
 
+    obliged = mootness_obligation(image, answered())
+
+    assert obliged is not None
+    assert obliged.ids == ["d3"]
+
+
+def test_a_ruling_is_credited_by_the_update_its_own_document_carries() -> None:
+    """
+    Given an obligation on three decisions and one turn ruling on all three --
+          `stands` on the first, `invalidate` on the second with the update to
+          match, and `invalidate` on the third with no update at all
+    When what is left unruled is read
+    Then it is the third alone.
+
+    `stands` is credited on its `why`, which is the whole of that answer: the
+    decision goes on being offered, and there is nothing to queue. The other two
+    are credited on the update, because a verdict that says a decision is dead
+    and queues nothing has changed nothing -- which is the failure the ruling
+    exists to catch, and crediting the word alone would put the check back where
+    it started.
+    """
+    obligation = MootnessObligation(target=TARGET, answer="x", ids=["d2", "d3", "d4"])
+    rulings = [
+        {"decision": "d2", "ruling": "stands", "why": "it asks a different question"},
+        {"decision": "d3", "ruling": "invalidate", "why": "subsumed"},
+        {"decision": "d4", "ruling": "invalidate", "why": "subsumed"},
+    ]
+    updates = [
+        {"kind": "informational", "text": "Two move."},
+        {"kind": "invalidate", "target": "d3", "why": "subsumed"},
+        {"kind": "invalidate", "target": "other", "why": "not one of them"},
+    ]
+
+    assert unruled(obligation.ids, rulings, updates) == ["d4"]
+
+
+def test_a_revise_ruling_is_credited_by_a_revise_and_never_by_an_invalidate() -> None:
+    """
+    Given a turn ruling `revise` on one decision while queueing an `invalidate`
+          against it
+    When what is left unruled is read
+    Then that decision is.
+
+    The update has to be the one the ruling named. A turn whose verdict and
+    whose change disagree has not decided which of the two it means, and
+    crediting either would let the human apply a death the reply argued against.
+    """
+    obligation = MootnessObligation(target=TARGET, answer="x", ids=["d2"])
+    rulings = [{"decision": "d2", "ruling": "revise", "why": "the prereq is gone"}]
+
+    assert unruled(obligation.ids, rulings, [{"kind": "invalidate", "target": "d2"}]) == ["d2"]
+    assert unruled(obligation.ids, rulings, [{"kind": "revise", "target": "d2"}]) == []
+
+
+def test_a_turn_that_ruled_on_nothing_leaves_every_named_decision_unruled() -> None:
+    """A valid document with an empty `rulings` discharges nothing: the shape
+    admits it, and the coverage check is what says it was not an answer."""
     obligation = MootnessObligation(target=TARGET, answer="x", ids=["d2", "d3"])
 
-    assert outstanding(image, obligation) == ["d3"]
+    assert unruled(obligation.ids, [], []) == ["d2", "d3"]
+
+
+def test_the_rulings_read_are_the_last_map_turns_and_no_older_ones() -> None:
+    """
+    Given two grill-master turns on the map, an earlier one ruling on a decision
+          and a later one ruling on nothing
+    When the turn's rulings are read
+    Then the later turn's are what comes back.
+
+    The check is on the turn that was just taken. Reading the channel's rulings
+    in aggregate would credit a turn for a verdict a previous one made, which is
+    exactly the press this exists to fire.
+    """
+    older = entry(
+        "informational",
+        "grill-master",
+        MAP_CHANNEL,
+        text="d2 stands.",
+        rulings=[{"decision": "d2", "ruling": "stands", "why": "it holds"}],
+    )
+    newer = entry("informational", "grill-master", MAP_CHANNEL, text="Noted.", rulings=[])
+    human = entry("answer", "human", MAP_CHANNEL, target="d1", answer={"option": "b"})
+
+    assert rulings_of([older, human, newer]) == ([], [])
+    assert rulings_of([newer, human, older])[0] == [
+        {"decision": "d2", "ruling": "stands", "why": "it holds"}
+    ]
 
 
 # ── What an invalidate the human applied owes what was resting on it ──
@@ -411,27 +498,26 @@ def test_a_later_unrelated_invalidate_does_not_press_an_older_strandings_depende
     assert mootness_obligation(image, applied(target="d3")) is None
 
 
-def test_a_revise_waiting_on_a_stranded_decision_discharges_the_obligation() -> None:
+def test_a_revise_waiting_on_a_stranded_decision_takes_it_out_of_the_obligation() -> None:
     """
-    Given the obligation an invalidate left on two decisions, one with a queued
-          `revise` and one with a queued `invalidate`
-    When what is still outstanding is read
-    Then neither is -- while a `revise` leaves an answer's own obligation intact.
+    Given two decisions stranded by an applied invalidate, one with a queued
+          `revise` against it and one with a queued `invalidate`
+    When the obligation is read
+    Then there is none.
 
     A decision resting on one that died may still stand without it, so revising
-    its prereqs says as much about it as invalidating it does. An answer's list
-    is not the same: the human's own answer killed those questions, and a revise
-    there would leave the decision on the frontier to be answered.
+    its prereqs says as much about it as invalidating it does. Both lists take
+    the same two changes, because both take the same three rulings: an answer
+    may change what a decision asks as readily as it kills it, and insisting on
+    the invalidate presses the agent to kill work that stands.
     """
     image = resting_board()
     image.pending = [
         PendingUpdate(id="p1", target="d2", kind=REVISE_KIND, superseded=False, authored_at=9),
         PendingUpdate(id="p2", target="d3", kind=INVALIDATE_KIND, superseded=False, authored_at=9),
     ]
-    left = MootnessObligation(target=TARGET, answer="x", ids=["d2", "d3"], cause=INVALIDATE_KIND)
 
-    assert outstanding(image, left) == []
-    assert outstanding(image, MootnessObligation(target=TARGET, answer="x", ids=["d2"])) == ["d2"]
+    assert mootness_obligation(image, applied()) is None
 
 
 def test_an_answer_owing_nothing_does_not_swallow_the_invalidates_obligation() -> None:

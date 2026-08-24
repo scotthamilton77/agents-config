@@ -30,6 +30,7 @@ from conftest import (
     ScriptedCli,
     ScriptedFast,
     attributions,
+    document,
     driven,
     event,
     handoff_doc,
@@ -56,7 +57,7 @@ from grillui.drivers import (
     write_resume,
 )
 from grillui.escalation import CONDITION_COMMITMENT, CONDITION_IRREDUCIBLE, CONDITION_MULTIPLE
-from grillui.lane import AgentUnreachableError
+from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import LOG_FILE, SessionLog
 from grillui.projector import fold
 from grillui.schemas import (
@@ -352,7 +353,7 @@ def test_a_fast_turn_asked_for_a_fact_its_context_lacks_asserts_none(session_dir
     log = briefed(session_dir)
     human_turn(log, "What is the retention window in the current system?")
     transport = ScriptedFast(
-        reply="The context I was given does not say what the retention window is."
+        reply=document(text="The context I was given does not say what the retention window is.")
     )
 
     take_fast_turn(log, transport)
@@ -717,7 +718,7 @@ def test_a_turn_that_reports_no_chain_identity_is_still_a_turn(session_dir: Path
     log = briefed(session_dir)
     human_turn(log, "The log.")
 
-    driver = HeavyDriver(TierConfig(), lambda _argv: json.dumps({"result": REPLY}))
+    driver = HeavyDriver(TierConfig(), lambda _argv: json.dumps({"result": document()}))
     driver.run(log, record_dispatch(log))
 
     assert replies(log)[0]["text"] == REPLY
@@ -757,12 +758,37 @@ def test_an_empty_completion_is_a_failed_turn_not_a_silent_one(session_dir: Path
     Given a model that answers with whitespace
     When the turn is taken
     Then it fails loudly and nothing is written into the log as a reply.
+
+    Whitespace never reaches the shape at all, so it is refused as a document
+    and never recorded as something the agent said.
     """
     log = briefed(session_dir)
     human_turn(log, "The log.")
 
-    with pytest.raises(ReplyRefusedError):
+    with pytest.raises(DocumentRefusedError):
         take_fast_turn(log, ScriptedFast(reply="   "))
+
+    assert replies(log) == []
+
+
+def test_a_document_that_carries_nothing_records_nothing_and_fails_nothing(
+    session_dir: Path,
+) -> None:
+    """
+    Given a well-formed document with no notice, no update and no ruling
+    When the turn is taken
+    Then no reply is appended and no error is raised.
+
+    §8.10 permits every field to be empty, so this is a valid turn and must not
+    be raised as a transport failure -- doing so skips the ladder that owes a
+    turn ruling on nothing a hand-up and then a notice. Nothing is appended
+    because every entry shape here holds content; the turn stays on the record
+    in its own dispatch file and in the lane's pair.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+
+    take_fast_turn(log, ScriptedFast(reply=document(text="")))
 
     assert replies(log) == []
 
@@ -1117,7 +1143,8 @@ def test_a_write_racing_the_reply_cannot_wedge_between_it_and_its_warning(
 
 def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
     """
-    Given a turn that measures over its window but says nothing the log will take
+    Given a turn that measures over its window and proposes an update of a kind
+          the appender does not know
     When it is run
     Then it raises and no warning is appended, because a turn nobody could
          record is not a turn whose size is worth telling the human about.
@@ -1126,8 +1153,9 @@ def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
     human_turn(log, "The log.")
     config = TierConfig.from_env({FAST_MODEL_ENV: "vendor/unknown", FAST_CONTEXT_LIMIT_ENV: "1000"})
 
+    refused = document(text="Proposing this.", updates=[{"kind": "not-a-kind", "target": "d1"}])
     with pytest.raises(ReplyRefusedError):
-        FastDriver(config, ScriptedFast(reply="   ", prompt_tokens=750)).run(
+        FastDriver(config, ScriptedFast(reply=refused, prompt_tokens=750)).run(
             log, record_dispatch(log)
         )
 

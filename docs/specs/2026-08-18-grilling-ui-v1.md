@@ -2123,7 +2123,7 @@ opens one proves something else.
 - GUI-A86 | probe: packages/grillui/tests/browser/thread_controls_probe.py::main
 - GUI-A87 | test: packages/grillui/tests/unit/test_page.py::test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_takes
 - GUI-A92 | probe: packages/grillui/tests/browser/chord_probe.py::main
-- GUI-A88 | test: packages/grillui/tests/unit/test_tiers.py::test_the_grill_master_brief_obliges_an_invalidate_for_each_decision_an_answer_moots
+- GUI-A88 | test: packages/grillui/tests/unit/test_tiers.py::test_the_grill_master_brief_obliges_a_ruling_on_each_decision_an_answer_bears_on
 - GUI-A89 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_can
 - GUI-A90 | probe: packages/grillui/tests/browser/thread_wait_probe.py::main
 - GUI-A93 | test: packages/grillui/tests/unit/test_tiers.py::test_a_turn_on_the_map_thread_is_told_to_state_which_decisions_change_and_how
@@ -2136,8 +2136,8 @@ opens one proves something else.
 - GUI-A99 | probe: packages/grillui/tests/browser/side_thread_fold_probe.py::main
 - GUI-A105 | probe: packages/grillui/tests/browser/inbox_batch_probe.py::main
 - GUI-A100 | test: packages/grillui/tests/unit/test_tiers.py::test_a_turn_owed_invalidates_is_given_the_ids_and_the_answer_in_a_section_of_its_own
-- GUI-A101 | test: packages/grillui/tests/unit/test_lane.py::test_a_prose_reply_to_a_killing_answer_is_pressed_on_the_expert_carrying_the_ids
-- GUI-A102 | test: packages/grillui/tests/unit/test_lane.py::test_an_expert_that_proposes_nothing_either_leaves_the_ids_named_to_the_human
+- GUI-A101 | test: packages/grillui/tests/unit/test_lane.py::test_a_reply_ruling_on_neither_named_decision_is_pressed_on_the_expert_carrying_the_ids
+- GUI-A102 | test: packages/grillui/tests/unit/test_lane.py::test_an_expert_that_rules_on_nothing_either_leaves_the_ids_named_to_the_human
 - GUI-A103 | test: packages/grillui/tests/unit/test_lane.py::test_an_obligation_met_or_never_created_presses_nobody
 - GUI-A106 | probe: packages/grillui/tests/browser/completion_probe.py::main
 - GUI-A107 | test: packages/grillui/tests/unit/test_capture.py::test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open
@@ -2145,13 +2145,13 @@ opens one proves something else.
 - GUI-A108 | test: packages/grillui/tests/unit/test_projector.py::test_a_prereq_that_has_been_invalidated_holds_nothing
 - GUI-A109 | test: packages/grillui/tests/unit/test_lane.py::test_an_invalidate_the_human_applied_is_pressed_on_the_next_map_turn
 - GMR-A1 | open
-- GMR-A2 | open
-- GMR-A3 | open
-- GMR-A4 | open
+- GMR-A2 | test: packages/grillui/tests/unit/test_rulings.py::test_a_reply_that_is_not_the_document_is_refused_and_never_reaches_the_human
+- GMR-A3 | test: packages/grillui/tests/unit/test_rulings.py::test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision
+- GMR-A4 | test: packages/grillui/tests/unit/test_rulings.py::test_a_ruling_whose_document_carries_no_matching_update_is_not_credited
 - GMR-A5 | open
 - GMR-A6 | open
 - GMR-A7 | open
-- GMR-A8 | open
+- GMR-A8 | test: packages/grillui/tests/unit/test_rulings.py::test_the_option_shape_says_the_grill_master_rules_on_the_mark
 - GMR-A9 | open
 - GMR-A10 | open
 - GMR-A11 | open
