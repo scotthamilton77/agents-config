@@ -668,11 +668,31 @@ invokes `codex exec --json`, and the thread id is the `thread_id` carried by the
 `thread.started` event that opens the stream; every later turn on that channel is `codex
 exec resume <thread_id> --json`, the id kept the way the heavy chain's session id is, and
 GUI-D15's one-process rule binds it identically. The standing brief is supplied on every
-invocation as `-c developer_instructions=…` and the §8.10 schema as `--output-schema
-<file>`, cold turn and resumed turn alike. The process runs with its standard input closed,
-since it otherwise blocks reading a stream nobody is writing. The turn's usage — the token
-counts on the `turn.completed` event — is what the context measurement reads, in place of a
-byte estimate.
+invocation as `-c developer_instructions=…`, cold turn and resumed turn alike, since a
+resumed thread inherits none of it; so is `--skip-git-repo-check`, without which the CLI
+refuses the turn on a trust check about its working directory. The process runs with its
+standard input closed, since it otherwise blocks reading a stream nobody is writing.
+
+No `--output-schema` is passed. That flag is the provider's strict structured-output mode,
+which requires every object in the schema to be closed, while §8.10's `updates` is
+deliberately open — each entry is judged as its own kind by the appender. The refuted
+alternative is to close it anyway: the only closed variant the provider accepts returns an
+empty object for every update, so the turn proposes nothing and says nothing about having
+failed to, and no closed key list can express an `add-node` carrying a whole nested
+decision. The shape is stated in the standing brief, validated on arrival, retried once on
+the same seat with the fault quoted, and then walks GUI-D45's ladder.
+
+The seat is given no tool and no working tree: every invocation disables both execution
+features (`-c features.shell_tool=false -c features.unified_exec=false`) and pins
+`-c sandbox_mode="read-only" -c approval_policy="never"` behind them, and the process runs
+in the session directory rather than the launch directory. A turn whose whole work is a
+ruling on the dispatch has no business in the human's repository.
+
+The turn's usage — the token counts on the `turn.completed` event — is what the context
+measurement reads, in place of a byte estimate. The count is the thread's running input
+total rather than one turn's, so what a turn records is the growth in that total; the last
+total is held in memory, and a restarted backend therefore over-reports exactly one turn,
+which errs toward warning early rather than never.
 
 **Latency is the currency here, not price**: the map seat and the expert seat both ride
 subscriptions, so a per-turn dollar figure for either is a fiction, and what the human
@@ -1911,11 +1931,14 @@ Each criterion is mechanically checkable and convertible to a red test.
   returns the channel to its first-rung seat.
 - **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
   the `thread.started` event, then resumes that thread on every later turn on the channel as
-  `codex exec resume <thread_id> --json`; `-c developer_instructions=…` and `--output-schema
-  <file>` are passed on the resumed turn as well as on the cold one; the process is run with
-  its standard input closed; a reply that does not validate is refused under GMR-A2 rather
-  than shown to the human; and the token counts on `turn.completed`, not the byte estimate,
-  are what the context measurement records.
+  `codex exec resume <thread_id> --json`; `-c developer_instructions=…`, the effort, the two
+  execution features disabled, the read-only sandbox and the never-approve policy are passed
+  on the resumed turn as well as on the cold one, and both run in the session directory
+  rather than the launch directory; the process is run with its standard input closed; no
+  `--output-schema` is passed, and a reply that does not validate is refused under GMR-A2
+  rather than shown to the human; and the growth in the `turn.completed` input count, not
+  the byte estimate, is what the context measurement records — the deliberate exception
+  being the one turn a restarted backend over-reports, having no earlier total to subtract.
 
 ## 10. Open questions for the implementing work
 
@@ -2148,10 +2171,10 @@ opens one proves something else.
 - GMR-A2 | test: packages/grillui/tests/unit/test_rulings.py::test_a_reply_that_is_not_the_document_is_refused_and_never_reaches_the_human
 - GMR-A3 | test: packages/grillui/tests/unit/test_rulings.py::test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision
 - GMR-A4 | test: packages/grillui/tests/unit/test_rulings.py::test_a_ruling_whose_document_carries_no_matching_update_is_not_credited
-- GMR-A5 | open
+- GMR-A5 | test: packages/grillui/tests/unit/test_seats.py::test_the_map_and_a_thread_take_the_same_rung_on_seats_configured_apart
 - GMR-A6 | open
 - GMR-A7 | open
 - GMR-A8 | test: packages/grillui/tests/unit/test_rulings.py::test_the_option_shape_says_the_grill_master_rules_on_the_mark
 - GMR-A9 | open
 - GMR-A10 | open
-- GMR-A11 | open
+- GMR-A11 | test: packages/grillui/tests/unit/test_seats.py::test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter

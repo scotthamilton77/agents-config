@@ -58,7 +58,7 @@ from grillui.schemas import (
 from grillui.session import end_session
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from grillui.capture import Summarizer
     from grillui.lane import TurnDriver
@@ -98,6 +98,7 @@ def create_app(
     driver: TurnDriver | None = None,
     *,
     expert: TurnDriver | None = None,
+    seats: Mapping[str, TurnDriver] | None = None,
     summarize: Summarizer = default_summary,
     on_end: Callable[[], None] | None = None,
 ) -> FastAPI:
@@ -112,6 +113,12 @@ def create_app(
     off the human's own gestures, one channel at a time, so one escalation never
     moves another channel.
 
+    `seats` is where a named channel takes its first-rung turns instead of on
+    the session's own driver -- the map's, whose turn is a ruling rather than a
+    facilitation. It changes who sits on the rung and never how many rungs
+    there are: a seated channel hands a turn it could not take up to the same
+    `expert` every other channel has.
+
     `summarize` is the seam capture writes the terminal result's prose through.
     Its default builds the briefing from the structured parts, so ending a
     session never waits on a model being reachable.
@@ -123,7 +130,7 @@ def create_app(
     of its own to end.
     """
     app = FastAPI(title="grillui session backend")
-    lane = Lane(log, driver, expert)
+    lane = Lane(log, driver, expert, seats)
     claim = Claim(log.directory)
 
     def require_epoch(presented: str) -> None:

@@ -1,12 +1,21 @@
 """The two tiers: what each is told, which model it is, and what a turn is given.
 
-**Configuration owns the model ids, and the heavy tier's effort with them.**
-Nothing here is written into a driver: the fast tier is a non-Claude model
-reached over OpenRouter and the heavy tier is a Claude model driven as CLI
-turns, and what each is comes from configuration so the choice can be re-made on
-cost-per-useful-turn without a code change. The escalation policy sits beside
-them: whether a met condition needs the human's gesture is a property of the
-session, not of the code, and it defaults to needing it.
+**Configuration owns the model ids, and the efforts with them.** Nothing here
+is written into a driver: what occupies each rung comes from configuration so
+the choice can be re-made on cost-per-useful-turn without a code change. The
+escalation policy sits beside them: whether a met condition needs the human's
+gesture is a property of the session, not of the code, and it defaults to
+needing it.
+
+**A tier is a rung and a seat is who sits on it.** There are two rungs and only
+two -- `fast` first, `heavy` as the expert -- and what varies per channel is the
+seat on the first rung: a transport, a model, and an effort where the transport
+takes one. A channel whose first rung was already the expert would have nowhere
+to hand a turn up to, so the number of rungs is not configuration and the seat
+is. The threads' first-rung seat is a hosted model over OpenRouter; the map's is
+a mid-weight reasoning model on the Codex transport, because the map's turn is a
+ruling rather than a facilitation; and the expert seat is one shared
+configuration for every channel.
 
 **A standing brief has two parts, and they vary independently.** The role's
 part says what the turn is for and opens the brief; the tier's part says how the
@@ -40,7 +49,9 @@ from grillui.dispatch import GRILL_MASTER, THREAD_AGENT
 from grillui.escalation import INVALIDATE_KIND, turns_of
 from grillui.schemas import (
     FAST_TIER,
+    FOLDABLE_KINDS,
     HEAVY_TIER,
+    MAP_CHANNEL,
     MAP_THREAD_KIND,
     SESSION_START_KIND,
     Thread,
@@ -62,6 +73,26 @@ if TYPE_CHECKING:
 DEFAULT_FAST_MODEL = "google/gemini-3.5-flash-lite"
 DEFAULT_HEAVY_MODEL = "claude-opus-5"
 DEFAULT_HEAVY_EFFORT = "xhigh"
+
+# The three transports a seat may sit on, and the whole of the set. A transport
+# outside it is refused at launch rather than resolved to whichever driver the
+# wiring happens to fall through to: a misspelled transport that quietly seated
+# the map on the threads' model would be a session running a configuration
+# nobody chose, attributed to one they did.
+OPENROUTER_TRANSPORT = "openrouter"
+CODEX_TRANSPORT = "codex"
+CLAUDE_TRANSPORT = "claude"
+TRANSPORTS = (OPENROUTER_TRANSPORT, CODEX_TRANSPORT, CLAUDE_TRANSPORT)
+
+# The map's first-rung seat. It is a reasoning model rather than the threads'
+# quick one because the map's turn is a ruling on what a gesture cost the rest
+# of the board -- work the threads' seat is not asked for and does not do -- and
+# it is mid-weight rather than the expert because the human is waiting on it.
+# Where its rulings prove inadequate the step-up is this model, not another
+# rung.
+DEFAULT_MAP_TRANSPORT = CODEX_TRANSPORT
+DEFAULT_MAP_MODEL = "gpt-5.6-luna"
+DEFAULT_MAP_EFFORT = "medium"
 
 # What each model can hold, in tokens, captured 2026-08-22: the Claude figures
 # from the bundled `claude-api` reference's model table, the Gemini one from
@@ -107,6 +138,9 @@ DEFAULT_ESCALATION_POLICY = POLICY_GATED
 FAST_MODEL_ENV = "GRILLUI_FAST_MODEL"
 HEAVY_MODEL_ENV = "GRILLUI_HEAVY_MODEL"
 HEAVY_EFFORT_ENV = "GRILLUI_HEAVY_EFFORT"
+MAP_TRANSPORT_ENV = "GRILLUI_MAP_TRANSPORT"
+MAP_MODEL_ENV = "GRILLUI_MAP_MODEL"
+MAP_EFFORT_ENV = "GRILLUI_MAP_EFFORT"
 ESCALATION_POLICY_ENV = "GRILLUI_ESCALATION_POLICY"
 FAST_CONTEXT_LIMIT_ENV = "GRILLUI_FAST_CONTEXT_LIMIT"
 HEAVY_CONTEXT_LIMIT_ENV = "GRILLUI_HEAVY_CONTEXT_LIMIT"
@@ -114,6 +148,7 @@ API_KEY_ENV = "OPENROUTER_API_KEY"
 
 DEFAULT_API_BASE = "https://openrouter.ai/api/v1"
 CLAUDE_CLI = "claude"
+CODEX_CLI = "codex"
 
 # The CLI's own closed vocabulary for `--effort`. An effort outside it is a
 # misconfiguration, and the CLI would refuse the turn rather than pick for us.
@@ -130,10 +165,19 @@ class UnknownTierError(ValueError):
 class UnknownEffortError(ValueError):
     """An effort level the CLI would not accept."""
 
-    def __init__(self, effort: str) -> None:
+    def __init__(self, effort: str, name: str = HEAVY_EFFORT_ENV) -> None:
         super().__init__(
-            f"unknown effort: {effort!r}; {HEAVY_EFFORT_ENV} must be one of "
-            f"{', '.join(EFFORT_LEVELS)}"
+            f"unknown effort: {effort!r}; {name} must be one of {', '.join(EFFORT_LEVELS)}"
+        )
+
+
+class UnknownTransportError(ValueError):
+    """A transport outside the three a seat may sit on."""
+
+    def __init__(self, transport: str) -> None:
+        super().__init__(
+            f"unknown transport: {transport!r}; {MAP_TRANSPORT_ENV} must be one of "
+            f"{', '.join(TRANSPORTS)}"
         )
 
 
@@ -173,6 +217,25 @@ def _limit(source: Mapping[str, str], name: str) -> int | None:
 
 
 @dataclass(frozen=True)
+class Seat:
+    """Who occupies a rung on one channel: a transport, a model, and an effort.
+
+    Frozen for the same reason the configuration is: the turn is attributed to
+    what it was asked of, and a seat that could be edited mid-turn is a log
+    naming a model the request never went to.
+
+    `effort` is nothing where the transport does not take one, and that is the
+    honest shape rather than a missing field: an effort recorded on a turn that
+    never sent one is an attribution nobody can act on, since it reads exactly
+    like one that did.
+    """
+
+    transport: str
+    model: str
+    effort: str | None = None
+
+
+@dataclass(frozen=True)
 class TierConfig:
     """Which model each tier is, how hard the heavy one thinks, and how much
     each can be given before the backend starts saying so.
@@ -190,6 +253,9 @@ class TierConfig:
     fast_model: str = DEFAULT_FAST_MODEL
     heavy_model: str = DEFAULT_HEAVY_MODEL
     heavy_effort: str = DEFAULT_HEAVY_EFFORT
+    map_transport: str = DEFAULT_MAP_TRANSPORT
+    map_model: str = DEFAULT_MAP_MODEL
+    map_effort: str = DEFAULT_MAP_EFFORT
     escalation_policy: str = DEFAULT_ESCALATION_POLICY
     fast_context_limit: int | None = None
     heavy_context_limit: int | None = None
@@ -203,6 +269,10 @@ class TierConfig:
         # the heavy tier's money.
         if self.heavy_effort not in EFFORT_LEVELS:
             raise UnknownEffortError(self.heavy_effort)
+        if self.map_effort not in EFFORT_LEVELS:
+            raise UnknownEffortError(self.map_effort, MAP_EFFORT_ENV)
+        if self.map_transport not in TRANSPORTS:
+            raise UnknownTransportError(self.map_transport)
         if self.escalation_policy not in ESCALATION_POLICIES:
             raise UnknownPolicyError(self.escalation_policy)
 
@@ -223,10 +293,41 @@ class TierConfig:
             fast_model=source.get(FAST_MODEL_ENV) or DEFAULT_FAST_MODEL,
             heavy_model=source.get(HEAVY_MODEL_ENV) or DEFAULT_HEAVY_MODEL,
             heavy_effort=source.get(HEAVY_EFFORT_ENV) or DEFAULT_HEAVY_EFFORT,
+            map_transport=source.get(MAP_TRANSPORT_ENV) or DEFAULT_MAP_TRANSPORT,
+            map_model=source.get(MAP_MODEL_ENV) or DEFAULT_MAP_MODEL,
+            map_effort=source.get(MAP_EFFORT_ENV) or DEFAULT_MAP_EFFORT,
             escalation_policy=source.get(ESCALATION_POLICY_ENV) or DEFAULT_ESCALATION_POLICY,
             fast_context_limit=_limit(source, FAST_CONTEXT_LIMIT_ENV),
             heavy_context_limit=_limit(source, HEAVY_CONTEXT_LIMIT_ENV),
         )
+
+    @property
+    def thread_seat(self) -> Seat:
+        """The first-rung seat every thread channel takes its turns on."""
+        return Seat(OPENROUTER_TRANSPORT, self.fast_model)
+
+    @property
+    def map_seat(self) -> Seat:
+        """The first-rung seat the map channel takes its turns on.
+
+        An OpenRouter seat carries no effort whatever the effort is configured
+        to be, because that transport is not sent one here: seating the map on
+        the threads' seat is a transport and a model, and an effort left over
+        from the seat before it would be attributed to a turn that never sent
+        it.
+        """
+        if self.map_transport == OPENROUTER_TRANSPORT:
+            return Seat(self.map_transport, self.map_model)
+        return Seat(self.map_transport, self.map_model, self.map_effort)
+
+    @property
+    def expert_seat(self) -> Seat:
+        """The one seat on the second rung, shared by every channel."""
+        return Seat(CLAUDE_TRANSPORT, self.heavy_model, self.heavy_effort)
+
+    def seat_for(self, channel: str) -> Seat:
+        """Which first-rung seat this channel's next turn is composed by."""
+        return self.map_seat if channel == MAP_CHANNEL else self.thread_seat
 
     def model_for(self, tier: str) -> str:
         if tier == FAST_TIER:
@@ -237,19 +338,26 @@ class TierConfig:
         # billed to -- and attributed as -- the heavy model.
         raise UnknownTierError(tier)
 
-    def limit_for(self, tier: str) -> int | None:
-        """How many tokens this tier's model holds, or nothing if nobody knows.
+    def limit_for(self, tier: str, model: str | None = None) -> int | None:
+        """How many tokens this turn's model holds, or nothing if nobody knows.
 
         The override wins over the table, because the table is a snapshot of
         numbers this code does not own. Nothing at all is a real answer and the
         one that must not be rounded up into a number: a session on a model this
         table has never heard of gets no warning rather than a warning measured
         against a ceiling somebody made up.
+
+        The model is asked for rather than derived from the tier, because a rung
+        no longer names one model: the first rung seats the map and the threads
+        separately, and reading the threads' window against the map seat's turn
+        would warn -- or stay silent -- about a ceiling that is not this model's.
+        The override stays keyed to the rung, since that is the knob an operator
+        has.
         """
         if tier == FAST_TIER:
-            return self.fast_context_limit or CONTEXT_LIMITS.get(self.fast_model)
+            return self.fast_context_limit or CONTEXT_LIMITS.get(model or self.fast_model)
         if tier == HEAVY_TIER:
-            return self.heavy_context_limit or CONTEXT_LIMITS.get(self.heavy_model)
+            return self.heavy_context_limit or CONTEXT_LIMITS.get(model or self.heavy_model)
         raise UnknownTierError(tier)
 
 
@@ -374,7 +482,8 @@ DOCUMENT_FORMAT_RULE = (
     "- `text`: what you are saying to the human, under the concision rule. Empty where the "
     "board already says it.\n"
     '- `updates`: the map updates you are proposing, each like {"kind": "revise", "target": '
-    '"d1", ...}.\n'
+    f'"d1", ...}}. `kind` is one of {", ".join(sorted(FOLDABLE_KINDS))} and nothing else; the '
+    "backend refuses a kind outside that list, and the refusal takes the whole turn with it.\n"
     "- `supersedes`: the ids of pending items of yours you are withdrawing.\n"
     "- `rulings`: your judgement on the decisions this gesture put in question, each {"
     '"decision": "d2", "ruling": "invalidate" | "revise" | "stands", "why": "one line"}.\n'
