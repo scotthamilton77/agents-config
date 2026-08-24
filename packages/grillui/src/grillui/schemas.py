@@ -173,6 +173,19 @@ SET_ASIDE_KINDS = frozenset({THREAD_PARK_KIND, THREAD_CLOSE_KIND})
 # Folding it is what puts its conclusion in front of the grill-master, which is
 # the only agent that may act on it.
 MAP_THREAD_KIND = "map"
+
+# The thread about the board itself, as against the plan on it. It is the one
+# channel the shipped reference material is handed to, and its kind is what says
+# so: anchoring no decision is not the test, because the map thread and a notice
+# thread opened from a notice that targeted nothing anchor none either and are
+# both about the plan.
+HELP_THREAD_KIND = "help"
+
+# A thread opened from something an agent said, anchored to the decision that
+# notice targeted or to none where it targeted none. It is about the plan, so it
+# is briefed like any other thread and given no reference material.
+NOTICE_THREAD_KIND = "notice"
+
 NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
 GESTURE_KINDS = frozenset({"answer"})
 
@@ -763,11 +776,37 @@ class SupersedeConflict(Strict):
 
 
 class HistoryEntry(Strict):
+    """One thing that happened to a decision, and what is on the record about it.
+
+    `actor` is who put the change on the board, which for an applied proposal is
+    the human. `proposed_by` is the agent whose queued update that apply landed,
+    and `verdict` the ruling that produced the move -- both recorded rather than
+    derived, so a thread agent asked why the board moved quotes them instead of
+    composing a cause out of `prereqs`. Each is absent where there is no such
+    fact: a move nobody proposed carries no proposer, and one no ruling produced
+    carries no verdict.
+    """
+
     seq: int
     timestamp: str
     kind: str
     actor: str
     why: str
+    proposed_by: str | None = None
+    verdict: RulingKind | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_absent_optionals(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, object]:
+        """An absent fact has no key at all rather than a null one, so a reader
+        of the record cannot mistake "nobody proposed this" for "the proposer
+        was not written down"."""
+        dumped: dict[str, object] = handler(self)
+        for key in ("proposed_by", "verdict"):
+            if dumped.get(key) is None:
+                dumped.pop(key, None)
+        return dumped
 
 
 class Image1(Strict):

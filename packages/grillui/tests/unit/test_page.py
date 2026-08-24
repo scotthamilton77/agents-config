@@ -51,6 +51,7 @@ from grillui.channels import (
     TRANSPORT_TABLE,
 )
 from grillui.claim import CLAIM_STATES
+from grillui.dispatch import record_dispatch
 from grillui.escalation import in_expert_mode
 from grillui.log import LOG_FILE
 from grillui.schemas import (
@@ -74,6 +75,7 @@ from grillui.schemas import (
     THREAD_GESTURE_KINDS,
     TIER_KEY,
     TRANSFER_FLAG,
+    DispatchContext,
     Handoff,
 )
 
@@ -3193,3 +3195,135 @@ def test_a_shell_without_exactly_one_of_each_token_is_refused(shell: str) -> Non
     script and nothing downstream would notice; assembly refuses it by name."""
     with pytest.raises(ValueError, match="__STYLE__"):
         assemble_page(shell, PAGE_DIR)
+
+
+# ----------------------------------------------------------------- GMR-A7
+# The kinds the page opens a thread under, and which of them the board's own
+# reference material crosses to.
+
+
+def minted_thread_kinds() -> set[str]:
+    """Every kind the page opens a thread under, read off its own calls.
+
+    Derived rather than listed here for the reason every other check in this
+    file is: a kind the page grew and the backend never routed on would be a
+    thread briefed as whatever the routing's default happens to be, and a list
+    written here would agree with the page exactly until someone changed one.
+    """
+    kinds: set[str] = set()
+    for chunk in page_source().split('ev("thread-created"')[1:]:
+        declared = next(one for one in chunk.split("\n") if "kind:" in one)
+        kinds.update(re.findall(r'"([a-z-]+)"', declared.split("kind:", 1)[1]))
+    assert kinds, "no thread-created call on the page declares a kind"
+    return kinds
+
+
+def _opened_thread(
+    client: TestClient, epoch: str, channel: str, kind: str, decision: str | None
+) -> None:
+    """One thread, opened the way the page opens one."""
+    receipt = post(
+        client,
+        epoch,
+        page_message(
+            "thread-created",
+            channel,
+            turns=[{"who": "human", "text": "About what you said."}],
+            decision=decision,
+            kind=kind,
+            title="a title",
+            requires_action=False,
+        ),
+    )[0]
+    assert receipt["status"] == "accepted", receipt
+
+
+def test_the_reference_material_crosses_to_the_help_kind_and_to_no_other_the_page_mints(
+    client: TestClient, log: Any
+) -> None:
+    """
+    Given a briefing that shipped reference material about the board
+    When a thread is opened under each kind the page mints, anchored the way the
+         page anchors it, and each one's dispatch is recorded
+    Then only the `help` thread's carries the material.
+
+    The map thread, a thread opened from a notice that targeted nothing, and one
+    opened from a waiting change that targeted nothing all anchor no decision,
+    so a rule drawn on the anchor hands the manual for driving the board to
+    three agents grilling a plan. The kind is the whole of the test, and it is
+    stated positively -- which is what this measures, since a negative rule
+    passes for `notice` only until the next kind arrives.
+    """
+    node = seed_node(client, log.epoch)
+    _opened(log, help_reference=REFERENCE)
+
+    # Every kind the page has, each anchored as the page anchors it -- and the
+    # two kinds opened from something an agent said twice each, because a notice
+    # or a waiting change that targeted nothing opens a thread anchoring
+    # nothing, which is the case an anchor rule cannot tell from help.
+    assert minted_thread_kinds() == {"user", "map", "help", "notice", "mandate", "pending"}, (
+        "the page mints a thread kind this check has no routing answer for"
+    )
+    anchors = [
+        ("t-help", "help", None),
+        ("t-map", "map", None),
+        ("t-notice-loose", "notice", None),
+        ("t-notice-on-node", "notice", node),
+        ("t-pending-loose", "pending", None),
+        ("t-pending-on-node", "pending", node),
+        ("t-mandate", "mandate", node),
+        ("t-user", "user", node),
+    ]
+    for channel, kind, decision in anchors:
+        _opened_thread(client, log.epoch, channel, kind, decision)
+
+    carried = {}
+    for channel, _, _ in anchors:
+        recorded = record_dispatch(log, channel=channel).read_text(encoding="utf-8")
+        carried[channel] = DispatchContext.model_validate_json(recorded).help_reference
+        if channel != "t-help":
+            assert REFERENCE not in recorded, f"{channel} was handed the material"
+
+    assert carried == {
+        "t-help": REFERENCE,
+        "t-map": None,
+        "t-notice-loose": None,
+        "t-notice-on-node": None,
+        "t-pending-loose": None,
+        "t-pending-on-node": None,
+        "t-mandate": None,
+        "t-user": None,
+    }
+
+
+def test_a_thread_opened_from_a_notice_anchors_the_decision_that_notice_targeted(
+    client: TestClient, log: Any
+) -> None:
+    """
+    Given a notice the agent addressed to a decision, and one it addressed to
+         none
+    When the human opens a thread from each
+    Then the first anchors that decision and the second anchors nothing, and
+         both are kinded `notice`.
+
+    The anchor is what puts the thread's conversation on the decision it is
+    about: a thread that lost it is a conversation the board cannot show beside
+    the question it belongs to, and one that invented an anchor would put the
+    agent in front of a decision the human never raised.
+    """
+    node = seed_node(client, log.epoch)
+    post(client, log.epoch, event("informational", key="note-1", target=node, text="said"))
+    post(client, log.epoch, event("informational", key="note-2", text="said of nothing"))
+
+    _opened_thread(client, log.epoch, "t-notice-on-node", "notice", node)
+    _opened_thread(client, log.epoch, "t-notice-loose", "notice", None)
+
+    assert thread_of(client, "t-notice-on-node")["decision"] == node
+    assert thread_of(client, "t-notice-on-node")["kind"] == "notice"
+    assert thread_of(client, "t-notice-loose")["decision"] is None
+    assert thread_of(client, "t-notice-loose")["kind"] == "notice"
+
+    # And the page builds exactly that: the notice's own target, whatever it is.
+    builder = function_body("discussNotice")
+    assert 'kind: "notice"' in builder
+    assert "decision: target" in builder

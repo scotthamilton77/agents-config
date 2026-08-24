@@ -319,9 +319,15 @@ def test_the_thread_agent_is_told_how_to_read_a_board_that_moved(tier: str) -> N
     When it is read for what the board's own fields mean
     Then it carries the legend: the record says what happened and why, a
          question about why the board moved is answered by quoting it or by
-         saying it does not say, and a pre-mark is a prediction rather than a
-         dependency -- without which the agent invents a cause for a move it can
-         read verbatim in front of it.
+         saying it does not say, a pre-mark is a prediction rather than a
+         dependency, and the two fields that name who proposed a move and what
+         was ruled on it are pointed at by name -- without which the agent
+         invents a cause for a move it can read verbatim in front of it.
+
+    The fields are named rather than described because they are what the agent
+    has to go looking for: a legend that says the record holds the reason, over
+    a record that holds it under `proposed_by`, is a legend that sends the agent
+    to `prereqs`.
     """
     brief = system_prompt(tier, THREAD_AGENT)
 
@@ -331,6 +337,9 @@ def test_the_thread_agent_is_told_how_to_read_a_board_that_moved(tier: str) -> N
     assert "never by inferring a cause" in brief
     assert "a mark, not a dependency" in brief
     assert "including a notice this thread may have been opened from" in brief
+    assert "`proposed_by`" in brief
+    assert "`verdict`" in brief
+    assert "quoted rather than inferred" in brief
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])

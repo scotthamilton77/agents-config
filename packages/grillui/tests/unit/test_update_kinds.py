@@ -194,7 +194,8 @@ def test_invalidate_carries_its_rationale_onto_the_decision_it_blocks(
     read the block and its justification as two unrelated items. The rationale
     has to survive the queue to reach the board at all, and the history entry
     is attributed to the gesture that caused the change -- the human's apply --
-    while the reasoning it carries stays the agent's.
+    while the reasoning it carries, and the `proposed_by` beside it, stay the
+    agent's.
     """
     seed_node(client, log.epoch)
     neighbour = post(client, log.epoch, add_node("mint-1"))[0]["node"]["id"]
@@ -216,6 +217,7 @@ def test_invalidate_carries_its_rationale_onto_the_decision_it_blocks(
         "kind": "invalidate",
         "actor": "human",
         "why": rationale,
+        "proposed_by": "grill-master",
     }
     assert board[neighbour]["rationale"] is None
     assert rationale not in str(board[neighbour])

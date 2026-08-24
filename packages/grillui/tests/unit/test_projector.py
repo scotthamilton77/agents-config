@@ -487,3 +487,259 @@ def test_staleness_does_not_travel_through_an_invalidated_dependent() -> None:
     statuses = {one.id: one.status for one in fold(EPOCH, entries).decisions}
 
     assert statuses == {"n1": "open", "n2": "invalidated", "n3": "settled"}
+
+
+# ------------------------------------------------------------------ GMR-A7
+# What §8.6's record says about who proposed a move and what was ruled.
+
+
+def queued(
+    seq: int, *updates: dict[str, Any], rulings: list[dict[str, str]] | None = None
+) -> LogEntry:
+    """A grill-master turn, whole: what it proposes and what it ruled.
+
+    The rulings ride the turn's own entry, which is where the fold has to read
+    them from -- by the time the human applies one of these, the gesture on the
+    log is the human's and carries nothing but the ids they named.
+    """
+    return entry(seq, "fold", updates=list(updates), rulings=rulings or [], stop={"met": False})
+
+
+def landing(seq: int, *ids: str, updates: list[dict[str, Any]]) -> LogEntry:
+    """The human's apply, carrying the authoring agent's own bytes.
+
+    The ids and the updates are parallel, because that is what the appender
+    materialises: the updates are resolved out of the queue in the order the
+    gesture named the ids.
+    """
+    return entry(seq, "apply", actor="human", pending=list(ids), updates=updates)
+
+
+KILL = {"kind": "invalidate", "target": "n1", "why": "the vendor ships one engine"}
+
+
+def test_an_applied_proposal_records_the_agent_that_proposed_it_and_the_verdict_behind_it() -> None:
+    """
+    Given a grill-master turn that ruled a decision invalid and queued the
+         invalidate behind that ruling
+    When the human applies it
+    Then the decision's history entry is actored to the human's apply and
+         carries the agent in `proposed_by` and `invalidate` in `verdict`.
+
+    The gesture that moved the board is the human's, so `actor` is theirs and
+    must stay theirs. Without the other two the record cannot say the move was
+    an agent's proposal at all, and a thread agent asked why the decision died
+    has `prereqs` and a plausible story -- which is the failure the fields
+    exist to end.
+    """
+    entries = [
+        NODE,
+        queued(2, KILL, rulings=[{"decision": "n1", "ruling": "invalidate", "why": "moot"}]),
+        landing(3, "k2#0", updates=[KILL]),
+    ]
+
+    recorded = fold(EPOCH, entries).history["n1"][-1]
+
+    assert (recorded.seq, recorded.kind, recorded.actor) == (3, "invalidate", "human")
+    assert recorded.proposed_by == "grill-master"
+    assert recorded.verdict == "invalidate"
+    assert recorded.why == "the vendor ships one engine"
+
+
+def test_a_queued_proposal_is_no_history_until_the_human_lands_it() -> None:
+    """
+    Given the same turn, with nothing applied after it
+    When the log is folded
+    Then the decision's history ends at the add-node.
+
+    A proposal has not happened to a decision yet, so recording a proposer for
+    it would put a move on the record that the human can still refuse.
+    """
+    entries = [
+        NODE,
+        queued(2, KILL, rulings=[{"decision": "n1", "ruling": "invalidate", "why": "moot"}]),
+    ]
+
+    assert [one.kind for one in fold(EPOCH, entries).history["n1"]] == ["add-node"]
+
+
+def test_a_stands_ruling_records_its_verdict_and_the_why_it_was_credited_on() -> None:
+    """
+    Given a turn that ruled a decision standing, which mints the notice that
+         says so and moves nothing
+    When the log is folded
+    Then that decision's history entry carries `stands` and the ruling's own
+         reasoning.
+
+    A `stands` verdict has no update behind it -- the decision goes on being
+    offered, which is the point -- so the ruling's `why` is the whole of what
+    was decided. Left off, the record says a notice arrived and not that the
+    question survived a challenge, which is the one thing a reader wants.
+    """
+    entries = [
+        NODE,
+        entry(
+            2,
+            "informational",
+            target="n1",
+            text="n1 stands: the audit requirement is unchanged",
+            rulings=[{"decision": "n1", "ruling": "stands", "why": "the audit need is unchanged"}],
+            stop={"met": False},
+        ),
+    ]
+
+    recorded = fold(EPOCH, entries).history["n1"][-1]
+
+    assert recorded.verdict == "stands"
+    assert recorded.why == "the audit need is unchanged"
+    assert recorded.proposed_by is None, "nobody applied anything"
+
+
+def test_a_move_the_human_made_themselves_carries_neither_field() -> None:
+    """
+    Given the human answering a decision directly
+    When the log is folded
+    Then its history entry carries no proposer and no verdict, and the keys are
+         absent from the serialised record rather than null.
+
+    Absent is the record saying nothing happened, and null would be the record
+    saying it forgot. A reader that cannot tell those apart is one that will
+    fill in the difference, which is the inference the legend forbids.
+    """
+    entries = [
+        NODE,
+        entry(
+            2,
+            "answer",
+            actor="human",
+            target="n1",
+            answer={"option": "a"},
+            why="the audit trail is the point",
+        ),
+    ]
+
+    image = fold(EPOCH, entries)
+    recorded = image.history["n1"][-1]
+
+    assert (recorded.proposed_by, recorded.verdict) == (None, None)
+    dumped = image.model_dump()["history"]["n1"][-1]
+    assert "proposed_by" not in dumped and "verdict" not in dumped
+    assert set(dumped) == {"seq", "timestamp", "kind", "actor", "why"}
+
+
+def test_a_ruling_with_no_update_behind_it_credits_no_other_update_on_that_decision() -> None:
+    """
+    Given a turn that ruled a decision invalid but queued a revise against it
+         instead
+    When the human applies that revise
+    Then the revise's history entry carries no verdict.
+
+    A verdict that queued nothing produced no move, and crediting the word to
+    whatever update happened to name the same decision is how the record comes
+    to say a decision was ruled dead that is sitting on the board revised. The
+    proposer still rides: an agent did author the change.
+    """
+    revise = {"kind": "revise", "target": "n1", "why": "the option set was too narrow"}
+    entries = [
+        NODE,
+        entry(2, "answer", actor="human", target="n1", answer={"option": "a"}),
+        queued(3, revise, rulings=[{"decision": "n1", "ruling": "invalidate", "why": "moot"}]),
+        landing(4, "k3#0", updates=[revise]),
+    ]
+
+    recorded = fold(EPOCH, entries).history["n1"][-1]
+
+    assert recorded.kind == "revise"
+    assert recorded.verdict is None
+    assert recorded.proposed_by == "grill-master"
+
+
+def test_one_apply_landing_two_proposals_gives_each_decision_its_own_verdict() -> None:
+    """
+    Given one turn ruling two decisions differently and queueing the change
+         behind each
+    When the human applies both in one gesture
+    Then each decision's history carries the verdict that was ruled on it.
+
+    The apply names its ids in order and the updates are resolved in that same
+    order, so the pairing is positional. A reader that took the gesture's first
+    id for every sub-update would record the second decision as having been
+    ruled something nobody said about it -- and the record would be wrong in
+    exactly the confident way a thread agent quotes.
+    """
+    second = {"kind": "revise", "target": "n2", "why": "the third option was missing"}
+    entries = [
+        NODE,
+        entry(2, "add-node", target="n2", short="Format", prereqs=[]),
+        entry(3, "answer", actor="human", target="n2", answer={"option": "a"}),
+        queued(
+            4,
+            KILL,
+            second,
+            rulings=[
+                {"decision": "n1", "ruling": "invalidate", "why": "moot"},
+                {"decision": "n2", "ruling": "revise", "why": "narrow"},
+            ],
+        ),
+        landing(5, "k4#0", "k4#1", updates=[KILL, second]),
+    ]
+
+    history = fold(EPOCH, entries).history
+
+    assert history["n1"][-1].verdict == "invalidate"
+    assert history["n2"][-1].verdict == "revise"
+    assert {history["n1"][-1].proposed_by, history["n2"][-1].proposed_by} == {"grill-master"}
+
+
+def test_a_history_entry_written_before_these_fields_existed_still_folds() -> None:
+    """
+    Given a log whose entries carry no rulings and no queue gesture at all
+    When it is folded
+    Then every history entry validates and carries neither field.
+
+    The fields are optional because the logs that predate them are still logs:
+    a fold that required a proposer would refuse to read a session recorded
+    yesterday, and the reverse handoff is the one artifact that must survive
+    the format moving under it.
+    """
+    entries = [
+        NODE,
+        entry(2, "revise", target="n1", why="the option set was too narrow"),
+        entry(3, "answer", actor="human", target="n1", answer={"option": "a"}, why="audit"),
+    ]
+
+    image = fold(EPOCH, entries)
+
+    Image2.model_validate(image.model_dump())
+    assert [(one.proposed_by, one.verdict) for one in image.history["n1"]] == [(None, None)] * 3
+
+
+def test_a_ruling_word_outside_the_closed_three_names_no_verdict() -> None:
+    """
+    Given a log whose turn ruled a decision with a word that is not one of the
+         three verdicts, against an update of that same name
+    When it is folded
+    Then the image builds and that decision's history carries no verdict.
+
+    The fold is a pure read of whatever the log holds, and the verdict
+    vocabulary is closed. Matching a ruling to an update by name alone would
+    put a word into the record that image 2 cannot be built from -- so the
+    reverse handoff would fail to serialise on a log the board otherwise reads
+    perfectly well.
+    """
+    entries = [
+        NODE,
+        queued(
+            2,
+            {"kind": "settle", "target": "n1", "why": "the vendor decided"},
+            rulings=[{"decision": "n1", "ruling": "settle", "why": "not a verdict"}],
+        ),
+    ]
+
+    image = fold(EPOCH, entries)
+    recorded = image.history["n1"][-1]
+
+    Image2.model_validate(image.model_dump())
+    assert recorded.kind == "settle"
+    assert recorded.verdict is None
+    assert recorded.why == "the vendor decided"

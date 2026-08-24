@@ -112,7 +112,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ValidationError
 
@@ -124,6 +124,9 @@ from grillui.schemas import (
     PENDING_KEY,
     PROPOSABLE_KINDS,
     PROPOSED_ANSWER_KEY,
+    RULING_KINDS,
+    RULING_STANDS,
+    RULINGS_KEY,
     SESSION_START_KIND,
     SET_ASIDE_KINDS,
     SUPERSEDES_KEY,
@@ -143,6 +146,7 @@ from grillui.schemas import (
     LogEntry,
     Option,
     PendingUpdate,
+    RulingKind,
     SettledEntry,
     SupersedeConflict,
     Thread,
@@ -160,13 +164,15 @@ _REVISABLE_TEXT = ("short", "title", "body")
 class _Board:
     """The fold's running state, keyed the way the images are read.
 
-    The last five fields are the fold's own bookkeeping and reach no image: who
-    authored each queue entry, the update bytes a queued proposal is holding,
-    which entries the human has since dealt with and when, when the human last
-    changed each decision, and the withdrawals that arrived too late. Keeping
-    them here rather than in image 1 is what lets the queue answer "whose was
-    this?", "what would it do?" and "was this already acted on?" without either
-    image growing a field the protocol never declared.
+    The last six fields are the fold's own bookkeeping: who authored each queue
+    entry, the verdict the authoring turn ruled on it, the update bytes a queued
+    proposal is holding, which entries the human has since dealt with and when,
+    when the human last changed each decision, and the withdrawals that arrived
+    too late. Keeping them here rather than in image 1 is what lets the queue
+    answer "whose was this?", "what was ruled?", "what would it do?" and "was
+    this already acted on?" without image 1 growing a field the protocol never
+    declared. Only the first two reach an image at all, and only once the human
+    has applied the entry: they are then history, which is image 2's alone.
     """
 
     decisions: dict[str, Decision] = field(default_factory=dict)
@@ -175,6 +181,7 @@ class _Board:
     pending: list[PendingUpdate] = field(default_factory=list)
     seq: int = 0
     author_of: dict[str, str] = field(default_factory=dict)
+    verdicts: dict[str, tuple[RulingKind, str]] = field(default_factory=dict)
     proposals: dict[str, dict[str, Any]] = field(default_factory=dict)
     dealt: dict[str, tuple[PendingUpdate, int]] = field(default_factory=dict)
     touched: dict[str, int] = field(default_factory=dict)
@@ -202,9 +209,11 @@ def _run(entries: Sequence[LogEntry]) -> _Board:
             # The gesture is one entry, so there is no state in which half of it
             # landed: either the log has it and every sub-update applies, or it
             # does not and none of them does.
+            origins = _origins(entry)
             for index, update in enumerate(_updates(entry)):
                 key = f"{entry.idempotency_key}#{index}"
-                _apply(board, entry, str(update.get("kind")), update, key)
+                origin = origins[index] if index < len(origins) else None
+                _apply(board, entry, str(update.get("kind")), update, key, origin)
         else:
             _apply(board, entry, entry.kind, entry.payload, entry.idempotency_key)
         if entry.kind in {APPLY_KIND, DISMISS_KIND}:
@@ -307,7 +316,12 @@ def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
 
 
 def _apply(
-    board: _Board, entry: LogEntry, kind: str, payload: Mapping[str, object], key: str
+    board: _Board,
+    entry: LogEntry,
+    kind: str,
+    payload: Mapping[str, object],
+    key: str,
+    origin: str | None = None,
 ) -> None:
     """One update against the board, whether it arrived alone or inside a fold.
 
@@ -318,6 +332,11 @@ def _apply(
     An agent's update that would overwrite a decision the human made goes to
     the queue instead of the board, and contributes no history: history is what
     happened to a decision, and a proposal has not happened to one yet.
+
+    `origin` is the queue entry this update is the human applying, where it is
+    one. The apply carries the authoring agent's own bytes and the human's own
+    actor, so without it the record of a change an agent proposed and a human
+    let land is indistinguishable from one the human wrote themselves.
     """
     _supersede(board, entry, payload)
     if _proposes(board, entry.actor, kind, payload):
@@ -350,7 +369,7 @@ def _apply(
         _append_turns(board, entry)
     elif kind in THREAD_GESTURE_KINDS:
         _set_thread_state(board, entry, kind)
-    _record_history(board, entry, kind, payload)
+    _record_history(board, entry, kind, payload, origin)
 
 
 def _updates(entry: LogEntry) -> list[Mapping[str, object]]:
@@ -358,6 +377,21 @@ def _updates(entry: LogEntry) -> list[Mapping[str, object]]:
     if not isinstance(raw, list):
         return []
     return [update for update in raw if isinstance(update, Mapping)]
+
+
+def _origins(entry: LogEntry) -> list[str]:
+    """The queue entries an apply is applying, in the order it carries them.
+
+    An apply's `updates` are materialised out of the queue in the order the
+    gesture named the ids, so position is what pairs a sub-update back to the
+    entry it came from -- and the sub-update's own derived key names the apply
+    rather than the proposal, so it cannot do the pairing itself. Every other
+    fold-shaped entry applies nothing and has no origins.
+    """
+    if entry.kind != APPLY_KIND:
+        return []
+    raw = entry.payload.get(PENDING_KEY)
+    return [one for one in raw if isinstance(one, str)] if isinstance(raw, list) else []
 
 
 def to_image1(image: Image2) -> Image1:
@@ -732,6 +766,9 @@ def _queue(
         )
     )
     board.author_of[key] = entry.actor
+    ruled = _ruling_on(entry, kind, payload)
+    if ruled is not None:
+        board.verdicts[key] = ruled
     board.proposals[key] = {**payload, "kind": kind}
 
 
@@ -909,25 +946,78 @@ def _set_thread_state(board: _Board, entry: LogEntry, kind: str) -> None:
         thread.state = _GESTURE_STATE[kind]
 
 
+def _ruling_on(
+    entry: LogEntry, kind: str, payload: Mapping[str, object]
+) -> tuple[RulingKind, str] | None:
+    """The verdict the authoring turn ruled on this update, and the why behind it.
+
+    A ruling rides its turn's own entry, so it is read from there and credited
+    the way the coverage check credits one: an `invalidate` or a `revise` is the
+    ruling only where this update is that change against that decision, because
+    a verdict that queued nothing produced no move. A `stands` produced no move
+    either -- that is the point of it -- so the only thing it credits is the
+    informational it minted on the decision it ruled.
+
+    Nothing here reads what a `why` means, and nothing is inferred: an update on
+    a decision the turn did not rule on carries no verdict, which is the record
+    saying so rather than the record being silent.
+    """
+    target = payload.get("target")
+    raw = entry.payload.get(RULINGS_KEY)
+    if not isinstance(target, str) or not isinstance(raw, list):
+        return None
+    for one in raw:
+        if not isinstance(one, Mapping) or one.get("decision") != target:
+            continue
+        verdict = one.get("ruling")
+        # The vocabulary is closed and the fold is a pure read of whatever the
+        # log holds, so a word outside it names no verdict rather than putting
+        # one image 2 cannot be built from into the record. Membership in the
+        # closed set is what the cast rests on: the set is derived from the type.
+        if verdict not in RULING_KINDS:
+            continue
+        if verdict == kind or (verdict == RULING_STANDS and kind == "informational"):
+            return cast("RulingKind", verdict), _text(one, "why")
+    return None
+
+
 def _record_history(
-    board: _Board, entry: LogEntry, kind: str, payload: Mapping[str, object]
+    board: _Board,
+    entry: LogEntry,
+    kind: str,
+    payload: Mapping[str, object],
+    origin: str | None = None,
 ) -> None:
     """History is keyed by decision id, so an entry naming a node the board
     does not hold contributes none: image 2 crosses whole, and a phantom key
     is an invitation to reason about a decision nobody can answer.
 
     `why` is the rationale the causing event carried, which is what makes the
-    record readable as a reason rather than as a diff."""
+    record readable as a reason rather than as a diff. Where a ruling produced
+    the move and the update itself gave no rationale, the ruling's own why is
+    what the turn recorded, so it is what the record says.
+
+    `proposed_by` and `verdict` are both facts already in the log, carried
+    forward rather than derived: the queue remembers who authored an entry and
+    what the authoring turn ruled on it, and an apply is the human landing that
+    entry. A move nobody proposed and no ruling produced carries neither, and
+    the absence is the record saying nothing happened rather than saying it
+    forgot -- which is what lets a thread agent quote this instead of composing
+    a cause out of `prereqs`.
+    """
     node_id = payload.get("target")
     if not isinstance(node_id, str) or node_id not in board.decisions:
         return
+    ruled = board.verdicts.get(origin) if origin else _ruling_on(entry, kind, payload)
     board.history.setdefault(node_id, []).append(
         HistoryEntry(
             seq=entry.seq,
             timestamp=entry.timestamp,
             kind=kind,
             actor=entry.actor,
-            why=_text(payload, "why"),
+            why=_text(payload, "why") or (ruled[1] if ruled else ""),
+            proposed_by=board.author_of.get(origin) if origin else None,
+            verdict=ruled[0] if ruled else None,
         )
     )
 
