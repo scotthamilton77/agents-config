@@ -725,9 +725,16 @@ def document_problem(reply: str) -> str | None:
     if carried is None:
         return "the reply was prose, not the reply document"
     try:
-        GrillMasterDocument.model_validate(carried)
+        document = GrillMasterDocument.model_validate(carried)
     except ValidationError as error:
         return fault_summary(error, "document")
+    # A withdrawal rides on the turn's entry, so a turn that withdraws while
+    # giving nothing to record has no entry to put it on and the gesture is
+    # lost. Judged here rather than at the append, because here is where the
+    # seat is told what was wrong and gets its one retry -- and adding a line
+    # of `text` is exactly the fix a seat can make.
+    if document.supersedes and not sub_updates(document):
+        return "supersedes: a withdrawal needs `text`, an update or a ruling to ride on"
     return None
 
 
@@ -801,6 +808,20 @@ def _proposal_refusal(
     return None if taken is not None else REFUSED_SHAPE
 
 
+def sub_updates(document: GrillMasterDocument) -> list[dict[str, Any]]:
+    """Everything one turn puts on the board, in the order the human meets it.
+
+    The notice it spoke, the changes it proposed, the why behind each decision
+    it ruled standing, and its judgement that the grilling is over. Built in one
+    place because two readers ask the same question of it: the validator, which
+    refuses a withdrawal with nothing to ride on, and the recorder, which needs
+    at least one of these to have an entry at all.
+    """
+    notice = [{"kind": "informational", "text": document.text}] if document.text.strip() else []
+    minted = [stands_notice(one) for one in document.rulings if one.ruling == RULING_STANDS]
+    return [*notice, *document.updates, *minted, *stop_notice(document.stop)]
+
+
 def stands_notice(one: Ruling) -> dict[str, Any]:
     """What a `stands` ruling puts in front of the human.
 
@@ -848,14 +869,7 @@ def record_document(
     check reads coverage off them, and a key that is sometimes absent is a check
     that sometimes reads a turn that ruled as a turn that could not.
     """
-    notice = [{"kind": "informational", "text": document.text}] if document.text.strip() else []
-    minted = [stands_notice(one) for one in document.rulings if one.ruling == RULING_STANDS]
-    updates: list[dict[str, Any]] = [
-        *notice,
-        *document.updates,
-        *minted,
-        *stop_notice(document.stop),
-    ]
+    updates = sub_updates(document)
     if not updates:
         # Every key validated and the turn still carries nothing: no notice, no
         # proposal, no ruling. Nothing is appended, because every entry shape
@@ -878,7 +892,10 @@ def record_document(
         RULINGS_KEY: [one.model_dump() for one in document.rulings],
         STOP_KEY: document.stop.model_dump(),
     }
-    solo = len(updates) == 1 and not document.updates and not minted and not document.stop.met
+    # The turn spoke and did nothing else: with one sub-update and a notice in
+    # it, the notice is what that one is, since everything else contributed
+    # none. It rides as the entry itself rather than inside a fold.
+    solo = len(updates) == 1 and bool(document.text.strip())
     payload: dict[str, Any] = (
         {**{key: value for key, value in updates[0].items() if key != "kind"}, **attribution}
         if solo

@@ -37,7 +37,13 @@ from conftest import (
 )
 
 from grillui.dispatch import DISPATCH_DIR, GRILL_MASTER, THREAD_AGENT, record_dispatch
-from grillui.drivers import FastDriver, HeavyDriver, request_body
+from grillui.drivers import (
+    FastDriver,
+    HeavyDriver,
+    ReplyRefusedError,
+    record_reply,
+    request_body,
+)
 from grillui.lane import DocumentRefusedError, Lane
 from grillui.projector import fold
 from grillui.schemas import (
@@ -209,6 +215,88 @@ def test_a_reply_that_is_not_the_document_is_refused_and_never_reaches_the_human
     assert FAST_TIER in errors(log)[0]
     assert fault in errors(log)[0]
     assert spoken(log) == []
+
+
+ADRIFT = document(text="", supersedes=["p1"])
+
+
+def test_a_withdrawal_with_nothing_to_ride_on_is_refused_and_retried_then_handed_up(
+    log: SessionLog,
+) -> None:
+    """
+    Given a first-rung seat withdrawing a pending item in a document that says
+          nothing else, and an expert that answers properly
+    When the map turn is taken
+    Then the first rung is asked twice with the fault quoted, the expert is
+         handed the turn once, and the expert's document is what lands.
+
+    `supersedes` rides on the turn's own entry, so a turn carrying a withdrawal
+    and nothing to record it on would lose that gesture. It is caught as a fault
+    in the shape rather than at the append, because that is where the seat is
+    told what was wrong and gets its one retry -- and a line of `text` is
+    exactly the fix a seat can make.
+    """
+    first = ScriptedFast(replies=[ADRIFT])
+    expert = ScriptedFast(replies=[document(text="Taking that back.", supersedes=["p1"])])
+    seed(log)
+
+    answer(
+        Lane(
+            log,
+            FastDriver(TierConfig(), first),
+            expert=FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
+        )
+    )
+
+    assert len(first.calls) == 2, "the seat was not given its retry"
+    assert "supersedes" in first.calls[1]["prompt"]
+    assert len(expert.calls) == 1
+    assert spoken(log) == ["Taking that back."]
+    assert errors(log) == []
+
+
+def test_a_withdrawal_with_nothing_to_ride_on_ends_the_ladder_on_the_expert_seat(
+    log: SessionLog,
+) -> None:
+    """
+    Given a channel whose only seat is the expert one, withdrawing in a document
+          that says nothing else
+    When the map turn is taken
+    Then the seat is asked twice, one backend notice reports the failure, and
+         nothing the seat said reached the human.
+
+    The ladder's terminal state, not the generic error phase: there is no rung
+    above the expert, so the failure is recorded rather than handed anywhere.
+    """
+    only = ScriptedFast(replies=[ADRIFT])
+    seed(log)
+
+    answer(Lane(log, FastDriver(TierConfig(), only, tier=HEAVY_TIER)))
+
+    assert len(only.calls) == 2
+    said = notices(log)
+    assert len(said) == 1, said
+    assert HEAVY_TIER in said[0]
+    assert spoken(log) == []
+    assert HEAVY_TIER in errors(log)[0]
+
+
+def test_recording_a_withdrawal_with_nothing_to_ride_on_refuses_rather_than_drops_it(
+    log: SessionLog,
+) -> None:
+    """
+    Given a caller recording that document directly, past the validator
+    When it is recorded
+    Then it raises rather than appending nothing.
+
+    The validator catches this on every driver path, so this is the guard behind
+    it: the failure it prevents is silent, and a withdrawal that vanished with
+    no entry and no error is the one outcome nobody could notice.
+    """
+    seed(log)
+
+    with pytest.raises(ReplyRefusedError):
+        record_reply(log, FAST_TIER, "map", ADRIFT, {})
 
 
 def test_the_heavy_seat_validates_what_comes_back_as_the_fast_one_does(log: SessionLog) -> None:

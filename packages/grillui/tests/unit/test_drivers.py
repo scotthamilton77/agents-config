@@ -755,26 +755,18 @@ def test_a_completion_that_is_not_text_is_refused() -> None:
 
 def test_an_empty_completion_is_a_failed_turn_not_a_silent_one(session_dir: Path) -> None:
     """
-    Given a model that answers with whitespace, and one whose document is
-          well-formed and withdraws a notice while giving nothing to record the
-          withdrawal on
-    When each turn is taken
-    Then each fails loudly and nothing is written into the log as a reply.
+    Given a model that answers with whitespace
+    When the turn is taken
+    Then it fails loudly and nothing is written into the log as a reply.
 
-    Whitespace never reaches the shape at all. The withdrawal is the one empty
-    document that is still a failure: `supersedes` rides on an entry, so a turn
-    with no entry to put it on has lost the gesture, and losing it silently is
-    worse than saying the turn failed. An empty document that withdraws nothing
-    is not here -- it is a turn that ruled on nothing, which the coverage ladder
-    answers rather than the log refusing it.
+    Whitespace never reaches the shape at all, so it is refused as a document
+    and never recorded as something the agent said.
     """
     log = briefed(session_dir)
     human_turn(log, "The log.")
 
     with pytest.raises(DocumentRefusedError):
         take_fast_turn(log, ScriptedFast(reply="   "))
-    with pytest.raises(ReplyRefusedError):
-        take_fast_turn(log, ScriptedFast(reply=document(text="", supersedes=["p1"])))
 
     assert replies(log) == []
 
@@ -1151,7 +1143,8 @@ def test_a_write_racing_the_reply_cannot_wedge_between_it_and_its_warning(
 
 def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
     """
-    Given a turn that measures over its window but says nothing the log will take
+    Given a turn that measures over its window and proposes an update of a kind
+          the appender does not know
     When it is run
     Then it raises and no warning is appended, because a turn nobody could
          record is not a turn whose size is worth telling the human about.
