@@ -41,7 +41,6 @@ from grillui.schemas import (
     APPLY_KIND,
     FOLD_SHAPED,
     MAP_CHANNEL,
-    PENDING_KEY,
     PROPOSABLE_KINDS,
     QUEUE_GESTURE_KINDS,
     REASON_EPOCH_MISMATCH,
@@ -60,6 +59,7 @@ from grillui.schemas import (
     RejectedReceipt,
     fold_outcomes,
     mint_targets,
+    pending_ids,
     rejection_reason,
 )
 
@@ -485,18 +485,6 @@ def _amendment(
     return ("amended", amendments) if amendments else ("sent", None)
 
 
-def _pending_ids(payload: Mapping[str, Any]) -> list[str]:
-    """The queue entries a gesture names, in the order it named them.
-
-    Deduplicated: a repeated id must not materialise the same proposal twice
-    into the gesture's updates and double-apply it on the walk.
-    """
-    raw = payload.get(PENDING_KEY)
-    if not isinstance(raw, list):
-        return []
-    return list(dict.fromkeys(one for one in raw if isinstance(one, str)))
-
-
 def _queue_gesture_problem(
     event: EventSubmission, queued: Mapping[str, Proposed]
 ) -> tuple[str, str] | None:
@@ -513,7 +501,7 @@ def _queue_gesture_problem(
     queued, and what to do about it is a conversation between the human and the
     agent that wrote it.
     """
-    for pending_id in _pending_ids(event.payload):
+    for pending_id in pending_ids(event.payload):
         found = queued.get(pending_id)
         if found is None:
             return (
@@ -544,7 +532,7 @@ def _resolve(
     """
     if event.kind != APPLY_KIND:
         return payload
-    return {**payload, "updates": [queued[one].update for one in _pending_ids(payload)]}
+    return {**payload, "updates": [queued[one].update for one in pending_ids(payload)]}
 
 
 def _applied_updates(

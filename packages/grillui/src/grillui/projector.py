@@ -118,6 +118,7 @@ from pydantic import ValidationError
 
 from grillui.schemas import (
     APPLY_KIND,
+    DISCHARGING_KINDS,
     DISMISS_KIND,
     FOLD_SHAPED,
     FROM_THREAD_KEY,
@@ -125,7 +126,6 @@ from grillui.schemas import (
     PROPOSABLE_KINDS,
     PROPOSED_ANSWER_KEY,
     RULING_KINDS,
-    RULING_STANDS,
     RULINGS_KEY,
     SESSION_START_KIND,
     SET_ASIDE_KINDS,
@@ -135,6 +135,7 @@ from grillui.schemas import (
     THREAD_GESTURE_KINDS,
     THREAD_KINDS,
     THREAD_PARK_KIND,
+    VERDICT_KEY,
     Answer,
     CatchUpEntry,
     ConvergedProposal,
@@ -153,6 +154,7 @@ from grillui.schemas import (
     ThreadProjection,
     ThreadState,
     ThreadStub,
+    pending_ids,
     read_turns,
 )
 
@@ -385,13 +387,13 @@ def _origins(entry: LogEntry) -> list[str]:
     An apply's `updates` are materialised out of the queue in the order the
     gesture named the ids, so position is what pairs a sub-update back to the
     entry it came from -- and the sub-update's own derived key names the apply
-    rather than the proposal, so it cannot do the pairing itself. Every other
-    fold-shaped entry applies nothing and has no origins.
+    rather than the proposal, so it cannot do the pairing itself. The sequence
+    is the appender's own reader rather than a second walk of the same payload:
+    a gesture naming an id twice materialises one update for it, and a reader
+    here that kept the repeat would hand every update after it the wrong
+    author. Every other fold-shaped entry applies nothing and has no origins.
     """
-    if entry.kind != APPLY_KIND:
-        return []
-    raw = entry.payload.get(PENDING_KEY)
-    return [one for one in raw if isinstance(one, str)] if isinstance(raw, list) else []
+    return pending_ids(entry.payload) if entry.kind == APPLY_KIND else []
 
 
 def to_image1(image: Image2) -> Image1:
@@ -951,17 +953,31 @@ def _ruling_on(
 ) -> tuple[RulingKind, str] | None:
     """The verdict the authoring turn ruled on this update, and the why behind it.
 
-    A ruling rides its turn's own entry, so it is read from there and credited
-    the way the coverage check credits one: an `invalidate` or a `revise` is the
-    ruling only where this update is that change against that decision, because
-    a verdict that queued nothing produced no move. A `stands` produced no move
-    either -- that is the point of it -- so the only thing it credits is the
-    informational it minted on the decision it ruled.
+    Two verdicts are credited by the change they queued, and one says so itself.
+
+    An `invalidate` or a `revise` is credited the way the coverage check credits
+    one: only where this update is that change against that decision, because a
+    verdict that queued nothing produced no move. The kind has to match, so no
+    other update on that decision can take the credit.
+
+    A `stands` queued nothing -- that is the point of it -- and the only thing it
+    put on the board is the informational the driver minted for it. That notice
+    is shape-identical to one the same document may have written about the same
+    decision for its own reasons, so it carries the verdict it was minted for
+    rather than being picked out here by looking like the right sort of update.
+    Reading it back is the whole of this branch.
 
     Nothing here reads what a `why` means, and nothing is inferred: an update on
     a decision the turn did not rule on carries no verdict, which is the record
     saying so rather than the record being silent.
     """
+    # The vocabulary is closed and the fold is a pure read of whatever the log
+    # holds, so a word outside it names no verdict rather than putting one image
+    # 2 cannot be built from into the record. Membership in the closed set is
+    # what each cast below rests on: the set is derived from the type.
+    stamped = payload.get(VERDICT_KEY)
+    if stamped in RULING_KINDS:
+        return cast("RulingKind", stamped), _text(payload, "why")
     target = payload.get("target")
     raw = entry.payload.get(RULINGS_KEY)
     if not isinstance(target, str) or not isinstance(raw, list):
@@ -970,13 +986,7 @@ def _ruling_on(
         if not isinstance(one, Mapping) or one.get("decision") != target:
             continue
         verdict = one.get("ruling")
-        # The vocabulary is closed and the fold is a pure read of whatever the
-        # log holds, so a word outside it names no verdict rather than putting
-        # one image 2 cannot be built from into the record. Membership in the
-        # closed set is what the cast rests on: the set is derived from the type.
-        if verdict not in RULING_KINDS:
-            continue
-        if verdict == kind or (verdict == RULING_STANDS and kind == "informational"):
+        if verdict in DISCHARGING_KINDS and verdict == kind:
             return cast("RulingKind", verdict), _text(one, "why")
     return None
 

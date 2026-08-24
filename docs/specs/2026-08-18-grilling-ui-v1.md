@@ -2184,6 +2184,8 @@ opens one proves something else.
 - GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_move_the_human_made_themselves_carries_neither_field
 - GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_ruling_with_no_update_behind_it_credits_no_other_update_on_that_decision
 - GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_one_apply_landing_two_proposals_gives_each_decision_its_own_verdict
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_an_apply_naming_one_id_twice_still_pairs_each_update_with_its_own_author
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_stands_verdict_lands_only_on_the_notice_that_ruling_minted
 - GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_ruling_word_outside_the_closed_three_names_no_verdict
 - GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_history_entry_written_before_these_fields_existed_still_folds
 - GMR-A7 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_is_told_how_to_read_a_board_that_moved

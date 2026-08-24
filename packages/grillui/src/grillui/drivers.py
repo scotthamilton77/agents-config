@@ -99,6 +99,7 @@ from grillui.schemas import (
     SUPERSEDES_KEY,
     TIER_KEY,
     TRANSFER_SOURCE_KEY,
+    VERDICT_KEY,
     DispatchContext,
     EventSubmission,
     GrillMasterDocument,
@@ -1240,11 +1241,19 @@ def stands_notice(one: Ruling) -> dict[str, Any]:
     nothing recorded. Targeted at the decision it rules on, it renders there
     rather than on the notification lane, and a Discuss opened from it anchors
     to the same decision.
+
+    It carries the verdict it was minted for, and that ruling's reasoning as its
+    own `why`. The same document may write an ordinary targeted informational
+    about the same decision for reasons the ruling had nothing to do with, and
+    the two are shape-identical -- so the association is recorded here, where it
+    is a fact, rather than guessed downstream from what the update looks like.
     """
     return {
         "kind": "informational",
         "target": one.decision,
         "text": f"{one.decision} stands: {one.why}",
+        "why": one.why,
+        VERDICT_KEY: one.ruling,
     }
 
 

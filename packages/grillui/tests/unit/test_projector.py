@@ -7,8 +7,9 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from grillui.drivers import stands_notice
 from grillui.projector import fold, to_image1
-from grillui.schemas import Image1, Image2, LogEntry, ThreadTurn
+from grillui.schemas import Image1, Image2, LogEntry, Ruling, ThreadTurn
 
 EPOCH = "tenure-1"
 
@@ -575,21 +576,18 @@ def test_a_stands_ruling_records_its_verdict_and_the_why_it_was_credited_on() ->
     offered, which is the point -- so the ruling's `why` is the whole of what
     was decided. Left off, the record says a notice arrived and not that the
     question survived a challenge, which is the one thing a reader wants.
+
+    The notice is minted by the driver rather than written out here, so this
+    reads the shape the backend actually produces: a stands notice built by hand
+    could carry the association the fold looks for while the real one had lost
+    it, and the check would pass over a board that says nothing.
     """
-    entries = [
-        NODE,
-        entry(
-            2,
-            "informational",
-            target="n1",
-            text="n1 stands: the audit requirement is unchanged",
-            rulings=[{"decision": "n1", "ruling": "stands", "why": "the audit need is unchanged"}],
-            stop={"met": False},
-        ),
-    ]
+    ruling = Ruling(decision="n1", ruling="stands", why="the audit need is unchanged")
+    entries = [NODE, queued(2, stands_notice(ruling), rulings=[ruling.model_dump()])]
 
     recorded = fold(EPOCH, entries).history["n1"][-1]
 
+    assert recorded.kind == "informational"
     assert recorded.verdict == "stands"
     assert recorded.why == "the audit need is unchanged"
     assert recorded.proposed_by is None, "nobody applied anything"
@@ -743,3 +741,76 @@ def test_a_ruling_word_outside_the_closed_three_names_no_verdict() -> None:
     assert recorded.kind == "settle"
     assert recorded.verdict is None
     assert recorded.why == "the vendor decided"
+
+
+# -- Round 1: the two ways an origin or a verdict could land on the wrong update --
+
+
+def test_an_apply_naming_one_id_twice_still_pairs_each_update_with_its_own_author() -> None:
+    """
+    Given two proposals by different agents, ruled different ways, and a human
+         apply that names the first id twice and the second once
+    When the log is folded
+    Then each decision's history carries the agent that proposed it and the
+         verdict ruled on it.
+
+    The appender de-duplicates the ids before it materialises the updates, so a
+    gesture naming three ids carries two updates. A reader here that walked the
+    raw list instead would pair the second update with the first id's origin and
+    record the wrong agent and the wrong verdict against a decision -- wrong in
+    exactly the confident way a thread agent quotes. One reader for both, so the
+    two cannot drift.
+    """
+    kill = {"kind": "invalidate", "target": "n1", "why": "the vendor ships one engine"}
+    widen = {"kind": "revise", "target": "n2", "why": "the third option was missing"}
+    entries = [
+        NODE,
+        entry(2, "add-node", target="n2", short="Format", prereqs=[]),
+        entry(3, "answer", actor="human", target="n2", answer={"option": "a"}),
+        queued(4, kill, rulings=[{"decision": "n1", "ruling": "invalidate", "why": "moot"}]),
+        entry(
+            5,
+            "fold",
+            actor="thread-agent",
+            updates=[widen],
+            rulings=[{"decision": "n2", "ruling": "revise", "why": "narrow"}],
+            stop={"met": False},
+        ),
+        # The shape the appender writes: the raw ids it was handed, and the
+        # updates it materialised from the de-duplicated sequence.
+        entry(6, "apply", actor="human", pending=["k4#0", "k4#0", "k5#0"], updates=[kill, widen]),
+    ]
+
+    history = fold(EPOCH, entries).history
+
+    assert (history["n1"][-1].proposed_by, history["n1"][-1].verdict) == (
+        "grill-master",
+        "invalidate",
+    )
+    assert (history["n2"][-1].proposed_by, history["n2"][-1].verdict) == ("thread-agent", "revise")
+
+
+def test_a_stands_verdict_lands_only_on_the_notice_that_ruling_minted() -> None:
+    """
+    Given a turn that ruled a decision standing and also wrote its own targeted
+         informational about that same decision
+    When the log is folded
+    Then the minted notice carries `stands` and the turn's own informational
+         carries no verdict.
+
+    The two are the same shape -- kind, target and all -- so nothing about the
+    update itself tells them apart. Crediting by shape puts a verdict on a
+    message the ruling had nothing to do with, and the board then says a
+    decision survived a challenge twice when it was ruled on once.
+    """
+    ruling = Ruling(decision="n1", ruling="stands", why="the audit need is unchanged")
+    aside = {"kind": "informational", "target": "n1", "text": "the vendor replied about n1"}
+    entries = [NODE, queued(2, aside, stands_notice(ruling), rulings=[ruling.model_dump()])]
+
+    recorded = fold(EPOCH, entries).history["n1"]
+
+    assert [one.kind for one in recorded] == ["add-node", "informational", "informational"]
+    assert recorded[1].verdict is None, "the turn's own message took the ruling's credit"
+    assert recorded[1].why == ""
+    assert recorded[2].verdict == "stands"
+    assert recorded[2].why == "the audit need is unchanged"
