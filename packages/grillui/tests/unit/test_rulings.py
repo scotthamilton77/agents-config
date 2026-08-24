@@ -502,6 +502,7 @@ def test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_deci
     )
 
     assert untouched.calls == [], "a judgment gesture was round-tripped through the first rung"
+    assert len(ruled.calls) == 1, "a turn that ruled on both was followed by a second"
     assert notices(log) == []
     board = fold(log.epoch, log.entries())
     targeted = {

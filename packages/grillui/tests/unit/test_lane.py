@@ -676,22 +676,21 @@ class ProposingDriver:
         )
 
 
-def test_a_reply_ruling_on_neither_named_decision_is_pressed_on_the_expert_carrying_the_ids(
+def test_a_gesture_owed_rulings_is_composed_by_the_expert_carrying_the_ids(
     log: SessionLog,
 ) -> None:
     """
-    Given a board whose answered option names two other decisions, and a fast
-          tier whose turn rules on neither
+    Given a board whose answered option names two other decisions still on offer
     When the human takes that option
-    Then the expert tier is handed the same turn, its dispatch names both
-         decisions and the answer that puts them in question, and the lane
-         closes naming the tier that ended up taking the turn.
+    Then the expert seat composes the turn, its dispatch names both decisions,
+         the decision answered and the option's own text, the first rung is
+         never asked, and the lane closes naming the seat that took it.
 
-    The fast tier is briefed on the rule and does not honour it -- the live
+    The first rung is briefed on the rule and does not honour it -- the live
     session's reply was two sentences against an answer that put eight decisions
-    in question. So the check is not on what the turn said: it is on what the
-    turn ruled, and a turn that ruled on neither is handed up once rather than
-    believed.
+    in question. So the seat is not chosen on what a turn said: the gesture owes
+    a ruling per decision, which the board states before anyone is asked, and
+    that is what names the seat.
     """
     fast = SpyDriver(tier=FAST_TIER, reply="d2 and d3 are dead now.")
     expert = SpyDriver(tier=HEAVY_TIER, reply="Agreed, both are moot.")
@@ -700,8 +699,9 @@ def test_a_reply_ruling_on_neither_named_decision_is_pressed_on_the_expert_carry
 
     _answer(lane)
 
+    assert fast.dispatches == [], "a gesture owed rulings went through the first rung"
     obliged = _obligations(expert)
-    assert len(obliged) == 1, "the expert was not handed the turn"
+    assert len(obliged) == 1, "the expert did not take the turn"
     assert obliged[0] is not None
     assert obliged[0].ids == KILLED
     assert obliged[0].target == "d1"
