@@ -1851,7 +1851,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   both decisions, the decision answered and the option's own text, the first-rung seat is
   never asked, and the lane closes naming the seat that took the turn. A seat ruling
   `stands` on both, each with a why, is followed by no second turn.
-- **GUI-A102** Where the expert replies in prose too, exactly one backend `informational`
+- **GUI-A102** Where the expert seat replies in prose, exactly one backend `informational`
   notice names both decisions, and no `invalidate` entry exists that no human gesture asked
   for.
 - **GUI-A103** Neither an obligation already met nor one never created buys a second turn: a
