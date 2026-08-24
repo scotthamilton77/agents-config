@@ -1881,11 +1881,11 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A108** A decision whose `prereqs` are one settled decision and one invalidated by a
   change the human applied is on the frontier, and the invalidated one is `invalidated`.
 - **GUI-A109** Where two decisions rest on a third and the human applies the agent's
-  `invalidate` on it, both are answerable, and the next map turn carries an obligation naming
-  the one still standing, the decision that left the flow and the rationale it carried; a fast
-  tier replying in prose is handed to the expert once; and where the expert proposes nothing
-  and rules nothing, exactly one backend `informational` notice names that decision and the
-  backend authored no map mutation.
+  `invalidate` on it, both are answerable, and the map turn that apply buys carries an
+  obligation naming those still standing, the decision that left the flow and the rationale
+  it carried; that turn is the expert's by its class (GUI-D48); and where it proposes nothing
+  and rules nothing, exactly one backend `informational` notice names them and the backend
+  authored no map mutation.
 
 - **GMR-A1** For all four tier-agent pairs, the composed system prompt opens with that
   agent's role part: the grill-master's names it the map's author and carries the reshape
