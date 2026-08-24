@@ -49,6 +49,7 @@ from grillui.dispatch import GRILL_MASTER, THREAD_AGENT
 from grillui.escalation import INVALIDATE_KIND, turns_of
 from grillui.schemas import (
     FAST_TIER,
+    FOLDABLE_KINDS,
     HEAVY_TIER,
     MAP_CHANNEL,
     MAP_THREAD_KIND,
@@ -481,7 +482,8 @@ DOCUMENT_FORMAT_RULE = (
     "- `text`: what you are saying to the human, under the concision rule. Empty where the "
     "board already says it.\n"
     '- `updates`: the map updates you are proposing, each like {"kind": "revise", "target": '
-    '"d1", ...}.\n'
+    f'"d1", ...}}. `kind` is one of {", ".join(sorted(FOLDABLE_KINDS))} and nothing else; the '
+    "backend refuses a kind outside that list, and the refusal takes the whole turn with it.\n"
     "- `supersedes`: the ids of pending items of yours you are withdrawing.\n"
     "- `rulings`: your judgement on the decisions this gesture put in question, each {"
     '"decision": "d2", "ruling": "invalidate" | "revise" | "stands", "why": "one line"}.\n'

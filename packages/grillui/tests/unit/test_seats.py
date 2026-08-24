@@ -51,6 +51,7 @@ from grillui.lane import AgentUnreachableError, DocumentRefusedError, Lane
 from grillui.schemas import (
     EFFORT_KEY,
     FAST_TIER,
+    FOLDABLE_KINDS,
     HEAVY_TIER,
     MAP_CHANNEL,
     MODEL_KEY,
@@ -66,6 +67,7 @@ from grillui.tiers import (
     DEFAULT_FAST_MODEL,
     DEFAULT_MAP_EFFORT,
     DEFAULT_MAP_MODEL,
+    DOCUMENT_FORMAT_RULE,
     MAP_EFFORT_ENV,
     MAP_MODEL_ENV,
     MAP_TRANSPORT_ENV,
@@ -701,6 +703,20 @@ def test_the_seat_recommends_a_transfer_the_way_the_other_first_rung_seat_does(
         if entry.payload.get("phase") == STATUS_PHASE_TRANSFERRED
     ]
     assert len(moved) == 1
+
+
+def test_the_format_rule_names_every_update_kind_the_backend_folds() -> None:
+    """
+    Given the standing brief's format rule
+    When the kinds it offers are read back
+    Then they are exactly the kinds the appender folds -- read off the same
+         vocabulary rather than retyped, because a seat told nothing about the
+         list invents a kind that is refused, and the refusal takes the whole
+         turn with it.
+    """
+    listed = DOCUMENT_FORMAT_RULE.split("`kind` is one of ")[1].split(" and nothing else")[0]
+
+    assert set(listed.split(", ")) == set(FOLDABLE_KINDS)
 
 
 def test_a_seat_with_no_effort_asks_the_transport_for_none() -> None:
