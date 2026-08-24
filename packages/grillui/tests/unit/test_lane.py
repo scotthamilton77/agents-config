@@ -33,9 +33,10 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from conftest import RACE_WINDOW, TIMEOUT, SpyDriver, driven, event, run_turns, seed_node
+from conftest import TIMEOUT, SpyDriver, driven, event, run_turns, seed_node
 from fastapi.testclient import TestClient
 
+from grillui import lane as lane_module
 from grillui.dispatch import DISPATCH_DIR
 from grillui.lane import DocumentRefusedError, Lane, UnreachableDriver
 from grillui.log import SessionLog
@@ -1606,7 +1607,11 @@ class RacingLog(SessionLog):
     ) -> LogEntry:
         if phase == STATUS_PHASE_TRANSFERRED and self.gate is not None:
             with suppress(threading.BrokenBarrierError):
-                self.gate.wait(RACE_WINDOW)
+                # Long enough that a descheduled racer cannot slip past it and
+                # let the broken build write alone -- and still inside the join
+                # the caller waits the turn out with, so a gate nobody else
+                # reaches ends the turn rather than hanging it.
+                self.gate.wait(TIMEOUT / 2)
         return super().emit_status(phase, detail, channel, tier=tier)
 
 
@@ -1688,3 +1693,48 @@ def test_a_restart_over_the_same_session_writes_no_second_transfer(
     _answer_at(later, "d2")
     assert _seats(successor)[-1] == HEAVY_TIER, "the move did not survive the restart"
     assert later_first.dispatches == []
+
+
+def test_the_applys_dispatch_carries_the_obligation_it_was_scheduled_for(
+    log: SessionLog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given an apply that stranded two decisions, and a map reply landing between
+          the gesture being scheduled and its turn being taken
+    When the turn is taken
+    Then its dispatch still names both stranded decisions.
+
+    The obligation is a window on the log that closes at the last thing an agent
+    said on the map. A turn that read it again when it ran would find the window
+    shut and be handed nothing -- or, later in a session, the next gesture's
+    obligation in place of its own. Scheduling is where the gesture is known, so
+    scheduling is where the obligation is taken.
+    """
+    real = lane_module.record_dispatch
+
+    def interleaved(session: SessionLog, **rest: Any) -> Path:
+        monkeypatch.setattr(lane_module, "record_dispatch", real)
+        session.submit(
+            [
+                EventSubmission(
+                    kind="informational",
+                    actor="grill-master",
+                    idempotency_key="in-between",
+                    payload={"text": "Something else entirely."},
+                )
+            ],
+            session.epoch,
+        )
+        return real(session, **rest)
+
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+    monkeypatch.setattr(lane_module, "record_dispatch", interleaved)
+
+    _apply(lane, _proposal(log, "kill-d1", target="d1"))
+
+    obliged = _obligations(expert)[0]
+    assert obliged is not None, "the reply in between emptied the apply's obligation"
+    assert obliged.ids == ["d2", "d3"]
+    assert obliged.target == "d1"

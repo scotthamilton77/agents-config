@@ -88,6 +88,7 @@ from grillui.escalation import (
     dismisses_first_rung,
     in_expert_mode,
     judgment_class,
+    mootness_obligation,
     policy_transferred,
     rulings_of,
     unruled,
@@ -266,12 +267,20 @@ class Turn(NamedTuple):
     `conflict` and `reassess` are the two turns no gesture on a channel asked
     for. A conflict turn is also where the recursion stops: it does not look for
     conflicts of its own, so handing one back can never chain into a second.
+
+    `mootness` is what the gesture this turn was scheduled for owes the rest of
+    the board, read when it was scheduled and carried here rather than derived
+    again when the turn runs. The board is mutable and the turn runs later: an
+    agent reply landing on the map in between closes the window the obligation
+    is read from, so a turn deriving it again would be handed nothing -- or the
+    next gesture's obligation instead of its own.
     """
 
     channel: str
     concluding: str | None = None
     conflict: SupersedeConflict | None = None
     reassess: bool = False
+    mootness: MootnessObligation | None = None
 
 
 def turn_of(event: EventSubmission) -> Turn:
@@ -440,8 +449,13 @@ class Lane:
                 if refusing:
                     self._signal()
                 turn = turn_of(event)
-                if not is_answerable(event) and not self._owes_rulings(event, turn):
+                # Read once, here, and carried with the turn: the obligation is
+                # a window on the log that the next agent reply closes, so the
+                # turn must take it along rather than look for it again later.
+                owed = self._owed(turn)
+                if not is_answerable(event) and not self._owes_rulings(event, owed):
                     continue
+                turn = turn._replace(mootness=owed)
                 # The tier is the dispatched channel's, and it is read after the
                 # gesture landed: a turn carrying the human's transfer is itself
                 # the escalation, and must not be composed by the tier they just
@@ -481,7 +495,19 @@ class Lane:
             tier=driver.tier,
         )
 
-    def _owes_rulings(self, event: EventSubmission, turn: Turn) -> bool:
+    def _owed(self, turn: Turn) -> MootnessObligation | None:
+        """What the gesture this turn is being taken on owes the rest of the
+        board, as the board stands at the moment the turn is scheduled.
+
+        The map's only, because it is the only channel a ruling is owed on.
+        """
+        if turn.channel != MAP_CHANNEL:
+            return None
+        entries = self.log.entries()
+        return mootness_obligation(fold(self.log.epoch, entries), entries, MAP_CHANNEL)
+
+    @staticmethod
+    def _owes_rulings(event: EventSubmission, owed: MootnessObligation | None) -> bool:
         """Whether this gesture is owed a turn it is not conversation for.
 
         Applying is the one. It is no message and the backend answers it with
@@ -495,10 +521,10 @@ class Lane:
         to apply from, and an agent's entry is never a gesture.
         """
         return (
-            event.actor == "human"
+            owed is not None
+            and event.actor == "human"
             and event.kind == APPLY_KIND
             and event.channel == MAP_CHANNEL
-            and self._judgment(turn) is not None
         )
 
     def _distrusts(self, event: EventSubmission) -> bool:
@@ -612,6 +638,7 @@ class Lane:
                 concluding=turn.concluding,
                 conflict=turn.conflict,
                 reassess=turn.reassess,
+                mootness=turn.mootness,
             )
             # Where the log stood before this turn spoke. Coverage is read from
             # the window after it, never from the log whole: a turn whose
