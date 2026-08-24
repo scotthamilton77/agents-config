@@ -81,7 +81,7 @@ from grillui.schemas import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from grillui.log import SessionLog
@@ -286,27 +286,40 @@ class Lane:
     and the choice is made per channel: escalating one thread must leave every
     other where it was, so the tier cannot be a property of the session or of
     the driver. A lane with no expert tier configured never escalates anything.
+
+    `seats` is which driver occupies the first rung on a named channel, for the
+    channels that do not take the session's own. It is the seat that varies and
+    never the number of rungs: a channel seated here still hands a turn up to
+    the one expert, because a first rung that is already the expert has nowhere
+    to hand one.
     """
 
     def __init__(
-        self, log: SessionLog, driver: TurnDriver | None = None, expert: TurnDriver | None = None
+        self,
+        log: SessionLog,
+        driver: TurnDriver | None = None,
+        expert: TurnDriver | None = None,
+        seats: Mapping[str, TurnDriver] | None = None,
     ) -> None:
         self.log = log
         self.driver = driver
         self.expert = expert
+        self.seats = dict(seats or {})
         self._doctor = False
 
     def tier_for(self, channel: str, driver: TurnDriver) -> TurnDriver:
         """The tier this channel's next turn goes to: the expert one when the
-        human has escalated this channel, and the session's own otherwise.
+        human has escalated this channel, and this channel's own first-rung seat
+        otherwise.
 
         Named before the `composing` entry is written rather than after, so the
         tier the human is told they are waiting on is the tier that takes the
         turn.
         """
+        seated = self.seats.get(channel, driver)
         if self.expert is None:
-            return driver
-        return self.expert if in_expert_mode(self.log.entries(), channel) else driver
+            return seated
+        return self.expert if in_expert_mode(self.log.entries(), channel) else seated
 
     def accept(
         self, batch: Sequence[EventSubmission], epoch: str

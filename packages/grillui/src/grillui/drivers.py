@@ -111,9 +111,13 @@ from grillui.tiers import (
     API_KEY_ENV,
     BYTES_PER_TOKEN,
     CLAUDE_CLI,
+    CLAUDE_TRANSPORT,
+    CODEX_CLI,
+    CODEX_TRANSPORT,
     CONTEXT_WARN_FRACTION,
     DEFAULT_API_BASE,
     RETRY_RULE,
+    Seat,
     TierConfig,
     compose,
     system_prompt,
@@ -123,10 +127,17 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from typing import TextIO
 
+    from grillui.escalation import Recommendation
+    from grillui.lane import TurnDriver
     from grillui.log import SessionLog
-    from grillui.schemas import Receipt
+    from grillui.schemas import LogEntry, Receipt
 
 RESUME_FILE = "heavy-resume.json"
+# The Codex chain's identities keep their own file rather than a second key in
+# the heavy one: a channel may have both chains open at once -- the map's Codex
+# seat and the expert turn the human transfers it to -- and one file keyed by
+# channel could hold only one of them.
+CODEX_RESUME_FILE = "codex-resume.json"
 REQUEST_TIMEOUT = 60.0
 
 # What the human is told when an offer arrives in a shape nothing can read.
@@ -187,6 +198,12 @@ class FastTransport(Protocol):
 
 class ClaudeCli(Protocol):
     """One CLI invocation, returning what it printed."""
+
+    def __call__(self, argv: Sequence[str], /) -> str: ...
+
+
+class CodexCli(Protocol):
+    """One `codex exec` invocation, returning the JSONL stream it printed."""
 
     def __call__(self, argv: Sequence[str], /) -> str: ...
 
@@ -354,6 +371,121 @@ def read_cli_reply(printed: str) -> tuple[str, str | None, int | None]:
     )
 
 
+def codex_argv(seat: Seat, system: str, prompt: str, resume: str | None) -> list[str]:
+    """One `codex exec` turn's arguments, cold or resumed.
+
+    The brief rides on every invocation, not just the cold one: a resumed thread
+    inherits none of it, so a driver that supplied it once would resume into a
+    conversation briefed for a role it no longer knows it has.
+
+    Values are handed to `-c` as TOML, so each is quoted as one: an unquoted
+    string is taken literally only where it fails to parse, which makes what a
+    brief means depend on whether it happens to look like TOML.
+
+    Nothing here asks the transport to shape the reply. `--output-schema` is the
+    provider's strict structured-output mode, which requires every object in the
+    schema to be closed -- and a map update is deliberately untyped, since each
+    entry is judged as its own kind by the appender. The schema that satisfies
+    the provider makes the model emit an empty object for every update: a turn
+    that proposes nothing, silently, which is worse than the refusal it would
+    replace. The shape is asked for in the standing brief and checked here.
+    """
+    argv = [CODEX_CLI, "exec"]
+    if resume is not None:
+        argv += ["resume", resume]
+    # The session directory is not a repository and the process is not launched
+    # from one it owns. Without this the CLI refuses the turn outright, on a
+    # trust check about the working directory that has nothing to say about a
+    # turn which runs no commands.
+    argv += ["--json", "--skip-git-repo-check", "--model", seat.model]
+    argv += ["-c", f"developer_instructions={json.dumps(system)}"]
+    # Nothing is watching a desktop notification for a turn the board is already
+    # showing a waiting clock for.
+    argv += ["-c", "notify=[]"]
+    if seat.effort is not None:
+        argv += ["-c", f"model_reasoning_effort={json.dumps(seat.effort)}"]
+    return [*argv, prompt]
+
+
+def run_codex_cli(argv: Sequence[str], /) -> str:
+    """The Codex seat's transport: one process, run to completion, stdin closed.
+
+    Closed rather than inherited: `codex exec` reads its prompt from standard
+    input when one is piped, so a process with an open stream nobody is writing
+    waits on it for as long as the session lasts. The prompt is an argument
+    here, and the closed stream is what says so.
+    """
+    try:
+        finished = subprocess.run(  # noqa: S603 -- argv is built here, never a shell string
+            list(argv),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=REQUEST_TIMEOUT,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise AgentUnreachableError(FAST_TIER) from error
+    return finished.stdout
+
+
+def codex_input_tokens(usage: Any) -> int | None:
+    """What the turn was given, in tokens, out of a `turn.completed` usage block.
+
+    `input_tokens` is the whole input side and `cached_input_tokens` is the part
+    of it the provider served from cache, so the two are not added: summing them
+    would count the cached prefix twice and report a window filling up at
+    roughly double the rate it is.
+
+    Nothing is the answer where there is no usage to read, and a count this
+    cannot parse contributes nothing rather than a zero -- an unmeasured turn
+    must not read as an empty one.
+    """
+    if not isinstance(usage, dict):
+        return None
+    counted = usage.get("input_tokens")
+    return counted if isinstance(counted, int) else None
+
+
+def read_codex_reply(printed: str, tier: str) -> tuple[str, str | None, int | None]:
+    """The reply, the thread's identity, and what the turn counted at, out of
+    the JSONL stream `codex exec --json` printed.
+
+    The reply is the last `agent_message` item rather than the last item: the
+    stream also carries the CLI's own diagnostics as completed items, and a
+    reader taking whatever finished last would put a hook warning into the log
+    as the agent's turn.
+
+    A line that will not parse is skipped rather than fatal. What must not be
+    skipped is the absence of any agent message at all -- that is a turn nobody
+    took, and it surfaces as an unreachable seat rather than as an empty reply.
+    """
+    thread_id: str | None = None
+    said: str | None = None
+    counted: int | None = None
+    for line in printed.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
+        if kind == "thread.started":
+            found = event.get("thread_id")
+            thread_id = found if isinstance(found, str) else thread_id
+        elif kind == "item.completed":
+            item = event.get("item")
+            if isinstance(item, dict) and item.get("type") == "agent_message":
+                text = item.get("text")
+                said = text if isinstance(text, str) else said
+        elif kind == "turn.completed":
+            counted = codex_input_tokens(event.get("usage"))
+    if said is None:
+        raise AgentUnreachableError(tier)
+    return said, thread_id, counted
+
+
 def sent_bytes(system: str, prompt: str) -> int:
     """How big this turn's request was, in bytes.
 
@@ -382,9 +514,20 @@ class Measurement:
 
     @classmethod
     def of(
-        cls, config: TierConfig, tier: str, context_bytes: int, prompt_tokens: int | None
+        cls,
+        config: TierConfig,
+        tier: str,
+        context_bytes: int,
+        prompt_tokens: int | None,
+        model: str | None = None,
     ) -> Measurement:
-        return cls(tier, context_bytes, prompt_tokens, config.limit_for(tier))
+        """This turn's size, against the window of the model that took it.
+
+        The model is the seat's rather than the rung's: two seats share the
+        first rung, and measuring one against the other's ceiling is the
+        made-up number this whole measurement exists to avoid.
+        """
+        return cls(tier, context_bytes, prompt_tokens, config.limit_for(tier, model))
 
     @property
     def counted(self) -> bool:
@@ -450,20 +593,63 @@ class Measurement:
         print(f"grillui: {said}", file=sys.stdout if out is None else out, flush=True)
 
 
+def attribution_of(tier: str, seat: Seat) -> dict[str, Any]:
+    """Who took this turn: the rung it ran on, and the seat that sat on it.
+
+    The effort rides only where the seat has one, because the key's presence is
+    itself the claim that the request carried it. A seat on a transport that
+    takes no effort would otherwise be recorded as having been asked to think as
+    hard as the last one that was.
+    """
+    said: dict[str, Any] = {TIER_KEY: tier, MODEL_KEY: seat.model}
+    if seat.effort is not None:
+        said[EFFORT_KEY] = seat.effort
+    return said
+
+
+# What a channel the policy moved is told, on the entry that moves it.
+POLICY_MOVED = "the escalation policy moved this channel to the expert tier: "
+
+
+def advise(
+    log: SessionLog, entries: Sequence[LogEntry], channel: str, attribution: dict[str, Any]
+) -> Recommendation | None:
+    """The escalation condition this turn met, put on its attribution.
+
+    A property of the rung rather than of the transport, which is why it is
+    here: both seats on the first rung owe the same recommendation, and one that
+    only the OpenRouter seat made would go silent the moment a channel was
+    seated elsewhere.
+    """
+    advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel)
+    if advice is not None:
+        attribution[RECOMMENDATION_KEY] = advice.as_payload()
+    return advice
+
+
 @dataclass
 class FastDriver:
-    """The fast tier: facilitate, do not decide, and say when to hand up."""
+    """The first rung over OpenRouter: facilitate, do not decide, and say when
+    to hand up.
+
+    `seat` is which model this instance is, and it defaults to the threads'.
+    The same driver seats the map where a session configures it there, and then
+    the model it names is the map seat's -- one class, two seats, because what
+    differs between them is configuration and not transport.
+    """
 
     config: TierConfig = field(default_factory=TierConfig)
     transport: FastTransport = field(default_factory=OpenRouterTransport)
     tier: str = FAST_TIER
+    seat: Seat | None = None
 
     def run(self, log: SessionLog, dispatch: Path, /) -> None:
         recorded = dispatch.read_text(encoding="utf-8")
         context = DispatchContext.model_validate_json(recorded)
         channel = context.channel
         entries = log.entries()
-        model = self.config.fast_model
+        seat = self.seat if self.seat is not None else self.config.thread_seat
+        model = seat.model
         system = system_prompt(FAST_TIER, context.agent)
         prompt = compose(recorded, context, entries)
         ruling_turn = context.agent == GRILL_MASTER
@@ -474,11 +660,11 @@ class FastDriver:
         reply, prompt_tokens = (
             take_document(self.tier, prompt, ask, _first) if ruling_turn else ask(prompt)
         )
-        measured = Measurement.of(self.config, self.tier, sent_bytes(system, prompt), prompt_tokens)
-        attribution: dict[str, Any] = {TIER_KEY: self.tier, MODEL_KEY: model, **measured.recorded}
-        advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel)
-        if advice is not None:
-            attribution[RECOMMENDATION_KEY] = advice.as_payload()
+        measured = Measurement.of(
+            self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, model
+        )
+        attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
+        advice = advise(log, entries, channel, attribution)
         # The reply and everything it produces land under one hold of the
         # append lock -- the same discipline the lane uses to keep a turn and
         # the word about it adjacent. Two separate appends leave a window: a
@@ -496,12 +682,7 @@ class FastDriver:
         with log.appending():
             record_reply(log, self.tier, channel, reply, attribution)
             if advice is not None and self.config.autonomous:
-                log.emit_status(
-                    STATUS_PHASE_TRANSFERRED,
-                    "the escalation policy moved this channel to the expert tier: "
-                    f"{advice.condition}",
-                    channel,
-                )
+                log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, model)
 
 
@@ -517,6 +698,7 @@ class HeavyDriver:
     config: TierConfig = field(default_factory=TierConfig)
     cli: ClaudeCli = run_claude_cli
     tier: str = HEAVY_TIER
+    seat: Seat | None = None
     _turn: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
 
     def run(self, log: SessionLog, dispatch: Path, /) -> None:
@@ -524,8 +706,9 @@ class HeavyDriver:
         context = DispatchContext.model_validate_json(recorded)
         channel = context.channel
         entries = log.entries()
-        model = self.config.heavy_model
-        effort = self.config.heavy_effort
+        seat = self.seat if self.seat is not None else self.config.expert_seat
+        model = seat.model
+        effort = seat.effort or self.config.heavy_effort
         # A thread reopened across a board that moved opens a cold chain rather
         # than resuming one formed against the older board. The catch-up and the
         # thread's turns both cross in this dispatch, so nothing is lost; what is
@@ -561,7 +744,9 @@ class HeavyDriver:
         # chain's, which is why the count is the one that matters here: what
         # fills a heavy tier's window is the conversation it is resuming, and
         # this turn's prompt is the smallest part of it.
-        measured = Measurement.of(self.config, self.tier, sent_bytes(system, prompt), prompt_tokens)
+        measured = Measurement.of(
+            self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, model
+        )
         attribution: dict[str, Any] = {
             TIER_KEY: self.tier,
             MODEL_KEY: model,
@@ -589,13 +774,134 @@ class HeavyDriver:
             measured.warn(log, model)
 
 
-def read_resume(directory: Path, channel: str) -> str | None:
+@dataclass
+class CodexDriver:
+    """A first-rung seat on the Codex transport: one resumed thread, one turn at
+    a time.
+
+    The same shape as the expert seat's chain and for the same reasons. The
+    thread's identity is written into the session directory rather than held in
+    memory, so a backend restarted over that directory picks the conversation
+    back up instead of paying for a cold one; the lock is the one-process rule
+    made structural, since two turns resuming one thread is not a slow session
+    but a wrong one.
+
+    It sits on the first rung, not a third one: a channel seated here still
+    names the `fast` tier, still offers *Transfer to expert*, and hands a turn
+    it could not take up to the same expert every other channel has.
+    """
+
+    config: TierConfig = field(default_factory=TierConfig)
+    cli: CodexCli = run_codex_cli
+    tier: str = FAST_TIER
+    seat: Seat | None = None
+    _turn: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
+    _counted: dict[str, int] = field(default_factory=dict, repr=False, init=False)
+
+    def run(self, log: SessionLog, dispatch: Path, /) -> None:
+        recorded = dispatch.read_text(encoding="utf-8")
+        context = DispatchContext.model_validate_json(recorded)
+        channel = context.channel
+        entries = log.entries()
+        seat = self.seat if self.seat is not None else self.config.map_seat
+        # The same cold-open rule the expert chain has: a thread reopened across
+        # a board that moved starts a new conversation rather than resuming one
+        # formed against the older board.
+        cold = bool(context.catch_up)
+        ruling_turn = context.agent == GRILL_MASTER
+        system = system_prompt(self.tier, context.agent)
+        prompt = compose(recorded, context, entries)
+
+        def ask(text: str) -> tuple[str, str | None, int | None]:
+            # The thread is read fresh and written back on every attempt, so the
+            # retry a refused document buys resumes the turn that was refused
+            # rather than opening a second conversation about it.
+            printed = self.cli(
+                codex_argv(
+                    seat, system, text, read_resume(log.directory, channel, CODEX_RESUME_FILE)
+                )
+            )
+            outcome = read_codex_reply(printed, self.tier)
+            if outcome[1] is not None:
+                write_resume(log.directory, channel, outcome[1], CODEX_RESUME_FILE)
+            return outcome
+
+        with self._turn:
+            if cold:
+                forget_resume(log.directory, channel, CODEX_RESUME_FILE)
+                self._counted.pop(channel, None)
+            reply, _thread, total = (
+                take_document(self.tier, prompt, ask, _first) if ruling_turn else ask(prompt)
+            )
+            prompt_tokens = self._read_since(channel, total)
+        # The count is what this turn was given, out of a total the thread keeps,
+        # and the bytes are this turn's alone -- which is why the count is the
+        # one that matters: what fills the window is the conversation being
+        # resumed, and this turn's own prompt is the smallest part of it.
+        measured = Measurement.of(
+            self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, seat.model
+        )
+        attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
+        advice = advise(log, entries, channel, attribution)
+        # One hold of the append lock, for the reason every other seat takes
+        # one: the transfer a policy buys and the warning this turn measured are
+        # about the reply immediately above them.
+        with log.appending():
+            record_reply(log, self.tier, channel, reply, attribution)
+            if advice is not None and self.config.autonomous:
+                log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
+            measured.warn(log, seat.model)
+
+    def _read_since(self, channel: str, total: int | None) -> int | None:
+        """What this turn was given, out of the running total the thread reports.
+
+        The count on `turn.completed` is the thread's input so far and not this
+        turn's: it accumulates across turns and across the processes that took
+        them, so a conversation holding thirty thousand tokens reports a hundred
+        thousand by its third turn. Recorded raw it would be a window warning
+        that fires on arithmetic rather than on a full window, which is the
+        made-up ceiling this measurement exists to avoid.
+
+        Held in memory rather than on disk. A backend restarted mid-session then
+        over-reports exactly one turn -- it has no earlier total to subtract --
+        against a limit that is unknown for this seat's model anyway, which is a
+        cheaper wrong number than a second file to keep consistent.
+
+        A total that did not grow is not a number to state: something other than
+        this driver moved the thread, and an unmeasured turn falls back to the
+        estimate rather than to a count nobody can stand behind.
+        """
+        if total is None:
+            return None
+        read = total - self._counted.get(channel, 0)
+        self._counted[channel] = total
+        return read if read > 0 else None
+
+
+def seat_driver(config: TierConfig, seat: Seat, tier: str = FAST_TIER) -> TurnDriver:
+    """The driver that takes a seat's turns.
+
+    The one place a transport becomes a driver. A seat is configuration and a
+    driver is code, and mapping one to the other anywhere else is how a session
+    ends up attributed to a model a different transport answered.
+    """
+    if seat.transport == CODEX_TRANSPORT:
+        return CodexDriver(config, tier=tier, seat=seat)
+    if seat.transport == CLAUDE_TRANSPORT:
+        return HeavyDriver(config, tier=tier, seat=seat)
+    return FastDriver(config, tier=tier, seat=seat)
+
+
+def read_resume(directory: Path, channel: str, file: str = RESUME_FILE) -> str | None:
     """The chain this channel is already having, if there is one.
 
     Read from the directory on every turn rather than remembered, so the
     successor of a killed process resumes what its predecessor started.
+
+    The file is named because a channel may be having two chains at once, one
+    per transport, and each seat resumes its own.
     """
-    found = _chains(directory / RESUME_FILE).get(channel)
+    found = _chains(directory / file).get(channel)
     return found if isinstance(found, str) else None
 
 
@@ -612,15 +918,15 @@ def read_resume(directory: Path, channel: str) -> str | None:
 _REWRITE = threading.Lock()
 
 
-def write_resume(directory: Path, channel: str, session_id: str) -> None:
+def write_resume(directory: Path, channel: str, session_id: str, file: str = RESUME_FILE) -> None:
     """Remember the chain, per channel: the map's and each thread's are separate
     conversations and must not resume into each other."""
-    path = directory / RESUME_FILE
+    path = directory / file
     with _REWRITE:
-        _write_chains(path, {**_chains(path), channel: session_id})
+        _write_json(path, {**_chains(path), channel: session_id})
 
 
-def forget_resume(directory: Path, channel: str) -> None:
+def forget_resume(directory: Path, channel: str, file: str = RESUME_FILE) -> None:
     """Drop this channel's chain, leaving every other channel's alone.
 
     What a cold turn does on the way in. Dropping it now rather than letting the
@@ -628,11 +934,11 @@ def forget_resume(directory: Path, channel: str) -> None:
     turn returns none: the channel then holds no chain, instead of falling back
     to the one the cold turn was opened to get away from.
     """
-    path = directory / RESUME_FILE
+    path = directory / file
     with _REWRITE:
         chains = _chains(path)
         if chains.pop(channel, None) is not None:
-            _write_chains(path, chains)
+            _write_json(path, chains)
 
 
 def _chains(path: Path) -> dict[str, Any]:
@@ -647,11 +953,13 @@ def _chains(path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
-def _write_chains(path: Path, chains: dict[str, Any]) -> None:
+def _write_json(path: Path, payload: Any) -> None:
     # Written whole and renamed into place: a crash mid-write must cost the
-    # documented cold start, never leave half a file racing the reader.
+    # documented cold start, never leave half a file racing the reader -- and
+    # the reader here is sometimes another process entirely, which would take
+    # half a schema as a schema.
     scratch = path.with_suffix(".tmp")
-    scratch.write_text(json.dumps(chains), encoding="utf-8")
+    scratch.write_text(json.dumps(payload), encoding="utf-8")
     scratch.replace(path)
 
 

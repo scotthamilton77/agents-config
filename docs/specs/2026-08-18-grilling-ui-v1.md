@@ -2148,10 +2148,10 @@ opens one proves something else.
 - GMR-A2 | test: packages/grillui/tests/unit/test_rulings.py::test_a_reply_that_is_not_the_document_is_refused_and_never_reaches_the_human
 - GMR-A3 | test: packages/grillui/tests/unit/test_rulings.py::test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision
 - GMR-A4 | test: packages/grillui/tests/unit/test_rulings.py::test_a_ruling_whose_document_carries_no_matching_update_is_not_credited
-- GMR-A5 | open
+- GMR-A5 | test: packages/grillui/tests/unit/test_seats.py::test_the_map_and_a_thread_take_the_same_rung_on_seats_configured_apart
 - GMR-A6 | open
 - GMR-A7 | open
 - GMR-A8 | test: packages/grillui/tests/unit/test_rulings.py::test_the_option_shape_says_the_grill_master_rules_on_the_mark
 - GMR-A9 | open
 - GMR-A10 | open
-- GMR-A11 | open
+- GMR-A11 | test: packages/grillui/tests/unit/test_seats.py::test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter
