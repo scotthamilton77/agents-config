@@ -39,8 +39,8 @@ from typing import TYPE_CHECKING
 from grillui.escalation import mootness_obligation
 from grillui.projector import catch_up, conclusion_of, fold, project_thread, whole_board
 from grillui.schemas import (
+    HELP_THREAD_KIND,
     MAP_CHANNEL,
-    MAP_THREAD_KIND,
     SESSION_START_KIND,
     CatchUpEntry,
     DispatchContext,
@@ -219,15 +219,19 @@ def help_reference(entries: Sequence[LogEntry], image: Image2, channel: str) -> 
     plan, and it is the only channel this material is handed to: on a decision's
     thread or on the map it would be context spent on a question nobody is
     asking. Anchoring no decision is not the test -- the map thread anchors none
-    either and is about the plan, so it is told apart by its kind. The material
-    comes out of the log's opening entry, like every other thing the briefing
-    said -- the handoff file has no authority once the session is under way, so
-    a resumed session and a fresh one prime that thread identically.
+    either, and a thread opened from a notice that targeted nothing anchors none
+    while being about what that notice said. So the kind is the whole of the
+    test, and it is stated positively: the material crosses to `help` and to no
+    other kind, which is what stops a kind added later from inheriting it by
+    saying nothing. The material comes out of the log's opening entry, like every
+    other thing the briefing said -- the handoff file has no authority once the
+    session is under way, so a resumed session and a fresh one prime that thread
+    identically.
     """
     if channel == MAP_CHANNEL:
         return None
     thread = next((one for one in image.threads if one.id == channel), None)
-    if thread is None or thread.decision is not None or thread.kind == MAP_THREAD_KIND:
+    if thread is None or thread.kind != HELP_THREAD_KIND:
         return None
     opening = next((entry for entry in entries if entry.kind == SESSION_START_KIND), None)
     reference = None if opening is None else opening.payload.get("help_reference")

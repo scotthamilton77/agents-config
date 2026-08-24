@@ -459,7 +459,11 @@ BOARD_LEGEND = (
     "an option is the plan author's prediction that taking that option puts those "
     "decisions in question, which the grill-master rules on -- a mark, not a dependency. "
     "`pending` is what the human has not dealt with, including a notice this thread "
-    "may have been opened from."
+    "may have been opened from. A change in `history` carries `proposed_by`, the agent "
+    "whose queued update the human's apply landed, and, where a ruling produced it, that "
+    "`verdict` and its why -- so who proposed a move and what was ruled is quoted rather "
+    "than inferred, and an entry carrying neither is a move nobody proposed and no ruling "
+    "produced."
 )
 
 # The reply contract, and the whole of how a map mutation comes to exist. It is

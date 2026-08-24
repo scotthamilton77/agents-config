@@ -173,6 +173,19 @@ SET_ASIDE_KINDS = frozenset({THREAD_PARK_KIND, THREAD_CLOSE_KIND})
 # Folding it is what puts its conclusion in front of the grill-master, which is
 # the only agent that may act on it.
 MAP_THREAD_KIND = "map"
+
+# The thread about the board itself, as against the plan on it. It is the one
+# channel the shipped reference material is handed to, and its kind is what says
+# so: anchoring no decision is not the test, because the map thread and a notice
+# thread opened from a notice that targeted nothing anchor none either and are
+# both about the plan.
+HELP_THREAD_KIND = "help"
+
+# A thread opened from something an agent said, anchored to the decision that
+# notice targeted or to none where it targeted none. It is about the plan, so it
+# is briefed like any other thread and given no reference material.
+NOTICE_THREAD_KIND = "notice"
+
 NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
 GESTURE_KINDS = frozenset({"answer"})
 
@@ -188,6 +201,25 @@ DISMISS_KIND = "dismiss"
 QUEUE_GESTURE_KINDS = frozenset({APPLY_KIND, DISMISS_KIND})
 # Which pending ids a queue gesture is about.
 PENDING_KEY = "pending"
+
+
+def pending_ids(payload: Mapping[str, Any]) -> list[str]:
+    """The queue entries a gesture names, in the order it named them.
+
+    Deduplicated: a repeated id must not materialise the same proposal twice
+    into the gesture's updates and double-apply it on the walk.
+
+    One reader, because two would be a gesture whose updates and whose origins
+    are counted differently: the appender materialises an apply's updates from
+    this sequence, and the fold pairs each of those updates back to the entry it
+    came from by position in it. A second derivation that kept the duplicates
+    would leave the second update wearing the first one's author.
+    """
+    raw = payload.get(PENDING_KEY)
+    if not isinstance(raw, list):
+        return []
+    return list(dict.fromkeys(one for one in raw if isinstance(one, str)))
+
 
 # The lifecycle pair. `session-start` is the backend's alone: it is the entry
 # that strips the handoff file of its authority, so a client that could send one
@@ -342,6 +374,14 @@ FROM_THREAD_KEY = "from_thread"
 # what happened to be queued.
 RULINGS_KEY = "rulings"
 STOP_KEY = "stop"
+
+# The verdict a backend-minted sub-update records, stamped when it is minted.
+# A `stands` ruling queues no change, so the only thing on the board it produced
+# is the informational the driver mints for it -- and a document may carry its
+# own targeted informational on that same decision, which the ruling had nothing
+# to do with. Nothing in the shape of the two tells them apart, so the one the
+# ruling produced says so itself rather than being picked out by shape later.
+VERDICT_KEY = "verdict"
 
 # The three rulings a turn may make on a decision. `stands` is why there are
 # three: an answer may kill a question outright, a decision resting on one that
@@ -763,11 +803,37 @@ class SupersedeConflict(Strict):
 
 
 class HistoryEntry(Strict):
+    """One thing that happened to a decision, and what is on the record about it.
+
+    `actor` is who put the change on the board, which for an applied proposal is
+    the human. `proposed_by` is the agent whose queued update that apply landed,
+    and `verdict` the ruling that produced the move -- both recorded rather than
+    derived, so a thread agent asked why the board moved quotes them instead of
+    composing a cause out of `prereqs`. Each is absent where there is no such
+    fact: a move nobody proposed carries no proposer, and one no ruling produced
+    carries no verdict.
+    """
+
     seq: int
     timestamp: str
     kind: str
     actor: str
     why: str
+    proposed_by: str | None = None
+    verdict: RulingKind | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_absent_optionals(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, object]:
+        """An absent fact has no key at all rather than a null one, so a reader
+        of the record cannot mistake "nobody proposed this" for "the proposer
+        was not written down"."""
+        dumped: dict[str, object] = handler(self)
+        for key in ("proposed_by", "verdict"):
+            if dumped.get(key) is None:
+                dumped.pop(key, None)
+        return dumped
 
 
 class Image1(Strict):

@@ -2176,7 +2176,21 @@ opens one proves something else.
 - GMR-A4 | test: packages/grillui/tests/unit/test_rulings.py::test_a_ruling_whose_document_carries_no_matching_update_is_not_credited
 - GMR-A5 | test: packages/grillui/tests/unit/test_seats.py::test_the_map_and_a_thread_take_the_same_rung_on_seats_configured_apart
 - GMR-A6 | open
-- GMR-A7 | open
+- GMR-A7 | test: packages/grillui/tests/unit/test_page.py::test_a_thread_opened_from_a_notice_anchors_the_decision_that_notice_targeted
+- GMR-A7 | test: packages/grillui/tests/unit/test_page.py::test_the_reference_material_crosses_to_the_help_kind_and_to_no_other_the_page_mints
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_an_applied_proposal_records_the_agent_that_proposed_it_and_the_verdict_behind_it
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_queued_proposal_is_no_history_until_the_human_lands_it
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_stands_ruling_records_its_verdict_and_the_why_it_was_credited_on
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_move_the_human_made_themselves_carries_neither_field
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_ruling_with_no_update_behind_it_credits_no_other_update_on_that_decision
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_one_apply_landing_two_proposals_gives_each_decision_its_own_verdict
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_an_apply_naming_one_id_twice_still_pairs_each_update_with_its_own_author
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_stands_verdict_lands_only_on_the_notice_that_ruling_minted
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_the_fold_credits_a_stamp_only_on_the_one_form_the_backend_mints
+- GMR-A7 | test: packages/grillui/tests/unit/test_rulings.py::test_a_turn_cannot_stamp_its_own_update_with_a_verdict_nobody_ruled
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_ruling_word_outside_the_closed_three_names_no_verdict
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_history_entry_written_before_these_fields_existed_still_folds
+- GMR-A7 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_is_told_how_to_read_a_board_that_moved
 - GMR-A8 | test: packages/grillui/tests/unit/test_rulings.py::test_the_option_shape_says_the_grill_master_rules_on_the_mark
 - GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_answer_whose_mark_resolves_to_a_live_node_is_composed_by_the_expert
 - GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_applied_invalidate_that_strands_a_dependent_is_composed_by_the_expert
