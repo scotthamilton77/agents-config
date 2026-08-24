@@ -358,20 +358,43 @@ BOARD_LEGEND = (
 # stated to the grill-master alone: a thread agent that emitted one would have it
 # refused by the appender, and telling it the shape would be inviting the refusal.
 #
+# There is no prose mode, and the five keys are always present. A turn free to
+# answer in prose answers in prose on the turn that mattered -- the incident is a
+# reply that narrated three decisions as dead and moved none of them, which no
+# checker could credit and no human could act on.
+#
 # What it must not say is that sending an update changes the board. Some land and
 # some wait for the human, the split is drawn by the backend against the board at
 # the moment the reply arrives, and a turn that believed its updates had landed
 # would tell the human a decision was settled that is sitting in their queue.
-MUTATION_FORMAT_RULE = (
-    "To propose a change to the board, reply with a JSON object carrying `text` -- what you "
-    'are saying to the human -- and `updates`, a list of map updates such as {"kind": '
-    '"revise", "target": "d1", ...}. Reply with plain prose when you are proposing nothing. '
+DOCUMENT_FORMAT_RULE = (
+    "Every turn you take is one JSON object and nothing else: no prose outside it, no "
+    "markdown around it, and no key beyond the five below. All five are present on every "
+    "turn -- put an empty list or string where you have nothing to say.\n"
+    "- `text`: what you are saying to the human, under the concision rule. Empty where the "
+    "board already says it.\n"
+    '- `updates`: the map updates you are proposing, each like {"kind": "revise", "target": '
+    '"d1", ...}.\n'
+    "- `supersedes`: the ids of pending items of yours you are withdrawing.\n"
+    "- `rulings`: your judgement on the decisions this gesture put in question, each {"
+    '"decision": "d2", "ruling": "invalidate" | "revise" | "stands", "why": "one line"}.\n'
+    '- `stop`: {"met": false, "why": ""} until you judge the stop condition met, and then '
+    '{"met": true, "why": "why it is met"}.\n'
     "Sending an update is not making the change. An update that cannot overwrite anything "
     "the human decided lands when it arrives; one that can -- and every `unsettle` and "
     "`invalidate`, always -- waits in their queue until they apply it, and a decision with "
     "something waiting on it cannot be answered until they do. Your receipt says which of "
     "yours did which, so say what you are proposing and why rather than announcing that the "
     "board has changed."
+)
+
+# What a seat is told when its own last reply could not be read. Quoting the
+# fault is the whole of the retry's value: a model told only that it was wrong
+# guesses at a second shape, while one told which key was missing supplies it.
+RETRY_RULE = (
+    "Your last reply was refused because it is not the reply document. Send the same turn "
+    "again as one JSON object carrying exactly `text`, `updates`, `supersedes`, `rulings` and "
+    "`stop`, and nothing else. The fault was:"
 )
 
 # What an answer costs the rest of the board. A killing answer is the easiest
@@ -381,10 +404,12 @@ MUTATION_FORMAT_RULE = (
 # the human to answer. Naming and proposing are not the same act, and only the
 # second moves anything.
 MOOTNESS_RULE = (
-    "When the human's answer makes other decisions moot, propose an `invalidate` for each of "
-    "them in that same turn, carrying their answer as its `why`. Do not merely say that they "
-    "are dead, dropped or no longer apply: naming a decision changes nothing, and the human "
-    "is left answering the ones your reply already called dead."
+    "When the human's answer bears on decisions other than the one they answered, rule on "
+    "each of those in that same turn: `invalidate` where the answer leaves it no question to "
+    "ask, carrying their answer as the rationale; `revise` where the answer changes what it "
+    "asks; `stands` where it survives the answer intact. Do not merely say that a decision is "
+    "dead, dropped or no longer applies: naming one changes nothing, and an `invalidate` or a "
+    "`revise` moves it only when the same turn also carries that update."
 )
 
 # The same obligation as the rule above, on the one turn that owes it, naming
@@ -393,25 +418,31 @@ MOOTNESS_RULE = (
 # list is both harder to read past and checkable afterwards -- which is what
 # lets a fast reply that ignored it be handed up rather than believed.
 MOOTNESS_OBLIGATION_RULE = (
-    "Propose an `invalidate` for each decision named above, in this turn, carrying that "
-    "answer as its `why`. The human's own answer is what killed them and the board is still "
-    "offering every one of them: any you leave, they are asked to answer. Saying they are "
-    "dead is not proposing it."
+    "Rule on each decision named above, in this turn, in your `rulings`: `invalidate` where "
+    "the answer leaves it no question to ask, `revise` where the answer changes what it asks, "
+    "or `stands` where it survives the answer intact. Each ruling carries one line of `why`. "
+    "A ruling of `invalidate` or `revise` counts only where this same turn also carries that "
+    "update against that decision -- saying a decision is dead is not proposing its death. A "
+    "ruling of `stands` counts on its `why` alone, and that line is put on the decision for "
+    "the human to read. The board is still offering every one of them: any you leave unruled, "
+    "they are asked to answer."
 )
 
 # The same obligation for the other gesture that leaves decisions the board
-# should stop offering. What differs is the way out: a decision resting on one
-# that died may still stand without it, so revising its prereqs discharges this
-# as fully as invalidating it -- and choosing between the two is the judgement
-# the turn is being asked for. Insisting on the invalidate alone would press the
-# agent to kill work that survives its prereq.
+# should stop offering. The three rulings are the same three; what differs is
+# what each means here. A decision resting on one that died may stand without it,
+# or may keep the dead prereq and survive the loss anyway, and choosing among the
+# three is the judgement the turn is being asked for. A vocabulary of one verdict
+# presses the agent to kill work that survives its prereq.
 MOOTNESS_RESTING_RULE = (
-    "For each decision named above, in this turn, either propose an `invalidate` for it, "
-    "carrying that invalidation as its `why`, or propose a `revise` dropping the dead prereq "
-    "where the decision still stands without it. A prereq that has left the flow holds "
-    "nothing, so the board is offering every one of them again: any you leave, the human is "
-    "asked to answer a question that may have died with its footing. Saying they are moot is "
-    "not proposing it."
+    "Rule on each decision named above, in this turn, in your `rulings`: `invalidate` where "
+    "it dies with the prereq that left the flow, `revise` where it survives once the dead "
+    "prereq is dropped, or `stands` where it keeps the dead prereq and survives the loss "
+    "anyway. Each ruling carries one line of `why`. A ruling of `invalidate` or `revise` "
+    "counts only where this same turn also carries that update against that decision; a "
+    "ruling of `stands` counts on its `why`. A prereq that has left the flow holds nothing, "
+    "so the board is offering every one of them again: any you leave unruled, the human is "
+    "asked to answer a question that may have died with its footing."
 )
 
 BASIS_RULE = (
@@ -423,8 +454,8 @@ BASIS_RULE = (
 SUPERSEDE_RULE = (
     "The board carries the queue of what the human has not dealt with yet -- your notices and "
     "the changes of yours still waiting -- each with its id. To withdraw ones you sent "
-    "earlier, add `supersedes` -- a list of those ids -- beside `text`. Withdraw rather than "
-    "repeat yourself: the human is looking at that queue."
+    "earlier, name those ids in `supersedes`. Withdraw rather than repeat yourself: the human "
+    "is looking at that queue."
 )
 
 SUPERSEDE_CONFLICT_RULE = (
@@ -536,7 +567,7 @@ ROLE_PROMPTS: dict[str, str] = {
 # may emit, and what it owes when it does. They sit after the tier's part because
 # they are the contract for the reply, read once the turn knows what it is for.
 ROLE_RULES: dict[str, list[str]] = {
-    GRILL_MASTER: [MUTATION_FORMAT_RULE, MOOTNESS_RULE, BASIS_RULE, SUPERSEDE_RULE],
+    GRILL_MASTER: [DOCUMENT_FORMAT_RULE, MOOTNESS_RULE, BASIS_RULE, SUPERSEDE_RULE],
     THREAD_AGENT: [CONVERGENCE_RULE],
 }
 

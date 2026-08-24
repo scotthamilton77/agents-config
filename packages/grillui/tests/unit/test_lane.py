@@ -35,6 +35,7 @@ from grillui.schemas import (
     FAST_TIER,
     FOLD_KIND,
     HEAVY_TIER,
+    RULINGS_KEY,
     STATUS_KIND,
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
@@ -616,11 +617,14 @@ def _obligations(driver: Any) -> list[Any]:
 
 @dataclass
 class ProposingDriver:
-    """A tier that proposes an `invalidate` for every id its dispatch named.
+    """A tier that rules `invalidate` on every id its dispatch named, and queues
+    the update each ruling is credited by.
 
     The turn a model is supposed to take, standing in for one: it reads the
     obligation out of the context it was handed rather than off the board, so a
-    dispatch carrying none proposes nothing.
+    dispatch carrying none rules on nothing. The ruling and the update travel
+    together because that is what crediting one requires -- a driver that sent
+    the verdict alone would be the failure the check exists to catch.
     """
 
     tier: str = FAST_TIER
@@ -643,7 +647,15 @@ class ProposingDriver:
                                 {"kind": "invalidate", "target": one, "why": "the answer kills it"}
                                 for one in named
                             ),
-                        ]
+                        ],
+                        RULINGS_KEY: [
+                            {
+                                "decision": one,
+                                "ruling": "invalidate",
+                                "why": "the answer kills it",
+                            }
+                            for one in named
+                        ],
                     },
                 )
             ],
@@ -651,12 +663,12 @@ class ProposingDriver:
         )
 
 
-def test_a_prose_reply_to_a_killing_answer_is_pressed_on_the_expert_carrying_the_ids(
+def test_a_reply_ruling_on_neither_named_decision_is_pressed_on_the_expert_carrying_the_ids(
     log: SessionLog,
 ) -> None:
     """
     Given a board whose answered option names two other decisions, and a fast
-          tier that replies in prose
+          tier whose turn rules on neither
     When the human takes that option
     Then the expert tier is handed the same turn, its dispatch names both
          decisions and the answer that puts them in question, and the lane
@@ -664,9 +676,9 @@ def test_a_prose_reply_to_a_killing_answer_is_pressed_on_the_expert_carrying_the
 
     The fast tier is briefed on the rule and does not honour it -- the live
     session's reply was two sentences against an answer that put eight decisions
-    in question. So the check is not on the prose: what the reply proposed is
-    read off the board, and a turn that left the decisions standing is handed up
-    once rather than believed.
+    in question. So the check is not on what the turn said: it is on what the
+    turn ruled, and a turn that ruled on neither is handed up once rather than
+    believed.
     """
     fast = SpyDriver(tier=FAST_TIER, reply="d2 and d3 are dead now.")
     expert = SpyDriver(tier=HEAVY_TIER, reply="Agreed, both are moot.")
@@ -689,11 +701,12 @@ def test_a_prose_reply_to_a_killing_answer_is_pressed_on_the_expert_carrying_the
     )
 
 
-def test_an_expert_that_proposes_nothing_either_leaves_the_ids_named_to_the_human(
+def test_an_expert_that_rules_on_nothing_either_leaves_the_ids_named_to_the_human(
     log: SessionLog,
 ) -> None:
     """
-    Given both tiers replying in prose to an answer that kills two decisions
+    Given both tiers ruling on nothing after an answer that puts two decisions
+          in question
     When the human takes that option
     Then one backend notice names both decisions, and nothing on the board was
          invalidated by anything but a human gesture.
@@ -718,18 +731,19 @@ def test_an_expert_that_proposes_nothing_either_leaves_the_ids_named_to_the_huma
 
 def test_an_obligation_met_or_never_created_presses_nobody(log: SessionLog, tmp_path: Path) -> None:
     """
-    Given one session whose fast tier proposes an `invalidate` for each id it
-          was given, and another whose human takes the option naming nothing
+    Given one session whose fast tier rules `invalidate` on each id it was
+          given and queues each update, and another whose human takes the option
+          naming nothing
     When each answer's turn is taken
     Then neither hands the expert a turn and neither says anything to the human,
          and the first has both invalidates waiting in the queue.
 
-    Both halves are about what the press costs when it should not fire. A
-    proposal waiting in the queue is the obligation met, whether or not the
-    human has applied it yet -- a check reading the decision's status alone
-    would press every honoured turn. And every session log written before this
-    existed carries no pre-marks at all, so each has to go on costing exactly
-    what it cost: the obligation is a property of the option the human took.
+    Both halves are about what the press costs when it should not fire. A ruling
+    the same turn queued the update for is the obligation met, whether or not the
+    human has applied it yet -- a check reading the decision's status alone would
+    press every honoured turn. And every session log written before this existed
+    carries no pre-marks at all, so each has to go on costing exactly what it
+    cost: the obligation is a property of the option the human took.
     """
     honoured, expert = ProposingDriver(), SpyDriver(tier=HEAVY_TIER)
     _seed(log)
@@ -779,7 +793,7 @@ def test_an_invalidate_the_human_applied_is_pressed_on_the_next_map_turn(
 ) -> None:
     """
     Given two decisions resting on a third, the agent's invalidate on that third
-          applied by the human, and both tiers then replying in prose
+          applied by the human, and both tiers then ruling on nothing
     When the human answers one of the two on the next turn
     Then both were answerable at all, the expert is handed that turn carrying
          the other one and the invalidation as its rationale, one notice names

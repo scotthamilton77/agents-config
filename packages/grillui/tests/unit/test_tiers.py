@@ -576,26 +576,29 @@ def test_the_thread_agent_prompt_bars_an_offer_on_a_thread_anchoring_nothing(tie
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
-def test_the_grill_master_brief_obliges_an_invalidate_for_each_decision_an_answer_moots(
+def test_the_grill_master_brief_obliges_a_ruling_on_each_decision_an_answer_bears_on(
     tier: str,
 ) -> None:
     """
     Given the grill-master brief a driver composes for each tier
-    When it is read for what a killing answer obliges
-    Then it requires an `invalidate` per mooted decision carrying the answer as
-         its rationale, and bars narrating them as dead instead -- without which
-         the reply says d2 through d9 are dead code and the board goes on
-         offering them on the frontier. The thread agent is not told this: an
-         update from it is refused, so obliging it to send one is obliging it to
-         be refused.
+    When it is read for what an answer bearing on other decisions obliges
+    Then it requires a ruling per decision -- one of the three -- carrying the
+         answer as the rationale where it kills, and bars narrating a decision
+         as dead instead. Without that the reply says d2 through d9 are dead
+         code and the board goes on offering them on the frontier; with only one
+         legal verdict it kills the ones that stand. The thread agent is not
+         told this: an update from it is refused, so obliging it to send one is
+         obliging it to be refused.
     """
     brief = system_prompt(tier, GRILL_MASTER)
 
     assert MOOTNESS_RULE in brief
-    assert "makes other decisions moot" in brief
-    assert "propose an `invalidate` for each of them in that same turn" in brief
-    assert "carrying their answer as its `why`" in brief
-    assert "Do not merely say that they are dead" in brief
+    assert "bears on decisions other than the one they answered" in brief
+    assert "rule on each of those in that same turn" in brief
+    assert "carrying their answer as the rationale" in brief
+    assert "Do not merely say that a decision is dead" in brief
+    for verdict in ("invalidate", "revise", "stands"):
+        assert f"`{verdict}`" in MOOTNESS_RULE
     assert MOOTNESS_RULE not in system_prompt(tier, THREAD_AGENT)
 
 

@@ -29,12 +29,21 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import TIMEOUT, ScriptedCli, ScriptedFast, event, post, run_turns, seed_node
+from conftest import (
+    TIMEOUT,
+    ScriptedCli,
+    ScriptedFast,
+    document,
+    event,
+    post,
+    run_turns,
+    seed_node,
+)
 from fastapi.testclient import TestClient
 
 from grillui.dispatch import GRILL_MASTER, THREAD_AGENT, record_dispatch
 from grillui.drivers import FastDriver, HeavyDriver, ReplyRefusedError
-from grillui.lane import Lane, TurnDriver
+from grillui.lane import DocumentRefusedError, Lane, TurnDriver
 from grillui.log import LOG_FILE, SessionLog
 from grillui.projector import fold, project_thread, to_image1
 from grillui.schemas import (
@@ -208,9 +217,7 @@ def fast_tier(reply: str) -> tuple[TurnDriver, ScriptedFast]:
 
 
 def mutation_reply(text: str, title: str) -> str:
-    return json.dumps(
-        {"text": text, "updates": [{"kind": "revise", "target": NODE, "title": title}]}
-    )
+    return document(text=text, updates=[{"kind": "revise", "target": NODE, "title": title}])
 
 
 # ── GUI-D24 / §8.8: the thread projection ──
@@ -804,7 +811,7 @@ def test_a_conclusion_folded_as_context_only_leaves_the_board_alone_and_says_so(
     board(client, log.epoch)
     say(client, log.epoch, MINE, MINE_CONCLUDED)
     said = "Nothing on the board changes: retention was already priced into the store answer."
-    driver, _ = fast_tier(said)
+    driver, _ = fast_tier(document(text=said))
     lane = Lane(log, driver)
     before = fold(log.epoch, log.entries()).decisions
     cursor = log.seq
@@ -819,28 +826,29 @@ def test_a_conclusion_folded_as_context_only_leaves_the_board_alone_and_says_so(
     assert spoken[0].payload["text"] == said
 
 
-def test_a_reply_that_is_not_the_update_shape_is_recorded_as_what_it_said(
+def test_a_reply_that_is_not_the_update_shape_is_refused_rather_than_mined(
     client: TestClient, log: SessionLog
 ) -> None:
     """
-    Given a grill-master reply that is JSON but not the update shape
+    Given a grill-master reply that is JSON but not the reply document
     When its turn runs
-    Then it is recorded as prose rather than mined for updates.
+    Then it is refused and nothing of it reaches the log.
 
     Guessing at a half-shaped object would author board changes out of a reply
     that never asked for any -- the one failure the receipt vocabulary cannot
-    surface, because the write succeeded.
+    surface, because the write succeeded. Recording it as prose instead is the
+    other half of the same failure: the human reads raw JSON and the board never
+    moves.
     """
     board(client, log.epoch)
     said = json.dumps({"thoughts": "not the contract", "updates": "not a list"})
     driver, _ = fast_tier(said)
     cursor = log.seq
 
-    driver.run(log, record_dispatch(log))
+    with pytest.raises(DocumentRefusedError):
+        driver.run(log, record_dispatch(log))
 
-    spoken = [entry for entry in log.entries_after(cursor) if entry.actor == GRILL_MASTER]
-    assert [entry.kind for entry in spoken] == ["informational"]
-    assert spoken[0].payload["text"] == said
+    assert [entry for entry in log.entries_after(cursor) if entry.actor == GRILL_MASTER] == []
 
 
 def test_the_image_schemas_do_not_grow_the_projections_stub_fields() -> None:

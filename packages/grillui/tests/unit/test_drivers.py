@@ -30,6 +30,7 @@ from conftest import (
     ScriptedCli,
     ScriptedFast,
     attributions,
+    document,
     driven,
     event,
     handoff_doc,
@@ -56,7 +57,7 @@ from grillui.drivers import (
     write_resume,
 )
 from grillui.escalation import CONDITION_COMMITMENT, CONDITION_IRREDUCIBLE, CONDITION_MULTIPLE
-from grillui.lane import AgentUnreachableError
+from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import LOG_FILE, SessionLog
 from grillui.projector import fold
 from grillui.schemas import (
@@ -352,7 +353,7 @@ def test_a_fast_turn_asked_for_a_fact_its_context_lacks_asserts_none(session_dir
     log = briefed(session_dir)
     human_turn(log, "What is the retention window in the current system?")
     transport = ScriptedFast(
-        reply="The context I was given does not say what the retention window is."
+        reply=document(text="The context I was given does not say what the retention window is.")
     )
 
     take_fast_turn(log, transport)
@@ -717,7 +718,7 @@ def test_a_turn_that_reports_no_chain_identity_is_still_a_turn(session_dir: Path
     log = briefed(session_dir)
     human_turn(log, "The log.")
 
-    driver = HeavyDriver(TierConfig(), lambda _argv: json.dumps({"result": REPLY}))
+    driver = HeavyDriver(TierConfig(), lambda _argv: json.dumps({"result": document()}))
     driver.run(log, record_dispatch(log))
 
     assert replies(log)[0]["text"] == REPLY
@@ -754,15 +755,23 @@ def test_a_completion_that_is_not_text_is_refused() -> None:
 
 def test_an_empty_completion_is_a_failed_turn_not_a_silent_one(session_dir: Path) -> None:
     """
-    Given a model that answers with whitespace
-    When the turn is taken
-    Then it fails loudly and nothing is written into the log as a reply.
+    Given a model that answers with whitespace, and one whose document is
+          well-formed and says nothing at all -- no notice, no update, no ruling
+    When each turn is taken
+    Then each fails loudly and nothing is written into the log as a reply.
+
+    The two are the same failure at different depths. Whitespace never reaches
+    the shape; an empty document passes every key and still leaves the human
+    with a turn that happened and a board that did not move, which is not a turn
+    the log should carry.
     """
     log = briefed(session_dir)
     human_turn(log, "The log.")
 
-    with pytest.raises(ReplyRefusedError):
+    with pytest.raises(DocumentRefusedError):
         take_fast_turn(log, ScriptedFast(reply="   "))
+    with pytest.raises(ReplyRefusedError):
+        take_fast_turn(log, ScriptedFast(reply=document(text="")))
 
     assert replies(log) == []
 
@@ -1127,7 +1136,7 @@ def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
     config = TierConfig.from_env({FAST_MODEL_ENV: "vendor/unknown", FAST_CONTEXT_LIMIT_ENV: "1000"})
 
     with pytest.raises(ReplyRefusedError):
-        FastDriver(config, ScriptedFast(reply="   ", prompt_tokens=750)).run(
+        FastDriver(config, ScriptedFast(reply=document(text=""), prompt_tokens=750)).run(
             log, record_dispatch(log)
         )
 

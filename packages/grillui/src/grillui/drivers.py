@@ -66,13 +66,15 @@ import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from uuid import uuid4
 
 import httpx
+from pydantic import ValidationError
 
+from grillui.dispatch import GRILL_MASTER
 from grillui.escalation import in_expert_mode, recommend, transfer_source, turns_of
-from grillui.lane import AgentUnreachableError
+from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.projector import fold
 from grillui.schemas import (
     CONTEXT_BYTES_KEY,
@@ -87,13 +89,20 @@ from grillui.schemas import (
     PROMPT_TOKENS_KEY,
     PROPOSED_ANSWER_KEY,
     RECOMMENDATION_KEY,
+    RULING_STANDS,
+    RULINGS_KEY,
     STATUS_PHASE_TRANSFERRED,
+    STOP_KEY,
     SUPERSEDES_KEY,
     TIER_KEY,
     TRANSFER_SOURCE_KEY,
     DispatchContext,
     EventSubmission,
+    GrillMasterDocument,
     RejectedReceipt,
+    Ruling,
+    Stop,
+    fault_summary,
 )
 from grillui.tiers import (
     API_KEY_ENV,
@@ -101,13 +110,14 @@ from grillui.tiers import (
     CLAUDE_CLI,
     CONTEXT_WARN_FRACTION,
     DEFAULT_API_BASE,
+    RETRY_RULE,
     TierConfig,
     compose,
     system_prompt,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from typing import TextIO
 
     from grillui.log import SessionLog
@@ -167,7 +177,9 @@ class FastTransport(Protocol):
     reply from a provider that reported no usage.
     """
 
-    def __call__(self, *, model: str, system: str, prompt: str) -> tuple[str, int | None]: ...
+    def __call__(
+        self, *, model: str, system: str, prompt: str, shaped: bool = False
+    ) -> tuple[str, int | None]: ...
 
 
 class ClaudeCli(Protocol):
@@ -194,12 +206,14 @@ class OpenRouterTransport:
     client: httpx.Client | None = None
     environ: Mapping[str, str] | None = None
 
-    def __call__(self, *, model: str, system: str, prompt: str) -> tuple[str, int | None]:
+    def __call__(
+        self, *, model: str, system: str, prompt: str, shaped: bool = False
+    ) -> tuple[str, int | None]:
         source = os.environ if self.environ is None else self.environ
         key = self.api_key or source.get(API_KEY_ENV)
         if not key:
             raise AgentUnreachableError(FAST_TIER)
-        body = request_body(model, system, prompt)
+        body = request_body(model, system, prompt, shaped)
         headers = {"Authorization": f"Bearer {key}"}
         try:
             if self.client is not None:
@@ -217,17 +231,33 @@ class OpenRouterTransport:
         return f"{self.api_base}/chat/completions"
 
 
-def request_body(model: str, system: str, prompt: str) -> dict[str, Any]:
+def request_body(model: str, system: str, prompt: str, shaped: bool = False) -> dict[str, Any]:
     """The completion request. The standing brief is a system message rather
     than a preamble on the prompt, so it cannot be read as something the human
-    said."""
-    return {
+    said.
+
+    A grill-master turn asks the provider for the reply document by schema.
+    Asking is not trusting: the driver validates what comes back whatever the
+    request said, because a provider that ignores the field, downgrades it, or
+    honours it approximately fails silently and looks exactly like one that did
+    not.
+    """
+    body: dict[str, Any] = {
         "model": model,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
     }
+    if shaped:
+        body["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "grill_master_turn",
+                "schema": GrillMasterDocument.model_json_schema(),
+            },
+        }
+    return body
 
 
 def read_completion(document: Any) -> tuple[str, int | None]:
@@ -433,7 +463,14 @@ class FastDriver:
         model = self.config.fast_model
         system = system_prompt(FAST_TIER, context.agent)
         prompt = compose(recorded, context, entries)
-        reply, prompt_tokens = self.transport(model=model, system=system, prompt=prompt)
+        ruling_turn = context.agent == GRILL_MASTER
+
+        def ask(text: str) -> tuple[str, int | None]:
+            return self.transport(model=model, system=system, prompt=text, shaped=ruling_turn)
+
+        reply, prompt_tokens = (
+            take_document(self.tier, prompt, ask, _first) if ruling_turn else ask(prompt)
+        )
         measured = Measurement.of(self.config, self.tier, sent_bytes(system, prompt), prompt_tokens)
         attribution: dict[str, Any] = {TIER_KEY: self.tier, MODEL_KEY: model, **measured.recorded}
         advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel)
@@ -496,21 +533,27 @@ class HeavyDriver:
         cold = bool(context.catch_up)
         system = system_prompt(HEAVY_TIER, context.agent)
         prompt = compose(recorded, context, entries)
+
+        def ask(text: str) -> tuple[str, str | None, int | None]:
+            # The chain is read fresh and written back on every attempt, so the
+            # retry a refused document buys resumes the turn that was refused
+            # rather than opening a second conversation about it.
+            printed = self.cli(
+                claude_argv(model, effort, system, text, read_resume(log.directory, channel))
+            )
+            outcome = read_cli_reply(printed)
+            if outcome[1] is not None:
+                write_resume(log.directory, channel, outcome[1])
+            return outcome
+
         with self._turn:
             if cold:
                 forget_resume(log.directory, channel)
-            printed = self.cli(
-                claude_argv(
-                    model,
-                    effort,
-                    system,
-                    prompt,
-                    None if cold else read_resume(log.directory, channel),
-                )
+            reply, _chain, prompt_tokens = (
+                take_document(self.tier, prompt, ask, _first)
+                if context.agent == GRILL_MASTER
+                else ask(prompt)
             )
-            reply, session_id, prompt_tokens = read_cli_reply(printed)
-            if session_id is not None:
-                write_resume(log.directory, channel, session_id)
         # The bytes are this turn's alone and the count is the whole resumed
         # chain's, which is why the count is the one that matters here: what
         # fills a heavy tier's window is the conversation it is resuming, and
@@ -668,6 +711,62 @@ def _document(reply: str) -> dict[str, Any] | None:
     return document if isinstance(document, dict) else None
 
 
+def document_problem(reply: str) -> str | None:
+    """Why this reply is not a grill-master turn, or None where it is one.
+
+    Every fault names the key it is about, because that is what makes the one
+    retry worth taking: a seat told only that it was wrong guesses at a second
+    shape, while one told that `rulings` was missing supplies it.
+    """
+    carried = _document(reply)
+    if carried is None:
+        return "the reply was prose, not the reply document"
+    try:
+        GrillMasterDocument.model_validate(carried)
+    except ValidationError as error:
+        return fault_summary(error, "document")
+    return None
+
+
+def read_document(reply: str) -> GrillMasterDocument:
+    """The turn this reply is. Only ever called on one already validated."""
+    return GrillMasterDocument.model_validate(_document(reply) or {})
+
+
+_Outcome = TypeVar("_Outcome")
+
+
+def take_document(
+    tier: str,
+    prompt: str,
+    attempt: Callable[[str], _Outcome],
+    said: Callable[[_Outcome], str],
+) -> _Outcome:
+    """One grill-master turn, retried once on the same seat when what came back
+    is not the document.
+
+    One retry and no more. A model that lost the shape usually finds it again
+    when told which key was wrong, and paying an expert turn for a formatting
+    slip spends the human's waiting clock on nothing; a seat that missed twice
+    with the fault quoted is not going to find it on a third ask, and the rung
+    above is where the turn goes instead.
+    """
+    outcome = attempt(prompt)
+    problem = document_problem(said(outcome))
+    if problem is None:
+        return outcome
+    outcome = attempt(f"{prompt}\n\n## Your last reply was refused\n{RETRY_RULE} {problem}")
+    problem = document_problem(said(outcome))
+    if problem is not None:
+        raise DocumentRefusedError(tier, problem)
+    return outcome
+
+
+def _first(outcome: tuple[str, Any] | tuple[str, Any, Any]) -> str:
+    """What the seat said, out of whatever else its transport returned with it."""
+    return outcome[0]
+
+
 def _proposal_refusal(
     log: SessionLog, channel: str, reply: str, taken: dict[str, Any] | None
 ) -> str | None:
@@ -699,6 +798,82 @@ def _proposal_refusal(
     return None if taken is not None else REFUSED_SHAPE
 
 
+def stands_notice(one: Ruling) -> dict[str, Any]:
+    """What a `stands` ruling puts in front of the human.
+
+    A ruling of `stands` has no update behind it -- the decision goes on being
+    offered, which is the point -- so its `why` would otherwise be a judgement
+    nothing recorded. Targeted at the decision it rules on, it renders there
+    rather than on the notification lane, and a Discuss opened from it anchors
+    to the same decision.
+    """
+    return {
+        "kind": "informational",
+        "target": one.decision,
+        "text": f"{one.decision} stands: {one.why}",
+    }
+
+
+def stop_notice(stop: Stop) -> list[dict[str, Any]]:
+    """The turn saying the grilling is over, where it says so.
+
+    A notice and not a gesture: ending the session is the human's, and this is
+    what they act on. It rides the lane the board already keeps for what the
+    board itself does not show, so nothing on the page has to learn a new shape
+    to carry it.
+    """
+    if not stop.met:
+        return []
+    said = "The stop condition is met."
+    return [{"kind": "informational", "text": f"{said} {stop.why}" if stop.why else said}]
+
+
+def record_document(
+    log: SessionLog, tier: str, document: GrillMasterDocument, attribution: dict[str, Any]
+) -> None:
+    """Put a grill-master turn into the log, whole.
+
+    The turn is one gesture: the notice, the updates it proposes, and the
+    informational each `stands` ruling mints, all under one entry, because a
+    turn whose ruling landed and whose update did not is a board the human
+    cannot make sense of.
+
+    `rulings` and `stop` ride as payload keys on the entry itself, the way a
+    thread turn carries its offered answer -- the kind vocabulary is closed, and
+    a ruling is something a turn does while it says its piece rather than an
+    event of its own. They ride on every turn, empty or not: the obligation
+    check reads coverage off them, and a key that is sometimes absent is a check
+    that sometimes reads a turn that ruled as a turn that could not.
+    """
+    notice = [{"kind": "informational", "text": document.text}] if document.text.strip() else []
+    minted = [stands_notice(one) for one in document.rulings if one.ruling == RULING_STANDS]
+    updates: list[dict[str, Any]] = [
+        *notice,
+        *document.updates,
+        *minted,
+        *stop_notice(document.stop),
+    ]
+    if not updates:
+        # Every key was well-formed and the turn still said nothing: no notice,
+        # no proposal, no ruling. That is a failed turn like any other, and the
+        # human is owed the lane's error rather than an empty entry.
+        raise ReplyRefusedError(tier, "the completion was empty")
+    if document.supersedes:
+        updates[0] = {**updates[0], SUPERSEDES_KEY: document.supersedes}
+    judgement = {
+        RULINGS_KEY: [one.model_dump() for one in document.rulings],
+        STOP_KEY: document.stop.model_dump(),
+    }
+    solo = len(updates) == 1 and not document.updates and not minted and not document.stop.met
+    payload: dict[str, Any] = (
+        {**{key: value for key, value in updates[0].items() if key != "kind"}, **attribution}
+        if solo
+        else {"updates": updates, **attribution}
+    )
+    kind = "informational" if solo else FOLD_KIND
+    _submit(log, tier, MAP_CHANNEL, kind, {**payload, **judgement})
+
+
 def record_reply(
     log: SessionLog, tier: str, channel: str, text: str, attribution: dict[str, Any]
 ) -> None:
@@ -707,6 +882,10 @@ def record_reply(
     An agent is a client of the same appender the page writes through, so a
     reply is judged like any other write and a refusal is not swallowed: the
     human asked something, and a reply nobody can read is not an answer.
+
+    A map turn is a document and nothing else, and it is recorded by the
+    function above. What is left here is a thread agent's turn, which is prose
+    and may carry the one offer it is allowed to make.
 
     A reply declaring map updates is submitted as one gesture carrying them and
     the prose together, and it is submitted on the channel the turn ran on --
@@ -724,6 +903,9 @@ def record_reply(
     what a previous one told the human, or putting to them what it takes the
     thread to have settled, in the same breath as it says the new thing.
     """
+    if channel == MAP_CHANNEL:
+        record_document(log, tier, read_document(text), attribution)
+        return
     prose, updates, superseded, proposal = declared_updates(text)
     refusal = _proposal_refusal(log, channel, text, proposal)
     if refusal is not None:
@@ -734,10 +916,7 @@ def record_reply(
         proposal = None
     if not prose.strip():
         raise ReplyRefusedError(tier, "the completion was empty")
-    spoken: dict[str, Any] = {
-        "kind": "informational" if channel == MAP_CHANNEL else "thread-turn",
-        "text": prose,
-    }
+    spoken: dict[str, Any] = {"kind": "thread-turn", "text": prose}
     if superseded:
         spoken[SUPERSEDES_KEY] = superseded
     if proposal is not None:
@@ -749,10 +928,16 @@ def record_reply(
     payload: dict[str, Any] = (
         {**solo, **attribution} if not updates else {"updates": [spoken, *updates], **attribution}
     )
+    _submit(log, tier, channel, FOLD_KIND if updates else "thread-turn", payload)
+
+
+def _submit(log: SessionLog, tier: str, channel: str, kind: str, payload: dict[str, Any]) -> None:
+    """The one way a turn reaches the log: through the appender the page writes
+    through, so a driver holds no second path to the board."""
     receipt = log.submit(
         [
             EventSubmission(
-                kind=FOLD_KIND if updates else str(spoken["kind"]),
+                kind=kind,
                 actor="grill-master" if channel == MAP_CHANNEL else "thread-agent",
                 channel=channel,
                 idempotency_key=f"{tier}-{uuid4().hex}",

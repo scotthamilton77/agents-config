@@ -42,10 +42,13 @@ rather than the session.
 
 **An obligation the board can state is checked, not hoped for.** Where the
 answer a turn is replying to named the decisions it puts in question, the reply
-is measured against that list in code. One that left a decision standing is
-handed up a tier once and asked again; a second refusal is said to the human as
-a notice naming what is still being offered. Nothing here writes to the map: the
-insistence buys another agent turn, and the human is told when it buys nothing.
+is measured against that list in code -- off the turn's own rulings. One that
+left a decision unruled is handed up a tier once and asked again, narrowed to
+what is left; a second reply that rules on nothing is said to the human as a
+notice naming those decisions. A grill-master turn whose reply is not the reply
+document at all walks the same ladder, its own seat's one retry already spent.
+Nothing here writes to the map: the insistence buys another agent turn, and the
+human is told when it buys nothing.
 
 The driver seam is the whole of what a tier has to implement. A turn is one
 invocation: the driver runs, says what it has to say into the log, and returns.
@@ -62,7 +65,7 @@ import threading
 from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from grillui.dispatch import record_dispatch
-from grillui.escalation import INVALIDATE_KIND, in_expert_mode, outstanding
+from grillui.escalation import INVALIDATE_KIND, in_expert_mode, rulings_of, unruled
 from grillui.projector import fold, supersede_conflicts
 from grillui.schemas import (
     ANSWERABLE_KINDS,
@@ -104,6 +107,21 @@ class AgentUnreachableError(RuntimeError):
         super().__init__(f"the {tier!r} tier could not be reached")
 
 
+class DocumentRefusedError(RuntimeError):
+    """A grill-master turn that never arrived in the shape the board reads.
+
+    Distinct from a tier that could not be reached: a seat answered, twice, and
+    what it said is unusable. It carries the tier it ended on because the ladder
+    moves a refused turn up a rung -- the seat that failed last is the one the
+    human is owed the name of, and it is not always the one the turn started on.
+    """
+
+    def __init__(self, tier: str, detail: str) -> None:
+        super().__init__(f"the {tier!r} tier's reply is not the reply document: {detail}")
+        self.tier = tier
+        self.detail = detail
+
+
 class TurnDriver(Protocol):
     """One tier's way of taking one turn.
 
@@ -131,6 +149,47 @@ class UnreachableDriver:
 
     def run(self, _log: SessionLog, _dispatch: Path, /) -> None:
         raise AgentUnreachableError(self.tier)
+
+
+class _Pressed(NamedTuple):
+    """What one pressed turn came back as.
+
+    A wrapper over a string that may be nothing, because three outcomes have to
+    be told apart and two of them are absences: the seat was not reached at all,
+    the seat answered and its document was refused, and the seat answered
+    properly. Collapsing the first two loses the distinction between a turn to
+    fall back from and a turn to end the ladder on.
+    """
+
+    refusal: str | None
+
+
+def _run(driver: TurnDriver, log: SessionLog, dispatch: Path) -> str | None:
+    """One turn, with a refused document handed back rather than raised.
+
+    A document that will not validate is not the end of the turn -- there is a
+    rung above, and the ladder is the caller's to walk -- so it comes back as
+    the fault it is. Every other failure still raises: a seat that could not be
+    reached has no turn to press on.
+    """
+    try:
+        driver.run(log, dispatch)
+    except DocumentRefusedError as error:
+        return error.detail
+    return None
+
+
+def _lost(tier: str) -> str:
+    """What the human is told when a turn was taken and nothing came of it.
+
+    The seat's own bytes are deliberately not quoted at them: a reply the board
+    could not read is not made readable by printing it, and what they can act on
+    is that the gesture went unanswered.
+    """
+    return (
+        f"The {tier!r} tier answered in a shape the board cannot read, twice, so nothing was "
+        f"taken from its turn. Ask again, or ask on the map thread."
+    )
 
 
 class Turn(NamedTuple):
@@ -359,12 +418,18 @@ class Lane:
                 conflict=turn.conflict,
                 reassess=turn.reassess,
             )
-            driver.run(self.log, dispatch)
-            took = self._press_mootness(driver, turn, dispatch)
+            took = self._press(driver, turn, dispatch, _run(driver, self.log, dispatch))
             if self._watching(turn):
                 self._hand_back(took, standing)
             self.log.emit_status(
                 STATUS_PHASE_REPLIED, f"the {took.tier!r} tier's turn is over", turn.channel
+            )
+        except DocumentRefusedError as error:
+            # Named for the seat the ladder ended on rather than the one it
+            # started from: that is the seat the human is owed the name of, and
+            # on a turn handed up once it is not the same seat.
+            self.log.emit_status(
+                STATUS_PHASE_ERROR, f"the {error.tier!r} tier failed: {error!r}", turn.channel
             )
         except Exception as error:
             self.log.emit_status(
@@ -374,48 +439,76 @@ class Lane:
             if turn.reassess:
                 self._doctor = False
 
-    def _press_mootness(self, driver: TurnDriver, turn: Turn, dispatch: Path) -> TurnDriver:
-        """Insist on the invalidates a killing answer obliged, and say so when
-        no tier will make them. Returns whichever tier ended up taking the turn.
+    def _press(
+        self, driver: TurnDriver, turn: Turn, dispatch: Path, refusal: str | None
+    ) -> TurnDriver:
+        """Press a turn that did not answer, and say so when no seat will.
+        Returns whichever seat ended up taking it.
 
-        The check is code's: the obligation is a list of decision ids, and what
-        the reply did with them is read off the board rather than out of its
-        prose. A turn that left one standing is handed up once -- the fast tier
-        answering a killing answer in two sentences is the failure this exists
-        for, and it is not a failure another fast turn fixes.
+        Two failures press, and they press the same way. A reply that is not the
+        grill-master's document is one; a valid one leaving a decision the
+        dispatch named unruled is the other. Neither is a failure another turn on
+        the same seat fixes -- the seat has already had its retry -- so the turn
+        goes up one rung, narrowed to what is still outstanding, and no further:
+        from the seat with nothing above it the human is told instead.
+
+        The check is code's, and it is coverage rather than correctness: the
+        obligation is a list of decision ids, and what the reply did with each is
+        read off its own rulings. A ruling this would disagree with is not a
+        ruling missing.
 
         Nothing here authors a map mutation. The expert is asked for the same
-        proposals the fast tier was, and where it declines too the human is told
-        which decisions are still being offered, so the change is theirs to ask
-        for. A backend that minted the invalidates itself would be the sole
-        author rule broken by the code that enforces it.
+        rulings the first rung was, and where it declines too the human is told
+        which decisions went unruled, so the change is theirs to ask for. A
+        backend that minted the invalidates itself would be the sole-author rule
+        broken by the code that enforces it.
         """
         obligation = DispatchContext.model_validate_json(
             dispatch.read_text(encoding="utf-8")
         ).mootness
-        if obligation is None:
+        # The list shrinks as the ladder is walked. A turn handed up is measured
+        # against what the rung below left unruled, never against the original
+        # list, or a decision the first seat ruled on is reported as one nobody
+        # did -- and the human is sent to argue about a verdict that was made.
+        standing = [] if obligation is None else list(obligation.ids)
+        if refusal is None:
+            standing = self._unruled(standing)
+        if refusal is None and not standing:
             return driver
-        standing = outstanding(self._board(), obligation)
-        if standing and self.expert is not None and self.expert is not driver:
-            driver = self._insist(self.expert, turn, obligation, standing) or driver
-            standing = outstanding(self._board(), obligation)
-        if standing:
+        if self.expert is not None and self.expert is not driver:
+            pressed = self._insist(self.expert, turn, obligation, standing)
+            if pressed is not None:
+                driver, refusal = self.expert, pressed.refusal
+                if refusal is None:
+                    standing = self._unruled(standing)
+        if refusal is not None:
+            self.log.record("informational", {"text": _lost(driver.tier)})
+            raise DocumentRefusedError(driver.tier, refusal)
+        # Something is only ever outstanding where an obligation stated it, so
+        # the second test is the type system's rather than a case of its own.
+        if standing and obligation is not None:
             self.log.record("informational", {"text": _unmet(obligation, standing)})
         return driver
+
+    def _unruled(self, owed: Sequence[str]) -> list[str]:
+        """Which of these decisions the turn just taken left unruled."""
+        return unruled(owed, *rulings_of(self.log.entries(), MAP_CHANNEL))
 
     def _insist(
         self,
         expert: TurnDriver,
         turn: Turn,
-        obligation: MootnessObligation,
+        obligation: MootnessObligation | None,
         standing: Sequence[str],
-    ) -> TurnDriver | None:
-        """One expert turn on the same gesture, carrying what is still standing.
+    ) -> _Pressed | None:
+        """One expert turn on the same gesture, carrying what is still unruled.
 
-        The obligation is handed in rather than derived again: by now the first
-        tier has spoken on this channel, so nothing would derive it -- and it is
-        narrowed to what is left, since re-asking for a proposal already in the
-        queue is asking the human to deal with the same withdrawal twice.
+        The obligation is handed in rather than derived again: by now an agent
+        has spoken on this channel, so nothing would derive it -- and it is
+        narrowed to what is left, since re-asking for a ruling already made is
+        asking the human to read the same verdict twice. A turn pressed only
+        because its document would not validate carries the obligation whole,
+        there being no ruling to narrow it by.
 
         A tier that cannot be reached costs the insistence and nothing else. The
         human's turn was already answered by the first tier, and turning a
@@ -428,21 +521,23 @@ class Lane:
             turn.channel,
             tier=expert.tier,
         )
+        narrowed = (
+            None
+            if obligation is None
+            else obligation.model_copy(update={"ids": list(standing) or obligation.ids})
+        )
         try:
-            expert.run(
+            dispatch = record_dispatch(
                 self.log,
-                record_dispatch(
-                    self.log,
-                    channel=turn.channel,
-                    concluding=turn.concluding,
-                    conflict=turn.conflict,
-                    reassess=turn.reassess,
-                    mootness=obligation.model_copy(update={"ids": list(standing)}),
-                ),
+                channel=turn.channel,
+                concluding=turn.concluding,
+                conflict=turn.conflict,
+                reassess=turn.reassess,
+                mootness=narrowed,
             )
+            return _Pressed(_run(expert, self.log, dispatch))
         except Exception:
             return None
-        return expert
 
     def _board(self) -> Image2:
         return fold(self.log.epoch, self.log.entries())
@@ -478,21 +573,25 @@ class Lane:
 
 
 def _unmet(obligation: MootnessObligation, standing: Sequence[str]) -> str:
-    """What the human is told when no tier proposed what the gesture obliged.
+    """What the human is told when no seat ruled on what the gesture obliged.
 
     Named by id and by the gesture that left them there, because the human's
     move from here is to ask for the change on the map thread and a notice that
     described the case would leave them working out which decisions it meant.
+
+    It says the decisions were not ruled on rather than that no invalidate was
+    proposed: a turn ruling that all three stand has proposed nothing either, and
+    that is a discharged obligation rather than this one.
     """
     named, them = ", ".join(standing), "it" if len(standing) == 1 else "them"
     if obligation.cause == INVALIDATE_KIND:
         return (
-            f"{obligation.target} left the flow and {named} rested on it. No turn proposed "
-            f"an invalidate or a revise for {them}, so the board is offering {them} again. "
-            f"Ask on the map thread if that is wrong."
+            f"{obligation.target} left the flow and {named} rested on it. {named} "
+            f"{'was' if len(standing) == 1 else 'were'} not ruled on, so the board is offering "
+            f"{them} again. Ask on the map thread if that is wrong."
         )
     return (
-        f"The answer to {obligation.target} put {named} in question and no turn proposed an "
-        f"invalidate for {them}, so the board is still offering {them}. Ask on the map thread "
-        f"if that is wrong."
+        f"The answer to {obligation.target} put {named} in question, and {named} "
+        f"{'was' if len(standing) == 1 else 'were'} not ruled on, so the board is still "
+        f"offering {them}. Ask on the map thread if that is wrong."
     )

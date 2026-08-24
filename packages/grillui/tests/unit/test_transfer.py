@@ -47,6 +47,7 @@ from conftest import (
     ScriptedCli,
     ScriptedFast,
     attributions,
+    document,
     driven,
     replies,
     run_turns,
@@ -157,11 +158,11 @@ def both_tiers(policy: str = POLICY_GATED) -> tuple[FastDriver, HeavyDriver, Scr
     unconfigured session gets, so every check written before the policy existed
     still states the case it always stated.
     """
-    cli = ScriptedCli(reply=HEAVY_SAID)
+    cli = ScriptedCli(reply=document(text=HEAVY_SAID))
     return (
         FastDriver(
             TierConfig(fast_model=FAST_MODEL, escalation_policy=policy),
-            ScriptedFast(reply=FAST_SAID),
+            ScriptedFast(reply=document(text=FAST_SAID)),
         ),
         HeavyDriver(TierConfig(heavy_model=HEAVY_MODEL), cli),
         cli,

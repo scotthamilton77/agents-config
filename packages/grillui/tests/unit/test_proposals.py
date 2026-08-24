@@ -43,7 +43,7 @@ from grillui.schemas import (
     DispatchContext,
     Image1,
 )
-from grillui.tiers import BASIS_RULE, HEAVY_TIER, MUTATION_FORMAT_RULE, system_prompt
+from grillui.tiers import BASIS_RULE, DOCUMENT_FORMAT_RULE, HEAVY_TIER, system_prompt
 
 OPTIONS = [{"id": "a", "text": "Redis"}, {"id": "b", "text": "No cache at all"}]
 ANSWER = {"option": "a", "text": "an append-only log"}
@@ -675,11 +675,11 @@ def test_the_grill_masters_standing_brief_says_a_proposal_is_not_a_change() -> N
     """
     brief = system_prompt(HEAVY_TIER, GRILL_MASTER)
 
-    assert MUTATION_FORMAT_RULE in brief
+    assert DOCUMENT_FORMAT_RULE in brief
     assert BASIS_RULE in brief
-    assert "Sending an update is not making the change" in MUTATION_FORMAT_RULE
-    assert "`unsettle`" in MUTATION_FORMAT_RULE
-    assert "`invalidate`" in MUTATION_FORMAT_RULE
+    assert "Sending an update is not making the change" in DOCUMENT_FORMAT_RULE
+    assert "`unsettle`" in DOCUMENT_FORMAT_RULE
+    assert "`invalidate`" in DOCUMENT_FORMAT_RULE
 
 
 def test_a_thread_agent_is_never_told_the_proposal_contract() -> None:
@@ -693,7 +693,7 @@ def test_a_thread_agent_is_never_told_the_proposal_contract() -> None:
     """
     brief = system_prompt(HEAVY_TIER, THREAD_AGENT)
 
-    assert MUTATION_FORMAT_RULE not in brief
+    assert DOCUMENT_FORMAT_RULE not in brief
     assert BASIS_RULE not in brief
 
 

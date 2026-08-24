@@ -27,24 +27,29 @@ status entry where the policy moved the channel itself. An agent asserting a
 transfer in its own reply is neither, and moves nothing.
 
 One hand-up is not a recommendation at all. Where the human's gesture leaves
-decisions the board should stop offering, what the next turn owes is a list
-rather than a judgement, and a list can be checked after the fact. Two gestures
-leave one: an answer taking an option that named the decisions it puts in
-question, and an invalidate the human applied, which leaves whatever was resting
-on it standing on nothing. So the obligation is stated here, the reply is
-measured against it here, and what is left standing is what the lane insists on.
-The condition markers above are read lexically and may miss; this one cannot,
-because nothing about it is read out of prose.
+decisions the board should stop offering, what the next turn owes is a ruling
+per decision, and a ruling can be checked after the fact. Two gestures leave one:
+an answer taking an option that named the decisions it puts in question, and an
+invalidate the human applied, which leaves whatever was resting on it standing on
+nothing. So the obligation is stated here, and the reply is measured against it
+here -- off the turn's own `rulings`, where a ruling of `stands` counts on its
+`why` and a ruling of `invalidate` or `revise` counts only where the same turn
+carried that update. What is left unruled is what the lane insists on. The
+condition markers above are read lexically and may miss; this one cannot, because
+nothing about it is read out of prose.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from grillui.schemas import (
     AGENT_ACTORS,
+    DISCHARGING_KINDS,
     MAP_CHANNEL,
+    RULING_STANDS,
+    RULINGS_KEY,
     STATUS_KIND,
     STATUS_PHASE_TRANSFERRED,
     THREAD_KINDS,
@@ -55,9 +60,13 @@ from grillui.schemas import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from grillui.schemas import Image2, LogEntry
+
+# Whose turn carries a ruling. The map's author is the only agent that makes
+# one, so a reader looking for the last ruling looks for its entry and no other.
+GRILL_MASTER_ACTOR = "grill-master"
 
 CONDITION_COMMITMENT = "commitment asked on a decision two or more decisions depend on"
 CONDITION_IRREDUCIBLE = "reframing rejected, or the trade-off named as what cannot be resolved"
@@ -276,16 +285,12 @@ REVISE_KIND = "revise"
 # their own answer killed it.
 DEAD_STATUSES = frozenset({"settled", "invalidated"})
 
-# What a queued proposal has to be to discharge the obligation, by what made the
-# decisions moot. An answer's list can only be invalidated -- the human's own
-# answer killed the question. A decision left resting on one that has gone may
-# still stand without it, so a `revise` dropping the dead prereq answers for it
-# just as well, and insisting on an invalidate there would press the agent to
-# kill work that survives.
-DISCHARGING = {
-    ANSWER_KIND: frozenset({INVALIDATE_KIND}),
-    INVALIDATE_KIND: frozenset({INVALIDATE_KIND, REVISE_KIND}),
-}
+# A change already waiting in the queue is a decision the turn has nothing left
+# to be asked about, so it never enters the obligation in the first place. Both
+# lists take the same two kinds: a decision may die with the gesture, or change
+# under it, and re-asking for either would put the same withdrawal in front of
+# the human twice.
+DISCHARGING = DISCHARGING_KINDS
 
 
 def mootness_obligation(
@@ -361,9 +366,7 @@ def _resting_obligation(image: Image2, gesture: LogEntry) -> MootnessObligation 
     dead = _invalidations(gesture)
     gone = {one.get("target") for one in dead}
     standing = _still_standing(
-        image,
-        [one.id for one in image.decisions if gone.intersection(one.prereqs)],
-        DISCHARGING[INVALIDATE_KIND],
+        image, [one.id for one in image.decisions if gone.intersection(one.prereqs)]
     )
     if not standing:
         return None
@@ -380,19 +383,61 @@ def _resting_obligation(image: Image2, gesture: LogEntry) -> MootnessObligation 
     )
 
 
-def outstanding(image: Image2, obligation: MootnessObligation) -> list[str]:
-    """Which of the obligation's decisions the board is still offering.
+def rulings_of(entries: Sequence[LogEntry], channel: str = MAP_CHANNEL) -> tuple[list[Any], ...]:
+    """The rulings the last grill-master turn on this channel made, and the
+    updates it carried.
 
-    The whole of the check on a reply, and the reason it needs no prose parsing:
-    an agent's map mutation always waits in the human's queue, so a decision the
-    turn proposed one for is in the queue whether or not they have applied it,
-    and one the turn only narrated is still on the frontier being offered.
+    Read off the turn's own log entry, which is where a ruling lives: the check
+    is on what the document said, not on what the board happens to look like
+    afterwards. A turn that ruled and a turn whose proposal the human applied in
+    between are different facts, and only the first is coverage.
     """
-    return _still_standing(image, obligation.ids, DISCHARGING[obligation.cause])
+    for entry in reversed(entries):
+        if entry.channel != channel or entry.actor != GRILL_MASTER_ACTOR:
+            continue
+        return _dicts(entry.payload.get(RULINGS_KEY)), _dicts(entry.payload.get("updates"))
+    return [], []
+
+
+def unruled(
+    ids: Sequence[str],
+    rulings: Sequence[Mapping[str, Any]],
+    updates: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    """Which of these decisions the turn did not rule on.
+
+    Ids rather than the obligation, because the list shrinks as the ladder is
+    walked: a turn handed up carries what the rung below left unruled, and
+    measuring the second reply against the original list would report a decision
+    the first rung ruled on as one nobody did.
+
+    The whole of the check on a reply, and the reason it needs no prose parsing.
+    A `stands` ruling is credited by its `why`, which the shape already requires
+    to be there; an `invalidate` or a `revise` is credited only where the same
+    document carries that update against that decision, because a verdict that
+    says a decision is dead and queues nothing has changed nothing -- and
+    crediting the word alone is exactly the failure the ruling exists to catch.
+
+    Coverage and never correctness: a ruling the backend would disagree with is
+    not a ruling missing, and no code here reads what a `why` means.
+    """
+    queued = {
+        (one.get("kind"), one.get("target")) for one in updates if one.get("kind") in DISCHARGING
+    }
+    credited = {
+        one.get("decision")
+        for one in rulings
+        if one.get("ruling") == RULING_STANDS or (one.get("ruling"), one.get("decision")) in queued
+    }
+    return [one for one in ids if one not in credited]
+
+
+def _dicts(raw: object) -> list[Any]:
+    return [one for one in raw if isinstance(one, dict)] if isinstance(raw, list) else []
 
 
 def _still_standing(
-    image: Image2, ids: Sequence[str], kinds: frozenset[str] = frozenset({INVALIDATE_KIND})
+    image: Image2, ids: Sequence[str], kinds: frozenset[str] = DISCHARGING
 ) -> list[str]:
     proposed = {item.target for item in image.pending if item.kind in kinds and not item.superseded}
     # An id resolving to no node is dropped rather than carried: a pre-mark may
