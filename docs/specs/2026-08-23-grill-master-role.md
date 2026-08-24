@@ -320,7 +320,7 @@ way — a valid reply leaving a named id unruled hands a first-rung turn up once
 and on the expert seat raises the unmet notice directly. A reply is never shown to the
 human as prose. A
 seat's transport asks the provider for the shape where it can — a JSON schema on the
-request, `--output-schema` on the Codex transport — and every driver validates what comes
+request — and every driver validates what comes
 back regardless of what it asked for. A ruling names a decision, one of `invalidate`,
 `revise` or `stands`, and a `why`. An `invalidate` or `revise` ruling is credited only when
 the same document carries that update targeting that decision; a `stands` ruling is
