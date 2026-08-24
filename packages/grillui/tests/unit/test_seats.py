@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from conftest import (
+    ScriptedCli,
     ScriptedFast,
     attributions,
     document,
@@ -33,9 +34,11 @@ from conftest import (
 )
 
 from grillui import drivers
-from grillui.dispatch import record_dispatch
+from grillui.dispatch import GRILL_MASTER, record_dispatch
 from grillui.drivers import (
     CODEX_RESUME_FILE,
+    FIRST_RUNG_RESUME_FILE,
+    RESUME_FILE,
     CodexDriver,
     FastDriver,
     HeavyDriver,
@@ -56,6 +59,7 @@ from grillui.schemas import (
     MAP_CHANNEL,
     MODEL_KEY,
     PROMPT_TOKENS_KEY,
+    STATUS_PHASE_COMPOSING,
     STATUS_PHASE_TRANSFERRED,
     TIER_KEY,
     CatchUpEntry,
@@ -76,6 +80,7 @@ from grillui.tiers import (
     TierConfig,
     UnknownEffortError,
     UnknownTransportError,
+    system_prompt,
 )
 
 if TYPE_CHECKING:
@@ -253,7 +258,16 @@ def test_the_map_and_a_thread_take_the_same_rung_on_seats_configured_apart(
     # The seat that takes no effort is recorded as having taken none: the key's
     # presence is the claim that the request carried one.
     assert EFFORT_KEY not in on_thread
+    # The label itself is the page's, and `test_page` pins its two strings. What
+    # the backend owns is what the label is computed from: the channel is not in
+    # expert mode, and the lane named `fast` as the tier the human is waiting on,
+    # so the control renders *Transfer to expert* rather than the way back.
     assert not in_expert_mode(log.entries(), MAP_CHANNEL)
+    assert [
+        entry.payload.get(TIER_KEY)
+        for entry in log.entries()
+        if entry.payload.get("phase") == STATUS_PHASE_COMPOSING and entry.channel == MAP_CHANNEL
+    ] == [FAST_TIER]
 
 
 def test_seating_the_map_on_the_threads_seat_moves_its_turn_and_nothing_else(
@@ -274,8 +288,16 @@ def test_seating_the_map_on_the_threads_seat_moves_its_turn_and_nothing_else(
     seated = seat_driver(config, config.map_seat)
     assert isinstance(seated, FastDriver)
     seated.transport = ScriptedFast(reply=document(text=MAP_SAID))
+    # The threads' driver is a different object on a different model, so a lane
+    # that ignored the seating would be caught by the attribution rather than
+    # passing on the two being the same instance.
+    threads = seat_driver(
+        TierConfig(fast_model="another/model"), Seat(OPENROUTER_TRANSPORT, "another/model")
+    )
+    assert isinstance(threads, FastDriver)
+    threads.transport = ScriptedFast(reply=THREAD_SAID)
 
-    lane = Lane(log, seated, expert=None, seats={MAP_CHANNEL: seated})
+    lane = Lane(log, threads, expert=None, seats={MAP_CHANNEL: seated})
     run_turns(lane, answered("h1", "The log is the recovery source."))
 
     assert attributions(log) == [
@@ -431,6 +453,111 @@ def test_the_seat_is_given_no_way_to_run_a_command_or_write_anything(session_dir
         assert 'sandbox_mode="read-only"' in settings, turn
         assert 'approval_policy="never"' in settings, turn
     assert cli.directories == [session_dir, session_dir]
+
+
+def test_the_transport_is_asked_for_no_schema_and_told_the_directory_is_not_a_repo(
+    session_dir: Path,
+) -> None:
+    """
+    Given a map channel on the Codex seat taking a cold turn and a resumed one
+    When each invocation is read
+    Then neither asks the provider to shape the reply -- strict structured output
+         cannot express an open update, and the closed schema it accepts empties
+         every one -- and both carry `--skip-git-repo-check`, without which the
+         CLI refuses the turn over a session directory that is not a repository.
+    """
+    log = briefed(session_dir)
+    cli = ScriptedCodex()
+    driver = CodexDriver(TierConfig(), cli)
+
+    a_turn(log, driver)
+    a_turn(log, driver)
+
+    for turn in (1, 2):
+        assert "--output-schema" not in cli.calls[turn - 1], turn
+        assert "--skip-git-repo-check" in cli.calls[turn - 1], turn
+
+
+def test_a_first_rung_claude_seat_never_shares_the_experts_chain(session_dir: Path) -> None:
+    """
+    Given a session that seats the map's first rung on the `claude` transport,
+          with the expert seat behind it on the same channel
+    When each takes a turn
+    Then they resume different conversations and each is composed with its own
+         rung's brief: one file keyed by channel could hold only one of the two,
+         and the expert would resume the turn the first rung was having.
+    """
+    log = briefed(session_dir)
+    config = TierConfig.from_env({MAP_TRANSPORT_ENV: "claude", MAP_MODEL_ENV: "claude-first-rung"})
+    first = seat_driver(config, config.map_seat)
+    expert = seat_driver(config, config.expert_seat, tier=HEAVY_TIER)
+    assert isinstance(first, HeavyDriver)
+    assert isinstance(expert, HeavyDriver)
+    first.cli = ScriptedCli(session_id="first-rung-chain")
+    expert.cli = ScriptedCli(session_id="expert-chain")
+
+    a_turn(log, first)
+    a_turn(log, expert)
+
+    assert read_resume(session_dir, MAP_CHANNEL, FIRST_RUNG_RESUME_FILE) == "first-rung-chain"
+    assert read_resume(session_dir, MAP_CHANNEL, RESUME_FILE) == "expert-chain"
+    briefs = [first.cli.calls[0], expert.cli.calls[0]]
+    assert briefs[0][briefs[0].index("--append-system-prompt") + 1] == system_prompt(
+        FAST_TIER, GRILL_MASTER
+    )
+    assert briefs[1][briefs[1].index("--append-system-prompt") + 1] == system_prompt(
+        HEAVY_TIER, GRILL_MASTER
+    )
+    assert [one[TIER_KEY] for one in attributions(log)] == [FAST_TIER, HEAVY_TIER]
+
+
+def test_a_refused_attempt_is_not_billed_to_the_turn_that_lands(session_dir: Path) -> None:
+    """
+    Given a Codex seat whose first attempt is refused and whose retry lands, on a
+          thread whose reported total advances for both
+    When the accepted turn is recorded
+    Then it carries what it alone was given: the baseline moves on every attempt
+         the provider counted, so a rejected one is not billed to the reply after
+         it.
+    """
+    log = briefed(session_dir)
+    cli = ScriptedCodex(
+        replies=["prose, not a document", document(text=MAP_SAID)], totals=[10_000, 21_000]
+    )
+
+    a_turn(log, CodexDriver(TierConfig(), cli))
+
+    assert replies(log)[0][PROMPT_TOKENS_KEY] == 11_000
+
+
+def test_a_transport_that_failed_says_what_it_said_about_it(session_dir: Path) -> None:
+    """
+    Given a process that exits non-zero with something on its standard error, and
+          a stream carrying error items and no turn
+    When each is surfaced
+    Then the fault travels with the tier's name, bounded to one line: a
+         non-zero exit, a timeout and a stream with no turn are three different
+         mornings, and one sentence for all three throws away the only evidence
+         anybody had.
+    """
+    with pytest.raises(AgentUnreachableError) as exited:
+        run_codex_cli(
+            [
+                sys.executable,
+                "-c",
+                "import sys; print('boom', file=sys.stderr); raise SystemExit(2)",
+            ],
+            session_dir.parent,
+        )
+    assert "boom" in str(exited.value)
+
+    with pytest.raises(AgentUnreachableError) as unread:
+        read_codex_reply(
+            json.dumps({"type": "item.completed", "item": {"type": "error", "message": "no auth"}}),
+            FAST_TIER,
+        )
+    assert "no auth" in str(unread.value)
+    assert len(str(AgentUnreachableError(FAST_TIER, "x" * 500))) < 300
 
 
 def test_the_standing_brief_crosses_as_one_toml_value(session_dir: Path) -> None:

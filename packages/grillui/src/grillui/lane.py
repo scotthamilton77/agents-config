@@ -95,16 +95,35 @@ if TYPE_CHECKING:
     )
 
 
+# Enough of a diagnostic to name the fault, not enough to put a prompt or an
+# environment into the log: it is read by a human on a status line, and a
+# transport that failed with a page of output still failed once.
+DIAGNOSTIC_LIMIT = 200
+
+
+def bounded(detail: str) -> str:
+    """One line of what a transport said, cut to what a status line holds."""
+    said = " ".join(detail.split())
+    return said if len(said) <= DIAGNOSTIC_LIMIT else said[:DIAGNOSTIC_LIMIT] + "..."
+
+
 class AgentUnreachableError(RuntimeError):
     """A tier that could not be reached at all.
 
     Distinct from a tier that answered badly: there is no turn to salvage and
     nothing to wait for, so the lane says so immediately instead of leaving the
     human watching a timer that will never stop.
+
+    `detail` is what the transport said about it, bounded and on one line. A
+    tier that exited non-zero, one that timed out, and one that printed a
+    stream carrying no turn are three different mornings for whoever reads the
+    lane, and collapsing them into one sentence throws away the only evidence
+    anybody had.
     """
 
-    def __init__(self, tier: str) -> None:
-        super().__init__(f"the {tier!r} tier could not be reached")
+    def __init__(self, tier: str, detail: str = "") -> None:
+        said = f"the {tier!r} tier could not be reached"
+        super().__init__(f"{said}: {bounded(detail)}" if detail.strip() else said)
 
 
 class DocumentRefusedError(RuntimeError):

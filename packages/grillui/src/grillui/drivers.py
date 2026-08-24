@@ -138,6 +138,18 @@ RESUME_FILE = "heavy-resume.json"
 # seat and the expert turn the human transfers it to -- and one file keyed by
 # channel could hold only one of them.
 CODEX_RESUME_FILE = "codex-resume.json"
+# One chain file per rung. A channel may have this transport on both rungs at
+# once -- a session that seats the first rung on `claude`, with the expert seat
+# behind it -- and one file keyed by channel could hold only one of the two
+# conversations, so the expert would resume the first rung's and back again.
+FIRST_RUNG_RESUME_FILE = "fast-resume.json"
+
+
+def resume_file(tier: str) -> str:
+    """Which chain file this rung's conversations are kept in."""
+    return RESUME_FILE if tier == HEAVY_TIER else FIRST_RUNG_RESUME_FILE
+
+
 REQUEST_TIMEOUT = 60.0
 
 # What the map's seat may do, and it is nothing but answer. The CLI hands its
@@ -344,7 +356,7 @@ def run_claude_cli(argv: Sequence[str], /) -> str:
             list(argv), capture_output=True, text=True, check=True, timeout=REQUEST_TIMEOUT
         )
     except (OSError, subprocess.SubprocessError) as error:
-        raise AgentUnreachableError(HEAVY_TIER) from error
+        raise AgentUnreachableError(HEAVY_TIER, _process_fault(error)) from error
     return finished.stdout
 
 
@@ -461,8 +473,19 @@ def run_codex_cli(argv: Sequence[str], directory: Path, /) -> str:
             cwd=directory,
         )
     except (OSError, subprocess.SubprocessError) as error:
-        raise AgentUnreachableError(FAST_TIER) from error
+        # A non-zero exit, a timeout and a binary that is not there are three
+        # different mornings, and the process said which on its standard error.
+        # Carried through bounded rather than dropped: the lane's error phase is
+        # the only place anybody looks, and "could not be reached" on its own
+        # sends them to reproduce it by hand.
+        raise AgentUnreachableError(FAST_TIER, _process_fault(error)) from error
     return finished.stdout
+
+
+def _process_fault(error: BaseException) -> str:
+    """What the transport said about its own failure, as far as it said anything."""
+    said = getattr(error, "stderr", None)
+    return said if isinstance(said, str) and said.strip() else f"{type(error).__name__}: {error}"
 
 
 def codex_input_tokens(usage: Any) -> int | None:
@@ -499,6 +522,7 @@ def read_codex_reply(printed: str, tier: str) -> tuple[str, str | None, int | No
     thread_id: str | None = None
     said: str | None = None
     counted: int | None = None
+    faults: list[str] = []
     for line in printed.splitlines():
         try:
             event = json.loads(line)
@@ -515,10 +539,15 @@ def read_codex_reply(printed: str, tier: str) -> tuple[str, str | None, int | No
             if isinstance(item, dict) and item.get("type") == "agent_message":
                 text = item.get("text")
                 said = text if isinstance(text, str) else said
+            elif isinstance(item, dict) and item.get("type") == "error":
+                message = item.get("message")
+                faults.append(message if isinstance(message, str) else "an unreadable error item")
         elif kind == "turn.completed":
             counted = codex_input_tokens(event.get("usage"))
     if said is None:
-        raise AgentUnreachableError(tier)
+        # The stream's own error items are what it carried instead of a turn,
+        # and they are the only account of why there is nothing to record.
+        raise AgentUnreachableError(tier, "; ".join(faults) or "the stream carried no turn")
     return said, thread_id, counted
 
 
@@ -753,7 +782,12 @@ class HeavyDriver:
         # same. The old record is discarded as the turn opens rather than kept
         # for a null session id to fall back on.
         cold = bool(context.catch_up)
-        system = system_prompt(HEAVY_TIER, context.agent)
+        # The rung's brief, not the expert's: a session may seat this transport
+        # on a channel's first rung, and a turn briefed as the expert while the
+        # lane, the attribution and the hand-up all call it `fast` is a seat
+        # answering as a rung it is not on.
+        system = system_prompt(self.tier, context.agent)
+        chains = resume_file(self.tier)
         prompt = compose(recorded, context, entries)
 
         def ask(text: str) -> tuple[str, str | None, int | None]:
@@ -761,16 +795,18 @@ class HeavyDriver:
             # retry a refused document buys resumes the turn that was refused
             # rather than opening a second conversation about it.
             printed = self.cli(
-                claude_argv(model, effort, system, text, read_resume(log.directory, channel))
+                claude_argv(
+                    model, effort, system, text, read_resume(log.directory, channel, chains)
+                )
             )
             outcome = read_cli_reply(printed)
             if outcome[1] is not None:
-                write_resume(log.directory, channel, outcome[1])
+                write_resume(log.directory, channel, outcome[1], chains)
             return outcome
 
         with self._turn:
             if cold:
-                forget_resume(log.directory, channel)
+                forget_resume(log.directory, channel, chains)
             reply, _chain, prompt_tokens = (
                 take_document(self.tier, prompt, ask, _first)
                 if context.agent == GRILL_MASTER
@@ -858,19 +894,22 @@ class CodexDriver:
                 ),
                 log.directory,
             )
-            outcome = read_codex_reply(printed, self.tier)
-            if outcome[1] is not None:
-                write_resume(log.directory, channel, outcome[1], CODEX_RESUME_FILE)
-            return outcome
+            said, thread, total = read_codex_reply(printed, self.tier)
+            if thread is not None:
+                write_resume(log.directory, channel, thread, CODEX_RESUME_FILE)
+            # Read against the baseline here rather than on the accepted reply,
+            # because a refused attempt still ran: the provider's total counts
+            # it, and a baseline that only moved on the attempt that landed
+            # would bill the accepted turn for every rejected one before it.
+            return said, thread, self._read_since(channel, total)
 
         with self._turn:
             if cold:
                 forget_resume(log.directory, channel, CODEX_RESUME_FILE)
                 self._counted.pop(channel, None)
-            reply, _thread, total = (
+            reply, _thread, prompt_tokens = (
                 take_document(self.tier, prompt, ask, _first) if ruling_turn else ask(prompt)
             )
-            prompt_tokens = self._read_since(channel, total)
         # The count is what this turn was given, out of a total the thread keeps,
         # and the bytes are this turn's alone -- which is why the count is the
         # one that matters: what fills the window is the conversation being
