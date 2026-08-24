@@ -39,7 +39,7 @@ from conftest import (
 )
 
 from grillui import drivers
-from grillui.dispatch import record_dispatch
+from grillui.dispatch import GRILL_MASTER, record_dispatch
 from grillui.drivers import (
     RESUME_FILE,
     FastDriver,
@@ -89,6 +89,7 @@ from grillui.tiers import (
     HEAVY_CONTEXT_LIMIT_ENV,
     HEAVY_MODEL_ENV,
     TierConfig,
+    system_prompt,
 )
 
 SOURCE = Path(__file__).resolve().parents[2] / "src" / "grillui"
@@ -324,7 +325,10 @@ def test_the_turn_the_model_is_given_carries_the_briefing_and_the_board(
     Given a briefed session
     When the fast tier takes a turn
     Then the prompt the model was given carries the session's stop condition and
-         every settled decision's id, and the system prompt is the shipped one.
+         every settled decision's id, and the system prompt is the shipped brief
+         for the role and tier this turn ran as -- not merely something that
+         resembles one, since a driver that composed the wrong pair's brief
+         would still be handing the model a shipped string.
     """
     log = briefed(session_dir)
     human_turn(log, "The log.")
@@ -335,7 +339,7 @@ def test_the_turn_the_model_is_given_carries_the_briefing_and_the_board(
     prompt = transport.calls[0]["prompt"]
     assert "every decision is settled or parked with a named blocker" in prompt
     assert TARGET in prompt
-    assert "stop short of deciding" in transport.calls[0]["system"]
+    assert transport.calls[0]["system"] == system_prompt(FAST_TIER, GRILL_MASTER)
 
 
 def test_a_fast_turn_asked_for_a_fact_its_context_lacks_asserts_none(session_dir: Path) -> None:

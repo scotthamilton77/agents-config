@@ -8,16 +8,19 @@ cost-per-useful-turn without a code change. The escalation policy sits beside
 them: whether a met condition needs the human's gesture is a property of the
 session, not of the code, and it defaults to needing it.
 
-**The prompts are the tiers' whole standing brief.** Both carry the same four
-rules -- never assert what the context does not support, keep it short, reply to
-what the human said rather than fishing for what they say next, and say your
-piece in one turn and stop -- and the fast tier additionally carries the
-facilitation mandate: answer from the context you were given, and stop short of
-deciding. Every turn, whichever tier and whichever role, also carries the
-register rule: plain sentences, the answer first, no term the decision does not
-need. Whether a turn should have gone up a tier is not the model's own judgment
-to make and is not asked of it here; that is evaluated against the transcript in
-code.
+**A standing brief has two parts, and they vary independently.** The role's
+part says what the turn is for and opens the brief; the tier's part says how the
+turn is taken -- never assert what the context does not support, keep it short,
+reply to what the human said rather than fishing for what they say next, and say
+your piece in one turn and stop -- with the fast tier adding that it answers
+fast. Nothing about what a turn is for rides on the tier: either tier may drive
+the map or a thread, and a mandate hanging on the tier is inherited by whichever
+role runs there -- which is how the map's author comes to be told to stop short
+of deciding on the one turn whose whole work is a ruling. Every turn, whichever
+tier and whichever role, closes on the register rule: plain sentences, the
+answer first, no term the decision does not need. Whether a turn should have
+gone up a tier is not the model's own judgment to make and is not asked of it
+here; that is evaluated against the transcript in code.
 
 **A turn is given the briefing, the board and the channel's conversation.** The
 briefing is read out of the session's own opening log entry rather than the
@@ -33,7 +36,7 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from grillui.dispatch import THREAD_AGENT
+from grillui.dispatch import GRILL_MASTER, THREAD_AGENT
 from grillui.escalation import INVALIDATE_KIND, turns_of
 from grillui.schemas import (
     FAST_TIER,
@@ -296,19 +299,59 @@ DIALOGUE_RULE = (
     "turn that ends on a statement is finished."
 )
 
-FACILITATION_MANDATE = (
-    "You facilitate the discussion. Answer from the context you were given, quickly, and "
-    "keep the human moving. The moment a question crosses into reasoning, decisioning or "
-    "implied design, stop short of deciding it: say what the question turns on and leave "
-    "the decision with the human."
+# How the fast tier takes a turn, and the whole of what is particular to it.
+# What a turn is *for* is the role's, below: a mandate written here is inherited
+# by whichever role happens to be running on this tier.
+FAST_TIER_MANDATE = (
+    "Answer from the context you were given, fast. This is the quick tier: the human is "
+    "mid-thought and waiting on you, so a turn that arrives late has already cost them "
+    "more than the detail it spent that time on is worth."
 )
 
+FACILITATION_MANDATE = (
+    "You facilitate the discussion. Answer from the context you were given and keep the "
+    "human moving. The moment a question crosses into reasoning, decisioning or implied "
+    "design, stop short of deciding it: say what the question turns on and leave the "
+    "decision with the human."
+)
+
+# What the grill-master's turn is for, on either tier. The sole-author line is
+# the load-bearing one: an agent that does not know it owns the map reads its own
+# ruling as a remark, and the board goes on offering decisions its reply called
+# dead.
 GRILL_MASTER_MANDATE = (
-    "You are the grill-master. You interrogate the plan decision by decision until every "
-    "decision is either settled or parked with a named blocker, and you are the only "
-    "agent that authors changes to the map. Push on the axis the posture names. When you "
-    "judge the stop condition met, say so to the human -- ending the grilling is theirs "
-    "to do, not yours."
+    "You are the grill-master: the author of the map and the only agent that changes it. "
+    "The human answers decisions; you rule on what each answer does to the rest of the "
+    "plan and keep the map honest after every gesture. Push on the axis the posture "
+    "names. You speak to the human only in notices; when you judge the stop condition "
+    "met, say so, and leave ending the session to them."
+)
+
+# The one step of the house grilling method the board does not already mechanise.
+# The tree, the frontier, the round and the recommendation are the board's;
+# fact-finding is impossible in a single call with no tools. What is left is what
+# an answer does to everything it was not about, which is the turn's whole work.
+RESHAPE_STEP = (
+    "An answer settles its decision; say what else it did. Rule on every decision the "
+    "dispatch names and on any other the answer undermines -- dead, changed, or standing, "
+    "each with one line of why. Where the answer implies a decision the map lacks, add it "
+    "with its prerequisites and what its options would put in question. Say whether the "
+    "stop condition is met."
+)
+
+# How to read a board that moved. A thread agent is handed the record of every
+# change and no key to it, and the failure that follows is not invention out of
+# nothing: it is a plausible cause composed from `prereqs` while the actual
+# rationale sits in the same bytes, unquoted.
+BOARD_LEGEND = (
+    "The board you are given is a record, not a summary. A decision's `status`, "
+    "`rationale` and `history` are what happened to it and why: answer a question about "
+    "why the board moved by quoting them, or by saying the record does not say -- never "
+    "by inferring a cause. `prereqs` is what a decision waits on. `puts_in_question` on "
+    "an option is the plan author's prediction that taking that option puts those "
+    "decisions in question, which the grill-master rules on -- a mark, not a dependency. "
+    "`pending` is what the human has not dealt with, including a notice this thread "
+    "may have been opened from."
 )
 
 # The reply contract, and the whole of how a map mutation comes to exist. It is
@@ -466,44 +509,54 @@ CONVERGENCE_RULE = (
     "it as a question hands them the work of declining it."
 )
 
-FAST_SYSTEM_PROMPT = "\n\n".join(
-    [FACILITATION_MANDATE, NO_MANUFACTURE_RULE, CONCISION_RULE, DIALOGUE_RULE, ONE_TURN_RULE]
-)
+# How each tier takes a turn, and nothing about what the turn is for. The four
+# rules are shared because they are properties of a turn rather than of a model;
+# what the fast tier adds is its own speed and no mandate.
+_TURN_RULES = [NO_MANUFACTURE_RULE, CONCISION_RULE, DIALOGUE_RULE, ONE_TURN_RULE]
 
-HEAVY_SYSTEM_PROMPT = "\n\n".join(
-    [GRILL_MASTER_MANDATE, NO_MANUFACTURE_RULE, CONCISION_RULE, DIALOGUE_RULE, ONE_TURN_RULE]
-)
+FAST_SYSTEM_PROMPT = "\n\n".join([FAST_TIER_MANDATE, *_TURN_RULES])
+
+HEAVY_SYSTEM_PROMPT = "\n\n".join(_TURN_RULES)
 
 SYSTEM_PROMPTS: dict[str, str] = {
     FAST_TIER: FAST_SYSTEM_PROMPT,
     HEAVY_TIER: HEAVY_SYSTEM_PROMPT,
 }
 
+# What each agent's turn is for, stated to it first and identically on either
+# tier. Held as a table so there is one place a role's brief is written and one
+# place a test reads it from: a role composed inline per tier is a role that can
+# be keyed to one.
+ROLE_PROMPTS: dict[str, str] = {
+    GRILL_MASTER: "\n\n".join([GRILL_MASTER_MANDATE, RESHAPE_STEP]),
+    THREAD_AGENT: "\n\n".join([THREAD_AGENT_MANDATE, FACILITATION_MANDATE, BOARD_LEGEND]),
+}
+
+# The rules that follow from the role rather than describing it: what each agent
+# may emit, and what it owes when it does. They sit after the tier's part because
+# they are the contract for the reply, read once the turn knows what it is for.
+ROLE_RULES: dict[str, list[str]] = {
+    GRILL_MASTER: [MUTATION_FORMAT_RULE, MOOTNESS_RULE, BASIS_RULE, SUPERSEDE_RULE],
+    THREAD_AGENT: [CONVERGENCE_RULE],
+}
+
 
 def system_prompt(tier: str, agent: str) -> str:
-    """The standing brief for one turn: the tier's, plus whose turn it is.
+    """The standing brief for one turn: whose turn it is, then how it is taken.
 
-    A tier is how a turn is taken and an agent is what it may do, and the two
-    vary independently -- either tier may drive the map or a thread, so the
-    sole-author rule cannot ride on the tier's prompt alone.
+    A tier is how a turn is taken and a role is what the turn is for, and the two
+    vary independently -- either tier may drive the map or a thread. The role
+    comes first, and it is the same text on both tiers: a mandate keyed to the
+    tier is inherited by whichever role runs there, which is what puts the map's
+    author under "stop short of deciding" on the turn whose work is a ruling.
 
     The register rule is joined here, once, rather than into either role's rules
     or either tier's prompt: what a turn costs the human to read is a property
     of every turn, and a rule copied per role is a rule that goes missing from
     the next one.
     """
-    role = (
-        [THREAD_AGENT_MANDATE, SYSTEM_PROMPTS[tier], CONVERGENCE_RULE]
-        if agent == THREAD_AGENT
-        else [
-            SYSTEM_PROMPTS[tier],
-            MUTATION_FORMAT_RULE,
-            MOOTNESS_RULE,
-            BASIS_RULE,
-            SUPERSEDE_RULE,
-        ]
-    )
-    return "\n\n".join([*role, REGISTER_RULE])
+    role = THREAD_AGENT if agent == THREAD_AGENT else GRILL_MASTER
+    return "\n\n".join([ROLE_PROMPTS[role], SYSTEM_PROMPTS[tier], *ROLE_RULES[role], REGISTER_RULE])
 
 
 NO_BRIEFING = "No briefing was recorded for this session."
