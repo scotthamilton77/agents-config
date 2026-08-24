@@ -1,6 +1,6 @@
 """The status lane, the answerability decision, and the seam a tier plugs into.
 
-Six rules meet here.
+Eight rules meet here.
 
 **The lane is mechanical.** The instant a human turn is accepted, and inside the
 same lock that appended it, the backend emits `accepted` and then `composing`
@@ -40,6 +40,24 @@ their turns concurrently with each other and with the map; only the heavy tier's
 own single-flight rule serialises anything, and it serialises the resume chain
 rather than the session.
 
+**A gesture the board can class is seated before a model is called.** The
+judgment classes are closed and each is read off the board at the moment the
+turn is scheduled, so a gesture that is one of them is composed by the expert
+seat from the start: no first-rung turn is recorded for it, and nothing is
+round-tripped through a rung the class already passed over. The `composing`
+entry therefore names the seat that actually takes the turn, which is the only
+thing the human has to go on while they wait. Classing writes no status entry,
+because there is nothing to fall back from -- the next clerical gesture is
+first-rung again with no entry to undo.
+
+**Two wordless refusals move the channel; one is noise.** Applying and
+dismissing carry no text, so no transcript condition sees them: a dismissal of
+a first-rung proposal and a press onto the expert are counted alike, and the
+second of them moves the map channel up through the same status entry the
+escalation policy writes. One writes nothing, because one is noise. The count
+is this process's; the entry it writes is the log's and is sticky, so a channel
+already moved is never moved twice -- and the way back down stays the human's.
+
 **An obligation the board can state is checked, not hoped for.** Where the
 answer a turn is replying to named the decisions it puts in question, the reply
 is measured against that list in code -- off the turn's own rulings. One that
@@ -65,16 +83,27 @@ import threading
 from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from grillui.dispatch import record_dispatch
-from grillui.escalation import INVALIDATE_KIND, in_expert_mode, rulings_of, unruled
+from grillui.escalation import (
+    INVALIDATE_KIND,
+    dismisses_first_rung,
+    in_expert_mode,
+    judgment_class,
+    policy_transferred,
+    rulings_of,
+    unruled,
+)
 from grillui.projector import fold, supersede_conflicts
 from grillui.schemas import (
     ANSWERABLE_KINDS,
+    DISMISS_KIND,
     MAP_CHANNEL,
+    PENDING_KEY,
     STATUS_KIND,
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
     STATUS_PHASE_REPLIED,
+    STATUS_PHASE_TRANSFERRED,
     THREAD_FOLD_KIND,
     TIER_KEY,
     DispatchContext,
@@ -99,6 +128,19 @@ if TYPE_CHECKING:
 # environment into the log: it is read by a human on a status line, and a
 # transport that failed with a page of output still failed once.
 DIAGNOSTIC_LIMIT = 200
+
+# How many wordless refusals of the first rung it takes to move the channel.
+# One is noise -- a proposal the human simply did not want is not a seat that
+# cannot do the work -- and the second is the pattern.
+DISTRUST_THRESHOLD = 2
+
+# What the lane says when the count is reached. It states the count rather than
+# a condition, because that is what fired: unlike a transcript condition there
+# is no sentence of the human's to quote back at them.
+DISTRUST_MOVED = (
+    "the escalation policy moved this channel to the expert tier: "
+    "the first-rung seat's turn was refused twice"
+)
 
 
 def bounded(detail: str) -> str:
@@ -325,20 +367,46 @@ class Lane:
         self.expert = expert
         self.seats = dict(seats or {})
         self._doctor = False
+        self._distrust = 0
 
-    def tier_for(self, channel: str, driver: TurnDriver) -> TurnDriver:
+    def tier_for(self, channel: str, driver: TurnDriver, gesture: Turn | None = None) -> TurnDriver:
         """The tier this channel's next turn goes to: the expert one when the
-        human has escalated this channel, and this channel's own first-rung seat
-        otherwise.
+        human has escalated this channel or the gesture's own class names it,
+        and this channel's own first-rung seat otherwise.
 
         Named before the `composing` entry is written rather than after, so the
         tier the human is told they are waiting on is the tier that takes the
         turn.
+
+        `gesture` is the turn about to be taken, where the caller has one. A
+        caller asking only which tier a channel is sitting on -- with no turn
+        scheduled and so no gesture to class -- passes none and gets that.
         """
         seated = self.seats.get(channel, driver)
         if self.expert is None:
             return seated
-        return self.expert if in_expert_mode(self.log.entries(), channel) else seated
+        if in_expert_mode(self.log.entries(), channel):
+            return self.expert
+        if gesture is not None and self._judgment(gesture) is not None:
+            return self.expert
+        return seated
+
+    def _judgment(self, gesture: Turn) -> str | None:
+        """Which judgment class this turn is, read off the board as it stands.
+
+        Folded here rather than at dispatch time because the seat has to be
+        named before the turn is announced: a class read after the first rung
+        had the turn is a class that arrived too late to skip it.
+        """
+        entries = self.log.entries()
+        return judgment_class(
+            fold(self.log.epoch, entries),
+            entries,
+            gesture.channel,
+            concluding=gesture.concluding is not None,
+            conflict=gesture.conflict is not None,
+            reassess=gesture.reassess,
+        )
 
     def accept(
         self, batch: Sequence[EventSubmission], epoch: str
@@ -361,16 +429,25 @@ class Lane:
             # entries land adjacent to the turn they report -- a second turn in
             # the same batch never wedges between a turn and its `accepted`.
             for event in batch:
+                # Asked before the gesture lands, because it is about the queue
+                # entry the gesture is on its way to remove.
+                refusing = self._distrusts(event)
                 receipt = self.log.submit([event], epoch)[0]
                 receipts.append(receipt)
-                if receipt.status != "accepted" or not is_answerable(event):
+                if receipt.status != "accepted":
+                    continue
+                if refusing:
+                    self._signal()
+                if not is_answerable(event):
                     continue
                 turn = turn_of(event)
                 # The tier is the dispatched channel's, and it is read after the
                 # gesture landed: a turn carrying the human's transfer is itself
                 # the escalation, and must not be composed by the tier they just
-                # moved off.
-                driver = self.tier_for(turn.channel, base)
+                # moved off. The gesture goes with it, so a judgment class names
+                # the expert here rather than after a first-rung turn was
+                # announced and taken.
+                driver = self.tier_for(turn.channel, base, turn)
                 turns.append((driver, turn))
                 # The two entries are addressed to two different channels, and
                 # for every gesture but a fold they are the same one. `accepted`
@@ -391,6 +468,49 @@ class Lane:
                     tier=driver.tier,
                 )
         return receipts, [self._schedule(driver, turn) for driver, turn in turns]
+
+    def _distrusts(self, event: EventSubmission) -> bool:
+        """Whether this gesture, once it lands, says the first rung got it wrong.
+
+        A dismissal on the map and nothing else: applying is agreement, and
+        every other gesture the human makes there carries text a transcript
+        condition already reads. With no expert configured there is nowhere to
+        move the channel to, so the queue is not folded to find out.
+        """
+        if (
+            self.expert is None
+            or event.actor != "human"
+            or event.kind != DISMISS_KIND
+            or event.channel != MAP_CHANNEL
+        ):
+            return False
+        named = event.payload.get(PENDING_KEY)
+        if not isinstance(named, list):
+            return False
+        entries = self.log.entries()
+        return dismisses_first_rung(
+            fold(self.log.epoch, entries),
+            entries,
+            [one for one in named if isinstance(one, str)],
+            self.expert.tier,
+        )
+
+    def _signal(self) -> None:
+        """One wordless refusal of the first rung, counted, and the move it buys.
+
+        The count is this process's, and a successor starts it again: nothing
+        was written for the signals below the threshold, so there is nothing for
+        it to read back, and under-counting leaves the channel where the human
+        can still move it themselves. What must survive the restart is the move
+        itself, and that does -- the entry is in the log, and it is the log this
+        asks before writing another.
+        """
+        self._distrust += 1
+        if self._distrust < DISTRUST_THRESHOLD:
+            return
+        if policy_transferred(self.log.entries(), MAP_CHANNEL):
+            return
+        self.log.emit_status(STATUS_PHASE_TRANSFERRED, DISTRUST_MOVED, MAP_CHANNEL)
 
     @property
     def doctor_outstanding(self) -> bool:
@@ -418,8 +538,8 @@ class Lane:
         if self.driver is None or self._doctor:
             return None
         self._doctor = True
-        driver = self.tier_for(MAP_CHANNEL, self.driver)
-        return self._schedule(driver, Turn(MAP_CHANNEL, reassess=True))
+        turn = Turn(MAP_CHANNEL, reassess=True)
+        return self._schedule(self.tier_for(MAP_CHANNEL, self.driver, turn), turn)
 
     def _schedule(self, driver: TurnDriver, turn: Turn) -> threading.Thread:
         thread = threading.Thread(
@@ -515,6 +635,12 @@ class Lane:
             return driver
         if self.expert is not None and self.expert is not driver:
             handed = self.log.seq
+            # The press is the second thing the distrust counter counts, and it
+            # is counted where the decision to press is made rather than on the
+            # way out: a seat that could not be reached still leaves the first
+            # rung's turn the one that was not enough.
+            if turn.channel == MAP_CHANNEL:
+                self._signal()
             pressed = self._insist(self.expert, turn, obligation, standing)
             if pressed is not None:
                 driver, refusal = self.expert, pressed.refusal
@@ -613,7 +739,10 @@ class Lane:
         known = {one.update.id for one in standing}
         for conflict in self._conflicts():
             if conflict.update.id not in known:
-                self._take_turn(driver, Turn(MAP_CHANNEL, conflict=conflict))
+                # A conflict is one of the judgment classes, so the seat is read
+                # for it too rather than inherited from whoever raised it.
+                turn = Turn(MAP_CHANNEL, conflict=conflict)
+                self._take_turn(self.tier_for(MAP_CHANNEL, driver, turn), turn)
 
 
 def _unmet(obligation: MootnessObligation, standing: Sequence[str]) -> str:

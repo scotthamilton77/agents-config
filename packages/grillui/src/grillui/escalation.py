@@ -1,4 +1,5 @@
-"""Whether a turn should be handed up a tier, decided from the transcript.
+"""Whether a turn should be handed up a tier, decided from the transcript and,
+where a gesture leaves no transcript to read, from the board.
 
 A fast model asked to judge whether a question exceeds its own ability judges
 generously and answers anyway -- including on a question the human has just
@@ -26,6 +27,26 @@ human's own turn carrying the transfer key, or the backend's `transferred`
 status entry where the policy moved the channel itself. An agent asserting a
 transfer in its own reply is neither, and moves nothing.
 
+Three of the map channel's escalations are not conditions on a transcript at
+all, because the gestures they fire on carry no text for a condition to read.
+Two of them are read here, off the board and before any model is called:
+
+- **which seat a gesture is composed on.** The judgment classes are closed --
+  a gesture that leaves the board decisions it is still offering, a thread's
+  conclusion being folded in, a withdrawal the human got in front of, and the
+  doctor -- and everything else is clerical and stays on the first rung. The
+  class is a reading of the board and never a model's opinion of its own reach,
+  for the reason the conditions above exist: a model asked whether a question
+  exceeds it judges generously and answers anyway. Classing writes nothing, so
+  the next clerical gesture is first-rung again with no entry to undo.
+- **whether the human has said twice that the first rung was not enough.** A
+  dismissal of a first-rung seat's proposal is the one wordless way they say a
+  turn was wrong; the counter it feeds is the lane's, and what is read here is
+  which dismissals are that gesture and whether the policy has already moved
+  this channel. That second reading is what makes the move once-per-session:
+  the entry is sticky by GUI-D35's own rule, so a channel the human took back
+  down stays down rather than being bought again by the next signal.
+
 One hand-up is not a recommendation at all. Where the human's gesture leaves
 decisions the board should stop offering, what the next turn owes is a ruling
 per decision, and a ruling can be checked after the fact. Two gestures leave one:
@@ -48,11 +69,13 @@ from grillui.schemas import (
     AGENT_ACTORS,
     DISCHARGING_KINDS,
     MAP_CHANNEL,
+    PROPOSABLE_KINDS,
     RULING_STANDS,
     RULINGS_KEY,
     STATUS_KIND,
     STATUS_PHASE_TRANSFERRED,
     THREAD_KINDS,
+    TIER_KEY,
     TRANSFER_FLAG,
     TRANSFER_SOURCE_POLICY,
     MootnessObligation,
@@ -193,12 +216,116 @@ def _moved_by(entries: Sequence[LogEntry], channel: str) -> LogEntry | None:
             continue
         if entry.actor == "human" and TRANSFER_FLAG in entry.payload:
             return entry
-        if (
-            entry.actor == "backend"
-            and entry.kind == STATUS_KIND
-            and entry.payload.get("phase") == STATUS_PHASE_TRANSFERRED
-        ):
+        if _policy_transfer(entry, channel):
             return entry
+    return None
+
+
+def _policy_transfer(entry: LogEntry, channel: str) -> bool:
+    """Whether this entry is the policy's own move of this channel."""
+    return (
+        entry.channel == channel
+        and entry.actor == "backend"
+        and entry.kind == STATUS_KIND
+        and entry.payload.get("phase") == STATUS_PHASE_TRANSFERRED
+    )
+
+
+def policy_transferred(entries: Sequence[LogEntry], channel: str) -> bool:
+    """Whether the policy has ever moved this channel up.
+
+    Asked before writing another such entry, and answered over the whole log
+    rather than from the mode the channel is in now. The two are different
+    questions the moment the human uses the transfer control: the way back down
+    is theirs, and a second entry written on the next signal would buy the
+    channel again on a decision they have already reversed. Log-derived, so a
+    successor process asks it of the same record and reaches the same answer --
+    the counter feeding it is one tenure's, and this is what keeps a restart
+    from spending the transfer twice.
+    """
+    return any(_policy_transfer(entry, channel) for entry in entries)
+
+
+def dismisses_first_rung(
+    image: Image2, entries: Sequence[LogEntry], pending: Sequence[str], expert_tier: str
+) -> bool:
+    """Whether this dismissal is the human saying a first-rung turn was wrong.
+
+    Read off the queue as it stands with the item still in it, so the caller
+    asks before the gesture lands rather than after the fold has removed what
+    the question is about.
+
+    Two things in that queue are not this gesture. The queue holds notices as
+    well as proposals -- the backend's own word that a turn left decisions
+    unruled among them -- and a notice is something the human was told rather
+    than something a seat offered them, so the kind is checked here and not left
+    to the appender's separate refusal of a notice as a thing to dismiss. And a
+    proposal the expert authored says nothing about the rung below it: an
+    unattributed one is not the expert's and counts, since every seat that takes
+    a turn names itself and an entry that named none was authored by no seat at
+    all.
+    """
+    named = set(pending)
+    seats = {entry.seq: entry.payload.get(TIER_KEY) for entry in entries}
+    return any(
+        item.id in named
+        and item.kind in PROPOSABLE_KINDS
+        and seats.get(item.authored_at) != expert_tier
+        for item in image.pending
+    )
+
+
+# What each closed judgment class is called on the lane. Named rather than
+# counted: the class is the reason a gesture skipped the first rung, and a human
+# reading why their cheap seat was passed over is owed the reason.
+JUDGMENT_UNRULED = "the gesture leaves decisions the board is still offering"
+JUDGMENT_FOLD = "a thread's conclusion is being folded into the board"
+JUDGMENT_CONFLICT = "a withdrawal the human got in front of"
+JUDGMENT_DOCTOR = "the board is being reassessed whole"
+
+
+def judgment_class(
+    image: Image2,
+    entries: Sequence[LogEntry],
+    channel: str,
+    *,
+    concluding: bool = False,
+    conflict: bool = False,
+    reassess: bool = False,
+) -> str | None:
+    """Which judgment class this turn is, or nothing where it is clerical.
+
+    The set is closed and every member is readable off the board before a model
+    is called, which is the whole of why the classing may decide a seat: there
+    is no transcript at this point to read, and a class inferred from the
+    human's prose would be the self-assessment the conditions above replace.
+
+    The three flags are the turns nobody spoke a channel gesture to start, or
+    spoke on another channel: a fold is answered on the map because only the
+    grill-master authors map mutations, a conflict is handed back to the author
+    that raised it, and the doctor is the whole board reassessed at once. Each
+    is a judgment the first rung has no standing to make.
+
+    The fourth class is the gesture that leaves the board offering decisions its
+    own answer moved -- an option whose mark resolves to one still live, or an
+    applied invalidate that stranded a dependent. It is the obligation the next
+    turn owes, asked for here rather than restated: a class drawn wider than the
+    obligation would send the expert a turn with nothing to rule on, and one
+    drawn narrower would leave the first rung a ruling it was passed over for.
+
+    Only the map's, because the map is the only channel these gestures reach:
+    a thread agent authors no map mutation and is owed no ruling.
+    """
+    if channel != MAP_CHANNEL:
+        return None
+    if concluding:
+        return JUDGMENT_FOLD
+    if conflict:
+        return JUDGMENT_CONFLICT
+    if reassess:
+        return JUDGMENT_DOCTOR
+    if mootness_obligation(image, entries, channel) is not None:
+        return JUDGMENT_UNRULED
     return None
 
 

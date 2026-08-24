@@ -2175,6 +2175,16 @@ opens one proves something else.
 - GMR-A6 | open
 - GMR-A7 | open
 - GMR-A8 | test: packages/grillui/tests/unit/test_rulings.py::test_the_option_shape_says_the_grill_master_rules_on_the_mark
-- GMR-A9 | open
-- GMR-A10 | open
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_answer_whose_mark_resolves_to_a_live_node_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_applied_invalidate_that_strands_a_dependent_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_thread_fold_is_composed_by_the_expert_on_the_map
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_withdrawal_the_human_got_in_front_of_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_the_doctor_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_clerical_answer_is_composed_by_the_first_rung
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_clerical_gesture_after_a_judgment_one_is_first_rung_again
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_mark_resolving_to_a_dead_node_stays_on_the_first_rung
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_one_dismissal_of_a_first_rung_proposal_moves_nothing
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_second_distrust_signal_writes_one_transfer_and_the_channel_stays_up
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_a_third_signal_writes_no_second_entry
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_humans_transfer_control_returns_the_channel_to_the_first_rung
 - GMR-A11 | test: packages/grillui/tests/unit/test_seats.py::test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter

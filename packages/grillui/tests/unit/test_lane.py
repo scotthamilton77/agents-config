@@ -11,6 +11,13 @@ The drivers here are stubs on purpose. What is being pinned is that the lane is
 written before a tier is reached and regardless of whether one answers, so a
 driver that blocks forever and a driver that cannot be reached at all are the
 two cases worth standing up.
+
+Which seat a turn is announced on is here too, because the choice is made in the
+same breath as the announcement. Two of the map channel's escalations need no
+human text and so are read off the board: the gesture's own class, which seats a
+judgment gesture on the expert with no first-rung turn recorded and writes
+nothing; and the distrust counter, whose second signal writes one policy
+transfer and whose third writes nothing new.
 """
 
 from __future__ import annotations
@@ -28,19 +35,25 @@ from conftest import TIMEOUT, SpyDriver, driven, event, run_turns, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.dispatch import DISPATCH_DIR
-from grillui.lane import Lane, UnreachableDriver
+from grillui.lane import DocumentRefusedError, Lane, UnreachableDriver
 from grillui.log import SessionLog
 from grillui.projector import fold
 from grillui.schemas import (
+    DISMISS_KIND,
     FAST_TIER,
     FOLD_KIND,
     HEAVY_TIER,
+    MAP_CHANNEL,
+    PENDING_KEY,
     RULINGS_KEY,
     STATUS_KIND,
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
     STATUS_PHASE_REPLIED,
+    STATUS_PHASE_TRANSFERRED,
+    TIER_KEY,
+    TRANSFER_FLAG,
     DispatchContext,
     EventSubmission,
     LogEntry,
@@ -731,12 +744,12 @@ def test_an_expert_that_rules_on_nothing_either_leaves_the_ids_named_to_the_huma
 
 def test_an_obligation_met_or_never_created_presses_nobody(log: SessionLog, tmp_path: Path) -> None:
     """
-    Given one session whose fast tier rules `invalidate` on each id it was
+    Given one session whose classed seat rules `invalidate` on each id it was
           given and queues each update, and another whose human takes the option
           naming nothing
     When each answer's turn is taken
-    Then neither hands the expert a turn and neither says anything to the human,
-         and the first has both invalidates waiting in the queue.
+    Then neither takes a second turn and neither says anything to the human, and
+         the first has both invalidates waiting in the queue.
 
     Both halves are about what the press costs when it should not fire. A ruling
     the same turn queued the update for is the obligation met, whether or not the
@@ -744,12 +757,17 @@ def test_an_obligation_met_or_never_created_presses_nobody(log: SessionLog, tmp_
     press every honoured turn. And every session log written before this existed
     carries no pre-marks at all, so each has to go on costing exactly what it
     cost: the obligation is a property of the option the human took.
-    """
-    honoured, expert = ProposingDriver(), SpyDriver(tier=HEAVY_TIER)
-    _seed(log)
-    _answer(Lane(log, honoured, expert=expert))
 
-    assert expert.dispatches == []
+    Which seat is which follows from the option: the marked one is a judgment
+    class and is composed on the expert, the unmarked one is clerical and stays
+    on the first rung. Each session's other seat is here to be shown untouched.
+    """
+    honoured, first_rung = ProposingDriver(tier=HEAVY_TIER), SpyDriver(tier=FAST_TIER)
+    _seed(log)
+    _answer(Lane(log, first_rung, expert=honoured))
+
+    assert first_rung.dispatches == [], "a judgment gesture went through the first rung"
+    assert len(honoured.dispatches) == 1, "the classed seat was asked twice for one gesture"
     assert _notices(log) == []
     queued = fold(log.epoch, log.entries()).pending
     assert sorted(str(one.target) for one in queued if one.kind == "invalidate") == KILLED
@@ -850,3 +868,659 @@ def test_an_invalidate_the_human_applied_is_pressed_on_the_next_map_turn(
     assert "d3" in said[0]
     authored = [one for one in log.entries() if one.actor == "backend" and one.kind == "invalidate"]
     assert authored == []
+
+
+# ── GMR-A9: the gesture's class names the seat, before any model is called ──
+
+
+@dataclass
+class RefusingDriver:
+    """A seat whose reply is never the document the board reads.
+
+    The shape a real driver's refusal takes after its own retry is spent: it
+    raises out of `run`, which is what the lane presses on. Standing one up here
+    rather than scripting a transport keeps a check about the press about the
+    press.
+    """
+
+    tier: str = FAST_TIER
+    dispatches: list[Path] = field(default_factory=list)
+
+    def run(self, _log: SessionLog, dispatch: Path, /) -> None:
+        self.dispatches.append(dispatch)
+        raise DocumentRefusedError(self.tier, "prose")
+
+
+@dataclass
+class WithdrawingDriver:
+    """A seat whose turn withdraws a queued notice.
+
+    The one way a withdrawal conflict is raised: the human dealt with the notice
+    while it waited, so taking it back now is a disagreement the author has to
+    reconcile. The withdrawal goes in through the appender, as a real reply's
+    does, or what it proves about the queue is nothing.
+    """
+
+    tier: str = FAST_TIER
+    withdraws: str = ""
+    dispatches: list[Path] = field(default_factory=list)
+
+    def run(self, log: SessionLog, dispatch: Path, /) -> None:
+        self.dispatches.append(dispatch)
+        log.submit(
+            [
+                EventSubmission(
+                    kind="informational",
+                    actor="grill-master",
+                    idempotency_key=f"reply-{uuid4().hex}",
+                    payload={"text": "Taking that back.", "supersedes": [self.withdraws]},
+                )
+            ],
+            log.epoch,
+        )
+
+
+def _two_seats() -> tuple[SpyDriver, SpyDriver]:
+    """A first rung and an expert, each of which says something when it takes a
+    turn.
+
+    Speaking matters: an obligation stands until an agent answers on the map, so
+    a silent seat would leave the previous gesture's obligation in front of the
+    next one and class it too.
+    """
+    return SpyDriver(tier=FAST_TIER, reply="Noted."), SpyDriver(tier=HEAVY_TIER, reply="Noted.")
+
+
+def _alert(log: SessionLog, key: str, target: str = "d3", tier: str = FAST_TIER) -> str:
+    """One notice on the queue, whose pending id is its key."""
+    receipt = log.submit(
+        [
+            EventSubmission(
+                kind="elicit-alert",
+                actor="grill-master",
+                idempotency_key=key,
+                payload={
+                    "target": target,
+                    "text": "This answer may not survive the retention question.",
+                    "blocking": False,
+                    TIER_KEY: tier,
+                },
+            )
+        ],
+        log.epoch,
+    )[0]
+    assert receipt.status == "accepted", receipt
+    return key
+
+
+def _proposal(log: SessionLog, key: str, target: str = "d3", tier: str = FAST_TIER) -> str:
+    """One seat's proposal waiting in the queue, and the id it is dismissed by.
+
+    The tier rides the authoring entry, which is where a real reply carries it,
+    so which rung proposed this is a fact read back off the log rather than one
+    the check asserts about itself.
+    """
+    receipt = log.submit(
+        [
+            EventSubmission(
+                kind="invalidate",
+                actor="grill-master",
+                idempotency_key=key,
+                payload={"target": target, "why": "the export subsumes it", TIER_KEY: tier},
+            )
+        ],
+        log.epoch,
+    )[0]
+    assert receipt.status == "accepted", receipt
+    return key
+
+
+def _seats(log: SessionLog, channel: str = MAP_CHANNEL) -> list[str]:
+    """Which tier the lane announced for each turn on this channel, in order.
+
+    Read off the `composing` entries rather than off the drivers, because that
+    entry is what the human sees while they wait: a lane that named the first
+    rung and dispatched the expert would be telling them the turn is cheap while
+    it spends.
+    """
+    return [
+        str(entry.payload.get(TIER_KEY))
+        for entry in statuses(log, STATUS_PHASE_COMPOSING)
+        if entry.channel == channel
+    ]
+
+
+def _transfers(log: SessionLog, channel: str = MAP_CHANNEL) -> list[str]:
+    """What the lane said each time the policy moved this channel."""
+    return [
+        str(entry.payload.get("detail"))
+        for entry in statuses(log, STATUS_PHASE_TRANSFERRED)
+        if entry.channel == channel
+    ]
+
+
+def _answer_at(lane: Lane, node: str, option: str = "a", **payload: Any) -> None:
+    """The human answering one decision, and the turn it buys, run out."""
+    run_turns(
+        lane,
+        EventSubmission(
+            kind="answer",
+            actor="human",
+            idempotency_key=f"answer-{node}-{uuid4().hex}",
+            payload={"target": node, "answer": {"option": option}, **payload},
+        ),
+    )
+
+
+def test_an_answer_whose_mark_resolves_to_a_live_node_is_composed_by_the_expert(
+    log: SessionLog,
+) -> None:
+    """
+    Given a board whose answered option names two decisions still on offer
+    When the human takes that option
+    Then the expert composes the turn, the first rung is never asked, the lane
+         names the expert from the start, and no transfer is written.
+
+    The class is what names the seat, so there is no first-rung turn to fall
+    back from and nothing to record: the next clerical gesture is first-rung
+    again with no entry to undo.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed(log)
+
+    _answer(lane)
+
+    assert first.dispatches == [], "a judgment gesture went through the first rung"
+    assert len(expert.dispatches) == 1
+    assert _seats(log) == [HEAVY_TIER]
+    assert _transfers(log) == [], "classing wrote a status entry"
+
+
+def test_an_applied_invalidate_that_strands_a_dependent_is_composed_by_the_expert(
+    log: SessionLog,
+) -> None:
+    """
+    Given two decisions resting on a third and the agent's invalidate on that
+          third applied by the human
+    When the next map gesture is made
+    Then the expert composes it and the first rung is never asked.
+
+    The gesture that classes is the apply: it strands whatever was resting on
+    what it killed, and saying which of them dies with it is a judgment.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+    log.submit(
+        [
+            EventSubmission(
+                kind="invalidate",
+                actor="grill-master",
+                idempotency_key="kill-d1",
+                payload={"target": "d1", "why": "the export was dropped"},
+            )
+        ],
+        log.epoch,
+    )
+    queued = fold(log.epoch, log.entries()).pending[0].id
+    run_turns(
+        lane,
+        EventSubmission(
+            kind="apply", actor="human", idempotency_key="apply-d1", payload={"pending": [queued]}
+        ),
+    )
+
+    _answer_at(lane, "d2")
+
+    assert first.dispatches == [], "a judgment gesture went through the first rung"
+    assert len(expert.dispatches) == 1
+    assert _seats(log) == [HEAVY_TIER]
+    assert _transfers(log) == []
+
+
+def test_a_thread_fold_is_composed_by_the_expert_on_the_map(log: SessionLog) -> None:
+    """
+    Given a thread the grill-master opened
+    When the human folds it
+    Then the map turn it schedules is the expert's and the first rung is never
+         asked.
+
+    Folding hands the map's author a conclusion to rule on, which is the same
+    judgment an answer's mark asks for and not a clerical one.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    log.submit(
+        [
+            EventSubmission(
+                kind="thread-created",
+                actor="grill-master",
+                channel=THREAD,
+                idempotency_key="agent-thread",
+                payload={"turns": [{"who": "grill-master", "text": "This one needs a thread."}]},
+            )
+        ],
+        log.epoch,
+    )
+
+    run_turns(
+        lane,
+        EventSubmission(
+            kind="thread-fold", actor="human", channel=THREAD, idempotency_key="fold-1", payload={}
+        ),
+    )
+
+    assert first.dispatches == [], "a judgment gesture went through the first rung"
+    assert len(expert.dispatches) == 1
+    assert _seats(log) == [HEAVY_TIER]
+    assert _transfers(log) == []
+
+
+def test_a_withdrawal_the_human_got_in_front_of_is_composed_by_the_expert(
+    log: SessionLog,
+) -> None:
+    """
+    Given a notice the human dealt with and a first-rung turn that then
+          withdraws it
+    When the conflict is handed back
+    Then the hand-back is the expert's turn and carries the conflict, while the
+         clerical gesture that started it stayed on the first rung.
+
+    Both halves matter. The conflict is a judgment class, so it does not inherit
+    the seat of whoever raised it; and the answer that raised it named no
+    decisions, so it was clerical and stayed cheap.
+    """
+    first = WithdrawingDriver(tier=FAST_TIER, withdraws="notice-d1")
+    expert = SpyDriver(tier=HEAVY_TIER, reply="Understood.")
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+    _alert(log, "notice-d1", "d1")
+
+    _answer_at(lane, "d1")
+
+    assert len(first.dispatches) == 1
+    assert len(expert.dispatches) == 1, "the conflict was not handed to the expert"
+    handed = DispatchContext.model_validate_json(expert.dispatches[0].read_text(encoding="utf-8"))
+    assert handed.conflict is not None
+    assert handed.conflict.update.id == "notice-d1"
+    assert _seats(log) == [FAST_TIER], "the gesture that raised the conflict was not clerical"
+    assert _transfers(log) == []
+
+
+def test_a_supersede_the_human_did_not_get_in_front_of_raises_no_expert_turn(
+    log: SessionLog,
+) -> None:
+    """
+    Given a notice on a decision nobody has answered, withdrawn by a first-rung
+          turn
+    When the turn is over
+    Then no second turn is taken at all.
+
+    A supersede-only reconciliation is clerical: the author revised itself and
+    the human is not standing on the other side of it, so there is nothing for
+    anyone to reconcile and no judgment to buy.
+    """
+    first = WithdrawingDriver(tier=FAST_TIER, withdraws="notice-d3")
+    expert = SpyDriver(tier=HEAVY_TIER, reply="Understood.")
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+    _alert(log, "notice-d3", "d3")
+
+    _answer_at(lane, "d1")
+
+    assert len(first.dispatches) == 1
+    assert expert.dispatches == [], "a supersede nobody got in front of bought an expert turn"
+    assert _seats(log) == [FAST_TIER]
+    assert _transfers(log) == []
+
+
+def test_the_doctor_is_composed_by_the_expert(log: SessionLog) -> None:
+    """
+    Given a board and both seats
+    When the human calls the doctor
+    Then the expert takes the turn, the first rung is never asked, and nothing
+         is written to the lane about a transfer.
+
+    Reassessing the whole board is the escape hatch, and asking the cheap seat
+    to do it first would spend the turn the hatch exists to avoid.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+
+    turn = lane.call_doctor()
+
+    assert turn is not None
+    turn.join(TIMEOUT)
+    assert not turn.is_alive()
+    assert first.dispatches == [], "the doctor went through the first rung"
+    assert len(expert.dispatches) == 1
+    assert _transfers(log) == []
+
+
+def test_a_clerical_answer_is_composed_by_the_first_rung(log: SessionLog) -> None:
+    """
+    Given the same board, and the option that names nothing
+    When the human takes it
+    Then the first rung composes the turn and the expert is never asked.
+
+    The control case for every claim above: the classing has to leave the
+    ordinary gesture where it was, or it is not a classing but an escalation.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed(log)
+
+    _answer(lane, option="a")
+
+    assert expert.dispatches == [], "a clerical gesture was sent to the expert"
+    assert len(first.dispatches) == 1
+    assert _seats(log) == [FAST_TIER]
+    assert _transfers(log) == []
+
+
+def test_a_clerical_gesture_after_a_judgment_one_is_first_rung_again(log: SessionLog) -> None:
+    """
+    Given a judgment gesture already composed by the expert
+    When the human then makes a clerical one
+    Then it is the first rung's, and no transfer was written by either.
+
+    Classing writes nothing, because there is nothing to fall back from. An
+    implementation that recorded the escalation would leave the channel on the
+    expert for the rest of the session, and the human would be paying for one
+    marked answer until they noticed.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed(log)
+
+    _answer(lane)
+    _answer_at(lane, "d2")
+
+    assert _seats(log) == [HEAVY_TIER, FAST_TIER]
+    assert len(first.dispatches) == 1
+    assert len(expert.dispatches) == 1
+    assert _transfers(log) == []
+
+
+def test_a_mark_resolving_to_a_dead_node_stays_on_the_first_rung(log: SessionLog) -> None:
+    """
+    Given both marked decisions already answered, and so no longer on offer
+    When the human takes the option that names them
+    Then the turn is the first rung's.
+
+    A mark is a prediction about decisions the board is still offering. Once
+    they are settled there is nothing to rule on, so an implementation that read
+    the mark alone would buy an expert turn per marked answer for the rest of
+    the session -- on a board where every named decision was already dealt with.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed(log)
+
+    _answer_at(lane, "d2")
+    _answer_at(lane, "d3")
+    _answer(lane)
+
+    assert expert.dispatches == [], "a mark resolving to nothing live bought an expert turn"
+    assert _seats(log) == [FAST_TIER, FAST_TIER, FAST_TIER]
+    assert _transfers(log) == []
+
+
+# ── GMR-A10: two wordless refusals move the channel, and only ever once ──
+
+
+def _dismiss(lane: Lane, *ids: str, status: str = "accepted") -> None:
+    """The human ending a queue entry, which schedules no turn of its own."""
+    receipts, turns = lane.accept(
+        [
+            EventSubmission(
+                kind=DISMISS_KIND,
+                actor="human",
+                idempotency_key=f"dismiss-{uuid4().hex}",
+                payload={PENDING_KEY: list(ids)},
+            )
+        ],
+        lane.log.epoch,
+    )
+    assert [receipt.status for receipt in receipts] == [status], receipts
+    assert turns == [], "a dismissal scheduled a turn"
+
+
+def test_one_dismissal_of_a_first_rung_proposal_moves_nothing(log: SessionLog) -> None:
+    """
+    Given a first-rung seat's proposal waiting on the human
+    When they dismiss it
+    Then nothing is written to the lane and the next map turn is the first
+         rung's.
+
+    One is noise. A proposal the human simply did not want is not a seat that
+    cannot do the work, and moving the channel on it would spend their money on
+    a single click.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+
+    _dismiss(lane, _proposal(log, "prop-1"))
+
+    assert _transfers(log) == []
+    _answer_at(lane, "d2")
+    assert _seats(log) == [FAST_TIER]
+    assert expert.dispatches == []
+
+
+@pytest.mark.parametrize(
+    "pair",
+    [
+        pytest.param(("dismiss", "dismiss"), id="dismissal-then-dismissal"),
+        pytest.param(("dismiss", "press"), id="dismissal-then-press"),
+        pytest.param(("press", "press"), id="press-then-press"),
+    ],
+)
+def test_the_second_distrust_signal_writes_one_transfer_and_the_channel_stays_up(
+    log: SessionLog, pair: tuple[str, str]
+) -> None:
+    """
+    Given each way the two distrust signals can be paired
+    When the second of them lands
+    Then exactly one policy transfer is on the lane, it was not there after the
+         first, and every map turn after it is the expert's.
+
+    The two events are counted alike because they say the same thing without
+    words: the human refusing a proposal, and the backend finding the reply too
+    thin to stand. Counting only one of them would need the human to click the
+    same refusal twice before the channel moved.
+    """
+    presses = "press" in pair
+    first: Any = (
+        RefusingDriver(tier=FAST_TIER) if presses else SpyDriver(tier=FAST_TIER, reply="Noted.")
+    )
+    expert = SpyDriver(tier=HEAVY_TIER, reply="Noted.")
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+
+    for index, (signal, node) in enumerate(zip(pair, ("d1", "d2"), strict=True)):
+        if signal == "dismiss":
+            _dismiss(lane, _proposal(log, f"prop-{index}"))
+        else:
+            _answer_at(lane, node)
+        assert len(_transfers(log)) == index, (
+            f"signal {index + 1} wrote the wrong number of entries"
+        )
+
+    _answer_at(lane, "d3")
+
+    assert len(_transfers(log)) == 1
+    assert _seats(log)[-1] == HEAVY_TIER, "the channel did not stay on the expert"
+
+
+def test_a_third_signal_writes_no_second_entry(log: SessionLog) -> None:
+    """
+    Given a channel the policy has already moved
+    When a third distrust signal lands
+    Then no second entry joins the first.
+
+    The channel is already there, so a second entry would say nothing and cost a
+    reader working out which of two transfers is live.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+
+    for index in range(3):
+        _dismiss(lane, _proposal(log, f"prop-{index}"))
+
+    assert len(_transfers(log)) == 1
+
+
+def test_the_humans_transfer_control_returns_the_channel_to_the_first_rung(
+    log: SessionLog,
+) -> None:
+    """
+    Given a channel the policy moved on the second signal
+    When the human takes the transfer back
+    Then that turn and the next are the first rung's, and a later signal writes
+         no second entry.
+
+    An entry only ever moves a channel up; the way back down is theirs. A
+    counter that fired again afterwards would overturn the human's own control
+    on the next click they made.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+    for index in range(2):
+        _dismiss(lane, _proposal(log, f"prop-{index}"))
+    assert len(_transfers(log)) == 1
+
+    _answer_at(lane, "d1", **{TRANSFER_FLAG: False})
+    _dismiss(lane, _proposal(log, "prop-later"))
+    _answer_at(lane, "d2")
+
+    assert _seats(log) == [FAST_TIER, FAST_TIER]
+    assert len(_transfers(log)) == 1, "a signal after the human's control wrote a second entry"
+
+
+def test_a_press_on_a_thread_channel_is_no_signal_about_the_map(log: SessionLog) -> None:
+    """
+    Given a thread whose first-rung seat never returns a document
+    When the human speaks in it twice and both turns are pressed onto the expert
+    Then nothing is written on the map channel.
+
+    The counter is the map's, because that is the channel these three triggers
+    are about. A thread that cannot hold its own shape says nothing about the
+    seat composing the board, and counting it would move the map on turns the
+    human took somewhere else entirely.
+    """
+    first, expert = RefusingDriver(tier=FAST_TIER), SpyDriver(tier=HEAVY_TIER, reply="Noted.")
+    lane = Lane(log, first, expert=expert)
+    log.submit(
+        [
+            EventSubmission(
+                kind="thread-created",
+                actor="grill-master",
+                channel=THREAD,
+                idempotency_key="agent-thread",
+                payload={"turns": [{"who": "grill-master", "text": "This one needs a thread."}]},
+            )
+        ],
+        log.epoch,
+    )
+
+    for index in range(2):
+        run_turns(
+            lane,
+            EventSubmission(
+                kind="thread-turn",
+                actor="human",
+                channel=THREAD,
+                idempotency_key=f"said-{index}",
+                payload={"turns": [{"text": "Say more about the retention window."}]},
+            ),
+        )
+
+    assert len(first.dispatches) == 2
+    assert len(expert.dispatches) == 2, "the thread turns were not pressed"
+    assert _transfers(log) == [], "a thread's press moved the map channel"
+
+
+def test_a_dismissal_naming_no_list_of_ids_is_read_without_raising(log: SessionLog) -> None:
+    """
+    Given a dismissal whose `pending` is not a list of ids at all
+    When it is offered twice
+    Then nothing is written and the batch came back with receipts rather than
+         an exception.
+
+    The count is read before the gesture lands, which puts this reader in front
+    of the appender rather than behind it -- and inside the append lock, where
+    an exception would take the whole batch down instead of one bad event. A
+    gesture that named no proposal refused none either way.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+
+    for _ in range(2):
+        _receipts, turns = lane.accept(
+            [
+                EventSubmission(
+                    kind=DISMISS_KIND,
+                    actor="human",
+                    idempotency_key=f"dismiss-{uuid4().hex}",
+                    payload={PENDING_KEY: "prop-1"},
+                )
+            ],
+            log.epoch,
+        )
+        assert turns == []
+
+    assert _transfers(log) == []
+
+
+def test_dismissing_the_experts_own_proposal_is_no_signal(log: SessionLog) -> None:
+    """
+    Given two proposals the expert seat authored
+    When the human dismisses both
+    Then nothing is written and the next map turn is the first rung's.
+
+    A proposal the expert wrote says nothing about the rung below it. Counting
+    it would move the channel to the seat the human has just twice said got it
+    wrong, which is the one move the count is not evidence for.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+
+    for index in range(2):
+        _dismiss(lane, _proposal(log, f"theirs-{index}", tier=HEAVY_TIER))
+
+    assert _transfers(log) == []
+    _answer_at(lane, "d2")
+    assert _seats(log) == [FAST_TIER]
+    assert expert.dispatches == []
+
+
+def test_a_dismissal_the_queue_refuses_is_no_signal(log: SessionLog) -> None:
+    """
+    Given a notice on the queue, which is not a proposal and so not something to
+          dismiss
+    When two dismissals naming it are refused, and one real dismissal follows
+    Then nothing is written to the lane.
+
+    The count is taken on the gesture that landed. A refused gesture changed
+    nothing the human can see, so counting it would move the channel on two
+    clicks that did nothing -- and the queue is full of notices, the backend's
+    own unmet-obligation ones among them.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+    told = _alert(log, "notice-d3")
+
+    for _ in range(2):
+        _dismiss(lane, told, status="rejected")
+    _dismiss(lane, _proposal(log, "prop-1"))
+
+    assert _transfers(log) == []
