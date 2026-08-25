@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""A scripted `codex` on the backend's PATH, and the assertion of what it was given.
+
+It prints the JSONL `codex exec --json` prints and nothing else: `thread.started`
+carrying the thread's identity, an `item.completed` the reader is meant to walk
+past, the `agent_message` that is the turn, and `turn.completed` carrying the
+thread's cumulative usage. The diagnostic item is deliberate -- a reader taking
+"the last completed item" as the reply puts it in the log as the agent's turn.
+
+The contract it checks is the driver's, stated here a second time on purpose:
+a shim that imported the driver's own argv builder would agree with it by
+construction and could never catch it changing.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _shim import emit, flag_value, record, settings, stdin_is_closed, turns  # noqa: E402
+
+NAME = "codex"
+
+# Every `-c` setting the turn must carry, whatever else it carries. The two
+# execution features are named separately because either alone leaves the other
+# side's tool on the turn, and the sandbox and the approval policy ride behind
+# them rather than instead of them.
+REQUIRED_SETTINGS = (
+    "features.shell_tool=false",
+    "features.unified_exec=false",
+    'sandbox_mode="read-only"',
+    'approval_policy="never"',
+    "notify=[]",
+)
+
+
+def violations(argv: list[str], resumed: str | None, brief: str | None) -> list[str]:
+    """Every way this invocation departs from the driver's stated contract."""
+    faults = []
+    if not argv or argv[0] != "exec":
+        faults.append(f"the first argument is {argv[:1]}, not ['exec']")
+    if resumed is not None and argv[1:2] != ["resume"]:
+        faults.append("a resumed turn does not read `exec resume <thread>`")
+    if "--json" not in argv:
+        faults.append("--json is absent, so the turn prints no stream to read")
+    if "--skip-git-repo-check" not in argv:
+        faults.append("--skip-git-repo-check is absent; the session directory is no repository")
+    if flag_value(argv, "--model") is None:
+        faults.append("--model names no model")
+    if brief is None:
+        faults.append("no developer_instructions setting: the turn carries no standing brief")
+    carried = settings(argv)
+    faults += [f"{one} is absent" for one in REQUIRED_SETTINGS if one not in carried]
+    if "--output-schema" in argv:
+        faults.append("--output-schema is present: strict shaping closes an update's open object")
+    if argv and argv[-1].startswith("-"):
+        faults.append(f"the last argument is {argv[-1]!r}, not the prompt")
+    if not stdin_is_closed():
+        faults.append("standard input is not closed, which is how `codex exec` hangs on a turn")
+    return faults
+
+
+def main() -> None:
+    argv = sys.argv[1:]
+    resumed = argv[2] if argv[:2] == ["exec", "resume"] else None
+    carried = settings(argv)
+    brief = next((one for one in carried if one.startswith("developer_instructions=")), None)
+    effort = next((one for one in carried if one.startswith("model_reasoning_effort=")), None)
+    index = record(
+        NAME,
+        {
+            "argv": argv,
+            "cwd": str(Path.cwd()),
+            "stdin_devnull": stdin_is_closed(),
+            "resume": resumed,
+            "model": flag_value(argv, "--model"),
+            "effort": None if effort is None else json.loads(effort.split("=", 1)[1]),
+            "brief": None if brief is None else json.loads(brief.split("=", 1)[1]),
+            "prompt": argv[-1] if argv else "",
+            "violations": violations(argv, resumed, brief),
+        },
+    )
+    scripted = turns(NAME)
+    if index >= len(scripted):
+        # A turn nobody scripted is the scenario reaching past its own script.
+        # It fails as a seat that printed no turn rather than hanging, and the
+        # call is on the record either way.
+        raise SystemExit(f"{NAME} shim: no turn {index} is scripted")
+    emit(scripted[index], stream(scripted[index], resumed))
+
+
+def stream(turn: dict[str, Any], resumed: str | None) -> list[str]:
+    """The JSONL this turn prints.
+
+    Shaped against a real `codex exec --json` run rather than against what the
+    reader happens to accept: the event order, the `error`-typed completed item
+    the CLI interleaves, and the five usage counts are all copied from one. A
+    fixture built to satisfy our own parser would agree with it by construction
+    and would stop being evidence the moment the real stream moved.
+
+    The diagnostic item is the load-bearing part. It is a *completed item* that
+    is not the agent's turn, and the real CLI emits one before the reply -- so a
+    reader taking "the last completed item" puts a CLI diagnostic into the log
+    as what the agent said.
+    """
+    thread = turn.get("thread_id", resumed or "thread-1")
+    lines = [
+        json.dumps({"type": "thread.started", "thread_id": thread}),
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"id": "item_0", "type": "error", "message": "a CLI diagnostic"},
+            }
+        ),
+        json.dumps({"type": "turn.started"}),
+    ]
+    if not turn.get("no_message"):
+        lines.append(
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"id": "item_1", "type": "agent_message", "text": turn.get("reply", "")},
+                }
+            )
+        )
+    usage = turn.get("usage_input")
+    if usage is not None:
+        # Five counts, as the CLI reports them. Only `input_tokens` is the whole
+        # input side; `cached_input_tokens` is the part of it served from cache,
+        # so a reader summing the two counts the cached prefix twice.
+        lines.append(
+            json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {
+                        "input_tokens": usage,
+                        "cached_input_tokens": 0,
+                        "cache_write_input_tokens": 0,
+                        "output_tokens": 5,
+                        "reasoning_output_tokens": 0,
+                    },
+                }
+            )
+        )
+    return lines
+
+
+if __name__ == "__main__":
+    main()

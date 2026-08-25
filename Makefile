@@ -11,6 +11,7 @@
         typecheck-executor cov-executor audit-executor verify-entry-executor \
         ci-grillui test-grillui lint-grillui format-check-grillui \
         typecheck-grillui cov-grillui audit-grillui verify-entry-grillui \
+        e2e-grillui \
         spec-lint content-lint content-tests doc-lint
 
 INSTALLER := packages/installer
@@ -217,3 +218,11 @@ audit-grillui:
 # grillui venv where the entry point is installed is selected.
 verify-entry-grillui:
 	uv --project $(GRILLUI) run grillui --help > /dev/null
+# e2e-grillui runs a real backend and a headless browser through the
+# grill-master use cases on scripted seats. It is deliberately outside
+# `ci-grillui` and outside `ci`, on the same reasoning the browser probes carry:
+# the gate would have to carry a browser and its binaries. `cov-grillui` cannot
+# collect it either -- `testpaths` is `tests/unit`, and only naming a path
+# explicitly, as here, reaches anything else.
+e2e-grillui:
+	cd $(GRILLUI) && uv run --with playwright pytest tests/e2e -q

@@ -17,6 +17,17 @@ make ci-grillui
 Read the `ci-grillui` target in the repo `Makefile` for its current membership.
 Run it standalone and read its exit status.
 
+Two test trees sit outside that gate, because it would have to carry a browser
+to run them. `tests/browser/` holds one-off probes, each run by hand. `tests/e2e/`
+is the kept end-to-end harness: `make e2e-grillui` launches a real backend
+through the same `launch` path a `grillui serve` takes, seats it on a local
+stub and two scripted CLI shims, and drives every grill-master use case with
+headless Playwright. Run it standalone too, and when a change touches seating,
+the lane, the document ladder or the fold, run it as well as `ci-grillui` —
+`testpaths` is `tests/unit`, so nothing else collects it. Its scenarios run on a
+PATH holding only those shims: a scenario must never be able to reach a real
+`codex` or `claude`, which would spend an account and read as a passing seat.
+
 ## What this package is
 
 The grilling-session backend, per `docs/specs/2026-08-18-grilling-ui-v1.md`.
