@@ -213,6 +213,9 @@ class Session:
     served: threading.Thread
     env: dict[str, str] = field(default_factory=dict)
     _configured: Any = None
+    # Where the log stood when `settled` last returned, so the next gesture is
+    # waited for rather than assumed to have already happened.
+    _settled_at: int = 0
 
     @property
     def scratch(self) -> Path:
@@ -255,18 +258,36 @@ class Session:
         ]
 
     def settled(self) -> None:
-        """Wait until no channel is mid-turn.
+        """Wait until the gesture just made has landed and left no turn running.
 
-        The lane's own pairing rule is what is waited on rather than a sleep: a
+        Both halves are load-bearing, and the second one alone is a trap. A
+        click reaches the log through a browser, an HTTP round trip and an
+        append; wait only for "no channel is mid-turn" and the answer is yes
+        before the gesture has arrived, so the scenario races ahead and reads a
+        board nothing has happened to yet. That failure is invisible on a fast
+        machine and arrives as a mystery on a slow one.
+
+        So the log is required to have moved past where it stood when this last
+        returned, and only then is the lane's own pairing rule waited on -- a
         `composing` with no `replied` or `error` after it is a turn still
-        running, and that is the only thing a scenario is ever waiting for.
+        running. Every gesture a scenario makes appends at least the human's own
+        entry, so "the log moved" is a fact about the gesture rather than a
+        guess about timing.
         """
         deadline = time.monotonic() + TURN_TIMEOUT
         while time.monotonic() < deadline:
-            if not _open_turns(self.entries()):
+            entries = self.entries()
+            landed = entries[-1].seq if entries else 0
+            if landed > self._settled_at and not _open_turns(entries):
+                self._settled_at = landed
                 return
             time.sleep(POLL)
-        stuck = f"a turn never closed: {_open_turns(self.entries())}"
+        entries = self.entries()
+        stuck = (
+            f"nothing landed past seq {self._settled_at}"
+            if (entries[-1].seq if entries else 0) <= self._settled_at
+            else f"a turn never closed: {_open_turns(entries)}"
+        )
         raise AssertionError(stuck)
 
     def close(self) -> None:

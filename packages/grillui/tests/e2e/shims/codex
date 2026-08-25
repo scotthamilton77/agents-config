@@ -94,30 +94,55 @@ def main() -> None:
 
 
 def stream(turn: dict[str, Any], resumed: str | None) -> list[str]:
-    """The JSONL this turn prints."""
+    """The JSONL this turn prints.
+
+    Shaped against a real `codex exec --json` run rather than against what the
+    reader happens to accept: the event order, the `error`-typed completed item
+    the CLI interleaves, and the five usage counts are all copied from one. A
+    fixture built to satisfy our own parser would agree with it by construction
+    and would stop being evidence the moment the real stream moved.
+
+    The diagnostic item is the load-bearing part. It is a *completed item* that
+    is not the agent's turn, and the real CLI emits one before the reply -- so a
+    reader taking "the last completed item" puts a CLI diagnostic into the log
+    as what the agent said.
+    """
     thread = turn.get("thread_id", resumed or "thread-1")
-    lines = [json.dumps({"type": "thread.started", "thread_id": thread})]
-    lines.append(
+    lines = [
+        json.dumps({"type": "thread.started", "thread_id": thread}),
         json.dumps(
-            {"type": "item.completed", "item": {"type": "reasoning", "text": "a diagnostic item"}}
-        )
-    )
+            {
+                "type": "item.completed",
+                "item": {"id": "item_0", "type": "error", "message": "a CLI diagnostic"},
+            }
+        ),
+        json.dumps({"type": "turn.started"}),
+    ]
     if not turn.get("no_message"):
         lines.append(
             json.dumps(
                 {
                     "type": "item.completed",
-                    "item": {"type": "agent_message", "text": turn.get("reply", "")},
+                    "item": {"id": "item_1", "type": "agent_message", "text": turn.get("reply", "")},
                 }
             )
         )
     usage = turn.get("usage_input")
     if usage is not None:
+        # Five counts, as the CLI reports them. Only `input_tokens` is the whole
+        # input side; `cached_input_tokens` is the part of it served from cache,
+        # so a reader summing the two counts the cached prefix twice.
         lines.append(
             json.dumps(
                 {
                     "type": "turn.completed",
-                    "usage": {"input_tokens": usage, "cached_input_tokens": 0},
+                    "usage": {
+                        "input_tokens": usage,
+                        "cached_input_tokens": 0,
+                        "cache_write_input_tokens": 0,
+                        "output_tokens": 5,
+                        "reasoning_output_tokens": 0,
+                    },
                 }
             )
         )
