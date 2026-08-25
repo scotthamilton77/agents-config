@@ -73,6 +73,14 @@ POLL = 0.05
 
 NEVER_STARTED = "the backend never started answering"
 
+# The settings a scenario may not choose. Three are the guard itself -- the
+# endpoint, the bearer, and the PATH a seat is resolved on -- and the fourth is
+# where the shims read their script from. Naming any of them puts a real CLI or
+# the network back within reach of a turn, so they are applied last and a caller
+# that names one is refused rather than quietly overridden. A safety property
+# that holds only for callers who did not ask otherwise is not one.
+GUARDED = (API_BASE_ENV, API_KEY_ENV, SCRIPT_ENV, "PATH")
+
 
 def free_port() -> int:
     with socket.socket() as probe:
@@ -273,14 +281,25 @@ class Session:
         running. Every gesture a scenario makes appends at least the human's own
         entry, so "the log moved" is a fact about the gesture rather than a
         guess about timing.
+
+        The condition has to hold twice, a poll apart, for one more reason: the
+        lane writes the gesture, its `accepted` and its `composing` under a
+        single hold of the append lock, but it writes them as three appends. A
+        read landing between the first and the third sees a log that moved and
+        no turn open -- which is this same mistake in a window microseconds
+        wide. Requiring the answer twice closes it without needing to know
+        anything about the lock.
         """
         deadline = time.monotonic() + TURN_TIMEOUT
+        confirmed = False
         while time.monotonic() < deadline:
             entries = self.entries()
             landed = entries[-1].seq if entries else 0
-            if landed > self._settled_at and not _open_turns(entries):
+            quiet = landed > self._settled_at and not _open_turns(entries)
+            if quiet and confirmed:
                 self._settled_at = landed
                 return
+            confirmed = quiet
             time.sleep(POLL)
         entries = self.entries()
         stuck = (
@@ -291,19 +310,49 @@ class Session:
         raise AssertionError(stuck)
 
     def close(self) -> None:
-        """End the run the way the end-session gesture does, and wait for it.
+        """End the run, and put the configuration back only once nothing can spawn a seat.
 
-        The configuration is put back only once the last turn is over. A turn
-        runs long after the call that started the backend returned, and a
-        harness that restored `PATH` on the way out of that call would hand the
-        seats back to whatever binaries the machine has -- which is a scenario
-        spending a real account and reporting it as a scripted seat.
+        Stopping the server is not the same as stopping the work. A turn runs on
+        a daemon thread of its own, outliving both the request that scheduled it
+        and the server that answered that request, and it spawns its seat
+        somewhere in the middle. So ending uvicorn and restoring `PATH` says
+        nothing about whether a turn is between "about to run a subprocess" and
+        "has run it" -- and a turn that reached that point after the restore
+        would resolve a real binary, which is the same escape as before, moved
+        onto the failure path.
+
+        What is waited on is therefore the workers themselves. If any is still
+        on its feet when the budget runs out, the environment is deliberately
+        **not** restored and the scenario fails instead: leaving the guard on is
+        harmless, and taking it off while something can still spawn is the one
+        outcome this harness must not produce.
         """
         self.stop()
         self.served.join(timeout=TURN_TIMEOUT)
+        deadline = time.monotonic() + TURN_TIMEOUT
+        while (self.served.is_alive() or _turn_workers()) and time.monotonic() < deadline:
+            time.sleep(POLL)
+        running = _turn_workers()
+        if self.served.is_alive() or running:
+            stuck = f"the guard stays on: still running at close: {running or ['the backend']}"
+            raise AssertionError(stuck)
         if self._configured is not None:
             self._configured.__exit__(None, None, None)
             self._configured = None
+
+
+def _turn_workers() -> list[str]:
+    """Turn workers still on their feet anywhere in this process.
+
+    The lane names each thread for the channel it is taking a turn on, which is
+    what makes them findable at all -- they are daemon threads nobody holds a
+    handle to. Scoped to the process rather than to one session on purpose: the
+    environment they would spawn a seat into is the process's, so another
+    session's straggler is exactly as able to reach a real binary as this one's.
+    """
+    return sorted(
+        one.name for one in threading.enumerate() if one.name.startswith("turn-") and one.is_alive()
+    )
 
 
 def _open_turns(entries: Sequence[LogEntry]) -> dict[str, str]:
@@ -360,17 +409,26 @@ def start(
     only thing either driver spawns is the seat, and an unreachable one fails
     the turn in milliseconds instead.
     """
+    chosen = dict(config or {})
+    named = [key for key in GUARDED if key in chosen]
+    if named:
+        # Refused before anything is created, so a scenario that tried cannot
+        # leave a stub or a directory behind either.
+        refused = (
+            f"a scenario may not set {', '.join(named)}: that is what keeps its seats scripted"
+        )
+        raise AssertionError(refused)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / SCRATCH).mkdir(parents=True, exist_ok=True)
     if handoff is not None:
         (directory / HANDOFF_FILE).write_text(json.dumps(dict(handoff)), encoding="utf-8")
     stub = OpenRouterStub() if stub is None else stub
     settings = {
+        **chosen,
         API_BASE_ENV: stub.api_base,
         API_KEY_ENV: STUB_KEY,
         SCRIPT_ENV: str(directory / SCRATCH),
         "PATH": f"{SHIM_DIR}{os.pathsep}{_interpreter_dir(directory / SCRATCH)}",
-        **dict(config or {}),
     }
     out = StringIO()
     stop = RunStop()
