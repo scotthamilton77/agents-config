@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""A scripted `claude` on the backend's PATH: the expert seat, and its chain.
+
+It prints the one JSON object `claude -p --output-format json` prints -- the
+reply, the chain's identity, and the usage block whose three input-side counts
+are summed into what the turn was given. The chain's identity is the point of
+asking for structured output at all: without it the next turn has no way to
+continue this conversation rather than open a new one.
+
+Like the other shim, it states the driver's contract a second time rather than
+importing it, and records a violation instead of exiting on one.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _shim import emit, flag_value, record, stdin_is_closed, turns  # noqa: E402
+
+NAME = "claude"
+
+
+def violations(argv: list[str]) -> list[str]:
+    """Every way this invocation departs from the driver's stated contract."""
+    faults = []
+    if argv[:1] != ["-p"]:
+        faults.append(f"the first argument is {argv[:1]}, not ['-p']")
+    if flag_value(argv, "--output-format") != "json":
+        faults.append("--output-format is not json, so no chain identity comes back")
+    if flag_value(argv, "--model") is None:
+        faults.append("--model names no model")
+    if flag_value(argv, "--effort") is None:
+        # Passed on every turn rather than only the cold one: a resumed chain
+        # does not inherit it.
+        faults.append("--effort is absent, so a resumed chain thinks at whatever it defaults to")
+    if flag_value(argv, "--append-system-prompt") is None:
+        faults.append("--append-system-prompt is absent: the turn carries no standing brief")
+    if argv and argv[-1].startswith("-"):
+        faults.append(f"the last argument is {argv[-1]!r}, not the prompt")
+    return faults
+
+
+def main() -> None:
+    argv = sys.argv[1:]
+    index = record(
+        NAME,
+        {
+            "argv": argv,
+            "cwd": str(Path.cwd()),
+            "stdin_devnull": stdin_is_closed(),
+            "resume": flag_value(argv, "--resume"),
+            "model": flag_value(argv, "--model"),
+            "effort": flag_value(argv, "--effort"),
+            "brief": flag_value(argv, "--append-system-prompt"),
+            "prompt": argv[-1] if argv else "",
+            "violations": violations(argv),
+        },
+    )
+    scripted = turns(NAME)
+    if index >= len(scripted):
+        raise SystemExit(f"{NAME} shim: no turn {index} is scripted")
+    emit(scripted[index], [json.dumps(printed(scripted[index], flag_value(argv, "--resume")))])
+
+
+def printed(turn: dict[str, Any], resumed: str | None) -> dict[str, Any]:
+    """The object this turn prints."""
+    said: dict[str, Any] = {
+        "result": turn.get("reply", ""),
+        "session_id": turn.get("session_id", resumed or "chain-1"),
+    }
+    if turn.get("no_message"):
+        del said["result"]
+    usage = turn.get("usage_input")
+    if usage is not None:
+        said["usage"] = {"input_tokens": usage, "cache_read_input_tokens": 0}
+    return said
+
+
+if __name__ == "__main__":
+    main()
