@@ -987,12 +987,19 @@ def seat_driver(config: TierConfig, seat: Seat, tier: str = FAST_TIER) -> TurnDr
     The one place a transport becomes a driver. A seat is configuration and a
     driver is code, and mapping one to the other anywhere else is how a session
     ends up attributed to a model a different transport answered.
+
+    The endpoint is configuration and so it is handed to the transport here,
+    which is the only place a session's own configuration and its transport meet.
+    A transport left to default would answer the session's configured endpoint on
+    every seat but the ones built through this function.
     """
     if seat.transport == CODEX_TRANSPORT:
         return CodexDriver(config, tier=tier, seat=seat)
     if seat.transport == CLAUDE_TRANSPORT:
         return HeavyDriver(config, tier=tier, seat=seat)
-    return FastDriver(config, tier=tier, seat=seat)
+    return FastDriver(
+        config, transport=OpenRouterTransport(api_base=config.api_base), tier=tier, seat=seat
+    )
 
 
 def read_resume(directory: Path, channel: str, file: str = RESUME_FILE) -> str | None:

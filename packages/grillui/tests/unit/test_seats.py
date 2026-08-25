@@ -44,6 +44,7 @@ from grillui.drivers import (
     CodexDriver,
     FastDriver,
     HeavyDriver,
+    OpenRouterTransport,
     codex_argv,
     codex_input_tokens,
     fault_of,
@@ -72,6 +73,8 @@ from grillui.schemas import (
 )
 from grillui.session import open_session
 from grillui.tiers import (
+    API_BASE_ENV,
+    DEFAULT_API_BASE,
     DEFAULT_FAST_MODEL,
     DEFAULT_MAP_EFFORT,
     DEFAULT_MAP_MODEL,
@@ -931,3 +934,24 @@ def test_a_seat_with_no_effort_asks_the_transport_for_none() -> None:
 
     assert not any(one.startswith("model_reasoning_effort") for one in argv)
     assert argv[-1] == "prompt"
+
+
+def test_the_openrouter_seat_asks_the_endpoint_the_session_is_configured_with() -> None:
+    """
+    Given an environment naming a completions endpoint
+    When the threads' seat is resolved to its driver
+    Then the transport that driver holds asks that endpoint, and an unset one
+         leaves it asking the provider's own -- so a session pointed elsewhere
+         goes through the seat every other turn goes through rather than through
+         a second wiring beside it.
+    """
+    stated = seat_driver(
+        TierConfig.from_env({API_BASE_ENV: "http://127.0.0.1:9/v1"}),
+        Seat(OPENROUTER_TRANSPORT, "m"),
+    )
+    default = seat_driver(TierConfig.from_env({}), Seat(OPENROUTER_TRANSPORT, "m"))
+
+    assert isinstance(stated.transport, OpenRouterTransport)
+    assert stated.transport.api_base == "http://127.0.0.1:9/v1"
+    assert isinstance(default.transport, OpenRouterTransport)
+    assert default.transport.api_base == DEFAULT_API_BASE

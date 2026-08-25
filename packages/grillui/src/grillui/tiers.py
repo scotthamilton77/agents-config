@@ -145,6 +145,13 @@ ESCALATION_POLICY_ENV = "GRILLUI_ESCALATION_POLICY"
 FAST_CONTEXT_LIMIT_ENV = "GRILLUI_FAST_CONTEXT_LIMIT"
 HEAVY_CONTEXT_LIMIT_ENV = "GRILLUI_HEAVY_CONTEXT_LIMIT"
 API_KEY_ENV = "OPENROUTER_API_KEY"
+# Where the OpenRouter seat's completions are asked for. Configuration for the
+# same reason the model ids are: the provider is a choice, and a session pointed
+# at a compatible endpoint -- a local stand-in, a gateway, a proxy -- must reach
+# it through the seat every other turn goes through rather than through a second
+# wiring built beside it. A second path would be a session exercising code no
+# real session runs.
+API_BASE_ENV = "GRILLUI_API_BASE"
 
 DEFAULT_API_BASE = "https://openrouter.ai/api/v1"
 CLAUDE_CLI = "claude"
@@ -259,6 +266,7 @@ class TierConfig:
     escalation_policy: str = DEFAULT_ESCALATION_POLICY
     fast_context_limit: int | None = None
     heavy_context_limit: int | None = None
+    api_base: str = DEFAULT_API_BASE
 
     def __post_init__(self) -> None:
         # Refused here rather than at the first heavy turn: a session that got
@@ -299,6 +307,7 @@ class TierConfig:
             escalation_policy=source.get(ESCALATION_POLICY_ENV) or DEFAULT_ESCALATION_POLICY,
             fast_context_limit=_limit(source, FAST_CONTEXT_LIMIT_ENV),
             heavy_context_limit=_limit(source, HEAVY_CONTEXT_LIMIT_ENV),
+            api_base=source.get(API_BASE_ENV) or DEFAULT_API_BASE,
         )
 
     @property
