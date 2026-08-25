@@ -36,7 +36,7 @@ import socket
 import sys
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import StringIO
@@ -80,6 +80,22 @@ NEVER_STARTED = "the backend never started answering"
 # that names one is refused rather than quietly overridden. A safety property
 # that holds only for callers who did not ask otherwise is not one.
 GUARDED = (API_BASE_ENV, API_KEY_ENV, SCRIPT_ENV, "PATH")
+
+# What a scenario is allowed to configure at all: this session's own settings and
+# nothing else. An allow-list rather than a longer `GUARDED`, because the escape
+# it closes is open-ended -- the proxy variables route a "loopback" request
+# somewhere else entirely, and a certificate bundle or a resolver override would
+# do as much. Naming each one as it is thought of is a list that is wrong until
+# the next person reads it.
+CONFIGURABLE = "GRILLUI_"
+
+# Proxies are then closed from the other side as well, because the ambient
+# environment is not a scenario's doing: a developer with `HTTPS_PROXY` exported
+# would have every stub request leave the machine, and `trust_env` is on by
+# default in httpx. `NO_PROXY=*` is read before any proxy variable and returns
+# no proxy at all, so this one setting covers the whole family, in both spellings
+# the environment is read in.
+NO_PROXY = {"NO_PROXY": "*", "no_proxy": "*"}
 
 
 def free_port() -> int:
@@ -282,28 +298,38 @@ class Session:
         entry, so "the log moved" is a fact about the gesture rather than a
         guess about timing.
 
-        The condition has to hold twice, a poll apart, for one more reason: the
-        lane writes the gesture, its `accepted` and its `composing` under a
+        The *same* state has to be seen twice, a poll apart, for one more reason:
+        the lane writes the gesture, its `accepted` and its `composing` under a
         single hold of the append lock, but it writes them as three appends. A
         read landing between the first and the third sees a log that moved and
-        no turn open -- which is this same mistake in a window microseconds
-        wide. Requiring the answer twice closes it without needing to know
-        anything about the lock.
+        no turn open -- this same mistake in a window microseconds wide. Two
+        observations of "quiet" are not enough to close it, because the first
+        can see the gesture and the second the `accepted`, both with no
+        `composing` yet; so what must repeat is the sequence number, which only
+        holds still once the whole batch has landed.
+
+        **This waits for a gesture that posts.** Not every control does: the
+        transfer control and the take-this-answer control change what the page
+        will send next and append nothing, so calling this after one waits for
+        an entry that is never coming. Follow those with a page wait instead.
         """
         deadline = time.monotonic() + TURN_TIMEOUT
-        confirmed = False
+        confirmed = -1
         while time.monotonic() < deadline:
             entries = self.entries()
             landed = entries[-1].seq if entries else 0
-            quiet = landed > self._settled_at and not _open_turns(entries)
-            if quiet and confirmed:
-                self._settled_at = landed
-                return
-            confirmed = quiet
+            if landed > self._settled_at and not _open_turns(entries):
+                if landed == confirmed:
+                    self._settled_at = landed
+                    return
+                confirmed = landed
+            else:
+                confirmed = -1
             time.sleep(POLL)
         entries = self.entries()
         stuck = (
-            f"nothing landed past seq {self._settled_at}"
+            f"nothing landed past seq {self._settled_at}: this waits for a gesture that posts, "
+            f"and the transfer and take-this-answer controls append nothing"
             if (entries[-1].seq if entries else 0) <= self._settled_at
             else f"a turn never closed: {_open_turns(entries)}"
         )
@@ -410,7 +436,7 @@ def start(
     the turn in milliseconds instead.
     """
     chosen = dict(config or {})
-    named = [key for key in GUARDED if key in chosen]
+    named = sorted(key for key in chosen if not key.startswith(CONFIGURABLE) or key in GUARDED)
     if named:
         # Refused before anything is created, so a scenario that tried cannot
         # leave a stub or a directory behind either.
@@ -425,6 +451,7 @@ def start(
     stub = OpenRouterStub() if stub is None else stub
     settings = {
         **chosen,
+        **NO_PROXY,
         API_BASE_ENV: stub.api_base,
         API_KEY_ENV: STUB_KEY,
         SCRIPT_ENV: str(directory / SCRATCH),
@@ -446,8 +473,15 @@ def start(
     session = Session(directory, url, stub, out, stop, served, dict(settings), keep)
     try:
         _wait_until_serving(url, served)
-    except AssertionError:
-        session.close()
+    except BaseException:
+        # Every failure, not just the one this raises itself: anything escaping
+        # after the environment was entered would otherwise leave the process on
+        # the restricted PATH with no session for a fixture to close. `close`
+        # keeps its own rule -- it refuses to restore while a worker could still
+        # spawn -- and that refusal is swallowed here so it cannot mask whatever
+        # actually went wrong.
+        with suppress(Exception):
+            session.close()
         raise
     return session
 
