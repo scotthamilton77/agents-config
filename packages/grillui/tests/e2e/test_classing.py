@@ -255,3 +255,59 @@ def test_folding_a_thread_and_calling_the_doctor_are_both_the_experts(
     assert len(session.claude_calls()) == 2, session.claude_calls()
     reassessed = [one for one in session.dispatches() if one.get("reassess")]
     assert len(reassessed) == 1, "the doctor's dispatch does not say it was called"
+
+
+def test_a_withdrawal_the_human_got_in_front_of_is_handed_back_to_the_expert(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a change the first rung proposed and the human applied
+    When a later turn withdraws that same change
+    Then the backend hands the disagreement back as a turn nobody spoke a
+         gesture to start, composed on the expert, carrying which item was
+         withdrawn and the sequence the human had already acted at.
+
+    Only the author can reconcile a rewrite that arrived after the answer, and
+    nothing on the board moves in the meantime: the hand-back buys a turn, not
+    a change.
+    """
+    session = launcher(handoff=handoff(STRANDED))
+    session.script_codex(
+        turn(
+            document(
+                "d3 is moot.",
+                updates=[{"kind": "invalidate", "target": "d3", "why": "nothing rests on it"}],
+            )
+        ),
+        turn(document("Actually, keep it.", supersedes=["WITHDRAWN"])),
+    )
+    session.script_claude(turn(document("Then d3 stands as it was.")))
+    page = board(session)
+
+    answer(page, "d1")
+    session.settled()
+    waiting = queued(session, "invalidate")
+    assert len(waiting) == 1, session.board()["pending"]
+    apply_one(page, waiting[0]["id"])
+    session.settled()
+
+    # The second turn withdraws the very item they just applied. The id is only
+    # known once it exists, so the script is rewritten with it in place.
+    session.script_codex(
+        turn(
+            document(
+                "d3 is moot.",
+                updates=[{"kind": "invalidate", "target": "d3", "why": "nothing rests on it"}],
+            )
+        ),
+        turn(document("Actually, keep it.", supersedes=[waiting[0]["id"]])),
+    )
+    answer(page, "d2")
+    session.settled()
+
+    assert composings(session) == ["fast", "fast", "heavy"], composings(session)
+    assert len(session.claude_calls()) == 1, session.claude_calls()
+    handed = [one for one in session.dispatches() if one.get("conflict")]
+    assert len(handed) == 1, "no dispatch carried the withdrawal back"
+    assert handed[0]["conflict"]["update"]["id"] == waiting[0]["id"], handed[0]["conflict"]
+    assert handed[0]["conflict"]["applied_at"] > 0, handed[0]["conflict"]
