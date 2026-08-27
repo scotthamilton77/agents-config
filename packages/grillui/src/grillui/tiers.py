@@ -41,6 +41,7 @@ what the model was given and what the audit record shows are the same bytes.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -195,12 +196,12 @@ class UnknownTransportError(ValueError):
 
 
 class UnreadableLimitError(ValueError):
-    """A context limit the environment stated in something that is not a count."""
+    """A limit the environment stated in something that is not one: a context
+    limit that is not a count of tokens, or a timeout that is not a positive
+    number of seconds."""
 
-    def __init__(self, name: str, raw: str) -> None:
-        super().__init__(
-            f"unreadable context limit: {name}={raw!r} must be a whole number of tokens"
-        )
+    def __init__(self, name: str, raw: str, expected: str = "a whole number of tokens") -> None:
+        super().__init__(f"unreadable limit: {name}={raw!r} must be {expected}")
 
 
 class UnknownPolicyError(ValueError):
@@ -217,12 +218,13 @@ def _seconds(source: Mapping[str, str], name: str) -> float:
     raw = source.get(name)
     if not raw:
         return DEFAULT_REQUEST_TIMEOUT
+    expected = "a positive, finite number of seconds"
     try:
         value = float(raw)
     except ValueError as error:
-        raise UnreadableLimitError(name, raw) from error
-    if value <= 0:
-        raise UnreadableLimitError(name, raw)
+        raise UnreadableLimitError(name, raw, expected) from error
+    if not math.isfinite(value) or value <= 0:
+        raise UnreadableLimitError(name, raw, expected)
     return value
 
 

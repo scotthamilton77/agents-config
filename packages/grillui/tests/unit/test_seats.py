@@ -979,6 +979,6 @@ def test_an_unreadable_request_timeout_is_refused_at_configuration() -> None:
 
     from grillui.tiers import REQUEST_TIMEOUT_ENV, TierConfig, UnreadableLimitError
 
-    for raw in ("soon", "0", "-5"):
-        with pytest.raises(UnreadableLimitError):
+    for raw in ("soon", "0", "-5", "nan", "inf", "Infinity"):
+        with pytest.raises(UnreadableLimitError, match="number of seconds"):
             TierConfig.from_env({REQUEST_TIMEOUT_ENV: raw})

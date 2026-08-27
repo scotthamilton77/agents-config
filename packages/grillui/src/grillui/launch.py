@@ -36,8 +36,8 @@ from fastapi.responses import JSONResponse
 
 from grillui.api import create_app
 from grillui.capture import capture, write_result
-from grillui.drivers import HeavyDriver, seat_driver
-from grillui.schemas import MAP_CHANNEL
+from grillui.drivers import seat_driver
+from grillui.schemas import HEAVY_TIER, MAP_CHANNEL
 from grillui.session import open_session
 from grillui.tiers import TierConfig
 
@@ -250,7 +250,7 @@ def launch(
     board = create_app(
         log,
         seat_driver(tiers, tiers.thread_seat),
-        expert=HeavyDriver(tiers),
+        expert=seat_driver(tiers, tiers.expert_seat, HEAVY_TIER),
         seats={MAP_CHANNEL: seat_driver(tiers, tiers.map_seat)},
         on_end=ending,
     )
