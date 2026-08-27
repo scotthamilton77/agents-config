@@ -15,6 +15,7 @@ import os
 import signal
 import socket
 import time
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -38,7 +39,7 @@ from grillui.launch import (
 from grillui.log import RESULT_FILE, SessionLog
 from grillui.schemas import FAST_TIER, HEAVY_TIER, SESSION_END_KIND, TRANSFER_FLAG
 from grillui.session import open_session
-from grillui.tiers import HEAVY_MODEL_ENV
+from grillui.tiers import HEAVY_MODEL_ENV, REQUEST_TIMEOUT_ENV
 
 from fastapi.testclient import TestClient  # isort: skip
 
@@ -681,6 +682,7 @@ def test_the_launched_board_is_given_a_heavy_expert_tier_on_the_one_configuratio
     billed to a model the launch never announced.
     """
     monkeypatch.setenv(HEAVY_MODEL_ENV, "claude-from-the-process")
+    monkeypatch.setenv(REQUEST_TIMEOUT_ENV, "300")
     built: list[dict[str, Any]] = []
     real = create_app
 
@@ -705,6 +707,10 @@ def test_the_launched_board_is_given_a_heavy_expert_tier_on_the_one_configuratio
     assert isinstance(expert, HeavyDriver)
     assert expert.config is fast.config
     assert expert.config.heavy_model == "claude-from-the-process"
+    # The expert is seated through the same door as every other seat, so the
+    # session's timeout reaches it: an expert built by hand keeps the constant.
+    assert isinstance(expert.cli, partial)
+    assert expert.cli.keywords == {"timeout": 300.0}
 
 
 def test_a_transfer_on_a_launched_board_takes_that_channels_next_turn_to_the_expert(

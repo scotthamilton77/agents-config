@@ -955,3 +955,30 @@ def test_the_openrouter_seat_asks_the_endpoint_the_session_is_configured_with() 
     assert stated.transport.api_base == "http://127.0.0.1:9/v1"
     assert isinstance(default.transport, OpenRouterTransport)
     assert default.transport.api_base == DEFAULT_API_BASE
+
+
+def test_the_request_timeout_is_configuration_with_the_constant_as_its_default() -> None:
+    from functools import partial
+
+    from grillui import drivers
+    from grillui.tiers import DEFAULT_REQUEST_TIMEOUT, REQUEST_TIMEOUT_ENV, TierConfig
+
+    assert TierConfig.from_env({}).request_timeout == DEFAULT_REQUEST_TIMEOUT == 60.0
+    config = TierConfig.from_env({REQUEST_TIMEOUT_ENV: "300"})
+    assert config.request_timeout == 300.0
+    codex = drivers.seat_driver(config, config.map_seat)
+    heavy = drivers.seat_driver(config, config.expert_seat, tier="heavy")
+    fast = drivers.seat_driver(config, config.thread_seat)
+    assert isinstance(codex.cli, partial) and codex.cli.keywords == {"timeout": 300.0}  # type: ignore[attr-defined]
+    assert isinstance(heavy.cli, partial) and heavy.cli.keywords == {"timeout": 300.0}  # type: ignore[attr-defined]
+    assert fast.transport.timeout == 300.0  # type: ignore[attr-defined]
+
+
+def test_an_unreadable_request_timeout_is_refused_at_configuration() -> None:
+    import pytest
+
+    from grillui.tiers import REQUEST_TIMEOUT_ENV, TierConfig, UnreadableLimitError
+
+    for raw in ("soon", "0", "-5", "nan", "inf", "Infinity"):
+        with pytest.raises(UnreadableLimitError, match="number of seconds"):
+            TierConfig.from_env({REQUEST_TIMEOUT_ENV: raw})

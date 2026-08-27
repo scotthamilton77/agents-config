@@ -41,6 +41,7 @@ what the model was given and what the audit record shows are the same bytes.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -152,6 +153,12 @@ API_KEY_ENV = "OPENROUTER_API_KEY"
 # wiring built beside it. A second path would be a session exercising code no
 # real session runs.
 API_BASE_ENV = "GRILLUI_API_BASE"
+# How long one turn may take a seat to answer, whatever its transport. A
+# constant is what a session cannot state, and a turn that outlives it is an
+# unreachable seat rather than a slow one; the default stays where it is because
+# a longer wait is not the remedy for a board that hides what is waiting.
+REQUEST_TIMEOUT_ENV = "GRILLUI_REQUEST_TIMEOUT"
+DEFAULT_REQUEST_TIMEOUT = 60.0
 
 DEFAULT_API_BASE = "https://openrouter.ai/api/v1"
 CLAUDE_CLI = "claude"
@@ -189,12 +196,12 @@ class UnknownTransportError(ValueError):
 
 
 class UnreadableLimitError(ValueError):
-    """A context limit the environment stated in something that is not a count."""
+    """A limit the environment stated in something that is not one: a context
+    limit that is not a count of tokens, or a timeout that is not a positive
+    number of seconds."""
 
-    def __init__(self, name: str, raw: str) -> None:
-        super().__init__(
-            f"unreadable context limit: {name}={raw!r} must be a whole number of tokens"
-        )
+    def __init__(self, name: str, raw: str, expected: str = "a whole number of tokens") -> None:
+        super().__init__(f"unreadable limit: {name}={raw!r} must be {expected}")
 
 
 class UnknownPolicyError(ValueError):
@@ -205,6 +212,20 @@ class UnknownPolicyError(ValueError):
             f"unknown escalation policy: {policy!r}; {ESCALATION_POLICY_ENV} must be one of "
             f"{', '.join(ESCALATION_POLICIES)}"
         )
+
+
+def _seconds(source: Mapping[str, str], name: str) -> float:
+    raw = source.get(name)
+    if not raw:
+        return DEFAULT_REQUEST_TIMEOUT
+    expected = "a positive, finite number of seconds"
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise UnreadableLimitError(name, raw, expected) from error
+    if not math.isfinite(value) or value <= 0:
+        raise UnreadableLimitError(name, raw, expected)
+    return value
 
 
 def _limit(source: Mapping[str, str], name: str) -> int | None:
@@ -267,6 +288,7 @@ class TierConfig:
     fast_context_limit: int | None = None
     heavy_context_limit: int | None = None
     api_base: str = DEFAULT_API_BASE
+    request_timeout: float = DEFAULT_REQUEST_TIMEOUT
 
     def __post_init__(self) -> None:
         # Refused here rather than at the first heavy turn: a session that got
@@ -308,6 +330,7 @@ class TierConfig:
             fast_context_limit=_limit(source, FAST_CONTEXT_LIMIT_ENV),
             heavy_context_limit=_limit(source, HEAVY_CONTEXT_LIMIT_ENV),
             api_base=source.get(API_BASE_ENV) or DEFAULT_API_BASE,
+            request_timeout=_seconds(source, REQUEST_TIMEOUT_ENV),
         )
 
     @property
