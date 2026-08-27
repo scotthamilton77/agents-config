@@ -68,6 +68,7 @@ import subprocess
 import sys
 import threading
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from uuid import uuid4
@@ -117,6 +118,7 @@ from grillui.tiers import (
     CODEX_TRANSPORT,
     CONTEXT_WARN_FRACTION,
     DEFAULT_API_BASE,
+    DEFAULT_REQUEST_TIMEOUT,
     RETRY_RULE,
     Seat,
     TierConfig,
@@ -151,7 +153,7 @@ def resume_file(tier: str) -> str:
     return RESUME_FILE if tier == HEAVY_TIER else FIRST_RUNG_RESUME_FILE
 
 
-REQUEST_TIMEOUT = 60.0
+REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
 # What the map's seat may do, and it is nothing but answer. The CLI hands its
 # agent a shell and a sandbox in whatever directory the backend was launched
@@ -261,6 +263,7 @@ class OpenRouterTransport:
 
     api_key: str | None = None
     api_base: str = DEFAULT_API_BASE
+    timeout: float = REQUEST_TIMEOUT
     client: httpx.Client | None = None
     environ: Mapping[str, str] | None = None
 
@@ -277,7 +280,7 @@ class OpenRouterTransport:
             if self.client is not None:
                 response = self.client.post(self._url, json=body, headers=headers)
             else:
-                with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+                with httpx.Client(timeout=self.timeout) as client:
                     response = client.post(self._url, json=body, headers=headers)
             response.raise_for_status()
             return read_completion(response.json())
@@ -350,11 +353,11 @@ def claude_argv(model: str, effort: str, system: str, prompt: str, resume: str |
     return [*argv, prompt]
 
 
-def run_claude_cli(argv: Sequence[str], /) -> str:
+def run_claude_cli(argv: Sequence[str], /, timeout: float = REQUEST_TIMEOUT) -> str:
     """The heavy tier's transport: one process, run to completion."""
     try:
         finished = subprocess.run(  # noqa: S603 -- argv is built here, never a shell string
-            list(argv), capture_output=True, text=True, check=True, timeout=REQUEST_TIMEOUT
+            list(argv), capture_output=True, text=True, check=True, timeout=timeout
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise AgentUnreachableError(HEAVY_TIER, fault_of(error)) from error
@@ -446,7 +449,7 @@ def codex_argv(seat: Seat, system: str, prompt: str, resume: str | None) -> list
     return [*argv, prompt]
 
 
-def run_codex_cli(argv: Sequence[str], directory: Path, /) -> str:
+def run_codex_cli(argv: Sequence[str], directory: Path, /, timeout: float = REQUEST_TIMEOUT) -> str:
     """The Codex seat's transport: one process, run to completion, stdin closed,
     in the session's own directory.
 
@@ -469,7 +472,7 @@ def run_codex_cli(argv: Sequence[str], directory: Path, /) -> str:
             capture_output=True,
             text=True,
             check=True,
-            timeout=REQUEST_TIMEOUT,
+            timeout=timeout,
             stdin=subprocess.DEVNULL,
             cwd=directory,
         )
@@ -993,12 +996,20 @@ def seat_driver(config: TierConfig, seat: Seat, tier: str = FAST_TIER) -> TurnDr
     A transport left to default would answer the session's configured endpoint on
     every seat but the ones built through this function.
     """
+    timeout = config.request_timeout
     if seat.transport == CODEX_TRANSPORT:
-        return CodexDriver(config, tier=tier, seat=seat)
+        return CodexDriver(
+            config, tier=tier, seat=seat, cli=partial(run_codex_cli, timeout=timeout)
+        )
     if seat.transport == CLAUDE_TRANSPORT:
-        return HeavyDriver(config, tier=tier, seat=seat)
+        return HeavyDriver(
+            config, tier=tier, seat=seat, cli=partial(run_claude_cli, timeout=timeout)
+        )
     return FastDriver(
-        config, transport=OpenRouterTransport(api_base=config.api_base), tier=tier, seat=seat
+        config,
+        transport=OpenRouterTransport(api_base=config.api_base, timeout=timeout),
+        tier=tier,
+        seat=seat,
     )
 
 
