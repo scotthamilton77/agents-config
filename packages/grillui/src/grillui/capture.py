@@ -2,8 +2,12 @@
 
 Capture reads a session directory and nothing else. It never needs the process
 that ran the session, which is what lets it be invoked three ways -- by the
+<<<<<<< HEAD
 backend on end-session, by the agent that launched the session after it
 returns, or by a
+=======
+backend on end-session, by the agent that launched the session, or by a
+>>>>>>> origin/main
 fresh agent pointed at a directory whose log is already terminal-ready.
 
 Everything structural here is pure code over the log: the decisions and their
@@ -13,7 +17,7 @@ identical output, because the fold it rests on has no clock, no randomness and
 no I/O.
 
 `summary` is the one field code does not write. It goes through the summarizer
-seam, whose v1 default builds a bounded briefing out of the structured parts
+seam, whose shipped default builds a bounded briefing out of the structured parts
 already computed -- no agent call, and deterministic like everything else. The
 single agent pass plugs into that same seam without any other part of this
 module learning that an agent exists.
@@ -62,11 +66,11 @@ AT_REST = frozenset({"settled", "invalidated"})
 def default_summary(result: TerminalResult) -> str:
     """A briefing built from the structured parts, and never a transcript.
 
-    Deterministic on purpose: the v1 default has to hold the seam open without
+    Deterministic on purpose: the shipped default has to hold the seam open without
     making the result depend on a model being reachable, so what it says is
     counted rather than composed.
 
-    A decision invalidated is counted apart from one settled and from one left
+    An invalidated decision is counted apart from one settled and from one left
     open, because the three are different news: the human answered it, an
     answer elsewhere mooted it, or it is still waiting. Rolling the invalidated
     ones in with the open ones would report work nobody has to do.
@@ -85,7 +89,7 @@ def default_summary(result: TerminalResult) -> str:
     return (
         f"{result.session.title or result.session.id}: "
         f"{len(settled)} of {len(result.decisions)} decisions settled, "
-        + (f"{len(aside)} set aside, " if aside else "")
+        + (f"{len(aside)} invalidated, " if aside else "")
         + f"{len(result.open_items)} left open, "
         f"{len(result.threads)} side threads. {result.stop_reason}.{loose}"
     )

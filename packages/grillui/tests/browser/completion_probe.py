@@ -5,7 +5,7 @@ decision actually puts an overlay on screen carrying both actions; whether
 dismissing it leaves a board that can still be written to, with the control it
 was offering visibly marked; whether letting an agent's invalidate land on the
 last open decision finishes the board too, in an overlay that says how many
-decisions were answered and how many set aside; whether an agent putting an
+decisions were answered and how many left the flow; whether an agent putting an
 open node back on the board takes the announcement away and settling that node
 brings it back; and what the human is left looking at when the browser refuses
 to close the tab.
@@ -121,7 +121,7 @@ def statuses(base: str) -> dict[str, str]:
 
 
 def agent_adds(base: str, node: str) -> None:
-    """One open decision, put on the board by the agent that owns the map.
+    """One open decision, put on the board by the grill-master.
 
     An `add-node` is not a proposal -- it overwrites no answer -- so it lands
     the moment it is appended, which is exactly the mid-session arrival the
@@ -285,7 +285,7 @@ def main() -> None:
         # 4. A decision nobody answers can still come to rest: the human applies
         #    the invalidate an agent proposed, and the board is finished by that
         #    press. The offer says which decisions were answered and which were
-        #    set aside, and dismissing it pulses the control as it always did.
+        #    left the flow, and dismissing it pulses the control as it always did.
         agent_adds(base, "d3")
         wait_for_board(page, base, "d3")
         assert statuses(base)["d3"] == "open", statuses(base)
@@ -295,14 +295,14 @@ def main() -> None:
         human_applies(page, base, queued, "d3")
         assert statuses(base) == {"d1": "settled", "d2": "settled", "d3": "invalidated"}
         assert page.locator(OVERLAY).count() == 1, (
-            "a board whose last question was set aside announced nothing"
+            "a board whose last question left the flow announced nothing"
         )
         said = page.locator(f"{OVERLAY} .box").inner_text()
-        assert "3 decisions: 2 answered, 1 set aside" in said, said
+        assert "3 decisions: 2 answered, 1 left the flow" in said, said
         page.click(f'{OVERLAY} [data-act="dismiss-completion"]')
         page.wait_for_timeout(400)
         assert "pulsing" in (page.locator(f".topbar {END}").get_attribute("class") or ""), (
-            "the set-aside board left no pulsing control behind"
+            "the finished board left no pulsing control behind"
         )
 
         # 5. An agent putting an open decision back on the board takes both the
