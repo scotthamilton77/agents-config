@@ -901,7 +901,7 @@ Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D25, GUI-D41).
 
 Conflict: one word, three live mechanisms — see *Fold (the log event)* and
 *Fold (the projection)*. Nothing but context disambiguates them, and whether any
-of the three is renamed is a ruling owed under `agents-config-9k9.315`.
+of the three is renamed is `agents-config-9k9.331`.
 
 ## Park
 
