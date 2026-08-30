@@ -7,10 +7,11 @@
 > steps. The root `CONTEXT.md` remains authoritative for the repository's own
 > vocabulary; where a word appears in both, the entry here says so.
 >
-> Two drafts under review at the time of writing — the pending-analysis spec and
-> its terminal-review child, both dated 2026-08-30 and living on the branch
-> spec-9k9.315-pending-analysis — propose vocabulary this file records as
-> proposals rather than as settled meaning. Every such entry says which is which.
+> Two merged specs whose slices are not yet built — the pending-analysis spec,
+> `docs/specs/2026-08-30-grilling-board-pending-analysis.md`, and its
+> terminal-review child, `docs/specs/2026-08-30-grilling-board-terminal-review.md`
+> — propose vocabulary this file records as proposals rather than as settled
+> meaning. Every such entry says which is which.
 
 ---
 
@@ -56,14 +57,16 @@ them; `packages/grillui/src/grillui/schemas.py` validates the shape.
 
 ## Trade-off (`pcr`)
 
-What an option is expected to buy, cost and force downstream — its pros, its
-costs and its ramifications, which is what `pcr` abbreviates; no other artifact
-expands it, and this entry is where the expansion lives. It is the human's only
-route on the board to the reasoning behind an option. An option carrying none
-shows no trade-off and is otherwise unaffected: what an option puts in question
-is the mark's business, not the trade-off's.
+What an option is expected to buy, cost and force downstream — what it buys, what
+it costs, what it forces downstream, which is the reading the `grill-with-ui`
+skill states for the three parts; `pcr` is the acronym over them, and this entry
+is where the acronym is expanded. It is the human's only route on the board to
+the reasoning behind an option. An option carrying none shows no trade-off and is
+otherwise unaffected: what an option puts in question is the mark's business, not
+the trade-off's.
 
-Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U19).
+Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U19);
+`src/user/.agents/skills/grill-with-ui/SKILL.md` states the three parts.
 
 ## Marked (`puts_in_question`)
 
@@ -78,6 +81,16 @@ Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D37, §5.7).
 Conflict: `packages/grillui/src/grillui/schemas.py` and the `grill-with-ui`
 skill each restate the sentence, and only the phrase "rules on" is mechanically
 asserted across the three.
+
+## Pre-mark
+
+The page showing, while the human has an option in hand, every decision that
+option would put in question. It is the mark made visible before anything is
+taken: presentation state alone, crossing no wire and appending nothing, so a
+reload with nothing in hand comes back to a board without it. One option is in
+hand at a time. Not to be confused with *pre-ruling*, which is cached judgment.
+
+Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U25).
 
 ## Prereq
 
@@ -95,6 +108,25 @@ answered, computed in code and never re-derived by the page. The frontier is
 also what drives a session — nobody schedules the human, the frontier does.
 
 Contract: `packages/grillui/src/grillui/projector.py`.
+
+## Design tree
+
+The plan as the conversational `grilling` skill holds it: every decision
+branching into the decisions that hang off it. It is the same structure the
+board renders as the map, in the medium that has no board — which is why the
+frontier is computed the same way in both.
+
+Contract: `src/user/.agents/skills/grilling/SKILL.md`.
+
+## Round
+
+One pass over the question frontier in the conversational `grilling` skill: the
+whole frontier asked at once, then a wait for the human's answers before the
+next. It is the conversational analogue of the board's turn-taking, and it has
+no counterpart on the board — the board's frontier is standing rather than
+batched, so the round does not cross into the grill-master's brief.
+
+Contract: `src/user/.agents/skills/grilling/SKILL.md`.
 
 ## Settled
 
@@ -127,12 +159,19 @@ Contract: `packages/grillui/src/grillui/projector.py`.
 ## Lock
 
 A hold on an open decision that keeps it off the frontier until the human deals
-with what is holding it. A lock is always somebody's — an agent's queued
-proposal, or an alert it raised — and the board names the holder rather than
-leaving the human to infer it. Fog is not a lock: a decision waiting on an unmet
-prerequisite is *fogged*, a status of its own with nobody holding it.
+with what is holding it, and a lock is always somebody's — the board names the
+holder rather than leaving the human to infer it. Four kinds hold one today: an
+agent's queued proposal on the decision, an alert it raised, a mandated thread
+holding the answer the human picked, and any open thread the agent flagged as
+requiring action. The drafts propose two more, an impact task weighing the
+decision and an open review discussion. Fog is not a lock: a decision waiting on
+an unmet prerequisite is *fogged*, a status of its own with nobody holding it.
 
-Contract: `packages/grillui/src/grillui/projector.py`.
+Contract: `packages/grillui/src/grillui/projector.py` for the board's own lock;
+`packages/grillui/src/grillui/page/script.js` for the thread-side holds.
+
+Design: the pending-analysis spec (PND-D5) for the task holder; the
+terminal-review draft (TRV-D2) for the review discussion.
 
 ## Mandate
 
@@ -141,6 +180,11 @@ and that the thread's conclusion is the only way the decision settles. The
 answer is held rather than applied until then.
 
 Contract: `packages/grillui/src/grillui/schemas.py`.
+
+Conflict: the v1 spec also uses *mandate* for a clause of an agent's brief — the
+facilitation mandate a thread agent carries — and calls its GUI-U criteria "UI
+mandates". The alignment pass renames those brief-clause uses; the decision
+property is the meaning that stays.
 
 ## History
 
@@ -187,6 +231,27 @@ conversation of a thread this agent is not having.
 
 Contract: `packages/grillui/src/grillui/projector.py`.
 
+## Catch-up
+
+What a thread set aside is handed when it is picked up again: the map events that
+landed on the board while it was away. It is projected and never composed — an
+entry is there because folding the log through it changed the decisions — so a
+catch-up naming something the log does not carry is corruption of the same kind
+a short image 2 is.
+
+Contract: `packages/grillui/src/grillui/projector.py` folds it;
+`packages/grillui/src/grillui/schemas.py` holds the shape.
+
+## Map event
+
+An entry that moves a decision, and that is the whole of the definition: one
+exactly when folding the log through it changes image 1's decisions. It is
+measured rather than listed, because a list of kinds would be a second
+definition of what changed the map and would disagree with the projector the
+first time a kind lands one way and waits the other.
+
+Contract: `packages/grillui/src/grillui/projector.py`.
+
 ## Handoff
 
 The single file that crosses the gap from the agent that launched a session to
@@ -206,6 +271,15 @@ judges against, and judging it met is as far as an agent goes.
 
 Contract: `src/user/.agents/skills/grilling/SKILL.md` states it;
 `docs/specs/2026-08-23-grill-master-role.md` says who judges it;
+`packages/grillui/src/grillui/schemas.py` holds the field.
+
+## Posture
+
+The briefing's statement of how hard to push and on what axis — the field beside
+`stop_when`, and the other half of what shapes an agent's manner. Where
+`stop_when` says when to stop, posture says how to press until then.
+
+Contract: `src/user/.agents/skills/grill-with-ui/SKILL.md` writes it;
 `packages/grillui/src/grillui/schemas.py` holds the field.
 
 ## Session
@@ -243,6 +317,16 @@ ended with work still unfinished — end is a gesture, never an inference from t
 board being at rest.
 
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D10).
+
+## Completion offer
+
+What the page shows once it reads the board as finished: an overlay saying
+nothing on the board is waiting on the human, and offering to end the session.
+Completion is announced rather than assumed, and the offer is never the ending —
+dismissing it returns the human to the board, and end stays their gesture. The
+criterion owns what *finished* means.
+
+Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U17).
 
 ---
 
@@ -287,6 +371,26 @@ the channel is in expert mode for another reason.
 
 Contract: `packages/grillui/src/grillui/escalation.py` decides the class;
 `packages/grillui/src/grillui/lane.py` decides which seat a turn actually takes.
+
+## Clerical
+
+A gesture that is not a judgment: everything outside the closed set of judgment
+classes, which stays on the first rung. The class is the whole distinction — a
+clerical gesture is not held at the expert seat by a judgment one before it,
+because classing writes nothing that outlives the gesture.
+
+Contract: `packages/grillui/src/grillui/escalation.py`.
+
+## Reshape step
+
+The procedure every grill-master turn follows, carried verbatim in its brief on
+both tiers: what a turn does beyond settling the decision in front of it. It is
+in the brief rather than in code because no gate can read whether a turn
+reshaped the map or merely answered it, and it is the only part of the
+conversational skill's method that crosses to the board — the tree, the frontier,
+the round and the recommendation are the board's own.
+
+Contract: `docs/specs/2026-08-23-grill-master-role.md` (§5.3).
 
 ## Dispatch
 
@@ -368,9 +472,22 @@ The backend re-asking one gesture at the expert seat because the first-rung turn
 did not discharge it. The expert's turn is on the log like any other, attributed
 to its seat, so the record shows two turns for the one gesture. What a hand-up
 does not do is move the channel — the next gesture starts on the first rung
-again — which is what distinguishes it from a transfer.
+again — which is what distinguishes it from a transfer. The sources also call it
+the *post-reply press*, and the lane calls the act of doing it *pressing* or
+*insisting*.
 
-Contract: `packages/grillui/src/grillui/lane.py`.
+Contract: `packages/grillui/src/grillui/lane.py`;
+`docs/specs/2026-08-23-grill-master-role.md` (GUI-D48) for the other name.
+
+## Coverage
+
+What the check on a grill-master reply reads: whether every decision the dispatch
+named was ruled on. It is never correctness — a ruling the backend would disagree
+with is not a ruling missing — which is what lets the check run in code with no
+prose parsing. A `stands` is credited by its reasoning, and an `invalidate` or a
+`revise` only where the same document carries that update against that decision.
+
+Contract: `packages/grillui/src/grillui/escalation.py`.
 
 ## Escalation
 
@@ -396,12 +513,14 @@ Contract: `packages/grillui/src/grillui/escalation.py`.
 
 ## Distrust counter
 
-The count of the human saying wordlessly that a first-rung turn was wrong. It
-exists because the human's other gestures on the map channel carry no text for a
-transcript condition to read. Once the count is high enough the policy moves the
-map channel up and leaves it there; the way back down is the human's own
-transfer control. The count itself is the running process's and starts again
-after a restart — what survives is the move, which is in the log.
+The count of a first-rung map turn having been found wanting, from either of two
+signals: the human dismissing it, which is their one wordless way of saying it
+was wrong, and the backend pressing it to the expert seat because it left a named
+decision unruled. It exists because the human's other gestures on the map channel
+carry no text for a transcript condition to read. Once the count is high enough
+the policy moves the map channel up and leaves it there; the way back down is the
+human's own transfer control. The count itself is the running process's and starts
+again after a restart — what survives is the move, which is in the log.
 
 Contract: `packages/grillui/src/grillui/lane.py`;
 `docs/specs/2026-08-23-grill-master-role.md` (GUI-D48) for the design.
@@ -409,13 +528,20 @@ Contract: `packages/grillui/src/grillui/lane.py`;
 Conflict: GUI-D48 calls the counter "per session and sticky", where the
 implementation makes only the resulting transfer durable.
 
+Conflict: the lane writes the distrust move onto the status lane
+unconditionally, where the transcript-condition path in
+`packages/grillui/src/grillui/drivers.py` writes its move only under the
+autonomous policy — one mechanism named by *Escalation policy*, two gatings.
+
 ## Grill-master
 
 The agent that authors the map: it rules on what every human gesture does to the
 rest of the plan, keeps the map honest after each one, and is the only *agent*
 that may change the map. It is a responder and never an initiator — the frontier
 drives, not the grill-master — and it speaks to the human only in notices. Also
-called the **map author**, which is the same role named by what it is for; the
+called the **map author**, which is the same role named by what it is for, and
+*the agent that owns the map* on the board's own controls and in the help
+material, which is the phrase the human is shown; the
 role and the tier are briefed independently, which is why the name matters. The
 map's first shape is not its work: the agent running the `grill-with-ui` skill
 assembles the handoff, and the grill-master authors every change from there.
@@ -435,6 +561,16 @@ than by inferring a cause.
 
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D24, GUI-D39, GUI-D47).
 
+## Board legend
+
+The part of a thread agent's brief that tells it how to read a board that moved:
+what a decision's status, rationale and history mean, so it quotes the record
+rather than composing a cause. Every composed thread-agent prompt carries it, on
+both tiers — a legend the heavier seat could infer is still cheaper to state than
+a turn spent inferring it wrong.
+
+Contract: `docs/specs/2026-08-23-grill-master-role.md` (GMR-A6, GUI-D47).
+
 ## Backend
 
 The coded process that owns one session — never an agent. It holds the log,
@@ -446,8 +582,11 @@ Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D1).
 
 ## Map document
 
-The one shape every grill-master turn comes back in; the sources also call it
-the *grill-master document* and the *reply document*. There is no prose mode: a
+The one shape every grill-master turn comes back in. Every source that names it
+today calls it the *reply document*, the specs saying *the grill-master reply
+document* and the backend's own retry message *the reply document*; *map
+document* is this glossary's name and the one being propagated to them. There is
+no prose mode: a
 reply that does not validate is refused and never shown to the human as the bytes
 it arrived in. The shape exists because a turn whose rulings went missing into a
 typo is the failure it was written to end.
@@ -472,6 +611,19 @@ reads them in code rather than reading prose. No check reads what the reasoning
 
 Contract: `packages/grillui/src/grillui/escalation.py`.
 
+## Mootness obligation
+
+What the gesture a turn is taken on owes the rest of the board: the decisions
+that gesture was authored to kill, riding the dispatch as its own field. Two
+gestures owe one — an answer taking an option that marks what it puts in
+question, and an invalidate the human applied. It is composed from what the board
+already carries rather than inferred from prose, and it rides its own field
+because a rule an agent has to find in the board is one the first rung does not
+find.
+
+Contract: `packages/grillui/src/grillui/escalation.py` composes it;
+`packages/grillui/src/grillui/schemas.py` holds the shape.
+
 ## Stands
 
 The ruling that a decision survives the gesture intact. It is a credited answer
@@ -482,7 +634,7 @@ answered.
 
 Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D38, GUI-D45).
 
-Conflict: the pending-analysis draft proposes that a `stands` notice arrive
+Conflict: the pending-analysis spec proposes that a `stands` notice arrive
 already read, where the merged artifacts raise it like any other.
 
 ## Invalidate
@@ -500,6 +652,23 @@ Changing what a decision asks. A revise says what changed rather than restating
 the node. It is the way out for a decision that survives a gesture once what
 died is dropped from it — which is why the ruling vocabulary has three verdicts
 and not one.
+
+Contract: `packages/grillui/src/grillui/projector.py`.
+
+## Unsettle
+
+Taking a decision's answer back: it returns to open and everything resting on it
+goes stale. Like an invalidate it always waits for the human, because undermining
+a decision they answered is their call and not an agent's.
+
+Contract: `packages/grillui/src/grillui/projector.py`.
+
+## Resolve-stale
+
+The verdict on a decision whose support was withdrawn: it leaves stale, settled
+again if its answer survived the withdrawal and open if it did not. It lands
+without waiting, because it is the agent adjudicating a change the human already
+made rather than proposing one of its own.
 
 Contract: `packages/grillui/src/grillui/projector.py`.
 
@@ -533,14 +702,14 @@ Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D21).
 
 ## Impact task
 
-**Proposed, not built.** In the pending-analysis draft, one unit of judgment
+**Proposed, not built.** In the pending-analysis spec, one unit of judgment
 weighed for one target decision, so that an agent's judgment becomes an
 unsettled prerequisite: a decision a ruling in flight may move is unanswerable
 while everything not downstream stays open. The draft calls the genus a *task*
 and gives it a second mode, the *review task*, over a review entry rather than a
 decision.
 
-Design: the pending-analysis draft, PND-D1.
+Design: the pending-analysis spec, PND-D1.
 
 ## Pre-ruling
 
@@ -548,7 +717,7 @@ Design: the pending-analysis draft, PND-D1.
 would need it, so the expected path costs no wait. A pre-ruling the board has
 moved under is recomputed rather than consumed.
 
-Design: the pending-analysis draft, PND-D6.
+Design: the pending-analysis spec, PND-D6.
 
 Conflict: *pre-ruling* and *pre-mark* name different things one word apart — the
 first is cached judgment, the second is the page's display of an option's mark.
@@ -575,7 +744,7 @@ board without it.
 
 Contract: `packages/grillui/src/grillui/projector.py`.
 
-Conflict: the pending-analysis draft carves one exception — a task's result may
+Conflict: the pending-analysis spec carves one exception — a task's result may
 change its own target directly — which the merged artifacts do not have.
 
 ## Dismiss
@@ -588,12 +757,16 @@ Contract: `packages/grillui/src/grillui/projector.py`.
 
 ## Inbox
 
-The board's surface for the queue: what is waiting on the human's gesture. It is
-told apart from the notification lane by that one property — the inbox holds what
-needs an action, and the lane holds what has already happened.
+The board's surface for the queued proposals alone: the map mutations waiting on
+the human's gesture. It is not the surface for the whole queue — the notices in
+the same queue render in the notification lane and on the decisions they are
+about. The split is by what the item needs: the inbox holds what needs an action,
+and the lane holds what has already happened.
 
 Contract: `packages/grillui/src/grillui/projector.py` folds the queue;
-`packages/grillui/src/grillui/page/script.js` renders it.
+`packages/grillui/src/grillui/page/script.js` renders both surfaces;
+`docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U15) for a notice rendering on its
+decision.
 
 ## Pending
 
@@ -601,23 +774,22 @@ The queue of what the human has not dealt with yet: the notices they were told
 and the map mutations an agent proposed and the board has not taken. The two
 share one queue because they are the same question to the human and the same
 question to the agent, which is dispatched the queue as the board the human is
-actually looking at.
+actually looking at. One queue, two surfaces: the proposals in the inbox and the
+notices in the notification lane and on the decisions they name.
 
 Contract: `packages/grillui/src/grillui/projector.py`.
 
-Conflict: the pending-analysis draft uses *pending* in its prose for a decision
-under analysis — the opposite state, one nobody may act on — and names the
-persisted form `waiting` to avoid exactly this collision. The queue meaning is
-the merged one.
-
 ## Waiting
 
-**Proposed, not built.** In the pending-analysis draft, the state of a decision
-whose impact is being weighed: off the frontier, unanswerable, and named on the
-board together with what it waits on. The word was chosen for the log and the
-projections precisely because *pending* was taken.
+A decision off the frontier and unanswerable, with what it waits on named beside
+it. The board already labels a decision held by an unmet prerequisite or by an
+unjudged conflict this way, and the pending-analysis spec extends the same sense
+to a decision whose impact is being weighed. *Pending* is the human's queue of
+what to act on; waiting is the opposite state, one nobody may act on, which is
+why the two are different words.
 
-Design: the pending-analysis draft.
+Contract: `packages/grillui/src/grillui/page/script.js` for what the board labels
+today; the pending-analysis spec (PND-D5) for the proposed extension.
 
 ## Proposal
 
@@ -632,15 +804,30 @@ Contract: `packages/grillui/src/grillui/projector.py`.
 
 Something an agent said that is addressed to the human. It joins the queue and
 carries a control that opens a thread on it, and where it is about a particular
-decision it renders on that decision rather than in a lane of its own.
+decision it renders on that decision rather than in a lane of its own. Two update
+kinds are notices — *informational* and *elicit-alert* — and they differ in whether
+the decision is held while the human deals with it.
 
-Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U9, GUI-U15).
+Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U9, GUI-U15);
+`packages/grillui/src/grillui/schemas.py` for the two kinds.
 
 ## Informational
 
-The update kind a notice travels as: it moves no decision and tells the human
-something. It is how the grill-master's prose reaches the board at all, since the
-map channel has no composer the human can type into.
+The notice kind that only tells the human something: it moves no decision and
+holds none. It is how the grill-master's prose reaches the board at all, since
+the map channel has no composer the human can type into.
+
+Contract: `packages/grillui/src/grillui/schemas.py`.
+
+## Elicit-alert
+
+The notice kind that can take a lock: an alert against one decision, which says
+for itself whether it blocks that decision or merely speaks about it. The sender
+always says which, because a lock nobody asked for and one somebody did are
+otherwise the same bytes. It never queues as a proposal —
+raising an alert as early as possible is the point of one — but it counts as a map
+mutation under the sole-author rule, since the hold it can place is the map
+author's to place.
 
 Contract: `packages/grillui/src/grillui/schemas.py`.
 
@@ -652,6 +839,16 @@ be spoken in before it exists, and its agent is given the whole board plus its
 own thread's turns as the thread projection.
 
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D24).
+
+## Seed prompt
+
+A prepared first turn a decision carries for the thread about it, offered as a
+control beside the box it stands in for. A decision that declares none renders
+none — the row is what the plan author wrote and nothing the page invents — and the
+full text is the label, because what a control sends is the only thing worth
+knowing about it.
+
+Contract: `packages/grillui/src/grillui/page/script.js`.
 
 ## Map thread
 
@@ -721,10 +918,35 @@ Contract: `packages/grillui/src/grillui/projector.py`.
 A disagreement the board cannot resolve on its own and hands back to the agent
 that caused it: an author withdrawing a queue entry the human had already acted
 on. Neither the page nor the backend adjudicates one — only the authoring agent
-knows what the rewrite was for.
+knows what the rewrite was for. Two other disagreements go by the same word and
+have their own entries: *queue conflict* and *result conflict*.
 
 Contract: `packages/grillui/src/grillui/projector.py` detects it;
 `packages/grillui/src/grillui/lane.py` hands it back.
+
+## Queue conflict
+
+A queued proposal the board moved under: the human changed its target after it
+was authored, so applying it now would overwrite the change they made while it
+waited. That is refused rather than resolved — the proposal stays queued and what
+to do about it is a conversation. The decision wears it, and until it is judged
+its answer is readable but cannot change.
+
+Contract: `packages/grillui/src/grillui/projector.py` marks the proposal;
+`packages/grillui/src/grillui/page/script.js` shows it on the decision.
+
+## Result conflict
+
+**Proposed, not built.** In the pending-analysis spec, two task results that
+were independent when they started and disagree when combined — two new nodes with
+the same prerequisites, two sub-updates on one decision, or a pre-ruling whose
+target was answered after its basis. One expert turn merges them into a single
+proposal naming both sources, so the human adjudicates once rather than
+reconciling two. The draft calls it simply a conflict; this glossary names it to
+tell it from the other two.
+
+Design: the pending-analysis spec, PND-D8, and its own account of which results
+conflict.
 
 ## Converged answer
 
@@ -895,14 +1117,14 @@ repository sense.
 
 ## Review
 
-**Proposed, not built.** In the terminal-review draft, the phase a board enters
+**Proposed, not built.** In the terminal-review spec, the phase a board enters
 once the frontier empties: the expert enumerates acceptance criteria and
 edge-case rows, and the human disposes of each. It exists because the board
 otherwise ends on a prose stop condition and leaves the readiness gate downstream
 nothing to read, where the conversational `grilling` skill ends on enumerated
 criteria.
 
-Design: the terminal-review draft, TRV-D1.
+Design: the terminal-review spec, TRV-D1.
 
 Conflict: *review* elsewhere in this repository means adversarial code review and
 its verdict artifact; the two share only the word.
@@ -913,34 +1135,40 @@ Two things one word. On the log, an *entry* is one appended line.
 
 Contract: `packages/grillui/src/grillui/schemas.py`.
 
-**Proposed, not built.** In the terminal-review draft, an *entry* is also one item
+**Proposed, not built.** In the terminal-review spec, an *entry* is also one item
 of the review phase, which the human disposes of and which links back to the
 decisions it derives from.
 
-Design: the terminal-review draft.
+Design: the terminal-review spec.
 
 ## Criterion
 
-**Proposed, not built.** In the terminal-review draft, one acceptance criterion
-enumerated at the end of a session, naming the decisions it derives from so that
-it traces to the choice behind it. It is a record on the log rather than a
-decision.
+One acceptance criterion for the plan under grilling, with a stable id and stated
+so that it is directly expressible as a failing test. The conversational
+`grilling` skill enumerates them today and does not end a session until it has —
+an empty question frontier is necessary and not sufficient. **Proposed, not
+built:** the terminal-review spec makes the same enumeration the board's, as a
+record on the log naming the decisions each criterion derives from.
 
-Design: the terminal-review draft; the root `CONTEXT.md` for what an acceptance
-criterion is in this repository generally.
+Contract: `src/user/.agents/skills/grilling/SKILL.md` for the live enumeration;
+the terminal-review spec for the board's record kind; the root `CONTEXT.md` for
+what an acceptance criterion is in this repository generally.
 
 ## Taxonomy row
 
-**Proposed, not built.** In the terminal-review draft, one edge-case category
-applied to one criterion — resolved, or ruled out with a reason. The categories
-are the closed set the `grilling` skill already works through.
+One edge-case category applied to one criterion — resolved, or explicitly ruled
+out with a reason. The categories are a closed set of five, and the
+conversational `grilling` skill treats each row of it as a question on the
+frontier today. **Proposed, not built:** the terminal-review spec makes the row
+a disposable record on the board.
 
-Design: the terminal-review draft.
+Contract: `src/user/.agents/skills/grilling/SKILL.md` for the categories and the
+live use; the terminal-review spec for the board's record kind.
 
 ## Disposition
 
-**Proposed, not built.** In the terminal-review draft, where the human has got to
+**Proposed, not built.** In the terminal-review spec, where the human has got to
 on one review entry. Rejection is a conclusion of a discussion rather than a
 control of its own, so a rejection always has a recorded reason.
 
-Design: the terminal-review draft, TRV-D3.
+Design: the terminal-review spec, TRV-D3.
