@@ -26,13 +26,15 @@ Enter sends whatever is in a box, on a decision and in a thread alike. Shift+Ent
 in a newline instead, and so does a backslash typed right before Enter — the backslash
 is eaten, the way it works in the terminal. Cmd+Enter (Ctrl+Enter) still sends too.
 
-Settling a decision opens whatever was waiting on it. A decision greyed as **fog** is
-one whose prerequisite is not settled yet — settle that first and this one opens.
+Settling a decision opens whatever was waiting on it. A decision greyed as **fog** is one
+whose prerequisite has not come through yet — settle that prerequisite, or have it taken
+out of the plan, and this one opens.
 
 Holding an option — hovering it, reaching it with the keyboard, having let a change land
 that points at one, or holding one as the answer behind a mandated thread — marks the
 decisions that taking it would put in question; nothing has happened to them yet, and the
-agent that owns the map rules on each one once you take the option.
+**grill-master**, the agent that authors the map, rules on each one once you take the
+option.
 
 Some decisions carry prepared prompts (💬). Pressing one says those exact words as the
 human's own turn in that decision's thread. It is a shortcut for their hands, not a
@@ -52,7 +54,7 @@ what is said in one is not in another.
   on the record.
 - **Close** — you are done with it. No effect on the board, kept on the record, and
   saying something in it later opens it again.
-- **Fold** — conclude it and hand the conclusion to the agent that owns the map. It is
+- **Fold** — conclude it and hand the conclusion to the grill-master. It is
   offered once the agent has declared something foldable, and the pane previews what
   folding would do.
 - **Pop out** — the same pane in its own window.
@@ -69,8 +71,8 @@ The help thread is a thread like any of these, except that it hangs off no decis
 **🗺 Ask for a map change** in the top row opens the other thread that hangs off no
 decision: the one about the map itself. Say what you want changed — decisions that are now
 moot, one that is wrong, one that is missing — and its agent turns that into a statement of
-which decisions change and how. Folding it hands the statement to the agent that owns the
-map, which proposes the changes; they arrive in the inbox waiting on you, like any other.
+which decisions change and how. Folding it hands the statement to the grill-master, which
+proposes the changes; they arrive in the inbox waiting on you, like any other.
 It is the route for a change spanning several decisions, which no thread on one of them can
 reach: a thread's agent may recommend a map change and never make one.
 
@@ -85,28 +87,40 @@ it — or *Dismiss it*.
 will be refused until one side gives way; talk it through or dismiss it.
 
 📥, ✉, ⚠ and 🕘 on a decision block mean, in order: a change is waiting on it, a message
-from the agent, the agent wants something judged, and its change history.
+from the agent, a question the agent raised that holds the decision until it is concluded,
+and its change history.
 
 ## Notifications
 
 🔔 carries what an agent said that the board has nowhere else to show. It is not the
 inbox: nothing in here is waiting on an action. Notifications bubble as they arrive, and
-the list starts empty on a reload — a session someone comes back to should not announce
-the morning's work as news. What was read stays read.
+the list and what was read both survive a reload — a session someone comes back to does
+not re-announce what they have already read as news. Anything still unread bubbles again
+after a reload.
 
-## The two agent tiers
+## The two tiers
 
-**Transfer to expert** (⚡) sends the next turn on that one channel to the heavier, slower
-agent, carrying everything already said there. It highlights when the agent itself
-recommends escalating; the human decides. Pressing it again puts that channel back on the
-fast agent. It is per channel — moving one thread leaves the map and every other thread
-where they were.
+Every channel — the map and each thread — takes its turns on the **first rung** until
+something moves it up. That is a statement about position and not about speed: the map's
+first-rung seat is a reasoning model. Above it sits the **expert**, the heavier and slower
+seat, shared by every channel.
 
-**Map doctor** (🩺) sends the agent over the whole board and everything queued, with a
-reassess-everything instruction. The board is read-only behind a notice until it answers.
+**Transfer to expert** (⚡) sends the next turn on that one channel to the expert, carrying
+everything already said there. It highlights when the agent itself recommends the expert
+tier. By default the human decides, but a session may be configured to let the backend act
+on that recommendation itself; either way the move is named on that channel's status lane.
+The backend may also hand a single turn up to the expert without moving the channel — the
+next one starts on the first rung again — and each turn on the board says which seat took
+it. Pressing the control again, now reading **Return to fast agent**, puts the channel back
+on the first rung. It is per channel — moving one thread leaves the map and every other
+thread where they were.
+
+**Map doctor** (🩺) sends the grill-master over the whole board and everything queued,
+with a reassess-everything instruction. The board is read-only behind a notice until it
+answers.
 It is the escape hatch when the board and the conversation have drifted apart.
 
-## Waiting, connection and windows
+## Agent replies, connection and windows
 
 The indicator across the top carries three signals: whether the backend is reachable,
 what the agents are doing and for how long, and whether anything this page sent has not

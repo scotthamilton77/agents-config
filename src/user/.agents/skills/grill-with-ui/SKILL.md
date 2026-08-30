@@ -92,14 +92,19 @@ Answer questions about it without reading any file:
 
 - A **map** of the plan's decisions, each opening into its question with the labelled
   options and a free-text note; answering one settles it and opens whatever waited on it.
-- **Threads** beside the map for side discussions, each with its own agent. A thread is
-  folded back into the map when it concludes, parked as a loose end the human may come
-  back to, or closed because they are done with it. Nothing is taken away by any of the
-  three, and a closed thread opens again if the human says something in it.
-- A **transfer-to-expert** control per channel, moving that conversation from the fast
-  agent to the heavy one; it highlights when the agent recommends escalating.
-- A **pending queue** of changes the agents propose to the map: the human applies or
-  dismisses each. Nothing an agent says rewrites the board on its own.
+- **Threads** beside the map for side discussions, each with its own agent. The human
+  folds one to conclude it — which hands the conclusion to the grill-master and changes
+  nothing on the map by itself — parks it as a loose end they may come back to, or closes
+  it because they are done with it. Nothing is taken away by any of the three, and a
+  closed thread opens again if the human says something in it.
+- A **transfer-to-expert** control per channel, moving that conversation from its
+  first-rung seat to the expert — the heavier, slower seat above it, and one of four
+  routes there (the human's transfer, the escalation policy, a hand-up of one turn, a
+  judgment class). It highlights when the agent recommends the expert tier.
+- A **pending queue** of what the human has not dealt with yet: the map mutations the
+  agents propose and the notices they raise. The board shows the proposals in the inbox,
+  where the human applies or dismisses each, and the notices in the notification lane.
+  Nothing an agent says rewrites the board on its own.
 - **Help**, upper right — a side thread on the session rather than on any decision,
   answered by an agent holding the reference material you shipped. That is where "why is
   this blocking me" goes, so you do not have to answer it from here.
