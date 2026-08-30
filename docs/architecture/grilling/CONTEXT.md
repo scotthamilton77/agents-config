@@ -78,16 +78,22 @@ to rule on each decision named.
 
 Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D37, §5.7).
 
+Conflict: three surfaces state what a mark is — the v1 spec's §8.2, the schema's
+`Option` documentation and the handoff-assembling skill — and only the phrase
+"rules on" is asserted across all three. Agreement beyond that phrase is
+reviewed rather than tested, which GMR-A8 says in as many words.
+
 ## Plan author
 
-Whoever authored the plan a session grills — its decisions, their options, the
-marks on them and the seed prompts they carry. Not the grill-master: an option
-is authored with the node it hangs off, which is the handoff's work at the start
-and the grill-master's for a node it later adds or revises, and the mark on it
-is the plan author's prediction, which the grill-master rules on.
+Whoever authored the node a decision or option stands on, and with it the marks
+and the seed prompt it carries. It is a role attached to a node rather than a
+second agent, and it is not another name for the grill-master: the handoff's
+author holds it for the plan the session opens on, and the grill-master holds it
+only for the nodes it adds or revises. Whoever holds it, a mark is a prediction
+the grill-master then rules on.
 
-Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D37) for the mark
-that is theirs, GUI-D47 for the sentence every thread agent is told;
+Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D37) for who
+authors a mark, GUI-D47 for the sentence every thread agent is told;
 `packages/grillui/src/grillui/tiers.py` states it.
 
 ## Pre-mark
@@ -190,9 +196,9 @@ answer is held rather than applied until then.
 Contract: `packages/grillui/src/grillui/schemas.py`.
 
 Conflict: the v1 spec also uses *mandate* for a clause of an agent's brief — the
-facilitation mandate a thread agent carries (GUI-D44, GMR-A1) — which stays
-under that name, because a test name and a shipped slice record share it.
-Unrelated mechanisms sharing a word.
+facilitation mandate a thread agent carries (GUI-D44, GMR-A1), which is a clause
+of a role's brief and not a property of any decision. Unrelated mechanisms
+sharing a word.
 
 ## History
 
@@ -894,7 +900,8 @@ decision themselves, which folds nothing and dispatches nobody.
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D25, GUI-D41).
 
 Conflict: one word, three live mechanisms — see *Fold (the log event)* and
-*Fold (the projection)*. Nothing but context disambiguates them.
+*Fold (the projection)*. Nothing but context disambiguates them, and whether any
+of the three is renamed is a ruling owed under `agents-config-9k9.315`.
 
 ## Park
 
