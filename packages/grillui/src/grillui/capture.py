@@ -2,12 +2,7 @@
 
 Capture reads a session directory and nothing else. It never needs the process
 that ran the session, which is what lets it be invoked three ways -- by the
-<<<<<<< HEAD
-backend on end-session, by the agent that launched the session after it
-returns, or by a
-=======
 backend on end-session, by the agent that launched the session, or by a
->>>>>>> origin/main
 fresh agent pointed at a directory whose log is already terminal-ready.
 
 Everything structural here is pure code over the log: the decisions and their
