@@ -78,9 +78,17 @@ to rule on each decision named.
 
 Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D37, §5.7).
 
-Conflict: `packages/grillui/src/grillui/schemas.py` and the `grill-with-ui`
-skill each restate the sentence, and only the phrase "rules on" is mechanically
-asserted across the three.
+## Plan author
+
+Whoever authored the plan a session grills — its decisions, their options, the
+marks on them and the seed prompts they carry. Not the grill-master: an option
+is authored with the node it hangs off, which is the handoff's work at the start
+and the grill-master's for a node it later adds or revises, and the mark on it
+is the plan author's prediction, which the grill-master rules on.
+
+Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D37) for the mark
+that is theirs, GUI-D47 for the sentence every thread agent is told;
+`packages/grillui/src/grillui/tiers.py` states it.
 
 ## Pre-mark
 
@@ -182,9 +190,9 @@ answer is held rather than applied until then.
 Contract: `packages/grillui/src/grillui/schemas.py`.
 
 Conflict: the v1 spec also uses *mandate* for a clause of an agent's brief — the
-facilitation mandate a thread agent carries — and calls its GUI-U criteria "UI
-mandates". The alignment pass renames those brief-clause uses; the decision
-property is the meaning that stays.
+facilitation mandate a thread agent carries (GUI-D44, GMR-A1) — which stays
+under that name, because a test name and a shipped slice record share it.
+Unrelated mechanisms sharing a word.
 
 ## History
 
@@ -438,7 +446,9 @@ Contract: `packages/grillui/src/grillui/tiers.py`.
 
 Conflict: the name reads as a claim about latency that
 `docs/specs/2026-08-23-grill-master-role.md` (GUI-D46) explicitly does not make —
-the map's first-rung seat is a reasoning model, not a fast one.
+the map's first-rung seat is a reasoning model, not a fast one. The board still
+labels the seat "fast agent"; `agents-config-9k9.327` rules on which the label
+follows.
 
 ## Seat
 
@@ -526,12 +536,14 @@ Contract: `packages/grillui/src/grillui/lane.py`;
 `docs/specs/2026-08-23-grill-master-role.md` (GUI-D48) for the design.
 
 Conflict: GUI-D48 calls the counter "per session and sticky", where the
-implementation makes only the resulting transfer durable.
+implementation makes only the resulting transfer durable —
+`agents-config-9k9.320`.
 
 Conflict: the lane writes the distrust move onto the status lane
 unconditionally, where the transcript-condition path in
 `packages/grillui/src/grillui/drivers.py` writes its move only under the
 autonomous policy — one mechanism named by *Escalation policy*, two gatings.
+`agents-config-9k9.324` rules on which gating is right.
 
 ## Grill-master
 
@@ -547,10 +559,6 @@ map's first shape is not its work: the agent running the `grill-with-ui` skill
 assembles the handoff, and the grill-master authors every change from there.
 
 Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D44).
-
-Conflict: `docs/specs/2026-08-18-grilling-ui-v1.md` once called it "the driving
-agent", which collides with the backend's own name for itself; the role ruling
-drops that word.
 
 ## Thread agent
 
@@ -582,11 +590,7 @@ Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D1).
 
 ## Map document
 
-The one shape every grill-master turn comes back in. Every source that names it
-today calls it the *reply document*, the specs saying *the grill-master reply
-document* and the backend's own retry message *the reply document*; *map
-document* is this glossary's name and the one being propagated to them. There is
-no prose mode: a
+The one shape every grill-master turn comes back in. There is no prose mode: a
 reply that does not validate is refused and never shown to the human as the bytes
 it arrived in. The shape exists because a turn whose rulings went missing into a
 typo is the failure it was written to end.
@@ -635,7 +639,8 @@ answered.
 Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D38, GUI-D45).
 
 Conflict: the pending-analysis spec proposes that a `stands` notice arrive
-already read, where the merged artifacts raise it like any other.
+already read, where the merged artifacts raise it like any other — until
+`agents-config-9k9.315.9` builds that slice.
 
 ## Invalidate
 
@@ -745,7 +750,8 @@ board without it.
 Contract: `packages/grillui/src/grillui/projector.py`.
 
 Conflict: the pending-analysis spec carves one exception — a task's result may
-change its own target directly — which the merged artifacts do not have.
+change its own target directly — which the merged artifacts do not have until
+`agents-config-9k9.315.5` builds that slice.
 
 ## Dismiss
 
@@ -888,8 +894,7 @@ decision themselves, which folds nothing and dispatches nobody.
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D25, GUI-D41).
 
 Conflict: one word, three live mechanisms — see *Fold (the log event)* and
-*Fold (the projection)*. Nothing but context disambiguates them, and the owner's
-ruling on renaming any of the three is pending.
+*Fold (the projection)*. Nothing but context disambiguates them.
 
 ## Park
 
