@@ -49,8 +49,7 @@ Contract: `packages/grillui/src/grillui/schemas.py`.
 
 One answer on offer for a decision, in the human's voice, labelled so that free
 text and thread turns can cite it. The board bounds how many a decision may
-carry: one option is a decision made rather than posed, and too many is a
-decision that was never narrowed.
+carry, and the skill that writes them states the bound.
 
 Contract: `src/user/.agents/skills/grill-with-ui/SKILL.md`, which is what writes
 them; `packages/grillui/src/grillui/schemas.py` validates the shape.
@@ -58,9 +57,10 @@ them; `packages/grillui/src/grillui/schemas.py` validates the shape.
 ## Trade-off (`pcr`)
 
 What an option is expected to buy, cost and force downstream. It is the human's
-only route on the board to the reasoning behind an option, and an option
-carrying none simply offers nothing to open. The acronym is never expanded in
-any artifact.
+only route on the board to the reasoning behind an option. An option carrying
+none shows no trade-off and is otherwise unaffected: what an option puts in
+question is the mark's business, not the trade-off's. The acronym is never
+expanded in any artifact.
 
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U19).
 
@@ -103,7 +103,8 @@ decision travels in every dispatch of every kind, because a projection that
 trimmed one would lose a human decision with nothing downstream able to detect
 the loss.
 
-Contract: `packages/grillui/src/grillui/projector.py`.
+Contract: `packages/grillui/src/grillui/projector.py` for the status;
+`packages/grillui/src/grillui/dispatch.py` for what every dispatch carries.
 
 ## Fog
 
@@ -124,9 +125,11 @@ Contract: `packages/grillui/src/grillui/projector.py`.
 
 ## Lock
 
-Anything that takes a decision off the frontier without settling it. A lock is
-always somebody's — an agent's queued proposal, or an alert it raised — and the
-board names what is holding rather than leaving the human to infer it.
+A hold on an open decision that keeps it off the frontier until the human deals
+with what is holding it. A lock is always somebody's — an agent's queued
+proposal, or an alert it raised — and the board names the holder rather than
+leaving the human to infer it. Fog is not a lock: a decision waiting on an unmet
+prerequisite is *fogged*, a status of its own with nobody holding it.
 
 Contract: `packages/grillui/src/grillui/projector.py`.
 
@@ -145,7 +148,8 @@ image and nowhere else. It exists so that an agent asked why the board moved
 quotes the record instead of composing a cause, and so it carries who proposed a
 move and what was ruled rather than leaving either to be inferred.
 
-Contract: `packages/grillui/src/grillui/schemas.py`.
+Contract: `packages/grillui/src/grillui/projector.py` records it;
+`packages/grillui/src/grillui/schemas.py` holds the shape.
 
 ## Rationale
 
@@ -154,7 +158,7 @@ decision itself. It is what makes a block and its justification one item rather
 than two, so the human deciding whether to apply an invalidation reads the
 argument for it in the same place.
 
-Contract: `packages/grillui/src/grillui/schemas.py`.
+Contract: `packages/grillui/src/grillui/projector.py`.
 
 ## Image 1
 
@@ -199,7 +203,9 @@ load-bearing field: an agent asked to find weaknesses finds them indefinitely,
 so a session without a stated ending never has one. It is what the grill-master
 judges against, and judging it met is as far as an agent goes.
 
-Contract: `packages/grillui/src/grillui/schemas.py`.
+Contract: `src/user/.agents/skills/grilling/SKILL.md` states it;
+`docs/specs/2026-08-23-grill-master-role.md` says who judges it;
+`packages/grillui/src/grillui/schemas.py` holds the field.
 
 ## Session
 
@@ -433,12 +439,12 @@ Contract: `docs/specs/2026-08-23-grill-master-role.md` (§8.10).
 
 ## Map mutation
 
-A change to the map, authored by an agent. Only the grill-master may author one:
-a map mutation arriving on a thread channel is refused at the appender and
-appended nowhere, whether it came over the wire or out of a driver's own reply,
-which is what makes the sole-author rule structural rather than a prompt.
+A change to the map, authored by an agent. Only the grill-master may author one,
+and the rule is structural rather than a prompt: the log refuses a map mutation
+from any other channel, wherever it came from.
 
-Contract: `packages/grillui/src/grillui/schemas.py`.
+Contract: `packages/grillui/src/grillui/schemas.py` judges the submission;
+`packages/grillui/src/grillui/log.py` is the appender that refuses it.
 
 ## Ruling
 
