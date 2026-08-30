@@ -19,8 +19,9 @@ When the frontier empties, the board enters a **review phase**: the expert enume
 acceptance criteria and taxonomy rows as entries linked to the decisions they derive from,
 and the human disposes of each — accept, or discuss; edit; add. An edit or an addition
 re-evaluates the linked decisions; a sufficient challenge reopens one, and the board
-returns to the map under its ordinary rules until the frontier empties again. End is
-offered only when every entry is accepted.
+returns to the map under its ordinary rules until the frontier empties again. The
+completion overlay is offered only when every entry is accepted; the board's End control
+stays where it is, behind the unfinished-board guard.
 
 ## User stories
 
@@ -33,23 +34,25 @@ offered only when every entry is accepted.
 
 ## The decisions, as settled
 
-**TRV-D1 — A terminal round.** When the frontier empties and the map is not ended, the expert enumerates acceptance criteria and taxonomy rows as entries on the board, linked to one or more decisions each; End is offered only when every entry is accepted. Criteria and taxonomy rows are new record kinds on the log, not decisions. *(session d7(a), free text)*
+**TRV-D1 — A terminal round.** When the frontier empties and the map is not ended, the expert enumerates acceptance criteria and taxonomy rows as entries on the board, linked to one or more decisions each; the completion overlay is offered only when every entry is accepted. Criteria and taxonomy rows are new record kinds on the log, not decisions. *(session d7(a), free text)*
 
 **TRV-D2 — A gated review with a way back.** Every entry offers accept or discuss; rejection is a conclusion of a discussion, never a control. The human may edit an entry or add one; either starts a re-evaluation task over the linked decisions, and a re-evaluation finding a conflict reopens the decision under the map's ordinary pending rules. *(session d10, free text)*
 
-**TRV-D3 — Per-entry dispositions block completion.** Each entry carries a disposition — open, accepted, under discussion, rejected with its thread — and completion is blocked until every entry is accepted and every re-evaluation and reopened decision is settled. *(session d12(a))*
+**TRV-D3 — Per-entry dispositions block completion.** Each entry carries a disposition — open, accepted, under discussion, rejected with its thread — and the completion overlay is withheld until every entry is accepted and every re-evaluation and reopened decision is settled. The human's `session-end` gesture is never withheld: it stays behind the unfinished-board guard (`agents-config-9k9.313`), and a session ended that way records every entry's disposition as it stood. *(session d12(a))*
 
 ## Implementation decisions
 
-**Entries are log records.** A criterion and a taxonomy row are record kinds carrying a stable id, text, the decision ids they derive from, and a disposition; the projector folds them into a `review` section of the second image. A taxonomy row belongs to a criterion and names its category. Ids are stable across edits: an edit is a new record superseding the last by id.
+**Entries are log records, and the closed vocabularies grow to hold them.** Three kinds join the event-kind registry as map-channel mutations the fold may carry: `criterion` — a stable id, text, and `derives_from`, one or more decision ids; `taxonomy-row` — its criterion's id, a category from the closed set of five, and either text or a `ruled_out` reason; `disposition` — an entry id and one of open, accepted, discussing, rejected. The expert and the human author the first two alike; an edit is a new record with the same id superseding the last, and an addition is a record with a fresh id. A human's `criterion` without a `derives_from` is refused at the gate, and the page does not offer the add without one. The projector folds them into a `review` section of the second image: every entry with its rows, links and disposition, and whether the phase is open.
 
-**The review phase is a board state.** The frontier empty and the map not ended is the trigger; the expert's enumeration is one judgment-class turn whose document proposes entries and nothing else; the phase ends when every entry is accepted. Reopening a decision leaves the phase and returns to it when the frontier empties again; entries survive the round trip and are re-evaluated where their linked decisions changed.
+**The enumeration is a grill-master document.** The reply document gains a `review` field carrying criteria with their rows; a document carrying `review` carries no `updates`, and one carrying both is refused. The frontier empty and the map not ended is the trigger; the enumeration is one judgment-class turn of its own class; the phase ends when every entry is accepted. Reopening a decision leaves the phase and returns to it when the frontier empties again; entries survive the round trip, and each entry linked to a decision that changed gets a re-evaluation task when the phase resumes.
 
-**Discussion is a thread.** Discuss opens a thread anchored to the entry, kinded for it, whose agent holds the entry, its linked decisions and the taxonomy; a rejection is that thread's conclusion, folded to the entry's disposition.
+**Discussion is a thread of a new kind.** `review` joins the thread kinds; its anchor is an entry id rather than a decision id, and the anchor's validity is read off the review section. The thread's agent holds the entry, its linked decisions and the taxonomy; a rejection is a `disposition` record the fold carries, so a thread's conclusion is the entry's disposition and nothing else may write rejected.
 
-**Re-evaluation is a task.** An edit or an addition records a task over the linked decisions, seated on the expert, whose result is either "consistent" or one or more reopen proposals; a reopen lands the decision back on the frontier with a history line naming the entry that caused it.
+**Re-evaluation is a task in the `review` mode.** An edit or an addition records one task of the parent spec's shape, mode `review`, targeting the entry and seated on the expert; an edit while one is live for that entry supersedes it. Its document either carries no `updates` — consistent, and the entry's disposition returns to open — or carries `unsettle` or `revise` sub-updates naming linked decisions; each named decision reopens directly, landing on the frontier with history whose `proposed_by` names the task and the entry. A sub-update naming a decision the entry does not derive from is refused at the gate.
 
-**Seams.** The end-to-end harness drives the phase with scripted seats; the terminal result gains a `criteria` section the capture step already knows how to write.
+**The terminal result carries the review.** `criteria` joins the result's fields: every entry with its id, text, links, rows and disposition, including the ones still open or rejected when the session ended, so the capture step records the phase as it stood rather than the accepted subset.
+
+**Seams.** The end-to-end harness drives the phase with scripted seats and asserts on the log, the page and the result; no new process, service or transport.
 
 ## Testing decisions
 
@@ -59,9 +62,9 @@ Drive a board to an empty frontier with scripted seats and assert the entries th
 
 - **TRV-A1** Answering the last frontier decision on a board with no open decision records one expert turn whose document proposes criteria and taxonomy rows and nothing else; each entry lands with a stable id and at least one linked decision; the completion overlay is not offered while any entry is not accepted.
 - **TRV-A2** Each entry offers accept and discuss and no reject control; accepting records the disposition; discussing opens a thread anchored to the entry whose fold may record a rejection with the thread as its reason. Idempotent: accepting an accepted entry records nothing.
-- **TRV-A3** Editing an entry or adding one records a task over its linked decisions on the expert seat; a result finding a conflict reopens the decision on the frontier with history naming the entry; a result finding none leaves the map unchanged; End stays unoffered until the task returns and any reopened decision is settled.
+- **TRV-A3** Editing an entry or adding one records one `review` task naming the entry on the expert seat, superseding a live one for the same entry; a document carrying `unsettle` or `revise` on a linked decision reopens exactly the decisions it names, each with history whose `proposed_by` names the task and the entry; a document with no updates leaves the map unchanged; a sub-update naming an unlinked decision is refused; the completion overlay stays withheld until the task returns and any reopened decision is settled. Inverse: a human `criterion` without `derives_from` is refused and the page offers no add without a link.
 - **TRV-A4** Reopening a decision from the review phase and settling it again returns the board to the review phase with the surviving entries intact and those linked to the changed decision re-evaluated.
-- **TRV-A5** The terminal result carries every accepted criterion with its id, text, linked decisions and taxonomy rows, and no rejected one; a session ended with an entry still open records that in the result rather than omitting the entry.
+- **TRV-A5** The terminal result's `criteria` section carries every entry with its id, text, linked decisions, taxonomy rows and disposition; a session ended through the unfinished-board guard with an entry still open or rejected records that disposition rather than omitting the entry.
 - **TRV-A6** Every taxonomy category — inverse, empty or boundary, dependency failure, repeated or concurrent, idempotency — is either present as a row on each criterion or recorded as ruled out with a reason; a criterion missing a category with no ruling blocks completion.
 
 ## Ordered slice list
