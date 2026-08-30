@@ -21,7 +21,8 @@ It folds the session's log into the structured result — the session's identity
 the open items each with the blocker that has to move first, and the threads with their
 conclusions — writes that beside the log and prints it.
 
-The fold is code, not judgement: run twice over the same log it produces the same bytes.
+The projection's fold is code, not judgement: run twice over the same log it produces the
+same bytes.
 Do not re-derive any part of it by hand, and do not correct it — a disagreement between
 this and your reading of the session means you read the session wrong.
 
@@ -30,9 +31,12 @@ not invent a result.
 
 ## 2. Write the summary
 
-The one part code does not produce. From the structured result alone, write a short
-briefing: what the session settled and on what grounds, what it left open and what each
-open item is waiting on, and what the threads concluded.
+`summary` is the one field the fold does not compose. It goes through a seam, and the
+shipped default counts the result rather than reading it — how many decisions settled, how
+many were taken out of the flow, how many are open. You are the written alternative: from
+the structured result alone, write a short briefing — what the session settled and on what
+grounds, what it left open and what each open item is waiting on, and what the threads
+concluded.
 
 Bound it to a briefing. It is never a transcript, never a decision-by-decision walk, and
 never longer than the structured result it summarises.
