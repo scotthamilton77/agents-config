@@ -520,7 +520,7 @@ def test_the_default_summary_is_a_briefing_and_not_a_transcript(session_dir: Pat
     When the default summarizer writes the summary
     Then it counts the structured parts and carries no turn text.
 
-    The v1 default holds the seam open without making the result depend on a
+    The shipped default holds the seam open without making the result depend on a
     model being reachable, and the field is bounded to a briefing either way.
     """
     log = started(session_dir)

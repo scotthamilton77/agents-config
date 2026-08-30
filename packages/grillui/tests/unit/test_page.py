@@ -1824,7 +1824,7 @@ def test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_ta
     press a promise the page keeps across a rename: the mode is recorded under
     the draft's own channel and the turn that opens the thread goes out under a
     minted one. Left uncarried, the control is live, the log is silent, and the
-    first turn -- the one the expert was wanted for -- is taken by the fast tier.
+    first turn -- the one the expert was wanted for -- is taken by the first rung.
 
     Both halves are pinned. The page carries the mode onto the minted name, and
     the kind that opens a thread declares the flag, so the backend's own reader
@@ -1963,7 +1963,7 @@ def test_the_control_follows_the_log_rather_than_the_click_the_policy_overtook()
 
     The click is an intent held until the log speaks after it, which is why it
     carries where the log stood when it was made. Without that, a human who had
-    just sent a channel back to the fast tier would see *Transfer to expert* on a
+    just sent a channel back to the first rung would see *Transfer to expert* on a
     channel the policy had since escalated -- and their next turn, which stamps
     the flag off exactly this reading, would silently undo the transfer.
     """
