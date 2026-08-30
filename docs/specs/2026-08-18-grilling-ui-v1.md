@@ -491,7 +491,7 @@ when no board change was ever proposed.
 
 **GUI-D37 — An option may name the decisions it would put in question, and that naming is
 display data.** An option in the map data may carry `puts_in_question`, an array of decision
-ids the map author expects that option, if taken, to put in question downstream, authored
+ids the plan author expects that option, if taken, to put in question downstream, authored
 with the node — in the handoff plan, or by the grill-master when it adds or revises one —
 and absent from an option that predicts nothing. Until the human
 answers with that option, the page is its only reader: it changes no status, places no hold,
@@ -714,7 +714,7 @@ change; a third rung is refused.
 board legend, on both tiers: a decision's `status`, `rationale` and `history` are the record
 of what happened to it and why, and a question about why the board moved is answered by
 quoting them or by saying the record does not say — never by inferring a cause. `prereqs`
-is what a decision waits on. `puts_in_question` on an option is the map author's prediction
+is what a decision waits on. `puts_in_question` on an option is the plan author's prediction
 that taking that option puts those decisions in question, which the grill-master rules on
 (GUI-D45) — a mark, not a dependency. `pending` is what the human has not dealt with,
 including a notice this thread may have been opened from. A map change in `history` carries
