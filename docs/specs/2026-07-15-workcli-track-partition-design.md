@@ -77,7 +77,7 @@ counts live rather than trusting them.)
 
 ## 3. Track model and configuration
 
-**Vocabulary** (config-owned; `project-config.toml` is authoritative and this
+**Vocabulary** (config-owned; `.work/config.toml` is authoritative and this
 table is its charter). The names this spec first proposed were revised on
 evidence before any of them was applied: `skills-discipline` alone would have
 absorbed 49% of the backlog and breached `max-track-backlog` on day one, so it
@@ -106,6 +106,12 @@ backlog but are never extraction candidates, being cross-cutting process and
 config rather than packages. `work triggers` excludes them from extraction
 evaluation entirely.
 
+Four of the rows above — `workcli`, `vizsuite`, `pdlc-orchestrator` and
+`holding-place` — name tracks since retired from the live registry: each left
+only once every item carrying it had closed, and closed beads are exempt from
+track invariants, so no retirement orphaned anything. The rows stay as the
+charter of record for those closed items, and §3.5–§3.6 keep their subjects.
+
 Two further tracks were proposed during the revision and **rejected on
 evidence**: `agent-skill-platform` (five of eight candidate members failed its
 own charter — it reproduced `skills-discipline` at small scale) and
@@ -118,21 +124,20 @@ Which of these an item takes is decided by §3.1–§3.6.
 track label (they legitimately span tracks) and are exempt from every track
 invariant and gate. Closed beads are exempt from all track invariants.
 
-**Config** (`project-config.toml`):
+**Config** (`.work/config.toml`, owned wholesale by `work init`):
 
 ```toml
 [tracks]
-names = ["installer", "prgroom", "workcli", "pdlc-orchestrator",
-         "holding-place", "vizsuite", "review-and-merge",
-         "pipeline-discipline", "grind-runtime", "ops-meta"]
+names = ["installer", "prgroom", "review-and-merge", "pipeline-discipline",
+         "grind-runtime", "ops-meta", "grilling"]
 organizing-only = ["pipeline-discipline", "ops-meta"]
-enforcement = "advisory"   # "advisory" | "required"; omitted key ⇒ "advisory" (fail-safe)
+enforcement = "required"   # "advisory" | "required"; omitted key ⇒ "advisory" (fail-safe)
 
 [operating-model]
 milestone-wip-cap = 2
 wip-exempt-milestones = ["agents-config-uxns2"]  # PORT — identified by work item id, never display name
 backlog-groom-nag-days = 7
-groom-state-item = ""   # work item id holding backlog-groom state; minted during backfill (§7)
+groom-state-item = "agents-config-t8o"   # work item id holding backlog-groom state
                         # the superseded spelling `groom-state-bead` is still
                         # accepted on read; this key wins when both are set
 
