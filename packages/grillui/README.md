@@ -181,9 +181,9 @@ The modules, and the separation between them is load-bearing:
   its default Codex seat — whose identity is written into the session directory
   in a file of its own, so a restarted backend picks the same conversation back
   up rather than paying for a cold one; one turn at a time on each, because the
-  discount lives in a cache one process holds. A turn catching up on a board
-  that moved while a thread was set aside opens cold on purpose, its chain
-  having reasoned from a board that no longer holds. A turn that produces nothing usable raises, and the lane turns that
+  discount lives in a cache one process holds. A chain catching up on a board
+  that moved while its channel was set aside is opened cold on purpose, having
+  reasoned from a board that no longer holds. A turn that produces nothing usable raises, and the lane turns that
   into an error phase in milliseconds.
 - `session.py` — starting, resuming and ending one session. It validates the
   handoff against its schema before the directory exists, appends the validated
