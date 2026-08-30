@@ -90,8 +90,8 @@ superseded one from the prototype record.
   agent-initiated upgrade path beside the human-gated control; the same criteria drove
   both with no discriminator, and the owner resolved it human-gated only, with autonomous
   escalation deferred behind sessions where the human accepts essentially every
-  recommendation — superseded by GUI-D35, under which the escalation policy is session
-  configuration taking `gated` or `autonomous`, defaulting to `gated`.
+  recommendation. That deferral was later superseded by GUI-D35: the escalation policy is
+  session configuration taking `gated` or `autonomous`, and it defaults to `gated`.
 - **The thread-agent context became a named projection.** Image-2-whole for every dispatch
   contradicted thread isolation; the owner resolved it as a per-thread projection — own
   thread in full, other non-parked threads as stubs carrying decision id, title, status

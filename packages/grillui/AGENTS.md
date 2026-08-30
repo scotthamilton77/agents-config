@@ -23,8 +23,8 @@ is the kept end-to-end harness: `make e2e-grillui` launches a real backend
 through the same `launch` path a `grillui serve` takes, seats it on a local
 stub and two scripted CLI shims, and drives every grill-master use case with
 headless Playwright. Run it standalone too, and when a change touches seating,
-the lane, the map document's ladder or the fold, run it as well as `ci-grillui` —
-`testpaths` is `tests/unit`, so nothing else collects it. Its scenarios run on a
+the lane, the map document's retry ladder or the fold, run it as well as
+`ci-grillui` — `testpaths` is `tests/unit`, so nothing else collects it. Its scenarios run on a
 PATH holding only those shims: a scenario must never be able to reach a real
 `codex` or `claude`, which would spend an account and read as a passing seat.
 
@@ -46,14 +46,14 @@ Current state, by area:
   capture.
 - **Agent drive** — two rungs, with the first rung's seat configured per
   channel: the threads sit on an OpenRouter model, the map on a reasoning model
-  over `codex exec`, and above both is one expert seat every channel hands
-  up to, driven as `claude -p --resume`. Both resumed transports run as
+  over `codex exec`, and above both is one expert seat every channel hands up
+  to, driven as `claude -p --resume`. Both resumed transports run as
   single-process chains, and the conditions recommending the expert are
   evaluated in code against the transcript, never by the model about itself.
-  Every grill-master turn is a map document of one
-  closed shape — notice, updates, withdrawals, rulings, stop — refused and
-  retried once on the same seat, handed up once, then recorded as a failure;
-  no map reply is ever shown to the human as prose. A ruling of `stands` is a
+  Every grill-master turn is a map document of one closed shape — notice,
+  updates, withdrawals, rulings, stop — refused and retried once on the same
+  seat, handed up once from a first rung, then recorded as a failure; no map
+  reply is ever shown to the human as prose. A ruling of `stands` is a
   credited answer beside `invalidate` and `revise`, and the obligation check
   reads coverage off the turn's own rulings. Thread agents run on per-thread
   contexts; the grill-master is the sole author of map mutations; pending-queue
