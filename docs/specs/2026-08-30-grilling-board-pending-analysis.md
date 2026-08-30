@@ -137,6 +137,23 @@ Each slice is the smallest independently mergeable unit; each cites what dischar
 
 The child spec's slices follow S3 and S4.
 
+## Continuations
+
+One item per slice, both specs' slices together, so the design child's delivery reconciles
+the implementation placeholder against the children already filed under
+`agents-config-9k9.315`.
+
+- feat: grillui S1: the task on the log and the frontier as the lock (PND-D1, PND-D5; PND-A1, PND-A3) — AC: PND-A1, PND-A3; make ci-grillui and make e2e-grillui exit 0.
+- feat: grillui S2: what goes pending, and on which seat (PND-D2, PND-D4; PND-A2) — AC: PND-A2; make ci-grillui and make e2e-grillui exit 0.
+- feat: grillui S3: what a result may touch (PND-D3; PND-A4) — AC: PND-A4; agents-config-9k9.310 closes; make ci-grillui and make e2e-grillui exit 0.
+- feat: grillui S4: failure as a named blocker, retry, and the doctor's contract (PND-D9, PND-D11, PND-D13; PND-A5, PND-A8) — AC: PND-A5, PND-A8; agents-config-9k9.306 and agents-config-9k9.309 close; make ci-grillui and make e2e-grillui exit 0.
+- feat: grillui S5: pre-rulings — one hop, consumed on the click, stale by basis (PND-D6; PND-A6) — AC: PND-A6; make ci-grillui and make e2e-grillui exit 0.
+- feat: grillui S6: the conflict-resolution turn (PND-D8; PND-A7) — AC: PND-A7; make ci-grillui and make e2e-grillui exit 0.
+- feat: grillui S7: notices that need no attention, and the legend (PND-D14; PND-A9, PND-A10) — AC: PND-A9 observed in a browser, PND-A10; make ci-grillui and make e2e-grillui exit 0.
+- feat: grillui T1: criteria and taxonomy entries on the log, and the review phase (TRV-D1; TRV-A1, TRV-A6) — AC: TRV-A1, TRV-A6; make ci-grillui and make e2e-grillui exit 0.
+- feat: grillui T2: dispositions, discussion and the result's criteria section (TRV-D3, TRV-D2; TRV-A2, TRV-A5) — AC: TRV-A2, TRV-A5; make ci-grillui and make e2e-grillui exit 0.
+- feat: grillui T3: edit, add and reopen (TRV-D2; TRV-A3, TRV-A4) — AC: TRV-A3, TRV-A4; make ci-grillui and make e2e-grillui exit 0.
+
 ## Out of scope
 
 - Stop-the-world rounds on the board; the child spec's terminal round is the one round the board owes.
@@ -153,3 +170,22 @@ does — is what the seat choice rests on, and a second session's replay is the 
 check it. The session that produced this spec ran the first-rung seat on every free-text
 answer, which is exactly the case PND-D2 and PND-D4 remove; the empty revises it produced
 (`agents-config-9k9.310`) are that seat doing the expert's job in the wrong vocabulary.
+
+## Evidence
+
+How each criterion above is discharged. States: `open`;
+`test: <file>::<test_fn>`; `probe: <file>::<name>`;
+`observed: #<PR> <YYYY-MM-DD> <name>`. A criterion whose own text says it is
+verified in a browser cannot be discharged by `test:` — a test that never
+opens one proves something else.
+
+- PND-A1 | open
+- PND-A2 | open
+- PND-A3 | open
+- PND-A4 | open
+- PND-A5 | open
+- PND-A6 | open
+- PND-A7 | open
+- PND-A8 | open
+- PND-A9 | open
+- PND-A10 | open
