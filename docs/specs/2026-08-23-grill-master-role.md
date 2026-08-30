@@ -817,7 +817,7 @@ it was wrong to make.
    through the amended prompt on either seat still returns an `invalidate` whose why says
    the decision must be answered — or a test has to assert a tier to pass, which says the
    role part leaked back into the tier part.
-3. **The reply document** (`.3` — GMR-A2, GMR-A3, GMR-A4) — the document and ruling types
+3. **The map document** (`.3` — GMR-A2, GMR-A3, GMR-A4) — the document and ruling types
    in the schemas, with the `Option` docstring and the `notice` thread kind beside them;
    the drivers validate the document, ask the transport for the shape, mint one
    `informational` targeted at each `stands` ruling, and carry `rulings` and `stop` on the
