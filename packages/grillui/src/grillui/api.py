@@ -110,8 +110,8 @@ def create_app(
 
     `expert` is where a channel the human has transferred takes its turns. It is
     the session's tier rather than a channel's: which channels are on it is read
-    off the human's own gestures, one channel at a time, so one transfer never
-    moves another channel.
+    off the log, one channel at a time, so one transfer never moves another
+    channel.
 
     `seats` is where a named channel takes its first-rung turns instead of on
     the session's own driver -- the map's, whose turn is a ruling rather than a

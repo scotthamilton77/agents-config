@@ -6,9 +6,9 @@ process, no loop, and nothing an agent waits on, because the orchestrator is
 what decides when any agent gets a turn. An agent that spent its turn asking
 whether there was anything to do would spend the turn on transport.
 
-**The first rung** has two seats and so two drivers: over OpenRouter it is one
-HTTP call to a hosted model, and over Codex it is one CLI turn against a resumed
-thread. Whether a first-rung reply should have gone up a tier is not asked of
+**The first rung** takes its seat from configuration, and each transport has
+its own driver: over OpenRouter it is one HTTP call to a hosted model, and over
+Codex or the Claude CLI it is one turn against a resumed chain. Whether a first-rung reply should have gone up a tier is not asked of
 the model: the conditions are evaluated against the transcript in code, and what
 they produce rides on the reply as metadata. Who acts on that metadata is the
 session's escalation policy -- the human, by default, and the backend itself
