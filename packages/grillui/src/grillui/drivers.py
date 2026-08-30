@@ -305,6 +305,10 @@ def request_body(model: str, system: str, prompt: str, shaped: bool = False) -> 
     request said, because a provider that ignores the field, downgrades it, or
     honours it approximately fails silently and looks exactly like one that did
     not.
+
+    Temperature is pinned to zero rather than left to the provider default:
+    these turns extract to a schema, where reproducibility is worth more than
+    sampling variety.
     """
     body: dict[str, Any] = {
         "model": model,
@@ -312,6 +316,7 @@ def request_body(model: str, system: str, prompt: str, shaped: bool = False) -> 
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
+        "temperature": 0,
     }
     if shaped:
         body["response_format"] = {

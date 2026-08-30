@@ -855,6 +855,18 @@ def test_the_fast_transport_asks_the_provider_for_the_shape_on_a_map_turn(
     assert "response_format" not in request_body("m", "s", "p")
 
 
+def test_every_completion_request_pins_temperature_to_zero() -> None:
+    """
+    Given a map turn request and a thread turn request
+    When each body is built
+    Then both carry temperature zero, so an identical turn is not resampled
+         into a different answer by the provider's default.
+    """
+    for body in (request_body("m", "s", "p", shaped=True), request_body("m", "s", "p")):
+        assert body["temperature"] == 0
+        assert type(body["temperature"]) is int
+
+
 def test_the_option_shape_says_the_grill_master_rules_on_the_mark() -> None:
     """
     Given the schema's own documentation of an option
