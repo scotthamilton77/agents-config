@@ -29,24 +29,31 @@ of implementation work claiming the requirements it discharges.
 contract; the reference page demonstrates the surface, and the ledger states what the owner
 asked of it.
 
-**Vocabulary.** The *grill-master* is the map's author: it rules on what every human
-gesture does to the rest of the plan, and is the only agent that authors changes to the
-map. A *thread agent* serves one side thread. The *backend*
-(equivalently, the *orchestrator*) is the coded process — never an agent. On the board: a
-decision is *settled* once answered; the *frontier* is the set of decisions answerable now;
-*fog* masks decisions whose prerequisites are unmet — a prerequisite that has been invalidated is
-not unmet, since it will never settle and so holds nothing (GUI-D43); a *thread* is a side
-conversation anchored to a decision or to the session itself, *parked* when set aside as a loose
-end that the human may return to, *closed* when the human is done with it, and *folded* when its
-conclusion is applied to the board — *fold-readiness* is the thread's last turn being an agent's,
-which is the turn a fold hands over (GUI-D41). A thread agent *proposes an answer* when the
-conversation has converged on what answers the thread's own decision: an offer the human
-arms, edits and takes, changing no map and settling nothing until they do. A *channel* is
-one lane between the page and an agent: the map's, on which the human makes gestures and
-the grill-master returns documents, and one conversational lane per thread. In
-the handoff file, *impetus* is why the grilling was requested, *posture* is how
-adversarially to grill, and *stop_when* is the condition under which the grill-master
-should treat the grilling as complete.
+**Vocabulary.** This document speaks the grilling glossary, which is
+`docs/architecture/grilling/CONTEXT.md`; the terms the body leans on hardest are these. The
+*grill-master*, equivalently the *map author*, is the agent that authors the map: it rules on
+what every human gesture does to the rest of the plan, and is the only agent that changes it.
+A *thread agent* serves one side thread and authors no map change. The *backend* (equivalently, the
+*orchestrator*) is the coded process — never an agent. On the board: a decision is *settled*
+once the human answers it; the *frontier* is the set of decisions answerable now; *fog* masks a
+decision whose prereq has not come through — a prereq that has left the flow holds nothing,
+since it will never settle (GUI-D43); *marked* is an option's prediction of what taking it puts
+in question; a *thread* is a side conversation anchored to a decision or to the session itself,
+*parked* when kept as a loose end the human may return to, *closed* when they are done with it,
+and *folded* when its conclusion is handed to the grill-master. A thread agent's *converged
+answer* is the offer it makes when the conversation has reached what answers the thread's own
+decision: an offer the human arms, edits and takes, changing no map and settling nothing until
+they do — where a *proposal* is a map mutation the grill-master authored and the board has not
+taken, waiting in the *pending* queue. A *notice* is something an agent said to the human; a
+*ruling* is the grill-master's verdict on one decision a gesture put in question, and *stands*
+is the ruling that a decision survives intact; every grill-master turn comes back as the *map
+document*. A *channel* is one lane between the page and an agent: the map's, on which the human
+makes gestures and the grill-master returns documents, and one conversational lane per thread.
+A *tier* is a rung and a *seat* is the transport, model and effort occupying one on a channel;
+a *judgment class* sends a gesture to the expert seat before any turn is taken, and a *hand-up*
+re-asks one gesture there. In the handoff file, *impetus* is why the grilling was requested,
+*posture* is how adversarially to grill, and *stop_when* is the condition under which the
+grill-master should treat the grilling as complete.
 
 ---
 
@@ -173,7 +180,7 @@ as `claude -p --resume` CLI turns, which bills the owner's subscription, at $0.5
 cold first turn and $0.054 thereafter, 6.5 s standalone and 12–34 s under load; those
 figures are a floor for a heavier default, not a ceiling. That one sentence is the whole of
 what a tier says about a turn: what the turn is *for* belongs to the role's part of the
-standing brief (GUI-D44) and never to the tier's, so no agent's mandate arrives with its
+standing brief (GUI-D44) and never to the tier's, so no agent's role part arrives with its
 weight. Where a turn meets an escalation condition, the backend attaches a recommendation
 to hand the channel to the heavy tier as metadata on that reply — **and who acts on that
 recommendation is the session's escalation policy** (GUI-D35). No agent escalates itself
@@ -202,14 +209,14 @@ tier's effort, and takes one of two values. Under `gated`, the default, a met co
 highlights the transfer control and nothing moves until the human activates it. Under
 `autonomous`, the backend itself puts that channel into expert mode the moment a fast reply
 meets a condition, so the next turn on that channel goes to the heavy tier carrying the
-accumulated thread — the same channel mode and the same transfer the human's activation
-produces, reached without the gesture. The policy is standing rather than one-shot: a
+accumulated thread — the same channel mode the human's own transfer produces, reached
+without the gesture. The policy is standing rather than one-shot: a
 later reply meeting a condition on a channel the human sent back to the fast tier escalates
 it again. Hard-wiring one behaviour instead is refused in both directions — a session where
 the human takes every recommendation pays a confirmation gesture per turn for nothing, and
 a session where they are still learning what the heavy tier is worth has money spent on
 their behalf by a condition they never saw fire. **The escalation is attributed, not
-silent.** The status lane carries a backend-authored transfer entry on that channel — a
+silent.** The status lane carries a backend-authored entry on that channel — a
 phase on the lane's own status kind (GUI-D13) — naming the condition and that the policy
 moved it — the phase is `transferred`, and its detail names the condition — and the heavy
 turn that follows carries `transfer_source: "policy"` beside its existing
@@ -255,7 +262,7 @@ agents may run concurrently with each other and with a grill-master turn.
 recommend; they never emit map updates, and a map update arriving on a thread channel is
 rejected. When the human folds a thread's conclusion into the map, the backend dispatches
 the grill-master carrying that conclusion, and the grill-master returns the structured map
-mutation; taking a thread's proposed answer is not a fold but the human answering the
+mutation; taking a thread's converged answer is not a fold but the human answering the
 decision (GUI-D33), and dispatches nothing. Routing
 it that way is what keeps the grill-master's own conversational context
 informed of how the map evolves — a mutation authored anywhere else changes the board
@@ -271,27 +278,27 @@ the conversation moving is refused — it reads as the agent having nothing left
 it hands the human the work of ending every thread by declining an invitation. This binds
 the thread-agent prompt on both tiers.
 
-**GUI-D31 — A thread agent offers its decision's answer as a proposal riding the turn that
+**GUI-D31 — A thread agent offers its decision's converged answer riding the turn that
 reached it.** Where a thread converges on what answers its own anchor decision, the agent's
-reply document carries a `proposed_answer` object beside its prose (§8.9): the anchor
+reply shape carries a `proposed_answer` object beside its prose (§8.9): the anchor
 decision, the option it builds on where one fits and null where none does, the answer text
 in the human's own words, and one line of why the thread reached it. The object rides the
 turn's own log entry as a payload key and the projection puts it on that turn (§8.5), the
 way superseding rides the turn that supersedes — an offer is something a turn makes while
-it says its piece, and the kind vocabulary of §8.3 stays closed. **A proposal is live when
+it says its piece, and the kind vocabulary of §8.3 stays closed. **A converged answer is live when
 it rides the thread's most recent turn**, which is the whole of the staleness rule: a
-second proposal on a later turn retires the first, a human turn retires both, and a
-proposal on a thread nobody has spoken in since is the one on offer. Only a thread agent
+second converged answer on a later turn retires the first, a human turn retires both, and
+one on a thread nobody has spoken in since is the one on offer. Only a thread agent
 on a decision-anchored thread may make one, and only for that thread's own anchor: the
 grill-master already asserts answers through `settle` under the queue's rules, and a
-session-scoped thread (GUI-U16) anchors no decision, so a proposal from either — or one
+session-scoped thread (GUI-U16) anchors no decision, so a converged answer from either — or one
 naming any decision other than the anchor — is dropped, and the turn carries a line naming
 the decision offered and why the board did not take it, in place of the object's own bytes:
 a reply recognisably offering an answer is never shown to the human as raw JSON, and a
-half-shaped reply document carrying one is answered the same way.
+half-shaped reply carrying one is answered the same way.
 **Dropping rather than rejecting is the rule
 here and only here**: refusing the write would throw away what the agent said to the human
-over a malformed offer nobody has seen yet. Carrying the proposal as an update inside the
+over a malformed offer nobody has seen yet. Carrying the converged answer as an update inside the
 turn's `updates` list instead is refused, because that list is map mutations and a thread
 channel's map mutation is rejected outright (GUI-D25) — the offer would be unsendable from
 the only actor allowed to make it.
@@ -303,8 +310,8 @@ put to them — and restating that is the whole of the drafting licence. Composi
 the human has not endorsed is the agent deciding and calling it convergence. The offer is
 the affordance and never a question: the turn says what it takes the thread to have
 settled and stops, because *shall I write this back?* is the closing question GUI-D30
-refuses under another name, and it hands the human the work of declining. One proposal per
-turn, on the anchor decision, built on an option the decision already has or on none —
+refuses under another name, and it hands the human the work of declining. One converged
+answer per turn, on the anchor decision, built on an option the decision already has or on none —
 proposing a new option is a map change and the grill-master's (GUI-D25). Prompting the
 agent to test for convergence explicitly, by asking each turn whether the thread has
 reached an answer, is refused: it is fishing with a different question, and it trains the
@@ -425,7 +432,7 @@ authored earlier: the backend marks the superseded ones and the page drops them 
 pending surface. If the human applied a superseded update before the rewrite landed, that
 conflict goes back to the grill-master for reconciliation — neither the page nor the
 backend resolves it, because only the authoring agent knows what the rewrite was for. The
-common flow is this self-healing one; the escape hatch when it is not enough is the map
+common flow is this self-healing one; the escape hatch when it is not enough is the
 doctor (GUI-U12).
 
 **GUI-D27 — Channel state is two layers.** The connection lifecycle belongs to the
@@ -435,14 +442,15 @@ to each channel — one for the map, one per thread: `idle`, `sending`, `awaitin
 so one thread stalling says nothing about any other. What is fixed here is the layer split
 and the two vocabularies; the transition table is the implementing work's to state.
 
-**GUI-D33 — Taking a proposal arms the decision's answer; the human still answers it.**
+**GUI-D33 — Taking a converged answer arms the decision's answer; the human still answers
+it.**
 The apply-decision control fills the board's own answer controls and nothing else: it
-inserts the proposed text into that decision's own-words box after anything already there
+inserts the offered text into that decision's own-words box after anything already there
 rather than over it, so no draft of the human's is discarded by an agent's, and where the
-proposal names an option it marks that option's control as the one that records it. Which
+converged answer names an option it marks that option's control as the one that records it. Which
 control the human then presses is what the answer becomes, and both already exist
 (GUI-U5): the option's own control records that option with the box as its note, and the
-own-words control records the text alone. That is what lets a proposal built on an option
+own-words control records the text alone. That is what lets a converged answer built on an option
 be taken as the qualification without it, which is how a converged answer that cites its
 option only in prose gets recorded. It appends no event, settles nothing, and leaves the
 text editable — the answer is the human's statement of record, and every converged answer
@@ -462,7 +470,7 @@ this one changes no map. Emitting the close as a second event beside the answer 
 two events half-land, and the human is left looking at a settled decision whose thread asks
 to be closed again. An answer citing a thread that does not exist is refused as an unknown
 thread id, and one citing a thread anchored to another decision is refused with a reason of
-its own, added to GUI-D16's closed vocabulary; both append nothing. A proposal taken onto
+its own, added to GUI-D16's closed vocabulary; both append nothing. A converged answer taken onto
 an already-settled decision re-answers it by that same path, which is what revisiting a
 decision already does.
 
@@ -483,8 +491,9 @@ when no board change was ever proposed.
 
 **GUI-D37 — An option may name the decisions it would put in question, and that naming is
 display data.** An option in the map data may carry `puts_in_question`, an array of decision
-ids the grill-master expects that option, if taken, to put in question downstream, authored
-when it adds or revises the node and absent from an option that predicts nothing. Until the human
+ids the plan author expects that option, if taken, to put in question downstream, authored
+with the node — in the handoff plan, or by the grill-master when it adds or revises one —
+and absent from an option that predicts nothing. Until the human
 answers with that option, the page is its only reader: it changes no status, places no hold,
 enters no projection but the option it rides on, and reaches a dispatch as nothing but the
 bytes of that node. Taking it is what obliges a ruling on each, and what that
@@ -696,7 +705,7 @@ which errs toward warning early rather than never.
 
 **Latency is the currency here, not price**: the map seat and the expert seat both ride
 subscriptions, so a per-turn dollar figure for either is a fiction, and what the human
-spends is the waiting clock — about 6 s for a resumed map turn against 12–34 s for an
+spends is the reply clock — about 6 s for a resumed map turn against 12–34 s for an
 expert one. A seat whose rulings prove
 inadequate takes a heavier model — `gpt-5.6-terra` for the map's — which is a configuration
 change; a third rung is refused.
@@ -720,8 +729,8 @@ decision was invalidated over a board whose `rationale` and `history` state it, 
 with a cause the record does not carry. Prompt text cannot be asserted to have been read;
 the session that watches one is what confirms the legend or reverts it.
 
-**GUI-D48 — The map channel escalates on three triggers that need no human text, each with
-its own persistence.** GUI-D35's policy and GUI-D12's conditions reach every channel, the
+**GUI-D48 — The map channel reaches the expert seat on three triggers that need no human
+text — a hand-up, a judgment class and a policy move — each with its own persistence.** GUI-D35's policy and GUI-D12's conditions reach every channel, the
 map's included, through the note riding an answer: the note is a human turn, so a note
 meeting a condition fires, and under `autonomous` writes its own `transferred` entry. That
 is the map's only human-text route, and it is thin — the human's other gestures there, an
@@ -729,11 +738,11 @@ apply and a dismiss, carry no text for a condition to read, and nobody presses *
 expert* at an agent they never talk to. The three triggers below are what a transcript
 condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note.
 
-1. **Post-reply press**, per gesture. A reply leaving a named decision unruled, or a
+1. **Hand-up** (the lane's *press*), per gesture. A reply leaving a named decision unruled, or a
    document still invalid after its one retry, is re-asked on the expert seat for that
    gesture alone (GUI-D42, GUI-D45). It checks coverage — every decision the dispatch named
    is ruled — and never correctness: a ruling the backend would disagree with is not a
-   ruling missing. A gesture already on the expert seat has no rung to press onto, and
+   ruling missing. A gesture already on the expert seat has no rung to hand up to, and
    GUI-D45's terminal ladder is what applies instead. Nothing is written that outlives the
    gesture.
 2. **Pre-dispatch turn classing**, per gesture. A gesture whose class is judgment
@@ -752,7 +761,7 @@ condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note
    gestures on the map channel that carry no text — the note riding an answer is the exception,
    and GUI-D12 reads it — so a dismissal is the one way they say, wordlessly, that the seat's
    proposal was wrong. One per-session counter counts two events as the same signal: the human
-   dismissing a first-rung seat's proposal, and a post-reply press. At the second the backend
+   dismissing a first-rung seat's proposal, and a hand-up. At the second the backend
    writes a policy `transferred` status entry on the map channel — GUI-D35's own machinery,
    unchanged: such an entry only ever moves a channel up, and the way back down is the human's
    transfer control. One signal writes nothing, because one is noise; a third writes nothing
@@ -770,7 +779,8 @@ The binding reference is `docs/prototypes/grilling-ui/grilling-ui-prototype-r5.h
 against the reaction ledger at `docs/prototypes/grilling-ui/REACTIONS.md`. V1 changes it as
 follows, and changes nothing else.
 
-- **GUI-U1 — Waiting is always visible.** Whenever the human sends anything an agent owes a
+- **GUI-U1 — An outstanding reply is always visible.** Whenever the human sends anything an
+  agent owes a
   reply to — a thread turn, an answer awaiting reaction — the page shows that the message
   reached the backend, that work is in progress, and an incrementing timer of how long the
   human has been waiting. This is fed by the mechanical status lane, so it appears
@@ -818,7 +828,7 @@ follows, and changes nothing else.
   in focus, wrapping at the head, and scrolls the board and the decision column to it. It
   is the frontier's own order; the page computes no second one. Where nothing is
   answerable the control is dead and says why, and the two reasons are told apart: a board
-  with nothing left open, and a board whose remaining decisions are all waiting on
+  with nothing left open, and a board whose remaining decisions are all held by
   something. No bare key reaches it — every focus move hands the caret to the focused
   decision's note box, so a bare-key shortcut would type into what the human is writing.
 - **GUI-U4 — Thread panels have a floating header and footer** — title with close and
@@ -842,7 +852,7 @@ follows, and changes nothing else.
   the hover discipline of GUI-U6.
 - **GUI-U25 — The option in hand marks what it would put in question, and the mark is the
   page's alone.** While the human has an option in hand — the pointer or the keyboard on that
-  option's own control, an option a taken proposal marked (GUI-D33), or an option standing as a
+  option's own control, an option a taken converged answer marked (GUI-D33), or an option standing as a
   held answer behind a mandated thread — every decision that option's `puts_in_question` (§8.2)
   names wears a provisional mark, on the map and on its own block, reading as *the option you
   are holding would put this in question*. The mark is presentation state in the sense of
@@ -930,22 +940,23 @@ follows, and changes nothing else.
   reads as *where the channel is now*, so the human infers the opposite of what activating
   it does.
 - **GUI-U24 — A channel the policy moved says so where it moved, and nowhere else.** Under
-  `autonomous` (GUI-D35) the transfer appears on that channel's status lane, naming the
+  `autonomous` (GUI-D35) the policy move appears on that channel's status lane, naming the
   condition that fired, and the transfer control flips to *Return to fast agent* (GUI-U22)
   with the human having pressed nothing — the control's position follows the channel's mode
-  as the lane states it, never the human's own last click, which after a policy transfer
+  as the lane states it, never the human's own last click, which after a policy move
   names the tier the channel has left. No notification is raised: the move is board state
   and the lane already carries it (GUI-U10, GUI-U15). The control stays active throughout,
   so returning the channel to the fast tier is the same gesture it always was.
-- **GUI-U23 — A live proposal renders beneath the turn that made it, with one control.**
+- **GUI-U23 — A live converged answer renders beneath the turn that made it, with one
+  control.**
   The agent's turn is followed by what it proposes — the option it builds on, the answer
   text, and its one-line reason — and an apply-decision control naming the decision it
   would arm. It appears on the thread's most recent turn only (GUI-D31); an earlier turn's
-  retired proposal stays readable as part of what was said and carries no control. The
+  retired converged answer stays readable as part of what was said and carries no control. The
   control renders on an open thread only: parking or closing the thread (GUI-D29) hides it
-  while the proposal stays live in the log — though a closed thread reopens only on a
+  while the converged answer stays live in the log — though a closed thread reopens only on a
   human turn, which retires the offer it follows (GUI-D31), so a fresh one is needed — and
-  a session ended with a proposal nobody took carries it nowhere — the terminal result
+  a session ended with a converged answer nobody took carries it nowhere — the terminal result
   (§8.7) lists decisions and threads, never offers. Activating it brings the anchor
   decision into view with its own-words box filled and the named option's control marked
   (GUI-D33); the human presses one of those two existing controls to answer. Where that
@@ -968,10 +979,11 @@ follows, and changes nothing else.
   how to drive the board rather than grilling the design.
 - **GUI-U17 — Completion is announced, not assumed.** A board is finished when it carries
   at least one decision and every decision on it has come to rest: settled by the human, or
-  invalidated by an answer that mooted it (GUI-D38). Stale and fogged decisions are not at
-  rest and hold the board open. When the board is finished the page presents an overlay
-  stating that nothing on the board is waiting on the human, naming how many decisions were
-  answered and how many set aside, and offering an end-session action and a dismiss action.
+  invalidated by an `invalidate` the human applied (GUI-D38, GUI-D26). Stale and fogged
+  decisions are not at rest and hold the board open. When the board is finished the page
+  presents an overlay stating that nothing on the board is waiting on the human, naming how
+  many decisions were answered and how many invalidated, and offering an end-session action
+  and a dismiss action.
   The same reading is what the terminal result writes up (GUI-U14). Dismissing returns the
   human to the board and pulses the main end-session control's border, so the offer stays
   findable without a second overlay. End-session attempts to close the tab; where the browser
@@ -1145,14 +1157,14 @@ The current map snapshot: a pure fold, byte-identical for a given log.
   log entries it was not there for, and a turn projected without its tier can no longer be
   labelled by anything but the channel's current mode. A turn may additionally carry
   `proposal` — the converged-answer object of §8.9, present only on a `thread-agent` turn
-  on a decision-anchored thread. Every proposal a turn made projects; which one is live is
+  on a decision-anchored thread. Every converged answer a turn made projects; which one is live is
   position, not a field (GUI-D31). `kind` is what opened the thread: `user` on a decision,
   `mandate` where an agent opened one that holds its decision, `help` for the thread about
   the board, `map` for the session-level thread the human asks for a map change in
   (GUI-D40), and `notice` for one opened from an agent's notice, anchored to the decision
   that notice targeted or to none where it targeted none (GUI-D47). `help` and `map` both
   carry a null `decision`, so the kind is the only thing that tells them apart — which is
-  what decides whether a dispatch carries `help_reference` and which mandate its turns are
+  what decides whether a dispatch carries `help_reference` and which role part its turns are
   given.
 - `pending` — array of objects: `id`, `target` (decision id), `kind`, `superseded`
   (boolean), and `authored_at` (sequence integer). This is the queue GUI-D26 dispatches.
@@ -1195,7 +1207,7 @@ receives beside file references (GUI-D8).
 - `open_items` — array of objects: `id` and `blocker` (string) for every decision that is
   not at rest at end — neither settled nor invalidated, the same finished-board reading
   GUI-U17 takes. A decision the log invalidated is a closed question, so it is no open
-  item, and `summary` counts it as set aside rather than as left open.
+  item, and `summary` counts it as invalidated rather than as left open.
 - `threads` — array of objects: `id`, `title`, `state` (the §8.5 state enum), and
   `conclusion` (string or null). A parked thread is one of the session's open loose ends
   and a closed thread is a line item only (GUI-D29).
@@ -1230,19 +1242,19 @@ Two shapes, fixed here rather than left to the implementing slice, because three
 have to agree on them: the driver reading an agent's reply, the projector putting the offer
 on a turn, and the page arming an answer from it.
 
-**In the reply document**, `proposed_answer` is a third key beside `text` and `updates`, and
+**In the thread agent's reply shape**, `proposed_answer` is a third key beside `text` and `updates`, and
 a document carrying it and prose is a declaring reply like any other:
 
 - `decision` — string. The proposing thread's own anchor decision id; any other value, or
-  any value at all from a thread anchoring none, drops the proposal (GUI-D31).
+  any value at all from a thread anchoring none, drops the converged answer (GUI-D31).
 - `option` — string or null: an option id the anchor decision already carries, or null
   where the converged answer stands on none. An id the decision does not carry drops the
-  proposal.
+  offer.
 - `text` — string, non-empty. The answer in the human's own words, as the thread reached it.
 - `because` — string, one line: why the thread converged here. It is shown to the human
   beside the offer and is not part of the answer.
 
-An unusable proposal is dropped and the turn is recorded — carrying what the agent said
+An unusable converged answer is dropped and the turn is recorded — carrying what the agent said
 where the document had prose, and, either way, one line naming the decision offered and why
 the board did not take it. The reply's own bytes are never what the human is shown, and the
 write is never rejected. The fence a model wraps the document in is presentation and is read
@@ -1254,7 +1266,7 @@ thread that exists and whose anchor decision is the answered decision, and it is
 closes that thread in the same entry (GUI-D33). Absent, the answer is an ordinary one and
 closes nothing.
 
-### 8.10 The grill-master reply document
+### 8.10 The map document
 
 One object, every map turn, under §8's rule that an unknown key is a rejection (GUI-D45).
 
@@ -1493,7 +1505,7 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A20** A page whose epoch is stale recovers current state through the state read
   without human intervention and without asserting any board content of its own, verified
   by reloading the page mid-session in a browser.
-- **GUI-A21** The waiting indicator appears on every turn an agent owes, carries an
+- **GUI-A21** The reply clock appears on every turn an agent owes, carries an
   incrementing timer, and is driven by status-lane entries — verified in a browser against
   a deliberately slow heavy-tier turn.
 - **GUI-A22** Every message and notification renders a timestamp in the operating system's
@@ -1658,16 +1670,16 @@ Each criterion is mechanically checkable and convertible to a red test.
   a question is allowed in, asserted against the prompt the driver actually composes rather
   than against a constant read out of the source; and over one live session's thread turns,
   no turn ends in a question outside those two cases.
-- **GUI-A65** A thread agent's reply document carrying a `proposed_answer` records the
-  turn's prose and projects the proposal onto that turn with its decision, option, text and
-  reason. The same document drops its proposal — recording the prose, appending no
+- **GUI-A65** A thread agent's reply carrying a `proposed_answer` records the turn's prose
+  and projects the converged answer onto that turn with its decision, option, text and
+  reason. The same document drops its converged answer — recording the prose, appending no
   rejection and rendering no control — when it comes from the grill-master, from a thread
   whose anchor decision is null, when it names any decision other than the thread's anchor,
   or when it names an option that decision does not carry. The check is mutation-tested:
   removing the anchor test turns the suite red naming that case.
 - **GUI-A66** Over a fixture of four converged threads taken from a real session, each
-  convergence is expressible as one proposal and taking it records exactly what the
-  proposal carried. The four are the shapes that occur: an existing option plus a
+  convergence is expressible as one converged answer and taking it records exactly what
+  that answer carried. The four are the shapes that occur: an existing option plus a
   qualification narrowing what it means, an existing option plus a qualification adding
   work downstream, an answer that names its option only in its prose, and an answer
   standing on no option at all. The two that name an option record an answer carrying both
@@ -1675,9 +1687,9 @@ Each criterion is mechanically checkable and convertible to a red test.
   clean option swap is an answer recording an `option` with empty `text`; a fixture whose
   four cases are all clean option swaps fails the check.
 - **GUI-A67** The apply-decision control renders beneath the thread's most recent turn when
-  that turn carries a proposal and nowhere else — not on an earlier turn whose proposal a
-  later one retired, and not on a thread whose most recent turn is the human's. Activating
-  it inserts the proposed text into the anchor decision's own-words box after text already
+  that turn carries a converged answer and nowhere else — not on an earlier turn whose
+  answer a later one retired, and not on a thread whose most recent turn is the human's.
+  Activating it inserts the offered text into the anchor decision's own-words box after text already
   present rather than replacing it, marks the named option's control, leaves the text
   editable, and appends no event — asserted by checking that the log grew by nothing.
   Pressing the marked option then records option and text together; pressing the own-words
@@ -1688,20 +1700,22 @@ Each criterion is mechanically checkable and convertible to a red test.
   that single entry settles the decision, moves its thread to `closed`, and advances the
   frontier by the ordinary rule, with no second event and no grill-master dispatch in the
   log. The terminal result reports that thread's conclusion as the applied answer text
-  rather than null, on a live end-session and a capture run alike. Taking a proposal onto
-  an already-settled decision re-answers it by the same path. An answer whose `from_thread`
+  rather than null, on a live end-session and a capture run alike. Taking a converged
+  answer onto an already-settled decision re-answers it by the same path. An answer whose `from_thread`
   names no thread is rejected as an unknown thread id, and one naming a thread anchored to
   another decision is rejected with its own typed reason; neither appends anything.
-- **GUI-A69** A live proposal creates no pending-queue entry, appears in no grill-master
-  dispatch context as a pending update, and places no hold on its anchor decision — the
-  decision stays answerable by every ordinary route while the proposal stands, verified by
-  answering it with an unrelated option while the offer is live. No dismiss gesture exists
-  for a proposal: over a fixture where one thread carries two agent turns each proposing,
+- **GUI-A69** A live converged answer creates no pending-queue entry, appears in no
+  grill-master dispatch context as a pending update, and places no hold on its anchor
+  decision — the decision stays answerable by every ordinary route while the offer stands,
+  verified by answering it with an unrelated option while the offer is live. No dismiss
+  gesture exists for one: over a fixture where one thread carries two agent turns each
+  offering,
   only the later turn renders a control and no log entry declines the earlier one.
 - **GUI-A70** Every shipped thread-agent prompt states the convergence condition, the
   restatement-only licence and that the offer is never put as a question — asserted against
   the prompt the driver composes rather than a constant read out of the source. Over one
-  live session's thread turns, no turn carrying a proposal also asks whether to apply it.
+  live session's thread turns, no turn carrying a converged answer also asks whether to
+  apply it.
 - **GUI-A71** A session configured with no escalation policy runs `gated`: a fast reply
   meeting a GUI-D12 condition carries its recommendation, the log records no transfer, and
   the next turn on that channel is taken by the fast tier.
@@ -1775,9 +1789,9 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A83** Every standing brief a driver composes — the grill-master's and a thread
   agent's, on the fast tier and on the heavy one — carries the register rule: plain
   sentences, the answer before the reasoning, and no term the decision does not need.
-- **GUI-A84** One declaring reply document reads the same in all three layouts a model
-  writes it in: the object alone, the object under a fence, and the object on the fence's
-  own opening line. All three yield the document's prose and the proposal it carried.
+- **GUI-A84** One declaring reply reads the same in all three layouts a model writes it in:
+  the object alone, the object under a fence, and the object on the fence's own opening
+  line. All three yield the reply's prose and the converged answer it carried.
 - **GUI-A85** An offer the board cannot take reaches the human as a line naming the decision
   it was for and why it was refused, never as the reply's own JSON. On a thread anchoring no
   decision the line is the whole of the turn; on a thread anchored to another decision what
@@ -1814,12 +1828,12 @@ Each criterion is mechanically checkable and convertible to a red test.
   the agent answers, shut again on their next turn — and the page waits nowhere on a
   declaration riding a turn's payload. What the preview offers is that same turn's text,
   which is what the backend hands the grill-master as the conclusion.
-- **GUI-A93** A turn taken on the map thread is given that thread's mandate: name each
+- **GUI-A93** A turn taken on the map thread is given that thread's role part: name each
   decision that changes, say what happens to it and why, author nothing, and write the
   conclusion to be acted on by an agent that will not see the conversation.
 - **GUI-A94** No other channel is given it — not the help thread, not a decision's thread,
   not the map channel — and a dispatch whose board merely carries the map thread as another
-  thread is not either. The mandate is a property of the channel a turn runs on.
+  thread is not either. The role part is a property of the channel a turn runs on.
 - **GUI-A95** The map thread's dispatch carries no `help_reference`, though it anchors no
   decision, and the help thread's still carries it; a `notice` thread's carries none.
 - **GUI-A96** The shipped page carries a board control that opens the session's one map
@@ -1864,20 +1878,20 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A106** In a browser, against a running backend: on a board whose one open decision
   is left invalidated by a proposal the human applies, every other decision being settled,
   the completion overlay appears carrying both actions, its copy names how many decisions
-  were answered and how many set aside, and dismissing it leaves the main end-session
+  were answered and how many invalidated, and dismissing it leaves the main end-session
   control's border pulsing over a board that is not sealed. Verified in a browser.
 - **GUI-A107** A capture of a session whose decisions are one settled and the rest
-  invalidated reports no open items, and its summary counts the invalidated ones as set
-  aside rather than as left open.
+  invalidated reports no open items, and its summary reports the invalidated ones as
+  invalidated rather than as left open.
 - **GUI-A110** In a browser, against a running backend: on a board carrying three decisions
   on the frontier and a fourth resting on the first, pressing the board's next-open control
   walks the focus along the frontier in the frontier's own order and wraps back to its
   head, scrolling the decision column so the decision it lands on is on screen; once the
   first is invalidated and the other two settled, the fourth is the whole frontier; a
   queued change against the fourth then locks it, the control is dead, and the reason on
-  screen says the board is waiting; and once that change lands and the fourth is
+  screen says the board is held; and once that change lands and the fourth is
   invalidated too, the same control is dead giving a different reason, which does not say
-  the board is waiting. Verified in a browser.
+  the board is held. Verified in a browser.
 - **GUI-A108** A decision whose `prereqs` are one settled decision and one invalidated by a
   change the human applied is on the frontier, and the invalidated one is `invalidated`.
 - **GUI-A109** Where two decisions rest on a third and the human applies the agent's
@@ -1926,7 +1940,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   composed by the first-rung seat; and neither writes a `transferred` entry, so a clerical
   gesture following a judgment one is first-rung again.
 - **GMR-A10** One dismissal of a first-rung seat's proposal moves nothing and writes no status
-  entry; a second distrust signal — a dismissal or a post-reply press, counted alike — writes
+  entry; a second distrust signal — a dismissal or a hand-up, counted alike — writes
   exactly one policy `transferred` entry on the map channel, and every map turn after it is
   the expert seat's; a third signal writes no second entry; and the human's transfer control
   returns the channel to its first-rung seat.
