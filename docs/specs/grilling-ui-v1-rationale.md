@@ -77,7 +77,8 @@ The spec carries the current position; these are the reversals, so nobody re-der
 superseded one from the prototype record.
 
 - **Per-side-thread agents moved from deferred to in scope.** Each thread is its own channel
-  with its own agent context, defaulting to the fast tier.
+  with its own agent context, defaulting to the first rung's seat for that channel
+  (GUI-D46).
 - **Human-initiated escalation moved from deferred to in scope**, as the transfer-to-expert
   control. The agent recommends; the human decides.
 - **The clean decision-log projection moved from deferred to in scope**, as the core of the
@@ -89,7 +90,8 @@ superseded one from the prototype record.
   agent-initiated upgrade path beside the human-gated control; the same criteria drove
   both with no discriminator, and the owner resolved it human-gated only, with autonomous
   escalation deferred behind sessions where the human accepts essentially every
-  recommendation.
+  recommendation. That deferral was later superseded by GUI-D35: the escalation policy is
+  session configuration taking `gated` or `autonomous`, and it defaults to `gated`.
 - **The thread-agent context became a named projection.** Image-2-whole for every dispatch
   contradicted thread isolation; the owner resolved it as a per-thread projection — own
   thread in full, other non-parked threads as stubs carrying decision id, title, status

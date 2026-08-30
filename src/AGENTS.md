@@ -28,3 +28,18 @@ installer:
   properties of what deploys — and it fails on a directory staging never reads
   and nothing declares. `.installignore` is where a directory declares itself
   source-side, so an edit there changes what this gate measures.
+
+Three things about this tree that a plain look misses:
+
+- Every deployed artifact lives under a hidden directory (`src/user/.claude/`,
+  `src/user/.agents/`, `src/plugins/*/.claude/`), so a plain `rg` over `src/`
+  matches nothing and exits 0. Pass `--hidden` (or use `grep -r`), and never
+  cap a census with `head`.
+- Skill Python is held to `ruff check`, deliberately not `ruff format`: no gate
+  formats it and the compact hand-formatting is the convention, so
+  `ruff format --check` saying "would reformat" on a sibling is confirmation,
+  not a finding.
+- `*_test.py` / `*_test.js` under a skill deploy to user space with the skill
+  and run inside other projects. A shipped test degrades to a skip, never a
+  false FAIL, when a repo-internal path (this repo's `project-config.toml`) is
+  absent.
