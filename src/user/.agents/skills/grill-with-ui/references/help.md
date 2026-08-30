@@ -94,26 +94,30 @@ and its change history.
 
 🔔 carries what an agent said that the board has nowhere else to show. It is not the
 inbox: nothing in here is waiting on an action. Notifications bubble as they arrive, and
-the list and what was read both survive a reload — a session someone comes back to does
-not re-announce what they have already read as news. Anything still unread bubbles again
-after a reload.
+the list starts empty on a reload — a session someone comes back to should not announce
+the morning's work as news. What was read stays read, across a reload too: the markers
+they have already cleared do not light up again.
 
 ## The two tiers
 
-Every channel — the map and each thread — takes its turns on the **first rung** until
-something moves it up. That is a statement about position and not about speed: the map's
-first-rung seat is a reasoning model. Above it sits the **expert**, the heavier and slower
-seat, shared by every channel.
+Every channel — the map and each thread — runs on one of two tiers, and starts on the
+**first rung**. That names its position and not its speed: the map's first-rung agent is a
+reasoning model. Above it is the **expert**, a heavier and slower agent every channel
+shares.
 
 **Transfer to expert** (⚡) sends the next turn on that one channel to the expert, carrying
-everything already said there. It highlights when the agent itself recommends the expert
-tier. By default the human decides, but a session may be configured to let the backend act
-on that recommendation itself; either way the move is named on that channel's status lane.
-The backend may also hand a single turn up to the expert without moving the channel — the
-next one starts on the first rung again — and each turn on the board says which seat took
-it. Pressing the control again, now reading **Return to fast agent**, puts the channel back
-on the first rung. It is per channel — moving one thread leaves the map and every other
-thread where they were.
+everything already said there. It lights up when what has been said on that channel meets
+the backend's own test for a question the expert should take — the test is code, and never
+a model's opinion of its own reach. Acting on it is normally yours to do; a session can be
+set up to let the backend act on the test itself, and either way the move is announced on
+that channel. Pressing the control again, now reading **Return to fast agent**, puts the
+channel back on the first rung. It is per channel — moving one thread leaves the map and
+every other thread where they were.
+
+Some single turns go to the expert without the channel moving: a gesture the board reads
+as needing judgement is sent there from the start, and a first-rung turn that did not do
+what was asked of it is asked again there. The channel's next turn is back on the first
+rung either way, and every agent turn on the board says which of the two answered it.
 
 **Map doctor** (🩺) sends the grill-master over the whole board and everything queued,
 with a reassess-everything instruction. The board is read-only behind a notice until it

@@ -100,7 +100,8 @@ Answer questions about it without reading any file:
 - A **transfer-to-expert** control per channel, moving that conversation from its
   first-rung seat to the expert — the heavier, slower seat above it, and one of four
   routes there (the human's transfer, the escalation policy, a hand-up of one turn, a
-  judgment class). It highlights when the agent recommends the expert tier.
+  judgment class). It highlights on a condition the backend evaluates in code, never on a
+  model's opinion of its own reach.
 - A **pending queue** of what the human has not dealt with yet: the map mutations the
   agents propose and the notices they raise. The board shows the proposals in the inbox,
   where the human applies or dismisses each, and the notices in the notification lane.
