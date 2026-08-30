@@ -98,7 +98,7 @@ pointer.
 | `pdlc-orchestrator` | extractable | The deterministic FSM engine intended to drive Objectives through the lifecycle, and its design corpus. |
 | `grind-runtime` | extractable | The event-sourced grind runtime: typed event schema, single-writer append log, pure FSM fold, CLI, dashboard projection. Was organizing-only pending a package; `packages/grind` exists, so it is extractable and `work triggers` evaluates it. |
 | `grilling` | extractable | The interactive spec-interrogation engine: `packages/grillui` — session log, pure projector, board page, lane, seats and drivers — with the `grill-with-ui` and `grill-capture` skills and the grilling glossary and specs. Decides *how a design is interrogated*, never how work moves. |
-| `vizsuite` | extractable | Backlog and knowledge-graph visualization and its data contracts. The package was extracted to its own repository; the name stays registered because work items still carry it, and removing a name orphans them. |
+| `vizsuite` | extractable | Backlog and knowledge-graph visualization and its data contracts. The package was extracted to its own repository; the name has since left the live registry, every item that carried it now closed. |
 | `holding-place` | extractable | The idea pipeline and its Promote contract. |
 
 `pipeline-discipline` and `ops-meta` are **organizing-only**: they partition the
