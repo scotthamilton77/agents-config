@@ -28,7 +28,7 @@ board that no longer holds.
 
 **A reply may declare map updates, and only the grill-master's are heard at
 all.** The two roles answer in different shapes. A grill-master turn is the
-reply document and nothing else -- notice, updates, withdrawals, rulings and
+map document and nothing else -- notice, updates, withdrawals, rulings and
 the stop judgement in one object, validated here, retried once on this seat
 when it does not, and handed up rather than shown to the human as the bytes it
 arrived in. A thread agent's turn is prose, optionally carrying the one offer
@@ -300,7 +300,7 @@ def request_body(model: str, system: str, prompt: str, shaped: bool = False) -> 
     than a preamble on the prompt, so it cannot be read as something the human
     said.
 
-    A grill-master turn asks the provider for the reply document by schema.
+    A grill-master turn asks the provider for the map document by schema.
     Asking is not trusting: the driver validates what comes back whatever the
     request said, because a provider that ignores the field, downgrades it, or
     honours it approximately fails silently and looks exactly like one that did
@@ -1155,7 +1155,7 @@ def document_problem(reply: str) -> str | None:
     """
     carried = _document(reply)
     if carried is None:
-        return "the reply was prose, not the reply document"
+        return "the reply was prose, not the map document"
     try:
         document = GrillMasterDocument.model_validate(carried)
     except ValidationError as error:

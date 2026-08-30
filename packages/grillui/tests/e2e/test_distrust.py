@@ -125,7 +125,7 @@ def test_a_dismissal_and_a_press_are_the_same_signal(
 ) -> None:
     """
     Given one change the first rung proposed and, afterwards, a first-rung turn
-         whose reply is not the reply document twice
+         whose reply is not the map document twice
     When the human dismisses the change and the refused turn is handed up
     Then the two count as one pattern and exactly one `transferred` entry is
          written -- the press is counted where the decision to hand up is made,

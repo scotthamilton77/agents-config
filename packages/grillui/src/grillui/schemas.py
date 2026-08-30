@@ -358,7 +358,7 @@ SUPERSEDES_KEY = "supersedes"
 # The offer a thread agent's turn makes, and the provenance the answer that
 # takes it carries back. Both ride a payload key rather than a kind of their
 # own: an offer is something a turn makes while it says its piece, and the kind
-# vocabulary is closed. The reply document and the log entry spell it the same
+# vocabulary is closed. The map document and the log entry spell it the same
 # way; the projection puts it on the turn under the shorter name, because on a
 # turn there is nothing else it could be an answer to.
 PROPOSED_ANSWER_KEY = "proposed_answer"
@@ -685,7 +685,7 @@ class ConvergedProposal(Strict):
     """What a thread agent offers when its thread has reached the answer to its
     own anchor decision.
 
-    Read out of the reply document and projected onto the turn that made it, so
+    Read out of the map document and projected onto the turn that made it, so
     the driver, the projection and the page all agree on one shape. `because` is
     shown beside the offer and is never part of the answer: the answer is the
     human's statement of record, and a reason folded into it would put the

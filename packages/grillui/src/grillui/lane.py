@@ -180,7 +180,7 @@ class DocumentRefusedError(RuntimeError):
     """
 
     def __init__(self, tier: str, detail: str) -> None:
-        super().__init__(f"the {tier!r} tier's reply is not the reply document: {detail}")
+        super().__init__(f"the {tier!r} tier's reply is not the map document: {detail}")
         self.tier = tier
         self.detail = detail
 

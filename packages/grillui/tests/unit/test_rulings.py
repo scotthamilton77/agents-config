@@ -1,4 +1,4 @@
-"""The grill-master's reply document, and the ruling as a first-class answer.
+"""The grill-master's map document, and the ruling as a first-class answer.
 
 Two failures meet here and they are the same failure seen twice.
 

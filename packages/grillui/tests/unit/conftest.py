@@ -146,7 +146,7 @@ def document(
     stop: Any = None,
     **broken: Any,
 ) -> str:
-    """One grill-master reply document, defaulting to the turn that proposes
+    """One grill-master map document, defaulting to the turn that proposes
     nothing and rules on nothing.
 
     Every field is loosely typed and `broken` takes any extra key, because half

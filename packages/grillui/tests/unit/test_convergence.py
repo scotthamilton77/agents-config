@@ -720,7 +720,7 @@ def test_an_answer_without_from_thread_closes_nothing(client: TestClient, epoch:
     assert thread_of(client, shape.thread)["state"] == "open"
 
 
-# ---------------------------------------------------------------- GUI-D31: the reply document
+# ---------------------------------------------------------------- GUI-D31: the map document
 
 
 @pytest.mark.parametrize(
@@ -744,7 +744,7 @@ def test_a_reply_document_carrying_a_proposal_is_read_as_prose_and_an_offer(
     case: str, document: dict[str, Any], expected: dict[str, Any] | None
 ) -> None:
     """
-    Given a reply document carrying a proposed_answer beside its prose
+    Given a map document carrying a proposed_answer beside its prose
     When the driver reads what the turn declared
     Then the prose is the document's text rather than its raw bytes, and the
          proposal is carried out beside the updates.

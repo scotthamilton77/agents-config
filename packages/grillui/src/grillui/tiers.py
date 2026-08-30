@@ -441,13 +441,13 @@ DIALOGUE_RULE = (
     "turn that ends on a statement is finished."
 )
 
-# How the fast tier takes a turn, and the whole of what is particular to it.
+# How the `fast` rung takes a turn, and the whole of what is particular to it.
 # What a turn is *for* is the role's, below: a mandate written here is inherited
 # by whichever role happens to be running on this tier.
 FAST_TIER_MANDATE = (
-    "Answer from the context you were given, fast. This is the quick tier: the human is "
-    "mid-thought and waiting on you, so a turn that arrives late has already cost them "
-    "more than the detail it spent that time on is worth."
+    "Answer from the context you were given. The human is mid-thought and waiting on "
+    "you, so a turn that arrives late has already cost them more than the detail it "
+    "spent that time on is worth."
 )
 
 FACILITATION_MANDATE = (
@@ -689,8 +689,7 @@ CONVERGENCE_RULE = (
 
 # How each tier takes a turn, and nothing about what the turn is for. The four
 # rules are shared because they are properties of a turn rather than of a model;
-# what the `fast` rung adds is the promptness line in its own prompt, and no
-# mandate.
+# what the `fast` rung adds is its own tier line, and no role mandate.
 _TURN_RULES = [NO_MANUFACTURE_RULE, CONCISION_RULE, DIALOGUE_RULE, ONE_TURN_RULE]
 
 FAST_SYSTEM_PROMPT = "\n\n".join([FAST_TIER_MANDATE, *_TURN_RULES])
