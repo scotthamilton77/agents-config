@@ -5,10 +5,10 @@ Eight rules meet here.
 **The lane is mechanical.** The instant a human turn is accepted, and inside the
 same lock that appended it, the backend emits `accepted` and then `composing`
 naming the tier about to take the turn -- before one byte leaves the process.
-That is 0-1 ms against a second for a fast reply and half a minute for a heavy
-one, and it is why the page can show that a message landed rather than showing
-nothing until a model gets around to answering. No status entry is ever produced
-by a model and no code path here waits on one, including the failure path: an
+That happens in the time it takes to append, against however long the seat
+takes to answer, and it is why the page can show that a message landed rather
+than showing nothing until a model gets around to answering. No status entry is
+ever produced by a model and no code path here waits on one, including the failure path: an
 agent that cannot be reached at all surfaces as an error phase in milliseconds
 rather than as an unbounded silence.
 
@@ -34,9 +34,9 @@ channel left announced is a waiting clock that counts up for the rest of the
 session.
 
 **The tier is a property of the channel, not of the session.** Each turn's
-driver is chosen for the channel it is about to run on, so escalating one thread
-leaves every other thread and the map where the human left them. Threads take
-their turns concurrently with each other and with the map; only the heavy tier's
+driver is chosen for the channel it is about to run on, so transferring one
+thread leaves every other thread and the map where the human left them. Threads
+take their turns concurrently with each other and with the map; only the heavy tier's
 own single-flight rule serialises anything, and it serialises the resume chain
 rather than the session.
 
@@ -353,8 +353,8 @@ class Lane:
     until a tier is configured, and it is deliberately not disguised as a
     working one.
 
-    `expert` is the tier a channel the human has escalated takes its turns on,
-    and the choice is made per channel: escalating one thread must leave every
+    `expert` is the tier a channel the human has transferred takes its turns on,
+    and the choice is made per channel: transferring one thread must leave every
     other where it was, so the tier cannot be a property of the session or of
     the driver. A lane with no expert tier configured never escalates anything.
 
@@ -381,7 +381,7 @@ class Lane:
 
     def tier_for(self, channel: str, driver: TurnDriver, gesture: Turn | None = None) -> TurnDriver:
         """The tier this channel's next turn goes to: the expert one when the
-        human has escalated this channel or the gesture's own class names it,
+        human has transferred this channel or the gesture's own class names it,
         and this channel's own first-rung seat otherwise.
 
         Named before the `composing` entry is written rather than after, so the

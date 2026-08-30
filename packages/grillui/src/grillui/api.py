@@ -108,9 +108,9 @@ def create_app(
     state, not a broken one: the board still accepts everything it would
     otherwise, and nothing pretends a reply is coming.
 
-    `expert` is where a channel the human has escalated takes its turns. It is
+    `expert` is where a channel the human has transferred takes its turns. It is
     the session's tier rather than a channel's: which channels are on it is read
-    off the human's own gestures, one channel at a time, so one escalation never
+    off the human's own gestures, one channel at a time, so one transfer never
     moves another channel.
 
     `seats` is where a named channel takes its first-rung turns instead of on

@@ -2,7 +2,8 @@
 
 Capture reads a session directory and nothing else. It never needs the process
 that ran the session, which is what lets it be invoked three ways -- by the
-backend on end-session, by the main agent after the session returns, or by a
+backend on end-session, by the agent that launched the session after it
+returns, or by a
 fresh agent pointed at a directory whose log is already terminal-ready.
 
 Everything structural here is pure code over the log: the decisions and their
@@ -65,9 +66,9 @@ def default_summary(result: TerminalResult) -> str:
     making the result depend on a model being reachable, so what it says is
     counted rather than composed.
 
-    A decision set aside is counted apart from one settled and from one left
+    A decision invalidated is counted apart from one settled and from one left
     open, because the three are different news: the human answered it, an
-    answer elsewhere mooted it, or it is still waiting. Rolling the set-aside
+    answer elsewhere mooted it, or it is still waiting. Rolling the invalidated
     ones in with the open ones would report work nobody has to do.
 
     A parked thread is named here and a closed one is not, which is the whole

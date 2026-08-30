@@ -1,9 +1,9 @@
 """Two wordless refusals of the first rung move the channel; one is noise (GMR-A10).
 
 Applying and dismissing carry no text, so no transcript condition sees them.
-A dismissal of a first-rung proposal and a press onto the expert are the two
-ways the human says, without saying anything, that the seat got it wrong -- and
-they are counted alike.
+A dismissal of a first-rung proposal is the human saying wordlessly that the
+seat got it wrong; the backend's own press of a refused turn onto the expert is
+the same evidence about the same rung -- and the two are counted alike.
 
 One writes nothing, because one is noise: a proposal the human simply did not
 want is not a seat that cannot do the work. The second is the pattern, and it

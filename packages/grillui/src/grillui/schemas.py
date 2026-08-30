@@ -310,7 +310,7 @@ STATUS_PHASES = frozenset(
 # heavy one, where how hard the model was told to think is as much a part of what
 # produced the turn -- and of what it cost -- as which model it was.
 # `RECOMMENDATION_KEY` rides a
-# fast reply that met one of the escalation conditions, naming the condition and
+# first-rung reply that met one of the escalation conditions, naming the condition and
 # its evidence; it is a recommendation and nothing more, because moving a channel
 # to another tier is the human's gesture under the `gated` policy.
 # `FOLLOWED_TRANSFER_KEY` records that a heavy turn was taken because that
@@ -1004,7 +1004,7 @@ class MootnessObligation(Strict):
     names them in its `puts_in_question`, so nothing here is inferred from prose
     and nothing is a model's reading of a rule. It rides its own field rather
     than being left inside image 2 because a rule an agent has to find in the
-    board is a rule the fast tier does not find -- the evidence is a turn whose
+    board is a rule a turn does not reliably find -- the evidence is a turn whose
     answer put eight decisions in question and whose reply was two sentences.
 
     `ids` is what the board is still offering of that list, so an obligation

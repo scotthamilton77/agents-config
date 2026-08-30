@@ -21,8 +21,9 @@ configuration for every channel.
 part says what the turn is for and opens the brief; the tier's part says how the
 turn is taken -- never assert what the context does not support, keep it short,
 reply to what the human said rather than fishing for what they say next, and say
-your piece in one turn and stop -- with the fast tier adding that it answers
-fast. Nothing about what a turn is for rides on the tier: either tier may drive
+your piece in one turn and stop -- with the `fast` rung's part adding the
+promptness line its own prompt carries. Nothing about what a turn is for rides
+on the tier: either tier may drive
 the map or a thread, and a mandate hanging on the tier is inherited by whichever
 role runs there -- which is how the map's author comes to be told to stop short
 of deciding on the one turn whose whole work is a ruling. Every turn, whichever
@@ -64,11 +65,12 @@ if TYPE_CHECKING:
     from grillui.schemas import DispatchContext, LogEntry, MootnessObligation
 
 
-# The defaults: a non-Claude fast tier reached over OpenRouter, a Claude heavy
-# tier driven through its own CLI at its deepest routine effort. The heavy tier
-# is where the human sends a question the fast tier could not carry, so it is
-# configured to think rather than to be quick -- an expert that answers as
-# fast and as cheaply as the fast tier reads as a transfer that never happened.
+# The defaults: a non-Claude first-rung seat reached over OpenRouter, a Claude
+# expert seat driven through its own CLI at its deepest routine effort. The
+# expert is where the human sends a question the first rung could not carry, so
+# it is configured to think rather than to be quick -- an expert that answered
+# as cheaply and as shallowly as the threads' OpenRouter seat reads as a
+# transfer that never happened.
 # All three remain configuration rather than constants a session is stuck with,
 # so the choice can be re-made on cost-per-useful-turn.
 DEFAULT_FAST_MODEL = "google/gemini-3.5-flash-lite"
@@ -561,7 +563,7 @@ MOOTNESS_RULE = (
 # the decisions rather than describing the case. The standing rule is a
 # paragraph an agent has to recognise its own turn in; this is a list, and a
 # list is both harder to read past and checkable afterwards -- which is what
-# lets a fast reply that ignored it be handed up rather than believed.
+# lets a first-rung reply that ignored it be handed up rather than believed.
 MOOTNESS_OBLIGATION_RULE = (
     "Rule on each decision named above, in this turn, in your `rulings`: `invalidate` where "
     "the answer leaves it no question to ask, `revise` where the answer changes what it asks, "
@@ -687,7 +689,8 @@ CONVERGENCE_RULE = (
 
 # How each tier takes a turn, and nothing about what the turn is for. The four
 # rules are shared because they are properties of a turn rather than of a model;
-# what the fast tier adds is its own speed and no mandate.
+# what the `fast` rung adds is the promptness line in its own prompt, and no
+# mandate.
 _TURN_RULES = [NO_MANUFACTURE_RULE, CONCISION_RULE, DIALOGUE_RULE, ONE_TURN_RULE]
 
 FAST_SYSTEM_PROMPT = "\n\n".join([FAST_TIER_MANDATE, *_TURN_RULES])
@@ -810,7 +813,7 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
 
     A dispatch carrying a mootness obligation says which decisions the answer
     it is replying to put in question, by id, in a section of its own. The
-    standing brief already states the rule; what the fast tier does not do is
+    standing brief already states the rule; what a turn does not reliably do is
     find the pre-marks inside the board and work out that the rule is about this
     turn. Naming them is the same fact, stated where the turn cannot read past
     it.
@@ -884,7 +887,7 @@ def _mootness_section(obligation: MootnessObligation | None) -> list[str]:
     Two gestures leave one and they do not owe the same thing, so the section
     says which gesture it is about and what discharges it. Both name the ids
     rather than describing the case: the standing brief already states the rule,
-    and what the fast tier does not do is find the structure in the board and
+    and what a turn does not reliably do is find the structure in the board and
     work out that the rule is about this turn.
     """
     if obligation is None:

@@ -1,7 +1,7 @@
 """Assembling an agent's dispatch context, and recording what it was given.
 
 Dispatch context crosses whole. The grill-master is handed image 2 in full,
-byte-complete, and there is no elision path in v1 and no budget that can create
+byte-complete, and there is no elision path and no budget that can create
 one: a projector that trimmed settled decisions out of a dispatch would lose
 human decisions silently, and nothing downstream could tell -- the agent would
 simply proceed without a decision the human made minutes earlier.
@@ -17,7 +17,7 @@ the wrong context.
 
 One thread is not about the plan at all: the help thread, where the human asks
 how the board itself works. Its dispatch carries the reference material the
-orchestrator shipped, and no other dispatch does -- an agent grilling a design
+agent that launched the session shipped, and no other dispatch does -- an agent grilling a design
 has no use for it and would only be paying for it, and the map thread, which
 anchors no decision either, is about the plan and gets none of it.
 
@@ -115,8 +115,8 @@ def assemble(
     than in the board because a snapshot states what is true and never what
     changed.
 
-    `help_reference` is the material the orchestrator shipped about driving the
-    board. It is the caller's to hand in rather than this module's to look up,
+    `help_reference` is the material the agent that launched the session shipped
+    about driving the board. It is the caller's to hand in rather than this module's to look up,
     for the same reason the agent is not: a context is assembled from what it
     was given, and reaching back into the log for one field would give this
     function a second source of truth to disagree with.
