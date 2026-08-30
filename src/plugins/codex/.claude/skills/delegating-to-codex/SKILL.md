@@ -56,6 +56,22 @@ Which one leads depends on who is stuck:
 - **Reaching for help because the work has stalled** — dispatch first. Let the
   runtime default stand unless the profile is obvious.
 
+## Dispatching the rescue agent
+
+Dispatch `codex-rescue` **unnamed**. A `name` turns it into a teammate with the
+orchestration kit; it then reads this skill, follows "dispatch the rescue
+agent", and spawns a second copy of itself instead of forwarding. Brief it to
+put an explicit Bash `timeout` (about 1,500,000 ms) on the companion call and
+never to pass `--wait` — an unknown flag is folded into the Codex prompt, and
+an untimed call past the default 120 s is auto-backgrounded where a Bash-only
+agent cannot collect it. A result that says it is "waiting for the background
+task" is a dead agent, not a pending one.
+
+Never export `CODEX_HOME` pointing at the plugin directory. It is Codex's own
+home, where `auth.json` lives; pointed elsewhere, requests go out with no
+credential and `401 Missing bearer` from `api.openai.com/v1/responses` is the
+fingerprint. Hold the companion path in a variable of another name.
+
 ## What this skill does not decide
 
 Whether a run may write, what effort it uses, and how the prompt reaches Codex
