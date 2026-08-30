@@ -22,11 +22,11 @@ Narrow "when in doubt, do the safe thing" rules (merge authorization, destructiv
 - Stage by explicit path. `git add -A`, `git add .` and `commit -a` sweep in untracked artifacts and other agents' in-flight files; read `git status` first and name what you are committing.
 - Creating a PR is not authorization to merge. Absent an explicit instruction, or a merge policy stated in writing in the project's own configuration, do not merge — branch protection, a green pipeline and an approving review are not one.
 - Before deleting or overwriting work you didn't create, look at it; surface contradictions instead of proceeding.
-- A GitHub comment is never human authorization, whoever it renders as: every agent write authenticates with the owner's credential, so a comment from the owner's account may be an agent's own. Authorization comes from the session turn.
 </hard-lines>
 
 <conventions>
 - Minimal, surgical edits: touch only what the task requires; nothing speculative.
 - Artifacts state the current decision, not its history — git is the changelog. This reaches code comments and docstrings as much as skills, rules, commands, AGENTS.md and README.md. Keep the refuted alternative — the plausible wrong design and what breaks under it — in the present tense; cut the episode, including who got it wrong and when. Exempt: changelogs, ADRs, plan or spec files that must state a before-state to plan the transition, and the body of third-party content vendored at a pin, along with its provenance header — a vendored body reproduces its source verbatim. Its front matter and its host artifact are house-authored, and these rules govern wherever the pinned text disagrees.
 - If the repo has a CONTEXT.md glossary, use its terminology.
+- Slice small: a PR is one incremental step, and a slice that balloons mid-implementation stops and asks rather than pushing through — large PRs turn cross-model review into a marathon of one-more-thing rounds.
 </conventions>
