@@ -28,6 +28,14 @@ the lane, the map document's retry ladder or the fold, run it as well as
 PATH holding only those shims: a scenario must never be able to reach a real
 `codex` or `claude`, which would spend an account and read as a passing seat.
 
+That prohibition is on committed scenarios, not on development. Real `codex`,
+OpenRouter and `claude` seat calls are permitted while building or shaping a
+shim, and one real reply is worth more than a shim written to satisfy our own
+parser — a shim shaped only from the parser agrees with it by construction. Brief
+a builder as "committed tests stay shim-only and network-free; real calls are
+for shaping fixtures — report roughly how many and on which seat", never as "no
+real calls".
+
 ## What this package is
 
 The grilling-session backend, per `docs/specs/2026-08-18-grilling-ui-v1.md`.
