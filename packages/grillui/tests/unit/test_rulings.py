@@ -862,8 +862,9 @@ def test_every_completion_request_pins_temperature_to_zero() -> None:
     Then both carry temperature zero, so an identical turn is not resampled
          into a different answer by the provider's default.
     """
-    assert request_body("m", "s", "p", shaped=True)["temperature"] == 0
-    assert request_body("m", "s", "p")["temperature"] == 0
+    for body in (request_body("m", "s", "p", shaped=True), request_body("m", "s", "p")):
+        assert body["temperature"] == 0
+        assert type(body["temperature"]) is int
 
 
 def test_the_option_shape_says_the_grill_master_rules_on_the_mark() -> None:
