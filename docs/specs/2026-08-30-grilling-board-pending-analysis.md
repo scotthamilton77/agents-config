@@ -145,7 +145,7 @@ Each names what a red test asserts, on the log's bytes and, where the fact is re
 Each slice is the smallest independently mergeable unit; each cites what discharges it.
 
 - **S1 — The task on the log and the frontier as the lock** (PND-D1, PND-D5; PND-A1, PND-A3): task status entries, the projector's `waiting` field, frontier exclusion, supersession under the append lock, the page's waiting state naming what it waits on, restart recovery.
-- **S2 — What goes pending, and on which seat** (PND-D2, PND-D4, PND-D15; PND-A2, PND-A11): the classing extension for notes and free text, expert-at-medium seating for every task, the backpressure statement in every brief that weighs the board (`agents-config-9k9.314` audits its wording).
+- **S2 — What goes waiting, and on which seat** (PND-D2, PND-D4, PND-D15; PND-A2, PND-A11): the classing extension for notes and free text, expert-at-medium seating for every task, the backpressure statement in every brief that weighs the board (`agents-config-9k9.314` audits its wording).
 - **S3 — What a result may touch** (PND-D3, PND-D16; PND-A4, PND-A12): target auto-apply with `proposed_by` naming the task, wider changes as proposals with before/after rows, the empty-revise refusal (`agents-config-9k9.310`), the browser-local toggle widening the fold to unanswered decisions.
 - **S4 — Failure as a named blocker, and retry** (PND-D9, PND-D11, PND-D13; PND-A5, PND-A8): the failure phase folded into the `waiting` field, the retry control scoped to the subtree, the doctor's whole-map contract; discharges `agents-config-9k9.306` and `agents-config-9k9.309`.
 - **S5 — Pre-rulings** (PND-D6; PND-A6): background tasks per offered option, consumption on the click, staleness by basis sequence, descendant re-evaluation on a doubt.
@@ -161,7 +161,7 @@ the implementation placeholder against the children already filed under
 `agents-config-9k9.315`.
 
 - feat: grillui S1: the task on the log and the frontier as the lock (PND-D1, PND-D5; PND-A1, PND-A3) — AC: PND-A1, PND-A3; make ci-grillui and make e2e-grillui exit 0.
-- feat: grillui S2: what goes pending, and on which seat (PND-D2, PND-D4; PND-A2) — AC: PND-A2, PND-A11; make ci-grillui and make e2e-grillui exit 0.
+- feat: grillui S2: what goes waiting, and on which seat (PND-D2, PND-D4; PND-A2) — AC: PND-A2, PND-A11; make ci-grillui and make e2e-grillui exit 0.
 - feat: grillui S3: what a result may touch (PND-D3; PND-A4) — AC: PND-A4, PND-A12; agents-config-9k9.310 closes; make ci-grillui and make e2e-grillui exit 0.
 - feat: grillui S4: failure as a named blocker, retry, and the doctor's contract (PND-D9, PND-D11, PND-D13; PND-A5, PND-A8) — AC: PND-A5, PND-A8; agents-config-9k9.306 and agents-config-9k9.309 close; make ci-grillui and make e2e-grillui exit 0.
 - feat: grillui S5: pre-rulings — one hop, consumed on the click, stale by basis (PND-D6; PND-A6) — AC: PND-A6; make ci-grillui and make e2e-grillui exit 0.
