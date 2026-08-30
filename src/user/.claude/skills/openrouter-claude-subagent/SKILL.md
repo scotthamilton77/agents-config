@@ -78,6 +78,10 @@ and ask:
 > This subagent needs `[tool]` to `[reason]`. That gives it the ability to
 > [write local files / make outbound network calls]. Proceed?
 
+A mandated report file is granted as `Edit(<path>)`. `Edit` rules cover every
+file-editing tool; a `Write(<path>)` grant is not matched, so the reviewer
+cannot write its report and the verdict survives only in the run log's tail.
+
 ## Step 2 — Model selection
 
 `references/model-routing.md` is the source of truth for pricing, context
@@ -99,6 +103,13 @@ bucket table already encodes.
 4. State the model and a one-sentence reason (task bucket + price), and ask
    for confirmation — unless the user waived confirmation, in which case
    state the choice and proceed.
+
+Pass the bare model id. A context-window suffix such as `[1m]` is refused by
+the run's own model pin (`403 … decision=deny-pin`); `CLAUDE_CODE_MAX_CONTEXT_TOKENS`
+is the lever when the clamp matters. For a whole-document single pass avoid
+`z-ai/glm-5.3`: it returns thinking-only turns until the request times out,
+and a log full of thinking-only warnings is a dead run to re-dispatch, not one
+to wait on.
 
 ## Step 3 — Effort level
 
