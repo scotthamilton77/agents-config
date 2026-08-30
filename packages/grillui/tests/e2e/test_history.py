@@ -1,4 +1,4 @@
-"""What a decision's history says about why it moved (GUI-D48, §8.6).
+"""What a decision's history says about why it moved (GMR-A7).
 
 Two facts ride on each change and neither is derived: who proposed it, and what
 ruling produced it. The queue remembers the author of every entry and the verdict

@@ -1,20 +1,22 @@
-"""The two tiers as drivers: one turn each, one invocation, then gone.
+"""The tiers as drivers: one turn each, one invocation, then gone.
 
-Both implement the same seam, and neither holds an agent open between turns. A
-turn is picked up, answered into the log, and over -- there is no resident
-process, no loop, and nothing an agent waits on, because the orchestrator is
-what decides when any agent gets a turn. An agent that spent its turn asking
-whether there was anything to do would spend the turn on transport.
+They implement the same seam, and none of them holds an agent open between
+turns. A turn is picked up, answered into the log, and over -- there is no
+resident process, no loop, and nothing an agent waits on, because the
+orchestrator is what decides when any agent gets a turn. An agent that spent its
+turn asking whether there was anything to do would spend the turn on transport.
 
-**The fast tier** is one HTTP call to a hosted model, at about a second and a
-fraction of a cent. Whether its reply should have gone up a tier is not asked of
-the model: the conditions are evaluated against the transcript in code, and what
-they produce rides on the reply as metadata. Who acts on that metadata is the
+**The first rung** takes its seat from configuration, and each transport has its
+own driver: over OpenRouter it is one HTTP call to a hosted model, and over Codex
+or the Claude CLI it is one turn on a chain the session keeps open across turns.
+Whether a first-rung reply should have gone up a tier is not asked of the model:
+the conditions are evaluated against the transcript in code, and what they
+produce rides on the reply as metadata. Who acts on that metadata is the
 session's escalation policy -- the human, by default, and the backend itself
-under `autonomous`, which puts the channel on the heavy tier through the lane so
-the move is on the record rather than in memory.
+under `autonomous`, which puts the channel on the expert tier through the lane
+so the move is on the record rather than in memory.
 
-**The heavy tier** is one CLI turn against a resumed chain. The chain's identity
+**The expert tier** is one CLI turn against a resumed chain. The chain's identity
 is written into the session directory rather than held in memory, so a backend
 restarted over that directory picks the same conversation back up instead of
 starting a cold one; the cold turn costs about ten times a resumed one, which is
@@ -26,7 +28,7 @@ board that no longer holds.
 
 **A reply may declare map updates, and only the grill-master's are heard at
 all.** The two roles answer in different shapes. A grill-master turn is the
-reply document and nothing else -- notice, updates, withdrawals, rulings and
+map document and nothing else -- notice, updates, withdrawals, rulings and
 the stop judgement in one object, validated here, retried once on this seat
 when it does not, and handed up rather than shown to the human as the bytes it
 arrived in. A thread agent's turn is prose, optionally carrying the one offer
@@ -48,10 +50,10 @@ provider's own prompt count where the provider returned one; where it did not,
 the bytes stand in at a stated ratio and are reported as the estimate they are.
 Measured against the tier's context limit, a turn past three quarters of the
 window raises a notice on the board and a line on the launch's stdout, naming
-the tier, the model, what was measured and what the ceiling is. This is the
-instrument the deferred elision machinery waits on: without it, a session that
-outgrew its window would degrade with nothing to point at, and the decision to
-build elision would rest on nobody's measurement.
+the tier, the model, what was measured and what the ceiling is. There is no
+elision path and no budget that could create one; this is the instrument any
+argument for building one would have to rest on, since a session that outgrew
+its window would otherwise degrade with nothing to point at.
 
 **A reply that says nothing is a failure, not a turn.** Whatever the cause --
 transport, an empty completion, an appender that refused the reply -- it raises,
@@ -250,7 +252,8 @@ class CodexCli(Protocol):
 
 @dataclass
 class OpenRouterTransport:
-    """The fast tier's transport: one chat completion, no streaming, no retry.
+    """The first rung's OpenRouter transport: one chat completion, no streaming,
+    no retry.
 
     A turn is the unit of work, so a failed one is reported as a failed turn --
     the human is looking at the lane and can ask again, which is cheaper and
@@ -297,7 +300,7 @@ def request_body(model: str, system: str, prompt: str, shaped: bool = False) -> 
     than a preamble on the prompt, so it cannot be read as something the human
     said.
 
-    A grill-master turn asks the provider for the reply document by schema.
+    A grill-master turn asks the provider for the map document by schema.
     Asking is not trusting: the driver validates what comes back whatever the
     request said, because a provider that ignores the field, downgrades it, or
     honours it approximately fails silently and looks exactly like one that did
@@ -712,8 +715,8 @@ def advise(
 
 @dataclass
 class FastDriver:
-    """The first rung over OpenRouter: facilitate, do not decide, and say when
-    to hand up.
+    """The first rung over OpenRouter: one chat completion per turn, with the
+    escalation conditions read off the transcript beside it.
 
     `seat` is which model this instance is, and it defaults to the threads'.
     The same driver seats the map where a session configures it there, and then
@@ -752,13 +755,13 @@ class FastDriver:
         # append lock -- the same discipline the lane uses to keep a turn and
         # the word about it adjacent. Two separate appends leave a window: a
         # human turn accepted inside it is scheduled against a log where this
-        # channel is still fast, so the turn the policy just bought is composed
-        # by the tier it moved off -- and a warning that measured this reply
+        # channel is still on the first rung, so the turn the policy just
+        # bought is composed by the tier it moved off -- and a warning that measured this reply
         # would be filed against whatever landed in between.
         #
         # The transfer it triggers and the warning it measured are emitted
         # after it, and only if the reply landed: a turn nobody could record is
-        # not a turn whose recommendation is worth spending the heavy tier on,
+        # not a turn whose recommendation is worth spending the expert seat on,
         # nor one whose size is worth telling the human about. Under the lock
         # that costs nothing -- a refusal raises out of the block before either
         # is written, and nothing else could have read the log in between.
@@ -1152,7 +1155,7 @@ def document_problem(reply: str) -> str | None:
     """
     carried = _document(reply)
     if carried is None:
-        return "the reply was prose, not the reply document"
+        return "the reply was prose, not the map document"
     try:
         document = GrillMasterDocument.model_validate(carried)
     except ValidationError as error:

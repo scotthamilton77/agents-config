@@ -1,12 +1,12 @@
 """Whether a turn should be handed up a tier, decided from the transcript and,
 where a gesture leaves no transcript to read, from the board.
 
-A fast model asked to judge whether a question exceeds its own ability judges
+A model asked to judge whether a question exceeds its own ability judges
 generously and answers anyway -- including on a question the human has just
 finished saying they cannot resolve. So the recommendation is never the model's
 opinion of itself. It is a condition evaluated here, in code, against what was
 actually said and what the board actually looks like, and it is the sole basis
-of the metadata a fast reply carries.
+of the metadata a first-rung reply carries.
 
 Three conditions, all decidable from the transcript and the board:
 
@@ -153,7 +153,7 @@ class Recommendation:
     """A named condition and the evidence for it.
 
     The condition is named rather than scored: a human deciding whether to spend
-    a heavy turn is owed the reason, and a number would not be one.
+    an expert turn is owed the reason, and a number would not be one.
     """
 
     condition: str
@@ -208,7 +208,7 @@ def _moved_by(entries: Sequence[LogEntry], channel: str) -> LogEntry | None:
     changes, and it does so silently.
 
     Scanning backwards is what makes both directions work with no state kept: a
-    human's return to the fast tier wins over an earlier policy transfer, and a
+    human's return to the first rung wins over an earlier policy transfer, and a
     later met condition escalates the channel again.
     """
     for entry in reversed(entries):
@@ -277,7 +277,7 @@ def dismisses_first_rung(
 
 # What each closed judgment class is called on the lane. Named rather than
 # counted: the class is the reason a gesture skipped the first rung, and a human
-# reading why their cheap seat was passed over is owed the reason.
+# reading why their first-rung seat was passed over is owed the reason.
 JUDGMENT_UNRULED = "the gesture leaves decisions the board is still offering"
 JUDGMENT_FOLD = "a thread's conclusion is being folded into the board"
 JUDGMENT_CONFLICT = "a withdrawal the human got in front of"
@@ -337,7 +337,7 @@ def in_expert_mode(entries: Sequence[LogEntry], channel: str) -> bool:
     the map still in expert mode if that is where it was left.
 
     The mode is the last gesture on that channel and stands until the opposite
-    one is made -- a channel that fell back to the fast tier because the human
+    one is made -- a channel that fell back to the first rung because the human
     said nothing this turn would quietly undo the transfer they paid for.
     """
     moved = _moved_by(entries, channel)

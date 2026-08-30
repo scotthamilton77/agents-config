@@ -1,4 +1,4 @@
-"""What happens to a grill-master turn that is not the reply document (GMR-A2).
+"""What happens to a grill-master turn that is not the map document (GMR-A2).
 
 The ladder is one retry on the seat that failed, then one rung up, then the
 human is told -- and at no point are the bytes that failed shown to them as
@@ -84,7 +84,7 @@ def test_a_reply_that_is_not_the_document_is_retried_once_then_handed_up_then_sa
     assert len(codex) == 2, f"the first rung was asked {len(codex)} times"
     assert "Your last reply was refused" not in codex[0]["prompt"], "the first ask was a retry"
     assert "Your last reply was refused" in codex[1]["prompt"], codex[1]["prompt"][-400:]
-    assert "the reply was prose, not the reply document" in codex[1]["prompt"]
+    assert "the reply was prose, not the map document" in codex[1]["prompt"]
 
     # Then one rung up, where the same two asks happen and the fault named is
     # that seat's own -- the second reply's, not the first seat's.

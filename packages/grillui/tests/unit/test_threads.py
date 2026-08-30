@@ -830,7 +830,7 @@ def test_a_reply_that_is_not_the_update_shape_is_refused_rather_than_mined(
     client: TestClient, log: SessionLog
 ) -> None:
     """
-    Given a grill-master reply that is JSON but not the reply document
+    Given a grill-master reply that is JSON but not the map document
     When its turn runs
     Then it is refused and nothing of it reaches the log.
 

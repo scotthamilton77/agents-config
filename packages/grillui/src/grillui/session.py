@@ -1,6 +1,7 @@
 """Starting, resuming and ending one grilling session.
 
-**The handoff crosses the gap once.** The main agent writes it, the backend
+**The handoff crosses the gap once.** The agent that launched the session
+writes it, the backend
 validates it, and the backend appends `session-start` carrying the validated
 briefing whole. From that instant the file has no authority: editing it
 mid-session changes nothing, and a backend whose log is non-empty never opens it
@@ -11,8 +12,8 @@ file that has been edited under it.
 **The board is seeded through the log, never by re-reading the handoff.** One
 `session-start` entry carries the briefing, and the projector folds the plan out
 of it, so a fresh process re-folding `log.jsonl` alone reproduces the seeded
-board. The briefing's five load-bearing fields ride in that same entry, which is
-what keeps `stop_when` available to a process that never saw the file.
+board. The briefing's five fields ride in that same entry, which is what keeps
+the load-bearing `stop_when` available to a process that never saw the file.
 
 **A refused handoff initialises nothing.** Validation runs before the session
 directory is created, because a directory holding an empty log is a session as

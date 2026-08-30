@@ -1,9 +1,9 @@
 """Two wordless refusals of the first rung move the channel; one is noise (GMR-A10).
 
 Applying and dismissing carry no text, so no transcript condition sees them.
-A dismissal of a first-rung proposal and a press onto the expert are the two
-ways the human says, without saying anything, that the seat got it wrong -- and
-they are counted alike.
+A dismissal of a first-rung proposal is the human saying wordlessly that the
+seat got it wrong; the backend's own hand-up of a refused turn to the expert is
+the same evidence about the same rung -- and the two are counted alike.
 
 One writes nothing, because one is noise: a proposal the human simply did not
 want is not a seat that cannot do the work. The second is the pattern, and it
@@ -125,7 +125,7 @@ def test_a_dismissal_and_a_press_are_the_same_signal(
 ) -> None:
     """
     Given one change the first rung proposed and, afterwards, a first-rung turn
-         whose reply is not the reply document twice
+         whose reply is not the map document twice
     When the human dismisses the change and the refused turn is handed up
     Then the two count as one pattern and exactly one `transferred` entry is
          written -- the press is counted where the decision to hand up is made,
