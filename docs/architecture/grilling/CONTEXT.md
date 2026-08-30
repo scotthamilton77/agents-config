@@ -56,11 +56,12 @@ them; `packages/grillui/src/grillui/schemas.py` validates the shape.
 
 ## Trade-off (`pcr`)
 
-What an option is expected to buy, cost and force downstream. It is the human's
-only route on the board to the reasoning behind an option. An option carrying
-none shows no trade-off and is otherwise unaffected: what an option puts in
-question is the mark's business, not the trade-off's. The acronym is never
-expanded in any artifact.
+What an option is expected to buy, cost and force downstream — its pros, its
+costs and its ramifications, which is what `pcr` abbreviates; no other artifact
+expands it, and this entry is where the expansion lives. It is the human's only
+route on the board to the reasoning behind an option. An option carrying none
+shows no trade-off and is otherwise unaffected: what an option puts in question
+is the mark's business, not the trade-off's.
 
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U19).
 
@@ -364,10 +365,23 @@ Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U11, GUI-U22).
 ## Hand-up
 
 The backend re-asking one gesture at the expert seat because the first-rung turn
-did not discharge it. It is per gesture and writes nothing that outlives it,
-which is what distinguishes it from a transfer.
+did not discharge it. The expert's turn is on the log like any other, attributed
+to its seat, so the record shows two turns for the one gesture. What a hand-up
+does not do is move the channel — the next gesture starts on the first rung
+again — which is what distinguishes it from a transfer.
 
 Contract: `packages/grillui/src/grillui/lane.py`.
+
+## Escalation
+
+A turn, or a whole channel, going to the expert seat instead of the first rung.
+Four mechanisms do it and the artifacts keep them apart: the human's *transfer*
+moves a channel; the *escalation policy* moves one on the human's behalf; a
+*hand-up* re-asks one gesture; a *judgment class* sends one gesture there before
+any first-rung turn. Only the first two outlive the gesture. Each has its own
+entry; this one exists because the four are routinely called by the one word.
+
+Contract: `packages/grillui/src/grillui/lane.py` decides which seat a turn takes.
 
 ## Escalation policy
 
@@ -402,7 +416,9 @@ rest of the plan, keeps the map honest after each one, and is the only *agent*
 that may change the map. It is a responder and never an initiator — the frontier
 drives, not the grill-master — and it speaks to the human only in notices. Also
 called the **map author**, which is the same role named by what it is for; the
-role and the tier are briefed independently, which is why the name matters.
+role and the tier are briefed independently, which is why the name matters. The
+map's first shape is not its work: the agent running the `grill-with-ui` skill
+assembles the handoff, and the grill-master authors every change from there.
 
 Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D44).
 
@@ -428,9 +444,10 @@ believes something the log does not say is wrong by construction.
 
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D1).
 
-## Document
+## Map document
 
-The one shape every grill-master turn comes back in. There is no prose mode: a
+The one shape every grill-master turn comes back in; the sources also call it
+the *grill-master document* and the *reply document*. There is no prose mode: a
 reply that does not validate is refused and never shown to the human as the bytes
 it arrived in. The shape exists because a turn whose rulings went missing into a
 typo is the failure it was written to end.
@@ -514,12 +531,14 @@ author.
 
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D21).
 
-## Task
+## Impact task
 
 **Proposed, not built.** In the pending-analysis draft, one unit of judgment
-weighed for one target, so that an agent's judgment becomes an unsettled
-prerequisite: a decision a ruling in flight may move is unanswerable while
-everything not downstream stays open.
+weighed for one target decision, so that an agent's judgment becomes an
+unsettled prerequisite: a decision a ruling in flight may move is unanswerable
+while everything not downstream stays open. The draft calls the genus a *task*
+and gives it a second mode, the *review task*, over a review entry rather than a
+decision.
 
 Design: the pending-analysis draft, PND-D1.
 
