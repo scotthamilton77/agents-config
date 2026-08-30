@@ -1449,7 +1449,7 @@ function saySeed(tid, id, field) {
 // the human settled it, or an answer mooted it and the invalidate that says so
 // has landed. An invalidated decision is a closed question, not a loose end --
 // invalidation is how a killing answer closes what it kills -- so a board of
-// one answer and eight set aside is a finished board. Stale is a decision
+// one answer and eight invalidated is a finished board. Stale is a decision
 // somebody still has to move, and fog lifts on its own once what it waits for
 // is answered, so both hold the board open. That is the same reading the
 // terminal result takes -- its open items are the decisions neither settled nor
@@ -1462,7 +1462,7 @@ function boardFinished() {
   });
 }
 // How the finished board reads in the offer's own words: what was answered and
-// what was set aside, counted, because a human told only that the board is
+// what left the flow, counted, because a human told only that the board is
 // clear cannot tell an answered question from a mooted one.
 function completionTally() {
   var all = BOARD.decisions.length;
@@ -1471,7 +1471,7 @@ function completionTally() {
   }).length;
   if (!aside) return "Every decision on this board is settled";
   return all + (all === 1 ? " decision: " : " decisions: ") + (all - aside) + " answered, " +
-    aside + " set aside";
+    aside + " left the flow";
 }
 // The overlay announces the board *arriving* at that state rather than sitting
 // in it, so it is armed on the crossing and disarmed by leaving. An agent
@@ -1648,7 +1648,7 @@ function inHand(slot, found) {
 }
 // One control, on every channel anyone speaks on: the map's and each open
 // thread's. Never disabled — the moment the human most wants an expert is the
-// moment the fast tier is going badly, and a control that greys out while a turn
+// moment the first rung is going badly, and a control that greys out while a turn
 // is in flight is unavailable exactly then.
 //
 // The label names the action the press performs and never the state the channel
@@ -1660,7 +1660,7 @@ function inHand(slot, found) {
 function transferControl(channel) {
   var on = onExpert(channel), rec = recommended(channel);
   var why = rec ? "The agent recommends the expert tier — " + (rec.evidence || rec.condition)
-    : on ? "This channel's next turn goes to the expert tier. Press to hand it back to the fast agent."
+    : on ? "This channel's next turn goes to the expert tier. Press to return this channel to the first rung."
     : "Send this channel's next turn to the expert tier, carrying everything said here.";
   return '<button class="btn sm transfer' + (rec ? " rec" : "") +
     '" data-act="transfer" data-channel="' + esc(channel) + '"' +
@@ -1897,7 +1897,7 @@ function renderColumn() {
 /* ---------- slide-outs ---------- */
 // Who said each thing, and for an agent which tier said it. The tier comes off
 // the projected turn rather than off the channel, so a thread read back after a
-// transfer still shows which turns the fast agent took and which the expert did
+// transfer still shows which turns the first-rung seat took and which the expert did
 // — and a page that joined the session afterwards shows the same, because the
 // projection is where it read the board from.
 //
@@ -2040,7 +2040,7 @@ function threadBody(tid, forPop, chrome) {
         : mapdraft
         ? "Say what you want changed about the map itself — decisions that are now moot, one that is " +
           "wrong, one that is missing. The agent here works it into which decisions change and how; " +
-          "handing that to the agent that owns the map is what puts the changes in your inbox."
+          "handing that to the grill-master is what puts the changes in your inbox."
         : "Nothing exists yet. Close this and no thread is created — " +
           "the first thing you say is what opens it. It titles itself from what you say.") + "</div>",
       '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
@@ -2097,12 +2097,12 @@ function threadBody(tid, forPop, chrome) {
       // hands over is the thread's last, so it arms once the agent has spoken
       // last, and the human's own request is never what the map owner acts on.
       (t.kind === "map"
-        ? '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (ready ? "" : " disabled") + ">Hand it to the agent that owns the map</button>"
+        ? '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (ready ? "" : " disabled") + ">Fold it — conclude and hand it to the grill-master</button>"
         : '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (ready ? "" : " disabled") + ">Fold it — conclude and hand it to the agent</button>");
   }
   if (ready) {
     h += '<details class="foldimpact"><summary>what folding would do</summary><div class="body">' +
-      "Hands this to the agent that owns the map, as what the thread concluded: <strong>" +
+      "Hands this to the grill-master, as what the thread concluded: <strong>" +
       esc(ready.text || "") + "</strong></div></details>";
   } else if (t.kind !== "mandate" && t.kind !== "map" && !stillWaiting) {
     h += '<span class="muted">The agent has not answered yet — folding now would hand back your own words.</span>';
@@ -2383,7 +2383,7 @@ function renderShell() {
     // Beside the doctor because both are the human addressing the map rather
     // than a decision on it: the doctor asks the agent to go and look, and this
     // one is where they say what they want changed and why.
-    '<button class="btn sm" data-act="mapthread" title="Ask the agent that owns the map for a change to it">🗺 Ask for a map change</button>' +
+    '<button class="btn sm" data-act="mapthread" title="Ask the grill-master for a change to it">🗺 Ask for a map change</button>' +
     '<button class="btn sm" data-act="doctor" title="Send the agent over the whole board and the queue">🩺 Map doctor</button>' +
     '<button class="btn sm' + (UI.pulse ? " pulsing" : "") + '" data-act="endsession">End the session</button>' +
     // Pushed to the right edge of the row rather than sitting at the end of the

@@ -309,7 +309,7 @@
   /* A node carrying an unapplied change says so, and cannot be decided. */
   .pend-notice { background: var(--pend-bg); border: 1px solid var(--pend-line); border-radius: 8px;
                  padding: 9px 11px; font-size: 12.5px; color: var(--pend-ink); margin: 8px 0; }
-  /* Blocking elicitation threads render at the top of the block. */
+  /* Threads holding this decision render at the top of the block. */
   .blocking { background: var(--conflict-bg); border: 1px solid var(--conflict-line); border-radius: 8px;
               padding: 9px 11px; font-size: 12.5px; color: var(--conflict-ink); margin: 8px 0; }
   .blocking .tag { font: 600 9.5px ui-monospace, Menlo, monospace; letter-spacing: .09em; text-transform: uppercase; display: block; margin-bottom: 3px; }
@@ -406,7 +406,7 @@
   .scrim .box p { color: var(--ink-dim); font-size: 13.5px; margin: 0; }
   .scrim .box .acts { display: flex; gap: 8px; margin-top: 15px; }
 
-  /* ---------- informational bubbles, upper right ---------- */
+  /* ---------- notice bubbles, upper right ---------- */
   .bubbles { position: fixed; top: 16px; right: 16px; z-index: 990; display: flex; flex-direction: column; gap: 8px; width: 330px; }
   .bubble {
     background: #0f172a; color: #fff; border-radius: 10px; padding: 11px 13px; font-size: 12.5px; line-height: 1.5;

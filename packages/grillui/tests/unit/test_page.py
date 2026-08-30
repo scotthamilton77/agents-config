@@ -1794,7 +1794,7 @@ def test_the_control_is_on_every_channel_and_is_never_disabled() -> None:
     """The map's channel and each open thread's, and active on all of them.
 
     Always active is the decision rather than an omission: the moment a human
-    most wants an expert is the moment the fast tier is going badly, which is
+    most wants an expert is the moment the first rung is going badly, which is
     also the moment a control gated on the channel being idle would be greyed
     out. The label names the switch the press makes, so the channel already on
     the expert offers the way back.
@@ -1824,7 +1824,7 @@ def test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_ta
     press a promise the page keeps across a rename: the mode is recorded under
     the draft's own channel and the turn that opens the thread goes out under a
     minted one. Left uncarried, the control is live, the log is silent, and the
-    first turn -- the one the expert was wanted for -- is taken by the fast tier.
+    first turn -- the one the expert was wanted for -- is taken by the first rung.
 
     Both halves are pinned. The page carries the mode onto the minted name, and
     the kind that opens a thread declares the flag, so the backend's own reader
@@ -1963,7 +1963,7 @@ def test_the_control_follows_the_log_rather_than_the_click_the_policy_overtook()
 
     The click is an intent held until the log speaks after it, which is why it
     carries where the log stood when it was made. Without that, a human who had
-    just sent a channel back to the fast tier would see *Transfer to expert* on a
+    just sent a channel back to the first rung would see *Transfer to expert* on a
     channel the policy had since escalated -- and their next turn, which stamps
     the flag off exactly this reading, would silently undo the transfer.
     """
@@ -2645,10 +2645,11 @@ def test_the_map_threads_fold_arms_on_the_same_turn_an_ordinary_ones_does() -> N
 
     assert gated in foot, "the ordinary fold is no longer gated, so this proves nothing"
     assert ungated in foot
-    assert "Hand it to the agent that owns the map" in foot
+    assert "Fold it — conclude and hand it to the grill-master" in foot
     # One readiness for every fold: the map thread's arms on the same agent turn
     # an ordinary thread's does, because both hand over the thread's last turn.
-    assert '(ready ? "" : " disabled") + ">Hand it to the agent that owns the map' in foot
+    gated_map = '(ready ? "" : " disabled") + ">Fold it — conclude and hand it to the grill-master'
+    assert gated_map in foot
 
 
 def test_an_ordinary_threads_fold_arms_on_the_turn_it_would_hand_over() -> None:
@@ -2781,7 +2782,7 @@ def test_a_finished_board_is_one_the_terminal_result_would_leave_nothing_open_on
     # And the offer says which is which, so a human is not left reading one
     # answer and eight killed questions as nine answered ones.
     tally = function_body("completionTally")
-    assert '"invalidated"' in tally and '" set aside"' in tally
+    assert '"invalidated"' in tally and '" left the flow"' in tally
     assert '" answered, "' in tally
     assert "completionTally()" in function_body("completionOffer")
 
