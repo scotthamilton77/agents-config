@@ -169,6 +169,9 @@ an unmet prerequisite is *fogged*, a status of its own with nobody holding it.
 Contract: `packages/grillui/src/grillui/projector.py` for the board's own lock;
 `packages/grillui/src/grillui/page/script.js` for the thread-side holds.
 
+Design: the pending-analysis draft (PND-D5) for the task holder; the
+terminal-review draft (TRV-D2) for the review discussion.
+
 ## Mandate
 
 A property of a decision declaring that any answer to it opens a side thread,
@@ -316,11 +319,11 @@ Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D10).
 
 ## Completion offer
 
-What the page shows once it reads the board as finished — every decision at rest,
-stale and fogged ones holding it open — saying nothing is waiting on the human and
-offering to end the session. It is an announcement and an offer, never the
-ending: dismissing it returns the human to the board, and end stays their
-gesture.
+What the page shows once it reads the board as finished: an overlay saying
+nothing on the board is waiting on the human, and offering to end the session.
+Completion is announced rather than assumed, and the offer is never the ending —
+dismissing it returns the human to the board, and end stays their gesture. The
+criterion owns what *finished* means.
 
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U17).
 
@@ -379,12 +382,12 @@ Contract: `packages/grillui/src/grillui/escalation.py`.
 
 ## Reshape step
 
-The procedure every grill-master turn follows, carried in its brief on both
-tiers: settle the decision, say what else the answer did, rule on everything the
-dispatch names and anything else the answer undermines, add what the answer
-implies the map lacks, and say whether the stop condition is met. It is the only
-part of the conversational skill's method that crosses to the board — the tree,
-the frontier, the round and the recommendation are the board's own.
+The procedure every grill-master turn follows, carried verbatim in its brief on
+both tiers: what a turn does beyond settling the decision in front of it. It is
+in the brief rather than in code because no gate can read whether a turn
+reshaped the map or merely answered it, and it is the only part of the
+conversational skill's method that crosses to the board — the tree, the frontier,
+the round and the recommendation are the board's own.
 
 Contract: `docs/specs/2026-08-23-grill-master-role.md` (§5.3).
 
@@ -579,9 +582,10 @@ Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D1).
 ## Map document
 
 The one shape every grill-master turn comes back in. Every source that names it
-today calls it the *reply document* — the specs, and the backend's own retry
-message; *map document* is this glossary's name and the one being propagated to
-them. There is no prose mode: a
+today calls it the *reply document*, the specs saying *the grill-master reply
+document* and the backend's own retry message *the reply document*; *map
+document* is this glossary's name and the one being propagated to them. There is
+no prose mode: a
 reply that does not validate is refused and never shown to the human as the bytes
 it arrived in. The shape exists because a turn whose rulings went missing into a
 typo is the failure it was written to end.
@@ -816,10 +820,10 @@ Contract: `packages/grillui/src/grillui/schemas.py`.
 
 ## Elicit-alert
 
-The notice kind that can take a lock: an alert against one decision, saying
-whether it blocks that decision or merely speaks about it. Whether it blocks is
-required of the sender rather than defaulted, because a lock nobody asked for and
-one somebody did are otherwise the same bytes. It never queues as a proposal —
+The notice kind that can take a lock: an alert against one decision, which says
+for itself whether it blocks that decision or merely speaks about it. The sender
+always says which, because a lock nobody asked for and one somebody did are
+otherwise the same bytes. It never queues as a proposal —
 raising an alert as early as possible is the point of one — but it counts as a map
 mutation under the sole-author rule, since the hold it can place is the map
 author's to place.
@@ -940,7 +944,8 @@ proposal naming both sources, so the human adjudicates once rather than
 reconciling two. The draft calls it simply a conflict; this glossary names it to
 tell it from the other two.
 
-Design: the pending-analysis draft, PND-D8.
+Design: the pending-analysis draft, PND-D8, and its own account of which results
+conflict.
 
 ## Converged answer
 
