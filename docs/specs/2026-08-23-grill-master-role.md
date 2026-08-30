@@ -73,7 +73,7 @@ from the vocabulary paragraph alone.
   human steers the map through a thread agent) and the Vocabulary's own "backend
   (equivalently, the orchestrator)". The grill-master drives nothing: the board's
   frontier drives, computed in code (GUI-D43). "Driving" can only mean "authoring".
-- *The role part is the tier's* (GUI-D11: "The fast tier facilitates discussion ... stops
+- *The brief clause is the tier's* (GUI-D11: "The fast tier facilitates discussion ... stops
   short of deciding") against items 1, 3 and 10, which put a decision on whichever tier
   takes the map turn. GUI-A88 presumes a "grill-master's standing brief, on the fast tier
   and on the heavy one" that the spec never states. On the fast tier, the map's author is
@@ -139,7 +139,7 @@ an `invalidate`. The log attributes the turn to the fast tier, 5 923 prompt toke
 
 ### 2.2 The side thread (dispatches at seq 10, 15 and 20)
 
-For a reader who has not seen them: a thread agent's prompt is the thread agent's role part
+For a reader who has not seen them: a thread agent's prompt is the thread-agent brief clause
 ("You are a side-thread agent ... You recommend and never author changes to the map ... If
 the human asks you to change the map ... say plainly that you cannot"), then the same
 fast-tier prompt the grill-master got — facilitation first — then the convergence rule and
@@ -202,14 +202,14 @@ the spec itself being silent or self-contradicting.
    exactly as silence. GUI-D42 says so. **Gap.**
 3. **The grill-master inherits the tier's "facilitate" line though its inputs are events
    and its outputs mutations.** Confirmed: `system_prompt(tier, agent)` joins
-   `SYSTEM_PROMPTS[tier]` to the role's rules, and the grill-master role part is a member of
+   `SYSTEM_PROMPTS[tier]` to the role's rules, and the grill-master brief clause is a member of
    the heavy prompt only. Checked for all four pairs: the fast grill-master carries the
    facilitation clause and no grill-master line; the heavy thread agent carries "You are
    the grill-master ... the only agent that authors changes to the map" beside "You
    recommend and never author changes". The tests pin it
    (`test_the_fast_prompt_carries_the_facilitation_mandate_and_stops_short_of_deciding`,
    `test_the_heavy_prompt_leaves_ending_the_grilling_to_the_human`). **Gap** — GUI-D11
-   hangs the role part on the tier and no decision states the grill-master's brief — **and
+   hangs the brief clause on the tier and no decision states the grill-master's brief — **and
    drift**: a heavy thread agent told it is the sole author contradicts GUI-D25 and the
    spirit of GUI-A89, which passes because it checks for the refusal text and not against
    its contradiction.
