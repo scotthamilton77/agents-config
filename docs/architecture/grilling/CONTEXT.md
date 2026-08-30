@@ -7,10 +7,11 @@
 > steps. The root `CONTEXT.md` remains authoritative for the repository's own
 > vocabulary; where a word appears in both, the entry here says so.
 >
-> Two drafts under review at the time of writing — the pending-analysis spec and
-> its terminal-review child, both dated 2026-08-30 and living on the branch
-> `spec/9k9.315-pending-analysis` — propose vocabulary this file records as
-> proposals rather than as settled meaning. Every such entry says which is which.
+> Two merged specs whose slices are not yet built — the pending-analysis spec,
+> `docs/specs/2026-08-30-grilling-board-pending-analysis.md`, and its
+> terminal-review child, `docs/specs/2026-08-30-grilling-board-terminal-review.md`
+> — propose vocabulary this file records as proposals rather than as settled
+> meaning. Every such entry says which is which.
 
 ---
 
@@ -169,7 +170,7 @@ an unmet prerequisite is *fogged*, a status of its own with nobody holding it.
 Contract: `packages/grillui/src/grillui/projector.py` for the board's own lock;
 `packages/grillui/src/grillui/page/script.js` for the thread-side holds.
 
-Design: the pending-analysis draft (PND-D5) for the task holder; the
+Design: the pending-analysis spec (PND-D5) for the task holder; the
 terminal-review draft (TRV-D2) for the review discussion.
 
 ## Mandate
@@ -633,7 +634,7 @@ answered.
 
 Contract: `docs/specs/2026-08-23-grill-master-role.md` (GUI-D38, GUI-D45).
 
-Conflict: the pending-analysis draft proposes that a `stands` notice arrive
+Conflict: the pending-analysis spec proposes that a `stands` notice arrive
 already read, where the merged artifacts raise it like any other.
 
 ## Invalidate
@@ -701,14 +702,14 @@ Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D21).
 
 ## Impact task
 
-**Proposed, not built.** In the pending-analysis draft, one unit of judgment
+**Proposed, not built.** In the pending-analysis spec, one unit of judgment
 weighed for one target decision, so that an agent's judgment becomes an
 unsettled prerequisite: a decision a ruling in flight may move is unanswerable
 while everything not downstream stays open. The draft calls the genus a *task*
 and gives it a second mode, the *review task*, over a review entry rather than a
 decision.
 
-Design: the pending-analysis draft, PND-D1.
+Design: the pending-analysis spec, PND-D1.
 
 ## Pre-ruling
 
@@ -716,7 +717,7 @@ Design: the pending-analysis draft, PND-D1.
 would need it, so the expected path costs no wait. A pre-ruling the board has
 moved under is recomputed rather than consumed.
 
-Design: the pending-analysis draft, PND-D6.
+Design: the pending-analysis spec, PND-D6.
 
 Conflict: *pre-ruling* and *pre-mark* name different things one word apart — the
 first is cached judgment, the second is the page's display of an option's mark.
@@ -743,7 +744,7 @@ board without it.
 
 Contract: `packages/grillui/src/grillui/projector.py`.
 
-Conflict: the pending-analysis draft carves one exception — a task's result may
+Conflict: the pending-analysis spec carves one exception — a task's result may
 change its own target directly — which the merged artifacts do not have.
 
 ## Dismiss
@@ -782,13 +783,13 @@ Contract: `packages/grillui/src/grillui/projector.py`.
 
 A decision off the frontier and unanswerable, with what it waits on named beside
 it. The board already labels a decision held by an unmet prerequisite or by an
-unjudged conflict this way, and the pending-analysis draft extends the same sense
+unjudged conflict this way, and the pending-analysis spec extends the same sense
 to a decision whose impact is being weighed. *Pending* is the human's queue of
 what to act on; waiting is the opposite state, one nobody may act on, which is
 why the two are different words.
 
 Contract: `packages/grillui/src/grillui/page/script.js` for what the board labels
-today; the pending-analysis draft (PND-D5) for the proposed extension.
+today; the pending-analysis spec (PND-D5) for the proposed extension.
 
 ## Proposal
 
@@ -936,7 +937,7 @@ Contract: `packages/grillui/src/grillui/projector.py` marks the proposal;
 
 ## Result conflict
 
-**Proposed, not built.** In the pending-analysis draft, two task results that
+**Proposed, not built.** In the pending-analysis spec, two task results that
 were independent when they started and disagree when combined — two new nodes with
 the same prerequisites, two sub-updates on one decision, or a pre-ruling whose
 target was answered after its basis. One expert turn merges them into a single
@@ -944,7 +945,7 @@ proposal naming both sources, so the human adjudicates once rather than
 reconciling two. The draft calls it simply a conflict; this glossary names it to
 tell it from the other two.
 
-Design: the pending-analysis draft, PND-D8, and its own account of which results
+Design: the pending-analysis spec, PND-D8, and its own account of which results
 conflict.
 
 ## Converged answer
@@ -1116,14 +1117,14 @@ repository sense.
 
 ## Review
 
-**Proposed, not built.** In the terminal-review draft, the phase a board enters
+**Proposed, not built.** In the terminal-review spec, the phase a board enters
 once the frontier empties: the expert enumerates acceptance criteria and
 edge-case rows, and the human disposes of each. It exists because the board
 otherwise ends on a prose stop condition and leaves the readiness gate downstream
 nothing to read, where the conversational `grilling` skill ends on enumerated
 criteria.
 
-Design: the terminal-review draft, TRV-D1.
+Design: the terminal-review spec, TRV-D1.
 
 Conflict: *review* elsewhere in this repository means adversarial code review and
 its verdict artifact; the two share only the word.
@@ -1134,11 +1135,11 @@ Two things one word. On the log, an *entry* is one appended line.
 
 Contract: `packages/grillui/src/grillui/schemas.py`.
 
-**Proposed, not built.** In the terminal-review draft, an *entry* is also one item
+**Proposed, not built.** In the terminal-review spec, an *entry* is also one item
 of the review phase, which the human disposes of and which links back to the
 decisions it derives from.
 
-Design: the terminal-review draft.
+Design: the terminal-review spec.
 
 ## Criterion
 
@@ -1146,11 +1147,11 @@ One acceptance criterion for the plan under grilling, with a stable id and state
 so that it is directly expressible as a failing test. The conversational
 `grilling` skill enumerates them today and does not end a session until it has —
 an empty question frontier is necessary and not sufficient. **Proposed, not
-built:** the terminal-review draft makes the same enumeration the board's, as a
+built:** the terminal-review spec makes the same enumeration the board's, as a
 record on the log naming the decisions each criterion derives from.
 
 Contract: `src/user/.agents/skills/grilling/SKILL.md` for the live enumeration;
-the terminal-review draft for the board's record kind; the root `CONTEXT.md` for
+the terminal-review spec for the board's record kind; the root `CONTEXT.md` for
 what an acceptance criterion is in this repository generally.
 
 ## Taxonomy row
@@ -1158,16 +1159,16 @@ what an acceptance criterion is in this repository generally.
 One edge-case category applied to one criterion — resolved, or explicitly ruled
 out with a reason. The categories are a closed set of five, and the
 conversational `grilling` skill treats each row of it as a question on the
-frontier today. **Proposed, not built:** the terminal-review draft makes the row
+frontier today. **Proposed, not built:** the terminal-review spec makes the row
 a disposable record on the board.
 
 Contract: `src/user/.agents/skills/grilling/SKILL.md` for the categories and the
-live use; the terminal-review draft for the board's record kind.
+live use; the terminal-review spec for the board's record kind.
 
 ## Disposition
 
-**Proposed, not built.** In the terminal-review draft, where the human has got to
+**Proposed, not built.** In the terminal-review spec, where the human has got to
 on one review entry. Rejection is a conclusion of a discussion rather than a
 control of its own, so a rejection always has a recorded reason.
 
-Design: the terminal-review draft, TRV-D3.
+Design: the terminal-review spec, TRV-D3.
