@@ -18,19 +18,19 @@ ruling rather than a facilitation; and the expert seat is one shared
 configuration for every channel.
 
 **A standing brief has two parts, and they vary independently.** The role's
-part says what the turn is for and opens the brief; the tier's part says how the
-turn is taken -- never assert what the context does not support, keep it short,
-reply to what the human said rather than fishing for what they say next, and say
-your piece in one turn and stop -- with the `fast` rung's part adding the
-promptness line its own prompt carries. Nothing about what a turn is for rides
-on the tier: either tier may drive
-the map or a thread, and a mandate hanging on the tier is inherited by whichever
-role runs there -- which is how the map's author comes to be told to stop short
-of deciding on the one turn whose whole work is a ruling. Every turn, whichever
-tier and whichever role, closes on the register rule: plain sentences, the
-answer first, no term the decision does not need. Whether a turn should have
-gone up a tier is not the model's own judgment to make and is not asked of it
-here; that is evaluated against the transcript in code.
+part says what the turn is for and opens the brief; the tier's part says how
+the turn is taken -- never assert what the context does not support, keep it
+short, reply to what the human said rather than fishing for what they say next,
+and say your piece in one turn and stop -- with the `fast` rung's part adding
+the promptness line its own prompt carries. Nothing about what a turn is for
+rides on the tier: either tier may drive the map or a thread, and a mandate
+hanging on the tier is inherited by whichever role runs there -- which is how
+the map's author comes to be told to stop short of deciding on the one turn
+whose whole work is a ruling. Every turn, whichever tier and whichever role,
+closes on the register rule: plain sentences, the answer first, no term the
+decision does not need. Whether a turn should have gone up a tier is not the
+model's own judgment to make and is not asked of it here; that is evaluated
+against the transcript in code.
 
 **A turn is given the briefing, the board and the channel's conversation.** The
 briefing is read out of the session's own opening log entry rather than the

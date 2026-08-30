@@ -11,10 +11,10 @@ own driver: over OpenRouter it is one HTTP call to a hosted model, and over Code
 or the Claude CLI it is one turn on a chain the session keeps open across turns.
 Whether a first-rung reply should have gone up a tier is not asked of the model:
 the conditions are evaluated against the transcript in code, and what they
-produce rides on the reply as metadata. Who acts on that metadata is the session's escalation policy
--- the human, by default, and the backend itself under `autonomous`, which puts
-the channel on the expert tier through the lane so the move is on the record
-rather than in memory.
+produce rides on the reply as metadata. Who acts on that metadata is the
+session's escalation policy -- the human, by default, and the backend itself
+under `autonomous`, which puts the channel on the expert tier through the lane
+so the move is on the record rather than in memory.
 
 **The expert tier** is one CLI turn against a resumed chain. The chain's identity
 is written into the session directory rather than held in memory, so a backend
@@ -755,8 +755,8 @@ class FastDriver:
         # append lock -- the same discipline the lane uses to keep a turn and
         # the word about it adjacent. Two separate appends leave a window: a
         # human turn accepted inside it is scheduled against a log where this
-        # channel is still on the first rung, so the turn the policy just bought is composed
-        # by the tier it moved off -- and a warning that measured this reply
+        # channel is still on the first rung, so the turn the policy just
+        # bought is composed by the tier it moved off -- and a warning that measured this reply
         # would be filed against whatever landed in between.
         #
         # The transfer it triggers and the warning it measured are emitted
