@@ -33,7 +33,7 @@ asked of it.
 `docs/architecture/grilling/CONTEXT.md`; the terms the body leans on hardest are these. The
 *grill-master*, equivalently the *map author*, is the agent that authors the map: it rules on
 what every human gesture does to the rest of the plan, and is the only agent that changes it.
-A *thread agent* serves one side thread and authors nothing. The *backend* (equivalently, the
+A *thread agent* serves one side thread and authors no map change. The *backend* (equivalently, the
 *orchestrator*) is the coded process — never an agent. On the board: a decision is *settled*
 once the human answers it; the *frontier* is the set of decisions answerable now; *fog* masks a
 decision whose prereq has not come through — a prereq that has left the flow holds nothing,
@@ -979,11 +979,11 @@ follows, and changes nothing else.
   how to drive the board rather than grilling the design.
 - **GUI-U17 — Completion is announced, not assumed.** A board is finished when it carries
   at least one decision and every decision on it has come to rest: settled by the human, or
-  invalidated by a ruling they applied (GUI-D38, GUI-D26). Stale and fogged decisions are
-  not at rest and hold the board open. When the board is finished the page presents an
-  overlay stating that nothing on the board is waiting on the human, naming how many
-  decisions were answered and how many invalidated, and offering an end-session action and
-  a dismiss action.
+  invalidated by an `invalidate` the human applied (GUI-D38, GUI-D26). Stale and fogged
+  decisions are not at rest and hold the board open. When the board is finished the page
+  presents an overlay stating that nothing on the board is waiting on the human, naming how
+  many decisions were answered and how many invalidated, and offering an end-session action
+  and a dismiss action.
   The same reading is what the terminal result writes up (GUI-U14). Dismissing returns the
   human to the board and pulses the main end-session control's border, so the offer stays
   findable without a second overlay. End-session attempts to close the tab; where the browser
@@ -1577,7 +1577,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   backend to mark that update superseded and the page to drop it from the pending surface;
   if the human applied it first, the backend dispatches the conflict back to the
   grill-master and neither the page nor the backend rewrites the board on its own.
-- **GUI-A40** The doctor control dispatches the grill-master with the full map and the
+- **GUI-A40** The map doctor control dispatches the grill-master with the full map and the
   pending queue, the page refuses every board mutation behind a modal while the dispatch is
   outstanding, and the board becomes writable again when the response lands — verified in a
   browser.
