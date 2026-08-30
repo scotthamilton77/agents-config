@@ -332,7 +332,7 @@ def judgment_class(
 def in_expert_mode(entries: Sequence[LogEntry], channel: str) -> bool:
     """Whether this one channel is on the heavy tier.
 
-    Per channel, and read from the log rather than held in memory: transferring
+    Per channel, and read from the log rather than held in memory: escalating
     one thread says nothing about any other, and a successor process must find
     the map still in expert mode if that is where it was left.
 
