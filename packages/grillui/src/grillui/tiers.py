@@ -537,7 +537,7 @@ DOCUMENT_FORMAT_RULE = (
 # fault is the whole of the retry's value: a model told only that it was wrong
 # guesses at a second shape, while one told which key was missing supplies it.
 RETRY_RULE = (
-    "Your last reply was refused because it is not the reply document. Send the same turn "
+    "Your last reply was refused because it is not the map document. Send the same turn "
     "again as one JSON object carrying exactly `text`, `updates`, `supersedes`, `rulings` and "
     "`stop`, and nothing else. The fault was:"
 )

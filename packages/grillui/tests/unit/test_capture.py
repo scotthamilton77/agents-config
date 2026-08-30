@@ -79,7 +79,7 @@ def test_the_end_session_gesture_appends_a_terminal_entry_and_leaves_a_result(
 
     The log entry and the result file are both required and they are not the
     same claim: the entry is the record that the session ended, and the result
-    is what the main agent is handed.
+    is what the launching agent is handed.
     """
     log = started(session_dir)
     client = driven(log, SpyDriver())
@@ -286,7 +286,7 @@ def test_capture_over_a_log_with_no_terminal_entry_says_so(session_dir: Path) ->
          ending.
 
     Capture is invocable over any session directory. Reporting an ending nobody
-    made would put a terminal claim in the main agent's hands for a grilling
+    made would put a terminal claim in the launching agent's hands for a grilling
     that is still open.
     """
     log = started(session_dir)
@@ -425,7 +425,7 @@ def test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open(
     Given a session ended with one decision answered and the rest invalidated
          by proposals the human applied
     When capture runs
-    Then it reports no open items and counts the invalidated ones as set aside.
+    Then it reports no open items and counts the invalidated ones apart.
 
     This is the board a whole session can end on: one answer that killed the
     questions under it, and nothing anybody still has to move. Reporting the
@@ -450,7 +450,7 @@ def test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open(
 
     assert [one.status for one in result.decisions] == ["settled", "invalidated"]
     assert result.open_items == []
-    assert "1 of 2 decisions settled, 1 set aside, 0 left open" in result.summary
+    assert "1 of 2 decisions settled, 1 invalidated, 0 left open" in result.summary
 
 
 def test_a_decision_the_human_never_got_to_says_a_change_is_waiting_on_it(
