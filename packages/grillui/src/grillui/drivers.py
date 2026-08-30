@@ -1,19 +1,20 @@
 """The tiers as drivers: one turn each, one invocation, then gone.
 
-Both implement the same seam, and neither holds an agent open between turns. A
-turn is picked up, answered into the log, and over -- there is no resident
-process, no loop, and nothing an agent waits on, because the orchestrator is
-what decides when any agent gets a turn. An agent that spent its turn asking
-whether there was anything to do would spend the turn on transport.
+They implement the same seam, and none of them holds an agent open between
+turns. A turn is picked up, answered into the log, and over -- there is no
+resident process, no loop, and nothing an agent waits on, because the
+orchestrator is what decides when any agent gets a turn. An agent that spent its
+turn asking whether there was anything to do would spend the turn on transport.
 
-**The first rung** takes its seat from configuration, and each transport has
-its own driver: over OpenRouter it is one HTTP call to a hosted model, and over
-Codex or the Claude CLI it is one turn against a resumed chain. Whether a first-rung reply should have gone up a tier is not asked of
-the model: the conditions are evaluated against the transcript in code, and what
-they produce rides on the reply as metadata. Who acts on that metadata is the
-session's escalation policy -- the human, by default, and the backend itself
-under `autonomous`, which puts the channel on the expert tier through the lane so
-the move is on the record rather than in memory.
+**The first rung** takes its seat from configuration, and each transport has its
+own driver: over OpenRouter it is one HTTP call to a hosted model, and over Codex
+or the Claude CLI it is one turn against a resumed chain. Whether a first-rung
+reply should have gone up a tier is not asked of the model: the conditions are
+evaluated against the transcript in code, and what they produce rides on the
+reply as metadata. Who acts on that metadata is the session's escalation policy
+-- the human, by default, and the backend itself under `autonomous`, which puts
+the channel on the expert tier through the lane so the move is on the record
+rather than in memory.
 
 **The expert tier** is one CLI turn against a resumed chain. The chain's identity
 is written into the session directory rather than held in memory, so a backend
