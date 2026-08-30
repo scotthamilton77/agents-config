@@ -34,8 +34,9 @@ briefing this one refused.
 Both rungs take turns. A tier is a rung and not a model class: what varies is
 the seat on it. The first rung's seat is per-channel configuration — the
 threads' is a hosted model over OpenRouter, reading its key from
-`OPENROUTER_API_KEY`, and the map's is a reasoning model on the Codex transport,
-because a map turn is a ruling rather than a facilitation — while the expert
+`OPENROUTER_API_KEY`, and the map's defaults to a reasoning model on the Codex
+transport, because a map turn is a ruling rather than a facilitation, though it
+may be seated on any of the three transports — while the expert
 above it is one shared configuration for every channel, a Claude model driven as
 `claude -p --resume` turns. A session re-chooses the seats with
 `GRILLUI_FAST_MODEL`, `GRILLUI_MAP_TRANSPORT`, `GRILLUI_MAP_MODEL`,
@@ -173,14 +174,16 @@ The modules, and the separation between them is load-bearing:
   class, and whether the human has said wordlessly often enough that the first
   rung was not enough.
 - `drivers.py` — the seats behind the `TurnDriver` seam, and the three
-  transports they sit on. Every reply carries its tier and model id into the
-  log, a first-rung reply carries any recommendation, and an expert reply
-  records whether it followed a transfer. The two CLI seats each hold a resumed
-  chain — the map's first rung on Codex, the expert on the Claude CLI — whose
-  identity is written into the session directory in a file of its own, so a
-  restarted backend resumes the same conversation and pays the cold start once;
-  one turn at a time on each, because the discount lives in a cache one process
-  holds. A turn that produces nothing usable raises, and the lane turns that
+  transports they sit on. Every reply that is recorded carries its tier and
+  model id into the log, a first-rung reply carries any recommendation, and an
+  expert reply records whether it followed a transfer. A seat on a CLI
+  transport holds a resumed chain — the expert always, the map's first rung on
+  its default Codex seat — whose identity is written into the session directory
+  in a file of its own, so a restarted backend picks the same conversation back
+  up rather than paying for a cold one; one turn at a time on each, because the
+  discount lives in a cache one process holds. A turn catching up on a board
+  that moved while a thread was set aside opens cold on purpose, its chain
+  having reasoned from a board that no longer holds. A turn that produces nothing usable raises, and the lane turns that
   into an error phase in milliseconds.
 - `session.py` — starting, resuming and ending one session. It validates the
   handoff against its schema before the directory exists, appends the validated
