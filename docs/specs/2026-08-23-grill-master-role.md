@@ -73,7 +73,7 @@ from the vocabulary paragraph alone.
   human steers the map through a thread agent) and the Vocabulary's own "backend
   (equivalently, the orchestrator)". The grill-master drives nothing: the board's
   frontier drives, computed in code (GUI-D43). "Driving" can only mean "authoring".
-- *The mandate is the tier's* (GUI-D11: "The fast tier facilitates discussion ... stops
+- *The brief clause is the tier's* (GUI-D11: "The fast tier facilitates discussion ... stops
   short of deciding") against items 1, 3 and 10, which put a decision on whichever tier
   takes the map turn. GUI-A88 presumes a "grill-master's standing brief, on the fast tier
   and on the heavy one" that the spec never states. On the fast tier, the map's author is
@@ -139,7 +139,7 @@ an `invalidate`. The log attributes the turn to the fast tier, 5 923 prompt toke
 
 ### 2.2 The side thread (dispatches at seq 10, 15 and 20)
 
-For a reader who has not seen them: a thread agent's prompt is the thread-agent mandate
+For a reader who has not seen them: a thread agent's prompt is the thread-agent brief clause
 ("You are a side-thread agent ... You recommend and never author changes to the map ... If
 the human asks you to change the map ... say plainly that you cannot"), then the same
 fast-tier prompt the grill-master got — facilitation first — then the convergence rule and
@@ -202,14 +202,14 @@ the spec itself being silent or self-contradicting.
    exactly as silence. GUI-D42 says so. **Gap.**
 3. **The grill-master inherits the tier's "facilitate" line though its inputs are events
    and its outputs mutations.** Confirmed: `system_prompt(tier, agent)` joins
-   `SYSTEM_PROMPTS[tier]` to the role's rules, and the grill-master mandate is a member of
+   `SYSTEM_PROMPTS[tier]` to the role's rules, and the grill-master brief clause is a member of
    the heavy prompt only. Checked for all four pairs: the fast grill-master carries the
-   facilitation mandate and no grill-master line; the heavy thread agent carries "You are
+   facilitation clause and no grill-master line; the heavy thread agent carries "You are
    the grill-master ... the only agent that authors changes to the map" beside "You
    recommend and never author changes". The tests pin it
    (`test_the_fast_prompt_carries_the_facilitation_mandate_and_stops_short_of_deciding`,
    `test_the_heavy_prompt_leaves_ending_the_grilling_to_the_human`). **Gap** — GUI-D11
-   hangs the mandate on the tier and no decision states the grill-master's brief — **and
+   hangs the brief clause on the tier and no decision states the grill-master's brief — **and
    drift**: a heavy thread agent told it is the sole author contradicts GUI-D25 and the
    spirit of GUI-A89, which passes because it checks for the refusal text and not against
    its contradiction.
@@ -218,7 +218,7 @@ the spec itself being silent or self-contradicting.
    shaped `{text, updates|supersedes|proposed_answer}` as prose, so a document with a
    misspelt key is shown to the human as raw JSON; the fast request carries no structured
    output request. **Gap**: §8 fixes the thread agent's `proposed_answer` (§8.9) and says
-   nothing about the grill-master's reply document.
+   nothing about the grill-master's map document.
 5. **No method; nobody drives.** Confirmed. The fast grill-master receives no role at all;
    the heavy one receives an aim ("interrogate the plan decision by decision ... Push on
    the axis the posture names") and no procedure for a turn. "Nobody drives" is by design
@@ -329,7 +329,7 @@ driver records as an `informational` targeted at that decision, so it renders on
 decision (GUI-U15) and a Discuss from it anchors there. Rulings may name decisions the
 dispatch did not; the check is only that every decision the dispatch named is ruled.
 
-**§8.10 — The grill-master reply document.** One object, every map turn, under §8's rule
+**§8.10 — The grill-master map document.** One object, every map turn, under §8's rule
 that an unknown key is a rejection:
 
 - `text` — string; may be empty. The notice to the human, bounded by GUI-U3.
@@ -513,7 +513,7 @@ returned a valid §8.10 document with no schema supplied.
 **Latency is the currency here, not price.** The map seat rides the owner's OpenAI
 subscription and the expert seat the owner's Anthropic one, so neither is API-denominated
 and a per-turn dollar figure for either would be a fiction. What the human spends is the
-waiting clock: a resumed turn on the map seat measured about 6 s wall against 12–34 s for
+reply clock: a resumed turn on the map seat measured about 6 s wall against 12–34 s for
 an expert turn (probe, 2026-08-23).
 
 **The step-up is a model, not a rung.** Where the map seat's rulings prove inadequate, that
@@ -556,11 +556,11 @@ apply and a dismiss, carry no text for a condition to read, and nobody presses *
 expert* at an agent they never talk to. The three triggers below are what a transcript
 condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note.
 
-1. **Post-reply press**, per gesture. A reply leaving a named decision unruled, or a
-   document still invalid after its one retry, is re-asked on the expert seat for that
+1. **Hand-up** (the lane's "press"), per gesture. A reply leaving a named decision unruled,
+   or a document still invalid after its one retry, is re-asked on the expert seat for that
    gesture alone (GUI-D42, GUI-D45). It checks coverage — every decision the dispatch named
    is ruled — and never correctness: a ruling the backend would disagree with is not a
-   ruling missing. A gesture already on the expert seat has no rung to press onto, and
+   ruling missing. A gesture already on the expert seat has no rung to hand up to, and
    GUI-D45's terminal ladder is what applies instead. Nothing is written that outlives the
    gesture.
 2. **Pre-dispatch turn classing**, per gesture. A gesture whose class is judgment
@@ -579,7 +579,7 @@ condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note
    gestures on the map channel that carry no text — the note riding an answer is the exception,
    and GUI-D12 reads it — so a dismissal is the one way they say, wordlessly, that the seat's
    proposal was wrong. One per-session counter counts two events as the same signal: the human
-   dismissing a first-rung seat's proposal, and a post-reply press (trigger 1). At the second
+   dismissing a first-rung seat's proposal, and a hand-up (trigger 1). At the second
    signal the backend writes a policy `transferred` status entry on the map channel — GUI-D35's
    own machinery, unchanged: such an entry only ever moves a channel up, and the way back down
    is the human's transfer control. One signal writes nothing, because one is noise; a third
@@ -678,7 +678,7 @@ carries the replacement; *suspect* names what would settle it.
   the grill-master as the `stop` field of its document (§8.10), which the page raises as a
   notice — and does not end the session itself."
 - **GUI-D11.** Changes: the first sentence becomes "The fast tier answers from the context
-  it was given, fast, and never manufactures information." The facilitation mandate —
+  it was given, fast, and never manufactures information." The facilitation clause —
   "stop short of deciding" — moves to the thread agent's role part (GUI-D44) and is no
   longer a property of the tier. The sentence naming the fast tier a non-Claude model over
   OpenRouter becomes a statement about the rung's default seat rather than about the rung,
@@ -703,7 +703,7 @@ carries the replacement; *suspect* names what would settle it.
 - **§8.6 `history`.** Changes: each entry gains `proposed_by` — the agent whose queued
   update the human's apply landed, absent where no agent authored the move — and, where a
   ruling produced it, `verdict` and the `why` that ruling carried.
-- **§8.10 (new).** The grill-master reply document, §5.2.
+- **§8.10 (new).** The grill-master map document, §5.2.
 - **GUI-A37, GUI-A38, GUI-A39, GUI-A40, GUI-A57, GUI-A64, GUI-A70, GUI-A79–A82,
   GUI-A93, GUI-A94, GUI-A102, GUI-A106, GUI-A107, GUI-A108.** Stand.
 - **GUI-A43.** Changes: "a scripted turn under it returns a `text` of at most three
@@ -743,18 +743,18 @@ skill's text, and each names what a red test would assert.
 
 - **GMR-A1** For all four tier-agent pairs, the composed system prompt opens with that
   agent's role part: the grill-master's names it the map's author and carries the reshape
-  step on both tiers; the thread agent's carries the facilitation mandate and no sentence of
+  step on both tiers; the thread agent's carries the facilitation clause and no sentence of
   the grill-master's, on both tiers. Mutation-tested: keying either role to a tier turns the
   suite red naming the pair.
 - **GMR-A2** A grill-master reply validates against §8.10 or is refused: a prose reply, a
   document missing `text` or `rulings`, and a ruling outside the three kinds each surface
   as the lane's error phase naming the tier, and none reaches the log as a notice.
 - **GMR-A3** A dispatch carrying an obligation names the ids, quotes the gesture and states
-  the three rulings; a reply ruling `stands` with a why on each named id presses no expert,
-  raises no unmet notice, records one `informational` targeted at each of those decisions
-  carrying that why, and leaves each on the frontier; a reply ruling nothing on a named id
-  hands the turn up once, narrowed to the unruled ids, and a second such reply raises exactly
-  one notice saying those decisions were not ruled on.
+  the three rulings; a reply ruling `stands` with a why on each named id hands nothing up to
+  the expert, raises no unmet notice, records one `informational` targeted at each of those
+  decisions carrying that why, and leaves each on the frontier; a reply ruling nothing on a
+  named id hands the turn up once, narrowed to the unruled ids, and a second such reply
+  raises exactly one notice saying those decisions were not ruled on.
 - **GMR-A4** An `invalidate` or `revise` ruling whose document carries no matching update
   targeting that decision is not credited, and the turn is handed up as unruled;
   mutation-tested by crediting the ruling alone.
@@ -780,7 +780,7 @@ skill's text, and each names what a red test would assert.
   strands nothing, is composed by the first-rung seat; and neither writes a `transferred`
   entry, so a clerical gesture following a judgment one is first-rung again.
 - **GMR-A10** One dismissal of a first-rung seat's proposal moves nothing and writes no
-  status entry; a second distrust signal — a dismissal or a post-reply press, counted alike
+  status entry; a second distrust signal — a dismissal or a hand-up, counted alike
   — writes exactly one policy `transferred` entry on the map channel, and every map turn
   after it is the expert seat's; a third signal writes no second entry; and the human's
   transfer control returns the channel to its first-rung seat.
@@ -811,7 +811,7 @@ it was wrong to make.
    briefing an agent by its tier.
 2. **The prompts** (`.2` — GMR-A1, GMR-A6) — `system_prompt` joins a role part to a tier
    part; the grill-master's role part carries §5.1 and §5.3; the thread agent's carries the
-   facilitation mandate and the board legend of §5.5; the obligation sections state the
+   facilitation clause and the board legend of §5.5; the obligation sections state the
    three rulings; the mutation-format rule becomes the document rule; the two tier-keyed
    prompt tests become role-keyed. Wrong if: a replay of the recorded incident dispatch
    through the amended prompt on either seat still returns an `invalidate` whose why says
@@ -822,7 +822,7 @@ it was wrong to make.
    the drivers validate the document, ask the transport for the shape, mint one
    `informational` targeted at each `stands` ruling, and carry `rulings` and `stop` on the
    turn's entry; the outstanding check credits a ruling by its matching update or by
-   `stands`; the lane presses on unruled ids and rewords the notice. Wrong if: a session's
+   `stands`; the lane hands up on unruled ids and rewords the notice. Wrong if: a session's
    log shows a grill-master turn refused for shape more than once in ten, which says the
    transport's structured output is not holding and a fallback parser is owed.
 4. **Per-channel seats and the Codex driver** (`.4` — GMR-A5, GMR-A11) — the tier
