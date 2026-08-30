@@ -31,14 +31,24 @@ names the field that is wrong and initialises nothing, because a directory
 holding an empty log would read as a session and the next start would accept the
 briefing this one refused.
 
-Both tiers take turns. The fast tier is a non-Claude model over OpenRouter and
-the heavy tier is a Claude model driven as `claude -p --resume` turns; which
-model each is comes from `GRILLUI_FAST_MODEL` and `GRILLUI_HEAVY_MODEL`, and the
-fast tier reads its key from `OPENROUTER_API_KEY`. A turn is one invocation that
-exits — nothing polls, and no agent process stays resident between turns. Which
-tier takes a turn is a property of the channel: the map and each thread are on
-the tier the human last put them on, read back off their own turns, so
-escalating one thread moves nothing else.
+Both rungs take turns. A tier is a rung and not a model class: what varies is
+the seat on it. The first rung's seat is per-channel configuration — the
+threads' is a hosted model over OpenRouter, reading its key from
+`OPENROUTER_API_KEY`, and the map's is a reasoning model on the Codex transport,
+because a map turn is a ruling rather than a facilitation — while the expert
+above it is one shared configuration for every channel, a Claude model driven as
+`claude -p --resume` turns. A session re-chooses the seats with
+`GRILLUI_FAST_MODEL`, `GRILLUI_MAP_TRANSPORT`, `GRILLUI_MAP_MODEL`,
+`GRILLUI_MAP_EFFORT`, `GRILLUI_HEAVY_MODEL` and `GRILLUI_HEAVY_EFFORT`; the two
+rungs themselves are not configuration, and the log names them `fast` and
+`heavy`. A turn is one invocation that exits — nothing polls, and no agent
+process stays resident between turns. Which rung takes a turn is a property of
+the channel, read back off its own turns, and four mechanisms send one to the
+expert: the human's transfer moves a channel, the escalation policy moves one on
+their behalf, a hand-up re-asks the single gesture a first-rung turn did not
+discharge, and a judgment class sends a gesture straight there before any
+first-rung turn runs. Only the first two outlive the gesture, and both are per
+channel, so moving one thread moves nothing else.
 
 Every turn records what it was given. The reply carries the request's bytes
 always and the provider's own prompt count where it returned one; without a
@@ -55,25 +65,29 @@ is handed the whole board and its own thread's turns, with every other live
 thread reduced to a stub — anchor decision, title, state, and the conclusion if
 it reached one — and parked threads left out; it reads another thread's body
 through the read surface when a stub turns out to matter. Threads take their
-turns concurrently, with each other and with the map, while the grill-master's
-heavy turns stay on one process at a time.
+turns concurrently, with each other and with the map, while each resumed chain —
+the map's on Codex, the expert's on the Claude CLI — takes one turn at a time.
 
 The grill-master is the sole agent author of map mutations. A map update
 arriving on a thread channel is refused with a typed receipt and appended
 nowhere, whether it came over the wire or out of a driver's own reply. When the
 human folds a thread, the backend dispatches the grill-master with that thread's
-conclusion; it answers in prose, or in an object carrying prose and the updates
-to apply, and those land as one atomic gesture attributed to the grill-master on
-the map channel. A conclusion it takes as context only produces no map mutation
-and a reply that says so.
+conclusion; it answers in a map document — one closed shape carrying the notice,
+the updates, the withdrawals, the rulings and the stop judgement — and those land
+as one atomic gesture attributed to the grill-master on the map channel. There is
+no prose mode: a reply that does not validate is retried once on the same seat
+and handed up once, then recorded as a failure, rather than shown to the human as
+the bytes it arrived in. A conclusion it takes as context only produces no map
+mutation and a document that says so.
 
-Every grill-master dispatch carries the pending queue — the notices the human
-has not dealt with yet, each with its id, its target and its kind — as it stood
-when the dispatch was folded. Answering a decision is dealing with the notices
-standing on it, and they leave the queue. A response may withdraw notices it
-authored itself by naming their ids in `supersedes`: those stay in the queue
-marked superseded, for the page to drop. When the human answered first, the
-withdrawal and the board disagree, and that goes back to the grill-master as a
+Every grill-master dispatch carries the pending queue — what the human has not
+dealt with yet, the notices they were told and the map mutations an agent
+proposed that the board has not taken, each with its id, its target and its kind
+— as it stood when the dispatch was folded. Answering a decision is dealing with
+the notices standing on it, and they leave the queue. A response may withdraw
+entries it authored itself by naming their ids in `supersedes`: those stay in the
+queue marked superseded, for the page to drop. When the human already acted on
+the entry, the withdrawal and the board disagree, and that goes back to the grill-master as a
 dispatch of its own — neither the page nor the backend rewrites the board,
 because only the authoring agent knows what the rewrite was for. Each conflict
 is handed back once.
@@ -147,20 +161,27 @@ The modules, and the separation between them is load-bearing:
   the briefing, the recorded board bytes and the channel's own conversation. The
   briefing is read from the session's opening log entry rather than the handoff
   file, so a process that never saw that file briefs its agents identically.
-- `escalation.py` — the three conditions a fast reply's handoff recommendation
-  is decided by, evaluated in code against the transcript and the board. It is
-  never the model's assessment of its own competence: a fast model asked whether
-  a question is beyond it judges generously and answers anyway. Recommending is
-  all that happens here — moving a channel to the heavy tier is the human's
-  gesture.
-- `drivers.py` — the two tiers behind the `TurnDriver` seam, and their
-  transports. Every reply carries its tier and model id into the log, a fast
-  reply carries any recommendation, and a heavy reply records whether it
-  followed a transfer. The heavy tier's chain identity is written into the
-  session directory, so a restarted backend resumes the same conversation and
-  pays the cold start once; one heavy turn runs at a time, because the discount
-  lives in a cache one process holds. A turn that produces nothing usable
-  raises, and the lane turns that into an error phase in milliseconds.
+- `escalation.py` — the three conditions a first-rung reply's recommendation is
+  decided by, evaluated in code against the transcript and the board. It is
+  never the model's assessment of its own competence: a model asked whether a
+  question is beyond it judges generously and answers anyway. Recommending is
+  all that happens here — who acts on the recommendation is the session's
+  escalation policy, which by default waits for the human's transfer and under
+  `autonomous` moves the channel itself, attributed on the status lane rather
+  than silently. The two map-channel escalations no transcript carries are read
+  here too, off the board and before any model is called: a gesture's judgment
+  class, and whether the human has said wordlessly often enough that the first
+  rung was not enough.
+- `drivers.py` — the seats behind the `TurnDriver` seam, and the three
+  transports they sit on. Every reply carries its tier and model id into the
+  log, a first-rung reply carries any recommendation, and an expert reply
+  records whether it followed a transfer. The two CLI seats each hold a resumed
+  chain — the map's first rung on Codex, the expert on the Claude CLI — whose
+  identity is written into the session directory in a file of its own, so a
+  restarted backend resumes the same conversation and pays the cold start once;
+  one turn at a time on each, because the discount lives in a cache one process
+  holds. A turn that produces nothing usable raises, and the lane turns that
+  into an error phase in milliseconds.
 - `session.py` — starting, resuming and ending one session. It validates the
   handoff against its schema before the directory exists, appends the validated
   briefing as `session-start`, and rebuilds the images on every open so any
@@ -170,9 +191,11 @@ The modules, and the separation between them is load-bearing:
 - `capture.py` — the terminal result, folded from a session directory and
   nothing else, so the same operation serves the backend at end-session and a
   fresh reader pointed at last week's grilling. Everything structural is pure
-  code over the log; the prose summary goes through a summarizer seam whose v1
-  default counts the structured parts rather than composing them, so ending a
-  session never waits on a model.
+  code over the log; the prose summary goes through a summarizer seam whose
+  shipped default counts the structured parts rather than composing them, so
+  ending a session never waits on a model. An agent-written summary is the
+  `grill-capture` skill's to supply through that seam, and this package ships
+  no model behind it.
 - `api.py` — the board endpoints. `/status` is answered from memory and opens
   no file, so it stays cheap whatever the log has grown to; `/state`, `/image1`
   and `/image2` fold; `/updates` refuses a stale epoch with 409; `/events`
@@ -223,17 +246,6 @@ parked, fold-readiness declared by the agent with its impact behind a control,
 bubble overlays, and one scroll intent per human action. A refused write raises
 a banner naming the typed reason and saying plainly that the message was not
 recorded and no agent will answer it.
-
-Not built yet: the transfer-to-expert control (a channel's tier is already
-per-channel state, set by the transfer flag on the human's own turn and carried
-into the dispatch, but no page surface raises the recommendation or activates
-the transfer, and nothing yet flips the control's label back), session control
-and single-main-window enforcement, the channel-state model and its diagnostic
-surface, the single agent pass behind capture's summarizer seam, port fallback
-and browser handoff, and the page's own polish mandates — the waiting indicator
-and its timer, message timestamps everywhere, floating thread chrome,
-hover-hide-on-click across every overlay, the three-way connection indicator,
-and notification read-state with mark-all-read.
 
 ## Development
 
