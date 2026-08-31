@@ -172,11 +172,14 @@ usually driven by an agent on the human's behalf, and a tab nobody asked for is 
 
 ## 3. Agent drive
 
-**GUI-D11 — The fast tier answers from the context it was given, fast, and never
-manufactures information.** Its default seat is a non-Claude model over OpenRouter, at
-roughly one second and $0.0002–$0.0008 per turn; which seat occupies this rung on a given
-channel is GUI-D46's to say, not this decision's. The heavy tier is a Claude model driven
-as `claude -p --resume` CLI turns, which bills the owner's subscription, at $0.576 for the
+**GUI-D11 — The fast tier answers from the context it was given, and never
+manufactures information.** How the turn is taken is the shipped first-rung mandate: the
+human is mid-thought and waiting on it, so a turn that arrives late has already cost them
+more than the detail it spent that time on is worth. A thread channel's default seat is a
+non-Claude model over OpenRouter, at roughly one second and $0.0002–$0.0008 per turn;
+which seat occupies this rung on a given channel is GUI-D46's to say, not this decision's,
+and a seat on a subscription transport prices its turn in latency instead (GUI-D46). The
+heavy tier is a Claude model driven as `claude -p --resume` CLI turns, which bills the owner's subscription, at $0.576 for the
 cold first turn and $0.054 thereafter, 6.5 s standalone and 12–34 s under load; those
 figures are a floor for a heavier default, not a ceiling. That one sentence is the whole of
 what a tier says about a turn: what the turn is *for* belongs to the role's part of the
@@ -399,7 +402,9 @@ nothing.
   note on a neighbouring node makes the human read the block and its justification as two
   unrelated items.
 - Revise, informational, elicit-alert (with a flag for whether it blocks), settle,
-  unsettle and resolve-stale, plus the thread kinds below.
+  unsettle and resolve-stale, plus the thread kinds below. Settle carries its answer in
+  the same shape the human's answer gesture carries it: an `answer` object with `option`
+  and/or `text`, at least one present.
 
 Confirming what landed is not an update kind: it is the state read of GUI-D18.
 
@@ -624,7 +629,12 @@ is stated to it first, identically on both tiers: *You are the grill-master: the
 the map and the only agent that changes it. The human answers decisions; you rule on what
 each answer does to the rest of the plan and keep the map honest after every gesture. Push
 on the axis the posture names. You speak to the human only in notices; when you judge the
-stop condition met, say so, and leave ending the session to them.* A thread agent's role
+stop condition met, say so, and leave ending the session to them.
+An answer settles its decision; say what else it did. Rule on every decision the dispatch
+names and on any other the answer undermines — dead, changed, or standing, each with one
+line of why. Where the answer implies a decision the map lacks, add it with its
+prerequisites and what its options would put in question. Say whether the stop condition
+is met.* A thread agent's role
 part is GUI-D24's and GUI-D39's, on both tiers, and carries no sentence of the
 grill-master's — including the facilitation mandate, which is a thread agent's role and not
 a property of the fast tier. **Keying either role to a tier is refused.** It puts the map's
@@ -761,11 +771,16 @@ condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note
    gestures on the map channel that carry no text — the note riding an answer is the exception,
    and GUI-D12 reads it — so a dismissal is the one way they say, wordlessly, that the seat's
    proposal was wrong. One per-session counter counts two events as the same signal: the human
-   dismissing a first-rung seat's proposal, and a hand-up. At the second the backend
-   writes a policy `transferred` status entry on the map channel — GUI-D35's own machinery,
-   unchanged: such an entry only ever moves a channel up, and the way back down is the human's
+   dismissing a first-rung seat's proposal, and a hand-up. At the second, GUI-D35's own
+   policy decides what the count buys: under `autonomous` the backend writes a policy
+   `transferred` status entry on the map channel — such an entry only ever moves a channel
+   up, and the way back down is the human's transfer control — while under `gated`, the
+   default, it writes a recommendation status entry on that channel — backend-authored,
+   because a dismissal produces no agent reply for a recommendation to ride, where a met
+   transcript condition's advice rides its own reply's attribution — held sticky for the
+   session rather than riding one reply, and nothing moves until the human activates the
    transfer control. One signal writes nothing, because one is noise; a third writes nothing
-   new, because the channel is already there.
+   new, because the count is already spent.
 
 Two is a threshold nobody has defended under fire, and the observation that lowers the
 claim is a session where the second signal is followed by expert rulings a replay on the
@@ -1939,11 +1954,15 @@ Each criterion is mechanically checkable and convertible to a red test.
   recorded for it; a clerical answer, whose option carries no mark and strands nothing, is
   composed by the first-rung seat; and neither writes a `transferred` entry, so a clerical
   gesture following a judgment one is first-rung again.
-- **GMR-A10** One dismissal of a first-rung seat's proposal moves nothing and writes no status
-  entry; a second distrust signal — a dismissal or a hand-up, counted alike — writes
-  exactly one policy `transferred` entry on the map channel, and every map turn after it is
-  the expert seat's; a third signal writes no second entry; and the human's transfer control
-  returns the channel to its first-rung seat.
+- **GMR-A10** One dismissal of a first-rung seat's proposal moves nothing and writes no
+  status entry; at the second distrust signal — a dismissal or a hand-up, counted alike —
+  the escalation policy decides what the count buys: under `autonomous` the backend writes
+  exactly one policy `transferred` entry on the map channel and every map turn after it is
+  the expert seat's, while under `gated`, the default, it writes exactly one recommendation
+  status entry on the map channel and the next map turn is still the first-rung seat's
+  until the human's transfer control moves it; a third signal writes no further entry under
+  either policy; and the human's transfer control returns a transferred channel to its
+  first-rung seat.
 - **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
   the `thread.started` event, then resumes that thread on every later turn on the channel as
   `codex exec resume <thread_id> --json`; `-c developer_instructions=…`, the effort, the two
@@ -1957,9 +1976,11 @@ Each criterion is mechanically checkable and convertible to a red test.
 
 ## 10. Open questions for the implementing work
 
-- **The heavy tier's default model.** V1 makes the model configuration with a Claude
-  default; the cost figures in GUI-D11 are a floor for a heavier one. The first real session
-  should settle which default is right on cost-per-useful-turn.
+- **The heavy tier's default model — decided.** The expert seat
+  defaults to `claude-opus-5` at `xhigh` effort, overridable per seat; the cost figures in
+  GUI-D11 are a floor for a heavier default. What remains open is only whether a first real
+  session's cost-per-useful-turn moves the default, which is a configuration change, not a
+  spec question.
 - **Whether something better replaces the launch floor.** The v1 launch path is decided
   (GUI-D28); the open question is only whether a better hand-off to the browser replaces
   it.

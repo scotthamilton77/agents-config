@@ -298,7 +298,12 @@ role part, stated to it first and on both tiers: *You are the grill-master: the 
 the map and the only agent that changes it. The human answers decisions; you rule on what
 each answer does to the rest of the plan and keep the map honest after every gesture. Push
 on the axis the posture names. You speak to the human only in notices; when you judge the
-stop condition met, say so, and leave ending the session to them.* A thread agent's role
+stop condition met, say so, and leave ending the session to them.
+An answer settles its decision; say what else it did. Rule on every decision the dispatch
+names and on any other the answer undermines — dead, changed, or standing, each with one
+line of why. Where the answer implies a decision the map lacks, add it with its
+prerequisites and what its options would put in question. Say whether the stop condition
+is met.* A thread agent's role
 part is GUI-D24's and GUI-D39's, on both tiers, and carries no sentence of the grill-master's.
 Keying the role to the tier is refused: it puts the map's author under "stop short of
 deciding" on the turn whose work is a ruling, and hands the sole-author line to a thread
@@ -335,7 +340,11 @@ that an unknown key is a rejection:
 - `text` — string; may be empty. The notice to the human, bounded by GUI-U3.
 - `updates` — array; may be empty. Each entry is one GUI-D19 update: `kind`, `target`
   where the kind has one, `basis` (the board's `seq` as dispatched) and `why` where the
-  kind carries a rationale — `invalidate` always does.
+  kind carries a rationale — `invalidate` always does. A `settle` update additionally
+  carries `answer` — an object holding `option` (an option id the decision offers) and/or
+  `text`, at least one of the two — nested under the `answer` key, never as top-level
+  `option`/`text` fields; a `settle` without a usable `answer` is refused before the turn
+  is recorded.
 - `supersedes` — array of pending ids; may be empty.
 - `rulings` — array; may be empty on a dispatch naming nothing. Each entry: `decision`
   (string, a decision on the board), `ruling` (`invalidate`, `revise` or `stands`) and
@@ -678,11 +687,13 @@ carries the replacement; *suspect* names what would settle it.
   the grill-master as the `stop` field of its document (§8.10), which the page raises as a
   notice — and does not end the session itself."
 - **GUI-D11.** Changes: the first sentence becomes "The fast tier answers from the context
-  it was given, fast, and never manufactures information." The facilitation clause —
-  "stop short of deciding" — moves to the thread agent's role part (GUI-D44) and is no
-  longer a property of the tier. The sentence naming the fast tier a non-Claude model over
-  OpenRouter becomes a statement about the rung's default seat rather than about the rung,
-  which GUI-D46 seats per channel. The rest of GUI-D11 stands.
+  it was given, and never manufactures information", and how the turn is taken follows the
+  shipped first-rung mandate — the human is mid-thought and waiting, so a late turn has
+  already cost more than the detail it bought. The facilitation clause — "stop short of
+  deciding" — moves to the thread agent's role part (GUI-D44) and is no longer a property
+  of the tier. The sentence naming the fast tier a non-Claude model over OpenRouter becomes
+  a statement about the default seat of a thread channel's first rung rather than about the
+  rung, which GUI-D46 seats per channel. The rest of GUI-D11 stands.
 - **GUI-D12, GUI-D14, GUI-D15, GUI-D19, GUI-D22, GUI-D24, GUI-D26, GUI-D29, GUI-D30,
   GUI-D39, GUI-D40, GUI-D41, GUI-D43.** Stand.
 - **GUI-D25.** Stands, and GUI-D44 restates it as the role.
@@ -780,10 +791,14 @@ skill's text, and each names what a red test would assert.
   strands nothing, is composed by the first-rung seat; and neither writes a `transferred`
   entry, so a clerical gesture following a judgment one is first-rung again.
 - **GMR-A10** One dismissal of a first-rung seat's proposal moves nothing and writes no
-  status entry; a second distrust signal — a dismissal or a hand-up, counted alike
-  — writes exactly one policy `transferred` entry on the map channel, and every map turn
-  after it is the expert seat's; a third signal writes no second entry; and the human's
-  transfer control returns the channel to its first-rung seat.
+  status entry; at the second distrust signal — a dismissal or a hand-up, counted alike —
+  the escalation policy decides what the count buys: under `autonomous` the backend writes
+  exactly one policy `transferred` entry on the map channel and every map turn after it is
+  the expert seat's, while under `gated`, the default, it writes exactly one recommendation
+  status entry on the map channel and the next map turn is still the first-rung seat's
+  until the human's transfer control moves it; a third signal writes no further entry under
+  either policy; and the human's transfer control returns a transferred channel to its
+  first-rung seat.
 - **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
   the `thread.started` event, then resumes that thread on every later turn on the channel as
   `codex exec resume <thread_id> --json`; `-c developer_instructions=…`, the effort, the two
@@ -831,7 +846,9 @@ it was wrong to make.
    the standing brief and the reply schema on every turn, and the turn's own usage feeding
    the context measurement; attribution carries the seat's model and effort. Wrong if:
    GUI-D46's downward observation lands — three sessions' rulings replayed on the threads'
-   seat agree on every named decision — which says one seat was enough all along.
+   seat agree on every named decision — which changes the map seat's defaults only
+   (`DEFAULT_MAP_*`): the per-channel seat configuration and the Codex driver stay,
+   re-seatable when a session wants them.
 5. **Mechanical escalation** (`.5` — GMR-A9, GMR-A10) — pre-dispatch turn classing over the
    closed judgment set, and the per-session distrust counter writing the policy
    `transferred` entry at its second signal. Wrong if: a session reaches the expert seat on
