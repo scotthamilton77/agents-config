@@ -855,16 +855,24 @@ def test_the_fast_transport_asks_the_provider_for_the_shape_on_a_map_turn(
     assert "response_format" not in request_body("m", "s", "p")
 
 
-def test_every_completion_request_pins_temperature_to_zero() -> None:
+def test_completion_requests_pin_temperature_to_zero_except_on_gemini() -> None:
     """
-    Given a map turn request and a thread turn request
+    Given map and thread turn requests for a non-Gemini and a Gemini model
     When each body is built
-    Then both carry temperature zero, so an identical turn is not resampled
-         into a different answer by the provider's default.
+    Then the non-Gemini bodies carry temperature zero, so an identical turn is
+         not resampled into a different answer by the provider's default —
+         and the Gemini bodies omit the field entirely, so Google's own
+         default applies as its guidance requires.
     """
     for body in (request_body("m", "s", "p", shaped=True), request_body("m", "s", "p")):
         assert body["temperature"] == 0
         assert type(body["temperature"]) is int
+    gemini = "google/gemini-3.5-flash-lite"
+    for body in (
+        request_body(gemini, "s", "p", shaped=True),
+        request_body(gemini, "s", "p"),
+    ):
+        assert "temperature" not in body
 
 
 def test_the_option_shape_says_the_grill_master_rules_on_the_mark() -> None:
