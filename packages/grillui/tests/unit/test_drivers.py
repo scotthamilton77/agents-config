@@ -1309,6 +1309,8 @@ def test_a_reply_the_appender_refuses_for_its_shape_surfaces_as_a_refused_reply(
             {},
         )
 
-    assert "the appender refused it: " in str(refused.value)
-    assert "'invalidate' payload: why" in str(refused.value)
+    assert str(refused.value) == (
+        f"the {FAST_TIER!r} tier produced no reply: the appender refused it: "
+        "event 0: fold sub-update 1: 'invalidate' payload: why: Field required"
+    )
     assert log.seq == before

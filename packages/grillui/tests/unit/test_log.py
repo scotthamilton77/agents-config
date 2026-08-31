@@ -16,6 +16,7 @@ from grillui.schemas import (
     FOLD_KIND,
     PENDING_KEY,
     EventSubmission,
+    batch_payload_problem,
 )
 
 
@@ -210,7 +211,7 @@ def test_a_malformed_interior_line_refuses_to_load(session_dir: Path) -> None:
 # ---- the payload gate both client write paths go through ---------------------
 
 # One fold whose sub-update invalidates a decision without saying why: bytes the
-# HTTP gate has always refused, offered here the way a driver offers them.
+# HTTP gate refuses, offered here the way a driver offers them.
 WHY_LESS_INVALIDATE: dict[str, Any] = {
     "kind": FOLD_KIND,
     "actor": "grill-master",
@@ -233,9 +234,9 @@ def test_a_why_less_invalidate_offered_to_the_appender_is_refused_before_anythin
     When it is submitted straight to the appender, as a driver submits
     Then the batch is refused for its shape and no entry lands.
 
-    The rationale is what makes an invalidation readable, and an agent's
-    malformed proposal reaching the human's queue means the human applying it is
-    who finds out.
+    The rationale is what makes an invalidation readable; without this gate the
+    malformed proposal would sit in the human's queue, and the human applying it
+    would be who finds out.
     """
     with pytest.raises(PayloadRefusedError) as refused:
         log.submit([_malformed()], log.epoch)
@@ -262,14 +263,17 @@ def test_both_write_paths_refuse_the_same_bytes_with_the_same_words(
     with pytest.raises(PayloadRefusedError) as refused:
         log.submit([_malformed()], log.epoch)
 
+    spoken = batch_payload_problem([_malformed()])
+    assert spoken is not None
     assert response.status_code == 422
-    assert response.json()["detail"] == refused.value.problem
+    assert response.json()["detail"] == spoken
+    assert refused.value.problem == spoken
     assert log.entries() == []
 
 
 @pytest.mark.parametrize("kind", [APPLY_KIND, DISMISS_KIND])
 @pytest.mark.parametrize("named", ["prop-1", [], ["prop-1", 2]])
-def test_a_queue_gesture_naming_no_list_of_ids_is_refused_at_the_appender(
+def test_a_queue_gesture_whose_pending_is_no_usable_list_of_ids_is_refused_at_the_appender(
     kind: str, named: Any, log: SessionLog
 ) -> None:
     """
@@ -347,4 +351,31 @@ def test_a_replayed_key_carrying_a_malformed_body_is_refused_for_its_shape(
     with pytest.raises(PayloadRefusedError):
         log.submit([_malformed(idempotency_key="k1")], log.epoch)
 
+    assert log.seq == 1
+
+
+def test_a_malformed_batch_carrying_a_stale_epoch_is_refused_for_its_shape(
+    log: SessionLog,
+) -> None:
+    """
+    Given a malformed batch presented under an epoch the log does not hold
+    When it is submitted
+    Then the shape refusal answers, not an epoch-mismatch receipt: the
+         vocabulary question is asked before any identity question.
+    """
+    with pytest.raises(PayloadRefusedError):
+        log.submit([_malformed()], "not-the-epoch")
+
+    assert log.entries() == []
+
+
+def test_a_backend_authored_record_is_judged_by_nothing(log: SessionLog) -> None:
+    """
+    Given payload bytes the client write paths refuse
+    When the backend records them under its own authority
+    Then the entry lands: record takes the backend's word and runs no gate.
+    """
+    entry = log.record(FOLD_KIND, {"updates": [{"kind": "invalidate", "target": "d1"}]})
+
+    assert entry.seq == 1
     assert log.seq == 1
