@@ -1144,17 +1144,25 @@ def test_a_write_racing_the_reply_cannot_wedge_between_it_and_its_warning(
 
 def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
     """
-    Given a turn that measures over its window and proposes an update of a kind
-          the appender does not know
+    Given a turn that measures over its window and proposes a well-shaped
+          update against a decision the board does not carry
     When it is run
     Then it raises and no warning is appended, because a turn nobody could
          record is not a turn whose size is worth telling the human about.
+
+    The fault is one only the appender can see, so the reply is measured and
+    reaches the append before it is refused -- which is the ordering this is
+    about. A fault in the shape is refused a rung earlier, at the document gate,
+    where the seat still has its retry.
     """
     log = briefed(session_dir)
     human_turn(log, "The log.")
     config = TierConfig.from_env({FAST_MODEL_ENV: "vendor/unknown", FAST_CONTEXT_LIMIT_ENV: "1000"})
 
-    refused = document(text="Proposing this.", updates=[{"kind": "not-a-kind", "target": "d1"}])
+    refused = document(
+        text="Proposing this.",
+        updates=[{"kind": "invalidate", "target": "d99", "why": "nothing on the board is d99"}],
+    )
     with pytest.raises(ReplyRefusedError):
         FastDriver(config, ScriptedFast(reply=refused, prompt_tokens=750)).run(
             log, record_dispatch(log)

@@ -84,11 +84,13 @@ from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import PayloadRefusedError
 from grillui.projector import fold
 from grillui.schemas import (
+    ANSWER_KINDS,
     CONTEXT_BYTES_KEY,
     CONTEXT_LIMIT_KEY,
     EFFORT_KEY,
     FAST_TIER,
     FOLD_KIND,
+    FOLDABLE_KINDS,
     FOLLOWED_TRANSFER_KEY,
     HEAVY_TIER,
     MAP_CHANNEL,
@@ -110,7 +112,9 @@ from grillui.schemas import (
     RejectedReceipt,
     Ruling,
     Stop,
+    answer_problem,
     fault_summary,
+    payload_problem,
 )
 from grillui.tiers import (
     API_KEY_ENV,
@@ -1173,7 +1177,42 @@ def document_problem(reply: str) -> str | None:
     # of `text` is exactly the fix a seat can make.
     if document.supersedes and not sub_updates(document):
         return "supersedes: a withdrawal needs `text`, an update or a ruling to ride on"
+    for index, update in enumerate(document.updates):
+        problem = _update_problem(update)
+        if problem is not None:
+            return f"updates.{index}: {problem}"
     return None
+
+
+def _update_problem(update: Mapping[str, Any]) -> str | None:
+    """Why the appender would refuse this update, or None where it would take it.
+
+    The turn's own updates and no others: the notice, the `stands` informationals
+    and the stop notice are minted by the code below out of fields the shape has
+    already validated, so gate-judging them would put the backend's own bytes on
+    the seat's retry.
+
+    The shape is judged by the same function the appender judges it with, so the
+    two cannot drift into refusing different bytes. What is added here is what
+    that function has no answer for: it holds no shape for a kind outside the
+    vocabulary, so an unknown one passes it and is refused at the append instead;
+    and the answer an agent settles with is checked against the board there,
+    which this reader does not have. It asks the smaller question a boardless
+    reader can -- whether an answer is carried at all -- and leaves whether the
+    option is one the decision offers to the appender.
+    """
+    kind = update.get("kind")
+    if not isinstance(kind, str):
+        return "an update names no kind"
+    if kind not in FOLDABLE_KINDS:
+        return f"{kind!r} is not a kind an update may carry"
+    problem = payload_problem(kind, update)
+    if problem is not None:
+        return problem
+    if kind not in ANSWER_KINDS and "answer" not in update:
+        return None
+    refused = answer_problem(update.get("answer"), None)
+    return None if refused is None else f"{kind!r} payload: {refused[0]}: {refused[1]}"
 
 
 def read_document(reply: str) -> GrillMasterDocument:
