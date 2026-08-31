@@ -759,7 +759,11 @@ skill's text, and each names what a red test would assert.
   suite red naming the pair.
 - **GMR-A2** A grill-master reply validates against §8.10 or is refused: a prose reply, a
   document missing `text` or `rulings`, and a ruling outside the three kinds each surface
-  as the lane's error phase naming the tier, and none reaches the log as a notice.
+  as the lane's error phase naming the tier, and none reaches the log as a notice. An
+  update the appender would refuse for shape — a `settle` without a usable `answer`, a
+  sub-update missing a field its kind requires, a kind outside the foldable list — is
+  refused at the same gate: the seat's one retry quotes the fault, indexed against the
+  document's own `updates` array, and only a second refusal surfaces as the error phase.
 - **GMR-A3** A dispatch carrying an obligation names the ids, quotes the gesture and states
   the three rulings; a reply ruling `stands` with a why on each named id hands nothing up to
   the expert, raises no unmet notice, records one `informational` targeted at each of those

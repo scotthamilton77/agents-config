@@ -313,7 +313,12 @@ def request_body(model: str, system: str, prompt: str, shaped: bool = False) -> 
 
     Temperature is pinned to zero rather than left to the provider default:
     these turns extract to a schema, where reproducibility is worth more than
-    sampling variety.
+    sampling variety. Gemini-family models are the exception — the field is
+    omitted so Google's default applies, because Google recommends default
+    temperature for all Gemini 3 models, warns that lowering it risks looping
+    or degraded output, and exempts no request shape (schema-constrained
+    included); its determinism is best-effort at any setting, so the pin
+    bought nothing there.
     """
     body: dict[str, Any] = {
         "model": model,
@@ -321,8 +326,9 @@ def request_body(model: str, system: str, prompt: str, shaped: bool = False) -> 
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0,
     }
+    if "gemini" not in model:
+        body["temperature"] = 0
     if shaped:
         body["response_format"] = {
             "type": "json_schema",

@@ -12,6 +12,17 @@ content under `src/user/.claude/`, `src/user/.codex/`, `src/user/.gemini/` and
 directory carries its own `AGENTS.md` stating what currently lives there; read
 it rather than inferring from the folder's contents.
 
+Prompt prose authored here — lens mandates, dispatch briefs, anything a
+dispatch site sends downstream — can be served to any routed model family
+(Claude, GPT tiers, GLM, Kimi, Gemini), and no dispatch site varies its prompt
+per model. Write that prose to the dialect every family tolerates: goal-level
+framing with an explicit deliverable contract, no redundant or conflicting
+imperatives, no manual chain-of-thought scaffolding, no ALL-CAPS pressure,
+consistent delimiters. The provider citations behind each clause, and the
+per-model *parameter* facts (temperature splits, token floors) that belong in
+transport config rather than prose, are in
+`docs/reference/2026-08-31-model-prompting-variance.md`.
+
 Two gates read this tree, differently on purpose, and neither invokes the
 installer:
 
