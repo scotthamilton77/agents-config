@@ -565,6 +565,27 @@ def test_every_sub_update_fault_that_would_kill_the_turn_is_refused_at_the_gate(
     assert "updates.1" in fault, fault
 
 
+@pytest.mark.parametrize("kind", sorted(UPDATE_EXAMPLES))
+def test_an_unusable_answer_is_refused_on_every_kind_that_carries_one(kind: str) -> None:
+    """
+    Given each legal kind's example with an unusable `answer` attached
+    When the document is judged
+    Then the gate refuses it naming `answer`, whatever the kind.
+
+    The appender's answer check fires on any payload carrying an `answer` key,
+    not only on the answer kinds, and the gate mirrors that condition: a gate
+    that special-cased the kinds seen so far would pass an update the appender
+    refuses.
+    """
+    update = {**UPDATE_EXAMPLES[kind], "answer": {}}
+
+    fault = document_problem(document(updates=[FIRST, update]))
+
+    assert fault is not None, f"{kind!r} carrying an unusable answer was taken"
+    assert "answer" in fault, fault
+    assert "updates.1" in fault, fault
+
+
 def test_the_gate_refuses_every_shape_fault_the_appenders_reader_names() -> None:
     """
     Given each legal kind's example with one of its fields stripped
