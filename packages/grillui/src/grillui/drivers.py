@@ -81,6 +81,7 @@ from pydantic import ValidationError
 from grillui.dispatch import GRILL_MASTER
 from grillui.escalation import in_expert_mode, recommend, transfer_source, turns_of
 from grillui.lane import AgentUnreachableError, DocumentRefusedError
+from grillui.log import PayloadRefused
 from grillui.projector import fold
 from grillui.schemas import (
     CONTEXT_BYTES_KEY,
@@ -1418,19 +1419,28 @@ def record_reply(
 
 def _submit(log: SessionLog, tier: str, channel: str, kind: str, payload: dict[str, Any]) -> None:
     """The one way a turn reaches the log: through the appender the page writes
-    through, so a driver holds no second path to the board."""
-    receipt = log.submit(
-        [
-            EventSubmission(
-                kind=kind,
-                actor="grill-master" if channel == MAP_CHANNEL else "thread-agent",
-                channel=channel,
-                idempotency_key=f"{tier}-{uuid4().hex}",
-                payload=payload,
-            )
-        ],
-        log.epoch,
-    )[0]
+    through, so a driver holds no second path to the board.
+
+    A payload the appender refuses for its shape arrives as an exception rather
+    than a receipt, and it is the same outcome from the human's side: they asked
+    something and no answer exists. It surfaces with the appender's own words,
+    so the agent is told which field it left out.
+    """
+    try:
+        receipt = log.submit(
+            [
+                EventSubmission(
+                    kind=kind,
+                    actor="grill-master" if channel == MAP_CHANNEL else "thread-agent",
+                    channel=channel,
+                    idempotency_key=f"{tier}-{uuid4().hex}",
+                    payload=payload,
+                )
+            ],
+            log.epoch,
+        )[0]
+    except PayloadRefused as refused:
+        raise ReplyRefusedError(tier, f"the appender refused it: {refused.problem}") from refused
     if receipt.status != "accepted":
         raise ReplyRefusedError(tier, _refusal(receipt))
 

@@ -7,9 +7,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
-from grillui.log import LOG_FILE, CorruptLogError, SessionLog
-from grillui.schemas import EventSubmission
+from grillui.log import LOG_FILE, CorruptLogError, PayloadRefused, SessionLog
+from grillui.schemas import (
+    APPLY_KIND,
+    DISMISS_KIND,
+    FOLD_KIND,
+    PENDING_KEY,
+    EventSubmission,
+)
 
 
 def _submit(log: SessionLog, key: str, **payload: object) -> Any:
@@ -198,3 +205,146 @@ def test_a_malformed_interior_line_refuses_to_load(session_dir: Path) -> None:
 
     with pytest.raises(CorruptLogError, match="line 1"):
         SessionLog(session_dir)
+
+
+# ---- the payload gate both client write paths go through ---------------------
+
+# One fold whose sub-update invalidates a decision without saying why: bytes the
+# HTTP gate has always refused, offered here the way a driver offers them.
+WHY_LESS_INVALIDATE: dict[str, Any] = {
+    "kind": FOLD_KIND,
+    "actor": "grill-master",
+    "channel": "map",
+    "idempotency_key": "drive-1",
+    "payload": {"updates": [{"kind": "invalidate", "target": "d1"}]},
+}
+
+
+def _malformed(**overrides: Any) -> EventSubmission:
+    """The malformed fold, with whatever the caller changes about it."""
+    return EventSubmission.model_validate({**WHY_LESS_INVALIDATE, **overrides})
+
+
+def test_a_why_less_invalidate_offered_to_the_appender_is_refused_before_anything_lands(
+    log: SessionLog,
+) -> None:
+    """
+    Given a fold whose sub-update invalidates a decision without saying why
+    When it is submitted straight to the appender, as a driver submits
+    Then the batch is refused for its shape and no entry lands.
+
+    The rationale is what makes an invalidation readable, and an agent's
+    malformed proposal reaching the human's queue means the human applying it is
+    who finds out.
+    """
+    with pytest.raises(PayloadRefused) as refused:
+        log.submit([_malformed()], log.epoch)
+
+    assert refused.value.problem.startswith("event 0: ")
+    assert "why" in refused.value.problem
+    assert log.entries() == []
+
+
+def test_both_write_paths_refuse_the_same_bytes_with_the_same_words(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given one malformed fold, offered over the wire and offered to the appender
+    When each path judges it
+    Then the wire answers 422 and the appender raises, both quoting the one
+         problem text, and nothing is appended either way.
+
+    Two seams calling two readers is how they come to disagree; one reader,
+    called from both, is what makes the equivalence a property rather than a
+    coincidence to be re-checked.
+    """
+    response = client.post("/events", json={"epoch": log.epoch, "events": [WHY_LESS_INVALIDATE]})
+    with pytest.raises(PayloadRefused) as refused:
+        log.submit([_malformed()], log.epoch)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == refused.value.problem
+    assert log.entries() == []
+
+
+@pytest.mark.parametrize("kind", [APPLY_KIND, DISMISS_KIND])
+@pytest.mark.parametrize("named", ["prop-1", [], ["prop-1", 2]])
+def test_a_queue_gesture_naming_no_list_of_ids_is_refused_at_the_appender(
+    kind: str, named: Any, log: SessionLog
+) -> None:
+    """
+    Given an apply or a dismiss whose `pending` is a bare string, an empty list,
+         or a list with a non-string in it
+    When it is submitted straight to the appender
+    Then it is refused naming the field, and nothing is appended.
+
+    No production caller reaches this: the wire gate refuses these bytes and the
+    queue-gesture check refuses a non-human actor. It is the appender's own
+    contract, pinned here so that the gate cannot quietly narrow to whatever the
+    callers of the day happen to send.
+    """
+    with pytest.raises(PayloadRefused) as refused:
+        log.submit(
+            [
+                _malformed(
+                    kind=kind,
+                    actor="human",
+                    idempotency_key="gesture-1",
+                    payload={PENDING_KEY: named},
+                )
+            ],
+            log.epoch,
+        )
+
+    assert PENDING_KEY in refused.value.problem
+    assert log.entries() == []
+
+
+def test_a_fault_in_a_batchs_second_event_appends_neither_and_receipts_neither(
+    log: SessionLog,
+) -> None:
+    """
+    Given a two-event batch whose first event is well-formed and whose second
+         carries a payload fault
+    When it is submitted
+    Then the whole batch is refused before any append: nothing lands, and the
+         caller receives no receipt for either event.
+
+    Refusing part-way through would leave an entry in the log that nobody ever
+    got a receipt for, which is the one failure the receipt contract exists to
+    make impossible.
+    """
+    good = EventSubmission(
+        kind="informational",
+        actor="grill-master",
+        idempotency_key="ok-1",
+        payload={"text": "the budget landed"},
+    )
+
+    with pytest.raises(PayloadRefused) as refused:
+        log.submit([good, _malformed()], log.epoch)
+
+    assert refused.value.problem.startswith("event 1: ")
+    assert log.entries() == []
+    assert log.seq == 0
+
+
+def test_a_replayed_key_carrying_a_malformed_body_is_refused_for_its_shape(
+    log: SessionLog,
+) -> None:
+    """
+    Given a key that has already landed
+    When it is presented again on a body the appender would not take
+    Then it is refused for the shape rather than answered as a duplicate.
+
+    The replay answer is what a client's retry is owed, and a retry carries the
+    bytes it sent before. Bytes it did not send before are a different write
+    wearing a used key, and answering that off the index would tell the sender
+    something landed that this log would never have taken.
+    """
+    _submit(log, "k1", text="one")
+
+    with pytest.raises(PayloadRefused):
+        log.submit([_malformed(idempotency_key="k1")], log.epoch)
+
+    assert log.seq == 1

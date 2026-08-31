@@ -428,6 +428,11 @@ class Lane:
         the driver has not been touched. The threads come back so a caller that
         needs to know when a turn finished can wait for it -- nothing in the
         request path does.
+
+        The batch arrives already screened for payload shape: the write route is
+        the one caller, and it runs that check before handing anything over. So
+        there is no second check here, and a malformed batch reaching this
+        method would raise out of the appender rather than come back receipted.
         """
         base = self.driver
         receipts: list[Receipt] = []

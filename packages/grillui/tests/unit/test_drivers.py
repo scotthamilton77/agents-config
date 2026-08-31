@@ -52,6 +52,7 @@ from grillui.drivers import (
     declared_updates,
     read_cli_reply,
     read_completion,
+    record_reply,
     request_body,
     run_claude_cli,
     write_resume,
@@ -1279,3 +1280,35 @@ def test_an_offer_on_another_decision_keeps_the_prose_and_says_why_it_was_refuse
     assert said.startswith(REPLY)
     assert "'d3'" in said
     assert "is about 'd1'" in said
+
+
+def test_a_reply_the_appender_refuses_for_its_shape_surfaces_as_a_refused_reply(
+    session_dir: Path,
+) -> None:
+    """
+    Given a grill-master turn proposing an invalidation that says no why
+    When the driver records it
+    Then the refusal surfaces as a refused reply quoting the appender's own
+         problem text, and nothing lands on the board.
+
+    The turn produced nothing the log would take, which is what the human is
+    owed the error for -- and the words are the appender's, so the agent is told
+    which field it left out rather than that something went wrong.
+    """
+    log = briefed(session_dir)
+    before = log.seq
+
+    with pytest.raises(ReplyRefusedError) as refused:
+        record_reply(
+            log,
+            FAST_TIER,
+            MAP_CHANNEL,
+            document(
+                text="That decision is dead.", updates=[{"kind": "invalidate", "target": TARGET}]
+            ),
+            {},
+        )
+
+    assert "the appender refused it: " in str(refused.value)
+    assert "'invalidate' payload: why" in str(refused.value)
+    assert log.seq == before

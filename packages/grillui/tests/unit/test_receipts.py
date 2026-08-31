@@ -453,3 +453,31 @@ def test_a_revise_waiting_on_the_human_does_not_change_which_options_an_answer_m
     stale = answer_with(client, log, "a", "no-longer-offered")
     assert stale["status"] == "rejected"
     assert stale["reason"] == REASON_UNKNOWN_OPTION
+
+
+def test_the_rejection_vocabulary_is_exactly_these_twelve_reasons() -> None:
+    """
+    Given the closed set of reasons a receipt may name
+    When it is read
+    Then it is exactly these twelve, and a payload fault is not among them.
+
+    A payload the vocabulary has no word for is refused whole, before anything
+    lands, rather than by minting a thirteenth reason every caller switching on
+    this set would then have to learn.
+    """
+    vocabulary = {
+        REASON_MISSING_KEY,
+        REASON_EPOCH_MISMATCH,
+        REASON_UNKNOWN_KIND,
+        REASON_UNKNOWN_NODE,
+        REASON_EMPTY_ANSWER,
+        REASON_THREAD_WITHOUT_TURN,
+        REASON_THREAD_MAP_MUTATION,
+        REASON_UNKNOWN_PENDING,
+        REASON_PENDING_CONFLICT,
+        REASON_UNKNOWN_THREAD,
+        REASON_FOREIGN_THREAD,
+        REASON_UNKNOWN_OPTION,
+    }
+
+    assert vocabulary == REJECTION_REASONS

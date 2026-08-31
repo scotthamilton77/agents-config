@@ -229,10 +229,13 @@ def create_app(
         at the speed of the disk rather than the speed of a model.
 
         A payload the closed rejection vocabulary has no word for is refused
-        here, before anything is appended and for the batch whole -- the same
-        answer an unknown envelope field gets. Refusing part-way through would
-        leave entries in the log that no caller ever got a receipt for, which is
-        the one failure this protocol is built to make impossible."""
+        for the batch whole, before anything is appended -- the same answer an
+        unknown envelope field gets. The judgement is the appender's own and
+        every write path takes it; running it here as well is what turns the
+        appender's raised refusal into this route's 422, so an HTTP client is
+        answered rather than served a traceback. Both calls read the one
+        function, so the two seams cannot come to disagree about what is
+        malformed."""
         malformed = batch_payload_problem(batch.events)
         if malformed is not None:
             raise HTTPException(status_code=MALFORMED_PAYLOAD_STATUS, detail=malformed)
