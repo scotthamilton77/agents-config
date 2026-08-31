@@ -1503,34 +1503,37 @@ def test_a_press_on_a_thread_channel_is_no_signal_about_the_map(log: SessionLog)
     assert _transfers(log) == [], "a thread's press moved the map channel"
 
 
-def test_a_dismissal_naming_no_list_of_ids_is_read_without_raising(log: SessionLog) -> None:
+def test_a_dismissal_naming_a_proposal_the_queue_never_held_is_read_without_raising(
+    log: SessionLog,
+) -> None:
     """
-    Given a dismissal whose `pending` is not a list of ids at all
+    Given a well-shaped dismissal naming an id no proposal in the queue carries
     When it is offered twice
     Then nothing is written and the batch came back with receipts rather than
          an exception.
 
     The count is read before the gesture lands, which puts this reader in front
     of the appender rather than behind it -- and inside the append lock, where
-    an exception would take the whole batch down instead of one bad event. A
-    gesture that named no proposal refused none either way.
+    an exception would take the whole batch down instead of one refused event.
+    A gesture that named no proposal refused none either way.
     """
     first, expert = _two_seats()
     lane = Lane(log, first, expert=expert)
     _seed_resting(log)
 
     for _ in range(2):
-        _receipts, turns = lane.accept(
+        receipts, turns = lane.accept(
             [
                 EventSubmission(
                     kind=DISMISS_KIND,
                     actor="human",
                     idempotency_key=f"dismiss-{uuid4().hex}",
-                    payload={PENDING_KEY: "prop-1"},
+                    payload={PENDING_KEY: ["no-such-proposal"]},
                 )
             ],
             log.epoch,
         )
+        assert [receipt.status for receipt in receipts] == ["rejected"]
         assert turns == []
 
     assert _transfers(log) == []

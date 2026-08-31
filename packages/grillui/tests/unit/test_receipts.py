@@ -295,6 +295,19 @@ def test_each_rejection_reason_produces_exactly_that_typed_receipt(
     assert [entry.kind for entry in log.entries()] == accepted_so_far
 
 
+def test_the_refusal_suite_walks_the_whole_vocabulary() -> None:
+    """
+    Given the case table driving the suite above
+    When it is compared to the reason vocabulary
+    Then they match exactly.
+
+    The parametrisation above shrinks with REJECTION_REASONS, so removing a
+    reason would silently erase its case; this guard turns that into a red
+    while staying quiet when a reason is added with its case.
+    """
+    assert REFUSALS.keys() == REJECTION_REASONS
+
+
 def test_a_missing_key_receipt_carries_a_null_key_rather_than_inventing_one(
     client: TestClient, log: SessionLog
 ) -> None:
@@ -453,3 +466,20 @@ def test_a_revise_waiting_on_the_human_does_not_change_which_options_an_answer_m
     stale = answer_with(client, log, "a", "no-longer-offered")
     assert stale["status"] == "rejected"
     assert stale["reason"] == REASON_UNKNOWN_OPTION
+
+
+def test_a_stale_epoch_receipt_says_epoch_mismatch_verbatim(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a submission carrying a stale epoch
+    When it is refused
+    Then the receipt's reason is the verbatim string "epoch mismatch".
+
+    The page script's rehydrate branch (page/script.js) matches this exact
+    wire string to drop hydration, and no running gate covers that file — a
+    rename here must go red so that consumer gets updated with it.
+    """
+    receipt = _refuse_stale_epoch(client, log)
+
+    assert receipt["reason"] == "epoch mismatch"

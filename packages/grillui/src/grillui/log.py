@@ -57,6 +57,7 @@ from grillui.schemas import (
     FoldOutcome,
     LogEntry,
     RejectedReceipt,
+    batch_payload_problem,
     fold_outcomes,
     mint_targets,
     pending_ids,
@@ -83,6 +84,20 @@ class CorruptLogError(RuntimeError):
 
     def __init__(self, path: Path, line_number: int) -> None:
         super().__init__(f"{path} line {line_number} is not a valid log entry")
+
+
+class PayloadRefusedError(RuntimeError):
+    """A batch carrying a payload fault, refused whole and before any append.
+
+    Raised rather than answered with a receipt: the closed rejection vocabulary
+    has no word for a malformed payload, the fault is the batch's rather than
+    one event's, and there is no partial append to report on. `problem` is the
+    one problem text both client write paths quote.
+    """
+
+    def __init__(self, problem: str) -> None:
+        super().__init__(problem)
+        self.problem = problem
 
 
 def _now() -> str:
@@ -199,7 +214,19 @@ class SessionLog:
     def submit(self, batch: Sequence[EventSubmission], epoch: str) -> list[Receipt]:
         """Judge and append a batch under one epoch, one receipt per event in
         submission order. The lock spans the batch so the sequence a receipt
-        names is the sequence the entry actually landed at."""
+        names is the sequence the entry actually landed at.
+
+        Payload shape is judged first: for the batch whole, before anything is
+        appended, and ahead of both the epoch check and the replay index. Every
+        client write path arrives here -- the page's and a driver's alike -- so
+        judging it here rather than at one caller is what stops the two from
+        taking different bytes. The fault is raised rather than receipted: the
+        rejection vocabulary is closed and has no word for it, and there is no
+        partial append for a per-event verdict to report on.
+        """
+        problem = batch_payload_problem(batch)
+        if problem is not None:
+            raise PayloadRefusedError(problem)
         with self._lock:
             return [self._submit_one(event, epoch) for event in batch]
 
@@ -262,8 +289,12 @@ class SessionLog:
                 detail="every client-originated event carries an idempotency key",
             )
 
-        # Deliberately ahead of content validation: a replayed key is answered
-        # from where it landed, whatever body the replay carries.
+        # Ahead of everything judged against the board, and behind the shape
+        # check the batch already passed: a replayed key is answered from where
+        # it landed, whatever the replay says about a board that has moved --
+        # but only on a body this log would take at all. A malformed body under
+        # a used key is a different write wearing it, and answering that off the
+        # index would report a landing for bytes nothing here ever accepted.
         landed = self._index.keys.get(key)
         if landed is not None:
             return DuplicateReceipt(idempotency_key=key, epoch=self.epoch, seq=landed)
