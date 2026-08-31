@@ -775,8 +775,9 @@ condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note
    policy decides what the count buys: under `autonomous` the backend writes a policy
    `transferred` status entry on the map channel — such an entry only ever moves a channel
    up, and the way back down is the human's transfer control — while under `gated`, the
-   default, it writes a recommendation status entry on that channel, the same
-   backend-authored attribution a met transcript condition gets, held sticky for the
+   default, it writes a recommendation status entry on that channel — backend-authored,
+   because a dismissal produces no agent reply for a recommendation to ride, where a met
+   transcript condition's advice rides its own reply's attribution — held sticky for the
    session rather than riding one reply, and nothing moves until the human activates the
    transfer control. One signal writes nothing, because one is noise; a third writes nothing
    new, because the count is already spent.
@@ -1953,11 +1954,15 @@ Each criterion is mechanically checkable and convertible to a red test.
   recorded for it; a clerical answer, whose option carries no mark and strands nothing, is
   composed by the first-rung seat; and neither writes a `transferred` entry, so a clerical
   gesture following a judgment one is first-rung again.
-- **GMR-A10** One dismissal of a first-rung seat's proposal moves nothing and writes no status
-  entry; a second distrust signal — a dismissal or a hand-up, counted alike — writes
-  exactly one policy `transferred` entry on the map channel, and every map turn after it is
-  the expert seat's; a third signal writes no second entry; and the human's transfer control
-  returns the channel to its first-rung seat.
+- **GMR-A10** One dismissal of a first-rung seat's proposal moves nothing and writes no
+  status entry; at the second distrust signal — a dismissal or a hand-up, counted alike —
+  the escalation policy decides what the count buys: under `autonomous` the backend writes
+  exactly one policy `transferred` entry on the map channel and every map turn after it is
+  the expert seat's, while under `gated`, the default, it writes exactly one recommendation
+  status entry on the map channel and the next map turn is still the first-rung seat's
+  until the human's transfer control moves it; a third signal writes no further entry under
+  either policy; and the human's transfer control returns a transferred channel to its
+  first-rung seat.
 - **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
   the `thread.started` event, then resumes that thread on every later turn on the channel as
   `codex exec resume <thread_id> --json`; `-c developer_instructions=…`, the effort, the two
