@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from conftest import decision, document, handoff, lane, notices, option, turn
+from conftest import BOARD_TIMEOUT, decision, document, handoff, lane, notices, option, turn
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -49,6 +49,10 @@ MARKED = [
 # What a model sends when it has lost the shape. Distinctive enough that its
 # absence from the log and from the page is a real assertion.
 PROSE = "I think the append-only log is fine, honestly."
+
+# The answer a settle carries. Distinctive enough that finding it on the
+# decision is a real assertion about what the human is looking at.
+SETTLED = "compaction falls out of the log the human just chose"
 MISSING_RULINGS = json.dumps(
     {"text": "The store is settled.", "updates": [], "supersedes": [], "stop": {"met": False}}
 )
@@ -111,6 +115,51 @@ def test_a_reply_that_is_not_the_document_is_retried_once_then_handed_up_then_sa
     assert PROSE not in written, "the refused bytes were recorded"
     assert "The store is settled." not in written, "the refused document's prose was recorded"
     assert PROSE not in page.locator("#shell").inner_text(), "the refused bytes were rendered"
+
+
+def test_a_settle_carrying_a_usable_answer_settles_the_decision_end_to_end(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a decision the board carries no answer for, and a seat settling it
+          with an `answer` naming an option it offers
+    When the human answers the decision above it
+    Then the appender takes the turn, the board carries d2 as settled, and the
+         human reads that answer on the decision itself.
+
+    The positive control for the gate. Every other scenario here is about a turn
+    that is refused, and a gate that refused everything would pass all of them:
+    this is the one that fails if the shape a seat is briefed to send stops
+    landing. The target is unanswered on purpose -- a settle lands on arrival
+    only there, and on an answered decision it would queue behind a human apply
+    and the page would show the queue rather than the answer.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_codex(
+        turn(
+            document(
+                "d2 follows from the log.",
+                updates=[
+                    {"kind": "settle", "target": "d2", "answer": {"option": "a", "text": SETTLED}}
+                ],
+            )
+        )
+    )
+    page = board(session)
+
+    answer(page, "d1")
+    session.settled()
+
+    # The appender took it: the turn is in the log and the board says settled.
+    assert len(session.codex_calls()) == 1, "the seat was retried on a document the gate takes"
+    assert lane(session.entries(), "map")[-1][0] == "replied", lane(session.entries(), "map")
+    d2 = {one["id"]: one for one in session.board()["decisions"]}["d2"]
+    assert d2["status"] == "settled", d2
+    assert d2["answer"] == {"option": "a", "text": SETTLED}, d2
+
+    # And the human reads it where the decision is.
+    page.wait_for_selector("#col-d2 .pill.settled", timeout=BOARD_TIMEOUT)
+    assert SETTLED in page.locator("#col-d2").inner_text(), page.locator("#col-d2").inner_text()
 
 
 def test_a_withdrawal_with_nothing_to_ride_on_is_a_document_problem_and_walks_the_ladder(

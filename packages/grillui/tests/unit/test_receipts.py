@@ -31,6 +31,7 @@ from grillui.schemas import (
     REASON_UNKNOWN_PENDING,
     REASON_UNKNOWN_THREAD,
     REJECTION_REASONS,
+    payload_problem,
 )
 
 
@@ -409,6 +410,30 @@ def test_an_answer_the_decision_can_carry_is_still_accepted(
 
     assert receipt["status"] == "accepted", receipt
     assert board_decision(client)["status"] == "settled"
+
+
+def test_a_settle_without_an_answer_is_still_refused_with_the_typed_receipt(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an agent settling a decision over the wire and carrying no answer
+    When it is submitted
+    Then the envelope shape takes it -- a settle is only required to name its
+         target -- and the receipt refuses it with the typed empty-answer
+         reason, exactly as before.
+
+    The requirement that a settle carry a nested `answer` is enforced at the
+    document gate, where the seat still has its retry. Moving it into the
+    envelope shape instead would turn this receipt into a raised payload fault,
+    which the rejection vocabulary has no word for and the page cannot show.
+    """
+    seed_node(client, log.epoch)
+
+    assert payload_problem("settle", {"target": SEED_NODE}) is None
+    receipt = post(client, log.epoch, event("settle", key="k1", target=SEED_NODE))[0]
+
+    assert receipt["status"] == "rejected", receipt
+    assert receipt["reason"] == REASON_EMPTY_ANSWER, receipt
 
 
 NEW_OPTIONS = [{"id": "c", "text": "A second log"}, {"id": "d", "text": "No store at all"}]

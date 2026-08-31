@@ -1534,7 +1534,7 @@ def rejection_reason(
         return (REASON_UNKNOWN_NODE, f"no decision node {target!r} exists in this session")
 
     if submission.kind in ANSWER_KINDS or "answer" in submission.payload:
-        return _answer_problem(
+        return answer_problem(
             submission.payload.get("answer"),
             offered.get(target) if isinstance(target, str) else None,
         ) or _from_thread_problem(submission, known_threads)
@@ -1713,13 +1713,15 @@ def _thread_turn_problem(submission: EventSubmission) -> tuple[str, str] | None:
     )
 
 
-def _answer_problem(answer: object, offered: Set[str] | None) -> tuple[str, str] | None:
+def answer_problem(answer: object, offered: Set[str] | None) -> tuple[str, str] | None:
     """An answer says something, and what it says is an option the decision has.
 
     `offered` is None when the decision is not on the board -- the unknown-node
     refusal has already spoken for that -- and an answer of text alone names no
     option to check, which is how a human answers a question none of the
-    offered options fits.
+    offered options fits. It is also what a reader holding no board passes: the
+    document gate judges an agent's `settle` for carrying an answer at all,
+    while which options a decision offers stays this appender's question.
     """
     if not isinstance(answer, Mapping) or not (answer.get("option") or answer.get("text")):
         return (

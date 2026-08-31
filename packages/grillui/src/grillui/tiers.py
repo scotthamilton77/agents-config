@@ -42,10 +42,11 @@ what the model was given and what the audit record shows are the same bytes.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from grillui.dispatch import GRILL_MASTER, THREAD_AGENT
 from grillui.escalation import INVALIDATE_KIND, turns_of
@@ -513,16 +514,54 @@ BOARD_LEGEND = (
 # some wait for the human, the split is drawn by the backend against the board at
 # the moment the reply arrives, and a turn that believed its updates had landed
 # would tell the human a decision was settled that is sitting in their queue.
+# One example per kind the backend folds, and the source the rule below states
+# them from. A kind's required fields are the appender's, not this text's, so
+# they are held as objects and put through the appender's own shape check in the
+# suite rather than typed into prose nothing reads back: an example a seat
+# copied and had refused loses the turn for following the brief.
+#
+# `basis` is deliberately absent. The appender does not enforce it, so it is not
+# a field this rule owes -- the basis rule is where it is asked for.
+UPDATE_EXAMPLES: dict[str, dict[str, Any]] = {
+    "add-node": {
+        "kind": "add-node",
+        "title": "How is the log compacted?",
+        "options": [{"id": "a", "text": "Never"}, {"id": "b", "text": "On a size bound"}],
+        "prereqs": ["d1"],
+    },
+    "elicit-alert": {
+        "kind": "elicit-alert",
+        "target": "d1",
+        "text": "this rests on a throughput figure nobody has",
+        "blocking": True,
+    },
+    "informational": {"kind": "informational", "target": "d1", "text": "what you are telling them"},
+    "invalidate": {"kind": "invalidate", "target": "d1", "why": "the answer left it no question"},
+    "resolve-stale": {"kind": "resolve-stale", "target": "d1"},
+    "revise": {"kind": "revise", "target": "d1", "title": "How is the log compacted, given b?"},
+    "settle": {
+        "kind": "settle",
+        "target": "d1",
+        "answer": {"option": "a", "text": "the answer in their words"},
+    },
+    "unsettle": {"kind": "unsettle", "target": "d1"},
+}
+
 DOCUMENT_FORMAT_RULE = (
     "Every turn you take is one JSON object and nothing else: no prose outside it, no "
     "markdown around it, and no key beyond the five below. All five are present on every "
     "turn -- put an empty list or string where you have nothing to say.\n"
     "- `text`: what you are saying to the human, under the concision rule. Empty where the "
     "board already says it.\n"
-    '- `updates`: the map updates you are proposing, each like {"kind": "revise", "target": '
-    f'"d1", ...}}. `kind` is one of {", ".join(sorted(FOLDABLE_KINDS))} and nothing else; the '
-    "backend refuses a kind outside that list, and the refusal takes the whole turn with it.\n"
-    "- `supersedes`: the ids of pending items of yours you are withdrawing.\n"
+    "- `updates`: the map updates you are proposing. "
+    f"`kind` is one of {', '.join(sorted(FOLDABLE_KINDS))} and nothing else; the "
+    "backend refuses a kind outside that list, and the refusal takes the whole turn with it. "
+    "Each example below shows one update of its kind, carrying every field that kind "
+    "requires, and an update missing one of those is refused the same way -- a `settle` in "
+    "particular carries its `answer` nested under that key, holding `option`, `text` or "
+    "both, and never as top-level fields:\n"
+    + "".join(f"  - {json.dumps(one)}\n" for one in UPDATE_EXAMPLES.values())
+    + "- `supersedes`: the ids of pending items of yours you are withdrawing.\n"
     "- `rulings`: your judgement on the decisions this gesture put in question, each {"
     '"decision": "d2", "ruling": "invalidate" | "revise" | "stands", "why": "one line"}.\n'
     '- `stop`: {"met": false, "why": ""} until you judge the stop condition met, and then '

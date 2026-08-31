@@ -23,6 +23,7 @@ was made rather than being inferred from what happened to be queued.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -41,13 +42,16 @@ from grillui.drivers import (
     FastDriver,
     HeavyDriver,
     ReplyRefusedError,
+    document_problem,
     record_reply,
     request_body,
+    take_document,
 )
 from grillui.lane import DocumentRefusedError, Lane
 from grillui.projector import fold
 from grillui.schemas import (
     FAST_TIER,
+    FOLDABLE_KINDS,
     HEAVY_TIER,
     RULING_STANDS,
     RULINGS_KEY,
@@ -58,11 +62,14 @@ from grillui.schemas import (
     EventSubmission,
     MootnessObligation,
     Option,
+    payload_problem,
 )
 from grillui.tiers import (
+    BASIS_RULE,
     DOCUMENT_FORMAT_RULE,
     MOOTNESS_OBLIGATION_RULE,
     MOOTNESS_RESTING_RULE,
+    UPDATE_EXAMPLES,
     TierConfig,
     compose,
     system_prompt,
@@ -417,6 +424,236 @@ def test_the_expert_seat_has_no_rung_above_it_and_the_failure_is_recorded(
     assert HEAVY_TIER in said[0]
     assert spoken(log) == []
     assert HEAVY_TIER in errors(log)[0]
+
+
+# --- the document gate: an update the appender would refuse is refused here --
+
+# A settle whose option and text sit at the top level instead of nested under
+# `answer`. The envelope shape takes it -- a settle only has to name a target --
+# and the appender's answer check refuses it, so without this gate the turn
+# dies at the append with no retry left to spend.
+INCIDENT = {"kind": "settle", "target": "d2", "option": "a", "text": "the log wins"}
+
+# The notice a document carries beside the update under test, so the fault's
+# index is a position that was computed rather than a zero that would be right
+# whatever the gate did.
+FIRST = {"kind": "informational", "text": "Reading d1's answer across the board."}
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        pytest.param(INCIDENT, id="option-and-text-at-top-level"),
+        pytest.param({"kind": "settle", "target": "d2"}, id="no-answer-key"),
+        pytest.param({"kind": "settle", "target": "d2", "answer": "option a"}, id="answer-is-text"),
+        pytest.param(
+            {"kind": "settle", "target": "d2", "answer": {"option": None, "text": None}},
+            id="answer-carries-neither",
+        ),
+        pytest.param(
+            {"kind": "settle", "target": "d2", "answer": {}},
+            id="answer-is-an-empty-object",
+        ),
+        pytest.param(
+            {"kind": "informational", "text": "d2 is settled", "answer": {}},
+            id="any-payload-carrying-an-answer",
+        ),
+    ],
+)
+def test_a_settle_without_a_usable_answer_is_refused_at_the_gate(update: dict[str, Any]) -> None:
+    """
+    Given a map document whose updates carry a settle with no usable answer --
+          no `answer` key, an `answer` that is not an object, one carrying
+          neither `option` nor `text`, or the incident's own shape with both at
+          the top level -- and any other update carrying an `answer` key
+    When the document is judged
+    Then it is refused with a fault naming `answer` and the update's position in
+         the document's own updates array.
+
+    The appender refuses these bytes and the refusal is terminal, so a gate that
+    passed them would spend the seat's retry on nothing and lose the turn.
+    Whether the option is one the decision offers stays the appender's question:
+    the gate holds no board.
+    """
+    fault = document_problem(document(updates=[FIRST, update]))
+
+    assert fault is not None, "the gate took an update the appender refuses"
+    assert "answer" in fault, fault
+    assert "updates.1" in fault, fault
+
+
+def test_a_settle_without_a_usable_answer_is_retried_with_the_fault_quoted(
+    log: SessionLog,
+) -> None:
+    """
+    Given a first-rung seat sending the incident's settle and an expert that
+          sends a usable one
+    When a clerical map turn is taken
+    Then the first rung is asked twice with the fault quoted, the turn is handed
+         up once, and the expert's document is what lands.
+
+    This is the whole of what the gate buys: the same fault at the append is
+    terminal, and a seat told which key was wrong supplies it.
+    """
+    first = ScriptedFast(replies=[document(text="d2 is settled.", updates=[INCIDENT])])
+    expert = ScriptedFast(
+        replies=[
+            document(
+                text="d2 is settled.",
+                updates=[{"kind": "settle", "target": "d2", "answer": {"option": "a"}}],
+            )
+        ]
+    )
+    seed(log)
+
+    answer(
+        Lane(
+            log,
+            FastDriver(TierConfig(), first),
+            expert=FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
+        ),
+        option="a",
+    )
+
+    fault = document_problem(document(text="d2 is settled.", updates=[INCIDENT]))
+    assert fault is not None
+    assert len(first.calls) == 2, "the seat was not given its retry"
+    assert fault in first.calls[1]["prompt"], first.calls[1]["prompt"][-400:]
+    assert len(expert.calls) == 1
+    assert spoken(log) == ["d2 is settled."]
+    assert errors(log) == []
+
+
+@pytest.mark.parametrize(
+    ("update", "named"),
+    [
+        pytest.param({"kind": "invalidate", "target": "d2"}, "why", id="why-less-invalidate"),
+        pytest.param(
+            {
+                "kind": "add-node",
+                "title": "Which store?",
+                "options": [{"id": "a", "text": "A log"}],
+            },
+            "options",
+            id="one-option-add-node",
+        ),
+        pytest.param({"target": "d2", "why": "it is dead"}, "kind", id="no-kind"),
+        pytest.param({"kind": "answer", "target": "d2"}, "answer", id="kind-outside-the-fold"),
+        pytest.param({"kind": "settle-it", "target": "d2"}, "settle-it", id="unknown-kind"),
+    ],
+)
+def test_every_sub_update_fault_that_would_kill_the_turn_is_refused_at_the_gate(
+    update: dict[str, Any], named: str
+) -> None:
+    """
+    Given a map document carrying an update the appender would refuse -- a
+          why-less invalidate, a one-option add-node, an update naming no kind,
+          and a kind outside the foldable list
+    When the document is judged
+    Then it is refused with the field or the kind named, indexed against the
+         document's own updates array rather than the appended fold's
+         sub-update offset.
+
+    The shape faults are judged by the same `payload_problem` the appender uses,
+    so the two cannot drift; the kind checks are the gate's own, because that
+    function has no word for a kind it holds no shape for.
+    """
+    fault = document_problem(document(updates=[FIRST, update]))
+
+    assert fault is not None, "the gate took an update the appender refuses"
+    assert named in fault, fault
+    assert "updates.1" in fault, fault
+
+
+@pytest.mark.parametrize("kind", sorted(UPDATE_EXAMPLES))
+def test_an_unusable_answer_is_refused_on_every_kind_that_carries_one(kind: str) -> None:
+    """
+    Given each legal kind's example with an unusable `answer` attached
+    When the document is judged
+    Then the gate refuses it naming `answer`, whatever the kind.
+
+    The appender's answer check fires on any payload carrying an `answer` key,
+    not only on the answer kinds, and the gate mirrors that condition: a gate
+    that special-cased the kinds seen so far would pass an update the appender
+    refuses.
+    """
+    update = {**UPDATE_EXAMPLES[kind], "answer": {}}
+
+    fault = document_problem(document(updates=[FIRST, update]))
+
+    assert fault is not None, f"{kind!r} carrying an unusable answer was taken"
+    assert "answer" in fault, fault
+    assert "updates.1" in fault, fault
+
+
+def test_the_gate_refuses_every_shape_fault_the_appenders_reader_names() -> None:
+    """
+    Given each legal kind's example with one of its fields stripped
+    When the stripped update is one `payload_problem` refuses
+    Then the document gate refuses it with that same fault, at the update's own
+         index.
+
+    The gate's shape judgement is the appender's own reader, so this walks the
+    whole vocabulary rather than sampling it: any kind whose required field a
+    hand-written check forgot turns this red.
+    """
+    checked = 0
+    for kind, example in UPDATE_EXAMPLES.items():
+        for field in [key for key in example if key != "kind"]:
+            stripped = {key: value for key, value in example.items() if key != field}
+            spoken = payload_problem(kind, stripped)
+            if spoken is None:
+                continue
+            checked += 1
+            fault = document_problem(document(updates=[FIRST, stripped]))
+            assert fault is not None, f"{kind!r} without {field!r}: the gate took it"
+            assert spoken in fault, fault
+            assert "updates.1" in fault, fault
+    assert checked >= 4, "the vocabulary offered too few required fields to strip"
+
+
+def test_a_second_refused_reply_raises_the_fault_up_the_ladder() -> None:
+    """
+    Given a seat that answers the retry with the same unusable settle
+    When the turn is taken
+    Then the second refusal raises DocumentRefusedError carrying the same fault
+         the retry quoted, after exactly two asks.
+    """
+    bad = document(updates=[INCIDENT])
+    fault = document_problem(bad)
+    prompts: list[str] = []
+
+    def attempt(prompt: str) -> str:
+        prompts.append(prompt)
+        return bad
+
+    with pytest.raises(DocumentRefusedError) as refused:
+        take_document(FAST_TIER, "the dispatch", attempt, lambda said: said)
+
+    assert fault is not None
+    assert len(prompts) == 2
+    assert fault in prompts[1]
+    assert refused.value.detail == fault
+    assert refused.value.tier == FAST_TIER
+
+
+def test_a_backend_minted_notice_is_not_gate_judged(log: SessionLog) -> None:
+    """
+    Given a document that rules `stands` and says nothing else
+    When the turn is taken
+    Then it lands: the notice the ruling mints is the backend's own code and is
+         judged by the appender alone.
+
+    The gate reads the model's own updates array and nothing else. Judging the
+    minted entries too would put the backend's own bytes on the seat's retry.
+    """
+    only = ScriptedFast(replies=[document(text="", rulings=[ruling("d2"), ruling("d3")])])
+    seed(log)
+
+    answer(Lane(log, FastDriver(TierConfig(), only)), option="a")
+
+    assert len(only.calls) == 1, "a minted notice was refused back at the seat"
+    assert errors(log) == []
 
 
 # --- GMR-A3: the obligation names the ids and states the three rulings -------
@@ -807,6 +1044,31 @@ def test_the_document_rule_states_the_shape_the_turn_must_take() -> None:
     for key in ("text", "updates", "supersedes", "rulings", "stop"):
         assert f"`{key}`" in DOCUMENT_FORMAT_RULE, f"{key} is not stated"
     assert "Sending an update is not making the change" in DOCUMENT_FORMAT_RULE
+
+
+def test_the_document_rule_shows_one_example_per_kind_that_the_gate_would_take() -> None:
+    """
+    Given the per-kind examples the format rule is rendered from
+    When each is judged the way an update in a turn is judged
+    Then there is one for every kind the backend folds, each passes the shape
+         the appender holds it to, each passes the document gate inside a
+         minimal document, and the composed brief carries every one of them.
+
+    An example a seat copied and had refused is worse than no example: the turn
+    is lost for following the brief. So the examples are held as objects and put
+    through the same two checks the turn will meet, rather than typed into prose
+    that nothing reads back. `basis` is not among them -- the appender does not
+    enforce it, and the basis rule is where it is asked for.
+    """
+    brief = system_prompt(HEAVY_TIER, GRILL_MASTER)
+
+    assert set(UPDATE_EXAMPLES) == set(FOLDABLE_KINDS), set(UPDATE_EXAMPLES) ^ set(FOLDABLE_KINDS)
+    for kind, example in UPDATE_EXAMPLES.items():
+        assert payload_problem(kind, example) is None, kind
+        assert document_problem(document(updates=[example])) is None, kind
+        assert json.dumps(example) in brief, kind
+    assert "`basis`" not in DOCUMENT_FORMAT_RULE
+    assert "`basis`" in BASIS_RULE
 
 
 def test_the_fast_transport_asks_the_provider_for_the_shape_on_a_map_turn(
