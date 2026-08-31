@@ -451,6 +451,10 @@ FIRST = {"kind": "informational", "text": "Reading d1's answer across the board.
             id="answer-carries-neither",
         ),
         pytest.param(
+            {"kind": "settle", "target": "d2", "answer": {}},
+            id="answer-is-an-empty-object",
+        ),
+        pytest.param(
             {"kind": "informational", "text": "d2 is settled", "answer": {}},
             id="any-payload-carrying-an-answer",
         ),
