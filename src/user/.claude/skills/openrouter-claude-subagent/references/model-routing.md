@@ -54,6 +54,31 @@ before dispatch:
   the effort lever matters to an outcome, treat model choice as the reliable
   control and the effort level as a hint.
 
+## Sampling parameters
+
+This launcher pins none. A parameter absent from the request is omitted
+upstream and the provider's own default applies
+(<https://openrouter.ai/docs/api-reference/parameters>) — and a parameter you
+do send is forwarded, not clamped. Omission is the safe state, because the
+rows above disagree about what a pinned value may even be. Before pinning
+anything, per provider:
+
+- **Kimi thinking/code tiers** (`moonshotai/kimi-k2.7-code`,
+  `moonshotai/kimi-k2.6`): temperature is not modifiable — do not pass one.
+  Tool-calling runs want `max_tokens >= 16000`, and multi-turn tool use must
+  send the model's `reasoning_content` back with the next request.
+  (<https://platform.kimi.ai/docs/guide/use-kimi-k2-thinking-model>)
+- **Gemini rows**: Google strongly recommends leaving temperature at its
+  default 1.0 for all Gemini 3 models — lowering it can cause looping or
+  degraded output (<https://ai.google.dev/gemini-api/docs/gemini-3>) — and
+  its structured-output docs grant no exemption for schema-constrained
+  requests. Newer Google migration guidance may deprecate
+  `temperature`/`top_p`/`top_k` outright for recent Flash tiers; re-read
+  <https://ai.google.dev/gemini-api/docs/generate-content/latest-model>
+  before pinning anything on a Gemini row. Reproducibility is not
+  purchasable here either way: Gemini's `seed` is documented best-effort.
+- **GLM**: no first-party sampling recommendation exists; leave the default.
+
 ## Selection by task bucket
 
 | Bucket | Default pick | Step down (user said "cheap") | Step up (user said "best"/"most capable") |
