@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from grillui.log import LOG_FILE, CorruptLogError, PayloadRefused, SessionLog
+from grillui.log import LOG_FILE, CorruptLogError, PayloadRefusedError, SessionLog
 from grillui.schemas import (
     APPLY_KIND,
     DISMISS_KIND,
@@ -237,7 +237,7 @@ def test_a_why_less_invalidate_offered_to_the_appender_is_refused_before_anythin
     malformed proposal reaching the human's queue means the human applying it is
     who finds out.
     """
-    with pytest.raises(PayloadRefused) as refused:
+    with pytest.raises(PayloadRefusedError) as refused:
         log.submit([_malformed()], log.epoch)
 
     assert refused.value.problem.startswith("event 0: ")
@@ -259,7 +259,7 @@ def test_both_write_paths_refuse_the_same_bytes_with_the_same_words(
     coincidence to be re-checked.
     """
     response = client.post("/events", json={"epoch": log.epoch, "events": [WHY_LESS_INVALIDATE]})
-    with pytest.raises(PayloadRefused) as refused:
+    with pytest.raises(PayloadRefusedError) as refused:
         log.submit([_malformed()], log.epoch)
 
     assert response.status_code == 422
@@ -283,7 +283,7 @@ def test_a_queue_gesture_naming_no_list_of_ids_is_refused_at_the_appender(
     contract, pinned here so that the gate cannot quietly narrow to whatever the
     callers of the day happen to send.
     """
-    with pytest.raises(PayloadRefused) as refused:
+    with pytest.raises(PayloadRefusedError) as refused:
         log.submit(
             [
                 _malformed(
@@ -321,7 +321,7 @@ def test_a_fault_in_a_batchs_second_event_appends_neither_and_receipts_neither(
         payload={"text": "the budget landed"},
     )
 
-    with pytest.raises(PayloadRefused) as refused:
+    with pytest.raises(PayloadRefusedError) as refused:
         log.submit([good, _malformed()], log.epoch)
 
     assert refused.value.problem.startswith("event 1: ")
@@ -344,7 +344,7 @@ def test_a_replayed_key_carrying_a_malformed_body_is_refused_for_its_shape(
     """
     _submit(log, "k1", text="one")
 
-    with pytest.raises(PayloadRefused):
+    with pytest.raises(PayloadRefusedError):
         log.submit([_malformed(idempotency_key="k1")], log.epoch)
 
     assert log.seq == 1

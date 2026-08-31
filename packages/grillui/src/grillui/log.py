@@ -86,10 +86,7 @@ class CorruptLogError(RuntimeError):
         super().__init__(f"{path} line {line_number} is not a valid log entry")
 
 
-# The name is the refusal itself rather than the class of thing it is: this is
-# the one word both write paths quote back, and `noqa` costs less than a suffix
-# in every message that carries it.
-class PayloadRefused(RuntimeError):  # noqa: N818
+class PayloadRefusedError(RuntimeError):
     """A batch carrying a payload fault, refused whole and before any append.
 
     Raised rather than answered with a receipt: the closed rejection vocabulary
@@ -229,7 +226,7 @@ class SessionLog:
         """
         problem = batch_payload_problem(batch)
         if problem is not None:
-            raise PayloadRefused(problem)
+            raise PayloadRefusedError(problem)
         with self._lock:
             return [self._submit_one(event, epoch) for event in batch]
 
