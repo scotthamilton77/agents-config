@@ -295,6 +295,19 @@ def test_each_rejection_reason_produces_exactly_that_typed_receipt(
     assert [entry.kind for entry in log.entries()] == accepted_so_far
 
 
+def test_the_refusal_suite_walks_the_whole_vocabulary() -> None:
+    """
+    Given the case table driving the suite above
+    When it is compared to the reason vocabulary
+    Then they match exactly.
+
+    The parametrisation above shrinks with REJECTION_REASONS, so removing a
+    reason would silently erase its case; this guard turns that into a red
+    while staying quiet when a reason is added with its case.
+    """
+    assert REFUSALS.keys() == REJECTION_REASONS
+
+
 def test_a_missing_key_receipt_carries_a_null_key_rather_than_inventing_one(
     client: TestClient, log: SessionLog
 ) -> None:
@@ -455,29 +468,18 @@ def test_a_revise_waiting_on_the_human_does_not_change_which_options_an_answer_m
     assert stale["reason"] == REASON_UNKNOWN_OPTION
 
 
-def test_the_rejection_vocabulary_is_exactly_these_twelve_reasons() -> None:
+def test_a_stale_epoch_receipt_says_epoch_mismatch_verbatim(
+    client: TestClient, log: SessionLog
+) -> None:
     """
-    Given the closed set of reasons a receipt may name
-    When it is read
-    Then it is exactly these twelve, and a payload fault is not among them.
+    Given a submission carrying a stale epoch
+    When it is refused
+    Then the receipt's reason is the verbatim string "epoch mismatch".
 
-    A payload the vocabulary has no word for is refused whole, before anything
-    lands, rather than by minting a thirteenth reason every caller switching on
-    this set would then have to learn.
+    The page script's rehydrate branch (page/script.js) matches this exact
+    wire string to drop hydration, and no running gate covers that file — a
+    rename here must go red so that consumer gets updated with it.
     """
-    vocabulary = {
-        REASON_MISSING_KEY,
-        REASON_EPOCH_MISMATCH,
-        REASON_UNKNOWN_KIND,
-        REASON_UNKNOWN_NODE,
-        REASON_EMPTY_ANSWER,
-        REASON_THREAD_WITHOUT_TURN,
-        REASON_THREAD_MAP_MUTATION,
-        REASON_UNKNOWN_PENDING,
-        REASON_PENDING_CONFLICT,
-        REASON_UNKNOWN_THREAD,
-        REASON_FOREIGN_THREAD,
-        REASON_UNKNOWN_OPTION,
-    }
+    receipt = _refuse_stale_epoch(client, log)
 
-    assert vocabulary == REJECTION_REASONS
+    assert receipt["reason"] == "epoch mismatch"
