@@ -45,6 +45,7 @@ from grillui.drivers import (
     document_problem,
     record_reply,
     request_body,
+    take_document,
 )
 from grillui.lane import DocumentRefusedError, Lane
 from grillui.projector import fold
@@ -425,12 +426,12 @@ def test_the_expert_seat_has_no_rung_above_it_and_the_failure_is_recorded(
     assert HEAVY_TIER in errors(log)[0]
 
 
-# --- GMR-A2: an update the appender would refuse is refused at the gate ------
+# --- the document gate: an update the appender would refuse is refused here --
 
-# What the incident sent: a settle whose option and text sit at the top level
-# instead of nested under `answer`. The envelope shape takes it -- a settle only
-# has to name a target -- so it reached the append, where the answer check
-# refused it and the seat had no retry left to spend.
+# A settle whose option and text sit at the top level instead of nested under
+# `answer`. The envelope shape takes it -- a settle only has to name a target --
+# and the appender's answer check refuses it, so without this gate the turn
+# dies at the append with no retry left to spend.
 INCIDENT = {"kind": "settle", "target": "d2", "option": "a", "text": "the log wins"}
 
 # The notice a document carries beside the update under test, so the fault's
@@ -510,9 +511,10 @@ def test_a_settle_without_a_usable_answer_is_retried_with_the_fault_quoted(
         option="a",
     )
 
+    fault = document_problem(document(text="d2 is settled.", updates=[INCIDENT]))
+    assert fault is not None
     assert len(first.calls) == 2, "the seat was not given its retry"
-    assert "answer" in first.calls[1]["prompt"], first.calls[1]["prompt"][-400:]
-    assert "updates.0" in first.calls[1]["prompt"], first.calls[1]["prompt"][-400:]
+    assert fault in first.calls[1]["prompt"], first.calls[1]["prompt"][-400:]
     assert len(expert.calls) == 1
     assert spoken(log) == ["d2 is settled."]
     assert errors(log) == []
@@ -557,6 +559,57 @@ def test_every_sub_update_fault_that_would_kill_the_turn_is_refused_at_the_gate(
     assert fault is not None, "the gate took an update the appender refuses"
     assert named in fault, fault
     assert "updates.1" in fault, fault
+
+
+def test_the_gate_refuses_every_shape_fault_the_appenders_reader_names() -> None:
+    """
+    Given each legal kind's example with one of its fields stripped
+    When the stripped update is one `payload_problem` refuses
+    Then the document gate refuses it with that same fault, at the update's own
+         index.
+
+    The gate's shape judgement is the appender's own reader, so this walks the
+    whole vocabulary rather than sampling it: any kind whose required field a
+    hand-written check forgot turns this red.
+    """
+    checked = 0
+    for kind, example in UPDATE_EXAMPLES.items():
+        for field in [key for key in example if key != "kind"]:
+            stripped = {key: value for key, value in example.items() if key != field}
+            spoken = payload_problem(kind, stripped)
+            if spoken is None:
+                continue
+            checked += 1
+            fault = document_problem(document(updates=[FIRST, stripped]))
+            assert fault is not None, f"{kind!r} without {field!r}: the gate took it"
+            assert spoken in fault, fault
+            assert "updates.1" in fault, fault
+    assert checked >= 4, "the vocabulary offered too few required fields to strip"
+
+
+def test_a_second_refused_reply_raises_the_fault_up_the_ladder() -> None:
+    """
+    Given a seat that answers the retry with the same unusable settle
+    When the turn is taken
+    Then the second refusal raises DocumentRefusedError carrying the same fault
+         the retry quoted, after exactly two asks.
+    """
+    bad = document(updates=[INCIDENT])
+    fault = document_problem(bad)
+    prompts: list[str] = []
+
+    def attempt(prompt: str) -> str:
+        prompts.append(prompt)
+        return bad
+
+    with pytest.raises(DocumentRefusedError) as refused:
+        take_document(FAST_TIER, "the dispatch", attempt, lambda said: said)
+
+    assert fault is not None
+    assert len(prompts) == 2
+    assert fault in prompts[1]
+    assert refused.value.detail == fault
+    assert refused.value.tier == FAST_TIER
 
 
 def test_a_backend_minted_notice_is_not_gate_judged(log: SessionLog) -> None:
