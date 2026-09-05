@@ -57,6 +57,9 @@ docstring-code-format = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
+# The eval suite is not collected here: it spends real tokens and is run on
+# purpose. Its loader and checks are, and they import it by name.
+pythonpath = ["."]
 
 [tool.mypy]
 strict = true

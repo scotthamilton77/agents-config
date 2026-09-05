@@ -11,7 +11,7 @@
         typecheck-executor cov-executor audit-executor verify-entry-executor \
         ci-grillui test-grillui lint-grillui format-check-grillui \
         typecheck-grillui cov-grillui audit-grillui verify-entry-grillui \
-        e2e-grillui \
+        e2e-grillui eval-grillui \
         spec-lint content-lint content-tests doc-lint
 
 INSTALLER := packages/installer
@@ -226,3 +226,11 @@ verify-entry-grillui:
 # explicitly, as here, reaches anything else.
 e2e-grillui:
 	cd $(GRILLUI) && uv run --with playwright pytest tests/e2e -q
+
+# eval-grillui replays recorded turns against the models that actually sit in
+# the seats, so what the unit suite renders is checked against what those models
+# do with it. It spends real tokens and takes minutes, which is why it is run on
+# purpose and is a member of neither `ci` nor `ci-grillui`. Narrow a run with
+# `--case`, `--seat` and `-n` by invoking the module directly.
+eval-grillui:
+	cd $(GRILLUI) && uv run python -m evals
