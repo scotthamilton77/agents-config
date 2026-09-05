@@ -208,7 +208,7 @@ lint-grillui:
 format-check-grillui:
 	cd $(GRILLUI) && uv run ruff format --check
 typecheck-grillui:
-	cd $(GRILLUI) && uv run mypy --strict src
+	cd $(GRILLUI) && uv run mypy --strict src evals
 cov-grillui:
 	cd $(GRILLUI) && uv run pytest --cov --cov-report=term-missing
 audit-grillui:

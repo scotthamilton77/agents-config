@@ -13,6 +13,7 @@ import json
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -86,7 +87,7 @@ def _cli_output(raw: str) -> int | None:
 # seat said, and the two counts beside it. The hosted completion reports its
 # prompt count through the driver's own seam and nothing about its output, so
 # that count is absent rather than invented.
-REPLIES = {
+REPLIES: dict[str, Callable[[Any], tuple[str | None, int | None, int | None]]] = {
     OPENROUTER_TRANSPORT: lambda raw: (raw[0], raw[1], None),
     CLAUDE_TRANSPORT: lambda raw: (
         read_cli_reply(raw)[0],
@@ -151,7 +152,7 @@ class Tap:
     would have received rather than a second composition of it.
     """
 
-    def __init__(self, seam: Any) -> None:
+    def __init__(self, seam: Callable[..., Any]) -> None:
         self._seam = seam
         self.raw: Any = None
         self.seconds = 0.0
