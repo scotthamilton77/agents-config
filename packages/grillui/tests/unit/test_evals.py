@@ -500,8 +500,8 @@ def test_the_clock_runs_on_a_seam_that_raises() -> None:
     """
     Given a seam that spends time and then raises
     When the turn is timed
-    Then what it spent is on the record: a transport failure reported as taking
-         no time is the one turn whose cost the report denies.
+    Then the elapsed time is on the record: a transport failure reported as
+         taking no time is the one turn whose duration the report denies.
     """
 
     def raising() -> None:
@@ -584,7 +584,7 @@ def test_an_unnarrowed_run_takes_every_case(
 
     taken = {one["case"] for one in json.loads((tmp_path / "matrix.json").read_text("utf-8"))}
     assert taken == {one.name for one in load_cases()}
-    # A narrowing nothing answers is refused, even beside one that does.
+    # A --case naming no checked-in case refuses the run, even beside one that names one.
     with pytest.raises(SystemExit):
         suite.main(["--case", CASE, "--case", "typo", "--report", str(tmp_path)])
 
@@ -647,6 +647,69 @@ def test_two_updates_that_speak_are_two_channels() -> None:
 
     assert the_turn_speaks_once(twice) is not None
     assert the_turn_speaks_once(twice, limit=2) is None
+
+
+def test_the_measured_baselines_are_the_ones_recorded() -> None:
+    """
+    Given the two cases measured on a real seat
+    When their baselines are read
+    Then they are the counts those runs billed, on the seats that billed them:
+         a baseline edited to whatever a later run happened to cost is a check
+         that can never fail.
+    """
+    config = TierConfig.from_env({})
+    cases = {one.name: one for one in load_cases()}
+    expert = cases["2026-09-04-expert-owed-rulings"]
+    first_rung = cases["2026-09-04-first-rung-nothing-owed"]
+
+    assert (expert.prompt_tokens, seat_of(expert, config)) == (4868, config.expert_seat)
+    assert (first_rung.prompt_tokens, seat_of(first_rung, config)) == (9786, config.map_seat)
+
+
+def test_a_default_run_writes_a_dated_report_and_says_where(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a run naming no report directory
+    When it finishes
+    Then it wrote a dated directory of its own and printed where: a report
+         nobody is told the path of is a report nobody reads.
+    """
+    import evals.__main__ as suite
+
+    monkeypatch.setattr(suite, "REPORTS", tmp_path / "reports")
+    monkeypatch.setattr(
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+    )
+
+    suite.main(["--case", CASE])
+
+    written = list((tmp_path / "reports").iterdir())
+    assert len(written) == 1
+    assert (written[0] / "matrix.md").is_file()
+    assert f"report: {written[0]}" in capsys.readouterr().out
+
+
+def test_two_default_runs_do_not_share_one_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given two runs started close enough together to date the same
+    When each writes its report
+    Then neither is inside the other's directory: one run's reply and counts
+         written over another's is one report of two turns nobody can separate.
+    """
+    import evals.__main__ as suite
+
+    monkeypatch.setattr(suite, "REPORTS", tmp_path / "reports")
+    monkeypatch.setattr(
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+    )
+
+    suite.main(["--case", CASE])
+    suite.main(["--case", CASE])
+
+    assert len(list((tmp_path / "reports").iterdir())) == 2
 
 
 def test_each_case_is_replayed_on_the_seat_it_resolved(
