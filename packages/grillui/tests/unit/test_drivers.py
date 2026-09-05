@@ -14,6 +14,7 @@ the turn is.
 
 from __future__ import annotations
 
+import ast
 import json
 import sys
 import threading
@@ -769,6 +770,35 @@ def test_the_expert_seat_is_briefed_with_its_rungs_prompt_on_every_turn(
     assert "--resume" in cli.calls[1]
     for call in cli.calls:
         assert call[call.index("--system-prompt") + 1] == system_prompt(HEAVY_TIER, GRILL_MASTER)
+
+
+@pytest.mark.parametrize("constant", ["CODEX_LEAN_SEAT", "CLAUDE_LEAN_SEAT"])
+def test_each_transport_states_the_seat_ruling_in_one_sentence(constant: str) -> None:
+    """
+    Given a transport's seed-and-tool constant
+    When the source is read
+    Then the statement after it is a docstring of one sentence stating the
+         ruling: whoever is deciding whether a seat may reach for something
+         finds the answer beside the flags, and one sentence is what survives
+         being read there.
+    """
+    body = ast.parse(Path(drivers.__file__).read_text(encoding="utf-8")).body
+    after = [
+        body[index + 1]
+        for index, node in enumerate(body[:-1])
+        if isinstance(node, ast.Assign)
+        and any(getattr(one, "id", None) == constant for one in node.targets)
+    ]
+
+    assert len(after) == 1, f"{constant} is not assigned exactly once at module level"
+    said = after[0]
+    assert isinstance(said, ast.Expr) and isinstance(said.value, ast.Constant), (
+        f"{constant} carries no docstring"
+    )
+    text = said.value.value
+    assert isinstance(text, str), f"{constant} carries no docstring"
+    assert text.endswith(".") and text.count(".") == 1, f"{constant} says more than one sentence"
+    assert "minimal seed and no tools" in text, text
 
 
 def test_the_claude_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
