@@ -35,8 +35,10 @@ from grillui.tiers import (
     CLAUDE_TRANSPORT,
     CODEX_TRANSPORT,
     OPENROUTER_TRANSPORT,
+    TRANSPORTS,
     Seat,
     TierConfig,
+    UnknownTransportError,
     compose,
 )
 
@@ -136,6 +138,8 @@ def read_seat(stated: str) -> Seat:
     model, _, effort = rest.partition(":")
     if not transport or not model:
         raise SeatRefusedError(stated)
+    if transport not in TRANSPORTS:
+        raise UnknownTransportError(transport)
     return Seat(transport, model, effort or None)
 
 
@@ -177,11 +181,18 @@ def replay(case: Case, seat: Seat, config: TierConfig) -> tuple[str, int | None,
             raise ReplayRefusedError(case.name, "the session renders a prompt it does not pin")
         dispatch = directory / "dispatch.json"
         dispatch.write_text(case.recorded, encoding="utf-8")
-        driver.run(log, dispatch)
+        refused: str | None = None
+        try:
+            driver.run(log, dispatch)
+        except (DocumentRefusedError, AgentUnreachableError) as why:
+            refused = str(why)
     if tap.raw is None:
         raise ReplayRefusedError(case.name, "the seat was never reached")
-    reply, prompt_tokens, output_tokens = REPLIES[seat.transport](tap.raw)
-    return reply or "", prompt_tokens, output_tokens, tap.seconds
+    try:
+        reply, prompt_tokens, output_tokens = REPLIES[seat.transport](tap.raw)
+    except AgentUnreachableError:
+        reply, prompt_tokens, output_tokens = "", None, None
+    return reply or "", prompt_tokens, output_tokens, tap.seconds, refused
 
 
 def check(
@@ -293,13 +304,16 @@ def main(argv: list[str] | None = None) -> int:
     runs: list[dict[str, Any]] = []
     for case in cases:
         measured = seat_of(case, config)
-        for seat in [measured, *added]:
+        # Keyed by name, because two runs under one name write over each other's
+        # reply and counts and the report reads as one run.
+        for seat in {named(one): one for one in [measured, *added]}.values():
             for sample in range(1, (args.n or case.samples) + 1):
-                refused: str | None = None
                 reply, prompt_tokens, output_tokens, seconds = "", None, None, 0.0
                 try:
-                    reply, prompt_tokens, output_tokens, seconds = replay(case, seat, config)
-                except (DocumentRefusedError, AgentUnreachableError, ReplayRefusedError) as why:
+                    reply, prompt_tokens, output_tokens, seconds, refused = replay(
+                        case, seat, config
+                    )
+                except ReplayRefusedError as why:
                     refused = str(why)
                 results = check(
                     case, reply, prompt_tokens, baseline=seat == measured, refused=refused

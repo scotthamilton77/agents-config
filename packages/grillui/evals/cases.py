@@ -44,23 +44,34 @@ class Case:
     entries: tuple[LogEntry, ...]
 
 
-def _inside(where: Path, named: str) -> Path:
+def _within(path: Path, root: Path, case: str, named: str) -> Path:
+    """`path`, once it is known to lie inside the cases tree.
+
+    The containment is anchored on the tree and not on the case, because a case
+    directory is itself a path a link can point out of, and a comparison made
+    against it would follow that link on both sides and agree with itself. What
+    a case reads is composed into a prompt and sent to a third party, so the
+    only thing it may read is what the checkout carries.
+    """
+    resolved = path.resolve()
+    if not resolved.is_relative_to(root.resolve()):
+        raise CaseRefusedError(case, f"{named} lies outside the cases directory")
+    return resolved
+
+
+def _inside(where: Path, root: Path, named: str) -> Path:
     """One of the case's own three files.
 
     A name is a name and never a route: anything carrying a separator, a parent
     reference or a root would let a case read a file the checkout does not carry
-    and replay a turn nobody can see. A link is the same route wearing one of
-    these three names, so the file has to be the one that lies here -- what it
-    would pull in is composed into a prompt and sent to a third party.
+    and replay a turn nobody can see.
     """
     if named not in FILES:
         raise CaseRefusedError(where.name, f"{named!r} is not one of {', '.join(FILES)}")
     path = where / named
     if not path.is_file():
         raise CaseRefusedError(where.name, f"{named} is missing")
-    if path.is_symlink() or path.resolve().parent != where.resolve():
-        raise CaseRefusedError(where.name, f"{named} is a link out of the case directory")
-    return path
+    return _within(path, root, where.name, named)
 
 
 def _stated(where: Path, case: dict[str, Any], key: str) -> Any:
@@ -69,9 +80,15 @@ def _stated(where: Path, case: dict[str, Any], key: str) -> Any:
     return case[key]
 
 
-def load_case(where: Path) -> Case:
-    """The case this directory holds."""
-    case = json.loads(_inside(where, "case.json").read_text(encoding="utf-8"))
+def load_case(where: Path, root: Path | None = None) -> Case:
+    """The case this directory holds.
+
+    `root` is the tree the case must lie in, and defaults to the directory the
+    case sits in, so a case loaded on its own is contained by where it was found.
+    """
+    root = where.parent if root is None else root
+    _within(where, root, where.name, "the case directory")
+    case = json.loads(_inside(where, root, "case.json").read_text(encoding="utf-8"))
     named = {one for one in case.values() if isinstance(one, str)}
     outside = {one for one in named if "/" in one or one == ".." or Path(one).is_absolute()}
     if outside:
@@ -80,11 +97,11 @@ def load_case(where: Path) -> Case:
             f"case.json names {', '.join(sorted(outside))}, and a case reads "
             "nothing outside its own directory",
         )
-    recorded = _inside(where, "dispatch.json").read_text(encoding="utf-8")
+    recorded = _inside(where, root, "dispatch.json").read_text(encoding="utf-8")
     context = DispatchContext.model_validate_json(recorded)
     entries = tuple(
         LogEntry.model_validate_json(line)
-        for line in _inside(where, "log.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in _inside(where, root, "log.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     )
     owed = () if context.mootness is None else tuple(context.mootness.ids)
@@ -109,4 +126,4 @@ def load_case(where: Path) -> Case:
 
 def load_cases(root: Path = CASES) -> list[Case]:
     """Every case checked in, in name order."""
-    return [load_case(one) for one in sorted(root.iterdir()) if one.is_dir()]
+    return [load_case(one, root) for one in sorted(root.iterdir()) if one.is_dir()]

@@ -8,6 +8,7 @@ document it is there to catch and passes the one it is not.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -25,9 +26,15 @@ from evals.checks import (
     the_turn_speaks_once,
 )
 from grillui.drivers import seat_driver
-from grillui.lane import DocumentRefusedError
 from grillui.schemas import FAST_TIER, GrillMasterDocument
-from grillui.tiers import CLAUDE_TRANSPORT, CODEX_TRANSPORT, TierConfig, compose, system_prompt
+from grillui.tiers import (
+    CLAUDE_TRANSPORT,
+    CODEX_TRANSPORT,
+    TierConfig,
+    UnknownTransportError,
+    compose,
+    system_prompt,
+)
 
 CASE = "2026-09-04-first-rung-nothing-owed"
 
@@ -37,6 +44,22 @@ def document(**overrides: Any) -> GrillMasterDocument:
     return GrillMasterDocument.model_validate(
         {"text": "", "updates": [], "supersedes": [], "rulings": [], "stop": {"met": False}}
         | overrides
+    )
+
+
+def codex_stream(said: str, output_tokens: int = 7) -> str:
+    """What `codex exec --json` prints for one turn."""
+    return "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "t"}),
+            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": said}}),
+            json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {"input_tokens": 11, "output_tokens": output_tokens},
+                }
+            ),
+        ]
     )
 
 
@@ -51,9 +74,9 @@ def test_every_checked_in_case_renders_the_prompt_it_pins() -> None:
     """
     Given every case checked in
     When each is rendered through the prompt code a session composes with
-    Then the byte length is the one the case records, where it records one: a
-         case whose recorded turn today's prompt no longer reproduces is a case
-         replaying something that was never sent.
+    Then its combined byte length is the one the case records, where it records
+         one: a case whose recorded turn today's prompt no longer renders at the
+         size it was sent at is a case replaying something else.
     """
     cases = load_cases()
 
@@ -222,30 +245,37 @@ def test_a_reply_that_is_not_a_document_fails_every_check_that_reads_one() -> No
     assert all(results[one.__name__] == shape for one in DEPENDENT)
 
 
-def test_a_seat_that_refuses_twice_is_a_red_row_rather_than_a_crash(
+def test_a_seat_that_refuses_twice_is_a_red_row_carrying_what_it_sent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """
-    Given a seat whose reply is refused by the document gate on both attempts
+    Given a seat whose reply the document gate refuses on both attempts
     When the suite runs
-    Then the row is red for the stated reason and the matrix is still written:
-         a run that raised would leave no record of the turn that caused it.
+    Then the row is red for the stated reason and carries the reply the seat
+         sent and what it cost: the turn happened and was paid for, and a run
+         that raised, or one that recorded blanks, is the only record of it.
     """
     import evals.__main__ as suite
 
-    def refusing(*_args: object) -> tuple[str, int | None, int | None, float]:
-        raise DocumentRefusedError(FAST_TIER, "the reply was prose, not the map document")
-
-    monkeypatch.setattr(suite, "replay", refusing)
+    case = next(one for one in load_cases() if one.name == CASE)
+    config = TierConfig.from_env({})
+    seat = seat_of(case, config)
+    driver = seat_driver(config, seat, tier=case.tier)
+    driver.cli = lambda *_args: codex_stream("just prose", output_tokens=31)  # type: ignore[union-attr]
+    monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
 
     code = suite.main(["--case", CASE, "--report", str(tmp_path)])
 
+    run = json.loads((tmp_path / "matrix.json").read_text("utf-8"))[0]
     assert code == 1
-    run = json.loads((tmp_path / "matrix.json").read_text(encoding="utf-8"))[0]
+    assert run["output_tokens"] == 31
+    assert run["output_bytes"] == len(b"just prose")
+    assert run["wall_seconds"] >= 0
     reason = run["checks"][the_reply_is_the_map_document.__name__]
-    assert "prose" in reason
+    assert reason is not None
     assert all(run["checks"][one.__name__] == reason for one in DEPENDENT)
-    assert None not in run["checks"].values()
+    kept = next((tmp_path / CASE).iterdir())
+    assert (kept / "1.txt").read_text(encoding="utf-8") == "just prose"
 
 
 def test_a_check_that_does_not_apply_is_not_a_check_that_failed(
@@ -259,7 +289,9 @@ def test_a_check_that_does_not_apply_is_not_a_check_that_failed(
     """
     import evals.__main__ as suite
 
-    monkeypatch.setattr(suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0))
+    monkeypatch.setattr(
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+    )
 
     assert (
         suite.main(["--case", CASE, "--seat", "codex:another-model", "--report", str(tmp_path)])
@@ -400,9 +432,9 @@ def test_every_sample_is_taken_and_any_one_of_them_fails_the_run(
     ]
     taken: list[str] = []
 
-    def sampling(*_args: object) -> tuple[str, int | None, int | None, float]:
+    def sampling(*_args: object) -> tuple[str, int | None, int | None, float, str | None]:
         taken.append(replies[len(taken)])
-        return taken[-1], 9786, 40, 1.0
+        return taken[-1], 9786, 40, 1.0, None
 
     monkeypatch.setattr(suite, "replay", sampling)
 
@@ -430,17 +462,7 @@ def test_a_replay_sends_the_turn_through_the_seats_own_driver(
 
     def scripted(argv: object, _directory: Path, /) -> str:
         sent.append(list(argv))  # type: ignore[arg-type]
-        return "\n".join(
-            [
-                json.dumps({"type": "thread.started", "thread_id": "t"}),
-                json.dumps(
-                    {"type": "item.completed", "item": {"type": "agent_message", "text": said}}
-                ),
-                json.dumps(
-                    {"type": "turn.completed", "usage": {"input_tokens": 11, "output_tokens": 7}}
-                ),
-            ]
-        )
+        return codex_stream(said)
 
     case = next(one for one in load_cases() if one.name == CASE)
     config = TierConfig.from_env({})
@@ -449,12 +471,124 @@ def test_a_replay_sends_the_turn_through_the_seats_own_driver(
     driver.cli = scripted  # type: ignore[union-attr]
     monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
 
-    reply, prompt_tokens, output_tokens, seconds = suite.replay(case, seat, config)
+    reply, prompt_tokens, output_tokens, seconds, refused = suite.replay(case, seat, config)
 
     assert reply == said
     assert (prompt_tokens, output_tokens) == (11, 7)
     assert seconds >= 0
+    assert refused is None
     assert sent and sent[0][0] == "codex"
+
+
+def test_a_case_directory_that_is_a_link_out_of_the_tree_is_refused(tmp_path: Path) -> None:
+    """
+    Given a case directory that is a link to a session elsewhere on the machine
+    When the cases are loaded
+    Then it is refused: the containment is on the tree, so a link at the
+         directory is the same route out as a link at one of its files.
+    """
+    root = tmp_path / "cases"
+    root.mkdir()
+    (root / "borrowed").symlink_to(CASES / CASE, target_is_directory=True)
+
+    with pytest.raises(CaseRefusedError, match="the case directory"):
+        load_cases(root)
+
+
+def test_an_unnarrowed_run_takes_every_case(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given no case named on the command line
+    When the suite runs
+    Then every checked-in case is taken: a suite that quietly ran one of them
+         reports green on the two it never asked.
+    """
+    import evals.__main__ as suite
+
+    monkeypatch.setattr(
+        suite, "replay", lambda *_: (document().model_dump_json(), 4868, 40, 1.0, None)
+    )
+
+    suite.main(["--report", str(tmp_path)])
+
+    taken = {one["case"] for one in json.loads((tmp_path / "matrix.json").read_text("utf-8"))}
+    assert taken == {one.name for one in load_cases()}
+
+
+def test_a_seat_named_twice_does_not_overwrite_its_own_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given the case's own seat named again on the command line
+    When the suite runs
+    Then it is taken once: two runs keyed by the same seat write one another's
+         reply and counts over each other, and the report reads as one run.
+    """
+    import evals.__main__ as suite
+
+    monkeypatch.setattr(
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+    )
+
+    suite.main(["--case", CASE, "--seat", "codex:gpt-5.6-luna:medium", "--report", str(tmp_path)])
+
+    assert len(json.loads((tmp_path / "matrix.json").read_text("utf-8"))) == 1
+
+
+def test_a_seat_on_a_transport_no_session_has_is_refused() -> None:
+    """
+    Given a seat naming a transport this session cannot sit on
+    When the arguments are read
+    Then it is refused before anything runs, rather than reaching a driver that
+         has no seam to send through and dying with no report written.
+    """
+    with pytest.raises(UnknownTransportError):
+        read_seat("typo:some-model")
+
+
+def test_the_stop_verdict_is_held_both_ways() -> None:
+    """
+    Given a case expecting the grilling to be over and one expecting it not to be
+    When each turn's verdict is checked
+    Then each is held to its own case: a check that only ever caught a turn
+         stopping early would pass one that never stops at all.
+    """
+    assert the_stop_verdict_is_expected(document(stop={"met": False}), expected=True) is not None
+    assert the_stop_verdict_is_expected(document(stop={"met": True}), expected=True) is None
+
+
+def test_two_updates_that_speak_are_two_channels() -> None:
+    """
+    Given a turn speaking twice through updates and not at all in its notice
+    When the speech channels are counted
+    Then it fails: the human reads both, and counting the notice alone would
+         pass a shelf of them.
+    """
+    twice = document(
+        updates=[
+            {"kind": "informational", "text": "One thing."},
+            {"kind": "informational", "text": "And another."},
+        ]
+    )
+
+    assert the_turn_speaks_once(twice) is not None
+    assert the_turn_speaks_once(twice, limit=2) is None
+
+
+def test_a_thread_case_takes_the_threads_seat() -> None:
+    """
+    Given a first-rung case on a thread channel
+    When its seat is resolved
+    Then it is the threads' seat rather than the map's: the two rungs sit on
+         different transports, and a thread turn on the map's seat is a turn
+         nobody configured.
+    """
+    config = TierConfig.from_env({})
+    case = replace(load_cases()[0], channel="t-1", tier=FAST_TIER)
+
+    assert seat_of(case, config) == config.thread_seat
+    assert seat_of(case, config) != config.map_seat
 
 
 def test_the_seat_a_case_runs_on_is_the_one_the_session_would_use() -> None:
@@ -504,7 +638,7 @@ def test_a_failed_check_exits_non_zero_and_the_report_holds_the_reply(
     import evals.__main__ as suite
 
     failing = document(rulings=[ruling("d9")]).model_dump_json()
-    monkeypatch.setattr(suite, "replay", lambda *_: (failing, 9786, 812, 1.5))
+    monkeypatch.setattr(suite, "replay", lambda *_: (failing, 9786, 812, 1.5, None))
 
     code = suite.main(["--case", CASE, "--report", str(tmp_path)])
 
@@ -523,6 +657,8 @@ def test_a_run_whose_checks_all_pass_exits_zero(
 ) -> None:
     import evals.__main__ as suite
 
-    monkeypatch.setattr(suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0))
+    monkeypatch.setattr(
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+    )
 
     assert suite.main(["--case", CASE, "--report", str(tmp_path)]) == 0
