@@ -303,8 +303,8 @@ def test_a_seat_that_refuses_twice_is_a_red_row_carrying_what_it_sent(
     Given a seat whose reply the document gate refuses on both attempts
     When the suite runs
     Then the row is red for the stated reason and carries the reply the seat
-         sent and what it cost: the turn happened and was paid for, and a run
-         that raised, or one that recorded blanks, is the only record of it.
+         sent and what it counted: the turn was taken and spent tokens, and a
+         run that raised, or recorded blanks, is the only record of it.
     """
     import evals.__main__ as suite
 
@@ -356,16 +356,20 @@ def test_a_check_that_does_not_apply_is_not_a_check_that_failed(
     assert "| - |" not in default, default
 
 
-def test_a_prompt_token_count_far_from_the_baseline_fails_its_check() -> None:
+@pytest.mark.parametrize(
+    "named", ["2026-09-04-expert-owed-rulings", "2026-09-04-first-rung-nothing-owed"]
+)
+def test_a_prompt_token_count_far_from_the_baseline_fails_its_check(named: str) -> None:
     """
     Given a case carrying a measured prompt-token baseline
-    When a run bills far more than it
+    When a run counts far more than it
     Then the baseline check fails, so a seat that quietly grew its seed is
-         caught here rather than on the next invoice.
+         caught here rather than in a later report nobody compares.
     """
-    case = next(one for one in load_cases() if one.prompt_tokens is not None)
+    case = next(one for one in load_cases() if one.name == named)
     reply = document().model_dump_json()
     baseline = case.prompt_tokens
+    assert baseline is not None
 
     def counted(tokens: int | None) -> str | None:
         return check(case, reply, tokens, baseline=True)[BASELINE]
@@ -515,6 +519,31 @@ def test_the_clock_runs_on_a_seam_that_raises() -> None:
     assert tap.seconds > 0
 
 
+def test_a_replay_on_a_hosted_seat_goes_through_that_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Given a seat on the hosted transport, scripted
+    When a case is replayed on it
+    Then the turn goes out through that driver's own seam and its reply is read
+         as that transport returns it: one seam chosen for every transport
+         leaves this seat unable to take a turn at all.
+    """
+    import evals.__main__ as suite
+
+    said = document(text="The board holds.").model_dump_json()
+    case = next(one for one in load_cases() if one.name == CASE)
+    config = TierConfig.from_env({})
+    seat = read_seat("openrouter:some-model")
+    driver = seat_driver(config, seat, tier=case.tier)
+    driver.transport = lambda **_: (said, 21)  # type: ignore[union-attr]
+    monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
+
+    reply, prompt_tokens, output_tokens, _seconds, refused = suite.replay(case, seat, config)
+
+    assert (reply, prompt_tokens, output_tokens, refused) == (said, 21, None, None)
+
+
 def test_a_replay_sends_the_turn_through_the_seats_own_driver(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -653,9 +682,9 @@ def test_the_measured_baselines_are_the_ones_recorded() -> None:
     """
     Given the two cases measured on a real seat
     When their baselines are read
-    Then they are the counts those runs billed, on the seats that billed them:
-         a baseline edited to whatever a later run happened to cost is a check
-         that can never fail.
+    Then they are the counts those runs recorded, on the seats that recorded
+         them: a baseline edited to whatever a later run happened to count is a
+         check that can never fail.
     """
     config = TierConfig.from_env({})
     cases = {one.name: one for one in load_cases()}
