@@ -42,6 +42,7 @@ from conftest import (
 from grillui import drivers
 from grillui.dispatch import GRILL_MASTER, record_dispatch
 from grillui.drivers import (
+    CLAUDE_LEAN_SEAT,
     RESUME_FILE,
     FastDriver,
     HeavyDriver,
@@ -83,6 +84,7 @@ from grillui.session import open_session
 from grillui.tiers import (
     API_KEY_ENV,
     BYTES_PER_TOKEN,
+    CLAUDE_CLI,
     CONTEXT_LIMITS,
     DEFAULT_FAST_MODEL,
     DEFAULT_HEAVY_MODEL,
@@ -726,19 +728,37 @@ def test_a_turn_that_reports_no_chain_identity_is_still_a_turn(session_dir: Path
     assert not (session_dir / RESUME_FILE).exists()
 
 
-def test_the_argv_carries_the_model_the_effort_the_prompt_and_the_standing_brief() -> None:
+def test_the_claude_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
     """
-    Given a model id, an effort, a system brief, a prompt and a chain to resume
-    When the argv is built
-    Then all five are on it, and the prompt is the last argument.
+    Given a model id, an effort, a system brief, a prompt, and a cold turn and a
+          resumed one
+    When each argv is built
+    Then it is exactly the lean invocation: the brief replaces the CLI's own
+         system prompt rather than riding on top of it, no tool, settings file
+         or MCP server reaches the turn, the effort is stated on both, and the
+         prompt is the last argument.
     """
-    argv = claude_argv("claude-configured", "xhigh", "be brief", "what now?", "chain-2")
+    seeded = [
+        CLAUDE_CLI,
+        "-p",
+        "--output-format",
+        "json",
+        "--model",
+        "claude-configured",
+        "--effort",
+        "xhigh",
+        "--system-prompt",
+        "be brief",
+        *CLAUDE_LEAN_SEAT,
+    ]
 
-    assert argv[argv.index("--model") + 1] == "claude-configured"
-    assert argv[argv.index("--effort") + 1] == "xhigh"
-    assert argv[argv.index("--append-system-prompt") + 1] == "be brief"
-    assert argv[argv.index("--resume") + 1] == "chain-2"
-    assert argv[-1] == "what now?"
+    cold = claude_argv("claude-configured", "xhigh", "be brief", "what now?", None)
+    resumed = claude_argv("claude-configured", "xhigh", "be brief", "what now?", "chain-2")
+
+    assert cold == [*seeded, "what now?"]
+    assert resumed == [*seeded, "--resume", "chain-2", "what now?"]
+    assert "--append-system-prompt" not in cold
+    assert "--append-system-prompt" not in resumed
 
 
 def test_a_completion_that_is_not_text_is_refused() -> None:

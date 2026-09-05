@@ -182,6 +182,43 @@ CODEX_NO_TOOLS = [
     'approval_policy="never"',
 ]
 
+# What the seat is seeded with, and it is the brief and nothing else. Every
+# seat's turn gets a minimal seed and no tools, deliberately, so the dispatch
+# record is the whole of what the seat read. Left to the transport's defaults a
+# turn also reads the human's own CLI configuration, whatever instruction files
+# the working directory discovers, the skills catalogue, and every hook, app,
+# plugin and collaborator agent installed on the machine -- none of it in the
+# dispatch, all of it billed on every turn and able to say what the seat is.
+# The seed levers stand beside the tool ones rather than replacing them: a seat
+# reading nothing it was not given still needs no way to run a command.
+CODEX_LEAN_SEAT = [
+    *CODEX_NO_TOOLS,
+    "--ignore-user-config",
+    "--disable",
+    "hooks",
+    "--disable",
+    "apps",
+    "--disable",
+    "plugins",
+    "--disable",
+    "multi_agent",
+    "-c",
+    "project_doc_max_bytes=0",
+    "-c",
+    "skills.max_context_tokens=1",
+]
+
+# The same ruling on the other transport: every seat's turn gets a minimal seed
+# and no tools, deliberately, so the dispatch record is the whole of what the
+# seat read. These three stand behind the brief being passed as `--system-prompt`
+# rather than appended to the CLI's own -- appending leaves the whole coding
+# harness on the turn, which is both the bulk of what it is billed and the
+# house's own rulebook riding into a seat that is meant to judge a plan against
+# the world. The tools go with it: the ruling turn answers on the board snapshot
+# it was handed, and a seat that can read outside the prompt makes the dispatch
+# record a partial account of what it saw.
+CLAUDE_LEAN_SEAT = ["--tools", "", "--setting-sources", "", "--strict-mcp-config"]
+
 # What the human is told when an offer arrives in a shape nothing can read.
 # The offer's own bytes are deliberately not quoted back at them: an
 # unreadable object is not made readable by printing it.
@@ -364,9 +401,16 @@ def claude_argv(model: str, effort: str, system: str, prompt: str, resume: str |
     it: the reply alone would leave the next turn no way to continue this
     conversation rather than open a new one. The effort is passed on every turn
     rather than only the first: a resumed chain does not inherit it.
+
+    The brief is the session's whole system prompt rather than an addition to
+    the CLI's own, and it is passed on every turn: the CLI records a system
+    prompt once per conversation and reuses it, except where one is given here,
+    which is what keeps a resumed turn seated as the agent this rung briefed.
+    The lean flags sit ahead of the resumed chain and the prompt because the
+    tool list takes as many values as follow it.
     """
     argv = [CLAUDE_CLI, "-p", "--output-format", "json", "--model", model, "--effort", effort]
-    argv += ["--append-system-prompt", system]
+    argv += ["--system-prompt", system, *CLAUDE_LEAN_SEAT]
     if resume is not None:
         argv += ["--resume", resume]
     return [*argv, prompt]
@@ -462,7 +506,7 @@ def codex_argv(seat: Seat, system: str, prompt: str, resume: str | None) -> list
     # Nothing is watching a desktop notification for a turn the board is already
     # showing a waiting clock for.
     argv += ["-c", "notify=[]"]
-    argv += CODEX_NO_TOOLS
+    argv += CODEX_LEAN_SEAT
     if seat.effort is not None:
         argv += ["-c", f"model_reasoning_effort={json.dumps(seat.effort)}"]
     return [*argv, prompt]

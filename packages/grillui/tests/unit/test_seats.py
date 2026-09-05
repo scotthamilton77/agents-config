@@ -36,6 +36,7 @@ from conftest import (
 from grillui import drivers
 from grillui.dispatch import GRILL_MASTER, record_dispatch
 from grillui.drivers import (
+    CODEX_LEAN_SEAT,
     CODEX_RESUME_FILE,
     FIRST_RUNG_RESUME_FILE,
     NOT_STARTED,
@@ -74,6 +75,7 @@ from grillui.schemas import (
 from grillui.session import open_session
 from grillui.tiers import (
     API_BASE_ENV,
+    CODEX_CLI,
     DEFAULT_API_BASE,
     DEFAULT_FAST_MODEL,
     DEFAULT_MAP_EFFORT,
@@ -514,10 +516,10 @@ def test_a_first_rung_claude_seat_never_shares_the_experts_chain(session_dir: Pa
     assert read_resume(session_dir, MAP_CHANNEL, FIRST_RUNG_RESUME_FILE) == "first-rung-chain"
     assert read_resume(session_dir, MAP_CHANNEL, RESUME_FILE) == "expert-chain"
     briefs = [first.cli.calls[0], expert.cli.calls[0]]
-    assert briefs[0][briefs[0].index("--append-system-prompt") + 1] == system_prompt(
+    assert briefs[0][briefs[0].index("--system-prompt") + 1] == system_prompt(
         FAST_TIER, GRILL_MASTER
     )
-    assert briefs[1][briefs[1].index("--append-system-prompt") + 1] == system_prompt(
+    assert briefs[1][briefs[1].index("--system-prompt") + 1] == system_prompt(
         HEAVY_TIER, GRILL_MASTER
     )
     assert [one[TIER_KEY] for one in attributions(log)] == [FAST_TIER, HEAVY_TIER]
@@ -921,6 +923,42 @@ def test_the_format_rule_names_every_update_kind_the_backend_folds() -> None:
     listed = DOCUMENT_FORMAT_RULE.split("`kind` is one of ")[1].split(" and nothing else")[0]
 
     assert set(listed.split(", ")) == set(FOLDABLE_KINDS)
+
+
+def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
+    """
+    Given a Codex seat taking a cold turn and a resumed one
+    When each argv is built
+    Then it is exactly the lean invocation: the brief is the whole of the
+         instruction the turn reads, and no user configuration, discovered
+         project document, skills catalog, hook, app, plugin or collaborator
+         agent reaches it -- on the resumed turn as much as the cold one, which
+         inherits none of it.
+    """
+    seat = Seat("codex", "gpt-5.6-luna", "medium")
+    turn = [
+        "--json",
+        "--skip-git-repo-check",
+        "--model",
+        "gpt-5.6-luna",
+        "-c",
+        'developer_instructions="brief"',
+        "-c",
+        "notify=[]",
+        *CODEX_LEAN_SEAT,
+        "-c",
+        'model_reasoning_effort="medium"',
+        "prompt",
+    ]
+
+    assert codex_argv(seat, "brief", "prompt", None) == [CODEX_CLI, "exec", *turn]
+    assert codex_argv(seat, "brief", "prompt", "thread-9") == [
+        CODEX_CLI,
+        "exec",
+        "resume",
+        "thread-9",
+        *turn,
+    ]
 
 
 def test_a_seat_with_no_effort_asks_the_transport_for_none() -> None:
