@@ -200,6 +200,24 @@ def test_a_departure_from_the_contract_is_named_rather_than_passed_over(
     assert call["stdin_devnull"] is False, call
 
 
+def test_the_recorded_brief_is_the_bytes_the_turn_would_read(tmp_path: Path) -> None:
+    """
+    Given an invocation naming a brief with contents of its own
+    When the shim records it
+    Then the record carries those bytes: what a scenario checks a seat was
+         briefed with is the file's content, and a record saying only that some
+         brief was there would agree with a turn briefed by the wrong one.
+    """
+    brief = tmp_path / "fast-grill-master-brief.md"
+    brief.write_text("Rule one.\nRule two.\n", encoding="utf-8")
+    argv = codex_argv(SEAT, brief, PROMPT, None)
+
+    call = run_shim("codex", argv[1:], tmp_path)
+
+    assert call["violations"] == [], call["violations"]
+    assert call["brief"] == "Rule one.\nRule two.\n", call["brief"]
+
+
 def test_a_brief_the_shim_cannot_read_is_named_rather_than_fatal(tmp_path: Path) -> None:
     """
     Given an invocation naming a brief that exists and cannot be read
@@ -224,8 +242,9 @@ def test_a_brief_the_shim_cannot_read_is_named_rather_than_fatal(tmp_path: Path)
 
 def test_a_setting_spelled_another_valid_way_is_still_read(tmp_path: Path) -> None:
     """
-    Given a brief named as a bare unquoted value, and a second invocation
-          bringing developer_instructions with spaces around its equals sign
+    Given a brief named as a bare unquoted value, one named as a TOML literal
+          string, and an invocation bringing developer_instructions with spaces
+          around its equals sign
     When the shim records each
     Then both are read for what they are: the CLI accepts every one of these
          spellings, so a shim keyed to one of them passes the other by and
@@ -234,6 +253,13 @@ def test_a_setting_spelled_another_valid_way_is_still_read(tmp_path: Path) -> No
     raw = run_shim("codex", ["exec", "-c", "model_instructions_file=not-toml", PROMPT], tmp_path)
     assert any("is not a readable file" in one for one in raw["violations"]), raw
     assert raw["brief"] is None, raw
+
+    brief = tmp_path / "literal-brief.md"
+    brief.write_text(BRIEF, encoding="utf-8")
+    literal = run_shim(
+        "codex", ["exec", "-c", f"model_instructions_file='{brief}'", PROMPT], tmp_path
+    )
+    assert literal["brief"] == BRIEF, literal
 
     spaced = run_shim("codex", ["exec", "-c", 'developer_instructions = "brief"', PROMPT], tmp_path)
     assert any("developer_instructions is present" in one for one in spaced["violations"]), spaced

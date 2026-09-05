@@ -34,7 +34,7 @@ from conftest import (
 )
 
 from grillui import drivers
-from grillui.dispatch import GRILL_MASTER, record_dispatch
+from grillui.dispatch import GRILL_MASTER, THREAD_AGENT, record_dispatch
 from grillui.drivers import (
     CODEX_RESUME_FILE,
     FIRST_RUNG_RESUME_FILE,
@@ -53,6 +53,7 @@ from grillui.drivers import (
     run_claude_cli,
     run_codex_cli,
     seat_driver,
+    write_brief,
 )
 from grillui.escalation import in_expert_mode
 from grillui.lane import AgentUnreachableError, DocumentRefusedError, Lane
@@ -86,6 +87,8 @@ from grillui.tiers import (
     Seat,
     TierConfig,
     UnknownEffortError,
+    UnknownRoleError,
+    UnknownTierError,
     UnknownTransportError,
     system_prompt,
 )
@@ -178,6 +181,12 @@ class ScriptedCodex:
         """Every `-c key=value` one call carried."""
         argv = self.calls[turn - 1]
         return [argv[index + 1] for index, one in enumerate(argv) if one == "-c"]
+
+
+def brief_path(cli: ScriptedCodex, turn: int, /) -> Path:
+    """The file the turn named as its instructions."""
+    setting = next(one for one in cli.settings(turn) if one.startswith("model_instructions_file="))
+    return Path(json.loads(setting[len("model_instructions_file=") :]))
 
 
 def briefed(session_dir: Path) -> SessionLog:
@@ -640,8 +649,7 @@ def test_the_brief_is_named_by_a_path_that_resolves_from_anywhere(
 
     CodexDriver(TierConfig(), cli).run(log, record_dispatch(log))
 
-    setting = next(one for one in cli.settings(1) if one.startswith("model_instructions_file="))
-    named = Path(json.loads(setting[len("model_instructions_file=") :]))
+    named = brief_path(cli, 1)
 
     assert named.is_absolute(), named
     assert cli.briefs == [system_prompt(FAST_TIER, GRILL_MASTER)]
@@ -659,20 +667,85 @@ def test_a_symlink_at_the_briefs_name_is_replaced_rather_than_followed(
          and a name the session does not control is not a place to write.
     """
     log = briefed(session_dir)
-    outside = tmp_path / "outside.md"
-    outside.write_text("not the brief", encoding="utf-8")
-    (session_dir / "fast-grill-master-brief.md").symlink_to(outside)
+    planted = {}
+    for name in ("fast-grill-master-brief.md", "fast-grill-master-brief.tmp"):
+        outside = tmp_path / f"outside-{name}"
+        outside.write_text("not the brief", encoding="utf-8")
+        (session_dir / name).symlink_to(outside)
+        planted[name] = outside
     cli = ScriptedCodex()
 
     CodexDriver(TierConfig(), cli).run(log, record_dispatch(log))
 
-    setting = next(one for one in cli.settings(1) if one.startswith("model_instructions_file="))
-    named = Path(json.loads(setting[len("model_instructions_file=") :]))
+    named = brief_path(cli, 1)
 
     assert named.parent == session_dir, named
     assert not named.is_symlink(), named
-    assert outside.read_text(encoding="utf-8") == "not the brief"
+    for name, outside in planted.items():
+        assert outside.read_text(encoding="utf-8") == "not the brief", name
     assert cli.briefs == [system_prompt(FAST_TIER, GRILL_MASTER)]
+
+
+def test_a_thread_turn_is_briefed_as_the_thread_agent(session_dir: Path) -> None:
+    """
+    Given a side thread taken on the Codex seat
+    When its turn is composed
+    Then it is briefed as the thread agent rather than as the map's author: the
+         two roles are given different mandates, and a thread turn holding the
+         grill-master's would author on a board it does not own.
+    """
+    log = briefed(session_dir)
+    log.submit([opened(THREAD, "h1")], log.epoch)
+    cli = ScriptedCodex(reply=THREAD_SAID, thread_id="side-thread")
+
+    a_turn(log, CodexDriver(TierConfig(), cli), channel=THREAD)
+
+    assert cli.briefs == [system_prompt(FAST_TIER, THREAD_AGENT)]
+    assert brief_path(cli, 1).parent == session_dir
+
+
+@pytest.mark.parametrize("agent", [GRILL_MASTER, THREAD_AGENT])
+def test_the_brief_of_any_role_is_named_inside_the_session(agent: str, session_dir: Path) -> None:
+    """
+    Given each role a turn may be taken for
+    When its brief is written
+    Then the file sits directly inside the session directory.
+    """
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    assert write_brief(session_dir, FAST_TIER, agent, "the brief").parent == session_dir
+
+
+@pytest.mark.parametrize("named", ["x/../../escaped", "../escaped", "sub/agent", "invented"])
+def test_a_role_outside_the_vocabulary_is_refused_before_a_path_is_formed(
+    named: str, session_dir: Path
+) -> None:
+    """
+    Given a role this session does not define, including ones spelled to climb
+          out of the session directory
+    When a brief is asked for
+    Then it is refused: a name interpolated into a path component is a way out
+         of the directory, and the brief of a role with no prompt is nothing
+         anybody could have meant.
+    """
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(UnknownRoleError):
+        write_brief(session_dir, FAST_TIER, named, "the brief")
+
+
+def test_a_tier_outside_the_vocabulary_is_refused_before_a_path_is_formed(
+    session_dir: Path,
+) -> None:
+    """
+    Given a rung this session does not define
+    When a brief is asked for
+    Then it is refused, for the reason a role outside the vocabulary is.
+    """
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(UnknownTierError):
+        write_brief(session_dir, "../escaped", GRILL_MASTER, "the brief")
 
 
 def test_the_file_the_turn_names_holds_this_rungs_brief(session_dir: Path) -> None:
@@ -700,7 +773,7 @@ def test_the_file_the_turn_names_holds_this_rungs_brief(session_dir: Path) -> No
         # One quoted TOML string: a path carrying a space is otherwise read as
         # a bare token and the turn is briefed by nothing.
         assert quoted.startswith('"') and quoted.endswith('"'), turn
-        assert Path(json.loads(quoted)).parent == session_dir, turn
+        assert brief_path(cli, turn).parent == session_dir, turn
 
 
 def test_each_channel_keeps_its_own_thread(session_dir: Path) -> None:

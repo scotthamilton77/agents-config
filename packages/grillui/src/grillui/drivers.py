@@ -68,6 +68,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from functools import partial
@@ -127,8 +128,12 @@ from grillui.tiers import (
     DEFAULT_API_BASE,
     DEFAULT_REQUEST_TIMEOUT,
     RETRY_RULE,
+    ROLE_PROMPTS,
+    SYSTEM_PROMPTS,
     Seat,
     TierConfig,
+    UnknownRoleError,
+    UnknownTierError,
     compose,
     system_prompt,
 )
@@ -482,24 +487,27 @@ def write_brief(directory: Path, tier: str, agent: str, system: str, /) -> Path:
     brief handed alongside leaves the CLI's built-in prompt on the turn, which
     is a second instruction layer the dispatch record does not show.
 
-    Named for the rung and the role rather than the channel, because that is
-    what the brief varies by -- two channels on the same rung are briefed
-    identically and have no reason to keep separate copies. Written whole and
-    renamed into place under the same lock the session's other rewrites take,
-    so a turn never reads a brief half-written by the turn beside it.
+    The rung and the role are checked against the vocabularies that define them
+    before any path is formed, because both are interpolated into a path
+    component and a name carrying a separator is a way out of the session
+    directory. The directory is resolved and the name joined to it, so the brief
+    is a regular file directly inside the session however that session was named.
 
-    The directory is resolved and the name is joined to it, so the brief is
-    always a regular file directly inside the session: the turn runs in that
-    directory, and a relative session name would otherwise be resolved a second
-    time against itself. Resolving the name too would follow a symlink already
-    sitting there and write outside the session, which the rename replaces
-    instead.
+    Written under a name nothing can predict, created exclusively, and moved
+    onto the final one: a symlink planted at any name this would otherwise have
+    used is replaced rather than followed, and a reader sees either the previous
+    brief whole or this one.
     """
-    path = directory.resolve() / f"{tier}-{agent}-brief.md"
-    scratch = path.with_suffix(".tmp")
-    with _REWRITE:
-        scratch.write_text(system, encoding="utf-8")
-        scratch.replace(path)
+    if tier not in SYSTEM_PROMPTS:
+        raise UnknownTierError(tier)
+    if agent not in ROLE_PROMPTS:
+        raise UnknownRoleError(agent)
+    inside = directory.resolve()
+    handle, scratch = tempfile.mkstemp(dir=inside, suffix=".tmp")
+    with os.fdopen(handle, "w", encoding="utf-8") as file:
+        file.write(system)
+    path = inside / f"{tier}-{agent}-brief.md"
+    Path(scratch).replace(path)
     return path
 
 

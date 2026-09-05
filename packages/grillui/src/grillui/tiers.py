@@ -179,6 +179,13 @@ class UnknownTierError(ValueError):
         super().__init__(f"unknown tier: {tier!r}")
 
 
+class UnknownRoleError(ValueError):
+    """A role outside the ones this session briefs a turn for."""
+
+    def __init__(self, agent: str) -> None:
+        super().__init__(f"unknown role: {agent!r}; must be one of {', '.join(ROLE_PROMPTS)}")
+
+
 class UnknownEffortError(ValueError):
     """An effort level the CLI would not accept."""
 

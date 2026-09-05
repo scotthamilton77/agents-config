@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -54,9 +55,9 @@ def setting(argv: list[str], name: str) -> str | None:
     Keyed on the name rather than on the spelling: TOML allows space around the
     equals sign, and a check keyed to one spelling passes the other by and
     records a clean call on a turn that departed from the contract. The value is
-    read as TOML would read it and falls back to the raw string, which is what
-    the CLI itself does -- a bare path is a path, and refusing to read one would
-    kill the shim on an invocation the CLI accepts.
+    parsed as TOML and falls back to the raw string, which is what the CLI does
+    with a value that does not parse -- a bare path is a path, and refusing to
+    read one would kill the shim on an invocation the CLI accepts.
     """
     for one in settings(argv):
         key, _, value = one.partition("=")
@@ -64,10 +65,10 @@ def setting(argv: list[str], name: str) -> str | None:
             continue
         raw = value.strip()
         try:
-            loaded = json.loads(raw)
-        except ValueError:
+            read = tomllib.loads(f"value = {raw}")["value"]
+        except tomllib.TOMLDecodeError:
             return raw
-        return loaded if isinstance(loaded, str) else raw
+        return read if isinstance(read, str) else raw
     return None
 
 
