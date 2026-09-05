@@ -474,16 +474,40 @@ def read_cli_reply(printed: str) -> tuple[str, str | None, int | None]:
     )
 
 
-def codex_argv(seat: Seat, system: str, prompt: str, resume: str | None) -> list[str]:
+def write_brief(directory: Path, tier: str, agent: str, system: str, /) -> Path:
+    """Put this rung's standing brief in the session directory and say where.
+
+    A file rather than a command-line value because the setting that replaces
+    Codex's own instructions takes a path, and replacing them is the point: a
+    brief handed alongside leaves the CLI's built-in prompt on the turn, which
+    is a second instruction layer the dispatch record does not show.
+
+    Named for the rung and the role rather than the channel, because that is
+    what the brief varies by -- two channels on the same rung are briefed
+    identically and have no reason to keep separate copies. Written whole and
+    renamed into place under the same lock the session's other rewrites take,
+    so a turn never reads a brief half-written by the turn beside it.
+    """
+    path = directory / f"{tier}-{agent}-brief.md"
+    scratch = path.with_suffix(".tmp")
+    with _REWRITE:
+        scratch.write_text(system, encoding="utf-8")
+        scratch.replace(path)
+    return path
+
+
+def codex_argv(seat: Seat, brief: Path, prompt: str, resume: str | None) -> list[str]:
     """One `codex exec` turn's arguments, cold or resumed.
 
     The brief rides on every invocation, not just the cold one: a resumed thread
     inherits none of it, so a driver that supplied it once would resume into a
-    conversation briefed for a role it no longer knows it has.
+    conversation briefed for a role it no longer knows it has. It is named as
+    the file the model reads its instructions from, which replaces the CLI's
+    own rather than adding to them.
 
     Values are handed to `-c` as TOML, so each is quoted as one: an unquoted
     string is taken literally only where it fails to parse, which makes what a
-    brief means depend on whether it happens to look like TOML.
+    path means depend on whether it happens to look like TOML.
 
     Nothing here asks the transport to shape the reply. `--output-schema` is the
     provider's strict structured-output mode, which requires every object in the
@@ -501,7 +525,7 @@ def codex_argv(seat: Seat, system: str, prompt: str, resume: str | None) -> list
     # trust check about the working directory that has nothing to say about a
     # turn which runs no commands.
     argv += ["--json", "--skip-git-repo-check", "--model", seat.model]
-    argv += ["-c", f"developer_instructions={json.dumps(system)}"]
+    argv += ["-c", f"model_instructions_file={json.dumps(str(brief))}"]
     # Nothing is watching a desktop notification for a turn the board is already
     # showing a waiting clock for.
     argv += ["-c", "notify=[]"]
@@ -973,7 +997,10 @@ class CodexDriver:
             # rather than opening a second conversation about it.
             printed = self.cli(
                 codex_argv(
-                    seat, system, text, read_resume(log.directory, channel, CODEX_RESUME_FILE)
+                    seat,
+                    write_brief(log.directory, self.tier, context.agent, system),
+                    text,
+                    read_resume(log.directory, channel, CODEX_RESUME_FILE),
                 ),
                 log.directory,
             )

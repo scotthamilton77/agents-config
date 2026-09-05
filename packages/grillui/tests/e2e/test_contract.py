@@ -131,8 +131,10 @@ def test_the_argv_the_driver_builds_is_the_argv_the_shims_accept(tmp_path: Path)
     This is the one place the contract's two statements are put side by side.
     Everywhere else they are kept apart on purpose.
     """
-    cold = codex_argv(SEAT, BRIEF, PROMPT, None)
-    resumed = codex_argv(SEAT, BRIEF, PROMPT, "thread-9")
+    brief = tmp_path / "fast-grill-master-brief.md"
+    brief.write_text(BRIEF, encoding="utf-8")
+    cold = codex_argv(SEAT, brief, PROMPT, None)
+    resumed = codex_argv(SEAT, brief, PROMPT, "thread-9")
     expert = claude_argv("claude-opus-5", "xhigh", BRIEF, PROMPT, None)
 
     assert run_shim("codex", cold[1:], tmp_path)["violations"] == []
@@ -147,8 +149,9 @@ def test_a_departure_from_the_contract_is_named_rather_than_passed_over(
 ) -> None:
     """
     Given a Codex invocation that asks for a strict output schema, drops the
-         repository check and the sandbox closures, and leaves standard input
-         open
+         repository check and the sandbox closures, brings its brief alongside
+         the CLI's own instructions rather than in place of them, and leaves
+         standard input open
     When the shim records it
     Then every departure is named in the record, and the scenario is what fails
          on it -- a shim that exited non-zero instead would look to the backend
@@ -178,6 +181,19 @@ def test_a_departure_from_the_contract_is_named_rather_than_passed_over(
     assert "skills.max_context_tokens=1 is absent" in said, said
     for feature in ("hooks", "apps", "plugins", "multi_agent"):
         assert f"--disable {feature} is absent" in said, said
+    assert "no model_instructions_file setting" in said, said
+    assert "developer_instructions is present" in said, said
+
+    # A path is only a brief while it resolves: naming one that does not leaves
+    # the turn briefed by nothing, which the record must say rather than read as
+    # a turn that carried its brief.
+    dangling = run_shim(
+        "codex",
+        ["exec", "-c", f'model_instructions_file="{tmp_path / "gone.md"}"', PROMPT],
+        tmp_path,
+    )
+    assert any("is not a readable file" in one for one in dangling["violations"]), dangling
+    assert dangling["brief"] is None, dangling
     assert "standard input is not closed" in said, said
     assert call["stdin_devnull"] is False, call
 

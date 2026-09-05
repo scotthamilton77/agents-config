@@ -120,10 +120,19 @@ class ScriptedCodex:
     silent: bool = False
     calls: list[list[str]] = field(default_factory=list)
     directories: list[Path] = field(default_factory=list)
+    briefs: list[str] = field(default_factory=list)
 
     def __call__(self, argv: Sequence[str], directory: Path, /) -> str:
         self.calls.append(list(argv))
         self.directories.append(directory)
+        # Read here rather than after the run: the file is what the CLI would
+        # have read at this moment, and a later read would pass a turn briefed
+        # wrongly that a rewrite happened to correct.
+        named = next((one for one in argv if str(one).startswith("model_instructions_file=")), None)
+        if named is not None:
+            self.briefs.append(
+                Path(json.loads(str(named).split("=", 1)[1])).read_text(encoding="utf-8")
+            )
         turn = len(self.calls)
         lines: list[dict[str, Any]] = []
         if self.thread_id is not None:
@@ -435,7 +444,7 @@ def test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter(session_di
     assert read_resume(session_dir, MAP_CHANNEL, CODEX_RESUME_FILE) == "thread-7"
     for turn in (1, 2):
         settings = cli.settings(turn)
-        assert any(one.startswith("developer_instructions=") for one in settings), turn
+        assert any(one.startswith("model_instructions_file=") for one in settings), turn
         assert f'model_reasoning_effort="{DEFAULT_MAP_EFFORT}"' in settings, turn
         assert cli.option(turn, "--model") == DEFAULT_MAP_MODEL
         assert "--json" in cli.calls[turn - 1]
@@ -614,22 +623,32 @@ def test_no_provider_bytes_reach_a_status_entry(session_dir: Path) -> None:
     assert not any(leaked in one for one in said)
 
 
-def test_the_standing_brief_crosses_as_one_toml_value(session_dir: Path) -> None:
+def test_the_file_the_turn_names_holds_this_rungs_brief(session_dir: Path) -> None:
     """
-    Given a standing brief carrying newlines, quotes and braces
-    When it is put on the command line
-    Then it is one quoted TOML string, so what the brief means does not depend on
-         whether it happens to parse as TOML.
+    Given a Codex seat taking a cold turn and then a resumed one
+    When each is composed
+    Then the file each names carries this rung's standing brief at the moment of
+         the call, and it lies in the session's own directory: a resumed thread
+         inherits none of the brief, and a path naming stale bytes briefs the
+         turn for a role it no longer has.
     """
     log = briefed(session_dir)
-    cli = ScriptedCodex()
-    CodexDriver(TierConfig(), cli).run(log, record_dispatch(log))
+    cli = ScriptedCodex(thread_id="thread-7")
+    driver = CodexDriver(TierConfig(), cli)
 
-    setting = next(one for one in cli.settings(1) if one.startswith("developer_instructions="))
-    quoted = setting[len("developer_instructions=") :]
-    assert quoted.startswith('"') and quoted.endswith('"')
-    assert "grill-master" in json.loads(quoted)
-    assert "\n" not in quoted
+    a_turn(log, driver)
+    a_turn(log, driver)
+
+    assert cli.briefs == [system_prompt(FAST_TIER, GRILL_MASTER)] * 2
+    for turn in (1, 2):
+        setting = next(
+            one for one in cli.settings(turn) if one.startswith("model_instructions_file=")
+        )
+        quoted = setting[len("model_instructions_file=") :]
+        # One quoted TOML string: a path carrying a space is otherwise read as
+        # a bare token and the turn is briefed by nothing.
+        assert quoted.startswith('"') and quoted.endswith('"'), turn
+        assert Path(json.loads(quoted)).parent == session_dir, turn
 
 
 def test_each_channel_keeps_its_own_thread(session_dir: Path) -> None:
@@ -924,7 +943,7 @@ def test_the_format_rule_names_every_update_kind_the_backend_folds() -> None:
     assert set(listed.split(", ")) == set(FOLDABLE_KINDS)
 
 
-def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
+def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else(tmp_path: Path) -> None:
     """
     Given a Codex seat taking a cold turn and a resumed one
     When each argv is built
@@ -935,13 +954,14 @@ def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
          inherits none of it.
     """
     seat = Seat("codex", "gpt-5.6-luna", "medium")
+    brief = tmp_path / "fast-grill-master-brief.md"
     turn = [
         "--json",
         "--skip-git-repo-check",
         "--model",
         "gpt-5.6-luna",
         "-c",
-        'developer_instructions="brief"',
+        f'model_instructions_file="{brief}"',
         "-c",
         "notify=[]",
         "-c",
@@ -970,8 +990,8 @@ def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
         "prompt",
     ]
 
-    assert codex_argv(seat, "brief", "prompt", None) == ["codex", "exec", *turn]
-    assert codex_argv(seat, "brief", "prompt", "thread-9") == [
+    assert codex_argv(seat, brief, "prompt", None) == ["codex", "exec", *turn]
+    assert codex_argv(seat, brief, "prompt", "thread-9") == [
         "codex",
         "exec",
         "resume",
@@ -980,14 +1000,14 @@ def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
     ]
 
 
-def test_a_seat_with_no_effort_asks_the_transport_for_none() -> None:
+def test_a_seat_with_no_effort_asks_the_transport_for_none(tmp_path: Path) -> None:
     """
     Given a Codex seat configured with no effort
     When its arguments are built
     Then nothing is said about how hard to think, rather than a default being
          invented on the seat's behalf.
     """
-    argv = codex_argv(Seat("codex", "some-model"), "brief", "prompt", None)
+    argv = codex_argv(Seat("codex", "some-model"), tmp_path / "brief.md", "prompt", None)
 
     assert not any(one.startswith("model_reasoning_effort") for one in argv)
     assert argv[-1] == "prompt"
