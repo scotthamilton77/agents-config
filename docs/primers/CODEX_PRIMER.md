@@ -42,7 +42,7 @@ For a named top-level server, use:
 -c 'mcp_servers.server_name.enabled=false'
 ```
 
-Run outside a project to avoid a project `.codex/config.toml` layer. Combined
+Run outside a project to avoid a project-level .codex/config.toml layer. Combined
 with `--ignore-user-config` and disabled plugins, that is the supported way to
 remove configured MCP sources wholesale.
 
