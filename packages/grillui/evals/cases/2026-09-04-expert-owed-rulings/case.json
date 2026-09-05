@@ -1,0 +1,13 @@
+{
+  "tier": "heavy",
+  "channel": "map",
+  "context_bytes": 13453,
+  "samples": 1,
+  "owed_rulings": [
+    "d2",
+    "d3"
+  ],
+  "speech_limit": 1,
+  "stop": false,
+  "prompt_tokens": 4868
+}
