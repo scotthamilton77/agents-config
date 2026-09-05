@@ -48,12 +48,33 @@ REQUIRED_SETTINGS = (
 DISABLED_FEATURES = ("hooks", "apps", "plugins", "multi_agent")
 
 
+def setting(argv: list[str], name: str) -> str | None:
+    """What this invocation set `name` to, or nothing where it set it not at all.
+
+    Keyed on the name rather than on the spelling: TOML allows space around the
+    equals sign, and a check keyed to one spelling passes the other by and
+    records a clean call on a turn that departed from the contract. The value is
+    read as TOML would read it and falls back to the raw string, which is what
+    the CLI itself does -- a bare path is a path, and refusing to read one would
+    kill the shim on an invocation the CLI accepts.
+    """
+    for one in settings(argv):
+        key, _, value = one.partition("=")
+        if key.strip() != name:
+            continue
+        raw = value.strip()
+        try:
+            loaded = json.loads(raw)
+        except ValueError:
+            return raw
+        return loaded if isinstance(loaded, str) else raw
+    return None
+
+
 def briefed_from(argv: list[str]) -> Path | None:
     """The file this turn reads its instructions from, if it names one."""
-    named = next(
-        (one for one in settings(argv) if one.startswith("model_instructions_file=")), None
-    )
-    return None if named is None else Path(json.loads(named.split("=", 1)[1]))
+    named = setting(argv, "model_instructions_file")
+    return None if named is None else Path(named)
 
 
 def readable(path: Path | None) -> str | None:
@@ -91,7 +112,7 @@ def violations(argv: list[str], resumed: str | None, brief: Path | None) -> list
     elif readable(brief) is None:
         faults.append(f"model_instructions_file names {str(brief)!r}, which is not a readable file")
     carried = settings(argv)
-    if any(one.startswith("developer_instructions=") for one in carried):
+    if setting(argv, "developer_instructions") is not None:
         # Alongside rather than instead: the CLI's own instructions stay on the
         # turn, a second layer briefing the seat that the record does not show.
         faults.append("developer_instructions is present: the brief adds to the CLI's own prompt")
@@ -118,9 +139,7 @@ def violations(argv: list[str], resumed: str | None, brief: Path | None) -> list
 def main() -> None:
     argv = sys.argv[1:]
     resumed = argv[2] if argv[:2] == ["exec", "resume"] else None
-    carried = settings(argv)
     brief = briefed_from(argv)
-    effort = next((one for one in carried if one.startswith("model_reasoning_effort=")), None)
     index = record(
         NAME,
         {
@@ -129,7 +148,7 @@ def main() -> None:
             "stdin_devnull": stdin_is_closed(),
             "resume": resumed,
             "model": flag_value(argv, "--model"),
-            "effort": None if effort is None else json.loads(effort.split("=", 1)[1]),
+            "effort": setting(argv, "model_reasoning_effort"),
             "brief": readable(brief),
             "prompt": argv[-1] if argv else "",
             "violations": violations(argv, resumed, brief),

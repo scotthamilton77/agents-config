@@ -647,6 +647,34 @@ def test_the_brief_is_named_by_a_path_that_resolves_from_anywhere(
     assert cli.briefs == [system_prompt(FAST_TIER, GRILL_MASTER)]
 
 
+def test_a_symlink_at_the_briefs_name_is_replaced_rather_than_followed(
+    session_dir: Path, tmp_path: Path
+) -> None:
+    """
+    Given a symlink already sitting at the brief's name, pointing at a file
+          outside the session directory
+    When a Codex turn is composed
+    Then the brief is a regular file inside the session directory and the file
+         outside is untouched: everything a turn is given is inside the session,
+         and a name the session does not control is not a place to write.
+    """
+    log = briefed(session_dir)
+    outside = tmp_path / "outside.md"
+    outside.write_text("not the brief", encoding="utf-8")
+    (session_dir / "fast-grill-master-brief.md").symlink_to(outside)
+    cli = ScriptedCodex()
+
+    CodexDriver(TierConfig(), cli).run(log, record_dispatch(log))
+
+    setting = next(one for one in cli.settings(1) if one.startswith("model_instructions_file="))
+    named = Path(json.loads(setting[len("model_instructions_file=") :]))
+
+    assert named.parent == session_dir, named
+    assert not named.is_symlink(), named
+    assert outside.read_text(encoding="utf-8") == "not the brief"
+    assert cli.briefs == [system_prompt(FAST_TIER, GRILL_MASTER)]
+
+
 def test_the_file_the_turn_names_holds_this_rungs_brief(session_dir: Path) -> None:
     """
     Given a Codex seat taking a cold turn and then a resumed one

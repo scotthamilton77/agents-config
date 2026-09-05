@@ -221,6 +221,23 @@ def test_a_brief_the_shim_cannot_read_is_named_rather_than_fatal(tmp_path: Path)
     assert call["brief"] is None, call
 
 
+def test_a_setting_spelled_another_valid_way_is_still_read(tmp_path: Path) -> None:
+    """
+    Given a brief named as a bare unquoted value, and a second invocation
+          bringing developer_instructions with spaces around its equals sign
+    When the shim records each
+    Then both are read for what they are: the CLI accepts every one of these
+         spellings, so a shim keyed to one of them passes the other by and
+         records a clean call on a turn that departed from the contract.
+    """
+    raw = run_shim("codex", ["exec", "-c", "model_instructions_file=not-toml", PROMPT], tmp_path)
+    assert any("is not a readable file" in one for one in raw["violations"]), raw
+    assert raw["brief"] is None, raw
+
+    spaced = run_shim("codex", ["exec", "-c", 'developer_instructions = "brief"', PROMPT], tmp_path)
+    assert any("developer_instructions is present" in one for one in spaced["violations"]), spaced
+
+
 def test_an_expert_turn_that_forgot_its_effort_or_its_lean_seat_is_named_too(
     tmp_path: Path,
 ) -> None:
