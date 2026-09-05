@@ -19,11 +19,13 @@ it by construction, and could never catch it drifting.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from conftest import decision, document, handoff, turn
 from harness import SCRIPT_ENV, SHIM_DIR
 
@@ -196,6 +198,27 @@ def test_a_departure_from_the_contract_is_named_rather_than_passed_over(
     assert dangling["brief"] is None, dangling
     assert "standard input is not closed" in said, said
     assert call["stdin_devnull"] is False, call
+
+
+def test_a_brief_the_shim_cannot_read_is_named_rather_than_fatal(tmp_path: Path) -> None:
+    """
+    Given an invocation naming a brief that exists and cannot be read
+    When the shim records it
+    Then the record names the path and carries no brief, and the shim records
+         before it reads -- one that died on the read would look to the backend
+         like a seat that could not be reached, which walks a different ladder
+         and proves the wrong thing.
+    """
+    brief = tmp_path / "unreadable-brief.md"
+    brief.write_text(BRIEF, encoding="utf-8")
+    brief.chmod(0o000)
+    if os.access(brief, os.R_OK):
+        pytest.skip("this process reads a mode-000 file, so there is nothing to observe")
+
+    call = run_shim("codex", ["exec", "-c", f'model_instructions_file="{brief}"', PROMPT], tmp_path)
+
+    assert any("is not a readable file" in one for one in call["violations"]), call
+    assert call["brief"] is None, call
 
 
 def test_an_expert_turn_that_forgot_its_effort_or_its_lean_seat_is_named_too(

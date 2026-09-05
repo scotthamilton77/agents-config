@@ -56,6 +56,23 @@ def briefed_from(argv: list[str]) -> Path | None:
     return None if named is None else Path(json.loads(named.split("=", 1)[1]))
 
 
+def readable(path: Path | None) -> str | None:
+    """What the turn would be briefed with, or nothing where it would be briefed
+    with nothing.
+
+    Every way a path fails to yield bytes is one answer here -- absent, a
+    directory, a file this cannot read -- because each leaves the turn equally
+    unbriefed, and each must be recorded rather than raised: a shim that died on
+    the read would look to the backend like a seat that could not be reached.
+    """
+    if path is None:
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def violations(argv: list[str], resumed: str | None, brief: Path | None) -> list[str]:
     """Every way this invocation departs from the driver's stated contract."""
     faults = []
@@ -71,7 +88,7 @@ def violations(argv: list[str], resumed: str | None, brief: Path | None) -> list
         faults.append("--model names no model")
     if brief is None:
         faults.append("no model_instructions_file setting: the turn carries no standing brief")
-    elif not brief.is_file():
+    elif readable(brief) is None:
         faults.append(f"model_instructions_file names {str(brief)!r}, which is not a readable file")
     carried = settings(argv)
     if any(one.startswith("developer_instructions=") for one in carried):
@@ -113,7 +130,7 @@ def main() -> None:
             "resume": resumed,
             "model": flag_value(argv, "--model"),
             "effort": None if effort is None else json.loads(effort.split("=", 1)[1]),
-            "brief": None if brief is None or not brief.is_file() else brief.read_text(),
+            "brief": readable(brief),
             "prompt": argv[-1] if argv else "",
             "violations": violations(argv, resumed, brief),
         },

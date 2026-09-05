@@ -623,6 +623,30 @@ def test_no_provider_bytes_reach_a_status_entry(session_dir: Path) -> None:
     assert not any(leaked in one for one in said)
 
 
+def test_the_brief_is_named_by_a_path_that_resolves_from_anywhere(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a session opened on a directory named relative to the backend's own
+          working directory
+    When a Codex turn is composed
+    Then the brief is named absolutely: the turn runs in the session directory,
+         so a relative name is resolved a second time against it and briefs the
+         seat from a file that is not there.
+    """
+    monkeypatch.chdir(tmp_path)
+    cli = ScriptedCodex()
+    log = briefed(Path("session"))
+
+    CodexDriver(TierConfig(), cli).run(log, record_dispatch(log))
+
+    setting = next(one for one in cli.settings(1) if one.startswith("model_instructions_file="))
+    named = Path(json.loads(setting[len("model_instructions_file=") :]))
+
+    assert named.is_absolute(), named
+    assert cli.briefs == [system_prompt(FAST_TIER, GRILL_MASTER)]
+
+
 def test_the_file_the_turn_names_holds_this_rungs_brief(session_dir: Path) -> None:
     """
     Given a Codex seat taking a cold turn and then a resumed one

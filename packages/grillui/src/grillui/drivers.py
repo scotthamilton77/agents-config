@@ -487,8 +487,13 @@ def write_brief(directory: Path, tier: str, agent: str, system: str, /) -> Path:
     identically and have no reason to keep separate copies. Written whole and
     renamed into place under the same lock the session's other rewrites take,
     so a turn never reads a brief half-written by the turn beside it.
+
+    The path is absolute because the turn runs in the session directory: a
+    session named relative to the backend's own directory would otherwise be
+    resolved a second time against itself, and the seat would be briefed from
+    a file that is not there.
     """
-    path = directory / f"{tier}-{agent}-brief.md"
+    path = (directory / f"{tier}-{agent}-brief.md").resolve()
     scratch = path.with_suffix(".tmp")
     with _REWRITE:
         scratch.write_text(system, encoding="utf-8")
