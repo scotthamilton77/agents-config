@@ -35,6 +35,7 @@ from grillui.session import open_session
 from grillui.tiers import (
     CLAUDE_TRANSPORT,
     CODEX_TRANSPORT,
+    EFFORT_LEVELS,
     OPENROUTER_TRANSPORT,
     TRANSPORTS,
     Seat,
@@ -141,6 +142,10 @@ def read_seat(stated: str) -> Seat:
         raise SeatRefusedError(stated)
     if transport not in TRANSPORTS:
         raise UnknownTransportError(transport)
+    # An OpenRouter seat is sent no effort, so one named for it is one nothing
+    # would carry into the turn the report attributes it to.
+    if effort and (transport == OPENROUTER_TRANSPORT or effort not in EFFORT_LEVELS):
+        raise SeatRefusedError(stated)
     return Seat(transport, model, effort or None)
 
 
@@ -159,8 +164,10 @@ class Tap:
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         started = time.monotonic()
-        self.raw = self._seam(*args, **kwargs)
-        self.seconds += time.monotonic() - started
+        try:
+            self.raw = self._seam(*args, **kwargs)
+        finally:
+            self.seconds += time.monotonic() - started
         return self.raw
 
 
@@ -315,9 +322,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     config = TierConfig.from_env()
-    cases = [one for one in load_cases() if not args.case or one.name in args.case]
-    if not cases:
-        parser.error(f"no case named {', '.join(args.case)}")
+    every = load_cases()
+    unknown = sorted(set(args.case) - {one.name for one in every})
+    if unknown:
+        parser.error(f"no case named {', '.join(unknown)}")
+    cases = [one for one in every if not args.case or one.name in args.case]
     added = [read_seat(one) for one in args.seat]
     where = args.report or _dated()
     where.mkdir(parents=True, exist_ok=True)

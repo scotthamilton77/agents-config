@@ -111,6 +111,9 @@ def load_case(where: Path, root: Path | None = None) -> Case:
     samples = int(case.get("samples", 1))
     if samples < 1:
         raise CaseRefusedError(where.name, f"a run takes at least one sample, not {samples}")
+    stop = _stated(where, case, "stop")
+    if not isinstance(stop, bool):
+        raise CaseRefusedError(where.name, f"stop is {stop!r}, not true or false")
     owed = () if context.mootness is None else tuple(context.mootness.ids)
     stated = tuple(_stated(where, case, "owed_rulings"))
     if stated != owed:
@@ -122,7 +125,7 @@ def load_case(where: Path, root: Path | None = None) -> Case:
         samples=samples,
         owed_rulings=owed,
         speech_limit=int(case.get("speech_limit", 1)),
-        stop=bool(_stated(where, case, "stop")),
+        stop=stop,
         context_bytes=case.get("context_bytes"),
         prompt_tokens=case.get("prompt_tokens"),
         recorded=recorded,

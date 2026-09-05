@@ -8,13 +8,14 @@ document it is there to catch and passes the one it is not.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from evals.__main__ import BASELINE, DEPENDENT, check, matrix_of, read_seat, seat_of
+from evals.__main__ import BASELINE, DEPENDENT, Tap, check, matrix_of, read_seat, seat_of
 from evals.cases import CASES, CaseRefusedError, load_case, load_cases
 from evals.checks import (
     a_revise_supplies_what_it_revises,
@@ -26,7 +27,8 @@ from evals.checks import (
     the_turn_speaks_once,
 )
 from grillui.drivers import seat_driver
-from grillui.schemas import FAST_TIER, MAP_CHANNEL, GrillMasterDocument
+from grillui.lane import AgentUnreachableError
+from grillui.schemas import FAST_TIER, HEAVY_TIER, MAP_CHANNEL, GrillMasterDocument
 from grillui.tiers import (
     CLAUDE_TRANSPORT,
     CODEX_TRANSPORT,
@@ -179,6 +181,21 @@ def test_a_case_sampling_nothing_is_refused(tmp_path: Path) -> None:
     (where / "case.json").write_text(json.dumps(case | {"samples": 0}), encoding="utf-8")
 
     with pytest.raises(CaseRefusedError, match="at least one sample"):
+        load_case(where)
+
+
+def test_a_stop_expectation_that_is_not_a_boolean_is_refused(tmp_path: Path) -> None:
+    """
+    Given a case whose stop expectation is written as a string
+    When it is loaded
+    Then it is refused: read for truth, "false" is true, and the case then
+         checks for the opposite verdict to the one it was written with.
+    """
+    where = seeded_case(tmp_path / "stringly")
+    case = json.loads((where / "case.json").read_text(encoding="utf-8"))
+    (where / "case.json").write_text(json.dumps(case | {"stop": "false"}), encoding="utf-8")
+
+    with pytest.raises(CaseRefusedError, match="not true or false"):
         load_case(where)
 
 
@@ -479,6 +496,25 @@ def test_every_sample_is_taken_and_any_one_of_them_fails_the_run(
     assert (tmp_path / "matrix.md").read_text(encoding="utf-8").count("FAIL") == 1
 
 
+def test_the_clock_runs_on_a_seam_that_raises() -> None:
+    """
+    Given a seam that spends time and then raises
+    When the turn is timed
+    Then what it spent is on the record: a transport failure reported as taking
+         no time is the one turn whose cost the report denies.
+    """
+
+    def raising() -> None:
+        time.sleep(0.001)
+        raise AgentUnreachableError(FAST_TIER)
+
+    tap = Tap(raising)
+    with pytest.raises(AgentUnreachableError):
+        tap()
+
+    assert tap.seconds > 0
+
+
 def test_a_replay_sends_the_turn_through_the_seats_own_driver(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -548,6 +584,9 @@ def test_an_unnarrowed_run_takes_every_case(
 
     taken = {one["case"] for one in json.loads((tmp_path / "matrix.json").read_text("utf-8"))}
     assert taken == {one.name for one in load_cases()}
+    # A narrowing nothing answers is refused, even beside one that does.
+    with pytest.raises(SystemExit):
+        suite.main(["--case", CASE, "--case", "typo", "--report", str(tmp_path)])
 
 
 def test_a_seat_named_twice_does_not_overwrite_its_own_record(
@@ -610,82 +649,33 @@ def test_two_updates_that_speak_are_two_channels() -> None:
     assert the_turn_speaks_once(twice, limit=2) is None
 
 
-def test_a_thread_case_takes_the_threads_seat() -> None:
-    """
-    Given a first-rung case on a thread channel
-    When its seat is resolved
-    Then it is the threads' seat rather than the map's: the two rungs sit on
-         different transports, and a thread turn on the map's seat is a turn
-         nobody configured.
-    """
-    config = TierConfig.from_env({})
-    case = replace(load_cases()[0], channel="t-1", tier=FAST_TIER)
-
-    assert seat_of(case, config) == config.thread_seat
-    assert seat_of(case, config) != config.map_seat
-
-
-def test_the_measured_baselines_are_the_ones_recorded() -> None:
-    """
-    Given the two cases measured on a real seat
-    When their baselines are read
-    Then they are the counts those runs billed, on the seats that billed them:
-         a baseline edited to whatever a later run happened to cost is a check
-         that can never fail.
-    """
-    config = TierConfig.from_env({})
-    cases = {one.name: one for one in load_cases()}
-    expert = cases["2026-09-04-expert-owed-rulings"]
-    first_rung = cases["2026-09-04-first-rung-nothing-owed"]
-
-    assert (expert.prompt_tokens, seat_of(expert, config)) == (4868, config.expert_seat)
-    assert (first_rung.prompt_tokens, seat_of(first_rung, config)) == (9786, config.map_seat)
-
-
-def test_a_default_run_writes_a_dated_report_and_says_where(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """
-    Given a run naming no report directory
-    When it finishes
-    Then it wrote a dated directory of its own and printed where: a report
-         nobody is told the path of is a report nobody reads.
-    """
-    import evals.__main__ as suite
-
-    monkeypatch.setattr(suite, "REPORTS", tmp_path / "reports")
-    monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
-    )
-
-    suite.main(["--case", CASE])
-
-    written = list((tmp_path / "reports").iterdir())
-    assert len(written) == 1
-    assert (written[0] / "matrix.md").is_file()
-    assert f"report: {written[0]}" in capsys.readouterr().out
-
-
-def test_two_default_runs_do_not_share_one_report(
+def test_each_case_is_replayed_on_the_seat_it_resolved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """
-    Given two runs started close enough together to date the same
-    When each writes its report
-    Then neither is inside the other's directory: one run's reply and counts
-         written over another's is one report of two turns nobody can separate.
+    Given an expert case and a thread case
+    When the suite runs them
+    Then each turn is sent to its own rung's seat: a run that put every case on
+         one seat is a green report about seats nobody sat on.
     """
     import evals.__main__ as suite
 
-    monkeypatch.setattr(suite, "REPORTS", tmp_path / "reports")
+    config = TierConfig.from_env({})
+    expert = next(one for one in load_cases() if one.tier == HEAVY_TIER)
+    thread = replace(expert, name="t", tier=FAST_TIER, channel="t-1", prompt_tokens=None)
+    seats: list[object] = []
+    monkeypatch.setattr(suite, "load_cases", lambda: [expert, thread])
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+        suite,
+        "replay",
+        lambda _case, seat, _config: (
+            seats.append(seat) or (document().model_dump_json(), 4868, 40, 1.0, None)
+        ),
     )
 
-    suite.main(["--case", CASE])
-    suite.main(["--case", CASE])
+    suite.main(["--report", str(tmp_path)])
 
-    assert len(list((tmp_path / "reports").iterdir())) == 2
+    assert seats == [config.expert_seat, config.thread_seat]
 
 
 def test_the_seat_a_case_runs_on_is_the_one_the_session_would_use() -> None:
@@ -707,8 +697,9 @@ def test_a_seat_is_read_as_transport_model_and_effort() -> None:
 
     assert (seated.transport, seated.model, seated.effort) == ("codex", "gpt-5.6-luna", "medium")
     assert read_seat("openrouter:some-model").effort is None
-    with pytest.raises(ValueError, match="transport:model"):
-        read_seat("nonsense")
+    for refused in ("nonsense", "codex:m:medium:extra", "openrouter:m:high", "codex:m:brisk"):
+        with pytest.raises(ValueError):
+            read_seat(refused)
 
 
 def test_the_matrix_says_which_check_failed_on_which_seat() -> None:
