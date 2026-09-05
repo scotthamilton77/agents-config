@@ -182,15 +182,6 @@ CODEX_NO_TOOLS = [
     'approval_policy="never"',
 ]
 
-# What the seat is seeded with, and it is the brief and nothing else. Every
-# seat's turn gets a minimal seed and no tools, deliberately, so the dispatch
-# record is the whole of what the seat read. Left to the transport's defaults a
-# turn also reads the human's own CLI configuration, whatever instruction files
-# the working directory discovers, the skills catalogue, and every hook, app,
-# plugin and collaborator agent installed on the machine -- none of it in the
-# dispatch, all of it billed on every turn and able to say what the seat is.
-# The seed levers stand beside the tool ones rather than replacing them: a seat
-# reading nothing it was not given still needs no way to run a command.
 CODEX_LEAN_SEAT = [
     *CODEX_NO_TOOLS,
     "--ignore-user-config",
@@ -207,17 +198,12 @@ CODEX_LEAN_SEAT = [
     "-c",
     "skills.max_context_tokens=1",
 ]
+"""Every seat's turn gets a minimal seed and no tools, deliberately, so the dispatch record is
+the whole of what the seat read."""
 
-# The same ruling on the other transport: every seat's turn gets a minimal seed
-# and no tools, deliberately, so the dispatch record is the whole of what the
-# seat read. These three stand behind the brief being passed as `--system-prompt`
-# rather than appended to the CLI's own -- appending leaves the whole coding
-# harness on the turn, which is both the bulk of what it is billed and the
-# house's own rulebook riding into a seat that is meant to judge a plan against
-# the world. The tools go with it: the ruling turn answers on the board snapshot
-# it was handed, and a seat that can read outside the prompt makes the dispatch
-# record a partial account of what it saw.
 CLAUDE_LEAN_SEAT = ["--tools", "", "--setting-sources", "", "--strict-mcp-config"]
+"""Every seat's turn gets a minimal seed and no tools, deliberately, so the dispatch record is
+the whole of what the seat read."""
 
 # What the human is told when an offer arrives in a shape nothing can read.
 # The offer's own bytes are deliberately not quoted back at them: an

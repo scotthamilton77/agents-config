@@ -42,7 +42,6 @@ from conftest import (
 from grillui import drivers
 from grillui.dispatch import GRILL_MASTER, record_dispatch
 from grillui.drivers import (
-    CLAUDE_LEAN_SEAT,
     RESUME_FILE,
     FastDriver,
     HeavyDriver,
@@ -84,7 +83,6 @@ from grillui.session import open_session
 from grillui.tiers import (
     API_KEY_ENV,
     BYTES_PER_TOKEN,
-    CLAUDE_CLI,
     CONTEXT_LIMITS,
     DEFAULT_FAST_MODEL,
     DEFAULT_HEAVY_MODEL,
@@ -750,6 +748,29 @@ def test_a_turn_that_reports_no_chain_identity_is_still_a_turn(session_dir: Path
     assert not (session_dir / RESUME_FILE).exists()
 
 
+def test_the_expert_seat_is_briefed_with_its_rungs_prompt_on_every_turn(
+    session_dir: Path,
+) -> None:
+    """
+    Given a session whose expert seat takes a cold turn and then a resumed one
+    When each is composed
+    Then both carry this rung's standing brief as the whole system prompt: a
+         resumed chain inherits nothing, so a turn briefed only on the cold one
+         answers as whatever the transport last recorded.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+    cli = ScriptedCli(session_id="chain-7")
+
+    take_heavy_turn(log, cli)
+    take_heavy_turn(log, cli)
+
+    assert "--resume" not in cli.calls[0]
+    assert "--resume" in cli.calls[1]
+    for call in cli.calls:
+        assert call[call.index("--system-prompt") + 1] == system_prompt(HEAVY_TIER, GRILL_MASTER)
+
+
 def test_the_claude_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
     """
     Given a model id, an effort, a system brief, a prompt, and a cold turn and a
@@ -761,7 +782,7 @@ def test_the_claude_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
          prompt is the last argument.
     """
     seeded = [
-        CLAUDE_CLI,
+        "claude",
         "-p",
         "--output-format",
         "json",
@@ -771,7 +792,11 @@ def test_the_claude_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
         "xhigh",
         "--system-prompt",
         "be brief",
-        *CLAUDE_LEAN_SEAT,
+        "--tools",
+        "",
+        "--setting-sources",
+        "",
+        "--strict-mcp-config",
     ]
 
     cold = claude_argv("claude-configured", "xhigh", "be brief", "what now?", None)

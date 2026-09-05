@@ -36,7 +36,6 @@ from conftest import (
 from grillui import drivers
 from grillui.dispatch import GRILL_MASTER, record_dispatch
 from grillui.drivers import (
-    CODEX_LEAN_SEAT,
     CODEX_RESUME_FILE,
     FIRST_RUNG_RESUME_FILE,
     NOT_STARTED,
@@ -75,7 +74,6 @@ from grillui.schemas import (
 from grillui.session import open_session
 from grillui.tiers import (
     API_BASE_ENV,
-    CODEX_CLI,
     DEFAULT_API_BASE,
     DEFAULT_FAST_MODEL,
     DEFAULT_MAP_EFFORT,
@@ -946,15 +944,35 @@ def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
         'developer_instructions="brief"',
         "-c",
         "notify=[]",
-        *CODEX_LEAN_SEAT,
+        "-c",
+        "features.shell_tool=false",
+        "-c",
+        "features.unified_exec=false",
+        "-c",
+        'sandbox_mode="read-only"',
+        "-c",
+        'approval_policy="never"',
+        "--ignore-user-config",
+        "--disable",
+        "hooks",
+        "--disable",
+        "apps",
+        "--disable",
+        "plugins",
+        "--disable",
+        "multi_agent",
+        "-c",
+        "project_doc_max_bytes=0",
+        "-c",
+        "skills.max_context_tokens=1",
         "-c",
         'model_reasoning_effort="medium"',
         "prompt",
     ]
 
-    assert codex_argv(seat, "brief", "prompt", None) == [CODEX_CLI, "exec", *turn]
+    assert codex_argv(seat, "brief", "prompt", None) == ["codex", "exec", *turn]
     assert codex_argv(seat, "brief", "prompt", "thread-9") == [
-        CODEX_CLI,
+        "codex",
         "exec",
         "resume",
         "thread-9",
