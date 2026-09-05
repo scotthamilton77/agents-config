@@ -218,12 +218,14 @@ class ScriptedCli:
     session_id: str = "chain-1"
     usage: dict[str, Any] | None = None
     calls: list[list[str]] = field(default_factory=list)
+    directories: list[Path] = field(default_factory=list)
     hold: float = 0.0
     overlapping: bool = False
     _inside: int = 0
 
-    def __call__(self, argv: list[str], /) -> str:
+    def __call__(self, argv: list[str], directory: Path, /) -> str:
         self.calls.append(list(argv))
+        self.directories.append(directory)
         self._inside += 1
         self.overlapping = self.overlapping or self._inside > 1
         time.sleep(self.hold)

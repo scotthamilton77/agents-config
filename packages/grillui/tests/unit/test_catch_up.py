@@ -223,7 +223,7 @@ class SilentCli:
 
     calls: list[list[str]] = field(default_factory=list)
 
-    def __call__(self, argv: list[str], /) -> str:
+    def __call__(self, argv: list[str], _directory: Path, /) -> str:
         self.calls.append(list(argv))
         return json.dumps({"result": REPLY})
 

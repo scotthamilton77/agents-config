@@ -400,7 +400,7 @@ def test_a_seated_channel_still_hands_its_turn_up_to_the_one_expert(session_dir:
     log = briefed(session_dir)
     threads = FastDriver(TierConfig(), ScriptedFast())
     seated = CodexDriver(TierConfig(), ScriptedCodex())
-    expert = HeavyDriver(TierConfig(), lambda _argv: json.dumps({"result": document()}))
+    expert = HeavyDriver(TierConfig(), lambda _argv, _directory: json.dumps({"result": document()}))
     lane = Lane(log, threads, expert, seats={MAP_CHANNEL: seated})
 
     assert lane.tier_for(MAP_CHANNEL, threads) is seated
@@ -575,7 +575,8 @@ def test_a_failed_transport_names_its_category_and_publishes_no_provider_bytes()
                 sys.executable,
                 "-c",
                 f"import sys; print({leaked!r}, file=sys.stderr); raise SystemExit(2)",
-            ]
+            ],
+            here,
         )
 
     assert "exited 2" in str(exited.value)

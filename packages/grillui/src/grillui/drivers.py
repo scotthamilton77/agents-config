@@ -276,9 +276,14 @@ class FastTransport(Protocol):
 
 
 class ClaudeCli(Protocol):
-    """One CLI invocation, returning what it printed."""
+    """One CLI invocation, returning what it printed.
 
-    def __call__(self, argv: Sequence[str], /) -> str: ...
+    The directory is the one the process runs in, and it is part of the call
+    rather than the caller's ambient state: the CLI reads its working directory
+    into the turn, and a resumed turn takes no flag for it.
+    """
+
+    def __call__(self, argv: Sequence[str], directory: Path, /) -> str: ...
 
 
 class CodexCli(Protocol):
@@ -416,11 +421,28 @@ def claude_argv(model: str, effort: str, system: str, prompt: str, resume: str |
     return [*argv, prompt]
 
 
-def run_claude_cli(argv: Sequence[str], /, timeout: float = REQUEST_TIMEOUT) -> str:
-    """The heavy tier's transport: one process, run to completion."""
+def run_claude_cli(
+    argv: Sequence[str], directory: Path, /, timeout: float = REQUEST_TIMEOUT
+) -> str:
+    """The heavy tier's transport: one process, run to completion, in the
+    session's own directory.
+
+    The directory is the session's rather than the one the backend was launched
+    in, for the same reason the Codex seat's is: the CLI reads its working
+    directory into the turn -- the instruction files it discovers there and what
+    it says about the tree. Replacing the system prompt does not close that
+    route. A grilling is about the plan in the dispatch and not about whichever
+    repository the human happened to start the session from, and a seat reading
+    one makes the dispatch record a partial account of what the turn read.
+    """
     try:
         finished = subprocess.run(  # noqa: S603 -- argv is built here, never a shell string
-            list(argv), capture_output=True, text=True, check=True, timeout=timeout
+            list(argv),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout,
+            cwd=directory,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise AgentUnreachableError(HEAVY_TIER, fault_of(error)) from error
@@ -878,7 +900,8 @@ class HeavyDriver:
             printed = self.cli(
                 claude_argv(
                     model, effort, system, text, read_resume(log.directory, channel, chains)
-                )
+                ),
+                log.directory,
             )
             outcome = read_cli_reply(printed)
             if outcome[1] is not None:

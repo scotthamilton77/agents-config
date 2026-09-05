@@ -106,7 +106,8 @@ def test_every_call_a_driven_session_makes_keeps_the_contract(
     # The working directory is the turn's rather than the caller's: the CLI
     # reads it into the turn, and a grilling is about the plan in the dispatch
     # and not about whichever repository the human started the session from.
-    assert Path(codex[0]["cwd"]).resolve() == session.directory.resolve(), codex[0]["cwd"]
+    for call in (*codex, *claude):
+        assert Path(call["cwd"]).resolve() == session.directory.resolve(), call["cwd"]
     assert "--output-schema" not in codex[0]["argv"], codex[0]["argv"]
     carried = codex[0]["argv"]
     for closure in (

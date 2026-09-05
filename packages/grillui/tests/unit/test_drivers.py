@@ -409,6 +409,28 @@ def test_the_first_heavy_turn_opens_a_chain_and_the_second_resumes_it(session_di
     assert cli.calls[1][cli.calls[1].index("--resume") + 1] == "chain-7"
 
 
+def test_the_expert_seat_takes_its_turn_in_the_session_directory(session_dir: Path) -> None:
+    """
+    Given a session whose expert seat takes a cold turn and then a resumed one
+    When each is composed
+    Then both run in the session's own directory rather than wherever the
+         backend was launched: the CLI reads its working directory into the
+         turn, so a seat left in the human's repository reads instruction files
+         and a tree that are in no dispatch, and the record of what the turn was
+         given stops being the whole of it.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+    cli = ScriptedCli(session_id="chain-7")
+
+    take_heavy_turn(log, cli)
+    take_heavy_turn(log, cli)
+
+    assert "--resume" not in cli.calls[0]
+    assert "--resume" in cli.calls[1]
+    assert cli.directories == [session_dir, session_dir]
+
+
 def test_the_resume_identity_survives_a_restart(session_dir: Path) -> None:
     """
     Given a heavy turn taken by one backend process
@@ -676,7 +698,7 @@ def test_the_transport_opens_its_own_client_when_it_was_given_none(
         transport(model="vendor/fast", system="s", prompt="p")
 
 
-def test_the_cli_transport_returns_what_the_process_printed() -> None:
+def test_the_cli_transport_returns_what_the_process_printed(tmp_path: Path) -> None:
     """
     Given a process that prints a structured turn
     When the CLI transport runs it
@@ -685,12 +707,12 @@ def test_the_cli_transport_returns_what_the_process_printed() -> None:
     """
     printed = json.dumps({"session_id": "chain-3", "result": REPLY, "usage": {"input_tokens": 40}})
 
-    output = run_claude_cli([sys.executable, "-c", f"print({printed!r})"])
+    output = run_claude_cli([sys.executable, "-c", f"print({printed!r})"], tmp_path)
 
     assert read_cli_reply(output) == (REPLY, "chain-3", 40)
 
 
-def test_a_cli_that_fails_or_prints_nonsense_reads_as_unreachable() -> None:
+def test_a_cli_that_fails_or_prints_nonsense_reads_as_unreachable(tmp_path: Path) -> None:
     """
     Given a CLI that is not there, one that exits non-zero, and one that prints
           something that is not a turn
@@ -699,9 +721,9 @@ def test_a_cli_that_fails_or_prints_nonsense_reads_as_unreachable() -> None:
          happened.
     """
     with pytest.raises(AgentUnreachableError):
-        run_claude_cli(["/nonexistent/claude", "-p"])
+        run_claude_cli(["/nonexistent/claude", "-p"], tmp_path)
     with pytest.raises(AgentUnreachableError):
-        run_claude_cli([sys.executable, "-c", "raise SystemExit(3)"])
+        run_claude_cli([sys.executable, "-c", "raise SystemExit(3)"], tmp_path)
     with pytest.raises(AgentUnreachableError):
         read_cli_reply("not json")
     with pytest.raises(AgentUnreachableError):
@@ -721,7 +743,7 @@ def test_a_turn_that_reports_no_chain_identity_is_still_a_turn(session_dir: Path
     log = briefed(session_dir)
     human_turn(log, "The log.")
 
-    driver = HeavyDriver(TierConfig(), lambda _argv: json.dumps({"result": document()}))
+    driver = HeavyDriver(TierConfig(), lambda _argv, _directory: json.dumps({"result": document()}))
     driver.run(log, record_dispatch(log))
 
     assert replies(log)[0]["text"] == REPLY
@@ -884,14 +906,14 @@ def test_a_tier_that_cannot_be_reached_raises_out_of_the_turn(session_dir: Path)
         driver.run(log, record_dispatch(log))
 
 
-def test_the_dependency_on_a_real_process_runner_is_the_one_under_test() -> None:
+def test_the_dependency_on_a_real_process_runner_is_the_one_under_test(tmp_path: Path) -> None:
     """
     Given the runner the heavy tier ships with
     When it is handed an argv that exits cleanly
     Then it returns that process's own output, so nothing in the heavy path is
          a stub the tests wrote.
     """
-    assert run_claude_cli([sys.executable, "-c", "print('ok')"]).strip() == "ok"
+    assert run_claude_cli([sys.executable, "-c", "print('ok')"], tmp_path).strip() == "ok"
 
 
 # --- what a turn cost, and the tier that is filling its window up ---------------
