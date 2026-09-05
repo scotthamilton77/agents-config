@@ -398,7 +398,7 @@ def test_a_seated_channel_still_hands_its_turn_up_to_the_one_expert(session_dir:
     log = briefed(session_dir)
     threads = FastDriver(TierConfig(), ScriptedFast())
     seated = CodexDriver(TierConfig(), ScriptedCodex())
-    expert = HeavyDriver(TierConfig(), lambda _argv: json.dumps({"result": document()}))
+    expert = HeavyDriver(TierConfig(), lambda _argv, _directory: json.dumps({"result": document()}))
     lane = Lane(log, threads, expert, seats={MAP_CHANNEL: seated})
 
     assert lane.tier_for(MAP_CHANNEL, threads) is seated
@@ -514,10 +514,10 @@ def test_a_first_rung_claude_seat_never_shares_the_experts_chain(session_dir: Pa
     assert read_resume(session_dir, MAP_CHANNEL, FIRST_RUNG_RESUME_FILE) == "first-rung-chain"
     assert read_resume(session_dir, MAP_CHANNEL, RESUME_FILE) == "expert-chain"
     briefs = [first.cli.calls[0], expert.cli.calls[0]]
-    assert briefs[0][briefs[0].index("--append-system-prompt") + 1] == system_prompt(
+    assert briefs[0][briefs[0].index("--system-prompt") + 1] == system_prompt(
         FAST_TIER, GRILL_MASTER
     )
-    assert briefs[1][briefs[1].index("--append-system-prompt") + 1] == system_prompt(
+    assert briefs[1][briefs[1].index("--system-prompt") + 1] == system_prompt(
         HEAVY_TIER, GRILL_MASTER
     )
     assert [one[TIER_KEY] for one in attributions(log)] == [FAST_TIER, HEAVY_TIER]
@@ -573,7 +573,8 @@ def test_a_failed_transport_names_its_category_and_publishes_no_provider_bytes()
                 sys.executable,
                 "-c",
                 f"import sys; print({leaked!r}, file=sys.stderr); raise SystemExit(2)",
-            ]
+            ],
+            here,
         )
 
     assert "exited 2" in str(exited.value)
@@ -921,6 +922,62 @@ def test_the_format_rule_names_every_update_kind_the_backend_folds() -> None:
     listed = DOCUMENT_FORMAT_RULE.split("`kind` is one of ")[1].split(" and nothing else")[0]
 
     assert set(listed.split(", ")) == set(FOLDABLE_KINDS)
+
+
+def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
+    """
+    Given a Codex seat taking a cold turn and a resumed one
+    When each argv is built
+    Then it is exactly the lean invocation: the brief is the whole of the
+         instruction the turn reads, and no user configuration, discovered
+         project document, skills catalog, hook, app, plugin or collaborator
+         agent reaches it -- on the resumed turn as much as the cold one, which
+         inherits none of it.
+    """
+    seat = Seat("codex", "gpt-5.6-luna", "medium")
+    turn = [
+        "--json",
+        "--skip-git-repo-check",
+        "--model",
+        "gpt-5.6-luna",
+        "-c",
+        'developer_instructions="brief"',
+        "-c",
+        "notify=[]",
+        "-c",
+        "features.shell_tool=false",
+        "-c",
+        "features.unified_exec=false",
+        "-c",
+        'sandbox_mode="read-only"',
+        "-c",
+        'approval_policy="never"',
+        "--ignore-user-config",
+        "--disable",
+        "hooks",
+        "--disable",
+        "apps",
+        "--disable",
+        "plugins",
+        "--disable",
+        "multi_agent",
+        "-c",
+        "project_doc_max_bytes=0",
+        "-c",
+        "skills.max_context_tokens=1",
+        "-c",
+        'model_reasoning_effort="medium"',
+        "prompt",
+    ]
+
+    assert codex_argv(seat, "brief", "prompt", None) == ["codex", "exec", *turn]
+    assert codex_argv(seat, "brief", "prompt", "thread-9") == [
+        "codex",
+        "exec",
+        "resume",
+        "thread-9",
+        *turn,
+    ]
 
 
 def test_a_seat_with_no_effort_asks_the_transport_for_none() -> None:

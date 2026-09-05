@@ -14,6 +14,7 @@ the turn is.
 
 from __future__ import annotations
 
+import ast
 import json
 import sys
 import threading
@@ -407,6 +408,28 @@ def test_the_first_heavy_turn_opens_a_chain_and_the_second_resumes_it(session_di
     assert cli.calls[1][cli.calls[1].index("--resume") + 1] == "chain-7"
 
 
+def test_the_expert_seat_takes_its_turn_in_the_session_directory(session_dir: Path) -> None:
+    """
+    Given a session whose expert seat takes a cold turn and then a resumed one
+    When each is composed
+    Then both run in the session's own directory rather than wherever the
+         backend was launched: the CLI reads its working directory into the
+         turn, so a seat left in the human's repository reads instruction files
+         and a tree that are in no dispatch, and the record of what the turn was
+         given stops being the whole of it.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+    cli = ScriptedCli(session_id="chain-7")
+
+    take_heavy_turn(log, cli)
+    take_heavy_turn(log, cli)
+
+    assert "--resume" not in cli.calls[0]
+    assert "--resume" in cli.calls[1]
+    assert cli.directories == [session_dir, session_dir]
+
+
 def test_the_resume_identity_survives_a_restart(session_dir: Path) -> None:
     """
     Given a heavy turn taken by one backend process
@@ -674,7 +697,7 @@ def test_the_transport_opens_its_own_client_when_it_was_given_none(
         transport(model="vendor/fast", system="s", prompt="p")
 
 
-def test_the_cli_transport_returns_what_the_process_printed() -> None:
+def test_the_cli_transport_returns_what_the_process_printed(tmp_path: Path) -> None:
     """
     Given a process that prints a structured turn
     When the CLI transport runs it
@@ -683,12 +706,12 @@ def test_the_cli_transport_returns_what_the_process_printed() -> None:
     """
     printed = json.dumps({"session_id": "chain-3", "result": REPLY, "usage": {"input_tokens": 40}})
 
-    output = run_claude_cli([sys.executable, "-c", f"print({printed!r})"])
+    output = run_claude_cli([sys.executable, "-c", f"print({printed!r})"], tmp_path)
 
     assert read_cli_reply(output) == (REPLY, "chain-3", 40)
 
 
-def test_a_cli_that_fails_or_prints_nonsense_reads_as_unreachable() -> None:
+def test_a_cli_that_fails_or_prints_nonsense_reads_as_unreachable(tmp_path: Path) -> None:
     """
     Given a CLI that is not there, one that exits non-zero, and one that prints
           something that is not a turn
@@ -697,9 +720,9 @@ def test_a_cli_that_fails_or_prints_nonsense_reads_as_unreachable() -> None:
          happened.
     """
     with pytest.raises(AgentUnreachableError):
-        run_claude_cli(["/nonexistent/claude", "-p"])
+        run_claude_cli(["/nonexistent/claude", "-p"], tmp_path)
     with pytest.raises(AgentUnreachableError):
-        run_claude_cli([sys.executable, "-c", "raise SystemExit(3)"])
+        run_claude_cli([sys.executable, "-c", "raise SystemExit(3)"], tmp_path)
     with pytest.raises(AgentUnreachableError):
         read_cli_reply("not json")
     with pytest.raises(AgentUnreachableError):
@@ -719,26 +742,98 @@ def test_a_turn_that_reports_no_chain_identity_is_still_a_turn(session_dir: Path
     log = briefed(session_dir)
     human_turn(log, "The log.")
 
-    driver = HeavyDriver(TierConfig(), lambda _argv: json.dumps({"result": document()}))
+    driver = HeavyDriver(TierConfig(), lambda _argv, _directory: json.dumps({"result": document()}))
     driver.run(log, record_dispatch(log))
 
     assert replies(log)[0]["text"] == REPLY
     assert not (session_dir / RESUME_FILE).exists()
 
 
-def test_the_argv_carries_the_model_the_effort_the_prompt_and_the_standing_brief() -> None:
+def test_the_expert_seat_is_briefed_with_its_rungs_prompt_on_every_turn(
+    session_dir: Path,
+) -> None:
     """
-    Given a model id, an effort, a system brief, a prompt and a chain to resume
-    When the argv is built
-    Then all five are on it, and the prompt is the last argument.
+    Given a session whose expert seat takes a cold turn and then a resumed one
+    When each is composed
+    Then both carry this rung's standing brief as the whole system prompt: a
+         resumed chain inherits nothing, so a turn briefed only on the cold one
+         answers as whatever the transport last recorded.
     """
-    argv = claude_argv("claude-configured", "xhigh", "be brief", "what now?", "chain-2")
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+    cli = ScriptedCli(session_id="chain-7")
 
-    assert argv[argv.index("--model") + 1] == "claude-configured"
-    assert argv[argv.index("--effort") + 1] == "xhigh"
-    assert argv[argv.index("--append-system-prompt") + 1] == "be brief"
-    assert argv[argv.index("--resume") + 1] == "chain-2"
-    assert argv[-1] == "what now?"
+    take_heavy_turn(log, cli)
+    take_heavy_turn(log, cli)
+
+    assert "--resume" not in cli.calls[0]
+    assert "--resume" in cli.calls[1]
+    for call in cli.calls:
+        assert call[call.index("--system-prompt") + 1] == system_prompt(HEAVY_TIER, GRILL_MASTER)
+
+
+@pytest.mark.parametrize("constant", ["CODEX_LEAN_SEAT", "CLAUDE_LEAN_SEAT"])
+def test_each_transport_states_the_seat_ruling_in_one_sentence(constant: str) -> None:
+    """
+    Given a transport's seed-and-tool constant
+    When the source is read
+    Then the statement after it is a docstring of one sentence stating the
+         ruling on what a seat is seeded with and may use.
+    """
+    body = ast.parse(Path(drivers.__file__).read_text(encoding="utf-8")).body
+    after = [
+        body[index + 1]
+        for index, node in enumerate(body[:-1])
+        if isinstance(node, ast.Assign)
+        and any(getattr(one, "id", None) == constant for one in node.targets)
+    ]
+
+    assert len(after) == 1, f"{constant} is not assigned exactly once at module level"
+    said = after[0]
+    assert isinstance(said, ast.Expr) and isinstance(said.value, ast.Constant), (
+        f"{constant} carries no docstring"
+    )
+    text = said.value.value
+    assert isinstance(text, str), f"{constant} carries no docstring"
+    assert text.endswith(".") and text.count(".") == 1, f"{constant} says more than one sentence"
+    assert "minimal seed and no tools" in text, text
+
+
+def test_the_claude_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
+    """
+    Given a model id, an effort, a system brief, a prompt, and a cold turn and a
+          resumed one
+    When each argv is built
+    Then it is exactly the lean invocation: the brief replaces the CLI's own
+         system prompt rather than riding on top of it, no tool, settings file
+         or MCP server reaches the turn, the effort is stated on both, and the
+         prompt is the last argument.
+    """
+    seeded = [
+        "claude",
+        "-p",
+        "--output-format",
+        "json",
+        "--model",
+        "claude-configured",
+        "--effort",
+        "xhigh",
+        "--system-prompt",
+        "be brief",
+        "--tools",
+        "",
+        "--setting-sources",
+        "",
+        "--strict-mcp-config",
+    ]
+
+    cold = claude_argv("claude-configured", "xhigh", "be brief", "what now?", None)
+    resumed = claude_argv("claude-configured", "xhigh", "be brief", "what now?", "chain-2")
+
+    assert cold == [*seeded, "what now?"]
+    assert resumed == [*seeded, "--resume", "chain-2", "what now?"]
+    assert "--append-system-prompt" not in cold
+    assert "--append-system-prompt" not in resumed
 
 
 def test_a_completion_that_is_not_text_is_refused() -> None:
@@ -864,14 +959,14 @@ def test_a_tier_that_cannot_be_reached_raises_out_of_the_turn(session_dir: Path)
         driver.run(log, record_dispatch(log))
 
 
-def test_the_dependency_on_a_real_process_runner_is_the_one_under_test() -> None:
+def test_the_dependency_on_a_real_process_runner_is_the_one_under_test(tmp_path: Path) -> None:
     """
     Given the runner the heavy tier ships with
     When it is handed an argv that exits cleanly
     Then it returns that process's own output, so nothing in the heavy path is
          a stub the tests wrote.
     """
-    assert run_claude_cli([sys.executable, "-c", "print('ok')"]).strip() == "ok"
+    assert run_claude_cli([sys.executable, "-c", "print('ok')"], tmp_path).strip() == "ok"
 
 
 # --- what a turn cost, and the tier that is filling its window up ---------------

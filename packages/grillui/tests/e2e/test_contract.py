@@ -106,7 +106,8 @@ def test_every_call_a_driven_session_makes_keeps_the_contract(
     # The working directory is the turn's rather than the caller's: the CLI
     # reads it into the turn, and a grilling is about the plan in the dispatch
     # and not about whichever repository the human started the session from.
-    assert Path(codex[0]["cwd"]).resolve() == session.directory.resolve(), codex[0]["cwd"]
+    for call in (*codex, *claude):
+        assert Path(call["cwd"]).resolve() == session.directory.resolve(), call["cwd"]
     assert "--output-schema" not in codex[0]["argv"], codex[0]["argv"]
     carried = codex[0]["argv"]
     for closure in (
@@ -172,23 +173,49 @@ def test_a_departure_from_the_contract_is_named_rather_than_passed_over(
     assert "--skip-git-repo-check is absent" in said, said
     assert "features.shell_tool=false is absent" in said, said
     assert 'sandbox_mode="read-only" is absent' in said, said
+    assert "--ignore-user-config is absent" in said, said
+    assert "project_doc_max_bytes=0 is absent" in said, said
+    assert "skills.max_context_tokens=1 is absent" in said, said
+    for feature in ("hooks", "apps", "plugins", "multi_agent"):
+        assert f"--disable {feature} is absent" in said, said
     assert "standard input is not closed" in said, said
     assert call["stdin_devnull"] is False, call
 
 
-def test_an_expert_turn_that_forgot_its_effort_is_named_too(tmp_path: Path) -> None:
+def test_an_expert_turn_that_forgot_its_effort_or_its_lean_seat_is_named_too(
+    tmp_path: Path,
+) -> None:
     """
-    Given an expert invocation with no effort on it
+    Given an expert invocation with no effort on it, whose brief is appended to
+          the CLI's own harness rather than replacing it, and which grants the
+          turn the tools, the settings files and the MCP servers of whatever
+          machine it runs on
     When the shim records it
-    Then it says so: the effort is passed on every turn rather than only the
-         first, because a resumed chain inherits none of it and would think at
-         whatever it defaults to while the log says otherwise.
+    Then every departure is named. The effort is passed on every turn rather
+         than only the first, because a resumed chain inherits none of it and
+         would think at whatever it defaults to while the log says otherwise;
+         and a seat seeded with anything beyond its brief makes the dispatch
+         record a partial account of what the turn read.
     """
     call = run_shim(
         "claude",
-        ["-p", "--output-format", "json", "--model", "claude-opus-5", PROMPT],
+        [
+            "-p",
+            "--output-format",
+            "json",
+            "--model",
+            "claude-opus-5",
+            "--append-system-prompt",
+            BRIEF,
+            PROMPT,
+        ],
         tmp_path,
     )
+    said = " | ".join(call["violations"])
 
-    assert any("--effort is absent" in one for one in call["violations"]), call["violations"]
-    assert any("--append-system-prompt is absent" in one for one in call["violations"]), call
+    assert "--effort is absent" in said, said
+    assert "--system-prompt is absent" in said, said
+    assert "--append-system-prompt is present" in said, said
+    assert "--tools is not passed as ''" in said, said
+    assert "--setting-sources is not passed as ''" in said, said
+    assert "--strict-mcp-config is absent" in said, said

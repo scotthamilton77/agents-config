@@ -24,6 +24,12 @@ from _shim import emit, flag_value, record, stdin_is_closed, turns  # noqa: E402
 
 NAME = "claude"
 
+# What the seat is seeded with beyond its brief, and it is nothing: no tool, no
+# settings file, no MCP server. Each is named with the value it must carry --
+# the empty string is what disables a list, and a flag carrying anything else
+# has granted the turn something.
+LEAN_SEED = (("--tools", ""), ("--setting-sources", ""))
+
 
 def violations(argv: list[str]) -> list[str]:
     """Every way this invocation departs from the driver's stated contract."""
@@ -38,8 +44,22 @@ def violations(argv: list[str]) -> list[str]:
         # Passed on every turn rather than only the cold one: a resumed chain
         # does not inherit it.
         faults.append("--effort is absent, so a resumed chain thinks at whatever it defaults to")
-    if flag_value(argv, "--append-system-prompt") is None:
-        faults.append("--append-system-prompt is absent: the turn carries no standing brief")
+    if flag_value(argv, "--system-prompt") is None:
+        faults.append("--system-prompt is absent: the turn carries no standing brief")
+    if "--append-system-prompt" in argv:
+        # Appended, the brief arrives on top of the CLI's own coding harness --
+        # which is the bulk of what the turn is billed, and is house context in
+        # a seat that is meant to judge a plan against the world.
+        faults.append(
+            "--append-system-prompt is present: the brief adds to a harness, is not the whole of one"
+        )
+    faults += [
+        f"{flag} is not passed as {value!r}"
+        for flag, value in LEAN_SEED
+        if flag_value(argv, flag) != value
+    ]
+    if "--strict-mcp-config" not in argv:
+        faults.append("--strict-mcp-config is absent, so the machine's MCP servers reach the turn")
     if argv and argv[-1].startswith("-"):
         faults.append(f"the last argument is {argv[-1]!r}, not the prompt")
     return faults
@@ -56,7 +76,7 @@ def main() -> None:
             "resume": flag_value(argv, "--resume"),
             "model": flag_value(argv, "--model"),
             "effort": flag_value(argv, "--effort"),
-            "brief": flag_value(argv, "--append-system-prompt"),
+            "brief": flag_value(argv, "--system-prompt"),
             "prompt": argv[-1] if argv else "",
             "violations": violations(argv),
         },

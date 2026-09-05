@@ -35,7 +35,17 @@ REQUIRED_SETTINGS = (
     'sandbox_mode="read-only"',
     'approval_policy="never"',
     "notify=[]",
+    # The seed: no instruction file the working directory happens to discover,
+    # and no skills catalogue.
+    "project_doc_max_bytes=0",
+    "skills.max_context_tokens=1",
 )
+
+# What the turn must be given no way to reach. Each is a feature the CLI enables
+# by default, and each would put something on the turn that is not in the
+# dispatch: the machine's hooks, its connectors, its installed plugins, and the
+# collaborator agents a turn could hand its work to.
+DISABLED_FEATURES = ("hooks", "apps", "plugins", "multi_agent")
 
 
 def violations(argv: list[str], resumed: str | None, brief: str | None) -> list[str]:
@@ -55,6 +65,16 @@ def violations(argv: list[str], resumed: str | None, brief: str | None) -> list[
         faults.append("no developer_instructions setting: the turn carries no standing brief")
     carried = settings(argv)
     faults += [f"{one} is absent" for one in REQUIRED_SETTINGS if one not in carried]
+    if "--ignore-user-config" not in argv:
+        faults.append(
+            "--ignore-user-config is absent: the machine's own configuration seeds the turn"
+        )
+    disabled = [
+        argv[index + 1]
+        for index, one in enumerate(argv)
+        if one == "--disable" and index + 1 < len(argv)
+    ]
+    faults += [f"--disable {one} is absent" for one in DISABLED_FEATURES if one not in disabled]
     if "--output-schema" in argv:
         faults.append("--output-schema is present: strict shaping closes an update's open object")
     if argv and argv[-1].startswith("-"):

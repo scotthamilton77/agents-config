@@ -182,6 +182,29 @@ CODEX_NO_TOOLS = [
     'approval_policy="never"',
 ]
 
+CODEX_LEAN_SEAT = [
+    *CODEX_NO_TOOLS,
+    "--ignore-user-config",
+    "--disable",
+    "hooks",
+    "--disable",
+    "apps",
+    "--disable",
+    "plugins",
+    "--disable",
+    "multi_agent",
+    "-c",
+    "project_doc_max_bytes=0",
+    "-c",
+    "skills.max_context_tokens=1",
+]
+"""Every seat's turn gets a minimal seed and no tools, deliberately, so the dispatch record is
+the whole of what the seat read."""
+
+CLAUDE_LEAN_SEAT = ["--tools", "", "--setting-sources", "", "--strict-mcp-config"]
+"""Every seat's turn gets a minimal seed and no tools, deliberately, so the dispatch record is
+the whole of what the seat read."""
+
 # What the human is told when an offer arrives in a shape nothing can read.
 # The offer's own bytes are deliberately not quoted back at them: an
 # unreadable object is not made readable by printing it.
@@ -239,9 +262,14 @@ class FastTransport(Protocol):
 
 
 class ClaudeCli(Protocol):
-    """One CLI invocation, returning what it printed."""
+    """One CLI invocation, returning what it printed.
 
-    def __call__(self, argv: Sequence[str], /) -> str: ...
+    The directory is the one the process runs in, and it is part of the call
+    rather than the caller's ambient state: the CLI reads its working directory
+    into the turn, and a resumed turn takes no flag for it.
+    """
+
+    def __call__(self, argv: Sequence[str], directory: Path, /) -> str: ...
 
 
 class CodexCli(Protocol):
@@ -364,19 +392,34 @@ def claude_argv(model: str, effort: str, system: str, prompt: str, resume: str |
     it: the reply alone would leave the next turn no way to continue this
     conversation rather than open a new one. The effort is passed on every turn
     rather than only the first: a resumed chain does not inherit it.
+
+    The brief is the session's whole system prompt rather than an addition to
+    the CLI's own, and it is passed on every turn: the CLI records a system
+    prompt once per conversation and reuses it, except where one is given here,
+    which is what keeps a resumed turn seated as the agent this rung briefed.
+    The lean flags sit ahead of the resumed chain and the prompt because the
+    tool list takes as many values as follow it.
     """
     argv = [CLAUDE_CLI, "-p", "--output-format", "json", "--model", model, "--effort", effort]
-    argv += ["--append-system-prompt", system]
+    argv += ["--system-prompt", system, *CLAUDE_LEAN_SEAT]
     if resume is not None:
         argv += ["--resume", resume]
     return [*argv, prompt]
 
 
-def run_claude_cli(argv: Sequence[str], /, timeout: float = REQUEST_TIMEOUT) -> str:
-    """The heavy tier's transport: one process, run to completion."""
+def run_claude_cli(
+    argv: Sequence[str], directory: Path, /, timeout: float = REQUEST_TIMEOUT
+) -> str:
+    """The heavy tier's transport: one process, run to completion, in the
+    session's own directory rather than any the caller happens to be in."""
     try:
         finished = subprocess.run(  # noqa: S603 -- argv is built here, never a shell string
-            list(argv), capture_output=True, text=True, check=True, timeout=timeout
+            list(argv),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout,
+            cwd=directory,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise AgentUnreachableError(HEAVY_TIER, fault_of(error)) from error
@@ -462,7 +505,7 @@ def codex_argv(seat: Seat, system: str, prompt: str, resume: str | None) -> list
     # Nothing is watching a desktop notification for a turn the board is already
     # showing a waiting clock for.
     argv += ["-c", "notify=[]"]
-    argv += CODEX_NO_TOOLS
+    argv += CODEX_LEAN_SEAT
     if seat.effort is not None:
         argv += ["-c", f"model_reasoning_effort={json.dumps(seat.effort)}"]
     return [*argv, prompt]
@@ -834,7 +877,8 @@ class HeavyDriver:
             printed = self.cli(
                 claude_argv(
                     model, effort, system, text, read_resume(log.directory, channel, chains)
-                )
+                ),
+                log.directory,
             )
             outcome = read_cli_reply(printed)
             if outcome[1] is not None:
