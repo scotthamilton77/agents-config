@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from evals.__main__ import BASELINE, check, matrix_of, read_seat, seat_of
+from evals.__main__ import BASELINE, DEPENDENT, check, matrix_of, read_seat, seat_of
 from evals.cases import CASES, CaseRefusedError, load_case, load_cases
 from evals.checks import (
     a_revise_supplies_what_it_revises,
@@ -24,8 +24,12 @@ from evals.checks import (
     the_stop_verdict_is_expected,
     the_turn_speaks_once,
 )
-from grillui.schemas import GrillMasterDocument
+from grillui.drivers import seat_driver
+from grillui.lane import DocumentRefusedError
+from grillui.schemas import FAST_TIER, GrillMasterDocument
 from grillui.tiers import CLAUDE_TRANSPORT, CODEX_TRANSPORT, TierConfig, compose, system_prompt
+
+CASE = "2026-09-04-first-rung-nothing-owed"
 
 
 def document(**overrides: Any) -> GrillMasterDocument:
@@ -200,19 +204,73 @@ def test_a_revise_that_changes_nothing_fails() -> None:
 # --- the run and its report -----------------------------------------------------
 
 
-def test_a_reply_that_is_not_a_document_is_not_checked_for_what_it_cannot_have() -> None:
+def test_a_reply_that_is_not_a_document_fails_every_check_that_reads_one() -> None:
     """
     Given a reply that is not the map document
     When it is checked
-    Then the shape check fails and no check that reads a document is claimed to
-         have passed on a document there is none of.
+    Then every check has a verdict and each dependent one fails for the reason
+         the shape check gave: a cell left blank reads as a check nobody ran,
+         and the matrix is the whole record of what a seat did.
     """
     case = load_cases()[0]
 
-    results = check(case, "just prose", None)
+    results = check(case, "just prose", None, baseline=True)
 
-    assert results[the_reply_is_the_map_document.__name__] is not None
-    assert the_rulings_are_the_ones_owed.__name__ not in results
+    shape = results[the_reply_is_the_map_document.__name__]
+    assert shape is not None
+    assert results[the_rulings_are_the_ones_owed.__name__] == shape
+    assert all(results[one.__name__] == shape for one in DEPENDENT)
+
+
+def test_a_seat_that_refuses_twice_is_a_red_row_rather_than_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a seat whose reply is refused by the document gate on both attempts
+    When the suite runs
+    Then the row is red for the stated reason and the matrix is still written:
+         a run that raised would leave no record of the turn that caused it.
+    """
+    import evals.__main__ as suite
+
+    def refusing(*_args: object) -> tuple[str, int | None, int | None, float]:
+        raise DocumentRefusedError(FAST_TIER, "the reply was prose, not the map document")
+
+    monkeypatch.setattr(suite, "replay", refusing)
+
+    code = suite.main(["--case", CASE, "--report", str(tmp_path)])
+
+    assert code == 1
+    run = json.loads((tmp_path / "matrix.json").read_text(encoding="utf-8"))[0]
+    reason = run["checks"][the_reply_is_the_map_document.__name__]
+    assert "prose" in reason
+    assert all(run["checks"][one.__name__] == reason for one in DEPENDENT)
+    assert None not in run["checks"].values()
+
+
+def test_a_check_that_does_not_apply_is_not_a_check_that_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a case run on a seat other than the one its baseline was measured on
+    When the report is written
+    Then the baseline is marked as not applying rather than passed or failed: a
+         model that was never measured cannot be held to another model's count.
+    """
+    import evals.__main__ as suite
+
+    monkeypatch.setattr(suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0))
+
+    assert (
+        suite.main(["--case", CASE, "--seat", "codex:another-model", "--report", str(tmp_path)])
+        == 0
+    )
+
+    rows = [one for one in (tmp_path / "matrix.md").read_text(encoding="utf-8").splitlines()[2:]]
+    added = next(one for one in rows if "another-model" in one)
+    default = next(one for one in rows if "another-model" not in one)
+    assert "| - |" in added, added
+    assert "| - |" not in default, default
 
 
 def test_a_prompt_token_count_far_from_the_baseline_fails_its_check() -> None:
@@ -224,10 +282,179 @@ def test_a_prompt_token_count_far_from_the_baseline_fails_its_check() -> None:
     """
     case = next(one for one in load_cases() if one.prompt_tokens is not None)
     reply = document().model_dump_json()
+    baseline = case.prompt_tokens
 
-    assert check(case, reply, case.prompt_tokens)[BASELINE] is None
-    assert check(case, reply, case.prompt_tokens * 3)[BASELINE] is not None
-    assert check(case, reply, None)[BASELINE] is not None
+    def counted(tokens: int | None) -> str | None:
+        return check(case, reply, tokens, baseline=True)[BASELINE]
+
+    margin = int(baseline * 0.1)
+
+    assert counted(baseline) is None
+    # The boundary itself, and the first count outside it, in both directions.
+    assert counted(baseline + margin) is None
+    assert counted(baseline - margin) is None
+    assert counted(baseline + margin + 1) is not None
+    assert counted(baseline - margin - 1) is not None
+    assert counted(None) is not None
+    assert BASELINE not in check(case, reply, baseline, baseline=False)
+
+
+def test_a_case_whose_member_file_is_a_symlink_is_refused(tmp_path: Path) -> None:
+    """
+    Given a case whose log is a link to a file elsewhere on the machine
+    When it is loaded
+    Then it is refused: a case reads nothing outside its own directory, and a
+         link is a route out of it that the name alone does not show. The bytes
+         it would pull in are composed into a prompt sent to a third party.
+    """
+    seeded = CASES / CASE
+    where = tmp_path / "linked"
+    where.mkdir()
+    for name in ("dispatch.json", "case.json"):
+        (where / name).write_text((seeded / name).read_text(encoding="utf-8"), encoding="utf-8")
+    (where / "log.jsonl").symlink_to(seeded / "log.jsonl")
+
+    with pytest.raises(CaseRefusedError, match=r"log\.jsonl"):
+        load_case(where)
+
+
+def test_an_added_node_is_held_to_each_field_on_its_own() -> None:
+    """
+    Given an added node missing only one of the fields the board renders
+    When it is checked
+    Then it fails either way round: a check that only caught a node missing both
+         would pass one the page draws half of.
+    """
+    node = {
+        "kind": "add-node",
+        "title": "What confirms a match?",
+        "short": "Confirm",
+        "body": "How?",
+    }
+
+    assert added_nodes_carry_short_and_body(document(updates=[node])) is None
+    for missing in ("short", "body"):
+        thin = {one: value for one, value in node.items() if one != missing}
+        assert added_nodes_carry_short_and_body(document(updates=[thin])) is not None, missing
+
+
+def test_a_ruling_given_twice_is_not_the_ruling_that_was_owed() -> None:
+    """
+    Given a turn ruling on one decision twice
+    When the rulings are checked
+    Then it fails: the board shows a decision the turn judged once and a record
+         that judged it twice, and nothing says which reading is the turn's.
+    """
+    twice = document(rulings=[ruling("d2"), ruling("d2"), ruling("d3")])
+
+    assert the_rulings_are_the_ones_owed(twice, ("d2", "d3")) is not None
+    assert (
+        the_rulings_are_the_ones_owed(document(rulings=[ruling("d2"), ruling("d3")]), ("d2", "d3"))
+        is None
+    )
+
+
+def test_an_option_named_in_an_update_is_held_to_the_same_rule_as_the_notice() -> None:
+    """
+    Given a turn naming an option without its decision inside an update rather
+          than in the notice
+    When it is checked
+    Then it fails: the human reads both, and a rule that stopped at the notice
+         would be satisfied by moving the sentence.
+    """
+    spoken = document(updates=[{"kind": "informational", "text": "Take option b."}])
+    qualified = document(updates=[{"kind": "informational", "text": "Take option b of d1."}])
+
+    assert option_references_name_their_decision(spoken) is not None
+    assert option_references_name_their_decision(qualified) is None
+
+
+def test_a_sample_count_below_one_is_refused(tmp_path: Path) -> None:
+    """
+    Given a run asked for no samples
+    When the arguments are read
+    Then it is refused rather than exiting clean having sampled nothing, which
+         reads exactly like a suite that passed.
+    """
+    import evals.__main__ as suite
+
+    with pytest.raises(SystemExit):
+        suite.main(["--case", CASE, "-n", "-1", "--report", str(tmp_path)])
+
+
+def test_every_sample_is_taken_and_any_one_of_them_fails_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a case sampled three times, whose last sample alone fails a check
+    When the suite runs
+    Then every sample is taken and the run fails: a check that held twice and
+         broke on the third held by luck.
+    """
+    import evals.__main__ as suite
+
+    replies = [
+        document().model_dump_json(),
+        document().model_dump_json(),
+        document(rulings=[ruling("d9")]).model_dump_json(),
+    ]
+    taken: list[str] = []
+
+    def sampling(*_args: object) -> tuple[str, int | None, int | None, float]:
+        taken.append(replies[len(taken)])
+        return taken[-1], 9786, 40, 1.0
+
+    monkeypatch.setattr(suite, "replay", sampling)
+
+    code = suite.main(["--case", CASE, "-n", "3", "--report", str(tmp_path)])
+
+    assert len(taken) == 3
+    assert code == 1
+    assert (tmp_path / "matrix.md").read_text(encoding="utf-8").count("FAIL") == 1
+
+
+def test_a_replay_sends_the_turn_through_the_seats_own_driver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Given a scripted seat standing in for the transport
+    When a case is replayed
+    Then the turn goes out through the driver the session builds, over a session
+         log reconstructed from the case, and what comes back is read as that
+         transport's reply.
+    """
+    import evals.__main__ as suite
+
+    said = document(text="The board holds.").model_dump_json()
+    sent: list[list[str]] = []
+
+    def scripted(argv: object, _directory: Path, /) -> str:
+        sent.append(list(argv))  # type: ignore[arg-type]
+        return "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": "t"}),
+                json.dumps(
+                    {"type": "item.completed", "item": {"type": "agent_message", "text": said}}
+                ),
+                json.dumps(
+                    {"type": "turn.completed", "usage": {"input_tokens": 11, "output_tokens": 7}}
+                ),
+            ]
+        )
+
+    case = next(one for one in load_cases() if one.name == CASE)
+    config = TierConfig.from_env({})
+    seat = seat_of(case, config)
+    driver = seat_driver(config, seat, tier=case.tier)
+    driver.cli = scripted  # type: ignore[union-attr]
+    monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
+
+    reply, prompt_tokens, output_tokens, seconds = suite.replay(case, seat, config)
+
+    assert reply == said
+    assert (prompt_tokens, output_tokens) == (11, 7)
+    assert seconds >= 0
+    assert sent and sent[0][0] == "codex"
 
 
 def test_the_seat_a_case_runs_on_is_the_one_the_session_would_use() -> None:
@@ -277,15 +504,18 @@ def test_a_failed_check_exits_non_zero_and_the_report_holds_the_reply(
     import evals.__main__ as suite
 
     failing = document(rulings=[ruling("d9")]).model_dump_json()
-    monkeypatch.setattr(suite, "replay", lambda *_: (failing, 9786, 1.5))
+    monkeypatch.setattr(suite, "replay", lambda *_: (failing, 9786, 812, 1.5))
 
-    code = suite.main(["--case", "2026-09-04-first-rung-nothing-owed", "--report", str(tmp_path)])
+    code = suite.main(["--case", CASE, "--report", str(tmp_path)])
 
     assert code == 1
     assert (tmp_path / "matrix.md").read_text(encoding="utf-8").count("FAIL") == 1
-    kept = next((tmp_path / "2026-09-04-first-rung-nothing-owed").iterdir())
+    kept = next((tmp_path / CASE).iterdir())
     assert (kept / "1.txt").read_text(encoding="utf-8") == failing
-    assert json.loads((kept / "1.json").read_text(encoding="utf-8"))["wall_seconds"] == 1.5
+    recorded = json.loads((kept / "1.json").read_text(encoding="utf-8"))
+    assert recorded["wall_seconds"] == 1.5
+    assert recorded["prompt_tokens"] == 9786
+    assert recorded["output_tokens"] == 812
 
 
 def test_a_run_whose_checks_all_pass_exits_zero(
@@ -293,8 +523,6 @@ def test_a_run_whose_checks_all_pass_exits_zero(
 ) -> None:
     import evals.__main__ as suite
 
-    monkeypatch.setattr(suite, "replay", lambda *_: (document().model_dump_json(), 9786, 1.0))
+    monkeypatch.setattr(suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0))
 
-    assert (
-        suite.main(["--case", "2026-09-04-first-rung-nothing-owed", "--report", str(tmp_path)]) == 0
-    )
+    assert suite.main(["--case", CASE, "--report", str(tmp_path)]) == 0

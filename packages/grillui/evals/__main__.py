@@ -28,6 +28,7 @@ from evals.checks import (
     the_turn_speaks_once,
 )
 from grillui.drivers import read_cli_reply, read_codex_reply, read_document, seat_driver
+from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.schemas import HEAVY_TIER
 from grillui.session import open_session
 from grillui.tiers import (
@@ -43,13 +44,66 @@ REPORTS = Path.home() / ".grillui-evals"
 TOLERANCE = 0.1
 BASELINE = "prompt_tokens_near_baseline"
 
-# What each transport hands back, read with the same functions the driver reads
-# it with, so an eval never disagrees with a session about what a seat said.
+# The checks a reply can only be held to once it is a document. A reply that is
+# not one fails all of them for that reason, rather than leaving cells nobody
+# can tell apart from checks that were never run.
+DEPENDENT = (
+    the_rulings_are_the_ones_owed,
+    added_nodes_carry_short_and_body,
+    the_turn_speaks_once,
+    option_references_name_their_decision,
+    the_stop_verdict_is_expected,
+    a_revise_supplies_what_it_revises,
+)
+
+
+def _codex_output(raw: str) -> int | None:
+    """What the Codex turn said it wrote, off the stream it printed."""
+    for line in raw.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get("type") == "turn.completed":
+            counted = event.get("usage", {}).get("output_tokens")
+            return counted if isinstance(counted, int) else None
+    return None
+
+
+def _cli_output(raw: str) -> int | None:
+    """What the CLI turn said it wrote, off the object it printed."""
+    try:
+        counted = json.loads(raw).get("usage", {}).get("output_tokens")
+    except (ValueError, AttributeError):
+        return None
+    return counted if isinstance(counted, int) else None
+
+
+# What each transport hands back: the reply read with the same function the
+# driver reads it with, so an eval never disagrees with a session about what a
+# seat said, and the two counts beside it. The hosted completion reports its
+# prompt count through the driver's own seam and nothing about its output, so
+# that count is absent rather than invented.
 REPLIES = {
-    OPENROUTER_TRANSPORT: lambda raw: (raw[0], raw[1]),
-    CLAUDE_TRANSPORT: lambda raw: (read_cli_reply(raw)[0], read_cli_reply(raw)[2]),
-    CODEX_TRANSPORT: lambda raw: (read_codex_reply(raw)[0], read_codex_reply(raw)[2]),
+    OPENROUTER_TRANSPORT: lambda raw: (raw[0], raw[1], None),
+    CLAUDE_TRANSPORT: lambda raw: (
+        read_cli_reply(raw)[0],
+        read_cli_reply(raw)[2],
+        _cli_output(raw),
+    ),
+    CODEX_TRANSPORT: lambda raw: (
+        read_codex_reply(raw)[0],
+        read_codex_reply(raw)[2],
+        _codex_output(raw),
+    ),
 }
+
+
+class SampleCountRefusedError(argparse.ArgumentTypeError):
+    """A sample count that would take no turn."""
+
+    def __init__(self, counted: int) -> None:
+        super().__init__(f"a run takes at least one sample, not {counted}")
 
 
 class SeatRefusedError(ValueError):
@@ -105,8 +159,8 @@ class Tap:
         return self.raw
 
 
-def replay(case: Case, seat: Seat, config: TierConfig) -> tuple[str, int | None, float]:
-    """One sample: the reply, what its prompt counted at, and how long it took."""
+def replay(case: Case, seat: Seat, config: TierConfig) -> tuple[str, int | None, int | None, float]:
+    """One sample: the reply, what it counted at either end, and how long it took."""
     driver = seat_driver(config, seat, tier=case.tier)
     seam = "transport" if seat.transport == OPENROUTER_TRANSPORT else "cli"
     tap = Tap(getattr(driver, seam))
@@ -126,15 +180,33 @@ def replay(case: Case, seat: Seat, config: TierConfig) -> tuple[str, int | None,
         driver.run(log, dispatch)
     if tap.raw is None:
         raise ReplayRefusedError(case.name, "the seat was never reached")
-    reply, tokens = REPLIES[seat.transport](tap.raw)
-    return reply or "", tokens, tap.seconds
+    reply, prompt_tokens, output_tokens = REPLIES[seat.transport](tap.raw)
+    return reply or "", prompt_tokens, output_tokens, tap.seconds
 
 
-def check(case: Case, reply: str, tokens: int | None) -> dict[str, str | None]:
-    """Every check this reply is held to, by name."""
-    shape = the_reply_is_the_map_document(reply)
+def check(
+    case: Case,
+    reply: str,
+    tokens: int | None,
+    *,
+    baseline: bool,
+    refused: str | None = None,
+) -> dict[str, str | None]:
+    """Every check this reply is held to, by name.
+
+    `refused` is the reason a seat produced no reply to check, and it fails the
+    same checks the reply's own shape failure would: a turn nobody could read is
+    the turn that happened, and the record says so rather than saying nothing.
+
+    `baseline` is whether this seat is the one the case's token count was
+    measured on. Held to another seat's count, a model that was never measured
+    fails a check about a number nobody claimed for it.
+    """
+    shape = refused or the_reply_is_the_map_document(reply)
     results: dict[str, str | None] = {the_reply_is_the_map_document.__name__: shape}
-    if shape is None:
+    if shape is not None:
+        results |= {one.__name__: shape for one in DEPENDENT}
+    else:
         document = read_document(reply)
         results |= {
             the_rulings_are_the_ones_owed.__name__: the_rulings_are_the_ones_owed(
@@ -150,7 +222,7 @@ def check(case: Case, reply: str, tokens: int | None) -> dict[str, str | None]:
             ),
             a_revise_supplies_what_it_revises.__name__: a_revise_supplies_what_it_revises(document),
         }
-    if case.prompt_tokens is not None:
+    if baseline and case.prompt_tokens is not None:
         results[BASELINE] = _near(tokens, case.prompt_tokens)
     return results
 
@@ -168,6 +240,8 @@ def matrix_of(runs: list[dict[str, Any]]) -> str:
     names = sorted({one for run in runs for one in run["checks"]})
     lines = ["| case | seat | sample | " + " | ".join(names) + " |"]
     lines.append("|" + "---|" * (len(names) + 3))
+    # A dash is a check that does not apply to this run. Everything else is a
+    # verdict, so a blank never stands for a check nobody got round to.
     for run in runs:
         cells = [
             "-" if one not in run["checks"] else ("pass" if run["checks"][one] is None else "FAIL")
@@ -177,6 +251,18 @@ def matrix_of(runs: list[dict[str, Any]]) -> str:
             f"| {run['case']} | {run['seat']} | {run['sample']} | " + " | ".join(cells) + " |"
         )
     return "\n".join(lines)
+
+
+def _samples(stated: str) -> int:
+    """A sample count that samples something.
+
+    Nothing is not a smaller run, it is a run that took no turn and reported no
+    failure, which reads exactly like a suite that passed.
+    """
+    counted = int(stated)
+    if counted < 1:
+        raise SampleCountRefusedError(counted)
+    return counted
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -190,7 +276,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--seat", action="append", default=[], help="add transport:model[:effort], repeatable"
     )
-    parser.add_argument("-n", type=int, default=None, help="samples per case, default the case's")
+    parser.add_argument(
+        "-n", type=_samples, default=None, help="samples per case, default the case's"
+    )
     parser.add_argument("--report", type=Path, default=None, help="where the report is written")
     args = parser.parse_args(argv)
 
@@ -204,15 +292,24 @@ def main(argv: list[str] | None = None) -> int:
 
     runs: list[dict[str, Any]] = []
     for case in cases:
-        for seat in [seat_of(case, config), *added]:
+        measured = seat_of(case, config)
+        for seat in [measured, *added]:
             for sample in range(1, (args.n or case.samples) + 1):
-                reply, tokens, seconds = replay(case, seat, config)
-                results = check(case, reply, tokens)
+                refused: str | None = None
+                reply, prompt_tokens, output_tokens, seconds = "", None, None, 0.0
+                try:
+                    reply, prompt_tokens, output_tokens, seconds = replay(case, seat, config)
+                except (DocumentRefusedError, AgentUnreachableError, ReplayRefusedError) as why:
+                    refused = str(why)
+                results = check(
+                    case, reply, prompt_tokens, baseline=seat == measured, refused=refused
+                )
                 run = {
                     "case": case.name,
                     "seat": named(seat),
                     "sample": sample,
-                    "prompt_tokens": tokens,
+                    "prompt_tokens": prompt_tokens,
+                    "output_tokens": output_tokens,
                     "output_bytes": len(reply.encode()),
                     "wall_seconds": round(seconds, 1),
                     "checks": results,

@@ -1,9 +1,9 @@
 """The recorded turns this suite replays, and how one is read off disk.
 
-A case is three files and nothing else: the dispatch as it was recorded, the
-log entries that dispatch's prompt is composed from, and what the reply is
-expected to satisfy. The whole session it was trimmed from is not here, and a
-case that reached for one would be replaying something no checkout has.
+A case is read from three files: the dispatch as it was recorded, the log
+entries that dispatch's prompt is composed from, and what the reply is expected
+to satisfy. The whole session it was trimmed from is not here, and a case that
+reached for one would be replaying something no checkout has.
 """
 
 from __future__ import annotations
@@ -49,13 +49,17 @@ def _inside(where: Path, named: str) -> Path:
 
     A name is a name and never a route: anything carrying a separator, a parent
     reference or a root would let a case read a file the checkout does not carry
-    and replay a turn nobody can see.
+    and replay a turn nobody can see. A link is the same route wearing one of
+    these three names, so the file has to be the one that lies here -- what it
+    would pull in is composed into a prompt and sent to a third party.
     """
     if named not in FILES:
         raise CaseRefusedError(where.name, f"{named!r} is not one of {', '.join(FILES)}")
     path = where / named
     if not path.is_file():
         raise CaseRefusedError(where.name, f"{named} is missing")
+    if path.is_symlink() or path.resolve().parent != where.resolve():
+        raise CaseRefusedError(where.name, f"{named} is a link out of the case directory")
     return path
 
 

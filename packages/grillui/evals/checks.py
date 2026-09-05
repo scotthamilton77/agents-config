@@ -36,8 +36,8 @@ def the_rulings_are_the_ones_owed(document: GrillMasterDocument, owed: Sequence[
     ruling on decisions nobody asked about, which is how five stands arrive on a
     turn that owed nothing.
     """
-    ruled = sorted({one.decision for one in document.rulings})
-    wanted = sorted(set(owed))
+    ruled = sorted(one.decision for one in document.rulings)
+    wanted = sorted(owed)
     if ruled == wanted:
         return None
     return f"rulings on {ruled or 'nothing'}, owed {wanted or 'nothing'}"
@@ -72,14 +72,16 @@ def option_references_name_their_decision(document: GrillMasterDocument) -> str 
     """An option is named with the decision it belongs to.
 
     The board carries an option `b` under most of its rows, so a bare letter is
-    an instruction the human has to resolve against the whole map.
+    an instruction the human has to resolve against the whole map. Every place
+    the turn speaks is read, because the human reads all of them and a rule that
+    stopped at the notice would be satisfied by moving the sentence.
     """
+    spoken = [document.text, *(str(one.get("text", "")) for one in document.updates)]
     bare = [
         found.group(0)
-        for found in OPTION.finditer(document.text)
-        if not DECISION.search(
-            document.text[max(0, found.start() - QUALIFYING) : found.end() + QUALIFYING]
-        )
+        for said in spoken
+        for found in OPTION.finditer(said)
+        if not DECISION.search(said[max(0, found.start() - QUALIFYING) : found.end() + QUALIFYING])
     ]
     return None if not bare else f"unqualified option references: {bare}"
 
