@@ -163,8 +163,16 @@ class Tap:
         return self.raw
 
 
-def replay(case: Case, seat: Seat, config: TierConfig) -> tuple[str, int | None, int | None, float]:
-    """One sample: the reply, what it counted at either end, and how long it took."""
+def replay(
+    case: Case, seat: Seat, config: TierConfig
+) -> tuple[str, int | None, int | None, float, str | None]:
+    """One sample: the reply, what it counted at either end, how long it took, and
+    the reason the turn was refused, or nothing where it was not.
+
+    A refusal is caught here because this is where what the seat returned is
+    held: the turn happened and was paid for, and a row reporting nothing about
+    it is the only record of a turn nobody can account for.
+    """
     driver = seat_driver(config, seat, tier=case.tier)
     seam = "transport" if seat.transport == OPENROUTER_TRANSPORT else "cli"
     tap = Tap(getattr(driver, seam))
@@ -276,6 +284,18 @@ def _samples(stated: str) -> int:
     return counted
 
 
+def _dated() -> Path:
+    """A report directory of this run's own, named for when it started.
+
+    Made rather than named, because two runs starting inside the same second
+    would otherwise write one another's replies and counts into one directory
+    and leave a report of two turns nobody can separate.
+    """
+    REPORTS.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ-")
+    return Path(tempfile.mkdtemp(prefix=stamp, dir=REPORTS))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="grillui-evals",
@@ -298,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
     if not cases:
         parser.error(f"no case named {', '.join(args.case)}")
     added = [read_seat(one) for one in args.seat]
-    where = args.report or REPORTS / datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
+    where = args.report or _dated()
     where.mkdir(parents=True, exist_ok=True)
 
     runs: list[dict[str, Any]] = []

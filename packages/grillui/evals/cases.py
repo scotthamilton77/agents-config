@@ -28,7 +28,11 @@ class CaseRefusedError(ValueError):
 
 @dataclass(frozen=True)
 class Case:
-    """One recorded turn, and what its reply owes."""
+    """One recorded turn, and what its reply owes.
+
+    `channel` is the dispatch's, because the driver reads it off that record and
+    the seat is chosen by it: stated a second time, the two can only disagree.
+    """
 
     name: str
     tier: str
@@ -104,6 +108,9 @@ def load_case(where: Path, root: Path | None = None) -> Case:
         for line in _inside(where, root, "log.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     )
+    samples = int(case.get("samples", 1))
+    if samples < 1:
+        raise CaseRefusedError(where.name, f"a run takes at least one sample, not {samples}")
     owed = () if context.mootness is None else tuple(context.mootness.ids)
     stated = tuple(_stated(where, case, "owed_rulings"))
     if stated != owed:
@@ -111,8 +118,8 @@ def load_case(where: Path, root: Path | None = None) -> Case:
     return Case(
         name=where.name,
         tier=_stated(where, case, "tier"),
-        channel=_stated(where, case, "channel"),
-        samples=int(case.get("samples", 1)),
+        channel=context.channel,
+        samples=samples,
         owed_rulings=owed,
         speech_limit=int(case.get("speech_limit", 1)),
         stop=bool(_stated(where, case, "stop")),

@@ -26,7 +26,7 @@ from evals.checks import (
     the_turn_speaks_once,
 )
 from grillui.drivers import seat_driver
-from grillui.schemas import FAST_TIER, GrillMasterDocument
+from grillui.schemas import FAST_TIER, MAP_CHANNEL, GrillMasterDocument
 from grillui.tiers import (
     CLAUDE_TRANSPORT,
     CODEX_TRANSPORT,
@@ -45,6 +45,14 @@ def document(**overrides: Any) -> GrillMasterDocument:
         {"text": "", "updates": [], "supersedes": [], "rulings": [], "stop": {"met": False}}
         | overrides
     )
+
+
+def seeded_case(where: Path) -> Path:
+    """A copy of a checked-in case, for a test that spoils one field of it."""
+    where.mkdir(parents=True)
+    for name in ("dispatch.json", "log.jsonl", "case.json"):
+        (where / name).write_text((CASES / CASE / name).read_text(encoding="utf-8"), "utf-8")
+    return where
 
 
 def codex_stream(said: str, output_tokens: int = 7) -> str:
@@ -97,31 +105,31 @@ def test_the_seed_cases_are_the_behaviours_this_suite_watches() -> None:
          turn owing none, and a turn whose recorded reply revised without
          changing anything.
     """
-    owed = {case.name: case.owed_rulings for case in load_cases()}
+    cases = {one.name: one for one in load_cases()}
 
-    assert owed["2026-09-04-expert-owed-rulings"] == ("d2", "d3")
-    assert owed["2026-09-04-first-rung-nothing-owed"] == ()
-    assert owed["2026-08-27-revise-without-substance"] == ()
+    assert cases["2026-09-04-expert-owed-rulings"].owed_rulings == ("d2", "d3")
+    assert cases["2026-09-04-first-rung-nothing-owed"].owed_rulings == ()
+
+    # The disagreement case is the first-rung map turn at that seq. What its
+    # recorded reply did is not in the fixture, so the turn is pinned, not it.
+    revise = cases["2026-08-27-revise-without-substance"]
+    assert (revise.tier, revise.channel, revise.context.seq) == (FAST_TIER, MAP_CHANNEL, 25)
+    assert revise.owed_rulings == ()
 
 
 @pytest.mark.parametrize("named", ["../elsewhere/dispatch.json", "/etc/passwd", ".."])
 def test_a_case_naming_a_path_outside_itself_is_refused(named: str, tmp_path: Path) -> None:
     """
-    Given a case naming a file outside its own directory
+    Given a complete case that also names a file outside its own directory
     When it is loaded
-    Then it is refused: a case that reads what the checkout does not carry
-         replays a turn nobody else can see.
+    Then that name is what refuses it: a case reading what the checkout does
+         not carry replays a turn nobody else can see.
     """
-    where = tmp_path / "borrowed"
-    where.mkdir()
-    (where / "case.json").write_text(
-        json.dumps(
-            {"tier": "fast", "channel": "map", "stop": False, "owed_rulings": [], "log": named}
-        ),
-        encoding="utf-8",
-    )
+    where = seeded_case(tmp_path / "borrowed")
+    case = json.loads((where / "case.json").read_text(encoding="utf-8"))
+    (where / "case.json").write_text(json.dumps(case | {"log": named}), encoding="utf-8")
 
-    with pytest.raises(CaseRefusedError):
+    with pytest.raises(CaseRefusedError, match="reads nothing outside"):
         load_case(where)
 
 
@@ -151,16 +159,42 @@ def test_a_case_disagreeing_with_its_dispatch_about_what_is_owed_is_refused(
     Then it is refused: the expectation and the dispatch are two statements of
          one fact, and a case where they differ tests neither.
     """
-    seeded = CASES / "2026-09-04-first-rung-nothing-owed"
-    where = tmp_path / "mismatched"
-    where.mkdir()
-    for name in ("dispatch.json", "log.jsonl"):
-        (where / name).write_text((seeded / name).read_text(encoding="utf-8"), encoding="utf-8")
-    case = json.loads((seeded / "case.json").read_text(encoding="utf-8"))
+    where = seeded_case(tmp_path / "mismatched")
+    case = json.loads((where / "case.json").read_text(encoding="utf-8"))
     (where / "case.json").write_text(json.dumps(case | {"owed_rulings": ["d9"]}), encoding="utf-8")
 
-    with pytest.raises(CaseRefusedError):
+    with pytest.raises(CaseRefusedError, match="owes"):
         load_case(where)
+
+
+def test_a_case_sampling_nothing_is_refused(tmp_path: Path) -> None:
+    """
+    Given a case asking for no samples
+    When it is loaded
+    Then it is refused, by the rule a sample count on the command line is held
+         to: a run that took no turn reports no failure and reads as a pass.
+    """
+    where = seeded_case(tmp_path / "empty")
+    case = json.loads((where / "case.json").read_text(encoding="utf-8"))
+    (where / "case.json").write_text(json.dumps(case | {"samples": 0}), encoding="utf-8")
+
+    with pytest.raises(CaseRefusedError, match="at least one sample"):
+        load_case(where)
+
+
+def test_a_case_takes_its_channel_from_the_dispatch_it_replays(tmp_path: Path) -> None:
+    """
+    Given a case whose expectations name a channel of their own
+    When it is loaded
+    Then the dispatch's channel is the one it carries: the seat is chosen by it
+         and the driver reads it off the record, so a second statement of it can
+         only disagree.
+    """
+    where = seeded_case(tmp_path / "restated")
+    case = json.loads((where / "case.json").read_text(encoding="utf-8"))
+    (where / "case.json").write_text(json.dumps(case | {"channel": "t-9"}), encoding="utf-8")
+
+    assert load_case(where).channel == MAP_CHANNEL
 
 
 # --- the checks -----------------------------------------------------------------
@@ -589,6 +623,69 @@ def test_a_thread_case_takes_the_threads_seat() -> None:
 
     assert seat_of(case, config) == config.thread_seat
     assert seat_of(case, config) != config.map_seat
+
+
+def test_the_measured_baselines_are_the_ones_recorded() -> None:
+    """
+    Given the two cases measured on a real seat
+    When their baselines are read
+    Then they are the counts those runs billed, on the seats that billed them:
+         a baseline edited to whatever a later run happened to cost is a check
+         that can never fail.
+    """
+    config = TierConfig.from_env({})
+    cases = {one.name: one for one in load_cases()}
+    expert = cases["2026-09-04-expert-owed-rulings"]
+    first_rung = cases["2026-09-04-first-rung-nothing-owed"]
+
+    assert (expert.prompt_tokens, seat_of(expert, config)) == (4868, config.expert_seat)
+    assert (first_rung.prompt_tokens, seat_of(first_rung, config)) == (9786, config.map_seat)
+
+
+def test_a_default_run_writes_a_dated_report_and_says_where(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a run naming no report directory
+    When it finishes
+    Then it wrote a dated directory of its own and printed where: a report
+         nobody is told the path of is a report nobody reads.
+    """
+    import evals.__main__ as suite
+
+    monkeypatch.setattr(suite, "REPORTS", tmp_path / "reports")
+    monkeypatch.setattr(
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+    )
+
+    suite.main(["--case", CASE])
+
+    written = list((tmp_path / "reports").iterdir())
+    assert len(written) == 1
+    assert (written[0] / "matrix.md").is_file()
+    assert f"report: {written[0]}" in capsys.readouterr().out
+
+
+def test_two_default_runs_do_not_share_one_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given two runs started close enough together to date the same
+    When each writes its report
+    Then neither is inside the other's directory: one run's reply and counts
+         written over another's is one report of two turns nobody can separate.
+    """
+    import evals.__main__ as suite
+
+    monkeypatch.setattr(suite, "REPORTS", tmp_path / "reports")
+    monkeypatch.setattr(
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+    )
+
+    suite.main(["--case", CASE])
+    suite.main(["--case", CASE])
+
+    assert len(list((tmp_path / "reports").iterdir())) == 2
 
 
 def test_the_seat_a_case_runs_on_is_the_one_the_session_would_use() -> None:
