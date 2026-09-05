@@ -411,16 +411,7 @@ def run_claude_cli(
     argv: Sequence[str], directory: Path, /, timeout: float = REQUEST_TIMEOUT
 ) -> str:
     """The heavy tier's transport: one process, run to completion, in the
-    session's own directory.
-
-    The directory is the session's rather than the one the backend was launched
-    in, for the same reason the Codex seat's is: the CLI reads its working
-    directory into the turn -- the instruction files it discovers there and what
-    it says about the tree. Replacing the system prompt does not close that
-    route. A grilling is about the plan in the dispatch and not about whichever
-    repository the human happened to start the session from, and a seat reading
-    one makes the dispatch record a partial account of what the turn read.
-    """
+    session's own directory rather than any the caller happens to be in."""
     try:
         finished = subprocess.run(  # noqa: S603 -- argv is built here, never a shell string
             list(argv),

@@ -778,9 +778,7 @@ def test_each_transport_states_the_seat_ruling_in_one_sentence(constant: str) ->
     Given a transport's seed-and-tool constant
     When the source is read
     Then the statement after it is a docstring of one sentence stating the
-         ruling: whoever is deciding whether a seat may reach for something
-         finds the answer beside the flags, and one sentence is what survives
-         being read there.
+         ruling on what a seat is seeded with and may use.
     """
     body = ast.parse(Path(drivers.__file__).read_text(encoding="utf-8")).body
     after = [
