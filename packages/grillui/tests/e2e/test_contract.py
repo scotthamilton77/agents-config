@@ -204,10 +204,11 @@ def test_a_brief_the_shim_cannot_read_is_named_rather_than_fatal(tmp_path: Path)
     """
     Given an invocation naming a brief that exists and cannot be read
     When the shim records it
-    Then the record names the path and carries no brief, and the shim records
-         before it reads -- one that died on the read would look to the backend
-         like a seat that could not be reached, which walks a different ladder
-         and proves the wrong thing.
+    Then the record names the path and carries no brief: the read answers with
+         nothing rather than raising, so an unreadable brief reaches the record
+         as a violation. Raising would kill the shim before it recorded
+         anything, which looks to the backend like a seat that could not be
+         reached and proves the wrong thing.
     """
     brief = tmp_path / "unreadable-brief.md"
     brief.write_text(BRIEF, encoding="utf-8")
