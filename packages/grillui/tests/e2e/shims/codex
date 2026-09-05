@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +49,53 @@ REQUIRED_SETTINGS = (
 DISABLED_FEATURES = ("hooks", "apps", "plugins", "multi_agent")
 
 
-def violations(argv: list[str], resumed: str | None, brief: str | None) -> list[str]:
+def setting(argv: list[str], name: str) -> str | None:
+    """What this invocation set `name` to, or nothing where it set it not at all.
+
+    Keyed on the name rather than on the spelling: TOML allows space around the
+    equals sign, and a check keyed to one spelling passes the other by and
+    records a clean call on a turn that departed from the contract. The value is
+    parsed as TOML and falls back to the raw string, which is what the CLI does
+    with a value that does not parse -- a bare path is a path, and refusing to
+    read one would kill the shim on an invocation the CLI accepts.
+    """
+    for one in settings(argv):
+        key, _, value = one.partition("=")
+        if key.strip() != name:
+            continue
+        raw = value.strip()
+        try:
+            read = tomllib.loads(f"value = {raw}")["value"]
+        except tomllib.TOMLDecodeError:
+            return raw
+        return read if isinstance(read, str) else raw
+    return None
+
+
+def briefed_from(argv: list[str]) -> Path | None:
+    """The file this turn reads its instructions from, if it names one."""
+    named = setting(argv, "model_instructions_file")
+    return None if named is None else Path(named)
+
+
+def readable(path: Path | None) -> str | None:
+    """What the turn would be briefed with, or nothing where it would be briefed
+    with nothing.
+
+    Every way a path fails to yield bytes is one answer here -- absent, a
+    directory, a file this cannot read -- because each leaves the turn equally
+    unbriefed, and each must be recorded rather than raised: a shim that died on
+    the read would look to the backend like a seat that could not be reached.
+    """
+    if path is None:
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def violations(argv: list[str], resumed: str | None, brief: Path | None) -> list[str]:
     """Every way this invocation departs from the driver's stated contract."""
     faults = []
     if not argv or argv[0] != "exec":
@@ -62,8 +109,14 @@ def violations(argv: list[str], resumed: str | None, brief: str | None) -> list[
     if flag_value(argv, "--model") is None:
         faults.append("--model names no model")
     if brief is None:
-        faults.append("no developer_instructions setting: the turn carries no standing brief")
+        faults.append("no model_instructions_file setting: the turn carries no standing brief")
+    elif readable(brief) is None:
+        faults.append(f"model_instructions_file names {str(brief)!r}, which is not a readable file")
     carried = settings(argv)
+    if setting(argv, "developer_instructions") is not None:
+        # Alongside rather than instead: the CLI's own instructions stay on the
+        # turn, a second layer briefing the seat that the record does not show.
+        faults.append("developer_instructions is present: the brief adds to the CLI's own prompt")
     faults += [f"{one} is absent" for one in REQUIRED_SETTINGS if one not in carried]
     if "--ignore-user-config" not in argv:
         faults.append(
@@ -87,9 +140,7 @@ def violations(argv: list[str], resumed: str | None, brief: str | None) -> list[
 def main() -> None:
     argv = sys.argv[1:]
     resumed = argv[2] if argv[:2] == ["exec", "resume"] else None
-    carried = settings(argv)
-    brief = next((one for one in carried if one.startswith("developer_instructions=")), None)
-    effort = next((one for one in carried if one.startswith("model_reasoning_effort=")), None)
+    brief = briefed_from(argv)
     index = record(
         NAME,
         {
@@ -98,8 +149,8 @@ def main() -> None:
             "stdin_devnull": stdin_is_closed(),
             "resume": resumed,
             "model": flag_value(argv, "--model"),
-            "effort": None if effort is None else json.loads(effort.split("=", 1)[1]),
-            "brief": None if brief is None else json.loads(brief.split("=", 1)[1]),
+            "effort": setting(argv, "model_reasoning_effort"),
+            "brief": readable(brief),
             "prompt": argv[-1] if argv else "",
             "violations": violations(argv, resumed, brief),
         },

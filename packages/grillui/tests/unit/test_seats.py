@@ -34,7 +34,7 @@ from conftest import (
 )
 
 from grillui import drivers
-from grillui.dispatch import GRILL_MASTER, record_dispatch
+from grillui.dispatch import GRILL_MASTER, THREAD_AGENT, record_dispatch
 from grillui.drivers import (
     CODEX_RESUME_FILE,
     FIRST_RUNG_RESUME_FILE,
@@ -53,6 +53,7 @@ from grillui.drivers import (
     run_claude_cli,
     run_codex_cli,
     seat_driver,
+    write_brief,
 )
 from grillui.escalation import in_expert_mode
 from grillui.lane import AgentUnreachableError, DocumentRefusedError, Lane
@@ -86,6 +87,8 @@ from grillui.tiers import (
     Seat,
     TierConfig,
     UnknownEffortError,
+    UnknownRoleError,
+    UnknownTierError,
     UnknownTransportError,
     system_prompt,
 )
@@ -120,10 +123,19 @@ class ScriptedCodex:
     silent: bool = False
     calls: list[list[str]] = field(default_factory=list)
     directories: list[Path] = field(default_factory=list)
+    briefs: list[str] = field(default_factory=list)
 
     def __call__(self, argv: Sequence[str], directory: Path, /) -> str:
         self.calls.append(list(argv))
         self.directories.append(directory)
+        # Read here rather than after the run: the file is what the CLI would
+        # have read at this moment, and a later read would pass a turn briefed
+        # wrongly that a rewrite happened to correct.
+        named = next((one for one in argv if str(one).startswith("model_instructions_file=")), None)
+        if named is not None:
+            self.briefs.append(
+                Path(json.loads(str(named).split("=", 1)[1])).read_text(encoding="utf-8")
+            )
         turn = len(self.calls)
         lines: list[dict[str, Any]] = []
         if self.thread_id is not None:
@@ -169,6 +181,12 @@ class ScriptedCodex:
         """Every `-c key=value` one call carried."""
         argv = self.calls[turn - 1]
         return [argv[index + 1] for index, one in enumerate(argv) if one == "-c"]
+
+
+def brief_path(cli: ScriptedCodex, turn: int, /) -> Path:
+    """The file the turn named as its instructions."""
+    setting = next(one for one in cli.settings(turn) if one.startswith("model_instructions_file="))
+    return Path(json.loads(setting[len("model_instructions_file=") :]))
 
 
 def briefed(session_dir: Path) -> SessionLog:
@@ -435,7 +453,7 @@ def test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter(session_di
     assert read_resume(session_dir, MAP_CHANNEL, CODEX_RESUME_FILE) == "thread-7"
     for turn in (1, 2):
         settings = cli.settings(turn)
-        assert any(one.startswith("developer_instructions=") for one in settings), turn
+        assert any(one.startswith("model_instructions_file=") for one in settings), turn
         assert f'model_reasoning_effort="{DEFAULT_MAP_EFFORT}"' in settings, turn
         assert cli.option(turn, "--model") == DEFAULT_MAP_MODEL
         assert "--json" in cli.calls[turn - 1]
@@ -614,22 +632,148 @@ def test_no_provider_bytes_reach_a_status_entry(session_dir: Path) -> None:
     assert not any(leaked in one for one in said)
 
 
-def test_the_standing_brief_crosses_as_one_toml_value(session_dir: Path) -> None:
+def test_the_brief_is_named_by_a_path_that_resolves_from_anywhere(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """
-    Given a standing brief carrying newlines, quotes and braces
-    When it is put on the command line
-    Then it is one quoted TOML string, so what the brief means does not depend on
-         whether it happens to parse as TOML.
+    Given a session opened on a directory named relative to the backend's own
+          working directory
+    When a Codex turn is composed
+    Then the brief is named absolutely: the turn runs in the session directory,
+         so a relative name is resolved a second time against it and briefs the
+         seat from a file that is not there.
     """
-    log = briefed(session_dir)
+    monkeypatch.chdir(tmp_path)
     cli = ScriptedCodex()
+    log = briefed(Path("session"))
+
     CodexDriver(TierConfig(), cli).run(log, record_dispatch(log))
 
-    setting = next(one for one in cli.settings(1) if one.startswith("developer_instructions="))
-    quoted = setting[len("developer_instructions=") :]
-    assert quoted.startswith('"') and quoted.endswith('"')
-    assert "grill-master" in json.loads(quoted)
-    assert "\n" not in quoted
+    named = brief_path(cli, 1)
+
+    assert named.is_absolute(), named
+    assert cli.briefs == [system_prompt(FAST_TIER, GRILL_MASTER)]
+
+
+def test_a_symlink_at_the_briefs_name_is_replaced_rather_than_followed(
+    session_dir: Path, tmp_path: Path
+) -> None:
+    """
+    Given a symlink already sitting at the brief's name, pointing at a file
+          outside the session directory
+    When a Codex turn is composed
+    Then the brief is a regular file inside the session directory and the file
+         outside is untouched: everything a turn is given is inside the session,
+         and a name the session does not control is not a place to write.
+    """
+    log = briefed(session_dir)
+    planted = {}
+    for name in ("fast-grill-master-brief.md", "fast-grill-master-brief.tmp"):
+        outside = tmp_path / f"outside-{name}"
+        outside.write_text("not the brief", encoding="utf-8")
+        (session_dir / name).symlink_to(outside)
+        planted[name] = outside
+    cli = ScriptedCodex()
+
+    CodexDriver(TierConfig(), cli).run(log, record_dispatch(log))
+
+    named = brief_path(cli, 1)
+
+    assert named.parent == session_dir, named
+    assert not named.is_symlink(), named
+    for name, outside in planted.items():
+        assert outside.read_text(encoding="utf-8") == "not the brief", name
+    assert cli.briefs == [system_prompt(FAST_TIER, GRILL_MASTER)]
+
+
+def test_a_thread_turn_is_briefed_as_the_thread_agent(session_dir: Path) -> None:
+    """
+    Given a side thread taken on the Codex seat
+    When its turn is composed
+    Then it is briefed as the thread agent rather than as the map's author: the
+         two roles are given different mandates, and a thread turn holding the
+         grill-master's would author on a board it does not own.
+    """
+    log = briefed(session_dir)
+    log.submit([opened(THREAD, "h1")], log.epoch)
+    cli = ScriptedCodex(reply=THREAD_SAID, thread_id="side-thread")
+
+    a_turn(log, CodexDriver(TierConfig(), cli), channel=THREAD)
+
+    assert cli.briefs == [system_prompt(FAST_TIER, THREAD_AGENT)]
+    assert brief_path(cli, 1).parent == session_dir
+
+
+@pytest.mark.parametrize("agent", [GRILL_MASTER, THREAD_AGENT])
+def test_the_brief_of_any_role_is_named_inside_the_session(agent: str, session_dir: Path) -> None:
+    """
+    Given each role a turn may be taken for
+    When its brief is written
+    Then the file sits directly inside the session directory.
+    """
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    assert write_brief(session_dir, FAST_TIER, agent, "the brief").parent == session_dir
+
+
+@pytest.mark.parametrize("named", ["x/../../escaped", "../escaped", "sub/agent", "invented"])
+def test_a_role_outside_the_vocabulary_is_refused_before_a_path_is_formed(
+    named: str, session_dir: Path
+) -> None:
+    """
+    Given a role this session does not define, including ones spelled to climb
+          out of the session directory
+    When a brief is asked for
+    Then it is refused: a name interpolated into a path component is a way out
+         of the directory, and the brief of a role with no prompt is nothing
+         anybody could have meant.
+    """
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(UnknownRoleError):
+        write_brief(session_dir, FAST_TIER, named, "the brief")
+
+
+def test_a_tier_outside_the_vocabulary_is_refused_before_a_path_is_formed(
+    session_dir: Path,
+) -> None:
+    """
+    Given a rung this session does not define
+    When a brief is asked for
+    Then it is refused, for the reason a role outside the vocabulary is.
+    """
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(UnknownTierError):
+        write_brief(session_dir, "../escaped", GRILL_MASTER, "the brief")
+
+
+def test_the_file_the_turn_names_holds_this_rungs_brief(session_dir: Path) -> None:
+    """
+    Given a Codex seat taking a cold turn and then a resumed one
+    When each is composed
+    Then the file each names carries this rung's standing brief at the moment of
+         the call, and it lies in the session's own directory: a resumed thread
+         inherits none of the brief, and a path naming stale bytes briefs the
+         turn for a role it no longer has.
+    """
+    log = briefed(session_dir)
+    cli = ScriptedCodex(thread_id="thread-7")
+    driver = CodexDriver(TierConfig(), cli)
+
+    a_turn(log, driver)
+    a_turn(log, driver)
+
+    assert cli.briefs == [system_prompt(FAST_TIER, GRILL_MASTER)] * 2
+    for turn in (1, 2):
+        setting = next(
+            one for one in cli.settings(turn) if one.startswith("model_instructions_file=")
+        )
+        quoted = setting[len("model_instructions_file=") :]
+        # One quoted TOML string: a path carrying a space is otherwise read as
+        # a bare token and the turn is briefed by nothing.
+        assert quoted.startswith('"') and quoted.endswith('"'), turn
+        assert brief_path(cli, turn).parent == session_dir, turn
 
 
 def test_each_channel_keeps_its_own_thread(session_dir: Path) -> None:
@@ -924,7 +1068,7 @@ def test_the_format_rule_names_every_update_kind_the_backend_folds() -> None:
     assert set(listed.split(", ")) == set(FOLDABLE_KINDS)
 
 
-def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
+def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else(tmp_path: Path) -> None:
     """
     Given a Codex seat taking a cold turn and a resumed one
     When each argv is built
@@ -935,13 +1079,14 @@ def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
          inherits none of it.
     """
     seat = Seat("codex", "gpt-5.6-luna", "medium")
+    brief = tmp_path / "fast-grill-master-brief.md"
     turn = [
         "--json",
         "--skip-git-repo-check",
         "--model",
         "gpt-5.6-luna",
         "-c",
-        'developer_instructions="brief"',
+        f'model_instructions_file="{brief}"',
         "-c",
         "notify=[]",
         "-c",
@@ -970,8 +1115,8 @@ def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
         "prompt",
     ]
 
-    assert codex_argv(seat, "brief", "prompt", None) == ["codex", "exec", *turn]
-    assert codex_argv(seat, "brief", "prompt", "thread-9") == [
+    assert codex_argv(seat, brief, "prompt", None) == ["codex", "exec", *turn]
+    assert codex_argv(seat, brief, "prompt", "thread-9") == [
         "codex",
         "exec",
         "resume",
@@ -980,14 +1125,14 @@ def test_the_codex_seat_is_seeded_with_the_brief_and_nothing_else() -> None:
     ]
 
 
-def test_a_seat_with_no_effort_asks_the_transport_for_none() -> None:
+def test_a_seat_with_no_effort_asks_the_transport_for_none(tmp_path: Path) -> None:
     """
     Given a Codex seat configured with no effort
     When its arguments are built
     Then nothing is said about how hard to think, rather than a default being
          invented on the seat's behalf.
     """
-    argv = codex_argv(Seat("codex", "some-model"), "brief", "prompt", None)
+    argv = codex_argv(Seat("codex", "some-model"), tmp_path / "brief.md", "prompt", None)
 
     assert not any(one.startswith("model_reasoning_effort") for one in argv)
     assert argv[-1] == "prompt"
