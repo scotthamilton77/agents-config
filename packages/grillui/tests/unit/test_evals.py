@@ -26,9 +26,17 @@ from evals.checks import (
     the_stop_verdict_is_expected,
     the_turn_speaks_once,
 )
-from grillui.drivers import seat_driver
+from grillui.drivers import read_document, record_reply, seat_driver
 from grillui.lane import AgentUnreachableError
-from grillui.schemas import FAST_TIER, HEAVY_TIER, MAP_CHANNEL, GrillMasterDocument
+from grillui.log import SessionLog
+from grillui.schemas import (
+    FAST_TIER,
+    HEAVY_TIER,
+    MAP_CHANNEL,
+    RULINGS_KEY,
+    TIER_KEY,
+    GrillMasterDocument,
+)
 from grillui.tiers import (
     CLAUDE_TRANSPORT,
     CODEX_TRANSPORT,
@@ -687,6 +695,41 @@ def test_two_updates_that_speak_are_two_channels() -> None:
     assert the_turn_speaks_once(twice, limit=2) is None
 
 
+def test_the_owed_rulings_check_reads_the_seat_and_not_the_landed_entry(
+    log: SessionLog,
+) -> None:
+    """
+    Given a reply ruling on a decision no obligation named, put through the
+          recorder that strikes exactly that ruling
+    When the landed entry and the seat's own reply are each held to the
+         owed-rulings check
+    Then the entry carries no ruling and the check still reports the one the
+         seat wrote.
+
+    The check measures the seat, which is what lets the prompt rewrite be
+    judged: a suite reading the landed entry would report a seat ruling on
+    whatever it liked as a seat that ruled correctly, and the backend's filter
+    would hide the behaviour the rewrite exists to change.
+    """
+    said = GrillMasterDocument.model_validate(
+        {
+            "text": "Nothing else moves.",
+            "updates": [],
+            "supersedes": [],
+            "rulings": [{"decision": "d9", "ruling": "stands", "why": "it survives"}],
+            "stop": {"met": False},
+        }
+    ).model_dump_json()
+
+    record_reply(log, FAST_TIER, MAP_CHANNEL, said, {TIER_KEY: FAST_TIER}, None)
+
+    landed = [one for one in log.entries() if one.actor == "grill-master"]
+    assert [one.payload[RULINGS_KEY] for one in landed] == [[]]
+    assert the_rulings_are_the_ones_owed(read_document(said), ()) == (
+        "rulings on ['d9'], owed nothing"
+    )
+
+
 def test_the_measured_baselines_are_the_ones_recorded() -> None:
     """
     Given the two cases measured on a real seat
@@ -700,8 +743,8 @@ def test_the_measured_baselines_are_the_ones_recorded() -> None:
     expert = cases["2026-09-04-expert-owed-rulings"]
     first_rung = cases["2026-09-04-first-rung-nothing-owed"]
 
-    assert (expert.prompt_tokens, seat_of(expert, config)) == (4868, config.expert_seat)
-    assert (first_rung.prompt_tokens, seat_of(first_rung, config)) == (9786, config.map_seat)
+    assert (expert.prompt_tokens, seat_of(expert, config)) == (5944, config.expert_seat)
+    assert (first_rung.prompt_tokens, seat_of(first_rung, config)) == (10573, config.map_seat)
 
 
 def test_a_default_run_writes_a_dated_report_and_says_where(

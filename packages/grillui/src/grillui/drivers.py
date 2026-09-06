@@ -85,13 +85,12 @@ from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import PayloadRefusedError
 from grillui.projector import fold
 from grillui.schemas import (
-    ANSWER_KINDS,
     CONTEXT_BYTES_KEY,
     CONTEXT_LIMIT_KEY,
+    DROPPED_RULINGS_KEY,
     EFFORT_KEY,
     FAST_TIER,
     FOLD_KIND,
-    FOLDABLE_KINDS,
     FOLLOWED_TRANSFER_KEY,
     HEAVY_TIER,
     MAP_CHANNEL,
@@ -101,6 +100,7 @@ from grillui.schemas import (
     RECOMMENDATION_KEY,
     RULING_STANDS,
     RULINGS_KEY,
+    STATUS_PHASE_RULINGS_DROPPED,
     STATUS_PHASE_TRANSFERRED,
     STOP_KEY,
     SUPERSEDES_KEY,
@@ -110,12 +110,12 @@ from grillui.schemas import (
     DispatchContext,
     EventSubmission,
     GrillMasterDocument,
+    MootnessObligation,
     RejectedReceipt,
     Ruling,
     Stop,
-    answer_problem,
     fault_summary,
-    payload_problem,
+    update_problem,
 )
 from grillui.tiers import (
     API_KEY_ENV,
@@ -864,7 +864,7 @@ class FastDriver:
         # that costs nothing -- a refusal raises out of the block before either
         # is written, and nothing else could have read the log in between.
         with log.appending():
-            record_reply(log, self.tier, channel, reply, attribution)
+            record_reply(log, self.tier, channel, reply, attribution, context.mootness)
             if advice is not None and self.config.autonomous:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, model)
@@ -962,7 +962,7 @@ class HeavyDriver:
         # and conditional on the reply -- a refusal raises out of the block
         # before anything is said about a turn that never happened.
         with log.appending():
-            record_reply(log, self.tier, channel, reply, attribution)
+            record_reply(log, self.tier, channel, reply, attribution, context.mootness)
             measured.warn(log, model)
 
 
@@ -1052,7 +1052,7 @@ class CodexDriver:
         # one: the transfer a policy buys and the warning this turn measured are
         # about the reply immediately above them.
         with log.appending():
-            record_reply(log, self.tier, channel, reply, attribution)
+            record_reply(log, self.tier, channel, reply, attribution, context.mootness)
             if advice is not None and self.config.autonomous:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, seat.model)
@@ -1270,41 +1270,10 @@ def document_problem(reply: str) -> str | None:
     if document.supersedes and not sub_updates(document):
         return "supersedes: a withdrawal needs `text`, an update or a ruling to ride on"
     for index, update in enumerate(document.updates):
-        problem = _update_problem(update)
+        problem = update_problem(update)
         if problem is not None:
             return f"updates.{index}: {problem}"
     return None
-
-
-def _update_problem(update: Mapping[str, Any]) -> str | None:
-    """Why the appender would refuse this update, or None where it would take it.
-
-    The turn's own updates and no others: the notice, the `stands` informationals
-    and the stop notice are minted by the code below out of fields the shape has
-    already validated, so gate-judging them would put the backend's own bytes on
-    the seat's retry.
-
-    The shape is judged by the same function the appender judges it with, so the
-    two cannot drift into refusing different bytes. What is added here is what
-    that function has no answer for: it holds no shape for a kind outside the
-    vocabulary, so an unknown one passes it and is refused at the append instead;
-    and the answer an agent settles with is checked against the board there,
-    which this reader does not have. It asks the smaller question a boardless
-    reader can -- whether an answer is carried at all -- and leaves whether the
-    option is one the decision offers to the appender.
-    """
-    kind = update.get("kind")
-    if not isinstance(kind, str):
-        return "an update names no kind"
-    if kind not in FOLDABLE_KINDS:
-        return f"{kind!r} is not a kind an update may carry"
-    problem = payload_problem(kind, update)
-    if problem is not None:
-        return problem
-    if kind not in ANSWER_KINDS and "answer" not in update:
-        return None
-    refused = answer_problem(update.get("answer"), None)
-    return None if refused is None else f"{kind!r} payload: {refused[0]}: {refused[1]}"
 
 
 def read_document(reply: str) -> GrillMasterDocument:
@@ -1438,8 +1407,40 @@ def stop_notice(stop: Stop) -> list[dict[str, Any]]:
     return [{"kind": "informational", "text": f"{said} {stop.why}" if stop.why else said}]
 
 
+def owed_rulings(
+    document: GrillMasterDocument, owed: MootnessObligation | None
+) -> tuple[GrillMasterDocument, list[str]]:
+    """The turn with its unowed rulings struck, and the ids that were struck.
+
+    A ruling is owed only where the dispatch carried an obligation, and then
+    only on the decisions that obligation named. Everything else is a verdict
+    nobody asked for, and an unstruck one is not harmless: a `stands` mints a
+    notice pinned to the decision it rules, so a turn ruling across the whole
+    board puts a line on every decision the human has already dealt with, and
+    the board that was showing them what is left to answer is showing them a
+    shelf of agreement instead.
+
+    Struck here rather than left to the seat because the brief is advice and
+    this is the gate: whatever any seat on any rung decides to rule, the entry
+    carries only what was asked for. The whole document is rebuilt rather than
+    the entry patched, so the `stands` notices minted downstream are minted from
+    the same list the entry records -- a filter applied to one and not the other
+    is how a notice for a struck ruling reaches the human anyway.
+    """
+    wanted = set() if owed is None else set(owed.ids)
+    kept = [one for one in document.rulings if one.decision in wanted]
+    struck = [one.decision for one in document.rulings if one.decision not in wanted]
+    if not struck:
+        return document, []
+    return document.model_copy(update={"rulings": kept}), struck
+
+
 def record_document(
-    log: SessionLog, tier: str, document: GrillMasterDocument, attribution: dict[str, Any]
+    log: SessionLog,
+    tier: str,
+    document: GrillMasterDocument,
+    attribution: dict[str, Any],
+    owed: MootnessObligation | None = None,
 ) -> None:
     """Put a grill-master turn into the log, whole.
 
@@ -1454,7 +1455,12 @@ def record_document(
     event of its own. They ride on every turn, empty or not: the obligation
     check reads coverage off them, and a key that is sometimes absent is a check
     that sometimes reads a turn that ruled as a turn that could not.
+
+    `owed` is what this turn's dispatch put in question, and the rulings are cut
+    to it before anything is built out of them. A turn that owed nothing lands
+    no rulings and mints no `stands` notice, whatever it sent.
     """
+    document, struck = owed_rulings(document, owed)
     updates = sub_updates(document)
     if not updates:
         # Every key validated and the turn still carries nothing: no notice, no
@@ -1466,6 +1472,17 @@ def record_document(
         # check upstream exists to decide about. Raising here would skip the
         # ladder that owes this case a hand-up and then a notice.
         #
+        # A strike still goes on the record. There is no entry to put it on --
+        # a turn whose whole content was unowed rulings has none -- so it rides
+        # the lane, which is where a fact the backend authored and nobody has to
+        # act on belongs. Written before the refusal below, because a turn that
+        # both withdrew and had rulings struck loses the record otherwise.
+        if struck:
+            log.emit_status(
+                STATUS_PHASE_RULINGS_DROPPED,
+                f"rulings on {', '.join(struck)} were not owed by this turn",
+                MAP_CHANNEL,
+            )
         # A withdrawal is the exception: `supersedes` rides on an entry, so a
         # turn that withdrew something and gave nothing to record it on has
         # lost the gesture. That is a failed turn rather than a silent drop.
@@ -1474,10 +1491,12 @@ def record_document(
         return
     if document.supersedes:
         updates[0] = {**updates[0], SUPERSEDES_KEY: document.supersedes}
-    judgement = {
+    judgement: dict[str, Any] = {
         RULINGS_KEY: [one.model_dump() for one in document.rulings],
         STOP_KEY: document.stop.model_dump(),
     }
+    if struck:
+        judgement[DROPPED_RULINGS_KEY] = struck
     # The turn spoke and did nothing else: with one sub-update and a notice in
     # it, the notice is what that one is, since everything else contributed
     # none. It rides as the entry itself rather than inside a fold.
@@ -1492,7 +1511,12 @@ def record_document(
 
 
 def record_reply(
-    log: SessionLog, tier: str, channel: str, text: str, attribution: dict[str, Any]
+    log: SessionLog,
+    tier: str,
+    channel: str,
+    text: str,
+    attribution: dict[str, Any],
+    owed: MootnessObligation | None = None,
 ) -> None:
     """Put the turn into the log, attributed.
 
@@ -1519,9 +1543,13 @@ def record_reply(
     the answer it offered, because that is what each is: this turn replacing
     what a previous one told the human, or putting to them what it takes the
     thread to have settled, in the same breath as it says the new thing.
+
+    `owed` is the dispatch's mootness obligation, and it reaches only the map
+    turn: a thread agent rules on nothing, so there is nothing there to cut to
+    an obligation it was never given.
     """
     if channel == MAP_CHANNEL:
-        record_document(log, tier, read_document(text), attribution)
+        record_document(log, tier, read_document(text), attribution, owed)
         return
     prose, updates, superseded, proposal = declared_updates(text)
     refusal = _proposal_refusal(log, channel, text, proposal)

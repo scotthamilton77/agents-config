@@ -291,6 +291,14 @@ STATUS_PHASE_COMPOSING = "composing"
 STATUS_PHASE_REPLIED = "replied"
 STATUS_PHASE_ERROR = "error"
 STATUS_PHASE_TRANSFERRED = "transferred"
+# The backend striking rulings a turn was never asked for. It is a phase
+# because the strike is backend-authored and owed to nobody, exactly like the
+# transfer above -- and because a turn whose whole content was unowed rulings
+# has no entry of its own for the record to ride on, while the strike is still
+# the difference between a seat that stayed inside its obligation and one that
+# was cut back to it. The page does not draw it: nothing the human has to act
+# on happened.
+STATUS_PHASE_RULINGS_DROPPED = "rulings-dropped"
 STATUS_PHASES = frozenset(
     {
         STATUS_PHASE_ACCEPTED,
@@ -298,6 +306,7 @@ STATUS_PHASES = frozenset(
         STATUS_PHASE_REPLIED,
         STATUS_PHASE_ERROR,
         STATUS_PHASE_TRANSFERRED,
+        STATUS_PHASE_RULINGS_DROPPED,
     }
 )
 
@@ -374,6 +383,20 @@ FROM_THREAD_KEY = "from_thread"
 # what happened to be queued.
 RULINGS_KEY = "rulings"
 STOP_KEY = "stop"
+
+# The decisions a turn ruled on that the dispatch never put in question, dropped
+# before the append. The drop is recorded rather than taken silently because it
+# is the backend overriding what the seat said: a turn cut back to its
+# obligation reads, from the log alone, exactly like a turn that stayed inside
+# it, and telling those two apart is the whole signal for whether the brief is
+# working.
+#
+# This key carries it on a turn that still had something to record, and is
+# absent from one where nothing was dropped, so its presence is the fact. A turn
+# whose whole content was unowed rulings has no entry to carry it -- striking
+# them leaves nothing to append -- and its drop rides the status lane instead,
+# under `STATUS_PHASE_RULINGS_DROPPED`.
+DROPPED_RULINGS_KEY = "rulings_dropped"
 
 # The verdict a backend-minted sub-update records, stamped when it is minted.
 # A `stands` ruling queues no change, so the only thing on the board it produced
@@ -1329,6 +1352,38 @@ def _fold_payload_problem(payload: Mapping[str, Any]) -> str | None:
         if problem is not None:
             return f"fold sub-update {index}: {problem}"
     return None
+
+
+def update_problem(update: Mapping[str, Any]) -> str | None:
+    """Why the appender would refuse this update, or None where it would take it.
+
+    One update as a turn offers it, kind and payload together. Every reader that
+    has to answer "would this be taken?" asks here: the document gate before a
+    seat's turn is recorded, and the prompt that tells the seat which fields an
+    update of each kind owes. Two readers computing that separately is how a
+    contract comes to promise what the gate refuses.
+
+    The shape is judged by the same function the appender judges it with, so the
+    two cannot drift into refusing different bytes. What is added is what that
+    function has no answer for: it holds no shape for a kind outside the
+    vocabulary, so an unknown one passes it and is refused at the append instead;
+    and the answer an agent settles with is checked against the board there,
+    which this reader does not have. It asks the smaller question a boardless
+    reader can -- whether an answer is carried at all -- and leaves whether the
+    option is one the decision offers to the appender.
+    """
+    kind = update.get("kind")
+    if not isinstance(kind, str):
+        return "an update names no kind"
+    if kind not in FOLDABLE_KINDS:
+        return f"{kind!r} is not a kind an update may carry"
+    problem = payload_problem(kind, update)
+    if problem is not None:
+        return problem
+    if kind not in ANSWER_KINDS and "answer" not in update:
+        return None
+    refused = answer_problem(update.get("answer"), None)
+    return None if refused is None else f"{kind!r} payload: {refused[0]}: {refused[1]}"
 
 
 def batch_payload_problem(submissions: Sequence[EventSubmission]) -> str | None:

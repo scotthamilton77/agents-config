@@ -58,6 +58,7 @@ from grillui.drivers import (
 from grillui.escalation import in_expert_mode
 from grillui.lane import AgentUnreachableError, DocumentRefusedError, Lane
 from grillui.schemas import (
+    DROPPED_RULINGS_KEY,
     EFFORT_KEY,
     FAST_TIER,
     FOLDABLE_KINDS,
@@ -65,12 +66,14 @@ from grillui.schemas import (
     MAP_CHANNEL,
     MODEL_KEY,
     PROMPT_TOKENS_KEY,
+    RULINGS_KEY,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_TRANSFERRED,
     TIER_KEY,
     CatchUpEntry,
     DispatchContext,
     EventSubmission,
+    MootnessObligation,
 )
 from grillui.session import open_session
 from grillui.tiers import (
@@ -1184,3 +1187,39 @@ def test_an_unreadable_request_timeout_is_refused_at_configuration() -> None:
     for raw in ("soon", "0", "-5", "nan", "inf", "Infinity"):
         with pytest.raises(UnreadableLimitError, match="number of seconds"):
             TierConfig.from_env({REQUEST_TIMEOUT_ENV: raw})
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(lambda said: HeavyDriver(TierConfig(), ScriptedCli(reply=said)), id="claude"),
+        pytest.param(lambda said: CodexDriver(TierConfig(), ScriptedCodex(reply=said)), id="codex"),
+    ],
+)
+def test_a_cli_seat_hands_its_obligation_to_the_recorder(session_dir: Path, build: Any) -> None:
+    """
+    Given a CLI seat replying with a ruling on the one decision its dispatch
+          owes and a ruling on one it does not
+    When the turn is taken
+    Then the entry carries the owed ruling alone and names the other as struck.
+
+    Each driver reads the obligation off its own dispatch and passes it to the
+    recorder on its own call, so a seat whose hand-off went missing would land
+    unowed rulings while every other seat refused them. The filter is one place;
+    reaching it is three.
+    """
+    log = briefed(session_dir)
+    owed = MootnessObligation(target=NODE, answer="A log", ids=["d2"])
+    said = document(
+        text="Both are settled.",
+        rulings=[
+            {"decision": "d2", "ruling": "stands", "why": "it survives"},
+            {"decision": "d9", "ruling": "stands", "why": "nobody asked"},
+        ],
+    )
+
+    build(said).run(log, record_dispatch(log, mootness=owed))
+
+    landed = replies(log)
+    assert [[two["decision"] for two in one[RULINGS_KEY]] for one in landed] == [["d2"]]
+    assert [one.get(DROPPED_RULINGS_KEY) for one in landed] == [["d9"]]

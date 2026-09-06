@@ -24,6 +24,7 @@ was made rather than being inferred from what happened to be queued.
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -43,23 +44,38 @@ from grillui.drivers import (
     HeavyDriver,
     ReplyRefusedError,
     document_problem,
+    owed_rulings,
+    read_document,
     record_reply,
     request_body,
     take_document,
 )
 from grillui.lane import DocumentRefusedError, Lane
-from grillui.projector import fold
+from grillui.projector import (
+    ALSO_QUEUES_AS_NOTICE,
+    LANDS_AT_ONCE,
+    LANDS_WHILE_UNANSWERED,
+    WAITS_IN_QUEUE,
+    fold,
+    node_from_payload,
+    queue,
+)
 from grillui.schemas import (
+    DROPPED_RULINGS_KEY,
     FAST_TIER,
     FOLDABLE_KINDS,
     HEAVY_TIER,
+    PAYLOAD_SHAPES,
     RULING_STANDS,
     RULINGS_KEY,
     STATUS_PHASE_ERROR,
+    STATUS_PHASE_RULINGS_DROPPED,
     STOP_KEY,
     VERDICT_KEY,
     DispatchContext,
     EventSubmission,
+    HandoffDecision,
+    LogEntry,
     MootnessObligation,
     Option,
     payload_problem,
@@ -79,6 +95,9 @@ if TYPE_CHECKING:
     from grillui.log import SessionLog
 
 KILLED = ["d2", "d3"]
+# Every decision the board carries, which is what a turn that ruled on
+# everything rules on.
+NODES = ("d1", "d2", "d3")
 KILLING_OPTION = {"id": "b", "text": "Close it unactioned", "puts_in_question": KILLED}
 
 
@@ -179,6 +198,15 @@ def errors(log: SessionLog) -> list[str]:
         str(entry.payload.get("detail"))
         for entry in log.entries()
         if entry.kind == "status" and entry.payload.get("phase") == STATUS_PHASE_ERROR
+    ]
+
+
+def struck(log: SessionLog) -> list[str]:
+    """What the lane recorded as ruled on and not owed, in order."""
+    return [
+        str(entry.payload.get("detail"))
+        for entry in log.entries()
+        if entry.kind == "status" and entry.payload.get("phase") == STATUS_PHASE_RULINGS_DROPPED
     ]
 
 
@@ -969,16 +997,20 @@ def test_a_ruling_carrying_its_update_is_credited_and_the_change_waits_for_the_h
     assert "d3" in board.frontier
 
 
-def test_a_ruling_may_name_a_decision_the_dispatch_did_not(log: SessionLog) -> None:
+def test_a_ruling_on_a_decision_the_dispatch_did_not_name_is_dropped(log: SessionLog) -> None:
     """
     Given a seat ruling on both named decisions and on a third the dispatch
           never mentioned
     When the human takes the option naming two
-    Then the turn discharges, and the third decision's why is on it too.
+    Then the entry carries the two that were owed and no other, the third
+         decision's `why` reaches nobody, and the entry names the id that was
+         struck.
 
-    The check is coverage and not correctness: every id the dispatch named must
-    be ruled, and a turn that saw further than the pre-marks did is not wrong
-    for saying so.
+    A ruling is owed on the ids the gesture put in question and on no others.
+    A turn ruling further than that is not seeing further: it is putting a
+    verdict, and a notice carrying it, on a decision nobody asked it about --
+    and on a settled one, that verdict is noise against an answer the human
+    already gave.
     """
     only = ScriptedFast(
         replies=[
@@ -993,12 +1025,91 @@ def test_a_ruling_may_name_a_decision_the_dispatch_did_not(log: SessionLog) -> N
     answer(Lane(log, FastDriver(TierConfig(), only)))
 
     assert notices(log) == []
+    assert [[two["decision"] for two in one[RULINGS_KEY]] for one in replies(log)] == [KILLED]
+    assert [one.get(DROPPED_RULINGS_KEY) for one in replies(log)] == [["d1"]]
     board = fold(log.epoch, log.entries())
     assert {one.target for one in board.pending if one.kind == "informational" and one.target} == {
-        "d1",
         "d2",
         "d3",
     }
+
+
+def test_a_turn_owing_nothing_lands_no_rulings_and_no_stands_notices(log: SessionLog) -> None:
+    """
+    Given a seat ruling `stands` on every decision on the board
+    When the human takes the option that puts nothing in question, so the
+         dispatch carries no obligation at all
+    Then the entry carries no rulings, no `stands` notice reaches the human, and
+         the entry names all three ids as struck.
+
+    Ruling across the whole board on a turn that owed nothing is what the filter
+    is for. Each `stands` would otherwise mint a notice pinned to the decision
+    it rules, so the human meets a line of agreement on every question rather
+    than the ones their answer actually disturbed. Whether the seat is told to
+    rule that widely is the brief's problem; that it cannot is this one.
+    """
+    only = ScriptedFast(
+        replies=[document(text="Nothing else moves.", rulings=[ruling(one) for one in NODES])]
+    )
+    seed(log)
+
+    answer(Lane(log, FastDriver(TierConfig(), only)), option="a")
+
+    assert [one[RULINGS_KEY] for one in replies(log)] == [[]]
+    assert [one.get(DROPPED_RULINGS_KEY) for one in replies(log)] == [list(NODES)]
+    assert spoken(log) == ["Nothing else moves."]
+    board = fold(log.epoch, log.entries())
+    # The turn's own notice queues, anchored to nothing. What must not be there
+    # is a notice pinned to a decision, which is the only shape a `stands` why
+    # reaches the board in.
+    assert [one.target for one in board.pending if one.kind == "informational"] == [None]
+
+
+def test_a_turn_carrying_only_unowed_rulings_records_the_drop_with_no_entry(
+    log: SessionLog,
+) -> None:
+    """
+    Given a turn owing nothing whose whole content is one ruling, so that
+          striking it leaves the turn with nothing to say
+    When the map turn is taken
+    Then no entry is appended, and the lane carries the id that was struck.
+
+    The empty-turn rule stands: every entry shape here holds content, and
+    inventing some would put words in the agent's mouth. What must not happen is
+    the strike going unrecorded, because a turn cut back to nothing and a turn
+    that said nothing are different facts and only one of them is about the
+    seat.
+    """
+    only = ScriptedFast(replies=[document(text="", rulings=[ruling("d2")])])
+    seed(log)
+
+    answer(Lane(log, FastDriver(TierConfig(), only)), option="a")
+
+    assert replies(log) == []
+    assert struck(log) == ["rulings on d2 were not owed by this turn"]
+
+
+def test_the_rulings_that_survive_are_the_ones_the_obligation_named() -> None:
+    """
+    Given a turn ruling on one owed decision and one that was never owed
+    When the document is recorded against the obligation the dispatch carried
+    Then the owed ruling is kept, the other is struck and named, and a turn
+         handed no obligation keeps none of them.
+
+    Asked of the recorder directly as well as through the lane, because this is
+    the seam every seat's turn passes through and a filter that only worked on
+    the rung the lane happened to seat would be a filter on one transport.
+    """
+    owed = MootnessObligation(target="d1", answer="Close it unactioned", ids=["d2"])
+    turn = read_document(document(rulings=[ruling("d2"), ruling("d3")]))
+
+    kept, struck = owed_rulings(turn, owed)
+    none_owed, all_struck = owed_rulings(turn, None)
+
+    assert [one.decision for one in kept.rulings] == ["d2"]
+    assert struck == ["d3"]
+    assert none_owed.rulings == []
+    assert all_struck == ["d2", "d3"]
 
 
 # --- what the human is told, and what the shape is stated to be --------------
@@ -1069,6 +1180,171 @@ def test_the_document_rule_shows_one_example_per_kind_that_the_gate_would_take()
         assert json.dumps(example) in brief, kind
     assert "`basis`" not in DOCUMENT_FORMAT_RULE
     assert "`basis`" in BASIS_RULE
+
+
+# What one kind's block in the rendered contract looks like, read back out of
+# the brief the seat is actually sent. Parsed rather than rebuilt: a check that
+# composed the block from the same objects the renderer uses would agree with
+# the renderer by construction and notice nothing, including a block edited into
+# the prompt by hand.
+CONTRACT_BLOCK = re.compile(
+    r"^  - `(?P<kind>[a-z-]+)`: .+\n"
+    r"    Required: (?P<required>.+?)\. Optional: (?P<optional>.+?)\.\n"
+    r"    It (?P<landing>.+?)\.\n"
+    r"    Example: (?P<example>\{.*\})$",
+    re.MULTILINE,
+)
+
+
+def _fields(said: str) -> set[str]:
+    """The field names one side of a Required/Optional line states."""
+    return set() if said == "nothing" else {one.strip(" `") for one in said.split(",")}
+
+
+def _refused_without(example: dict[str, Any]) -> set[str]:
+    """The example's fields whose removal the document gate refuses.
+
+    Asked of the gate here as well as in the renderer, and asked of it by taking
+    a real example apart, so the two answers agree only where the gate says the
+    same thing to both.
+    """
+    return {
+        name
+        for name in example
+        if name != "kind"
+        and document_problem(
+            document(updates=[{key: value for key, value in example.items() if key != name}])
+        )
+        is not None
+    }
+
+
+# What a node carries when its author states it, as against what the board adds
+# once it is on there: the same shape minus the status, answer, rationale and
+# lock the images own. An add-node payload is exactly one of these, so this is
+# the field set the page renders a new decision from -- read off the model
+# rather than listed by hand. `id` is out because the backend mints it.
+RENDERED_NODE_FIELDS = {
+    (one.alias or name) for name, one in HandoffDecision.model_fields.items()
+} - {"id"}
+RENDERED_OPTION_FIELDS = set(Option.model_fields)
+
+
+PROBE = "probe"
+
+
+def _folded(kind: str, *, answered: bool) -> tuple[bool, bool]:
+    """Whether an update of this kind waited as a proposal, and whether it
+    queued at all, read off a log the fold actually walked.
+
+    One board with one answerable decision, answered or not, and the kind's own
+    example arriving on it. Both facts come from the readers a client uses --
+    the queue of proposals and the pending list -- so what is observed here is
+    the fold's behaviour rather than any statement about it.
+    """
+    seeded: list[dict[str, Any]] = [
+        {
+            "kind": "add-node",
+            "actor": "grill-master",
+            "payload": {
+                "target": "d1",
+                "short": "Store",
+                "title": "Which storage?",
+                "body": "Pick one.",
+                "prereqs": [],
+                "options": [{"id": "a", "text": "A log"}, {"id": "b", "text": "A table"}],
+            },
+        }
+    ]
+    if answered:
+        seeded.append(
+            {
+                "kind": "answer",
+                "actor": "human",
+                "payload": {"target": "d1", "answer": {"option": "a"}},
+            }
+        )
+    seeded.append(
+        {
+            "kind": kind,
+            "actor": "grill-master",
+            "payload": {
+                key: value for key, value in UPDATE_EXAMPLES[kind].items() if key != "kind"
+            },
+        }
+    )
+    entries = [
+        LogEntry(
+            seq=index,
+            epoch="e",
+            timestamp="t",
+            idempotency_key=PROBE if index == len(seeded) else f"seed-{index}",
+            channel="map",
+            **one,
+        )
+        for index, one in enumerate(seeded, 1)
+    ]
+    return PROBE in queue(entries), any(one.id == PROBE for one in fold("e", entries).pending)
+
+
+def _observed_landing(kind: str) -> str:
+    """The phrase the fold's own behaviour earns this kind.
+
+    The rendered claim is checked against this rather than against the helper
+    that renders it: a helper answering the same way for every kind would agree
+    with itself, and the only thing that catches it is the board.
+    """
+    waits, queued = _folded(kind, answered=False)
+    waits_once_answered, _ = _folded(kind, answered=True)
+    if waits:
+        said = WAITS_IN_QUEUE
+    else:
+        said = LANDS_WHILE_UNANSWERED if waits_once_answered else LANDS_AT_ONCE
+    return said + (ALSO_QUEUES_AS_NOTICE if queued and not waits else "")
+
+
+def test_the_per_kind_contract_is_rendered_from_the_appender_and_the_fold() -> None:
+    """
+    Given the per-kind contract in the grill-master's standing brief
+    When each block is parsed back out of the brief the seat is sent and held to
+         the gate, the fold and the node shape
+    Then the brief names a kind exactly when the appender folds it; the fields
+         it calls required are exactly those the gate refuses an update for
+         missing; the fields it calls optional are exactly the rest of the shape
+         and the example; the landing it claims is the fold's own answer; each
+         example passes the shape and the gate; and the add-node example carries
+         every field a node is rendered from, options included.
+
+    The prompt is the seat's whole contract, so a contract that disagrees with
+    the gate is a seat writing updates the gate refuses, and one that shows an
+    incomplete node is a seat shipping decisions the board can only label by
+    their ids. Both sides are therefore read off the objects that enforce them,
+    and the rendered text is parsed back rather than rebuilt: a block composed
+    from the renderer's own inputs would agree with it by construction and
+    notice nothing, a block hand-edited into the prompt included.
+    """
+    brief = system_prompt(HEAVY_TIER, GRILL_MASTER)
+    blocks = {one.group("kind"): one for one in CONTRACT_BLOCK.finditer(brief)}
+
+    assert set(blocks) == set(FOLDABLE_KINDS), set(blocks) ^ set(FOLDABLE_KINDS)
+    for kind, block in blocks.items():
+        shape = PAYLOAD_SHAPES[kind]
+        example = UPDATE_EXAMPLES[kind]
+        required = _fields(block.group("required"))
+        assert required == _refused_without(example), kind
+        assert _fields(block.group("optional")) == (
+            (set(shape.model_fields) | set(example)) - {"kind"} - required
+        ), kind
+        assert block.group("landing") == _observed_landing(kind), kind
+        assert json.loads(block.group("example")) == example, kind
+        assert payload_problem(kind, example) is None, kind
+        assert document_problem(document(updates=[example])) is None, kind
+    added = json.loads(blocks["add-node"].group("example"))
+    assert set(added) >= RENDERED_NODE_FIELDS, RENDERED_NODE_FIELDS - set(added)
+    for offered in added["options"]:
+        assert set(offered) >= RENDERED_OPTION_FIELDS, RENDERED_OPTION_FIELDS - set(offered)
+    node = node_from_payload(added, "n-1")
+    assert node.short and node.body and node.title and node.options
 
 
 def test_the_fast_transport_asks_the_provider_for_the_shape_on_a_map_turn(
