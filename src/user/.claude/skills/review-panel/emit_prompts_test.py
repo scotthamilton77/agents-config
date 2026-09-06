@@ -1325,6 +1325,58 @@ class TestSweep:
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "sweep-not-due"
 
+    def _settled_campaign(self, tmp_path, repo, acs_file, dispositions):
+        """Round 1 raised a blocking finding, the ledger settled it, and the head never moved —
+        so no delta round can staff a lens and the sweep is the only round left to run."""
+        prior = write_json(tmp_path / "verdict-1.json", verdict_round1(repo))
+        ledger = write_json(tmp_path / "dispositions.json", dispositions)
+        staffing = write_json(tmp_path / "sweep-staffing.json", staffing_record(
+            TYPED_CODE_FRONTIER, decision="sweep-contract"))
+        out_dir = tmp_path / "sweep"
+        flat = argv(repo, acs_file, out_dir, **{"--round": "2", "--staffing": str(staffing)})
+        flat += ["--prior-verdict", str(prior), "--disposition", str(ledger), "--sweep"]
+        return flat, out_dir
+
+    @pytest.mark.parametrize("settled", [
+        {"disposition": "rebutted", "evidence": "the sentinel-terminated buffer cannot drop it"},
+        {"disposition": "fixed", "evidence": "test_trailing fails without the fix, passes with"},
+    ])
+    def test_b4_a_ledger_settled_round_is_the_zero_blocking_round(self, repo, acs_file, tmp_path,
+                                                                  capsys, settled):
+        """A finding rebutted or fixed in the ledger blocks nothing further, so the round that
+        raised it is the zero-blocking round the sweep closes — and the sweep is the whole-artifact
+        re-read of that settlement."""
+        flat, out_dir = self._settled_campaign(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", **settled},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        code, result = run(flat, capsys)
+        assert code == 0 and result["emitted"] is True
+        assert sorted(prompts(out_dir)) == sorted(TYPED_CODE_FRONTIER)
+        assert meta_of(out_dir)["sweep"] is True
+
+    def test_b4_a_deferred_blocking_finding_does_not_open_the_sweep(self, repo, acs_file,
+                                                                    tmp_path, capsys):
+        """Deferral settles a finding for later rounds without answering it; only a rebuttal or a
+        fix makes a blocking finding stop blocking the exit door."""
+        flat, _ = self._settled_campaign(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "advisory-deferred"},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "sweep-not-due"
+
+    def test_b4_an_unsupported_rebuttal_still_refuses_at_the_ledger(self, repo, acs_file,
+                                                                    tmp_path, capsys):
+        """The gate reads the disposition word; the ledger still audits the evidence behind it,
+        so a bare assertion opens nothing."""
+        flat, _ = self._settled_campaign(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "rebutted", "evidence": "  "},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "unsupported-rebuttal"
+
     def test_b4_a_first_round_sweep_is_refused(self, repo, acs_file, tmp_path, capsys):
         """Round 1 is already a whole-artifact read; there is no delta campaign to close."""
         staffing = write_json(tmp_path / "sweep-staffing.json", staffing_record(

@@ -777,19 +777,41 @@ def frontier_seats(roster: list[dict]) -> list[str]:
     return [lens["lens"] for lens in roster if lens.get("tier") == "frontier"]
 
 
-def check_sweep_due(round_no: int, verdicts: list[dict], roster: list[dict]) -> list[str]:
-    """Check the campaign is at its exit door, and return the seats the sweep subtracts from."""
+def check_sweep_due(
+    round_no: int, verdicts: list[dict], roster: list[dict], dispositions: list[dict]
+) -> list[str]:
+    """Check the campaign is at its exit door, and return the seats the sweep subtracts from.
+
+    A round blocks nothing once the ledger answers every mechanical finding it raised, as
+    `rebutted` or `fixed`; a deferral files a finding away without answering it, and an
+    undispositioned one is unanswered outright, so neither opens the door. The evidence behind
+    a disposition is the ledger's audit, not this gate's.
+    """
     if round_no < 2 or not verdicts:
         raise Refusal(
             "sweep-not-due",
             "the terminal sweep closes a campaign that reached zero blocking findings through "
             "delta rounds; there is no such round yet",
         )
-    if not is_clean_round(verdicts[-1]):
+    last = verdicts[-1]
+    answered = {
+        (entry.get("round"), entry.get("id"))
+        for entry in dispositions
+        if entry.get("disposition") in ("rebutted", "fixed")
+    }
+    unanswered = [
+        finding
+        for finding in last.get("findings", [])
+        if isinstance(finding, dict)
+        and finding.get("type") == "mechanical"
+        and (last.get("round"), finding.get("id")) not in answered
+    ]
+    if last.get("verdict") == "halted" or unanswered:
         raise Refusal(
             "sweep-not-due",
-            f"round {verdicts[-1].get('round')} still carries blocking findings; the sweep runs "
-            "after a zero-blocking round, not instead of fixing one",
+            f"round {last.get('round')} still carries blocking findings the ledger has not "
+            "settled as rebutted or fixed; the sweep runs after a zero-blocking round, not "
+            "instead of fixing one",
         )
     seats = frontier_seats(roster)
     if not seats:
@@ -1133,7 +1155,8 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
 
     roster = classes[args.artifact_class]["lenses"]
     staffing, staffing_digest = load_staffing(args.staffing)
-    seats = check_sweep_due(args.round, verdicts, roster) if args.sweep else []
+    dispositions = load_dispositions(args.disposition)
+    seats = check_sweep_due(args.round, verdicts, roster, dispositions) if args.sweep else []
     staffed = validate_staffing(staffing, roster, profile, args.sweep, due)
     staffing_ref = {"path": args.staffing, "digest": staffing_digest}
     if args.sweep and (
@@ -1157,9 +1180,7 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     prior_findings = prior_findings_of(verdicts)
-    ledger = build_ledger(
-        prior_findings, load_dispositions(args.disposition), args.artifact_class
-    )
+    ledger = build_ledger(prior_findings, dispositions, args.artifact_class)
     scopes, skipped, rescope = resolve_scopes(
         staffed, args.round, verdicts, args.sweep, bool(staffing.get("force_full")),
         args.repo_root, args.head_sha, args.last_full_head,

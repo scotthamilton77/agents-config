@@ -20,9 +20,8 @@ target's artifact type resolves against the profile table: each row carries defa
 force ceiling staffing subtracts below and never exceeds, a precondition set, and a no-gate
 marker — the only route to an empty precondition set. Minimum rows: prototype (no-gate,
 zero-force), changelog (mechanical-only), agent-instruction-prose (writing-skills
-mandates), spec, general-docs, typed-code. The emitter validates the table
-before use. An unlisted type names a listed profile with a reason, both recorded; an
-unresolvable target is refused — never improvise a lens set.
+mandates), spec, general-docs, typed-code. An unlisted type names a listed profile with a
+reason, both recorded; an unresolvable target is refused — never improvise a lens set.
 
 A mixed target partitions by class — one staffed round and one verdict per class present, each
 finding attributed to exactly one partition; a justified zero-lens partition contributes its
@@ -59,12 +58,13 @@ beyond the emitter's triviality boundary, or the staffing record's full-rescope
 override when a finding broke an assumption — forces a full rescope.
 
 Terminal-clean through deltas requires exactly one whole-artifact sweep after a zero-blocking
-round. `--sweep` flies under its own staffing decision — subtract-only from the class's
-frontier-tier seats, unbounded by the profile ceiling, a target-shaped rationale per subtraction
-(merely looking clean justifies nothing); a justified zero-seat decision is the terminal
-record. Framed blocking-only, ledger loaded. A class
-whose roster has no frontier seat escalates to the human.
-A clean, complete full round 1 whose staffing retained every frontier seat is terminal directly.
+round: one whose mechanical findings the ledger all settles as `rebutted` or `fixed`; deferred
+and undispositioned ones still block. `--sweep` flies under its own staffing decision, framed
+blocking-only, ledger loaded — subtract-only from the class's frontier seats, unbounded by the
+profile ceiling, a target-shaped rationale per subtraction (looking clean justifies nothing); a
+justified zero-seat decision is the terminal record. A class with no frontier seat
+escalates to the human. A clean, complete full round 1 that retained every frontier seat is
+terminal directly.
 
 ## Emitting the prompts
 
@@ -86,9 +86,9 @@ each due `--checkpoint`. Prompts put fixed instructions first, fence every inter
 declared data, and carry no other lens's mandate and no ambient house context — a lens's own
 mandate is the only route a house standard reaches the reviewer.
 
-The emitter refuses an unsound round with machine-readable errors (exit 2): an
-unsynced base, a missing gate or checkpoint, broken staffing or profile table, a ledger gap, an
-unsupported rebuttal, fix, or transfer, a terminated campaign, a resume over an unchanged ruler.
+The emitter refuses an unsound round with machine-readable errors (exit 2): an unsynced base, a
+missing gate or checkpoint, broken staffing or profile table, a ledger gap, an unsupported
+disposition, a terminated campaign.
 
 ## Dispositions and termination
 
