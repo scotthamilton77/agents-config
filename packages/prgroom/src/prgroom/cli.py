@@ -202,7 +202,13 @@ def _root(
     :func:`main` or directly (e.g. typer's ``CliRunner``). The resolved Store is
     stashed on ``ctx.obj`` for the verbs to consume. Precedence (flag > env >
     default) lives in :func:`resolve_store`, the single source of truth.
+
+    ``approve`` is exempt: it holds no grooming state, so a store it would never
+    open must not stand between a human-instructed merge and the review that
+    unblocks it.
     """
+    if ctx.invoked_subcommand == "approve":
+        return
     try:
         ctx.obj = _build_store(store)
     except PrgroomError as err:
@@ -742,10 +748,15 @@ def approve(
 
 
 def _load_approver(path: Path) -> ApproverConfig:
-    """Read the approver block, mapping the loader's ``ValueError`` onto its code."""
+    """Read the approver block, mapping a malformed or unreadable file onto its code.
+
+    ``ValueError`` is the loader's own type for bad content; ``OSError`` covers a
+    file the loader could stat but not open. Both are the same thing to a caller —
+    the App identity did not resolve — and neither may escape as a traceback.
+    """
     try:
         return ApproverConfig.load(path)
-    except ValueError as exc:
+    except (ValueError, OSError) as exc:
         raise PreconditionError(ErrorCode.PRECONDITION_APPROVER_CONFIG, detail=str(exc)) from exc
 
 

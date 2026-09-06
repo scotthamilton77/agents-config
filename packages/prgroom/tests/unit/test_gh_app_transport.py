@@ -128,3 +128,15 @@ def test_the_transport_satisfies_the_protocol_structurally() -> None:
     from prgroom.gh.app import HttpTransport
 
     assert isinstance(UrllibTransport(), HttpTransport)
+
+
+def test_a_success_whose_body_is_not_json_is_a_coded_error_not_a_decode_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A proxy or captive portal answers 200 with HTML; the caller must see the
+    # registry error every other API failure arrives as.
+    stub_urlopen(monkeypatch, FakeResponse(200, b"<html>bad gateway</html>"))
+    with pytest.raises(PrgroomError) as caught:
+        UrllibTransport().request("GET", URL, headers={})
+    assert caught.value.code is ErrorCode.RUNTIME_APPROVER_API_FAILED
+    assert "<html>bad gateway</html>" in caught.value.detail

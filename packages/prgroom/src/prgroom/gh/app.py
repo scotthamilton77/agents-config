@@ -101,7 +101,7 @@ class UrllibTransport:
         )
         try:
             with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:  # noqa: S310  # same https URL this module built
-                return int(response.status), json.loads(response.read() or b"null")
+                return int(response.status), _decode_json(response.read(), url)
         except urllib.error.HTTPError as exc:
             # An error status still carries a body worth surfacing in the
             # diagnostic; a non-JSON one (an HTML error page) degrades to text.
@@ -265,6 +265,23 @@ def submit_review(
         "review submission",
     )
     return int(review["id"])
+
+
+def _decode_json(raw: bytes, url: str) -> Any:
+    """Parse a success response's body; a body that is not JSON is an API failure.
+
+    A proxy or captive portal can answer 200 with HTML, which is a failed call and
+    must arrive as one rather than as a decoder traceback.
+    """
+    try:
+        return json.loads(raw or b"null")
+    except json.JSONDecodeError as exc:
+        detail = f"non-JSON body from {url}: {raw.decode(errors='replace')[:200]}"
+        raise PrgroomError(
+            tier=Tier.RUNTIME_TERMINAL_USER,
+            code=ErrorCode.RUNTIME_APPROVER_API_FAILED,
+            detail=detail,
+        ) from exc
 
 
 def _b64url(data: bytes) -> str:

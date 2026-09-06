@@ -245,3 +245,35 @@ def test_timeout_fake_raises_the_stdlib_timeout_the_signer_catches() -> None:
     # signer's timeout arm above would pass for the wrong reason.
     with pytest.raises(subprocess.TimeoutExpired):
         TimeoutRunner().run(["openssl"])
+
+
+def test_the_mint_body_is_exactly_the_repo_and_the_one_permission() -> None:
+    # Asserting the whole body, not two keys of it: a token that also carried
+    # contents or checks access would satisfy a per-key check while handing out
+    # more than a review submission needs.
+    http = RouteTableHttp(BASE_ROUTES)
+    mint_installation_token(http, "jwt", REF)
+    assert http.bodies_posted_to("/access_tokens") == [
+        {"repositories": ["demo"], "permissions": {"pull_requests": "write"}}
+    ]
+
+
+def test_a_failed_mint_detail_carries_the_status_and_a_body_excerpt() -> None:
+    routes = dict(BASE_ROUTES)
+    routes[("POST", "/app/installations/42/access_tokens")] = (
+        401,
+        {"message": "bad credentials"},
+    )
+    with pytest.raises(PrgroomError) as caught:
+        mint_installation_token(RouteTableHttp(routes), "jwt", REF)
+    assert "401" in caught.value.detail
+    assert "bad credentials" in caught.value.detail
+
+
+def test_a_rejected_submission_detail_carries_the_status_and_a_body_excerpt() -> None:
+    routes = dict(BASE_ROUTES)
+    routes[("POST", "/repos/octo/demo/pulls/5/reviews")] = (422, {"message": "unprocessable"})
+    with pytest.raises(PrgroomError) as caught:
+        submit_review(RouteTableHttp(routes), "tok", REF, event="APPROVE", body="b", commit_id=HEAD)
+    assert "422" in caught.value.detail
+    assert "unprocessable" in caught.value.detail

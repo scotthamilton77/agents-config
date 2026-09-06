@@ -8,6 +8,8 @@ asserts the code the tier maps to and that no traceback escaped.
 
 from __future__ import annotations
 
+import os
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +17,9 @@ import pytest
 from typer.testing import CliRunner
 
 from prgroom import cli
-from prgroom.errors import ErrorCode
+from prgroom.errors import ErrorCode, PreconditionError
 from prgroom.gh.app import REVIEWS_PER_PAGE
+from prgroom.lifecycle.run import Verbs
 from prgroom.proc import CommandResult
 from tests.fakes import RecordedRunner, RouteTableHttp
 
@@ -296,3 +299,107 @@ class TestArgumentValidation:
         assert result.exit_code == 2
         assert ErrorCode.PRECONDITION_BAD_PR_REF.value in result.output
         assert http.calls == []
+
+
+class TestOutsideTheGroomingLoop:
+    def test_a_store_that_cannot_be_built_does_not_prevent_an_approval(
+        self, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # approve reads and writes no grooming state and takes no PR lock, so an
+        # unrelated --store / PRGROOM_STORE setting must not stand between a
+        # human-instructed merge and the review that unblocks it.
+        config, _ = approver_env
+
+        def unusable_store(_name: str | None) -> object:
+            raise PreconditionError(ErrorCode.PRECONDITION_STORE_UNAVAILABLE)
+
+        monkeypatch.setattr(cli, "_build_store", unusable_store)
+        http = RouteTableHttp(BASE_ROUTES)
+        wire(monkeypatch, http)
+        result = invoke(config)
+        assert result.exit_code == 0
+        assert len(http.posted_reviews()) == 1
+
+    def test_approve_is_not_a_verb_the_run_aggregate_can_thread(self) -> None:
+        # run drives exactly the callables Verbs carries, and builds its pipeline
+        # from those fields alone; no slot for approve means no path to it.
+        assert "approve" not in {field.name for field in fields(Verbs)}
+
+
+class TestNoRetryAndNoOverride:
+    def test_a_failing_route_is_called_exactly_once(
+        self, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config, _ = approver_env
+        routes = dict(BASE_ROUTES)
+        routes[("POST", "/app/installations/42/access_tokens")] = (500, {"message": "boom"})
+        http = RouteTableHttp(routes)
+        wire(monkeypatch, http)
+        assert invoke(config).exit_code == 77
+        mints = [url for _, url, _, _ in http.calls if url.endswith("/access_tokens")]
+        assert len(mints) == 1
+
+    def test_no_admin_override_option_is_offered(self) -> None:
+        result = runner.invoke(cli.app, ["approve", "--help"])
+        assert "--admin" not in result.output
+        assert invoke(Path("project-config.toml"), "--admin").exit_code != 0
+
+
+class TestDefaultProjectConfigPath:
+    def test_the_default_config_is_the_one_in_the_current_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        key = tmp_path / "app.pem"
+        key.write_text("-----BEGIN PRIVATE KEY-----\n")
+        (tmp_path / "project-config.toml").write_text(CONFIG)
+        monkeypatch.setenv("APPROVER_KEY_PATH", str(key))
+        monkeypatch.chdir(tmp_path)
+        http = RouteTableHttp(BASE_ROUTES)
+        wire(monkeypatch, http)
+        result = runner.invoke(cli.app, ["approve", PR_ARG, "--head-sha", HEAD])
+        assert result.exit_code == 0
+        assert len(http.posted_reviews()) == 1
+
+
+class TestUnreadableProjectConfig:
+    def test_a_config_that_exists_but_cannot_be_opened_is_the_approver_config_error(
+        self, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        if os.geteuid() == 0:
+            pytest.skip("root reads a mode-000 file, so the failure cannot be provoked")
+        config, _ = approver_env
+        config.chmod(0o000)
+        http = RouteTableHttp({})
+        wire(monkeypatch, http)
+        try:
+            result = invoke(config)
+        finally:
+            config.chmod(0o600)
+        assert result.exit_code == 2
+        assert ErrorCode.PRECONDITION_APPROVER_CONFIG.value in result.output
+        assert http.calls == []
+
+
+def test_head_sha_is_required_and_its_absence_costs_no_network_call(
+    approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config, _ = approver_env
+    http = RouteTableHttp({})
+    wire(monkeypatch, http)
+    result = runner.invoke(cli.app, ["approve", PR_ARG, "--project-config", str(config)])
+    assert result.exit_code == 2
+    assert http.calls == []
+
+
+def test_facts_reach_the_review_body_byte_for_byte(
+    approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Deliberately non-canonical: odd spacing and a key order json.dumps would
+    # not reproduce, so a body built by re-serializing the input fails here.
+    facts = '{ "rule":"instructed",   "b":1,\t"a":[2,3] }'
+    config, _ = approver_env
+    http = RouteTableHttp(BASE_ROUTES)
+    wire(monkeypatch, http)
+    assert invoke(config, "--facts", facts).exit_code == 0
+    (posted,) = http.posted_reviews()
+    assert facts in posted["body"]

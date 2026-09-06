@@ -242,3 +242,22 @@ class TestResolveKeyPath:
         with pytest.raises(PreconditionError) as caught:
             resolve_key_path(approver, {"APP_KEY": str(missing)})
         assert caught.value.code is ErrorCode.PRECONDITION_APPROVER_KEY_UNREADABLE
+
+
+def test_the_facts_string_reaches_the_body_byte_for_byte() -> None:
+    # Non-canonical on purpose: spacing and key order json.dumps would not
+    # reproduce, so a body built by re-serializing the input fails here.
+    facts = '{ "rule":"instructed",   "b":1,\t"a":[2,3] }'
+    http = RouteTableHttp(dict(BASE_ROUTES))
+    approve_pr(
+        http=http,
+        runner=signing_runner(),
+        ref=REF,
+        head_sha=HEAD,
+        facts=facts,
+        app_id=APP_ID,
+        key_path=KEY_PATH,
+        now=NOW,
+    )
+    (posted,) = http.posted_reviews()
+    assert facts in posted["body"]
