@@ -113,11 +113,11 @@ real and still not a verdict on the change.
 
 ## Where a verdict is posted
 
-Outside the reviewed branch, never as a file in the diff: a comment-only pull request review by
-the reviewing App — the JSON as its body, one inline comment per finding at the line it names —
-pinned to the reviewed head; the App's approval is a separate review. A payload posted by any
-other identity is not a verdict, and one whose `head_sha` is not the current head is stale and
-treated as absent.
+Outside the reviewed branch: a submitted, comment-only pull request review by the reviewing
+GitHub App — the JSON as its body, an inline comment per finding that names a line — pinned to
+the reviewed head; the App's approval is a separate review. A payload any other identity posts
+is not a verdict, and one whose `head_sha` is not the current head is stale and treated as
+absent.
 
 ## When a round is complete
 

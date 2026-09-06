@@ -67,8 +67,10 @@ writable by the reviewed party, which would demand a separate attestation
 layer to restore trust.) The medium is a **pull request review authored by
 the App**: its body carries the verdict JSON verbatim, one inline review
 comment per finding sits at the file and line the finding names (a finding
-with no locatable anchor lives in the body only), and the review is pinned to
-the reviewed head SHA. A check run is not required. The approval is a second,
+with no locatable anchor lives in the body only; a clean verdict posts the
+envelope with no inline comments), and the review is pinned to the reviewed
+head SHA. The review is submitted — a pending or draft review is not posted
+and is not a verdict. A check run is not required. The approval is a second,
 separate review by the same App — event `APPROVE`, pinned to the final head —
 and never doubles as the verdict's carrier: a verdict review is submitted
 comment-only, so a posted verdict is never itself an approval. Provenance is
@@ -436,7 +438,9 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   reviewed; the approval is a separate `APPROVE` review by the same App,
   pinned to the final head — a verdict review never counts as an approval, and
   a review posted for a head that is no longer the PR's head is refused at
-  posting time (inverse pair). The criterion reaches the verdict medium and nothing else: non-verdict
+  posting time (inverse pair). Posting is idempotent per head: an `APPROVE`
+  for a head the App has already approved is a no-op, never a second
+  approval. The criterion reaches the verdict medium and nothing else: non-verdict
   machine writes remain owner-credentialed after S6 (§4), so satisfying this
   criterion is not a claim that they were converted, and a reader must not
   treat any other machine comment on this repository as App-attributable
