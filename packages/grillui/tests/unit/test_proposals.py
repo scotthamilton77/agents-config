@@ -366,6 +366,55 @@ def test_a_withdrawn_proposal_stops_locking_without_leaving_the_queue(
     assert frontier(client) == [SEED_NODE]
 
 
+@pytest.mark.parametrize("blocking", [True, False])
+def test_a_decision_two_things_hold_is_answerable_only_when_both_let_go(
+    blocking: bool, client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a decision carrying both a queued proposal and an alert
+    When the alert is dismissed, and then the proposal is
+    Then the decision is locked throughout and answerable only at the end.
+
+    Neither source speaks for the other. Both are read off the same queue on
+    every fold, so a fold that let the alert's verdict stand for the decision
+    would hand back a decision with a change still waiting on it -- and the
+    human would answer around exactly the change the queue exists to hold.
+    Parametrised over the flag because that failure is one-sided: a
+    non-blocking alert is what silently unlocks, and the blocking case alone
+    would pass either way.
+    """
+    seed_node(client, log.epoch)
+    proposal(client, log.epoch, "invalidate", "kill-1", target=SEED_NODE, why="moot")
+    post(
+        client,
+        log.epoch,
+        event(
+            "elicit-alert",
+            key="alert-1",
+            target=SEED_NODE,
+            text="nobody has read the licence",
+            blocking=blocking,
+        ),
+    )
+    assert board(client)[SEED_NODE]["locked"] is True
+    assert frontier(client) == []
+
+    alert = [
+        one["id"]
+        for one in client.get("/image1").json()["pending"]
+        if one["kind"] == "elicit-alert"
+    ]
+    assert queue_gesture(client, log.epoch, DISMISS_KIND, *alert)["status"] == "accepted"
+
+    assert board(client)[SEED_NODE]["locked"] is True, "the waiting change stopped holding it"
+    assert frontier(client) == []
+
+    queue_gesture(client, log.epoch, DISMISS_KIND, *proposed(client, SEED_NODE))
+
+    assert board(client)[SEED_NODE]["locked"] is False
+    assert frontier(client) == [SEED_NODE]
+
+
 # ── the human's apply ──
 
 
