@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from prgroom.errors import PrgroomError
+from prgroom.errors import ErrorCode, PrgroomError
 from prgroom.gh.app import GITHUB_API, REVIEWS_PER_PAGE, UrllibTransport
 from prgroom.lifecycle.approve import approve_pr
 from prgroom.proc import CommandResult
@@ -245,3 +245,57 @@ def test_the_corpus_covers_every_shape_json_decodes_to() -> None:
     # space would quietly shrink every sweep above.
     decoded = {type(json.loads(text)) for text in ("null", "true", "1", "1.5", '""', "[]", "{}")}
     assert decoded <= {type(shape) for shape in SHAPES}
+
+
+# What each endpoint answers when it works. Anything else is a failed call.
+EXPECTED_STATUS = {
+    APP: 200,
+    INSTALLATION: 200,
+    TOKEN: 201,
+    PULL_READ: 200,
+    REVIEWS_PAGE_1: 200,
+    SUBMIT: 200,
+}
+
+# The other success code, the successes that carry no usable body, a redirect,
+# and the error bands.
+STATUSES = [200, 201, 202, 204, 301, 400, 401, 403, 404, 422, 500, 502, 503]
+
+ENDPOINTS = [
+    pytest.param(APP, id="the-app-lookup"),
+    pytest.param(INSTALLATION, id="the-installation-lookup"),
+    pytest.param(TOKEN, id="the-token-mint"),
+    pytest.param(PULL_READ, id="the-live-head-read"),
+    pytest.param(REVIEWS_PAGE_1, id="the-reviews-listing"),
+    pytest.param(SUBMIT, id="the-review-submission"),
+]
+
+
+@pytest.mark.parametrize("endpoint", ENDPOINTS)
+@pytest.mark.parametrize("status", STATUSES)
+def test_an_unexpected_status_at_any_endpoint_stops_the_flow(
+    endpoint: tuple[str, str], status: int
+) -> None:
+    """A status the call did not ask for ends the run where it happened.
+
+    The client reads a body only from the status it expects, so accepting any
+    other one would carry an unparsed or absent payload into the next step — and,
+    on a read before the submission, into a POST that should never have happened.
+    """
+    if status == EXPECTED_STATUS[endpoint]:
+        pytest.skip("the status this call expects")
+    http = RouteTableHttp(routes_with(endpoint, (status, BASE_ROUTES[endpoint][1])))
+    with pytest.raises(PrgroomError) as caught:
+        call_approve(http)
+
+    expected_code = (
+        ErrorCode.RUNTIME_APPROVER_NOT_INSTALLED
+        if endpoint == INSTALLATION and status == 404
+        else ErrorCode.RUNTIME_APPROVER_API_FAILED
+    )
+    assert caught.value.code is expected_code
+
+    method, url, _, _ = http.calls[-1]
+    assert (method, url) == (endpoint[0], GITHUB_API + endpoint[1])
+    if endpoint is not SUBMIT:
+        assert http.posted_reviews() == []
