@@ -1171,6 +1171,10 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
             + f" under {staffing.get('decision')!r}. A seat outside that roster cannot fly a "
             "whole-artifact pass the campaign is about to terminate on",
         )
+    prior_findings = prior_findings_of(verdicts)
+    # Before the terminal record, not just before the prompts: a zero-seat decision is the
+    # campaign's last word, and it rests on a ledger nothing downstream will audit.
+    ledger = build_ledger(prior_findings, dispositions, args.artifact_class)
     if not staffed:
         return {
             "emitted": False, "terminal": "zero-sweep" if args.sweep else "zero-force",
@@ -1179,8 +1183,6 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
             "staffing_record": staffing_ref,
         }
 
-    prior_findings = prior_findings_of(verdicts)
-    ledger = build_ledger(prior_findings, dispositions, args.artifact_class)
     scopes, skipped, rescope = resolve_scopes(
         staffed, args.round, verdicts, args.sweep, bool(staffing.get("force_full")),
         args.repo_root, args.head_sha, args.last_full_head,

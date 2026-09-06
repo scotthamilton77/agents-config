@@ -1325,7 +1325,7 @@ class TestSweep:
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "sweep-not-due"
 
-    def _settled_campaign(self, tmp_path, repo, acs_file, dispositions):
+    def _settled_campaign(self, tmp_path, repo, acs_file, dispositions, **overrides):
         """Round 1 raised a blocking finding, the ledger settled it, and the head never moved —
         so no delta round can staff a lens and the sweep is the only round left to run."""
         prior = write_json(tmp_path / "verdict-1.json", verdict_round1(repo))
@@ -1333,7 +1333,8 @@ class TestSweep:
         staffing = write_json(tmp_path / "sweep-staffing.json", staffing_record(
             TYPED_CODE_FRONTIER, decision="sweep-contract"))
         out_dir = tmp_path / "sweep"
-        flat = argv(repo, acs_file, out_dir, **{"--round": "2", "--staffing": str(staffing)})
+        flat = argv(repo, acs_file, out_dir, **{
+            "--round": "2", "--staffing": str(staffing), **overrides})
         flat += ["--prior-verdict", str(prior), "--disposition", str(ledger), "--sweep"]
         return flat, out_dir
 
@@ -1376,6 +1377,21 @@ class TestSweep:
         ])
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "unsupported-rebuttal"
+
+    def test_b4_a_zero_seat_sweep_cannot_terminate_on_an_unaudited_ledger(self, repo, acs_file,
+                                                                          tmp_path, capsys):
+        """A judged zero at the exit door writes the campaign's last word, so the ledger it rests
+        on is audited first: staffing nobody skips the prompts, never the evidence."""
+        zero = write_json(tmp_path / "zero-sweep.json", staffing_record(
+            [], TYPED_CODE_LENSES, decision="sweep-contract",
+            justification="every change this campaign made was to generated fixtures"))
+        flat, _ = self._settled_campaign(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "rebutted", "evidence": "  "},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ], **{"--staffing": str(zero)})
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "unsupported-rebuttal"
+        assert "terminal" not in result
 
     def test_b4_a_first_round_sweep_is_refused(self, repo, acs_file, tmp_path, capsys):
         """Round 1 is already a whole-artifact read; there is no delta campaign to close."""
