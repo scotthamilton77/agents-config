@@ -266,3 +266,23 @@ def test_the_facts_string_reaches_the_body_byte_for_byte() -> None:
     )
     (posted,) = http.posted_reviews()
     assert facts in posted["body"]
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        pytest.param("/pulls/5", id="the-live-head-read"),
+        pytest.param("&page=1", id="the-reviews-listing"),
+        pytest.param("/reviews", id="the-review-submission"),
+    ],
+)
+def test_every_call_after_the_mint_carries_the_installation_token(tail: str) -> None:
+    # The JWT authenticates the App, not its installation; a PR-scoped call made
+    # with it would be refused, and one made with no credential would act as
+    # whoever the transport happens to be.
+    _, http = run_approve(dict(BASE_ROUTES))
+    authorized = [
+        headers.get("Authorization") for _, url, headers, _ in http.calls if url.endswith(tail)
+    ]
+    assert authorized
+    assert set(authorized) == {"Bearer tok"}

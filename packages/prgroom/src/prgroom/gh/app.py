@@ -200,7 +200,7 @@ def mint_installation_token(http: HttpTransport, jwt: str, ref: PRRef) -> Minted
             detail=f"the App is not installed on {ref.owner}/{ref.repo}",
         )
     installation = _expect((status, payload), "installation lookup")
-    installation_id = _field(installation, "id", want=int, what="installation lookup")
+    installation_id = read_field(installation, "id", want=int, what="installation lookup")
     scope = json.dumps(
         {"repositories": [ref.repo], "permissions": {"pull_requests": "write"}}
     ).encode()
@@ -214,8 +214,10 @@ def mint_installation_token(http: HttpTransport, jwt: str, ref: PRRef) -> Minted
         "installation-token mint",
         want=201,
     )
-    token = _field(minted, "token", want=str, what="installation-token mint")
-    return MintedApp(token=token, login=f"{_field(app, 'slug', want=str, what='app lookup')}[bot]")
+    token = read_field(minted, "token", want=str, what="installation-token mint")
+    return MintedApp(
+        token=token, login=f"{read_field(app, 'slug', want=str, what='app lookup')}[bot]"
+    )
 
 
 def read_head_sha(http: HttpTransport, token: str, ref: PRRef) -> str:
@@ -223,7 +225,7 @@ def read_head_sha(http: HttpTransport, token: str, ref: PRRef) -> str:
     pull: dict[str, Any] = _expect(
         http.request("GET", _pull_url(ref), headers=_bearer(token)), "pull request read"
     )
-    return _field(pull, "head", "sha", want=str, what="pull request read")
+    return read_field(pull, "head", "sha", want=str, what="pull request read")
 
 
 def iter_reviews(http: HttpTransport, token: str, ref: PRRef) -> Iterator[dict[str, Any]]:
@@ -267,7 +269,7 @@ def submit_review(
         http.request("POST", f"{_pull_url(ref)}/reviews", headers=_bearer(token), body=payload),
         "review submission",
     )
-    return _field(review, "id", want=int, what="review submission")
+    return read_field(review, "id", want=int, what="review submission")
 
 
 def _decode_json(raw: bytes, url: str) -> Any:
@@ -278,7 +280,7 @@ def _decode_json(raw: bytes, url: str) -> Any:
     """
     try:
         return json.loads(raw or b"null")
-    except json.JSONDecodeError as exc:
+    except ValueError as exc:
         detail = f"non-JSON body from {url}: {raw.decode(errors='replace')[:_EXCERPT]}"
         raise _api_failed(detail) from exc
 
@@ -308,7 +310,7 @@ def _error_body(exc: urllib.error.HTTPError) -> Any:
         return None
     try:
         return json.loads(raw or b"null")
-    except json.JSONDecodeError:
+    except ValueError:
         return raw.decode(errors="replace")[:_EXCERPT]
 
 
@@ -332,7 +334,7 @@ def _reviews_page(payload: Any, page: int) -> list[dict[str, Any]]:
     return payload
 
 
-def _field(payload: Any, *path: str, want: type[T], what: str) -> T:
+def read_field(payload: Any, *path: str, want: type[T], what: str) -> T:
     """Read a required field out of a response, or fail the call.
 
     Every field this client reads routes through here, so a response that parsed
@@ -345,7 +347,9 @@ def _field(payload: Any, *path: str, want: type[T], what: str) -> T:
             detail = f"{what}: response has no {'.'.join(path[: depth + 1])}"
             raise _api_failed(detail)
         node = node[key]
-    if not isinstance(node, want):
+    # bool is an int subclass, so a JSON boolean would otherwise satisfy an int
+    # field and go on to address an installation or name a review.
+    if not isinstance(node, want) or (want is not bool and isinstance(node, bool)):
         detail = f"{what}: {'.'.join(path)} is {type(node).__name__}, not {want.__name__}"
         raise _api_failed(detail)
     return node

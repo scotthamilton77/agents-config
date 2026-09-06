@@ -408,3 +408,14 @@ def test_a_bad_page_is_refused_before_any_of_it_is_yielded() -> None:
     reviews = iter_reviews(http, "tok", REF)
     with pytest.raises(PrgroomError):
         next(reviews)
+
+
+def test_the_segments_are_base64url_not_ordinary_base64() -> None:
+    # These bytes encode to '+' and '/' under ordinary base64 and to '-' and '_'
+    # under base64url. A JWT carrying the former is rejected by GitHub.
+    signature = bytes([0xFB, 0xFF, 0xBF])
+    encoded = build_jwt(1, NOW, lambda _payload: signature).rsplit(".", 1)[1]
+    assert "-" in encoded
+    assert "_" in encoded
+    assert "+" not in encoded
+    assert "/" not in encoded

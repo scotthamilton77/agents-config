@@ -25,6 +25,7 @@ from prgroom.gh.app import (
     iter_reviews,
     mint_installation_token,
     openssl_signer,
+    read_field,
     read_head_sha,
     submit_review,
 )
@@ -131,10 +132,13 @@ def _existing_approval_id(
     an earlier head does not attest the current one.
     """
     for review in iter_reviews(http, minted.token, ref):
+        if review.get("user") is None:
+            continue
+        login = read_field(review, "user", "login", want=str, what="reviews listing")
         if (
-            (review.get("user") or {}).get("login") == minted.login
+            login == minted.login
             and review.get("state") == _APPROVED_STATE
             and review.get("commit_id") == head_sha
         ):
-            return int(review["id"])
+            return read_field(review, "id", want=int, what="reviews listing")
     return None
