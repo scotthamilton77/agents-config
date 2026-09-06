@@ -32,6 +32,7 @@ from grillui.schemas import FAST_TIER, HEAVY_TIER, MAP_CHANNEL, GrillMasterDocum
 from grillui.tiers import (
     CLAUDE_TRANSPORT,
     CODEX_TRANSPORT,
+    OPENROUTER_TRANSPORT,
     TierConfig,
     UnknownTransportError,
     compose,
@@ -329,30 +330,38 @@ def test_a_seat_that_refuses_twice_is_a_red_row_carrying_what_it_sent(
     assert (kept / "1.txt").read_text(encoding="utf-8") == "just prose"
 
 
+@pytest.mark.parametrize("transport", [CODEX_TRANSPORT, OPENROUTER_TRANSPORT])
 def test_a_check_that_does_not_apply_is_not_a_check_that_failed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    transport: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """
-    Given a case run on a seat other than the one its baseline was measured on
+    Given a case run on an added seat, on either transport a seat may sit on,
+          rather than the one its baseline was measured on
     When the report is written
-    Then the baseline is marked as not applying rather than passed or failed: a
-         model that was never measured cannot be held to another model's count.
+    Then that seat took its own turn and the baseline is marked as not applying
+         rather than passed or failed: a model that was never measured cannot
+         be held to another model's count, and one the runner dropped or
+         replaced is a row about a turn it never took.
     """
     import evals.__main__ as suite
 
+    seats: list[object] = []
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+        suite,
+        "replay",
+        lambda _case, seat, _config: (
+            seats.append(seat) or (document().model_dump_json(), 9786, 40, 1.0, None)
+        ),
     )
 
-    assert (
-        suite.main(["--case", CASE, "--seat", "codex:another-model", "--report", str(tmp_path)])
-        == 0
-    )
+    added = f"{transport}:another-model"
+    assert suite.main(["--case", CASE, "--seat", added, "--report", str(tmp_path)]) == 0
 
-    rows = [one for one in (tmp_path / "matrix.md").read_text(encoding="utf-8").splitlines()[2:]]
-    added = next(one for one in rows if "another-model" in one)
+    assert read_seat(added) in seats
+    rows = (tmp_path / "matrix.md").read_text(encoding="utf-8").splitlines()[2:]
+    on_added = next(one for one in rows if "another-model" in one)
     default = next(one for one in rows if "another-model" not in one)
-    assert "| - |" in added, added
+    assert "| - |" in on_added, on_added
     assert "| - |" not in default, default
 
 
@@ -523,7 +532,7 @@ def test_a_replay_on_a_hosted_seat_goes_through_that_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
-    Given a seat on the hosted transport, scripted
+    Given a hosted seat whose transport seam is scripted to answer
     When a case is replayed on it
     Then the turn goes out through that driver's own seam and its reply is read
          as that transport returns it: one seam chosen for every transport
