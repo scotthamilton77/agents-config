@@ -114,9 +114,9 @@ real and still not a verdict on the change.
 ## Where a verdict is posted
 
 Outside the reviewed branch: a submitted, comment-only pull request review by the reviewing
-GitHub App — the JSON as its body, an inline comment per finding that names a line — pinned to
-the reviewed head; the App's approval is a separate review. A payload any other identity posts
-is not a verdict, and one whose `head_sha` is not the current head is stale and treated as
+GitHub App — the JSON as its body, inline comments only for the findings that name a line —
+pinned to the reviewed head; the App approves in a separate review. A payload any other identity
+posts is not a verdict, and one whose `head_sha` is not the current head is stale and treated as
 absent.
 
 ## When a round is complete
