@@ -323,7 +323,7 @@ def collect(
     findings: list[dict[str, Any]] = []
     suppressions: list[dict[str, Any]] = []
     lens_verdicts: dict[str, str] = {}
-    seen: dict[str, str] = {}
+    seen: set[str] = set()
     for lens in staffed:
         path = reports[lens]
         report = read_report(lens, path)
@@ -346,7 +346,8 @@ def collect(
                 # cannot be acted on, and the marker keeps the demotion countable.
                 finding["type"] = "advisory"
                 finding["downgraded_from"] = "mechanical"
-            match = settled.get(qualified(lens, round_no, item))
+            cites = qualified(lens, round_no, item)
+            match = settled.get(cites)
             if match is not None:
                 suppressions.append({
                     "lens": lens,
@@ -356,13 +357,16 @@ def collect(
                     "disposition": match.get("disposition"),
                 })
                 continue
-            if item in seen:
+            if cites in seen:
                 raise Refusal(
                     "duplicate-finding-id",
-                    f"finding id {item!r} is raised by both {seen[item]!r} and {lens!r}; two "
-                    "findings sharing an id cannot be dispositioned apart",
+                    f"finding id {item!r} is raised twice under {cites!r}; two findings "
+                    "sharing an id cannot be dispositioned apart",
                 )
-            seen[item] = lens
+            seen.add(cites)
+            # The envelope carries the qualified id, so ids stay unique across lenses and a
+            # disposition, an indictment or a re-citation names one finding and no other.
+            finding["id"] = cites
             findings.append(finding)
     suppressions.sort(key=lambda entry: (entry["lens"], entry["finding_id"]))
     return findings, suppressions, lens_verdicts

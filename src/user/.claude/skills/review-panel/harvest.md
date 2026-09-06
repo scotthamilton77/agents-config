@@ -197,11 +197,13 @@ demotion countable, so a lens producing them repeatedly is visible as unreliable
 exactly re-citing a settled ledger item is suppressed, each match recorded in `suppressions.json`
 beside the verdict, so the filter is auditable rather than silent. The citation it matches is
 qualified: the assembler reads every id as `{lens}.r{round}.{id}` unless the reviewer already
-wrote it that way, and keys the settled ledger the same, so what suppresses a finding is the id
-the prompt showed the reviewer for that item. Ids need no renumbering on the way in. Matching the
-bare id instead lets a settled `f1` swallow the next round's `f1`, since reviewers number findings
-f1..fN fresh every round: a delta round's first finding from a lens that found anything earlier
-wears a settled number, and the round assembles clean on a live mechanical finding.
+wrote it that way, writes that id into the envelope, and keys the settled ledger the same, so
+what suppresses a finding is the id the prompt showed the reviewer for that item. Dispositions,
+indictments and re-citations all cite the envelope's id, and nothing is renumbered by hand.
+Matching the bare id instead lets a settled `f1` swallow the next round's `f1`, since reviewers
+number findings f1..fN fresh every round: a delta round's first finding from a lens
+that found anything earlier wears a settled number, and the round assembles clean on a live
+mechanical finding.
 
 Its summary prints the distinct-vendor count. One means the panel collapsed onto a single vendor,
 and blind spots correlate inside a vendor — say so wherever the verdict is reported, the clean
