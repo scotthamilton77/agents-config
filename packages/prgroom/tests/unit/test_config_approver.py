@@ -6,6 +6,7 @@ value must stop the verb rather than resolve to something plausible.
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -125,3 +126,29 @@ def test_the_refusal_message_names_the_unknown_key(tmp_path: Path) -> None:
     body = '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nprivate-key = "x"\n'
     with pytest.raises(ValueError, match="private-key"):
         ApproverConfig.load(write_config(tmp_path, body))
+
+
+REPO_CONFIG = Path(__file__).parents[4] / "project-config.toml"
+
+
+@pytest.mark.skipif(
+    not REPO_CONFIG.is_file(), reason="installed away from the repository this config belongs to"
+)
+class TestTheRepositorysOwnConfig:
+    """The live block is what `prgroom approve` reads here; a temporary copy is not."""
+
+    def test_it_resolves_to_the_configured_app_and_key_variable(self) -> None:
+        approver = ApproverConfig.load(REPO_CONFIG)
+        assert approver.app_id == 4275336
+        assert approver.key_path_env == "MERGE_GUARD_APPROVER_KEY_PATH"
+
+    def test_the_approver_table_carries_exactly_the_three_keys_the_reader_knows(self) -> None:
+        with REPO_CONFIG.open("rb") as fh:
+            approver = tomllib.load(fh)["merge-policy"]["approver"]
+        assert set(approver) == {"type", "app-id", "key-path-env"}
+
+    def test_merge_authorization_is_still_explicit(self) -> None:
+        # The App can satisfy the ruleset's approving review; it does not decide
+        # that a merge should happen.
+        with REPO_CONFIG.open("rb") as fh:
+            assert tomllib.load(fh)["merge-policy"]["merge-authorization"] == "explicit"
