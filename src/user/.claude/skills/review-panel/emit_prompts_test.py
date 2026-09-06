@@ -266,6 +266,19 @@ def round2(tmp_path, repo: Repo, acs: Path, dispositions: list[dict],
     return flat, out_dir
 
 
+def halted_campaign(tmp_path, repo: Repo, ruler: str = "criteria.md") -> tuple[Path, str]:
+    """A round halted on a bent ruler: it indicted the criteria and abandoned a lens."""
+    (repo.root / ruler).write_text("- C1: the reader returns every record.\n", encoding="utf-8")
+    halt_head = repo.commit("record the criteria")
+    digest = "sha256:" + hashlib.sha256((repo.root / ruler).read_bytes()).hexdigest()
+    prior = write_json(tmp_path / "verdict-1.json", verdict_doc(
+        repo, 1, halt_head, ["correctness"], [], verdict="halted",
+        halt={"reason": "upstream-defect", "indicted_finding": "f1",
+              "indicted_artifact": ruler, "artifact_digest": digest,
+              "abandoned_lenses": ["security"]}))
+    return prior, halt_head
+
+
 class TestPromptContent:
     def test_b1_each_lens_gets_its_own_prompt_with_the_contract(self, repo, acs_file, tmp_path,
                                                                capsys):
@@ -1393,6 +1406,41 @@ class TestSweep:
         assert code == 2 and result["errors"][0]["code"] == "unsupported-rebuttal"
         assert "terminal" not in result
 
+    def test_b4_a_halted_round_cannot_be_swept(self, repo, acs_file, tmp_path, capsys):
+        """A halt abandons lenses mid-round, so what it reported is no zero-blocking round however
+        empty its findings list — and an empty ledger settles nothing on a reading never taken."""
+        prior, _ = halted_campaign(tmp_path, repo)
+        (repo.root / "criteria.md").write_text("- C1: every record, the trailing one included.\n",
+                                               encoding="utf-8")
+        head = repo.commit("fix the criteria")
+        staffing = write_json(tmp_path / "sweep-staffing.json", staffing_record(
+            TYPED_CODE_FRONTIER, decision="sweep-contract"))
+        flat = argv(repo, acs_file, tmp_path / "out", **{
+            "--round": "2", "--head-sha": head, "--staffing": str(staffing)})
+        flat += ["--prior-verdict", str(prior), "--sweep"]
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "sweep-not-due"
+
+    def test_b4_the_gate_and_the_ledger_read_one_disposition_load(self, repo, acs_file, tmp_path,
+                                                                  capsys, monkeypatch):
+        """One read of the file feeds both, so neither judges a campaign the other never saw: the
+        word that opens the gate and the evidence the ledger audits come from the same bytes."""
+        real = emitter.load_dispositions
+        loads = []
+
+        def counting(path):
+            loads.append(path)
+            return real(path)
+
+        monkeypatch.setattr(emitter, "load_dispositions", counting)
+        flat, _ = self._settled_campaign(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "rebutted", "evidence": "  "},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "unsupported-rebuttal"
+        assert len(loads) == 1
+
     def test_b4_a_first_round_sweep_is_refused(self, repo, acs_file, tmp_path, capsys):
         """Round 1 is already a whole-artifact read; there is no delta campaign to close."""
         staffing = write_json(tmp_path / "sweep-staffing.json", staffing_record(
@@ -1510,22 +1558,10 @@ class TestDispositions:
 
 
 class TestResume:
-    def _halted_campaign(self, tmp_path, repo, acs_file, ruler: str = "criteria.md"):
-        (repo.root / ruler).write_text("- C1: the reader returns every record.\n",
-                                       encoding="utf-8")
-        halt_head = repo.commit("record the criteria")
-        digest = "sha256:" + hashlib.sha256((repo.root / ruler).read_bytes()).hexdigest()
-        prior = write_json(tmp_path / "verdict-1.json", verdict_doc(
-            repo, 1, halt_head, ["correctness"], [], verdict="halted",
-            halt={"reason": "upstream-defect", "indicted_finding": "f1",
-                  "indicted_artifact": ruler, "artifact_digest": digest,
-                  "abandoned_lenses": ["security"]}))
-        return prior, halt_head
-
     def test_b6_a_resume_over_an_unchanged_ruler_is_refused(self, repo, acs_file, tmp_path,
                                                             capsys):
         """Every further round would measure against a ruler known to be bent."""
-        prior, halt_head = self._halted_campaign(tmp_path, repo, acs_file)
+        prior, halt_head = halted_campaign(tmp_path, repo)
         flat = argv(repo, acs_file, tmp_path / "out", **{"--round": "2",
                                                          "--head-sha": halt_head})
         flat += ["--prior-verdict", str(prior)]
@@ -1537,7 +1573,7 @@ class TestResume:
                                                                      tmp_path, capsys):
         """The campaign resumes only after the indicted upstream artifact has actually
         changed — and then it resumes normally."""
-        prior, _ = self._halted_campaign(tmp_path, repo, acs_file)
+        prior, _ = halted_campaign(tmp_path, repo)
         (repo.root / "criteria.md").write_text(
             "- C1: the reader returns every record, including the trailing one.\n",
             encoding="utf-8")
@@ -1550,7 +1586,7 @@ class TestResume:
     def test_b6_an_unreadable_indicted_artifact_refuses(self, repo, acs_file, tmp_path, capsys):
         """A resume needs the indicted artifact in hand: with nothing to digest, no change to
         it can be shown."""
-        prior, halt_head = self._halted_campaign(tmp_path, repo, acs_file)
+        prior, halt_head = halted_campaign(tmp_path, repo)
         (repo.root / "criteria.md").unlink()
         flat = argv(repo, acs_file, tmp_path / "out", **{"--round": "2",
                                                          "--head-sha": halt_head})
@@ -1572,7 +1608,8 @@ def checkpoint_record(after: int = 2, **overrides: Any) -> dict:
 
 
 class TestCheckpoints:
-    def _round3(self, tmp_path, repo, acs_file, *, checkpoints=(), cited=2, **overrides):
+    def _round3(self, tmp_path, repo, acs_file, *, checkpoints=(), cited=2, dispositions=None,
+                **overrides):
         """Two consecutive non-clean rounds: a checkpoint is due after round 2."""
         head = repo.write_lines(4, "fix.txt")
         priors = [
@@ -1581,7 +1618,7 @@ class TestCheckpoints:
             write_json(tmp_path / "verdict-2.json",
                        verdict_doc(repo, 2, repo.head, TYPED_CODE_LENSES, [mechanical("f3")])),
         ]
-        ledger = write_json(tmp_path / "dispositions.json", [
+        ledger = write_json(tmp_path / "dispositions.json", dispositions or [
             {"round": 1, "id": "f1", "disposition": "fixed", "evidence": "regression test added"},
             {"round": 2, "id": "f3", "disposition": "fixed", "evidence": "regression test added"},
         ])
@@ -1728,6 +1765,20 @@ class TestCheckpoints:
         code, result = run(flat, capsys)
         assert code == 0 and result["emitted"] is True
         assert meta_of(out_dir)["checkpoints"] == []
+
+    def test_b7_a_rebutted_round_still_counts_toward_the_cadence(self, repo, acs_file, tmp_path,
+                                                                 capsys):
+        """A rebuttal answers a finding for the rounds that follow; it does not unmake the churn
+        the round measured. Two rounds of it still buy a reading of the campaign."""
+        flat, _ = self._round3(tmp_path, repo, acs_file, dispositions=[
+            {"round": 1, "id": "f1", "disposition": "rebutted",
+             "evidence": "the buffer is sentinel-terminated; no record can be dropped"},
+            {"round": 2, "id": "f3", "disposition": "rebutted",
+             "evidence": "the caller two frames up validates the path"},
+        ])
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "missing-checkpoint"
+        assert "round 2" in result["errors"][0]["message"]
 
     def test_b7_the_cadence_reads_blocking_findings_not_the_verdict_word(self, repo, acs_file,
                                                                         tmp_path, capsys):
