@@ -49,6 +49,7 @@ from grillui.tiers import (
     FAST_MODEL_ENV,
     FAST_TIER,
     FAST_TIER_MANDATE,
+    FIELD_MEANINGS,
     GAP_RULE,
     GRILL_MASTER_MANDATE,
     HEAVY_CONTEXT_LIMIT_ENV,
@@ -458,11 +459,18 @@ def test_the_glossary_governs_the_board_and_not_the_plan(tier: str, agent: str) 
     # wrong one first.
     assert "stands on a" not in brief
     assert "standing on a" not in brief
+    assert "stands on none" not in brief
+    assert "leave out stands" not in brief
+    assert "still stands" not in brief
     # `notice` also names a string inside a mandate, so the line says so rather
     # than leaving the example to contradict the glossary.
     assert "a different thing under the same spelling" in brief
     # The page prints `title` as the question and `body` beneath it.
     assert "a `title` holding the question" in brief
+    assert "fogged meaning it is not a real question yet" in brief
+    assert (
+        "- obligation section: the section of a dispatch that names the decisions you owe" in brief
+    )
     assert "a `body` stating the question more fully" in brief
     # An applied invalidation obliges rulings too, so the definition covers both.
     assert "an answer the human gave, or an invalidation they applied" in brief
@@ -926,6 +934,7 @@ def test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_ca
     assert "You cannot read that thread's turns" in brief
     assert "read surface" not in brief
     assert "If the human asks you to change the map" in brief
+    assert "to invalidate, revise, settle or unsettle a decision, or add one" in brief
     assert "say plainly that you cannot" in brief
     assert "folding this thread is what puts your conclusion in front of the grill-master" in brief
     assert "Agreeing to do it is a promise nothing keeps" not in brief
@@ -1003,6 +1012,30 @@ def test_the_brief_states_the_two_rules_the_gate_does_not_enforce(tier: str) -> 
         in brief
     )
     assert "carrying none of them is accepted and changes nothing" in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_contract_defines_every_field_it_puts_in_front_of_the_seat(tier: str) -> None:
+    """
+    Given the grill-master brief on each tier
+    When the per-kind contract is read for the fields it shows
+    Then each field whose name does not say what it holds is given a line, and
+         `settle` promises only what an answer can carry.
+
+    The optional lists are the appender's and are not trimmed to what prose has
+    got round to explaining, so a field shown and left undefined is one the seat
+    fills in from the shape of the word: `pcr` and `zoom` say nothing at all,
+    and a seat inventing three lines for `pcr` puts them on the board. And an
+    answer may be an option with no words, so a `settle` promising the human's
+    words for every answer promises what half of them do not have.
+    """
+    brief = system_prompt(tier, GRILL_MASTER)
+
+    for field, said in FIELD_MEANINGS.items():
+        assert f"`{field}`: {said}." in brief, field
+    assert "record the answer the human gave: the option they took, their words, or both" in brief
+    assert "carrying the option and the words you recorded" in brief
+    assert "record the answer the human gave, in their words" not in brief
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
@@ -1208,6 +1241,7 @@ def test_a_turn_on_the_map_thread_is_told_to_state_which_decisions_change_and_ho
     assert "invalidated so it stops being offered" in prompt
     assert "revised so it asks a different question" in prompt
     assert "unsettled so its answer is withdrawn and it can be answered again" in prompt
+    assert "settled so it carries an answer" in prompt
     assert "added as a question the map does not carry" in prompt
 
 
@@ -1298,6 +1332,7 @@ def test_a_turn_owed_invalidates_is_given_the_ids_and_the_answer_in_a_section_of
 
     prompt = compose("{}", context, entries)
 
+    assert "## The obligation section:" in prompt
     assert "d2, d8" in prompt
     assert "Close it unactioned" in prompt
     assert MOOTNESS_OBLIGATION_RULE in prompt
@@ -1330,6 +1365,7 @@ def test_a_turn_owed_a_verdict_on_stranded_decisions_is_told_which_gesture_stran
 
     prompt = compose("{}", context, entries)
 
+    assert "## The obligation section:" in prompt
     assert "d4, d5" in prompt
     assert "the export was dropped" in prompt
     assert MOOTNESS_RESTING_RULE in prompt

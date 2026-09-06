@@ -445,7 +445,8 @@ BASELINE = (
     "- map: the whole set of questions in the plan, and what each of them waits on.\n"
     "- decision: one question on the map. It carries an id such as `d1`, a `title` holding the "
     "question, a `short` label the board prints beside it, a `body` stating the question more "
-    "fully, and a `status`, one of open, settled, invalidated, stale or fogged.\n"
+    "fully, and a `status`, one of open, settled, invalidated, stale, or fogged -- fogged "
+    "meaning it is not a real question yet and sharpens once another decision settles.\n"
     "- option: one answer a decision offers. It carries a letter such as `a`, and it belongs to "
     "that decision alone -- most decisions on the board offer an option `a`.\n"
     "- prereqs: on a decision, the ids of the decisions it waits on.\n"
@@ -484,6 +485,8 @@ BASELINE = (
     "designed and what may not be proposed against.\n"
     "- posture: the line in the briefing naming the axis to push the human on.\n"
     "- stop condition: the line in the briefing saying when this session is finished.\n"
+    "- obligation section: the section of a dispatch that names the decisions you owe a "
+    "ruling on. A dispatch that carries none owes none.\n"
     "- stands: the verdict that a decision survives another decision's move unchanged.\n"
     "- ruling: a verdict on what one decision's move -- an answer the human gave, or an "
     "invalidation they applied -- did to another decision. It is `invalidate`, `revise` or "
@@ -767,9 +770,9 @@ KIND_DEFINITIONS: dict[str, str] = {
     "resolve-stale": "judge a decision that went stale under a withdrawn answer",
     "revise": (
         "change what a decision asks: every field you supply replaces what is there, and "
-        "every field you leave out stands"
+        "every field you leave out is left as it is"
     ),
-    "settle": "record the answer the human gave, in their words",
+    "settle": "record the answer the human gave: the option they took, their words, or both",
     "unsettle": (
         "withdraw an answer, putting the decision back on the frontier; every decision settled "
         "on top of it goes stale, transitively, and each of those is judged with a "
@@ -795,12 +798,39 @@ KIND_VISIBILITY: dict[str, str] = {
         "the decision out of stale: settled again where its answer survived, open where it did not"
     ),
     "revise": "the decision asking the new question, with every field you left out unchanged",
-    "settle": "the decision settled, carrying the answer in the words you recorded",
+    "settle": "the decision settled, carrying the option and the words you recorded",
     "unsettle": (
         "the decision back among the ones they can answer, and every decision that rested on "
         "it marked stale"
     ),
 }
+
+
+# The fields the per-kind lists name and the examples show without saying what
+# they hold. The optional lists are the appender's and are not trimmed to what
+# prose has got round to explaining, so a field shown and left undefined is a
+# field the seat fills in from the shape of the word.
+FIELD_MEANINGS: dict[str, str] = {
+    "pcr": (
+        "three lines on one option, in order: what taking it buys, what it costs, and what it "
+        "forces the human to decide later"
+    ),
+    "mandate": (
+        "on a decision, the rule that any answer to it opens a thread, and that only that "
+        "thread's conclusion settles it"
+    ),
+    "threadId": "inside a `mandate`, the id of the thread an answer opens",
+    "scope": "inside a `mandate`, what that thread is about",
+    "talk": "on a decision, the prompts the board offers the human for opening the question up",
+    "zoom": "inside a `talk`, the prompt that asks them to look at one concrete case",
+    "fogUntil": ("on a decision, the id of the decision it waits on before it is a real question"),
+    "fogTitle": "what the board shows in that decision's place until then",
+}
+
+
+def field_meanings() -> str:
+    """What each field above holds, in the order the contract shows them."""
+    return "".join(f"  `{name}`: {said}.\n" for name, said in FIELD_MEANINGS.items())
 
 
 def _named(fields: Iterable[str]) -> str:
@@ -871,6 +901,8 @@ DOCUMENT_FORMAT_RULE = (
     "`settle` in particular carries its `answer` nested under that key, holding `option`, "
     "`text` or both, and never as top-level fields:\n"
     + "".join(kind_contract(kind) for kind in sorted(FOLDABLE_KINDS))
+    + "  What the fields above hold, where their names do not say it:\n"
+    + field_meanings()
     + "- `supersedes`: the ids of pending items of yours you are withdrawing.\n"
     "- `rulings`: one verdict for each decision the obligation section of this dispatch names, "
     'each {"decision": "d2", "ruling": "invalidate" | "revise" | "stands", "why": "one line"}. '
@@ -921,7 +953,8 @@ MOOTNESS_OBLIGATION_RULE = (
     "A ruling is a verdict, and a verdict on its own moves nothing. An `invalidate` or a "
     "`revise` ruling counts only where this same turn also sends that update against that "
     "decision. A `stands` ruling counts on its `why` alone, and that line goes on the "
-    "decision for the human to read.\n"
+    "decision for the human to read. An `invalidate` or `revise` ruling that arrives without "
+    "its update is discarded, and the human is shown that decision as unruled.\n"
     "The map author already predicted that these decisions change, which is why they are "
     "listed. `stands` overturns that prediction, so it is the uncommon verdict, and its `why` "
     "is written to be checked later rather than to be read now.\n"
@@ -944,7 +977,9 @@ MOOTNESS_RESTING_RULE = (
     "Each ruling carries one line of `why`.\n"
     "A ruling is a verdict, and a verdict on its own moves nothing. An `invalidate` or a "
     "`revise` ruling counts only where this same turn also sends that update against that "
-    "decision. A `stands` ruling counts on its `why` alone.\n"
+    "decision. A `stands` ruling counts on its `why` alone. An `invalidate` or `revise` "
+    "ruling that arrives without its update is discarded, and the human is shown that "
+    "decision as unruled.\n"
     "A decision that has left the plan holds nothing up, so the board is offering every "
     "decision named above again. Any you leave unruled, the human is asked to answer a "
     "question whose footing may be gone."
@@ -965,8 +1000,9 @@ SUPERSEDE_RULE = (
 
 SUPERSEDE_CONFLICT_RULE = (
     "You withdrew something the human had already acted on, so your rewrite and their answer "
-    "disagree. Only you can reconcile that -- nothing has been changed on the board and "
-    "nothing will be until you say so. Say what still stands, and send the updates that make "
+    "disagree. Your withdrawal was not applied: the board still carries their answer, and "
+    "nothing else has changed on it. Only you can reconcile that -- nothing more will change and "
+    "nothing will be until you say so. Say what still holds, and send the updates that make "
     "it true."
 )
 
@@ -993,7 +1029,8 @@ MAP_THREAD_MANDATE = (
     "turn what they want into a concrete statement of which decisions change and how: name "
     "each decision by its id, say what happens to it -- invalidated so it stops being offered, "
     "revised so it asks a different question, unsettled so its answer is withdrawn and it can "
-    "be answered again, or added as a question the map does not carry -- and why, and put "
+    "be answered again, settled so it carries an answer, or added as a question the map does "
+    "not carry -- and why, and put "
     "anything you had to assume to the human rather than deciding "
     "it yourself. You still author nothing, and this thread anchors no decision: folding it "
     "is what hands your statement to the grill-master, which proposes the updates. So write "
@@ -1050,8 +1087,9 @@ THREAD_AGENT_MANDATE = (
     "shows. You cannot read that thread's turns, so do not reason from what they might say. "
     "You recommend and never author changes to the map: a conclusion you reach goes to "
     "the grill-master when the human folds this thread, and a map update from you is "
-    "refused. If the human asks you to change the map -- to invalidate, revise or settle a "
-    "decision -- say plainly that you cannot, and that folding this thread is what puts "
+    "refused. If the human asks you to change the map -- to invalidate, revise, settle "
+    "or unsettle a decision, or add one -- say plainly that you cannot, and that folding this "
+    "thread is what puts "
     "your conclusion in front of the grill-master, who acts on it."
 )
 
@@ -1080,7 +1118,7 @@ CONVERGENCE_RULE = (
     "they stated the qualification themselves, or accepted in their own words one you put to "
     "them -- write it back as a `proposed_answer` object beside `text`: `decision`, this "
     "thread's anchor decision id; `option`, an option the decision already carries, or null "
-    "where the answer stands on none; `text`, the answer in their words; and `because`, one "
+    "where the answer rests on none; `text`, the answer in their words; and `because`, one "
     "line on why the thread reached it. Restating what they said is the whole of the licence. "
     "Composing an answer they have not endorsed is you deciding and calling it convergence, "
     "and proposing an option the decision does not carry is a change to the map, which is not "
@@ -1391,14 +1429,14 @@ def _mootness_section(obligation: MootnessObligation | None) -> list[str]:
     them = "it" if len(obligation.ids) == 1 else "them"
     if obligation.cause == INVALIDATE_KIND:
         return [
-            "## What the invalidate the human just applied left standing",
+            "## The obligation section: what the invalidate the human just applied left behind",
             f"{obligation.target} has left the flow: {obligation.answer!r}. {named} "
             f"list a decision that has left the flow among their prereqs, and the board is "
             f"offering {them} again -- a dead prereq holds nothing.",
             MOOTNESS_RESTING_RULE,
         ]
     return [
-        "## What the answer you are replying to puts in question",
+        "## The obligation section: what the answer you are replying to puts in question",
         f"The human answered {obligation.target} with {obligation.answer!r}. That option "
         f"names {named}, and the board is still offering {them}.",
         MOOTNESS_OBLIGATION_RULE,

@@ -727,6 +727,12 @@ def test_the_two_obligation_rules_each_state_all_three_rulings() -> None:
     for rule in (MOOTNESS_OBLIGATION_RULE, MOOTNESS_RESTING_RULE):
         for verdict in ("invalidate", "revise", "stands"):
             assert f"`{verdict}`" in rule, f"{verdict} is not stated as a way out"
+    # And what becomes of one that arrives alone. "Counts only" says when a
+    # ruling is credited and never what happens when it is not, so a seat
+    # reading it can take an uncredited verdict for a verdict the human sees.
+    for rule in (MOOTNESS_OBLIGATION_RULE, MOOTNESS_RESTING_RULE):
+        assert "ruling that arrives without its update is discarded" in rule
+        assert "the human is shown that decision as unruled" in rule
 
 
 def test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision(
