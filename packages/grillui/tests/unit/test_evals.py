@@ -383,16 +383,27 @@ def test_a_seat_that_refuses_twice_is_a_red_row_carrying_what_it_sent(
     assert (kept / "1.txt").read_text(encoding="utf-8") == "just prose"
 
 
+@pytest.mark.parametrize(
+    ("fault", "said"),
+    [
+        (subprocess.TimeoutExpired(["claude"], 1.0), "it timed out"),
+        (subprocess.CalledProcessError(2, ["claude"]), "it exited 2"),
+        (OSError("no such file"), "it could not be started"),
+    ],
+    ids=["timed-out", "exited", "not-started"],
+)
 def test_a_seat_the_transport_gave_up_on_is_a_red_row_naming_why(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    fault: Exception, said: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """
-    Given a seat whose transport gives up on the turn part way through it
+    Given a seat whose transport gives up on the turn part way through it, in
+          each of the ways it can
     When the suite runs
-    Then the row is red for what the transport said about it and carries the
-         clock the turn actually ran: a row blaming the runner for never
-         reaching the seat, over nought seconds, sends whoever re-runs it after
-         the wrong thing entirely.
+    Then the row is red for what the transport said about this one and carries
+         the clock the turn actually ran: a seat that timed out, one that exited
+         and one that was never there are three different mornings for whoever
+         re-runs the case, and a row naming none of them, over nought seconds,
+         sends them after the wrong thing entirely.
     """
     import evals.__main__ as suite
 
@@ -402,10 +413,7 @@ def test_a_seat_the_transport_gave_up_on_is_a_red_row_naming_why(
 
     def gave_up(*_args: Any) -> str:
         time.sleep(0.2)
-        raise AgentUnreachableError(
-            HEAVY_TIER,
-            fault_of(subprocess.TimeoutExpired(["claude"], config.request_timeout)),
-        )
+        raise AgentUnreachableError(HEAVY_TIER, fault_of(fault))
 
     driver.cli = gave_up  # type: ignore[union-attr]
     monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
@@ -415,7 +423,7 @@ def test_a_seat_the_transport_gave_up_on_is_a_red_row_naming_why(
     run = json.loads((tmp_path / "matrix.json").read_text("utf-8"))[0]
     reason = run["checks"][the_reply_is_the_map_document.__name__]
     assert code == 1
-    assert reason is not None and "timed out" in reason, reason
+    assert reason is not None and said in reason, reason
     assert all(run["checks"][one.__name__] == reason for one in DEPENDENT)
     assert run["wall_seconds"] > 0
 
@@ -425,12 +433,14 @@ def test_a_run_stating_no_timeout_seats_its_turns_behind_the_suites_own(
 ) -> None:
     """
     Given a run whose environment states no request timeout, and then one
-          stating seven seconds
-    When each builds the driver its case's seat takes its turn on
-    Then the first is built with the floor the recorded turns fit inside and the
-         second with exactly the seven it asked for: a turn this suite has
-         measured at over a minute, killed by a shorter default nobody chose, is
-         a row about the clock and about nothing the reply says.
+          stating seven seconds, each seating a case on its own seat and on an
+          added one
+    When each builds the drivers those seats take their turns on
+    Then every driver of the first carries the floor and every driver of the
+         second exactly the seven it asked for: the turns here are the longest
+         a seat takes, and one killed on the clock leaves no reply to judge --
+         a row about the runner rather than about the prompt, on whichever seat
+         the shorter default reached.
     """
     import evals.__main__ as suite
 
@@ -445,12 +455,13 @@ def test_a_run_stating_no_timeout_seats_its_turns_behind_the_suites_own(
 
     monkeypatch.setattr(suite, "seat_driver", spy)
 
+    added = ["--seat", "codex:another-model:medium"]
     monkeypatch.delenv(REQUEST_TIMEOUT_ENV, raising=False)
-    suite.main(["--case", CASE, "--report", str(tmp_path / "unstated")])
+    suite.main(["--case", CASE, *added, "--report", str(tmp_path / "unstated")])
     monkeypatch.setenv(REQUEST_TIMEOUT_ENV, "7")
-    suite.main(["--case", CASE, "--report", str(tmp_path / "stated")])
+    suite.main(["--case", CASE, *added, "--report", str(tmp_path / "stated")])
 
-    assert built == [300.0, 7.0]
+    assert built == [300.0, 300.0, 7.0, 7.0]
 
 
 def test_a_reply_the_appender_refuses_is_a_red_row_carrying_what_it_sent(
