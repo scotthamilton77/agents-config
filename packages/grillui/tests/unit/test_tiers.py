@@ -10,6 +10,7 @@ happened to be exporting.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -17,21 +18,28 @@ from conftest import dispatch_context, handoff_doc, write_handoff
 
 from grillui.dispatch import GRILL_MASTER, THREAD_AGENT
 from grillui.schemas import (
+    HELP_THREAD_KIND,
     MAP_THREAD_KIND,
+    Decision,
     DispatchContext,
     LogEntry,
     MootnessObligation,
+    Option,
     Thread,
     ThreadProjection,
 )
 from grillui.session import open_session
 from grillui.tiers import (
+    BASELINE,
     BOARD_LEGEND,
     CONCISION_RULE,
     CONTEXT_LIMITS,
+    CONVERGENCE_RULE,
     DEFAULT_FAST_MODEL,
     DEFAULT_HEAVY_EFFORT,
     DEFAULT_HEAVY_MODEL,
+    DIALOGUE_RULE,
+    DOCUMENT_FORMAT_RULE,
     EFFORT_LEVELS,
     ESCALATION_POLICIES,
     ESCALATION_POLICY_ENV,
@@ -40,15 +48,16 @@ from grillui.tiers import (
     FAST_MODEL_ENV,
     FAST_TIER,
     FAST_TIER_MANDATE,
+    GAP_RULE,
     GRILL_MASTER_MANDATE,
     HEAVY_CONTEXT_LIMIT_ENV,
     HEAVY_EFFORT_ENV,
     HEAVY_MODEL_ENV,
     HEAVY_TIER,
+    HELP_THREAD_MANDATE,
     MAP_THREAD_MANDATE,
     MOOTNESS_OBLIGATION_RULE,
     MOOTNESS_RESTING_RULE,
-    MOOTNESS_RULE,
     NO_BRIEFING,
     NO_MANUFACTURE_RULE,
     ONE_TURN_RULE,
@@ -57,6 +66,9 @@ from grillui.tiers import (
     REGISTER_RULE,
     RESHAPE_STEP,
     ROLE_PROMPTS,
+    RULING_CONCISION_RULE,
+    SPEECH_RULE,
+    SUPERSEDE_RULE,
     SYSTEM_PROMPTS,
     TierConfig,
     UnknownTierError,
@@ -227,18 +239,49 @@ def test_no_configuration_this_package_ships_names_a_fable_model() -> None:
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
-def test_every_shipped_system_prompt_carries_the_concision_constraint(tier: str) -> None:
+@pytest.mark.parametrize("agent", [GRILL_MASTER, THREAD_AGENT])
+def test_every_role_is_held_to_three_sentences_in_its_own_terms(tier: str, agent: str) -> None:
     """
-    Given each tier's shipped system prompt
-    When it is read
-    Then it carries the concision constraint, with the explicit-request
-         exception stated in the same breath.
+    Given the brief composed for each role on each tier
+    When it is read for how long a turn may be
+    Then both are held to three sentences, and each is held to it in the terms
+         of its own turn.
+
+    The length rule survives the split; the exception does not travel with it.
+    A thread agent can be asked for detail and is told so. The grill-master
+    cannot -- the human has no way to ask its ruling turn for more -- so an
+    exception stated to it is one it grants itself whenever it judges the turn
+    to warrant it, which is every turn.
+    """
+    brief = system_prompt(tier, agent)
+
+    assert "three sentences" in brief
+    if agent == THREAD_AGENT:
+        assert CONCISION_RULE in brief
+        assert "unless the human explicitly asks for detail" in brief
+        assert RULING_CONCISION_RULE not in brief
+    else:
+        assert RULING_CONCISION_RULE in brief
+        assert CONCISION_RULE not in brief
+        assert "unless the human explicitly asks for detail" not in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_neither_tiers_own_part_states_a_length_or_a_dialogue_rule(tier: str) -> None:
+    """
+    Given each tier's own part of the standing brief
+    When it is read for how a turn is written
+    Then neither the length rule nor the dialogue rule is in it: both differ by
+         role, and a rule hung on the tier is inherited by whichever role runs
+         there -- which is how the ruling turn came to be told to answer what
+         the human just asked, on a turn where they asked nothing.
     """
     prompt = SYSTEM_PROMPTS[tier]
 
-    assert CONCISION_RULE in prompt
-    assert "three sentences" in prompt
-    assert "unless the human explicitly asks for detail" in prompt
+    assert CONCISION_RULE not in prompt
+    assert RULING_CONCISION_RULE not in prompt
+    assert DIALOGUE_RULE not in prompt
+    assert "three sentences" not in prompt
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
@@ -255,20 +298,106 @@ def test_every_shipped_system_prompt_carries_the_no_manufacture_rule(tier: str) 
     assert "say what you lack" in prompt
 
 
+# The words the brief leans on, each of which the seat has to be holding the
+# right meaning of before it meets the rule that uses it. This list is the
+# test's own rather than the module's: read off the prompt it is checking, it
+# would agree with any vocabulary the prompt happened to define, including one
+# that had quietly dropped half of it.
+#
+# Two words that were on the board's vocabulary and are no longer in the prompt
+# are absent here on purpose. "gesture" was the house word for a human action
+# and is now "action". "receipt" named something the seat is never shown, so the
+# one sentence that used it now states the fact instead: the turn is not told
+# afterwards what landed.
+VOCABULARY = (
+    "map",
+    "decision",
+    "option",
+    "action",
+    "notice",
+    "dispatch",
+    "queue",
+    "pending",
+    "basis",
+    "seq",
+    "frontier",
+    "briefing",
+    "posture",
+    "stop condition",
+    "ruling",
+    "stands",
+)
+
+
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
 @pytest.mark.parametrize("agent", [GRILL_MASTER, THREAD_AGENT])
-def test_every_composed_brief_opens_with_its_agents_role(tier: str, agent: str) -> None:
+def test_every_composed_brief_opens_on_the_baseline_and_then_the_role(
+    tier: str, agent: str
+) -> None:
     """
     Given the brief a driver composes for one role on one tier
     When it is read from its first byte
-    Then it opens with that agent's role part, the same part on either tier.
+    Then it opens with the baseline -- the same baseline for both roles and both
+         tiers -- and the role's own part comes next.
 
-    A role keyed to the tier is the defect this is here to catch: it puts the
-    map's author under "stop short of deciding" on the one turn whose whole work
-    is a ruling, and hands the sole-author line to a thread agent the moment the
-    human transfers its thread.
+    Two defects meet here. A brief that opens on the role opens on a sentence
+    made of words the seat has not been given, so it fills them in and reasons
+    from what it filled in. And a role keyed to the tier puts the map's author
+    under "stop short of deciding" on the one turn whose whole work is a ruling.
     """
-    assert system_prompt(tier, agent).startswith(ROLE_PROMPTS[agent])
+    brief = system_prompt(tier, agent)
+
+    assert brief.startswith(BASELINE)
+    assert brief[len(BASELINE) :].lstrip("\n").startswith(ROLE_PROMPTS[agent])
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+@pytest.mark.parametrize("agent", [GRILL_MASTER, THREAD_AGENT])
+@pytest.mark.parametrize("term", VOCABULARY)
+def test_every_term_the_brief_uses_is_defined_before_it_is_used(
+    tier: str, agent: str, term: str
+) -> None:
+    """
+    Given each term the brief leans on, on each role and each tier
+    When the rendered brief is searched for it
+    Then the baseline defines it on a line of its own, and no use of it anywhere
+         else in the brief comes before that line.
+
+    The reader assumed is the weakest seated model, not the strongest. Told to
+    carry the `basis` on each update, a seat that has not been told what a basis
+    is does not stop and ask -- it writes something plausible into the field,
+    and the backend has no way to tell that from a basis it meant.
+    """
+    defined = f"\n- {term}: "
+
+    assert defined in BASELINE, f"{term} has no definition"
+    used = re.compile(rf"\b{re.escape(term)}s?\b")
+    first = used.search(system_prompt(tier, agent))
+
+    assert first is not None
+    assert first.start() < BASELINE.index(defined) + len(defined), f"{term} is used before defined"
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_reply_contract_is_the_last_thing_each_role_reads(tier: str) -> None:
+    """
+    Given the brief composed for each role
+    When it is read from its last byte back
+    Then it ends on that role's reply contract: the document shape for the
+         grill-master, the offer rule for the thread agent.
+
+    The reply contract is the last thing read and the first thing written. Put
+    ahead of the role and the rules, it is a shape the seat is given before it
+    has a reason to take it, and by the time it writes it is recalling the shape
+    rather than reading it.
+    """
+    grill_master = system_prompt(tier, GRILL_MASTER)
+
+    assert DOCUMENT_FORMAT_RULE in grill_master
+    assert grill_master.index(DOCUMENT_FORMAT_RULE) > grill_master.index(RESHAPE_STEP)
+    assert grill_master.index(DOCUMENT_FORMAT_RULE) > grill_master.index(REGISTER_RULE)
+    assert grill_master.endswith(SUPERSEDE_RULE)
+    assert system_prompt(tier, THREAD_AGENT).endswith(CONVERGENCE_RULE)
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
@@ -283,11 +412,10 @@ def test_the_grill_master_is_briefed_as_the_maps_author_on_either_tier(tier: str
     brief = system_prompt(tier, GRILL_MASTER)
 
     assert GRILL_MASTER_MANDATE in brief
-    assert "the author of the map and the only agent that changes it" in brief
-    assert "Push on the axis the posture names" in brief
-    assert "leave ending the session to them" in brief
+    assert "You write the map, and you are the only agent that changes it" in brief
+    assert "Push the human on the axis the briefing's posture names" in brief
+    assert "Ending the session is theirs, not yours" in brief
     assert RESHAPE_STEP in brief
-    assert "Rule on every decision the dispatch names" in brief
     assert "Say whether the stop condition is met" in brief
 
 
@@ -387,17 +515,23 @@ def test_every_brief_a_driver_composes_carries_the_register_rule(tier: str, agen
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
-def test_every_shipped_system_prompt_permits_exactly_two_kinds_of_question(tier: str) -> None:
+def test_the_thread_agent_alone_permits_exactly_two_kinds_of_question(tier: str) -> None:
     """
-    Given each tier's shipped system prompt
+    Given each role's brief on each tier
     When it is read for what it says about asking the human a question
-    Then a turn is a reply to what the human said, exactly two kinds of question
-         are permitted -- clarifying what is being asked, and raising what the
-         human is not considering -- and nothing licenses a trailing
-         continuation question.
-    """
-    prompt = SYSTEM_PROMPTS[tier]
+    Then the thread agent's turn is a reply to what the human said, exactly two
+         kinds of question are permitted -- clarifying what is being asked, and
+         raising what the human is not considering -- nothing licenses a
+         trailing continuation question, and none of it reaches the ruling turn.
 
+    The rule is about a discussion, and the map's ruling turn is not one. The
+    human answered a decision; they asked nothing. A turn told to answer what
+    they just said, on a turn where they said only "option b", answers the
+    letter instead of ruling on what it cost.
+    """
+    prompt = system_prompt(tier, THREAD_AGENT)
+
+    assert DIALOGUE_RULE in prompt
     assert "not a prompt for their next turn" in prompt
     assert "Ask a question in two cases only" in prompt
     assert "when you cannot answer without knowing what they are actually asking" in prompt
@@ -407,6 +541,8 @@ def test_every_shipped_system_prompt_permits_exactly_two_kinds_of_question(tier:
     # No third licence anywhere in the prompt: the habit this rule ends was
     # invited by one, and a survivor would be read as the exception.
     assert "ordinary move" not in prompt
+    assert DIALOGUE_RULE not in system_prompt(tier, GRILL_MASTER)
+    assert "Ask a question in two cases only" not in system_prompt(tier, GRILL_MASTER)
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
@@ -585,30 +721,37 @@ def test_the_thread_agent_prompt_bars_an_offer_on_a_thread_anchoring_nothing(tie
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
-def test_the_grill_master_brief_obliges_a_ruling_on_each_decision_an_answer_bears_on(
+def test_the_grill_master_brief_asks_for_rulings_nowhere_but_the_obligation_section(
     tier: str,
 ) -> None:
     """
     Given the grill-master brief a driver composes for each tier
-    When it is read for what an answer bearing on other decisions obliges
-    Then it requires a ruling per decision -- one of the three -- carrying the
-         answer as the rationale where it kills, and bars narrating a decision
-         as dead instead. Without that the reply says d2 through d9 are dead
-         code and the board goes on offering them on the frontier; with only one
-         legal verdict it kills the ones that stand. The thread agent is not
-         told this: an update from it is refused, so obliging it to send one is
-         obliging it to be refused.
+    When it is read for when a ruling is owed
+    Then the standing brief asks for none. It names the obligation section as
+         the one place rulings are asked for, states the empty list as what
+         every other turn sends, and carries no paragraph describing the case
+         an agent would have to recognise its own turn in.
+
+    The paragraph is the defect, not an omission. A standing rule about answers
+    that bear on other decisions is a rule every turn can read itself into, and
+    the live evidence is a turn owing nothing that ruled `stands` on all five
+    decisions on the board -- including two the human had already settled --
+    and put each rationale on the board as a notice.
     """
     brief = system_prompt(tier, GRILL_MASTER)
 
-    assert MOOTNESS_RULE in brief
-    assert "bears on decisions other than the one they answered" in brief
-    assert "rule on each of those in that same turn" in brief
-    assert "carrying their answer as the rationale" in brief
-    assert "Do not merely say that a decision is dead" in brief
-    for verdict in ("invalidate", "revise", "stands"):
-        assert f"`{verdict}`" in MOOTNESS_RULE
-    assert MOOTNESS_RULE not in system_prompt(tier, THREAD_AGENT)
+    assert "On every other turn `rulings` is an empty list." in brief
+    assert "Where this dispatch carries no obligation section, `rulings` is an empty list." in brief
+    assert "Do not rule on a decision nobody asked you about" in brief
+    # The two standing paragraphs that made every turn a ruling turn, by the
+    # phrases that made them one.
+    assert "bears on decisions other than the one they answered" not in brief
+    assert "Rule on every decision the dispatch names" not in brief
+    assert "any other the answer undermines" not in brief
+    # And the obligation section itself, which is not in the standing brief at
+    # all: it rides the one dispatch that owes it.
+    assert MOOTNESS_OBLIGATION_RULE not in brief
+    assert MOOTNESS_RESTING_RULE not in brief
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
@@ -634,6 +777,182 @@ def test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_ca
     # refusal test alone would pass.
     assert "the author of the map" not in brief
     assert "You are the grill-master" not in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_grill_master_brief_gives_the_turn_one_lane_to_the_human(tier: str) -> None:
+    """
+    Given the grill-master brief on each tier
+    When it is read for where the turn addresses the human
+    Then `text` is the one message, an `informational` is a note pinned to one
+         named decision rather than a second message, a `stands` rationale is
+         barred from being one, and an option is named with its decision.
+
+    Top-level `text` and the `informational` kind were the same act described
+    twice, in the same words -- "what you are saying to the human" against "what
+    you are telling them" -- which left the second one open and invited a shelf
+    of notices the human has to read to learn one thing. The bare option
+    reference is the same failure a level down: the board offers an option `b`
+    under most of its rows.
+
+    The thread agent is not told any of this: an update from it is refused, so
+    a rule about which kind to speak through is a rule about a refusal.
+    """
+    brief = system_prompt(tier, GRILL_MASTER)
+
+    assert SPEECH_RULE in brief
+    assert "one place per turn" in brief
+    assert "An `informational` update is not a second message" in brief
+    assert "name that decision in its `target`" in brief
+    assert "Never put the reason for a `stands` ruling in an `informational`" in brief
+    assert '"option b of d3", never "option b"' in brief
+    assert SPEECH_RULE not in system_prompt(tier, THREAD_AGENT)
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_brief_states_the_two_rules_the_gate_does_not_enforce(tier: str) -> None:
+    """
+    Given the grill-master brief on each tier
+    When it is read for what a node and a revision have to carry
+    Then it says an `add-node` carries `short` and `body`, and a `revise`
+         carries at least one of the fields a revision changes.
+
+    Both are true of the board and neither is true of the gate, which is exactly
+    why they have to be in prose. The rendered contract states what the gate
+    refuses an update for missing, so on both kinds it is silent here: a seat
+    reading only the contract ships a node the board draws as a blank row, and a
+    revision the human reads as a paragraph of disagreement over an unchanged
+    question.
+    """
+    brief = system_prompt(tier, GRILL_MASTER)
+
+    assert "An `add-node` carries `short` and `body`" in brief
+    assert "arrives as a blank row the human cannot read" in brief
+    assert "A `revise` carries at least one of `short`, `title`, `body` or `options`" in brief
+    assert "carrying none of them is accepted and changes nothing" in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_grill_master_brief_gives_a_gap_a_kind_and_a_way_out_of_it(tier: str) -> None:
+    """
+    Given the grill-master brief on each tier
+    When it is read for what to do about something nobody supplied
+    Then it names `elicit-alert` as the update that says so, states its three
+         fields, says that a blocking alert locks the decision, and states the
+         one path that unlocks it -- including that withdrawing the alert is not
+         that path.
+
+    "Say what you lack instead of supplying it" named no kind for the whole of
+    the seat's life, so the gap was said in prose and the board never heard it.
+    The unlock half matters more than it looks: the lock is set by the fold on
+    each replay of the alert, so no gesture of the human's clears it and
+    superseding the alert does not either. A seat that assumes a withdrawal
+    frees the decision leaves the human holding a question they cannot answer.
+    """
+    brief = system_prompt(tier, GRILL_MASTER)
+
+    assert GAP_RULE in brief
+    assert "`elicit-alert`" in brief
+    assert "`blocking` true locks the decision" in brief
+    assert "withdrawing the alert does not either" in brief
+    assert "with `blocking` false" in brief
+    assert "`blocking` false records the gap and leaves the decision answerable" in brief
+    assert GAP_RULE not in system_prompt(tier, THREAD_AGENT)
+
+
+def answered_board() -> DispatchContext:
+    """A map dispatch whose board carries the decision the human just answered."""
+    return DispatchContext(
+        agent=GRILL_MASTER,
+        channel="map",
+        epoch="e",
+        seq=4,
+        image2=ThreadProjection(
+            epoch="e",
+            seq=4,
+            decisions=[
+                Decision(
+                    id="d1",
+                    short="Store shape",
+                    options=[
+                        Option(id="a", text="A relational store"),
+                        Option(id="b", text="Append-only log"),
+                    ],
+                ),
+                Decision(id="d2", short="Compaction", options=[Option(id="b", text="On a bound")]),
+            ],
+        ),
+    )
+
+
+def answer_entry(option: str | None = "b", note: str | None = None) -> LogEntry:
+    """The human's own answer, as the log holds it."""
+    return LogEntry(
+        seq=4,
+        epoch="e",
+        kind="answer",
+        idempotency_key="k:1",
+        timestamp="2026-09-04T21:44:35.682+00:00",
+        actor="human",
+        channel="map",
+        payload={"target": "d1", "answer": {"option": option, "text": note}},
+    )
+
+
+def test_the_prompt_states_the_humans_last_answer_with_its_decision_and_option() -> None:
+    """
+    Given a channel whose log carries the human's answer
+    When the turn's prompt is assembled
+    Then the answer is stated with the decision's id and label, the option's
+         letter and its text, and their note -- rather than only as the
+         transcript line "human: option b".
+
+    A letter on its own is not an answer the seat can act on. The board carries
+    an option `b` under most of its rows, so a turn given the letter and left to
+    find the row is a turn that can rule on the wrong decision and stay
+    internally consistent while it does.
+    """
+    entries = [answer_entry(note="it has to survive a crash mid-write")]
+
+    prompt = compose("{}", answered_board(), entries)
+
+    assert "## The human's latest answer" in prompt
+    assert "Decision: d1 -- Store shape" in prompt
+    assert "Option taken: b -- Append-only log" in prompt
+    assert "Their note: it has to survive a crash mid-write" in prompt
+    # And the transcript heading no longer promises an order the seat is not
+    # given: what moved is what the catch-up section is for.
+    assert ", in order" not in prompt
+
+
+def test_the_answer_section_reads_the_option_off_the_board_it_was_given() -> None:
+    """
+    Given an answer naming an option, and then one carrying only their words
+    When each prompt is assembled
+    Then the first resolves the letter against that decision's own options and
+         the second says there was no option, rather than either inventing a
+         label.
+
+    The section restates what the board already holds, so a decision or an
+    option the board does not carry is named by what is known about it and no
+    more. A label composed for a row nobody can look up would be the one line in
+    the section nothing backs.
+    """
+    said = compose("{}", answered_board(), [answer_entry(option=None, note="neither, log it")])
+
+    assert "Option taken: none, they answered in their own words" in said
+    assert "Their note: neither, log it" in said
+    assert "Option taken: b -- On a bound" not in said
+
+
+def test_a_channel_with_no_answer_in_its_log_states_no_answer(entries: list[LogEntry]) -> None:
+    """
+    Given a thread channel the human has answered nothing on
+    When the turn's prompt is assembled
+    Then it carries no answer section at all, rather than one whose every field
+         is "none" -- which reads as an answer that was given and then lost.
+    """
+    assert "## The human's latest answer" not in compose("{}", dispatch_context("t-d1"), entries)
 
 
 def map_thread_context(kind: str = MAP_THREAD_KIND, channel: str = "t-map") -> DispatchContext:
@@ -684,6 +1003,42 @@ def test_the_map_thread_mandate_reaches_no_other_channel(entries: list[LogEntry]
     assert MAP_THREAD_MANDATE not in compose("{}", map_thread_context(kind="help"), entries)
     assert MAP_THREAD_MANDATE not in compose("{}", dispatch_context("t-d1"), entries)
     assert MAP_THREAD_MANDATE not in compose("{}", dispatch_context(), entries)
+
+
+def test_a_turn_on_the_help_thread_is_told_where_the_tools_own_material_is(
+    entries: list[LogEntry],
+) -> None:
+    """
+    Given a dispatch for the session's help thread
+    When the turn's prompt is assembled
+    Then it says that thread is about driving the board rather than about the
+         plan, names `help_reference` as where the material for it is, and tells
+         the turn to say so when the material does not answer the question.
+
+    The material has always crossed inside the board bytes and nothing has ever
+    pointed at it. A seat asked how a control works, with no line saying the
+    answer is in front of it, describes a screen it has never seen -- and the
+    human spends the next minute looking for a button that is not there.
+    """
+    prompt = compose("{}", map_thread_context(kind=HELP_THREAD_KIND), entries)
+
+    assert HELP_THREAD_MANDATE in prompt
+    assert "`help_reference`" in prompt
+    assert "say that it does not" in prompt
+    assert MAP_THREAD_MANDATE not in prompt
+
+
+def test_the_help_thread_mandate_reaches_no_other_channel(entries: list[LogEntry]) -> None:
+    """
+    Given the map thread, an ordinary side thread and the map channel
+    When each one's prompt is assembled
+    Then none carries the help thread's mandate: the material it points at rides
+         that one dispatch, so a turn told to answer from it anywhere else is
+         told to read a key the board it was handed does not carry.
+    """
+    assert HELP_THREAD_MANDATE not in compose("{}", map_thread_context(), entries)
+    assert HELP_THREAD_MANDATE not in compose("{}", dispatch_context("t-d1"), entries)
+    assert HELP_THREAD_MANDATE not in compose("{}", dispatch_context(), entries)
 
 
 def test_the_map_thread_as_another_threads_stub_mandates_nothing(
