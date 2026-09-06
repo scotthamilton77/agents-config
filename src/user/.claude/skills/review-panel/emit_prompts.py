@@ -105,8 +105,8 @@ UNTRUSTED_NOTICE = (
 SETTLED_ITEMS = (
     "The fenced section lists items already dispositioned in an earlier round, across every "
     "lens, each under the id that cites it. Each is settled: do not re-raise it, whichever "
-    "lens raised it first. To refer to one, carry its id exactly as listed; a finding you "
-    "raise this round is new, and carries an id of your own rather than a settled item's."
+    "lens raised it first. A finding you raise this round is new and carries an id of your "
+    "own; where you must refer to a settled item, cite it by the id listed for it."
 )
 SCOPE_FULL = (
     "Re-read the whole artifact this round, not only what changed since you last judged it."

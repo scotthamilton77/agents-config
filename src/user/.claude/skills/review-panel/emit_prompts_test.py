@@ -466,14 +466,15 @@ class TestRoundsAndLedger:
         self, repo, acs_file, tmp_path, capsys
     ):
         """Suppression matches an exact re-citation, so the prompt shows the id that cites a
-        settled item — lens and round included — and says a fresh finding never wears one."""
+        settled item — lens and round included — and gives the reviewer one rule: raise new
+        findings under your own ids, and refer to a settled item by the id listed for it."""
         flat, out_dir = round2(tmp_path, repo, acs_file, SETTLED)
         code, _ = run(flat, capsys)
         assert code == 0
         correctness = prompts(out_dir)["correctness"]
         assert emitter.SETTLED_ITEMS in correctness
         assert "each under the id that cites it" in correctness
-        assert "carry its id exactly as listed" in correctness
+        assert "cite it by the id listed for it" in correctness
         assert "round 1, finding correctness.r1.f1 (raised by correctness): fixed" in correctness
 
     def test_b4_an_id_already_carrying_a_lens_and_round_prefix_is_shown_as_written(self):

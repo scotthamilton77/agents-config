@@ -825,8 +825,25 @@ class TestSuppression:
             "settled_round": 1, "disposition": "rebutted",
         }]
 
+    def test_b11_a_qualified_id_matching_no_settled_item_stays_live(self, round2, dest):
+        """A qualified id is a citation, not a settlement: one naming nothing in the ledger is
+        a live finding, and it reaches the envelope under the id the lens wrote."""
+        source, directory = round2
+        code, answer, out = assemble(
+            source, dest, round_dir=directory,
+            reports=source.reports(
+                dest, {"correctness": [mechanical("correctness.r99.f1", "correctness")]},
+                round_dir=directory),
+        )
+        assert code == 0, answer
+        assert (answer["suppressed"], answer["mechanical"]) == (0, 1)
+        assert suppressions_of(out) == []
+        raised = json.loads(out.read_text(encoding="utf-8"))["findings"]
+        assert [item["id"] for item in raised] == ["correctness.r99.f1"]
+        assert validate(out, source.staffing) == (0, {"valid": True})
+
     def test_b11_a_ledger_id_already_qualified_is_keyed_as_written(self):
-        """Ids qualified where the finding was extracted reach the ledger already carrying
+        """Ids the assembler qualified in an earlier round reach the ledger already carrying
         lens and round; the index keys those as written rather than qualifying them twice."""
         index = assembler.settled_index({"prior_dispositions": [
             {"round": 1, "id": "correctness.r1.f1", "lens": "correctness",
