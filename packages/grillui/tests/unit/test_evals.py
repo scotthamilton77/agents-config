@@ -8,6 +8,7 @@ document it is there to catch and passes the one it is not.
 from __future__ import annotations
 
 import json
+import subprocess
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -26,7 +27,7 @@ from evals.checks import (
     the_stop_verdict_is_expected,
     the_turn_speaks_once,
 )
-from grillui.drivers import read_document, record_reply, seat_driver
+from grillui.drivers import fault_of, read_document, record_reply, seat_driver
 from grillui.lane import AgentUnreachableError
 from grillui.log import SessionLog
 from grillui.schemas import (
@@ -41,6 +42,7 @@ from grillui.tiers import (
     CLAUDE_TRANSPORT,
     CODEX_TRANSPORT,
     OPENROUTER_TRANSPORT,
+    REQUEST_TIMEOUT_ENV,
     TierConfig,
     UnknownTransportError,
     compose,
@@ -379,6 +381,109 @@ def test_a_seat_that_refuses_twice_is_a_red_row_carrying_what_it_sent(
     assert all(run["checks"][one.__name__] == reason for one in DEPENDENT)
     kept = next((tmp_path / CASE).iterdir())
     assert (kept / "1.txt").read_text(encoding="utf-8") == "just prose"
+
+
+def test_a_seat_the_transport_gave_up_on_is_a_red_row_naming_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a seat whose transport gives up on the turn part way through it
+    When the suite runs
+    Then the row is red for what the transport said about it and carries the
+         clock the turn actually ran: a row blaming the runner for never
+         reaching the seat, over nought seconds, sends whoever re-runs it after
+         the wrong thing entirely.
+    """
+    import evals.__main__ as suite
+
+    case = next(one for one in load_cases() if one.name == CLI_CASE)
+    config = TierConfig.from_env({})
+    driver = seat_driver(config, seat_of(case, config), tier=case.tier)
+
+    def gave_up(*_args: Any) -> str:
+        time.sleep(0.2)
+        raise AgentUnreachableError(
+            HEAVY_TIER,
+            fault_of(subprocess.TimeoutExpired(["claude"], config.request_timeout)),
+        )
+
+    driver.cli = gave_up  # type: ignore[union-attr]
+    monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
+
+    code = suite.main(["--case", CLI_CASE, "--report", str(tmp_path)])
+
+    run = json.loads((tmp_path / "matrix.json").read_text("utf-8"))[0]
+    reason = run["checks"][the_reply_is_the_map_document.__name__]
+    assert code == 1
+    assert reason is not None and "timed out" in reason, reason
+    assert all(run["checks"][one.__name__] == reason for one in DEPENDENT)
+    assert run["wall_seconds"] > 0
+
+
+def test_a_run_stating_no_timeout_seats_its_turns_behind_the_suites_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a run whose environment states no request timeout, and then one
+          stating seven seconds
+    When each builds the driver its case's seat takes its turn on
+    Then the first is built with the floor the recorded turns fit inside and the
+         second with exactly the seven it asked for: a turn this suite has
+         measured at over a minute, killed by a shorter default nobody chose, is
+         a row about the clock and about nothing the reply says.
+    """
+    import evals.__main__ as suite
+
+    built: list[float] = []
+    seated = suite.seat_driver
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        driver = seated(*args, **kwargs)
+        built.append(driver.cli.keywords["timeout"])
+        driver.cli = lambda *_args: codex_stream(document().model_dump_json())
+        return driver
+
+    monkeypatch.setattr(suite, "seat_driver", spy)
+
+    monkeypatch.delenv(REQUEST_TIMEOUT_ENV, raising=False)
+    suite.main(["--case", CASE, "--report", str(tmp_path / "unstated")])
+    monkeypatch.setenv(REQUEST_TIMEOUT_ENV, "7")
+    suite.main(["--case", CASE, "--report", str(tmp_path / "stated")])
+
+    assert built == [300.0, 7.0]
+
+
+def test_a_reply_the_appender_refuses_is_a_red_row_carrying_what_it_sent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a seat whose reply is the document in shape and acts on a decision the
+          board does not have
+    When the suite runs
+    Then the row is red for what the appender said and the reply is kept beside
+         it: the bytes are the only evidence of what the seat sent, and a run
+         that raised on them writes no row, no matrix and no reply at all.
+    """
+    import evals.__main__ as suite
+
+    case = next(one for one in load_cases() if one.name == CASE)
+    config = TierConfig.from_env({})
+    driver = seat_driver(config, seat_of(case, config), tier=case.tier)
+    said = document(
+        updates=[{"kind": "revise", "target": "no-such-decision", "title": "What now?"}]
+    ).model_dump_json()
+    driver.cli = lambda *_args: codex_stream(said)  # type: ignore[union-attr]
+    monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
+
+    code = suite.main(["--case", CASE, "--report", str(tmp_path)])
+
+    run = json.loads((tmp_path / "matrix.json").read_text("utf-8"))[0]
+    kept = next((tmp_path / CASE).iterdir())
+    reason = run["checks"][the_reply_is_the_map_document.__name__]
+    assert code == 1
+    assert reason is not None and "unknown node id" in reason, reason
+    assert all(run["checks"][one.__name__] == reason for one in DEPENDENT)
+    assert (kept / "1.txt").read_text(encoding="utf-8") == said
 
 
 @pytest.mark.parametrize("transport", [CODEX_TRANSPORT, OPENROUTER_TRANSPORT])
