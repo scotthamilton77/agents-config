@@ -633,22 +633,22 @@ OPTION_REFERENCE_RULE = (
     "before they can read it."
 )
 
-# The contract behind "say what you lack instead of supplying it". The rule
-# exists without it and has for the whole of the seat's life -- what was missing
-# is the kind that carries a gap, and what a blocking one costs the human. A
-# seat that does not know the lock exists spends it freely; a seat told the lock
-# is its alone to lift rations it against a price nobody pays, and says a gap is
-# survivable when it is not.
+# The contract behind "say what you lack instead of supplying it": the kind that
+# carries a gap, and what a blocking one costs the human. Both halves of the
+# price are here because a seat prices the lock off whatever it is told. Told
+# nothing, it spends the lock freely and leaves the human a question they cannot
+# answer; told the lock is its alone to lift, it rations the lock against a
+# price nobody pays and calls a gap survivable when it is not.
 GAP_RULE = (
     "When a decision rests on something nobody has supplied, say so rather than supplying it "
     "yourself. The update for that is `elicit-alert`: `target` is the decision, `text` is what "
     "is missing, and `blocking` says whether the decision can be answered without it.\n"
-    "`blocking` true locks the decision: nobody answers it while the lock stands. The human "
-    "lifts it by dismissing the alert from the queue, and you lift it by withdrawing that alert "
-    "or by sending a second `elicit-alert` on the same decision with `blocking` false, whose "
-    "`text` says what they supplied -- which is what you send once they have supplied it in the "
-    "thread on that decision. So set `blocking` true only where the decision truly cannot be "
-    "answered.\n"
+    "`blocking` true locks the decision: nobody answers it while it stands. The human lifts it "
+    "by dismissing the alert, and you lift it by withdrawing it -- naming its id in "
+    "`supersedes`, the reply's list of your own pending items you take back -- or by sending a "
+    "second `elicit-alert` on the same decision with `blocking` false, whose `text` says what "
+    "they supplied, once they have supplied it in that decision's thread. So set `blocking` "
+    "true only where the decision truly cannot be answered.\n"
     "`blocking` false leaves the decision answerable, and states the gap on the record. Use it "
     "where the gap is worth knowing about and the human could still decide without it."
 )
@@ -923,7 +923,8 @@ DOCUMENT_FORMAT_RULE = (
     "decision with a change of yours waiting on it cannot be answered until they do one or "
     "the other. A notice pinned to a decision holds nothing up, and answering the decision is "
     "how they deal with it -- except an `elicit-alert` with `blocking` true, which locks its "
-    "decision until you clear it. You are not told afterwards which of yours did which. So say "
+    "decision until the human dismisses that alert or you lift it. You are not told afterwards "
+    "which of yours did which. So say "
     "what "
     "you are proposing and why, and never tell the human the board has changed."
 )
