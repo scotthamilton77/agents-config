@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import sys
 import threading
 import time
@@ -709,6 +710,35 @@ def test_the_cli_transport_returns_what_the_process_printed(tmp_path: Path) -> N
     output = run_claude_cli([sys.executable, "-c", f"print({printed!r})"], tmp_path)
 
     assert read_cli_reply(output) == (REPLY, "chain-3", 40)
+
+
+def test_the_cli_child_reads_an_empty_stdin(tmp_path: Path) -> None:
+    """
+    Given a caller whose own standard input is an open stream nobody writes to
+    When the CLI transport runs a child that reads it
+    Then the child is at end of file rather than holding the caller's stream,
+         which is what the CLI spends three seconds waiting on for a piped
+         prompt that is not coming.
+    """
+    probe = (
+        "import os, sys\n"
+        "os.set_blocking(0, False)\n"
+        "try:\n"
+        "    sys.stdout.write(repr(os.read(0, 1)))\n"
+        "except BlockingIOError:\n"
+        "    sys.stdout.write('inherited a stream with no data')\n"
+    )
+    reader, writer = os.pipe()
+    stdin = os.dup(0)
+    try:
+        os.dup2(reader, 0)
+        output = run_claude_cli([sys.executable, "-c", probe], tmp_path)
+    finally:
+        os.dup2(stdin, 0)
+        for handle in (stdin, reader, writer):
+            os.close(handle)
+
+    assert output == "b''"
 
 
 def test_a_cli_that_fails_or_prints_nonsense_reads_as_unreachable(tmp_path: Path) -> None:
