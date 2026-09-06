@@ -61,6 +61,7 @@ from grillui.tiers import (
     NO_BRIEFING,
     NO_MANUFACTURE_RULE,
     ONE_TURN_RULE,
+    OPTION_REFERENCE_RULE,
     POLICY_AUTONOMOUS,
     POLICY_GATED,
     REGISTER_RULE,
@@ -805,8 +806,17 @@ def test_the_grill_master_brief_gives_the_turn_one_lane_to_the_human(tier: str) 
     assert "An `informational` update is not a second message" in brief
     assert "name that decision in its `target`" in brief
     assert "Never put the reason for a `stands` ruling in an `informational`" in brief
-    assert '"option b of d3", never "option b"' in brief
     assert SPEECH_RULE not in system_prompt(tier, THREAD_AGENT)
+    # The option rule stands on its own rather than closing the block above.
+    # As a trailing clause it was read as an aside, and the live reply that
+    # dropped it opened on "Option b would let an agent rewrite a target",
+    # where the decision was obvious to the writer and to nobody else.
+    assert OPTION_REFERENCE_RULE in brief
+    assert brief.index(OPTION_REFERENCE_RULE) > brief.index(SPEECH_RULE)
+    assert OPTION_REFERENCE_RULE not in SPEECH_RULE
+    assert '"option b of d3", never "option b"' in brief
+    assert "it holds when the decision is the one the human has just answered" in brief
+    assert OPTION_REFERENCE_RULE not in system_prompt(tier, THREAD_AGENT)
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])

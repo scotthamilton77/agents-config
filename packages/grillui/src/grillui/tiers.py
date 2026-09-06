@@ -581,10 +581,22 @@ SPEECH_RULE = (
     "on one decision and nowhere else, and name that decision in its `target`. A turn almost "
     "never needs both a `text` and an `informational`.\n"
     "Never put the reason for a `stands` ruling in an `informational`. The ruling carries its "
-    "own `why`, and the board shows that line on the decision itself.\n"
-    'Name every option with the decision it belongs to. Write "option b of d3", never '
-    '"option b": the board offers an option `b` under most of its decisions, so a bare '
-    "letter leaves the human to work out which question you mean."
+    "own `why`, and the board shows that line on the decision itself."
+)
+
+# A paragraph of its own rather than a closing clause of the rule above. The
+# case it has to survive is the one where the decision feels obvious to the
+# writer: the human has just answered, the turn opens on what their option
+# costs, and the id goes unsaid because the turn knows which one it means. The
+# human is reading the sentence off a board of rows that each offer an option
+# `b`, and cannot.
+OPTION_REFERENCE_RULE = (
+    "Every time you name an option, name its decision in the same breath. Write "
+    '"option b of d3", never "option b". This holds for the first mention as much as the '
+    "rest, and it holds when the decision is the one the human has just answered -- that is "
+    "the sentence it is most often dropped from. Most decisions on the board offer an option "
+    "`b`, so a bare letter is a sentence the human has to resolve against the whole map "
+    "before they can read it."
 )
 
 # The contract behind "say what you lack instead of supplying it". The rule
@@ -1024,7 +1036,14 @@ ROLE_REGISTER: dict[str, list[str]] = {
 # may emit, and what it owes when it does. They come last, because they are the
 # contract for the reply and the reply is the next thing written.
 ROLE_RULES: dict[str, list[str]] = {
-    GRILL_MASTER: [SPEECH_RULE, GAP_RULE, DOCUMENT_FORMAT_RULE, BASIS_RULE, SUPERSEDE_RULE],
+    GRILL_MASTER: [
+        SPEECH_RULE,
+        OPTION_REFERENCE_RULE,
+        GAP_RULE,
+        DOCUMENT_FORMAT_RULE,
+        BASIS_RULE,
+        SUPERSEDE_RULE,
+    ],
     THREAD_AGENT: [CONVERGENCE_RULE],
 }
 
