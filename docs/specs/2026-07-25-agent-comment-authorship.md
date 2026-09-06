@@ -219,15 +219,16 @@ S6-D2's text nominally reaches it, but no criterion anywhere names or constrains
 that channel, and a property no mechanism enforces is not a control. That channel
 produced the observed failure.
 
-**It states a reader-side obligation Slice D does not.** S6-D4 governs what the
-*fix loop* consumes. It says nothing about the merge hard line, and the hard line
-is where authorization actually lives. No S6 criterion requires an agent to check
-authorship before treating a comment as an instruction; `review-verdict`'s
-provenance rule is the only instance of that obligation in admitted source, and
-is scoped to verdict payloads. Extending it from "a verdict is only a verdict if the App
-posted it" to "a comment is only an instruction if a human wrote it" is this
-record's contribution, and it is a reader-side rule where every S6-D criterion is
-a writer-side or gate-side one.
+**It supplied the reader-side obligation Slice D now carries.** S6-D4 governs what
+the *fix loop* consumes, and it now names the hard line the eligibility contract
+must ship: an agent-authored comment is not human authorization, whichever
+identity it renders under. That line is this record's contribution.
+`review-verdict`'s provenance rule was the only instance of the obligation in
+admitted source, scoped to verdict payloads; extending it from "a verdict is only
+a verdict if the App posted it" to "a comment is only an instruction if a human
+wrote it" makes it a reader-side rule where every other S6-D criterion is
+writer-side or gate-side. No deployed asset carries the line yet — the
+eligibility contract that will is Slice D work.
 
 **It makes the grooming tool's own human-review constraint fail closed.** That
 constraint is a separate gate from the verdict-based merge-eligibility predicate
