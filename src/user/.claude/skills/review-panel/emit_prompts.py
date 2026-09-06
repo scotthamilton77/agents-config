@@ -104,7 +104,9 @@ UNTRUSTED_NOTICE = (
 )
 SETTLED_ITEMS = (
     "The fenced section lists items already dispositioned in an earlier round, across every "
-    "lens. Each is settled: do not re-raise it, whichever lens raised it first."
+    "lens, each under the id that cites it. Each is settled: do not re-raise it, whichever "
+    "lens raised it first. A finding you raise this round is new and carries an id of your "
+    "own; where you must refer to a settled item, cite it by the id listed for it."
 )
 SCOPE_FULL = (
     "Re-read the whole artifact this round, not only what changed since you last judged it."
@@ -114,6 +116,13 @@ SCOPE_DELTA = (
     "{head}, together with the dispositioned items below. Nothing outside that change and that "
     "history is in scope for you this round."
 )
+
+
+# A finding id is one whitespace-free token; an id whose whole shape is
+# {lens}.r{round}.{id} already carries its lens and round and is left as written: it
+# suppresses when it matches a settled item, and stays live when it matches none.
+_TOKEN = re.compile(r"\S+")
+_QUALIFIED = re.compile(r"[^\s.]+\.r\d+\.\S+")
 
 
 class Refusal(Exception):
@@ -821,6 +830,12 @@ def build_ledger(
     ledger = []
     for entry in dispositions:
         key = (entry.get("round"), entry.get("id"))
+        if not isinstance(key[1], str) or not _TOKEN.fullmatch(key[1]):
+            raise Refusal(
+                "ledger-gap",
+                f"the disposition from round {key[0]} carries the id {key[1]!r}, which is not "
+                "one whitespace-free token; a ledger id cites a finding id and has its shape",
+            )
         raw_evidence = entry.get("evidence")
         if raw_evidence is not None and not isinstance(raw_evidence, str):
             raise Refusal(
@@ -975,6 +990,18 @@ def lens_tier(lens: dict, round_no: int) -> str:
     return lens.get("re_review_tier", lens["tier"])
 
 
+def _qualified(lens: Any, round_no: Any, item: str) -> str:
+    """The id that cites a finding: {lens}.r{round}.{id}, left as written if already in it.
+
+    Reviewers number findings f1..fN fresh every round, so bare ids collide across rounds and
+    the assembler cannot tell a re-citation of a settled item from a new finding wearing its
+    number. What the prompt shows a reviewer is therefore the id that citation is matched on.
+    """
+    if not lens or _QUALIFIED.fullmatch(item):
+        return item
+    return f"{lens}.r{round_no}.{item}"
+
+
 def _render_findings(findings: list[dict], ledger: list[dict]) -> str:
     if not findings:
         return "None: this lens raised nothing in an earlier round.\n"
@@ -983,8 +1010,9 @@ def _render_findings(findings: list[dict], ledger: list[dict]) -> str:
     for finding in sorted(findings, key=lambda f: (f.get("round") or 0, f.get("id") or "")):
         key = (finding.get("round"), finding.get("id"))
         entry = by_key.get(key, {})
+        cites = _qualified(finding.get("lens"), key[0], key[1])
         lines.append(
-            f"- round {key[0]}, finding {key[1]} ({finding.get('type')}, criterion "
+            f"- round {key[0]}, finding {cites} ({finding.get('type')}, criterion "
             f"{finding.get('ac')}): {finding.get('claim')}\n"
             f"  disposition: {entry.get('disposition', 'none recorded')}"
             + (f" — {entry['evidence']}" if entry.get("evidence") else "")
@@ -996,8 +1024,9 @@ def _render_ledger(ledger: list[dict]) -> str:
     if not ledger:
         return "None: nothing has been dispositioned yet.\n"
     lines = [
-        f"- round {item['round']}, finding {item['id']} (raised by {item.get('lens')}): "
-        f"{item['disposition']}"
+        f"- round {item['round']}, finding "
+        f"{_qualified(item.get('lens'), item['round'], item['id'])} "
+        f"(raised by {item.get('lens')}): {item['disposition']}"
         + (f" — {item['evidence']}" if item.get("evidence") else "")
         + (f" [carried by {item['work_item']}]" if item.get("work_item") else "")
         for item in ledger

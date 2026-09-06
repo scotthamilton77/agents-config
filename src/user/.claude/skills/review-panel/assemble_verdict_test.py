@@ -499,10 +499,26 @@ class TestDowngrade:
 
 
 class TestDuplicateIds:
-    def test_two_lenses_raising_one_id_refuse(self, round1, dest):
+    def test_two_lenses_raising_one_id_assemble_apart(self, round1, dest):
+        """Each lens numbers its own findings f1..fN, so one number from two lenses is two
+        claims, and the qualified id the envelope carries is what tells them apart."""
         code, answer, out = assemble(round1, dest, findings={
             "correctness": [mechanical("F1", "correctness")],
             "security": [mechanical("F1", "security")],
+        })
+        assert code == 0, answer
+        assert answer["mechanical"] == 2
+        raised = json.loads(out.read_text(encoding="utf-8"))["findings"]
+        assert sorted(item["id"] for item in raised) == [
+            "correctness.r1.F1", "security.r1.F1"
+        ]
+        assert validate(out, round1.staffing) == (0, {"valid": True})
+
+    def test_one_lens_raising_one_id_twice_refuses(self, round1, dest):
+        """Two findings under one id in one lens cannot be dispositioned apart."""
+        code, answer, out = assemble(round1, dest, findings={
+            "correctness": [mechanical("F1", "correctness"),
+                            mechanical("F1", "correctness", ac="C2")],
         })
         assert code == 2
         assert answer["errors"][0]["code"] == "duplicate-finding-id"
@@ -523,6 +539,15 @@ class TestDuplicateIds:
         assert code == 2
         assert answer["errors"][0]["code"] == "bad-report"
 
+    @pytest.mark.parametrize("item", ["F 1", "F1 ", " F1", "F\t1"])
+    def test_a_finding_id_carrying_whitespace_refuses(self, round1, dest, item):
+        """An id is one token. Whitespace inside it makes the id the verdict carries
+        ambiguous to every reader that splits or quotes it."""
+        code, answer, _ = assemble(
+            round1, dest, findings={"correctness": [mechanical(item, "correctness")]})
+        assert code == 2
+        assert answer["errors"][0]["code"] == "bad-report"
+
 
 class TestIndictment:
     def test_b6_an_indictment_halts_the_round_on_the_upstream_defect(self, round1, dest):
@@ -531,14 +556,14 @@ class TestIndictment:
         code, answer, out = assemble(
             round1, dest,
             findings={"correctness": [mechanical("F1", "correctness")]},
-            extra=["--indict", "F1=a.txt", "--repo-root", str(round1.repo)],
+            extra=["--indict", "correctness.r1.F1=a.txt", "--repo-root", str(round1.repo)],
         )
         assert code == 0, answer
         assert answer["verdict"] == "halted"
         verdict = json.loads(out.read_text(encoding="utf-8"))
         halt = verdict["halt"]
         assert halt["reason"] == "upstream-defect"
-        assert halt["indicted_finding"] == "F1"
+        assert halt["indicted_finding"] == "correctness.r1.F1"
         assert halt["indicted_artifact"] == "a.txt"
         assert halt["abandoned_lenses"] == []
         assert halt["artifact_digest"] == "sha256:" + hashlib.sha256(
@@ -552,7 +577,7 @@ class TestIndictment:
         code, _, out = assemble(
             round1, dest,
             findings={"correctness": [mechanical("F1", "correctness")]},
-            extra=["--indict", "F1=a.txt", "--repo-root", str(round1.repo)],
+            extra=["--indict", "correctness.r1.F1=a.txt", "--repo-root", str(round1.repo)],
         )
         assert code == 0
         verdict = json.loads(out.read_text(encoding="utf-8"))
@@ -583,7 +608,7 @@ class TestIndictment:
         code, answer, _ = assemble(
             round1, dest,
             findings={"correctness": [mechanical("F1", "correctness")]},
-            extra=["--indict", "F1=no/such/file.md", "--repo-root", str(round1.repo)],
+            extra=["--indict", "correctness.r1.F1=no/such/file.md", "--repo-root", str(round1.repo)],
         )
         assert code == 2
         assert answer["errors"][0]["code"] == "bad-indictment"
@@ -593,7 +618,7 @@ class TestIndictment:
         code, answer, _ = assemble(
             round1, dest,
             findings={"correctness": [mechanical("F1", "correctness")]},
-            extra=["--indict", "F1=a.txt"],
+            extra=["--indict", "correctness.r1.F1=a.txt"],
         )
         assert code == 2
         assert answer["errors"][0]["code"] == "bad-indictment"
@@ -604,7 +629,7 @@ class TestIndictment:
         code, answer, _ = assemble(
             round1, dest,
             findings={"correctness": [mechanical("F1", "correctness")]},
-            extra=["--indict", f"F1={outside}", "--repo-root", str(round1.repo)],
+            extra=["--indict", f"correctness.r1.F1={outside}", "--repo-root", str(round1.repo)],
         )
         assert code == 2
         assert answer["errors"][0]["code"] == "bad-indictment"
@@ -725,9 +750,9 @@ def round2(tmp_path_factory) -> tuple[Round, Path]:
     assert code == 0
     dispositions = workspace / "dispositions.json"
     dispositions.write_text(json.dumps([
-        {"round": 1, "id": "F1", "disposition": "rebutted",
+        {"round": 1, "id": "correctness.r1.F1", "disposition": "rebutted",
          "evidence": "the reader is documented as skipping blank trailing records"},
-        {"round": 1, "id": "F2", "disposition": "advisory-deferred"},
+        {"round": 1, "id": "security.r1.F2", "disposition": "advisory-deferred"},
     ]), encoding="utf-8")
     (campaign.repo / "a.txt").write_text("two\nthree\n", encoding="utf-8")
     campaign.head = campaign.commit("three")
@@ -743,20 +768,41 @@ class TestSuppression:
     """PANEL-B11 over a real second round: the ledger is the one the emitter wrote."""
 
     def test_the_emitted_ledger_carries_the_lens_that_raised_each_settled_item(self, round2):
-        """Suppression matches on lens and id, so the ledger has to carry the lens."""
+        """Suppression matches the qualified id, which carries the lens and the round of the
+        item it cites, so the ledger has to carry the lens."""
         source, directory = round2
         ledger = source.meta(directory)["prior_dispositions"]
         assert {(entry["lens"], entry["id"]) for entry in ledger} == {
-            ("correctness", "F1"), ("security", "F2")
+            ("correctness", "correctness.r1.F1"), ("security", "security.r1.F2")
         }
 
-    def test_b11_an_exact_re_citation_of_a_settled_item_is_suppressed(self, round2, dest):
-        """A settled item does not re-enter the campaign, whatever the lens says this round."""
+    def test_b11_a_settled_id_reused_by_a_fresh_finding_is_not_suppressed(self, round2, dest):
+        """Reviewers number findings f1..fN fresh each round, so a bare id that happens to
+        match a settled one is a new claim rather than a citation of it."""
         source, directory = round2
         code, answer, out = assemble(
             source, dest, round_dir=directory,
             reports=source.reports(
                 dest, {"correctness": [mechanical("F1", "correctness")]}, round_dir=directory),
+        )
+        assert code == 0, answer
+        assert (answer["suppressed"], answer["mechanical"]) == (0, 1)
+        assert suppressions_of(out) == []
+        raised = json.loads(out.read_text(encoding="utf-8"))["findings"]
+        assert [(item["lens"], item["id"], item["type"]) for item in raised] == [
+            ("correctness", "correctness.r2.F1", "mechanical")
+        ]
+        assert validate(out, source.staffing) == (0, {"valid": True})
+
+    def test_b11_an_exact_re_citation_of_a_settled_item_is_suppressed(self, round2, dest):
+        """A settled item does not re-enter the campaign, whatever the lens says this round.
+        The citation is the settled item's qualified id, which names the round it settled in."""
+        source, directory = round2
+        code, answer, out = assemble(
+            source, dest, round_dir=directory,
+            reports=source.reports(
+                dest, {"correctness": [mechanical("correctness.r1.F1", "correctness")]},
+                round_dir=directory),
         )
         assert code == 0, answer
         assert answer["suppressed"] == 1
@@ -769,16 +815,67 @@ class TestSuppression:
         code, _, out = assemble(
             source, dest, round_dir=directory,
             reports=source.reports(
-                dest, {"correctness": [mechanical("F1", "correctness")]}, round_dir=directory),
+                dest, {"correctness": [mechanical("correctness.r1.F1", "correctness")]},
+                round_dir=directory),
         )
         assert code == 0
         assert suppressions_of(out) == [{
-            "lens": "correctness", "finding_id": "F1", "settled_id": "F1",
+            "lens": "correctness", "finding_id": "correctness.r1.F1",
+            "settled_id": "correctness.r1.F1",
             "settled_round": 1, "disposition": "rebutted",
         }]
 
-    def test_b11_the_same_id_from_another_lens_is_not_suppressed(self, round2, dest):
-        """Exact re-citation only: a different lens raising that id is a different claim."""
+    def test_b11_a_qualified_id_matching_no_settled_item_stays_live(self, round2, dest):
+        """A qualified id is a citation, not a settlement: one naming nothing in the ledger is
+        a live finding, and it reaches the envelope under the id the lens wrote."""
+        source, directory = round2
+        code, answer, out = assemble(
+            source, dest, round_dir=directory,
+            reports=source.reports(
+                dest, {"correctness": [mechanical("correctness.r99.f1", "correctness")]},
+                round_dir=directory),
+        )
+        assert code == 0, answer
+        assert (answer["suppressed"], answer["mechanical"]) == (0, 1)
+        assert suppressions_of(out) == []
+        raised = json.loads(out.read_text(encoding="utf-8"))["findings"]
+        assert [item["id"] for item in raised] == ["correctness.r99.f1"]
+        assert validate(out, source.staffing) == (0, {"valid": True})
+
+    def test_b11_a_ledger_id_already_qualified_is_keyed_as_written(self):
+        """Ids the assembler qualified in an earlier round reach the ledger already carrying
+        lens and round; the index keys those as written rather than qualifying them twice."""
+        index = assembler.settled_index({"prior_dispositions": [
+            {"round": 1, "id": "correctness.r1.f1", "lens": "correctness",
+             "disposition": "fixed"},
+            {"round": 1, "id": "f2", "lens": "security", "disposition": "advisory-deferred"},
+            {"round": 1, "id": "security.r1.", "lens": "security", "disposition": "fixed"},
+        ]})
+        assert set(index) == {
+            "correctness.r1.f1", "security.r1.f2", "security.r1.security.r1."
+        }
+
+    def test_b11_another_lens_citing_the_settled_id_is_suppressed(self, round2, dest):
+        """A settled item is settled whichever lens raised it first, and every lens is shown
+        the id that cites it, so writing that id is a citation whoever writes it."""
+        source, directory = round2
+        code, answer, out = assemble(
+            source, dest, round_dir=directory,
+            reports=source.reports(
+                dest, {"security": [mechanical("correctness.r1.F1", "security")]},
+                round_dir=directory),
+        )
+        assert code == 0, answer
+        assert answer["suppressed"] == 1
+        assert answer["verdict"] == "clean"
+        assert suppressions_of(out) == [{
+            "lens": "security", "finding_id": "correctness.r1.F1",
+            "settled_id": "correctness.r1.F1",
+            "settled_round": 1, "disposition": "rebutted",
+        }]
+
+    def test_b11_another_lens_reusing_a_settled_number_is_not_suppressed(self, round2, dest):
+        """A bare id is nobody's citation: the lens that raised it this round owns it."""
         source, directory = round2
         code, answer, out = assemble(
             source, dest, round_dir=directory,
@@ -786,8 +883,7 @@ class TestSuppression:
                 dest, {"security": [mechanical("F1", "security")]}, round_dir=directory),
         )
         assert code == 0, answer
-        assert answer["suppressed"] == 0
-        assert answer["mechanical"] == 1
+        assert (answer["suppressed"], answer["mechanical"]) == (0, 1)
         assert suppressions_of(out) == []
         assert validate(out, source.staffing) == (0, {"valid": True})
 
@@ -810,7 +906,7 @@ class TestSuppression:
                                 reports=source.reports(dest, round_dir=directory))
         assert code == 0
         carried = json.loads(out.read_text(encoding="utf-8"))["prior_dispositions"]
-        rebuttal = next(entry for entry in carried if entry["id"] == "F1")
+        rebuttal = next(entry for entry in carried if entry["id"] == "correctness.r1.F1")
         assert rebuttal["disposition"] == "rebutted"
         assert "blank trailing records" in rebuttal["evidence"]
         assert rebuttal["round"] == 1

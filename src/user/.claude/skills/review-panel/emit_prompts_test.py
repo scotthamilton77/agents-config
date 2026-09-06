@@ -452,14 +452,53 @@ class TestRoundsAndLedger:
         assert code == 0
         emitted = prompts(out_dir)
         correctness = emitted["correctness"]
-        assert "round 1, finding f1" in correctness
+        assert "round 1, finding correctness.r1.f1" in correctness
         assert "disposition: fixed" in correctness
         assert "the reader drops the trailing record" in correctness
         # f2 belongs to another lens: its disposition travels, its claim text does not.
-        assert "round 1, finding f2 (raised by security): advisory-deferred" in correctness
+        assert ("round 1, finding security.r1.f2 (raised by security): advisory-deferred"
+                in correctness)
         assert "the temp path is world-readable" not in correctness
         assert "None: this lens raised nothing in an earlier round." in emitted["test-adequacy"]
-        assert "round 1, finding f1" in emitted["test-adequacy"]
+        assert "round 1, finding correctness.r1.f1" in emitted["test-adequacy"]
+
+    def test_b4_the_settled_ledger_names_each_item_by_the_id_that_cites_it(
+        self, repo, acs_file, tmp_path, capsys
+    ):
+        """Suppression matches an exact re-citation, so the prompt shows the id that cites a
+        settled item — lens and round included — and gives the reviewer one rule: raise new
+        findings under your own ids, and refer to a settled item by the id listed for it."""
+        flat, out_dir = round2(tmp_path, repo, acs_file, SETTLED)
+        code, _ = run(flat, capsys)
+        assert code == 0
+        correctness = prompts(out_dir)["correctness"]
+        assert emitter.SETTLED_ITEMS in correctness
+        assert "each under the id that cites it" in correctness
+        assert "cite it by the id listed for it" in correctness
+        assert "round 1, finding correctness.r1.f1 (raised by correctness): fixed" in correctness
+
+    def test_b4_an_id_already_carrying_a_lens_and_round_prefix_is_shown_as_written(self):
+        """The prompt and the assembler read ids by one rule, or the id a reviewer is shown
+        is not the id its citation is matched on: an id carrying a lens-and-round prefix and
+        something after it is left as written, whichever lens wrote it, and every other id
+        qualifies under the lens raising it."""
+        assert emitter._qualified("security", 2, "correctness.r1.f1") == "correctness.r1.f1"
+        assert emitter._qualified("security", 2, "f1") == "security.r2.f1"
+        assert (emitter._qualified("security", 2, "correctness.r1.")
+                == "security.r2.correctness.r1.")
+        assert (emitter._qualified("security", 2, "correctness.r1. ")
+                == "security.r2.correctness.r1. ")
+
+    def test_b4_a_disposition_id_carrying_whitespace_is_refused(self, repo, acs_file, tmp_path,
+                                                                capsys):
+        """A ledger id is the same token shape a report's finding id is, or the id the prompt
+        shows a reviewer is not the id anything cites."""
+        flat, _ = round2(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "fixed", "evidence": "regression test added"},
+            {"round": 1, "id": "f 2", "disposition": "advisory-deferred"},
+        ])
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "ledger-gap"
 
     def test_b4_unsupported_rebuttal_is_refused(self, repo, acs_file, tmp_path, capsys):
         """A prior mechanical finding marked rebutted without evidence never settles."""
