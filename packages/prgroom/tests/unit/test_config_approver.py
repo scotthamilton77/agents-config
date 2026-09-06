@@ -80,27 +80,6 @@ def test_other_merge_policy_keys_are_ignored_not_rejected(tmp_path: Path) -> Non
             '[merge-policy.approver]\ntype = "github-app"\napp-id = true\n',
         ),
         (
-            "an env var name starting with a digit",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nkey-path-env = "9-BAD"\n',
-        ),
-        (
-            "an env var name with a hyphen after a legal first character",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\n'
-            'key-path-env = "GOOD-NAME"\n',
-        ),
-        (
-            "an env var name with a dot",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nkey-path-env = "APP.KEY"\n',
-        ),
-        (
-            "an env var name with a space",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nkey-path-env = "APP KEY"\n',
-        ),
-        (
-            "an empty env var name",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nkey-path-env = ""\n',
-        ),
-        (
             "a non-string env var name",
             '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nkey-path-env = 5\n',
         ),
@@ -152,3 +131,26 @@ class TestTheRepositorysOwnConfig:
         # that a merge should happen.
         with REPO_CONFIG.open("rb") as fh:
             assert tomllib.load(fh)["merge-policy"]["merge-authorization"] == "explicit"
+
+
+# The grammar the reader enforces is `[A-Za-z_][A-Za-z0-9_]*`. Pinning only the
+# refusals would leave a reader narrowed to uppercase looking correct while it
+# rejected every legal lowercase name.
+ACCEPTED_ENV_NAMES = ["lower_case", "MiXeDcAsE", "_leading_underscore", "A1", "x9_8y", "A", "_"]
+REJECTED_ENV_NAMES = ["9BAD", "9-BAD", "GOOD-NAME", "APP.KEY", "APP KEY", "", "1234", "a-b"]
+
+
+def approver_with_env_name(tmp_path: Path, name: str) -> Path:
+    body = f'[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nkey-path-env = "{name}"\n'
+    return write_config(tmp_path, body)
+
+
+@pytest.mark.parametrize("name", ACCEPTED_ENV_NAMES)
+def test_a_legal_env_var_name_is_accepted_unchanged(name: str, tmp_path: Path) -> None:
+    assert ApproverConfig.load(approver_with_env_name(tmp_path, name)).key_path_env == name
+
+
+@pytest.mark.parametrize("name", REJECTED_ENV_NAMES)
+def test_an_illegal_env_var_name_is_refused(name: str, tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="key-path-env"):
+        ApproverConfig.load(approver_with_env_name(tmp_path, name))
