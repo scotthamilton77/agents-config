@@ -204,16 +204,16 @@ intervention and reports the prime directive's own metric wrong.
 
 **It covers the writes that are not comments, and the channel no criterion
 constrains.** Five owner-credentialed writes are neither a comment nor an
-approval, so they fall outside S6-D2's text entirely: the thread resolution, the
+approval, and none is the verdict medium, so S6-D2 does not reach them: the thread resolution, the
 reviewer re-request, the `human-review-required` label add, the commit/push
 path, and the PR-body PATCH — a PR body is not a comment. The PATCH is the mildest
 of the five: the splice leaves the body's authorship the PR author's, so it
 converts no attribution; it stays in the conversion enumeration as a write path
 rather than as something a reader can mistake for an instruction. The ad-hoc `gh` invocation is
-the harder case: a comment an agent types by hand is a machine-posted comment, so
-S6-D2's text nominally reaches it, but no criterion anywhere names or constrains
-that channel, and a property no mechanism enforces is not a control. That channel
-produced the observed failure.
+the harder case: a comment an agent types by hand is a machine-posted comment that
+is not the verdict medium, so S6-D2 does not reach it, and no criterion anywhere
+names or constrains that channel; a property no mechanism enforces is not a
+control. That channel produced the observed failure.
 
 **It supplied the reader-side obligation Slice D now carries.** S6-D4 governs what
 the *fix loop* consumes, and it now names the hard line the eligibility contract
@@ -419,8 +419,8 @@ other.
   because a write that reaches GitHub any other way fails this criterion whatever
   introduced it. Binding the criterion to the client rather than to a
   call-site list also settles the paths the carve leaves undecided: whichever
-  grooming writes survive, they flow through the converted client. Machine-posted
-  comments and approvals stay S6-D2's (§3); the commit/push path is AUTH-C5's.
+  grooming writes survive, they flow through the converted client. The verdict
+  medium stays S6-D2's (§3); the commit/push path is AUTH-C5's.
   Observable: the actor GitHub records for a write made through the retained
   client — the comment's `user`, the thread's `resolvedBy`, the timeline event's
   `actor` — carries `type: "Bot"`. Inverse: a write that reaches GitHub without
@@ -483,8 +483,7 @@ other.
 Deploying any convention this record proposes — a separate tracker item, and
 deliberately so: a half-adopted marker is worse than none, because its absence
 stops meaning anything. Everything S6 Slice D already owns: the App identity for
-machine-posted comments and approvals (S6-D2 — §3 flags the contradiction between
-its text and what S6 delivers, for repair there), the **verdict-based**
+the verdict medium (S6-D2, scoped as §3 states), the **verdict-based**
 merge-eligibility predicate and its fail-closed provenance check (S6-D3), and the
 exclusion of human comments from the fix loop (S6-D4). prgroom's human-review
 constraint is a different gate from that predicate and is in scope here, at
