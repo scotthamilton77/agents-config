@@ -67,12 +67,13 @@ def seeded_case(where: Path) -> Path:
     return where
 
 
-def cli_result(said: str, *, turns: int = 1) -> str:
-    """What `claude -p --output-format json` prints for one turn."""
+def cli_result(said: str | None, *, turns: int = 1) -> str:
+    """What `claude -p --output-format json` prints, reporting the turns it took
+    and carrying no result text where the reply is one the driver refuses."""
     return json.dumps(
         {
             "session_id": "c",
-            "result": said,
+            **({} if said is None else {"result": said}),
             "num_turns": turns,
             "usage": {
                 "input_tokens": 2,
@@ -345,7 +346,9 @@ def test_a_seat_that_refuses_twice_is_a_red_row_carrying_what_it_sent(
     code = suite.main(["--case", CASE, "--report", str(tmp_path)])
 
     run = json.loads((tmp_path / "matrix.json").read_text("utf-8"))[0]
+    kept_run = json.loads((next((tmp_path / CASE).iterdir()) / "1.json").read_text("utf-8"))
     assert code == 1
+    assert (run["turns"], kept_run["turns"]) == (None, None)
     assert run["output_tokens"] == 31
     assert run["output_bytes"] == len(b"just prose")
     assert run["wall_seconds"] >= 0
@@ -901,6 +904,31 @@ def test_a_sample_records_how_many_turns_the_cli_took_to_answer(
     # The scripted usage counts exactly the case's baseline, so a run that did
     # not carry the turn count into the check would pass this row on a number
     # measured off the wrong bytes.
+    assert run["checks"][BASELINE] == "the seat took 2 turns, not one"
+
+
+def test_a_reply_the_driver_refuses_still_records_the_turns_the_cli_took(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a CLI that ran the prompt twice and printed nothing readable as a reply
+    When the suite records the sample
+    Then the count it printed is still the record's, and the baseline fails
+         naming it: a refusal that dropped the count is the one sample nobody
+         can tell apart from a seat that answered once.
+    """
+    import evals.__main__ as suite
+
+    case = next(one for one in load_cases() if one.name == CLI_CASE)
+    config = TierConfig.from_env({})
+    driver = seat_driver(config, seat_of(case, config), tier=case.tier)
+    driver.cli = lambda *_args: cli_result(None, turns=2)  # type: ignore[union-attr]
+    monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
+
+    suite.main(["--case", CLI_CASE, "-n", "1", "--report", str(tmp_path)])
+
+    run = json.loads((tmp_path / "matrix.json").read_text("utf-8"))[0]
+    assert run["turns"] == 2
     assert run["checks"][BASELINE] == "the seat took 2 turns, not one"
 
 

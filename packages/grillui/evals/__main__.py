@@ -101,6 +101,20 @@ def _cli_turns(raw: str) -> int | None:
     return counted if isinstance(counted, int) else None
 
 
+def _cli_reply(raw: str) -> tuple[str | None, int | None, int | None, int | None]:
+    """What the CLI said and what it counted, off the object it printed.
+
+    A reply the driver refuses keeps the counts printed beside it. The turn was
+    taken and paid for, and a record blank about how many turns the seat ran
+    cannot be told apart from a seat that answered once.
+    """
+    try:
+        text, _chain, prompt_tokens = read_cli_reply(raw)
+    except AgentUnreachableError:
+        text, prompt_tokens = "", None
+    return text, prompt_tokens, _cli_output(raw), _cli_turns(raw)
+
+
 # What each transport hands back: the reply read with the same function the
 # driver reads it with, so an eval never disagrees with a session about what a
 # seat said, the two counts beside it, and how many turns the seat took to get
@@ -109,12 +123,7 @@ def _cli_turns(raw: str) -> int | None:
 # invented, and only the CLI says anything about turns.
 REPLIES: dict[str, Callable[[Any], tuple[str | None, int | None, int | None, int | None]]] = {
     OPENROUTER_TRANSPORT: lambda raw: (raw[0], raw[1], None, None),
-    CLAUDE_TRANSPORT: lambda raw: (
-        read_cli_reply(raw)[0],
-        read_cli_reply(raw)[2],
-        _cli_output(raw),
-        _cli_turns(raw),
-    ),
+    CLAUDE_TRANSPORT: _cli_reply,
     CODEX_TRANSPORT: lambda raw: (
         read_codex_reply(raw)[0],
         read_codex_reply(raw)[2],
