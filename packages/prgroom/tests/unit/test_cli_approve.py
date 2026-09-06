@@ -412,3 +412,25 @@ def test_facts_reach_the_review_body_byte_for_byte(
     assert invoke(config, "--facts", facts).exit_code == 0
     (posted,) = http.posted_reviews()
     assert facts in posted["body"]
+
+
+def test_an_unreadable_key_file_is_refused_before_any_api_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if os.geteuid() == 0:
+        pytest.skip("root reads a mode-000 file, so the failure cannot be provoked")
+    key = tmp_path / "app.pem"
+    key.write_text("-----BEGIN PRIVATE KEY-----\n")
+    key.chmod(0o000)
+    config = tmp_path / "project-config.toml"
+    config.write_text(CONFIG)
+    monkeypatch.setenv("APPROVER_KEY_PATH", str(key))
+    http = RouteTableHttp({})
+    wire(monkeypatch, http)
+    try:
+        result = invoke(config)
+    finally:
+        key.chmod(0o600)
+    assert result.exit_code == 2
+    assert ErrorCode.PRECONDITION_APPROVER_KEY_UNREADABLE.value in result.output
+    assert http.calls == []

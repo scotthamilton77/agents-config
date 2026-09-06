@@ -11,6 +11,9 @@ surface, fails here.
 
 from __future__ import annotations
 
+import tomllib
+from pathlib import Path
+
 import pytest
 import typer
 from typer.testing import CliRunner
@@ -83,3 +86,12 @@ def test_sweep_is_rejected_as_unknown_command() -> None:
     result = runner.invoke(app, ["sweep", "octo/demo"])
     assert result.exit_code != 0
     assert "no such command" in result.output.lower()
+
+
+def test_the_package_declares_exactly_one_runtime_dependency() -> None:
+    # The App client signs and speaks HTTP through the stdlib and the existing
+    # subprocess seam; a cryptography or HTTP library appearing here means one
+    # of those went around its seam.
+    pyproject = Path(__file__).parents[2] / "pyproject.toml"
+    with pyproject.open("rb") as fh:
+        assert tomllib.load(fh)["project"]["dependencies"] == ["typer"]

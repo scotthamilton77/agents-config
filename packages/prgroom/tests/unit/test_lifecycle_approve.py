@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -286,3 +287,57 @@ def test_every_call_after_the_mint_carries_the_installation_token(tail: str) -> 
     ]
     assert authorized
     assert set(authorized) == {"Bearer tok"}
+
+
+def test_a_key_that_exists_but_cannot_be_read_is_the_unreadable_error(tmp_path: Path) -> None:
+    # Distinct from a path that is not there: the key is present and the process
+    # simply may not open it, which a handler narrowed to a missing file misses.
+    if os.geteuid() == 0:
+        pytest.skip("root reads a mode-000 file, so the failure cannot be provoked")
+    key = tmp_path / "app.pem"
+    key.write_text("-----BEGIN PRIVATE KEY-----\n")
+    key.chmod(0o000)
+    approver = ApproverConfig(app_id=1, key_path_env="APP_KEY")
+    try:
+        with pytest.raises(PreconditionError) as caught:
+            resolve_key_path(approver, {"APP_KEY": str(key)})
+    finally:
+        key.chmod(0o600)
+    assert caught.value.code is ErrorCode.PRECONDITION_APPROVER_KEY_UNREADABLE
+
+
+def test_a_full_page_with_no_match_is_followed_by_the_next_one() -> None:
+    # A page of exactly the page size is the boundary: it carries no signal that
+    # it is the last, so the walk must ask again before concluding there is no
+    # approval and posting one.
+    routes = dict(BASE_ROUTES)
+    routes[REVIEWS_PAGE_1] = (
+        200,
+        [
+            {"id": i, "state": "COMMENTED", "commit_id": HEAD, "user": {"login": "a-human"}}
+            for i in range(REVIEWS_PER_PAGE)
+        ],
+    )
+    routes[REVIEWS_PAGE_2] = (200, [])
+    _, http = run_approve(routes)
+    listings = [url for _, url, _, _ in http.calls if "/reviews?" in url]
+    assert len(listings) == 2
+    assert len(http.posted_reviews()) == 1
+
+
+def test_a_match_on_a_page_reached_only_by_the_boundary_walk_short_circuits() -> None:
+    routes = dict(BASE_ROUTES)
+    routes[REVIEWS_PAGE_1] = (
+        200,
+        [
+            {"id": i, "state": "COMMENTED", "commit_id": HEAD, "user": {"login": "a-human"}}
+            for i in range(REVIEWS_PER_PAGE)
+        ],
+    )
+    routes[REVIEWS_PAGE_2] = (
+        200,
+        [{"id": 500, "state": "APPROVED", "commit_id": HEAD, "user": {"login": APP_LOGIN}}],
+    )
+    message, http = run_approve(routes)
+    assert http.posted_reviews() == []
+    assert "review 500" in message
