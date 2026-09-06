@@ -6,6 +6,12 @@ built-in default** (§3.5). Durations are written in TOML as strings
 file is the per-repo ``.prgroom.toml``; a missing file is not an error (every
 setting has a default).
 
+:class:`ApproverConfig` reads a different file — the *project* config, whose
+``[merge-policy.approver]`` table names the GitHub App identity the ``approve``
+verb posts under. It shares this module's parse helpers and its uniform
+``ValueError`` on malformed input, and nothing about it is defaulted or resolved
+from the environment: absence is an error, not a fallback.
+
 Two TOML scopes (§3.5, §4.3): the PR-review retry budget ``pr_review_retries`` is a
 top-level key; the §4.3 quiescence knobs live under a ``[quiescence]`` table
 (``quiescence.idle_threshold``, ``quiescence.poll_interval``, etc.). Each knob also
@@ -31,6 +37,14 @@ DEFAULT_POLL_INTERVAL = timedelta(seconds=30)
 DEFAULT_AUTO_REQUEST_HUMAN_REVIEW = True
 
 _QUIESCENCE_TABLE = "quiescence"
+_MERGE_POLICY_TABLE = "merge-policy"
+_APPROVER_TABLE = "approver"
+_APPROVER_TYPE = "github-app"
+_APPROVER_KEYS: frozenset[str] = frozenset({"type", "app-id", "key-path-env"})
+
+# The value names an environment variable, so it must be a legal one — rejected
+# here rather than left to fail cryptically at lookup time.
+_ENV_VAR_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 # Accepted boolean spellings for the §4.3 ``auto_request_human_review`` env var.
 _TRUE_TOKENS: frozenset[str] = frozenset({"true", "1", "yes", "on"})
@@ -206,6 +220,56 @@ class PrgroomConfig:
         if "pr_review_retries" in table:
             return _coerce_int(table["pr_review_retries"], key="pr_review_retries")
         return DEFAULT_PR_REVIEW_RETRIES
+
+
+@dataclass(frozen=True, slots=True)
+class ApproverConfig:
+    """The GitHub App identity that authors an approving review.
+
+    A mechanical review-satisfaction identity, never an authorization source.
+    ``key_path_env`` names the environment variable holding the private key's
+    path, so the key's location never enters a committed file.
+    """
+
+    app_id: int
+    key_path_env: str
+
+    @classmethod
+    def load(cls, path: Path) -> ApproverConfig:
+        """Read the approver block out of the project config at ``path``.
+
+        Raises :class:`ValueError` — the loader's uniform type — when the block is
+        absent, incomplete, mistyped, or carries a key this reader does not know.
+        Every key is required and none is defaulted: there is no App identity to
+        fall back to, and a silent default would post reviews as the wrong actor.
+        An unknown key fails loud for the same reason a typo'd one must not be
+        ignored.
+        """
+        merge_policy = subtable(read_toml(path), _MERGE_POLICY_TABLE)
+        if _APPROVER_TABLE not in merge_policy:
+            msg = f"no [{_MERGE_POLICY_TABLE}.{_APPROVER_TABLE}] block in {path}"
+            raise ValueError(msg)
+        section = subtable(merge_policy, _APPROVER_TABLE)
+        unknown = sorted(set(section) - _APPROVER_KEYS)
+        if unknown:
+            msg = (
+                f"[{_MERGE_POLICY_TABLE}.{_APPROVER_TABLE}] has unknown key(s) "
+                f"{', '.join(unknown)} (allowed: {', '.join(sorted(_APPROVER_KEYS))})"
+            )
+            raise ValueError(msg)
+        approver_type = section.get("type")
+        if approver_type != _APPROVER_TYPE:
+            msg = f"approver type must be {_APPROVER_TYPE!r}, got {approver_type!r}"
+            raise ValueError(msg)
+        app_id = _coerce_int(section.get("app-id"), key="app-id")
+        if app_id <= 0:
+            msg = f"app-id must be a positive integer, got {app_id}"
+            raise ValueError(msg)
+        key_path_env = section.get("key-path-env")
+        if not isinstance(key_path_env, str) or not _ENV_VAR_NAME_RE.fullmatch(key_path_env):
+            msg = f"key-path-env must be a valid environment variable name, got {key_path_env!r}"
+            raise ValueError(msg)
+        return cls(app_id=app_id, key_path_env=key_path_env)
 
 
 def read_toml(path: Path | None) -> dict[str, Any]:
