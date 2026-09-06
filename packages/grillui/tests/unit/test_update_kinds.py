@@ -11,12 +11,17 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from conftest import SEED_NODE, apply_all, event, post, seed_node
+from conftest import SEED_NODE, apply_all, event, post, queue_gesture, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.log import SessionLog
 from grillui.projector import fold
-from grillui.schemas import REASON_UNKNOWN_KIND, REASON_UNKNOWN_NODE, Image1
+from grillui.schemas import (
+    DISMISS_KIND,
+    REASON_UNKNOWN_KIND,
+    REASON_UNKNOWN_NODE,
+    Image1,
+)
 
 OPTIONS = [{"id": "a", "text": "Redis"}, {"id": "b", "text": "No cache at all"}]
 
@@ -27,6 +32,11 @@ def decisions(client: TestClient) -> dict[str, Any]:
     Image1.model_validate(image)
     node_map: dict[str, Any] = {node["id"]: node for node in image["decisions"]}
     return node_map
+
+
+def alerts(client: TestClient) -> list[str]:
+    """The ids of the alerts waiting on the human, newest last."""
+    return [item["id"] for item in image1(client)["pending"] if item["kind"] == "elicit-alert"]
 
 
 def image1(client: TestClient) -> dict[str, Any]:
@@ -504,6 +514,78 @@ def test_a_later_alert_that_does_not_block_lifts_the_lock(
         event("elicit-alert", key="alert-2", blocking=False, target=SEED_NODE, text="terms are ok"),
     )
 
+    assert decisions(client)[SEED_NODE]["locked"] is False
+    assert image1(client)["frontier"] == [SEED_NODE]
+
+
+def test_the_human_dismissing_a_blocking_alert_unlocks_the_decision(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a decision locked by a blocking alert
+    When the human dismisses that alert
+    Then the alert leaves the queue and the decision is answerable again.
+
+    A lock outliving the thing that took it is a decision nobody can answer for
+    the rest of the session. The queue's own gesture is what ends it, the same
+    gesture that ends a waiting change, so the human has one way out of both
+    rather than a lock only the agent can lift.
+    """
+    seed_node(client, log.epoch)
+    post(
+        client,
+        log.epoch,
+        event(
+            "elicit-alert",
+            key="alert-1",
+            target=SEED_NODE,
+            text="nobody has read the licence",
+            blocking=True,
+        ),
+    )
+    assert decisions(client)[SEED_NODE]["locked"] is True
+
+    receipt = queue_gesture(client, log.epoch, DISMISS_KIND, *alerts(client))
+
+    assert receipt["status"] == "accepted"
+    assert image1(client)["pending"] == []
+    assert decisions(client)[SEED_NODE]["locked"] is False
+    assert image1(client)["frontier"] == [SEED_NODE]
+
+
+def test_a_withdrawn_alert_stops_locking_without_leaving_the_queue(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a decision locked by a blocking alert
+    When the alert's own author supersedes it
+    Then the entry is still in the queue, marked, and no longer locks anything.
+
+    The queue is what the next dispatch tells the agent the human is looking at,
+    so a withdrawal says so in place rather than vanishing -- but a gap the
+    author no longer claims must not go on holding a decision shut.
+    """
+    seed_node(client, log.epoch)
+    post(
+        client,
+        log.epoch,
+        event(
+            "elicit-alert",
+            key="alert-1",
+            target=SEED_NODE,
+            text="nobody has read the licence",
+            blocking=True,
+        ),
+    )
+    assert decisions(client)[SEED_NODE]["locked"] is True
+
+    post(
+        client,
+        log.epoch,
+        event("informational", key="k2", text="never mind", supersedes=alerts(client)),
+    )
+
+    assert [item["superseded"] for item in image1(client)["pending"]] == [True, False]
     assert decisions(client)[SEED_NODE]["locked"] is False
     assert image1(client)["frontier"] == [SEED_NODE]
 

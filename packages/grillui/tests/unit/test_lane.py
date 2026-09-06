@@ -1564,23 +1564,43 @@ def test_dismissing_the_experts_own_proposal_is_no_signal(log: SessionLog) -> No
 
 def test_a_dismissal_the_queue_refuses_is_no_signal(log: SessionLog) -> None:
     """
-    Given a notice on the queue, which is not a proposal and so not something to
-          dismiss
+    Given an id the queue holds nothing under
     When two dismissals naming it are refused, and one real dismissal follows
     Then nothing is written to the lane.
 
     The count is taken on the gesture that landed. A refused gesture changed
     nothing the human can see, so counting it would move the channel on two
-    clicks that did nothing -- and the queue is full of notices, the backend's
-    own unmet-obligation ones among them.
+    clicks that did nothing.
     """
     first, expert = _two_seats()
     lane = Lane(log, first, expert=expert)
     _seed_resting(log)
-    told = _alert(log, "notice-d3")
 
     for _ in range(2):
-        _dismiss(lane, told, status="rejected")
+        _dismiss(lane, "nothing-under-this#0", status="rejected")
+    _dismiss(lane, _proposal(log, "prop-1"))
+
+    assert _transfers(log) == []
+
+
+def test_dismissing_a_notice_the_queue_accepts_is_no_signal(log: SessionLog) -> None:
+    """
+    Given two notices on the queue, which the human may dismiss
+    When both dismissals land, and one real dismissal follows
+    Then nothing is written to the lane.
+
+    A notice is something the human was told, and being done with it is not
+    overruling the seat that told them -- an alert's dismissal is how they lift
+    the lock it took. The queue is full of notices, the backend's own
+    unmet-obligation ones among them, so counting these would move the channel
+    on a human clearing their inbox.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+
+    _dismiss(lane, _alert(log, "notice-one"))
+    _dismiss(lane, _alert(log, "notice-two"))
     _dismiss(lane, _proposal(log, "prop-1"))
 
     assert _transfers(log) == []

@@ -609,25 +609,69 @@ def test_a_dismiss_naming_nothing_in_the_queue_is_refused(
 
     assert receipt["status"] == "rejected"
     assert receipt["reason"] == REASON_UNKNOWN_PENDING
+    assert "no-such-proposal#0" in receipt["detail"]
+    assert "already applied or dismissed, or it was never sent" in receipt["detail"]
 
 
-def test_a_notice_is_not_something_to_apply(client: TestClient, log: SessionLog) -> None:
+# Both notice kinds, each with the payload its own schema asks for: an alert
+# must say whether it blocks, and an informational has no such field to say it
+# with.
+NOTICES = [("informational", {}), ("elicit-alert", {"blocking": False})]
+
+
+@pytest.mark.parametrize(("kind", "extra"), NOTICES)
+def test_a_notice_is_not_something_to_apply(
+    kind: str, extra: dict[str, Any], client: TestClient, log: SessionLog
+) -> None:
     """
-    Given an informational waiting in the queue
+    Given a notice of either kind waiting in the queue
     When the human tries to apply it
     Then the write is refused.
 
     Both live in the queue and only one is a change. Applying a notice would be
-    a gesture with nothing behind it, answered `accepted` all the same.
+    a gesture with nothing behind it, answered `accepted` all the same -- and an
+    alert the human may now dismiss is exactly where that mistake is reachable.
     """
     seed_node(client, log.epoch)
-    post(client, log.epoch, event("informational", key="note-1", text="worth knowing"))
+    post(
+        client,
+        log.epoch,
+        event(kind, key="note-1", target=SEED_NODE, text="worth knowing", **extra),
+    )
     notice_id = client.get("/image1").json()["pending"][0]["id"]
 
     receipt = queue_gesture(client, log.epoch, APPLY_KIND, notice_id)
 
     assert receipt["status"] == "rejected"
     assert receipt["reason"] == REASON_UNKNOWN_PENDING
+
+
+@pytest.mark.parametrize(("kind", "extra"), NOTICES)
+def test_a_notice_is_something_to_dismiss(
+    kind: str, extra: dict[str, Any], client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a notice of either kind waiting in the queue
+    When the human dismisses it
+    Then the write is accepted and the notice leaves the queue.
+
+    A dismiss is the human ending an item, and a notice is an item: refusing it
+    would leave a blocking alert holding its decision shut with no gesture of
+    theirs that reaches it. Applying is the half that stays proposals-only,
+    because a notice carries no update to materialise.
+    """
+    seed_node(client, log.epoch)
+    post(
+        client,
+        log.epoch,
+        event(kind, key="note-1", target=SEED_NODE, text="worth knowing", **extra),
+    )
+    notice_id = client.get("/image1").json()["pending"][0]["id"]
+
+    receipt = queue_gesture(client, log.epoch, DISMISS_KIND, notice_id)
+
+    assert receipt["status"] == "accepted"
+    assert client.get("/image1").json()["pending"] == []
 
 
 # ── what the agent is told it is looking at ──
