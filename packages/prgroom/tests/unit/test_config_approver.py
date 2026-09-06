@@ -6,8 +6,10 @@ value must stop the verb rather than resolve to something plausible.
 
 from __future__ import annotations
 
+import json
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -39,9 +41,8 @@ def test_a_valid_block_yields_the_app_id_and_env_var_name(tmp_path: Path) -> Non
 def test_key_path_env_is_required_with_no_code_side_default(tmp_path: Path) -> None:
     # A default here would put the key's env-var name in two places and let a
     # block that never names one still resolve to something.
-    body = '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\n'
     with pytest.raises(ValueError, match="key-path-env"):
-        ApproverConfig.load(write_config(tmp_path, body))
+        ApproverConfig.load(write_config(tmp_path, approver_block(**{"key-path-env": DROP})))
 
 
 def test_other_merge_policy_keys_are_ignored_not_rejected(tmp_path: Path) -> None:
@@ -51,47 +52,45 @@ def test_other_merge_policy_keys_are_ignored_not_rejected(tmp_path: Path) -> Non
     assert approver.app_id == 4275336
 
 
+# Every approver row below is a complete, valid block apart from the one field
+# it names, so a row cannot pass on a defect other than its own.
+DROP = object()
+VALID_APPROVER: dict[str, Any] = {
+    "type": "github-app",
+    "app-id": 7,
+    "key-path-env": "APP_KEY",
+}
+
+
+def approver_block(**overrides: Any) -> str:
+    fields = {**VALID_APPROVER, **overrides}
+    body = "\n".join(
+        f"{key} = {json.dumps(value)}" for key, value in fields.items() if value is not DROP
+    )
+    return f"[merge-policy.approver]\n{body}\n"
+
+
 @pytest.mark.parametrize(
     ("case", "body"),
     [
         ("no file at all", None),
         ("no merge-policy table", "other = 1\n"),
         ("merge-policy without an approver", '[merge-policy]\nmerge-authorization = "explicit"\n'),
-        (
-            "a wrong approver type",
-            '[merge-policy.approver]\ntype = "oauth-app"\napp-id = 7\n',
-        ),
-        ("a missing type", "[merge-policy.approver]\napp-id = 7\n"),
-        ("a missing app-id", '[merge-policy.approver]\ntype = "github-app"\n'),
-        (
-            "a zero app-id",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = 0\n',
-        ),
-        (
-            "a negative app-id",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = -3\n',
-        ),
-        (
-            "a non-integer app-id",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = "7"\n',
-        ),
-        (
-            "a boolean app-id",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = true\n',
-        ),
-        (
-            "a non-string env var name",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nkey-path-env = 5\n',
-        ),
-        (
-            "an unknown key",
-            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nprivate-key = "x"\n',
-        ),
-        (
-            "an approver that is not a table",
-            '[merge-policy]\napprover = "github-app"\n',
-        ),
         ("a merge-policy that is not a table", 'merge-policy = "explicit"\n'),
+        ("an approver that is not a table", '[merge-policy]\napprover = "github-app"\n'),
+        ("a wrong approver type", approver_block(**{"type": "oauth-app"})),
+        ("a missing type", approver_block(**{"type": DROP})),
+        ("a missing app-id", approver_block(**{"app-id": DROP})),
+        ("a zero app-id", approver_block(**{"app-id": 0})),
+        ("a negative app-id", approver_block(**{"app-id": -3})),
+        ("a string app-id", approver_block(**{"app-id": "7"})),
+        ("a boolean app-id", approver_block(**{"app-id": True})),
+        ("a float app-id", approver_block(**{"app-id": 7.0})),
+        ("an array app-id", approver_block(**{"app-id": [7]})),
+        ("a table app-id", approver_block(**{"app-id": {"n": 7}})),
+        ("a non-string env var name", approver_block(**{"key-path-env": 5})),
+        ("a missing env var name", approver_block(**{"key-path-env": DROP})),
+        ("an unknown key", approver_block(**{"private-key": "/k.pem"})),
     ],
 )
 def test_a_malformed_block_is_refused(case: str, body: str | None, tmp_path: Path) -> None:
@@ -101,10 +100,16 @@ def test_a_malformed_block_is_refused(case: str, body: str | None, tmp_path: Pat
         ApproverConfig.load(path)
 
 
+def test_an_otherwise_valid_block_built_the_same_way_is_accepted(tmp_path: Path) -> None:
+    # Guards the builder: if it emitted something the reader refuses, every row
+    # above would pass without testing the defect it names.
+    approver = ApproverConfig.load(write_config(tmp_path, approver_block()))
+    assert (approver.app_id, approver.key_path_env) == (7, "APP_KEY")
+
+
 def test_the_refusal_message_names_the_unknown_key(tmp_path: Path) -> None:
-    body = '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nprivate-key = "x"\n'
     with pytest.raises(ValueError, match="private-key"):
-        ApproverConfig.load(write_config(tmp_path, body))
+        ApproverConfig.load(write_config(tmp_path, approver_block(**{"private-key": "/k.pem"})))
 
 
 REPO_CONFIG = Path(__file__).parents[4] / "project-config.toml"
