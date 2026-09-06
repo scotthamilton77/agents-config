@@ -415,8 +415,15 @@ def claude_argv(model: str, effort: str, system: str, prompt: str, resume: str |
 def run_claude_cli(
     argv: Sequence[str], directory: Path, /, timeout: float = REQUEST_TIMEOUT
 ) -> str:
-    """The heavy tier's transport: one process, run to completion, in the
-    session's own directory rather than any the caller happens to be in."""
+    """The heavy tier's transport: one process, run to completion, stdin closed,
+    in the session's own directory rather than any the caller happens to be in.
+
+    Closed rather than inherited: the CLI takes a prompt piped to it on standard
+    input, so a process holding an open stream nobody writes spends the first
+    three seconds of every turn waiting for a prompt that is not coming, and
+    says so on stderr. The prompt is an argument here, and the closed stream is
+    what says so.
+    """
     try:
         finished = subprocess.run(  # noqa: S603 -- argv is built here, never a shell string
             list(argv),
@@ -424,6 +431,7 @@ def run_claude_cli(
             text=True,
             check=True,
             timeout=timeout,
+            stdin=subprocess.DEVNULL,
             cwd=directory,
         )
     except (OSError, subprocess.SubprocessError) as error:
