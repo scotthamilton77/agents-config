@@ -79,8 +79,18 @@ def invoke(config: Path, *extra: str, head: str = HEAD) -> Any:
     )
 
 
+# Rich styles option tokens and wraps to the terminal width, so `--head-sha`
+# arrives split by escape codes wherever colour is on (CI is). Asking for a wide,
+# colourless render keeps an option name a contiguous token to assert on.
+PLAIN_HELP_ENV = {"NO_COLOR": "1", "FORCE_COLOR": None, "TERM": "dumb", "COLUMNS": "200"}
+
+
+def help_output(*args: str) -> str:
+    return runner.invoke(cli.app, [*args, "--help"], env=PLAIN_HELP_ENV).output
+
+
 def test_help_lists_the_four_inputs() -> None:
-    result = runner.invoke(cli.app, ["approve", "--help"])
+    result = runner.invoke(cli.app, ["approve", "--help"], env=PLAIN_HELP_ENV)
     assert result.exit_code == 0
     for token in ("PR", "--head-sha", "--facts", "--project-config"):
         assert token in result.output
@@ -340,8 +350,7 @@ class TestNoRetryAndNoOverride:
         assert len(mints) == 1
 
     def test_no_admin_override_option_is_offered(self) -> None:
-        result = runner.invoke(cli.app, ["approve", "--help"])
-        assert "--admin" not in result.output
+        assert "--admin" not in help_output("approve")
         assert invoke(Path("project-config.toml"), "--admin").exit_code != 0
 
 
