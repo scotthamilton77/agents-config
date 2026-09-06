@@ -83,6 +83,7 @@ from grillui.schemas import (
 from grillui.tiers import (
     BASIS_RULE,
     DOCUMENT_FORMAT_RULE,
+    KIND_VISIBILITY,
     MOOTNESS_OBLIGATION_RULE,
     MOOTNESS_RESTING_RULE,
     UPDATE_EXAMPLES,
@@ -1191,6 +1192,7 @@ CONTRACT_BLOCK = re.compile(
     r"^  - `(?P<kind>[a-z-]+)`: .+\n"
     r"    Required: (?P<required>.+?)\. Optional: (?P<optional>.+?)\.\n"
     r"    It (?P<landing>.+?)\.\n"
+    r"    The human then sees (?P<seen>.+?)\.\n"
     r"    Example: (?P<example>\{.*\})$",
     re.MULTILINE,
 )
@@ -1312,8 +1314,9 @@ def test_the_per_kind_contract_is_rendered_from_the_appender_and_the_fold() -> N
          it calls required are exactly those the gate refuses an update for
          missing; the fields it calls optional are exactly the rest of the shape
          and the example; the landing it claims is the fold's own answer; each
-         example passes the shape and the gate; and the add-node example carries
-         every field a node is rendered from, options included.
+         block states what the human is then looking at; each example passes the
+         shape and the gate; and the add-node example carries every field a node
+         is rendered from, options included.
 
     The prompt is the seat's whole contract, so a contract that disagrees with
     the gate is a seat writing updates the gate refuses, and one that shows an
@@ -1336,6 +1339,7 @@ def test_the_per_kind_contract_is_rendered_from_the_appender_and_the_fold() -> N
             (set(shape.model_fields) | set(example)) - {"kind"} - required
         ), kind
         assert block.group("landing") == _observed_landing(kind), kind
+        assert block.group("seen") == KIND_VISIBILITY[kind], kind
         assert json.loads(block.group("example")) == example, kind
         assert payload_problem(kind, example) is None, kind
         assert document_problem(document(updates=[example])) is None, kind

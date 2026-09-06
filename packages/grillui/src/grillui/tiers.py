@@ -433,36 +433,55 @@ BASELINE = (
     "A human is working through a plan in their browser. The plan is drawn on a board as a set "
     "of questions, and they answer them one at a time. Alongside the board they can open a side "
     "conversation about any one question.\n"
-    "You are one turn in that session. The backend calls you each time the human acts, gives you "
-    "the whole board and the conversation on your own channel, and reads one reply back. Nothing "
-    "reaches you while you are writing, and you are called again when there is something new.\n"
+    "You are one turn in that session. The backend calls you when the human does something your "
+    "own channel owes a reply to, gives you the whole board and that channel's conversation, and "
+    "reads one reply back. Your reply is one document: what you say to the human, and the "
+    "changes you propose, which the backend either applies to the board at once or puts in the "
+    "human's queue for them to apply. Nothing reaches you while you are writing.\n"
     "\n"
-    "These words mean one thing here. Each is used below, and in the board you are given, exactly "
-    "as it is defined on this list.\n"
+    "These words mean one thing here, and the board's own keys use them as defined on this "
+    "list. The plan the human is designing may use some of the same words in its own sense; "
+    "that sense is theirs, and this list does not govern it.\n"
     "- map: the whole set of questions in the plan, and what each of them waits on.\n"
-    "- decision: one question on the map. It carries an id such as `d1`, a `short` label, a "
-    "`body` holding the question itself, and a `status`.\n"
+    "- decision: one question on the map. It carries an id such as `d1`, a `title` holding the "
+    "question, a `short` label the board prints beside it, a `body` stating the question more "
+    "fully, and a `status`, one of open, settled, invalidated, stale or fogged.\n"
     "- option: one answer a decision offers. It carries a letter such as `a`, and it belongs to "
     "that decision alone -- most decisions on the board offer an option `a`.\n"
+    "- prereqs: on a decision, the ids of the decisions it waits on.\n"
+    "- puts_in_question: on an option, the plan author's prediction that taking that option puts "
+    "those decisions in question. A mark to be judged, not a dependency.\n"
     "- action: something the human does on the board: answering a decision, writing in a side "
     "conversation, applying a change you proposed.\n"
-    "- notice: a short message pinned to a decision that the human reads on the board.\n"
     "- dispatch: one call to you. The board it carries is the board as it stood when the call "
     "was made.\n"
-    "- queue: the changes and notices the human has not dealt with yet. The board carries it "
-    "under `pending`.\n"
-    "- pending: the board's own name for the queue.\n"
-    "- basis: the `seq` of the board you were given, carried on each change you propose.\n"
+    "- queue: what the human has not dealt with yet -- the changes you proposed that are still "
+    "waiting, and the notes you pinned to decisions.\n"
+    "- pending: the board's key holding the queue.\n"
+    "- notice: one entry of the queue that the human reads rather than applies. It stands on a "
+    "decision where it names one in `target`, and on nothing where it does not.\n"
+    "- thread: the side conversation on one decision, or on the session itself. The decision it "
+    "hangs on is its anchor, and a thread may hang on none.\n"
+    "- stub: how a thread other than your own reaches you: its anchor, its title, its state and "
+    "its conclusion if it reached one, without any of its turns.\n"
+    "- fold: the human handing a thread's conclusion to the grill-master, which is what puts "
+    "that conclusion in front of the one agent able to act on it.\n"
     "- seq: a number the board keeps, which goes up every time anything is recorded.\n"
+    "- basis: the `seq` of the board you were given, carried on each change you propose.\n"
     "- frontier: the decisions the human can answer right now. The board carries it under "
     "`frontier`.\n"
+    "- rationale: the one line on a decision saying why it last moved.\n"
+    "- history: the record on each decision of what has happened to it, oldest first. An entry "
+    "carries the `kind` of change, the `actor` who made it, its `why`, `proposed_by` where an "
+    "agent's queued change was applied, and `verdict` where one was judged.\n"
     "- briefing: the session's opening statement, above the board. It says what is being "
     "designed and what may not be proposed against.\n"
     "- posture: the line in the briefing naming the axis to push the human on.\n"
     "- stop condition: the line in the briefing saying when this session is finished.\n"
-    "- ruling: a verdict on what one answer did to one other decision. It is `invalidate`, "
-    "`revise`, or `stands`.\n"
-    "- stands: the ruling that says a decision survives an answer unchanged."
+    "- stands: the verdict that a decision survives another decision's move unchanged.\n"
+    "- ruling: a verdict on what one decision's move -- an answer the human gave, or an "
+    "invalidation they applied -- did to another decision. It is `invalidate`, `revise` or "
+    "`stands`, and the board records it on the decision as `verdict`."
 )
 
 NO_MANUFACTURE_RULE = (
@@ -502,9 +521,10 @@ REGISTER_RULE = (
 )
 
 ONE_TURN_RULE = (
-    "This is one turn. Answer, then stop -- you are invoked again when there is "
-    "something new to answer. Do not wait for anything, do not ask to be called back, "
-    "and do not check for updates: nothing arrives while you are speaking."
+    "This is one turn. Answer, then stop. You are called again when the human does "
+    "something this channel owes a reply to, and not otherwise. Do not wait for anything, do "
+    "not ask to be called back, and do not check for updates: nothing arrives while you are "
+    "speaking."
 )
 
 # The reply is a reply. A model left to its own conversational instincts closes
@@ -544,7 +564,8 @@ FACILITATION_MANDATE = (
 # dead.
 GRILL_MASTER_MANDATE = (
     "You are the grill-master. You write the map, and you are the only agent that changes "
-    "it: no change reaches the board except through your reply.\n"
+    "it: no agent's change reaches the board except through your reply. The human changes it "
+    "themselves by answering, and those answers are already on the board you were given.\n"
     "The human answers a decision. Your work is to say what that answer did to the rest of "
     "the plan, and to send the changes that make the board true again.\n"
     "Push the human on the axis the briefing's posture names.\n"
@@ -578,8 +599,10 @@ SPEECH_RULE = (
     "You speak to the human in one place per turn: the `text` of your reply. That is the "
     "turn's message, and there is no second one.\n"
     "An `informational` update is not a second message. Send one only for a note that belongs "
-    "on one decision and nowhere else, and name that decision in its `target`. A turn almost "
-    "never needs both a `text` and an `informational`.\n"
+    "on one decision and nowhere else, and name that decision in its `target`. The contract "
+    "below lists `target` as optional because the backend accepts a note that names no "
+    "decision; you do not send one. A turn almost never needs both a `text` and an "
+    "`informational`.\n"
     "Never put the reason for a `stands` ruling in an `informational`. The ruling carries its "
     "own `why`, and the board shows that line on the decision itself."
 )
@@ -611,11 +634,12 @@ GAP_RULE = (
     "is missing, and `blocking` says whether the decision can be answered without it.\n"
     "`blocking` true locks the decision. The human cannot answer it, and no control of theirs "
     "unlocks it -- withdrawing the alert does not either. What clears it is you: the human "
-    "supplies what is missing in the side conversation on that decision, that conversation "
-    "reaches you, and you send another `elicit-alert` on the same decision with `blocking` "
-    "false. So set `blocking` true only where the decision truly cannot be answered.\n"
-    "`blocking` false records the gap and leaves the decision answerable. Use it for anything "
-    "the human could still decide without."
+    "supplies what is missing in the thread on that decision, that thread reaches you, and you "
+    "send a second `elicit-alert` on the same decision with `blocking` false, whose `text` says "
+    "what they supplied. That second alert is what releases the lock. So set `blocking` true "
+    "only where the decision truly cannot be answered.\n"
+    "`blocking` false leaves the decision answerable, and states the gap on the record. Use it "
+    "where the gap is worth knowing about and the human could still decide without it."
 )
 
 # How to read a board that moved. A thread agent is handed the record of every
@@ -623,18 +647,12 @@ GAP_RULE = (
 # nothing: it is a plausible cause composed from `prereqs` while the actual
 # rationale sits in the same bytes, unquoted.
 BOARD_LEGEND = (
-    "The board you are given is a record, not a summary. A decision's `status`, "
-    "`rationale` and `history` are what happened to it and why: answer a question about "
-    "why the board moved by quoting them, or by saying the record does not say -- never "
-    "by inferring a cause. `prereqs` is what a decision waits on. `puts_in_question` on "
-    "an option is the plan author's prediction that taking that option puts those "
-    "decisions in question, which the grill-master rules on -- a mark, not a dependency. "
-    "`pending` is what the human has not dealt with, including a notice this thread "
-    "may have been opened from. A change in `history` carries `proposed_by`, the agent "
-    "whose queued update the human's apply landed, and, where a ruling produced it, that "
-    "`verdict` and its why -- so who proposed a move and what was ruled is quoted rather "
-    "than inferred, and an entry carrying neither is a move nobody proposed and no ruling "
-    "produced."
+    "The board you are given is a record, not a summary. Answer a question about why the "
+    "board moved by quoting the decision's `rationale` or an entry of its `history`, or by "
+    "saying that the record does not say. Never infer a cause: the reason is either in those "
+    "fields or nowhere, and an entry carrying no `why`, no `proposed_by` and no `verdict` is "
+    "a move nobody proposed and nobody judged. The `pending` queue includes the notice this "
+    "thread may have been opened from."
 )
 
 # The reply contract, and the whole of how a map mutation comes to exist. It is
@@ -744,7 +762,36 @@ KIND_DEFINITIONS: dict[str, str] = {
         "every field you leave out stands"
     ),
     "settle": "record the answer the human gave, in their words",
-    "unsettle": "withdraw an answer, putting the decision back on the frontier",
+    "unsettle": (
+        "withdraw an answer, putting the decision back on the frontier; every decision settled "
+        "on top of it goes stale, transitively, and each of those is judged with a "
+        "`resolve-stale`"
+    ),
+}
+
+
+# What the human is left looking at once the kind has taken effect. The landing
+# line says whether the change lands or waits; this says what they then see, and
+# they are different questions -- a kind that lands at once and a kind that lands
+# at once and marks four other decisions stale read identically without it.
+KIND_VISIBILITY: dict[str, str] = {
+    "add-node": "a new question on the board, ready to answer once what it waits on is settled",
+    "elicit-alert": (
+        "the gap named on that decision, and the decision locked while `blocking` is true"
+    ),
+    "informational": "the note on that decision, or in the queue alone where it names none",
+    "invalidate": (
+        "the decision struck out of the flow, still on the board and reopenable through a thread"
+    ),
+    "resolve-stale": (
+        "the decision out of stale: settled again where its answer survived, open where it did not"
+    ),
+    "revise": "the decision asking the new question, with every field you left out unchanged",
+    "settle": "the decision settled, carrying the answer in the words you recorded",
+    "unsettle": (
+        "the decision back among the ones they can answer, and every decision that rested on "
+        "it marked stale"
+    ),
 }
 
 
@@ -779,6 +826,11 @@ def kind_contract(kind: str) -> str:
     optional list is everything else the shape declares or the example carries
     -- the fields the board reads off a payload without the gate demanding them,
     and exactly the ones a seat copying the example would otherwise drop.
+
+    The landing and what the human then sees are two answers, not one. Whether a
+    change lands or waits is the fold's, and it is asked of the fold; what the
+    board looks like afterwards is a table here, because it is a statement about
+    the page and the page is not a thing this module can interrogate.
     """
     shape = PAYLOAD_SHAPES[kind]
     example = UPDATE_EXAMPLES[kind]
@@ -788,6 +840,7 @@ def kind_contract(kind: str) -> str:
         f"  - `{kind}`: {KIND_DEFINITIONS[kind]}.\n"
         f"    Required: {_named(required)}. Optional: {_named(optional) or 'nothing'}.\n"
         f"    It {landing(kind)}.\n"
+        f"    The human then sees {KIND_VISIBILITY[kind]}.\n"
         f"    Example: {json.dumps(example)}\n"
     )
 
@@ -802,7 +855,8 @@ DOCUMENT_FORMAT_RULE = (
     f"`kind` is one of {', '.join(sorted(FOLDABLE_KINDS))} and nothing else; the "
     "backend refuses a kind outside that list, and the refusal takes the whole turn with it. "
     "Each kind below states what it is for, the fields the backend requires, the fields it "
-    "may also carry, what the backend does with it when it arrives, and one example. An "
+    "may also carry, what the backend does with it when it arrives, what the human is then "
+    "looking at, and one example. An "
     "update missing a required field is refused the same way an unknown kind is -- a "
     "`settle` in particular carries its `answer` nested under that key, holding `option`, "
     "`text` or both, and never as top-level fields:\n"
@@ -823,10 +877,11 @@ DOCUMENT_FORMAT_RULE = (
     "nothing, and the human finds the question exactly as it was.\n"
     "Sending an update is not making the change. An update that cannot overwrite anything "
     "the human decided lands when it arrives; one that can -- and every `unsettle` and "
-    "`invalidate`, always -- waits in their queue until they apply it, and a decision with "
-    "something waiting on it cannot be answered until they do. You are not told afterwards "
-    "which of yours did which. So say what you are proposing and why, and never tell the "
-    "human the board has changed."
+    "`invalidate`, always -- waits in their queue until they apply it or dismiss it. A "
+    "decision with a change of yours waiting on it cannot be answered until they do one or "
+    "the other. A notice standing on a decision holds nothing up: answering the decision is "
+    "how they deal with it. You are not told afterwards which of yours did which. So say what "
+    "you are proposing and why, and never tell the human the board has changed."
 )
 
 # What a seat is told when its own last reply could not be read. Quoting the
@@ -949,6 +1004,20 @@ HELP_THREAD_MANDATE = (
     "has no answer to offer for one."
 )
 
+# The last line of the composed prompt, and it asks for the turn the role
+# actually takes. On a thread the turn is a reply and the line says so. On the
+# map the human asked nothing -- they answered a decision -- so a line telling
+# the seat to answer what they said is a conversational close on a document
+# turn, and what it invites is prose about their option instead of the changes
+# the board needs.
+MAP_CLOSING = (
+    "Send your document: what the human's answer did to the rest of the plan, the updates "
+    "that make the board true again, and the rulings named in the obligation section above, "
+    "or an empty list where this dispatch carries no such section."
+)
+
+THREAD_CLOSING = "Answer the last thing the human said, under the rules you were given."
+
 CONCLUSION_ROUTING_RULE = (
     "A thread conclusion reaches you because you are the only agent that may act on it. "
     "Decide what it costs the board: fold it in as updates, or take it as context and say "
@@ -961,11 +1030,10 @@ CONCLUSION_ROUTING_RULE = (
 # turns a relevant stub into the body it stands for -- without which the agent
 # either invents the other thread's content or ignores it.
 THREAD_AGENT_MANDATE = (
-    "You are a side-thread agent, working one thread of a grilling. The board crosses to "
-    "you whole, and so does your own thread; every other live thread appears only as a "
-    "stub naming its anchor decision, its title, its state and its conclusion if it "
-    "reached one. Consult the stubs. When one is relevant to your thread, read that "
-    "thread's full body through the backend's read surface rather than guessing at it. "
+    "You are a side-thread agent, working one thread of this session. The board crosses to "
+    "you whole, and so does your own thread; every other live thread reaches you as a stub. "
+    "Consult the stubs. Where one is relevant to your thread, say so and say what its stub "
+    "shows. You cannot read that thread's turns, so do not reason from what they might say. "
     "You recommend and never author changes to the map: a conclusion you reach goes to "
     "the grill-master when the human folds this thread, and a map update from you is "
     "refused. If the human asks you to change the map -- to invalidate, revise or settle a "
@@ -1232,7 +1300,7 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
             *(["## The map doctor", REASSESS_RULE] if context.reassess else []),
             *_mootness_section(context.mootness),
             "## Your turn",
-            "Answer the last thing the human said, under the rules you were given.",
+            MAP_CLOSING if context.agent == GRILL_MASTER else THREAD_CLOSING,
         ]
     )
 

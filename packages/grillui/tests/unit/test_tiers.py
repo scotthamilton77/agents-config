@@ -55,6 +55,7 @@ from grillui.tiers import (
     HEAVY_MODEL_ENV,
     HEAVY_TIER,
     HELP_THREAD_MANDATE,
+    MAP_CLOSING,
     MAP_THREAD_MANDATE,
     MOOTNESS_OBLIGATION_RULE,
     MOOTNESS_RESTING_RULE,
@@ -71,6 +72,7 @@ from grillui.tiers import (
     SPEECH_RULE,
     SUPERSEDE_RULE,
     SYSTEM_PROMPTS,
+    THREAD_CLOSING,
     TierConfig,
     UnknownTierError,
     UnreadableLimitError,
@@ -314,19 +316,26 @@ VOCABULARY = (
     "map",
     "decision",
     "option",
+    "prereqs",
+    "puts_in_question",
     "action",
-    "notice",
     "dispatch",
     "queue",
     "pending",
-    "basis",
+    "notice",
+    "thread",
+    "stub",
+    "fold",
     "seq",
+    "basis",
     "frontier",
+    "rationale",
+    "history",
     "briefing",
     "posture",
     "stop condition",
-    "ruling",
     "stands",
+    "ruling",
 )
 
 
@@ -380,6 +389,89 @@ def test_every_term_the_brief_uses_is_defined_before_it_is_used(
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+@pytest.mark.parametrize("agent", [GRILL_MASTER, THREAD_AGENT])
+def test_the_baseline_says_what_the_reply_is_and_when_the_seat_is_called(
+    tier: str, agent: str
+) -> None:
+    """
+    Given the baseline every role and tier opens on
+    When it is read for what the seat owes and when it is asked for it
+    Then it says the reply is one document whose changes the backend applies or
+         queues, and it states the true condition for being called.
+
+    Both halves were wrong by overstatement. A baseline that introduced the role
+    before saying what came back left the document shape a hundred lines away
+    from the sentence that needed it. And "each time the human acts" is false for
+    every seat: a thread agent is not called for the human's map answers, nor for
+    another thread's turns, nor when the human declines its offer by ignoring it
+    -- a path this same brief describes.
+    """
+    brief = system_prompt(tier, agent)
+
+    assert "Your reply is one document" in brief
+    assert "applies to the board at once or puts in the human's queue" in brief
+    assert "when the human does something your own channel owes a reply to" in brief
+    assert "and not otherwise" in brief
+    assert "each time the human acts" not in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+@pytest.mark.parametrize("agent", [GRILL_MASTER, THREAD_AGENT])
+def test_the_glossary_governs_the_board_and_not_the_plan(tier: str, agent: str) -> None:
+    """
+    Given the glossary's claim about where its definitions hold
+    When it is read against the board and the plan in the same prompt
+    Then it claims the board's keys and disclaims the plan's own vocabulary, and
+         the two definitions the board falsifies are stated as the board has
+         them.
+
+    The claim that every word is used as defined "in the board you are given" is
+    false twice over in the same bytes. The human's plan is free to use `pending`
+    for a decision waiting on an analysis task, and the board carries notices
+    whose `target` is null. A seat that finds the glossary wrong about the board
+    in front of it has no way to tell which other line to trust.
+    """
+    brief = system_prompt(tier, agent)
+
+    assert "the board's own keys use them as defined on this list" in brief
+    assert "may use some of the same words in its own sense" in brief
+    assert "in the board you are given, exactly" not in brief
+    # A notice is an entry, not a message: `text` is the turn's only message.
+    assert "one entry of the queue that the human reads rather than applies" in brief
+    assert "on nothing where it does not" in brief
+    # The page prints `title` as the question and `body` beneath it.
+    assert "a `title` holding the question" in brief
+    assert "a `body` stating the question more fully" in brief
+    # An applied invalidation obliges rulings too, so the definition covers both.
+    assert "an answer the human gave, or an invalidation they applied" in brief
+    assert "the board records it on the decision as `verdict`" in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_grill_master_brief_states_the_board_effects_the_seat_cannot_see(tier: str) -> None:
+    """
+    Given the grill-master brief on each tier
+    When it is read for what the board does with what the turn sends
+    Then a queued change locks its decision and a notice does not, a dismissal
+         ends a queued change as an apply does, and an unsettle is stated with
+         the stale dependents it leaves.
+
+    Each was an over- or under-claim the seat pays for. Told that anything
+    waiting blocks an answer, it withholds notices to keep decisions answerable.
+    Told an unsettle only returns its own decision to the frontier, it never
+    sends the `resolve-stale` the decisions above it now need, and they sit
+    stale for the rest of the session.
+    """
+    brief = system_prompt(tier, GRILL_MASTER)
+
+    assert "until they apply it or dismiss it" in brief
+    assert "A decision with a change of yours waiting on it cannot be answered" in brief
+    assert "A notice standing on a decision holds nothing up" in brief
+    assert "every decision settled on top of it goes stale, transitively" in brief
+    assert "judged with a `resolve-stale`" in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
 def test_the_reply_contract_is_the_last_thing_each_role_reads(tier: str) -> None:
     """
     Given the brief composed for each role
@@ -414,6 +506,12 @@ def test_the_grill_master_is_briefed_as_the_maps_author_on_either_tier(tier: str
 
     assert GRILL_MASTER_MANDATE in brief
     assert "You write the map, and you are the only agent that changes it" in brief
+    # Scoped to agents. The human's own answers settle decisions with no reply
+    # of anyone's, and the board handed to this turn already carries them -- a
+    # seat reading the clause without that scope is invited to re-record them
+    # as `settle` updates.
+    assert "no agent's change reaches the board except through your reply" in brief
+    assert "The human changes it themselves by answering" in brief
     assert "Push the human on the axis the briefing's posture names" in brief
     assert "Ending the session is theirs, not yours" in brief
     assert RESHAPE_STEP in brief
@@ -446,29 +544,28 @@ def test_the_thread_agent_is_told_how_to_read_a_board_that_moved(tier: str) -> N
     """
     Given the thread agent's brief on each tier
     When it is read for what the board's own fields mean
-    Then it carries the legend: the record says what happened and why, a
-         question about why the board moved is answered by quoting it or by
-         saying it does not say, a pre-mark is a prediction rather than a
-         dependency, and the two fields that name who proposed a move and what
-         was ruled on it are pointed at by name -- without which the agent
-         invents a cause for a move it can read verbatim in front of it.
+    Then it carries the legend: a question about why the board moved is
+         answered by quoting the decision's `rationale` or an entry of its
+         `history`, or by saying that the record does not say, and never by
+         inferring a cause -- without which the agent invents a cause for a move
+         it can read verbatim in front of it.
 
-    The fields are named rather than described because they are what the agent
-    has to go looking for: a legend that says the record holds the reason, over
-    a record that holds it under `proposed_by`, is a legend that sends the agent
-    to `prereqs`.
+    What those fields hold is the shared glossary's, because both roles are
+    handed the same board and a field defined for one seat and left blank for
+    the other is the same defect twice. What stays here is the part that is
+    about facilitating: quote the record, or say it is silent.
     """
     brief = system_prompt(tier, THREAD_AGENT)
 
     assert BOARD_LEGEND in brief
-    assert "`status`, `rationale` and `history`" in brief
-    assert "quoting them" in brief
-    assert "never by inferring a cause" in brief
-    assert "a mark, not a dependency" in brief
-    assert "including a notice this thread may have been opened from" in brief
-    assert "`proposed_by`" in brief
-    assert "`verdict`" in brief
-    assert "quoted rather than inferred" in brief
+    assert "a record, not a summary" in brief
+    assert "quoting the decision's `rationale` or an entry of its `history`" in brief
+    assert "saying that the record does not say" in brief
+    assert "Never infer a cause" in brief
+    assert "includes the notice this thread may have been opened from" in brief
+    for named in ("`proposed_by`", "`verdict`", "prereqs", "puts_in_question"):
+        assert named in BASELINE, named
+    assert BOARD_LEGEND not in system_prompt(tier, GRILL_MASTER)
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
@@ -769,6 +866,11 @@ def test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_ca
     """
     brief = system_prompt(tier, THREAD_AGENT)
 
+    # Every seat runs with no tools, so an instruction to fetch another thread's
+    # body names a mechanism nothing provides. What a stub shows is all there is.
+    assert "say so and say what its stub shows" in brief
+    assert "You cannot read that thread's turns" in brief
+    assert "read surface" not in brief
     assert "If the human asks you to change the map" in brief
     assert "say plainly that you cannot" in brief
     assert "folding this thread is what puts your conclusion in front of the grill-master" in brief
@@ -806,6 +908,10 @@ def test_the_grill_master_brief_gives_the_turn_one_lane_to_the_human(tier: str) 
     assert "An `informational` update is not a second message" in brief
     assert "name that decision in its `target`" in brief
     assert "Never put the reason for a `stands` ruling in an `informational`" in brief
+    # The gate takes an untargeted note and the role does not send one. Both are
+    # true, and a seat left to notice the difference for itself picks one.
+    assert "lists `target` as optional because the backend accepts a note that names no" in brief
+    assert "you do not send one" in brief
     assert SPEECH_RULE not in system_prompt(tier, THREAD_AGENT)
     # The option rule stands on its own rather than closing the block above.
     # As a trailing clause it was read as an aside, and the live reply that
@@ -865,8 +971,9 @@ def test_the_grill_master_brief_gives_a_gap_a_kind_and_a_way_out_of_it(tier: str
     assert "`elicit-alert`" in brief
     assert "`blocking` true locks the decision" in brief
     assert "withdrawing the alert does not either" in brief
-    assert "with `blocking` false" in brief
-    assert "`blocking` false records the gap and leaves the decision answerable" in brief
+    assert "whose `text` says what they supplied" in brief
+    assert "That second alert is what releases the lock" in brief
+    assert "`blocking` false leaves the decision answerable" in brief
     assert GAP_RULE not in system_prompt(tier, THREAD_AGENT)
 
 
@@ -953,6 +1060,33 @@ def test_the_answer_section_reads_the_option_off_the_board_it_was_given() -> Non
     assert "Option taken: none, they answered in their own words" in said
     assert "Their note: neither, log it" in said
     assert "Option taken: b -- On a bound" not in said
+
+
+def test_each_channel_closes_on_the_turn_its_role_actually_takes(
+    entries: list[LogEntry],
+) -> None:
+    """
+    Given a map dispatch and a thread dispatch
+    When each prompt is read from its last line
+    Then the map is asked for its document and the thread is asked to answer
+         what the human said, and neither closing reaches the other channel.
+
+    The human asked the map nothing; they answered a decision. A closing line
+    telling that turn to answer the last thing they said is a conversational ask
+    on a document turn, and it is the last line read before the reply is
+    written -- which is where a turn that owes updates and rulings writes a
+    paragraph about their option instead.
+    """
+    on_the_map = compose("{}", dispatch_context(), entries)
+    on_a_thread = compose("{}", dispatch_context("t-d1"), entries)
+
+    assert on_the_map.endswith(MAP_CLOSING)
+    assert "the rulings named in the obligation section above" in on_the_map
+    assert "an empty list where this dispatch carries no such section" in on_the_map
+    assert THREAD_CLOSING not in on_the_map
+
+    assert on_a_thread.endswith(THREAD_CLOSING)
+    assert MAP_CLOSING not in on_a_thread
 
 
 def test_a_channel_with_no_answer_in_its_log_states_no_answer(entries: list[LogEntry]) -> None:
