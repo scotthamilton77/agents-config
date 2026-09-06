@@ -860,6 +860,13 @@ function noticeHomes(item) {
 function noticesOn(id) {
   return notices().filter(function (n) { return noticeHomes(n).indexOf(id) >= 0; });
 }
+// The alert whose blocking flag decides this decision's lock: the last live one
+// on it, which is the one the board reads. An older alert under it is still on
+// the queue and still worth reading, but dismissing it moves no lock, so it is
+// not where the control that lifts one belongs.
+function holdingAlert(id) {
+  return noticesOn(id).filter(function (n) { return n.kind === "elicit-alert"; }).pop() || null;
+}
 // A notice the human has not read yet. The message itself stays on the board
 // once read — it is board content and this page does not delete board content —
 // but the marker that says look at this comes off, which is the whole of what
@@ -1693,13 +1700,15 @@ function isExpanded(id) {
 // queue names the sequence it came from.
 function infoNote(n) {
   var unread = !isRead(n.id);
-  // The lock a blocking alert took is the human's to lift, and the alert is
-  // where they meet it. Offered only while that lock is the one holding the
-  // decision: a message is board content and this page does not delete board
-  // content, so the control is here to reopen a decision rather than to tidy
-  // the queue -- and where a change is also waiting, dismissing the alert would
-  // free nothing and the inbox is the way out instead.
-  var holding = n.kind === "elicit-alert" && n.target && (holdOn(n.target) || {}).kind === "alert";
+  // The lock a blocking alert took is the human's to lift, and the alert that
+  // took it is where they meet it. Two conditions, and each rules out a press
+  // that would free nothing: the decision's hold has to be the alert hold --
+  // where a change is also waiting, the inbox is the way out instead -- and
+  // this has to be the alert supplying it, not an older one under it. A message
+  // is board content and this page does not delete board content, so the
+  // control is here to reopen a decision rather than to tidy the queue.
+  var holding = n.target && (holdOn(n.target) || {}).kind === "alert" &&
+    (holdingAlert(n.target) || {}).id === n.id;
   return '<div class="infonote">' + (unread ? '<span class="unreadmark">●</span> ' : "") +
     "✉ <strong>" + esc(tierLabel(tierAt(n.authored_at)) || "Agent") + ", " +
     esc(n.kind === "elicit-alert" ? "alert" : "informational") +
