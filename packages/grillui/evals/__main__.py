@@ -83,22 +83,52 @@ def _cli_output(raw: str) -> int | None:
     return counted if isinstance(counted, int) else None
 
 
+def _cli_turns(raw: str) -> int | None:
+    """How many turns the CLI took to answer, off the object it printed.
+
+    One prompt answered once counts one. Above that the CLI ran the prompt again
+    inside the same process, and the usage it prints covers the last of those
+    turns alone -- a turn carrying the earlier exchange, so its prompt count is
+    of other bytes than the ones this sample sent. The count is recorded rather
+    than corrected because the earlier turn's own counts are not in what the CLI
+    printed, and a row that hid the extra turn would read as a seat whose prompt
+    grew by itself.
+    """
+    try:
+        counted = json.loads(raw).get("num_turns")
+    except (ValueError, AttributeError):
+        return None
+    return counted if isinstance(counted, int) else None
+
+
+def _cli_reply(raw: str) -> tuple[str | None, int | None, int | None, int | None]:
+    """What the CLI said and what it counted, off the object it printed.
+
+    A reply the driver refuses keeps the counts printed beside it. The turn was
+    taken and paid for, and a record blank about how many turns the seat ran
+    cannot be told apart from a seat that answered once.
+    """
+    try:
+        text, _chain, prompt_tokens = read_cli_reply(raw)
+    except AgentUnreachableError:
+        text, prompt_tokens = "", None
+    return text, prompt_tokens, _cli_output(raw), _cli_turns(raw)
+
+
 # What each transport hands back: the reply read with the same function the
 # driver reads it with, so an eval never disagrees with a session about what a
-# seat said, and the two counts beside it. The hosted completion reports its
-# prompt count through the driver's own seam and nothing about its output, so
-# that count is absent rather than invented.
-REPLIES: dict[str, Callable[[Any], tuple[str | None, int | None, int | None]]] = {
-    OPENROUTER_TRANSPORT: lambda raw: (raw[0], raw[1], None),
-    CLAUDE_TRANSPORT: lambda raw: (
-        read_cli_reply(raw)[0],
-        read_cli_reply(raw)[2],
-        _cli_output(raw),
-    ),
+# seat said, the two counts beside it, and how many turns the seat took to get
+# there. The hosted completion reports its prompt count through the driver's own
+# seam and nothing about its output, so that count is absent rather than
+# invented, and only the CLI says anything about turns.
+REPLIES: dict[str, Callable[[Any], tuple[str | None, int | None, int | None, int | None]]] = {
+    OPENROUTER_TRANSPORT: lambda raw: (raw[0], raw[1], None, None),
+    CLAUDE_TRANSPORT: _cli_reply,
     CODEX_TRANSPORT: lambda raw: (
         read_codex_reply(raw)[0],
         read_codex_reply(raw)[2],
         _codex_output(raw),
+        None,
     ),
 }
 
@@ -173,9 +203,10 @@ class Tap:
 
 def replay(
     case: Case, seat: Seat, config: TierConfig
-) -> tuple[str, int | None, int | None, float, str | None]:
-    """One sample: the reply, what it counted at either end, how long it took, and
-    the reason the turn was refused, or nothing where it was not.
+) -> tuple[str, int | None, int | None, int | None, float, str | None]:
+    """One sample: the reply, what it counted at either end, how many turns the
+    seat took, how long it took, and the reason the turn was refused, or nothing
+    where it was not.
 
     A refusal is caught here because this is where what the seat returned is
     held: the turn happened and was paid for, and a row reporting nothing about
@@ -205,16 +236,17 @@ def replay(
     if tap.raw is None:
         raise ReplayRefusedError(case.name, "the seat was never reached")
     try:
-        reply, prompt_tokens, output_tokens = REPLIES[seat.transport](tap.raw)
+        reply, prompt_tokens, output_tokens, turns = REPLIES[seat.transport](tap.raw)
     except AgentUnreachableError:
-        reply, prompt_tokens, output_tokens = "", None, None
-    return reply or "", prompt_tokens, output_tokens, tap.seconds, refused
+        reply, prompt_tokens, output_tokens, turns = "", None, None, None
+    return reply or "", prompt_tokens, output_tokens, turns, tap.seconds, refused
 
 
 def check(
     case: Case,
     reply: str,
     tokens: int | None,
+    turns: int | None = None,
     *,
     baseline: bool,
     refused: str | None = None,
@@ -250,11 +282,18 @@ def check(
             a_revise_supplies_what_it_revises.__name__: a_revise_supplies_what_it_revises(document),
         }
     if baseline and case.prompt_tokens is not None:
-        results[BASELINE] = _near(tokens, case.prompt_tokens)
+        results[BASELINE] = _near(tokens, case.prompt_tokens, turns)
     return results
 
 
-def _near(counted: int | None, baseline: int) -> str | None:
+def _near(counted: int | None, baseline: int, turns: int | None) -> str | None:
+    if turns is not None and turns != 1:
+        # The seat ran the prompt again inside one process, and the count beside
+        # it is the last of those turns: the prompt, the reply to it, and the
+        # prompt again. Held to the baseline that number is a measurement of
+        # other bytes, and near enough to pass by chance. Red rather than absent,
+        # because the sample was paid for and someone has to re-run it.
+        return f"the seat took {turns} turns, not one"
     if counted is None:
         return "the seat reported no prompt token count"
     if abs(counted - baseline) <= baseline * TOLERANCE:
@@ -338,15 +377,15 @@ def main(argv: list[str] | None = None) -> int:
         # reply and counts and the report reads as one run.
         for seat in {named(one): one for one in [measured, *added]}.values():
             for sample in range(1, (args.n or case.samples) + 1):
-                reply, prompt_tokens, output_tokens, seconds = "", None, None, 0.0
+                reply, prompt_tokens, output_tokens, turns, seconds = "", None, None, None, 0.0
                 try:
-                    reply, prompt_tokens, output_tokens, seconds, refused = replay(
+                    reply, prompt_tokens, output_tokens, turns, seconds, refused = replay(
                         case, seat, config
                     )
                 except ReplayRefusedError as why:
                     refused = str(why)
                 results = check(
-                    case, reply, prompt_tokens, baseline=seat == measured, refused=refused
+                    case, reply, prompt_tokens, turns, baseline=seat == measured, refused=refused
                 )
                 run = {
                     "case": case.name,
@@ -354,6 +393,7 @@ def main(argv: list[str] | None = None) -> int:
                     "sample": sample,
                     "prompt_tokens": prompt_tokens,
                     "output_tokens": output_tokens,
+                    "turns": turns,
                     "output_bytes": len(reply.encode()),
                     "wall_seconds": round(seconds, 1),
                     "checks": results,

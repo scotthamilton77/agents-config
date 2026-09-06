@@ -48,6 +48,7 @@ from grillui.tiers import (
 )
 
 CASE = "2026-09-04-first-rung-nothing-owed"
+CLI_CASE = "2026-09-04-expert-owed-rulings"
 
 
 def document(**overrides: Any) -> GrillMasterDocument:
@@ -64,6 +65,24 @@ def seeded_case(where: Path) -> Path:
     for name in ("dispatch.json", "log.jsonl", "case.json"):
         (where / name).write_text((CASES / CASE / name).read_text(encoding="utf-8"), "utf-8")
     return where
+
+
+def cli_result(said: str | None, *, turns: int = 1) -> str:
+    """What `claude -p --output-format json` prints, reporting the turns it took
+    and carrying no result text where the reply is one the driver refuses."""
+    return json.dumps(
+        {
+            "session_id": "c",
+            **({} if said is None else {"result": said}),
+            "num_turns": turns,
+            "usage": {
+                "input_tokens": 2,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 5942,
+                "output_tokens": 40,
+            },
+        }
+    )
 
 
 def codex_stream(said: str, output_tokens: int = 7) -> str:
@@ -327,7 +346,9 @@ def test_a_seat_that_refuses_twice_is_a_red_row_carrying_what_it_sent(
     code = suite.main(["--case", CASE, "--report", str(tmp_path)])
 
     run = json.loads((tmp_path / "matrix.json").read_text("utf-8"))[0]
+    kept_run = json.loads((next((tmp_path / CASE).iterdir()) / "1.json").read_text("utf-8"))
     assert code == 1
+    assert (run["turns"], kept_run["turns"]) == (None, None)
     assert run["output_tokens"] == 31
     assert run["output_bytes"] == len(b"just prose")
     assert run["wall_seconds"] >= 0
@@ -358,7 +379,7 @@ def test_a_check_that_does_not_apply_is_not_a_check_that_failed(
         suite,
         "replay",
         lambda _case, seat, _config: (
-            seats.append(seat) or (document().model_dump_json(), 9786, 40, 1.0, None)
+            seats.append(seat) or (document().model_dump_json(), 9786, 40, 1, 1.0, None)
         ),
     )
 
@@ -371,6 +392,29 @@ def test_a_check_that_does_not_apply_is_not_a_check_that_failed(
     default = next(one for one in rows if "another-model" not in one)
     assert "| - |" in on_added, on_added
     assert "| - |" not in default, default
+
+
+def test_a_count_off_a_seat_that_took_more_than_one_turn_is_not_a_measurement() -> None:
+    """
+    Given a case whose seat ran the prompt again inside one process
+    When the count it printed is held to the baseline
+    Then the check fails naming the turn count, because that count is of the
+         prompt plus a reply plus the prompt again -- near enough to the
+         baseline to pass by chance, and of bytes nobody sent. A seat that
+         reports no turn count at all is judged on its number as before.
+    """
+    case = next(one for one in load_cases() if one.name == CLI_CASE)
+    baseline = case.prompt_tokens
+    assert baseline is not None
+    reply = document().model_dump_json()
+
+    def counted(tokens: int | None, turns: int | None) -> str | None:
+        return check(case, reply, tokens, turns, baseline=True)[BASELINE]
+
+    assert counted(baseline, 2) == "the seat took 2 turns, not one"
+    assert counted(baseline, 1) is None
+    assert counted(baseline, None) is None
+    assert counted(None, 2) == "the seat took 2 turns, not one"
 
 
 @pytest.mark.parametrize(
@@ -504,9 +548,11 @@ def test_every_sample_is_taken_and_any_one_of_them_fails_the_run(
     ]
     taken: list[str] = []
 
-    def sampling(*_args: object) -> tuple[str, int | None, int | None, float, str | None]:
+    def sampling(
+        *_args: object,
+    ) -> tuple[str, int | None, int | None, int | None, float, str | None]:
         taken.append(replies[len(taken)])
-        return taken[-1], 9786, 40, 1.0, None
+        return taken[-1], 9786, 40, 1, 1.0, None
 
     monkeypatch.setattr(suite, "replay", sampling)
 
@@ -556,9 +602,13 @@ def test_a_replay_on_a_hosted_seat_goes_through_that_transport(
     driver.transport = lambda **_: (said, 21)  # type: ignore[union-attr]
     monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
 
-    reply, prompt_tokens, output_tokens, _seconds, refused = suite.replay(case, seat, config)
+    reply, prompt_tokens, output_tokens, turns, _seconds, refused = suite.replay(
+        case,
+        seat,
+        config,
+    )
 
-    assert (reply, prompt_tokens, output_tokens, refused) == (said, 21, None, None)
+    assert (reply, prompt_tokens, output_tokens, turns, refused) == (said, 21, None, None, None)
 
 
 def test_a_replay_sends_the_turn_through_the_seats_own_driver(
@@ -587,10 +637,14 @@ def test_a_replay_sends_the_turn_through_the_seats_own_driver(
     driver.cli = scripted  # type: ignore[union-attr]
     monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
 
-    reply, prompt_tokens, output_tokens, seconds, refused = suite.replay(case, seat, config)
+    reply, prompt_tokens, output_tokens, turns, seconds, refused = suite.replay(
+        case,
+        seat,
+        config,
+    )
 
     assert reply == said
-    assert (prompt_tokens, output_tokens) == (11, 7)
+    assert (prompt_tokens, output_tokens, turns) == (11, 7, None)
     assert seconds >= 0
     assert refused is None
     assert sent and sent[0][0] == "codex"
@@ -623,7 +677,7 @@ def test_an_unnarrowed_run_takes_every_case(
     import evals.__main__ as suite
 
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 4868, 40, 1.0, None)
+        suite, "replay", lambda *_: (document().model_dump_json(), 4868, 40, 1, 1.0, None)
     )
 
     suite.main(["--report", str(tmp_path)])
@@ -647,7 +701,7 @@ def test_a_seat_named_twice_does_not_overwrite_its_own_record(
     import evals.__main__ as suite
 
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1, 1.0, None)
     )
 
     suite.main(["--case", CASE, "--seat", "codex:gpt-5.6-luna:medium", "--report", str(tmp_path)])
@@ -760,7 +814,7 @@ def test_a_default_run_writes_a_dated_report_and_says_where(
 
     monkeypatch.setattr(suite, "REPORTS", tmp_path / "reports")
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1, 1.0, None)
     )
 
     suite.main(["--case", CASE])
@@ -784,7 +838,7 @@ def test_two_default_runs_do_not_share_one_report(
 
     monkeypatch.setattr(suite, "REPORTS", tmp_path / "reports")
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1, 1.0, None)
     )
 
     suite.main(["--case", CASE])
@@ -813,13 +867,69 @@ def test_each_case_is_replayed_on_the_seat_it_resolved(
         suite,
         "replay",
         lambda _case, seat, _config: (
-            seats.append(seat) or (document().model_dump_json(), 4868, 40, 1.0, None)
+            seats.append(seat) or (document().model_dump_json(), 4868, 40, 1, 1.0, None)
         ),
     )
 
     suite.main(["--report", str(tmp_path)])
 
     assert seats == [config.expert_seat, config.thread_seat]
+
+
+def test_a_sample_records_how_many_turns_the_cli_took_to_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a CLI that answers having run the prompt twice inside one process
+    When the suite records the sample
+    Then the record says two turns, because the usage the CLI prints covers the
+         last of them alone: the prompt count beside it is of a turn carrying an
+         earlier exchange, and a record without the count reads as a seat whose
+         prompt grew by itself.
+    """
+    import evals.__main__ as suite
+
+    case = next(one for one in load_cases() if one.name == CLI_CASE)
+    config = TierConfig.from_env({})
+    driver = seat_driver(config, seat_of(case, config), tier=case.tier)
+    driver.cli = lambda *_args: cli_result(document().model_dump_json(), turns=2)  # type: ignore[union-attr]
+    monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
+
+    suite.main(["--case", CLI_CASE, "-n", "1", "--report", str(tmp_path)])
+
+    run = json.loads((tmp_path / "matrix.json").read_text("utf-8"))[0]
+    kept = next((tmp_path / CLI_CASE).iterdir())
+    assert run["turns"] == 2
+    assert json.loads((kept / "1.json").read_text(encoding="utf-8"))["turns"] == 2
+    # The scripted usage counts exactly the case's baseline, so a run that did
+    # not carry the turn count into the check would pass this row on a number
+    # measured off the wrong bytes.
+    assert run["checks"][BASELINE] == "the seat took 2 turns, not one"
+
+
+def test_a_reply_the_driver_refuses_still_records_the_turns_the_cli_took(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a CLI that ran the prompt twice and printed nothing readable as a reply
+    When the suite records the sample
+    Then the count it printed is still the record's, and the baseline fails
+         naming it: a refusal that dropped the count is the one sample nobody
+         can tell apart from a seat that answered once.
+    """
+    import evals.__main__ as suite
+
+    case = next(one for one in load_cases() if one.name == CLI_CASE)
+    config = TierConfig.from_env({})
+    driver = seat_driver(config, seat_of(case, config), tier=case.tier)
+    driver.cli = lambda *_args: cli_result(None, turns=2)  # type: ignore[union-attr]
+    monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
+
+    suite.main(["--case", CLI_CASE, "-n", "1", "--report", str(tmp_path)])
+
+    run = json.loads((tmp_path / "matrix.json").read_text("utf-8"))[0]
+    assert run["turns"] == 2
+    assert run["checks"][BASELINE] == "the seat took 2 turns, not one"
 
 
 def test_the_seat_a_case_runs_on_is_the_one_the_session_would_use() -> None:
@@ -870,7 +980,7 @@ def test_a_failed_check_exits_non_zero_and_the_report_holds_the_reply(
     import evals.__main__ as suite
 
     failing = document(rulings=[ruling("d9")]).model_dump_json()
-    monkeypatch.setattr(suite, "replay", lambda *_: (failing, 9786, 812, 1.5, None))
+    monkeypatch.setattr(suite, "replay", lambda *_: (failing, 9786, 812, 1, 1.5, None))
 
     code = suite.main(["--case", CASE, "--report", str(tmp_path)])
 
@@ -890,7 +1000,7 @@ def test_a_run_whose_checks_all_pass_exits_zero(
     import evals.__main__ as suite
 
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1.0, None)
+        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1, 1.0, None)
     )
 
     assert suite.main(["--case", CASE, "--report", str(tmp_path)]) == 0
