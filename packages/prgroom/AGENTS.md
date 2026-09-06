@@ -92,11 +92,14 @@ exists.
 - Per-file Gh fakes are the default: each test module defines its own small
   `GhClient`-level fake tailored to what it asserts (`_RecordingGh`, `FakeGh`,
   …). Do not cross-import a sibling test module's fake. `tests/fakes.py` hosts
-  exactly two shared fakes: the subprocess seam (`CommandRunner`) and
+  exactly three shared fakes: the subprocess seam (`CommandRunner`);
   `RecordingGh`, the reply-surface `GhClient` recorder shared by the reply
   test modules — it records every call and those tests assert exact call
-  lists, so the permissive-default masking risk per-file fakes guard against
-  does not apply. Don't grow it into a general-purpose Gh fake.
+  lists; and `RouteTableHttp`, the App-HTTP seam recorder, which raises on any
+  route it was not given. In all three the permissive-default masking risk
+  per-file fakes guard against does not apply, which is the only reason they
+  are shared. Don't grow any of them into a general-purpose fake — a
+  `RouteTableHttp` route table stays in the test module that asserts it.
 - Coverage floor is 90% branch (enforced by `pytest --cov`).
 
 ## Installed by the installer

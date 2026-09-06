@@ -8,7 +8,6 @@ asserts the code the tier maps to and that no traceback escaped.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -17,9 +16,9 @@ from typer.testing import CliRunner
 
 from prgroom import cli
 from prgroom.errors import ErrorCode
-from prgroom.gh.app import GITHUB_API, REVIEWS_PER_PAGE
+from prgroom.gh.app import REVIEWS_PER_PAGE
 from prgroom.proc import CommandResult
-from tests.fakes import RecordedRunner
+from tests.fakes import RecordedRunner, RouteTableHttp
 
 runner = CliRunner()
 
@@ -50,36 +49,6 @@ key-path-env = "APPROVER_KEY_PATH"
 """
 
 
-class CliHttp:
-    """An ``HttpTransport`` fake; an unrouted call raises rather than defaulting."""
-
-    def __init__(self, routes: Routes) -> None:
-        self.routes = dict(routes)
-        self.calls: list[tuple[str, str, bytes | None]] = []
-
-    def request(
-        self,
-        method: str,
-        url: str,
-        *,
-        headers: Any,  # noqa: ARG002  # part of the transport signature; not asserted here
-        body: bytes | None = None,
-    ) -> tuple[int, Any]:
-        self.calls.append((method, url, body))
-        for (route_method, suffix), response in self.routes.items():
-            if route_method == method and url == GITHUB_API + suffix:
-                return response
-        msg = f"unexpected call: {method} {url}"
-        raise AssertionError(msg)
-
-    def posted_reviews(self) -> list[Any]:
-        return [
-            json.loads(body)
-            for method, url, body in self.calls
-            if method == "POST" and url.endswith("/reviews") and body is not None
-        ]
-
-
 @pytest.fixture
 def approver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     """A readable key, an env var naming it, and a project config on disk."""
@@ -91,7 +60,7 @@ def approver_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path,
     return config, key
 
 
-def wire(monkeypatch: pytest.MonkeyPatch, http: CliHttp) -> None:
+def wire(monkeypatch: pytest.MonkeyPatch, http: RouteTableHttp) -> None:
     monkeypatch.setattr(cli, "_build_http", lambda: http)
     monkeypatch.setattr(
         cli,
@@ -122,7 +91,7 @@ def test_the_happy_path_posts_and_reports_the_review_on_stdout(
     approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config, _ = approver_env
-    http = CliHttp(BASE_ROUTES)
+    http = RouteTableHttp(BASE_ROUTES)
     wire(monkeypatch, http)
     result = invoke(config, "--facts", '{"why": "instructed"}')
     assert result.exit_code == 0
@@ -142,7 +111,7 @@ def test_an_existing_approval_at_the_head_exits_zero_without_posting(
         200,
         [{"id": 7, "state": "APPROVED", "commit_id": HEAD, "user": {"login": "pr-hater[bot]"}}],
     )
-    http = CliHttp(routes)
+    http = RouteTableHttp(routes)
     wire(monkeypatch, http)
     result = invoke(config)
     assert result.exit_code == 0
@@ -154,7 +123,7 @@ def test_facts_default_to_an_empty_object(
     approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config, _ = approver_env
-    http = CliHttp(BASE_ROUTES)
+    http = RouteTableHttp(BASE_ROUTES)
     wire(monkeypatch, http)
     assert invoke(config).exit_code == 0
     (posted,) = http.posted_reviews()
@@ -168,7 +137,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, _ = approver_env
         routes = dict(BASE_ROUTES)
         routes[("GET", PULL)] = (200, {"head": {"sha": MOVED}})
-        http = CliHttp(routes)
+        http = RouteTableHttp(routes)
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 2
@@ -180,7 +149,7 @@ class TestFailuresAreCodedNotTracebacks:
     ) -> None:
         config = tmp_path / "project-config.toml"
         config.write_text('[merge-policy]\nmerge-authorization = "explicit"\n')
-        http = CliHttp({})
+        http = RouteTableHttp({})
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 2
@@ -192,7 +161,7 @@ class TestFailuresAreCodedNotTracebacks:
     ) -> None:
         config = tmp_path / "project-config.toml"
         config.write_text('[merge-policy.approver]\ntype = "github-app"\napp-id = -1\n')
-        http = CliHttp({})
+        http = RouteTableHttp({})
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 2
@@ -205,7 +174,7 @@ class TestFailuresAreCodedNotTracebacks:
         config = tmp_path / "project-config.toml"
         config.write_text(CONFIG)
         monkeypatch.delenv("APPROVER_KEY_PATH", raising=False)
-        http = CliHttp({})
+        http = RouteTableHttp({})
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 2
@@ -218,7 +187,7 @@ class TestFailuresAreCodedNotTracebacks:
         config = tmp_path / "project-config.toml"
         config.write_text(CONFIG)
         monkeypatch.setenv("APPROVER_KEY_PATH", str(tmp_path / "nowhere" / "app.pem"))
-        http = CliHttp({})
+        http = RouteTableHttp({})
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 2
@@ -231,7 +200,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, _ = approver_env
         routes = dict(BASE_ROUTES)
         routes[("GET", "/repos/octo/demo/installation")] = (404, {"message": "Not Found"})
-        wire(monkeypatch, CliHttp(routes))
+        wire(monkeypatch, RouteTableHttp(routes))
         result = invoke(config)
         assert result.exit_code == 77
         assert ErrorCode.RUNTIME_APPROVER_NOT_INSTALLED.value in result.output
@@ -242,7 +211,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, _ = approver_env
         routes = dict(BASE_ROUTES)
         routes[("POST", "/app/installations/42/access_tokens")] = (401, {"message": "bad creds"})
-        wire(monkeypatch, CliHttp(routes))
+        wire(monkeypatch, RouteTableHttp(routes))
         result = invoke(config)
         assert result.exit_code == 77
         assert ErrorCode.RUNTIME_APPROVER_API_FAILED.value in result.output
@@ -253,7 +222,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, _ = approver_env
         routes = dict(BASE_ROUTES)
         routes[("POST", f"{PULL}/reviews")] = (422, {"message": "unprocessable"})
-        wire(monkeypatch, CliHttp(routes))
+        wire(monkeypatch, RouteTableHttp(routes))
         result = invoke(config)
         assert result.exit_code == 77
         assert ErrorCode.RUNTIME_APPROVER_API_FAILED.value in result.output
@@ -262,7 +231,7 @@ class TestFailuresAreCodedNotTracebacks:
         self, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config, _ = approver_env
-        http = CliHttp(BASE_ROUTES)
+        http = RouteTableHttp(BASE_ROUTES)
         monkeypatch.setattr(cli, "_build_http", lambda: http)
         monkeypatch.setattr(
             cli,
@@ -282,11 +251,11 @@ class TestFailuresAreCodedNotTracebacks:
         config, _ = approver_env
         moved_routes = dict(BASE_ROUTES)
         moved_routes[("GET", PULL)] = (200, {"head": {"sha": MOVED}})
-        wire(monkeypatch, CliHttp(moved_routes))
+        wire(monkeypatch, RouteTableHttp(moved_routes))
         moved = invoke(config)
         failed_routes = dict(BASE_ROUTES)
         failed_routes[("POST", "/app/installations/42/access_tokens")] = (500, {"message": "boom"})
-        wire(monkeypatch, CliHttp(failed_routes))
+        wire(monkeypatch, RouteTableHttp(failed_routes))
         failed = invoke(config)
         assert moved.exit_code != failed.exit_code
 
@@ -297,7 +266,7 @@ class TestArgumentValidation:
         self, bad: str, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config, _ = approver_env
-        http = CliHttp({})
+        http = RouteTableHttp({})
         wire(monkeypatch, http)
         result = invoke(config, head=bad)
         assert result.exit_code == 2
@@ -307,7 +276,7 @@ class TestArgumentValidation:
         self, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config, _ = approver_env
-        http = CliHttp(BASE_ROUTES)
+        http = RouteTableHttp(BASE_ROUTES)
         wire(monkeypatch, http)
         result = invoke(config, head=HEAD.upper())
         assert result.exit_code == 0
@@ -318,7 +287,7 @@ class TestArgumentValidation:
         self, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config, _ = approver_env
-        http = CliHttp({})
+        http = RouteTableHttp({})
         wire(monkeypatch, http)
         result = runner.invoke(
             cli.app,

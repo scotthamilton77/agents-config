@@ -16,11 +16,11 @@ import pytest
 
 from prgroom.config import ApproverConfig
 from prgroom.errors import ErrorCode, PreconditionError
-from prgroom.gh.app import GITHUB_API, REVIEWS_PER_PAGE
+from prgroom.gh.app import REVIEWS_PER_PAGE
 from prgroom.lifecycle.approve import approve_pr, attestation_body, resolve_key_path
 from prgroom.proc import CommandResult
 from prgroom.prsession.pr_ref import PRRef
-from tests.fakes import RecordedRunner
+from tests.fakes import RecordedRunner, RouteTableHttp
 
 HEAD = "a" * 40
 MOVED = "b" * 40
@@ -47,47 +47,13 @@ BASE_ROUTES: Routes = {
 }
 
 
-class FlowHttp:
-    """An ``HttpTransport`` fake answering from a ``(method, suffix)`` route table.
-
-    An unrouted call raises rather than returning a permissive default, so a call
-    this flow was never meant to make fails the test that provoked it.
-    """
-
-    def __init__(self, routes: Routes) -> None:
-        self.routes = dict(routes)
-        self.calls: list[tuple[str, str, dict[str, str], bytes | None]] = []
-
-    def request(
-        self,
-        method: str,
-        url: str,
-        *,
-        headers: Any,
-        body: bytes | None = None,
-    ) -> tuple[int, Any]:
-        self.calls.append((method, url, dict(headers), body))
-        for (route_method, suffix), response in self.routes.items():
-            if route_method == method and url == GITHUB_API + suffix:
-                return response
-        msg = f"unexpected call: {method} {url}"
-        raise AssertionError(msg)
-
-    def posted_reviews(self) -> list[Any]:
-        return [
-            json.loads(body)
-            for method, url, _, body in self.calls
-            if method == "POST" and url.endswith("/reviews") and body is not None
-        ]
-
-
 def signing_runner() -> RecordedRunner:
     """A runner answering the one ``openssl`` call the flow makes."""
     return RecordedRunner([CommandResult(0, "SHA2-256(stdin)= 0a0b\n", "")])
 
 
-def run_approve(routes: Routes) -> tuple[str, FlowHttp]:
-    http = FlowHttp(routes)
+def run_approve(routes: Routes) -> tuple[str, RouteTableHttp]:
+    http = RouteTableHttp(routes)
     message = approve_pr(
         http=http,
         runner=signing_runner(),
@@ -121,7 +87,7 @@ class TestHappyPath:
     def test_the_flow_signs_once_through_the_runner_seam(self) -> None:
         runner = signing_runner()
         approve_pr(
-            http=FlowHttp(dict(BASE_ROUTES)),
+            http=RouteTableHttp(dict(BASE_ROUTES)),
             runner=runner,
             ref=REF,
             head_sha=HEAD,
@@ -205,7 +171,7 @@ class TestHeadMoved:
     def test_a_moved_live_head_refuses_without_posting_or_even_listing_reviews(self) -> None:
         routes = dict(BASE_ROUTES)
         routes[("GET", PULL)] = (200, {"head": {"sha": MOVED}})
-        http = FlowHttp(routes)
+        http = RouteTableHttp(routes)
         with pytest.raises(PreconditionError) as caught:
             approve_pr(
                 http=http,

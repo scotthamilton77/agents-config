@@ -35,7 +35,6 @@ DEFAULT_REVIEW_FINISH_TIMEOUT = timedelta(minutes=15)
 DEFAULT_IDLE_THRESHOLD = timedelta(minutes=10)
 DEFAULT_POLL_INTERVAL = timedelta(seconds=30)
 DEFAULT_AUTO_REQUEST_HUMAN_REVIEW = True
-DEFAULT_APPROVER_KEY_PATH_ENV = "MERGE_GUARD_APPROVER_KEY_PATH"
 
 _QUIESCENCE_TABLE = "quiescence"
 _MERGE_POLICY_TABLE = "merge-policy"
@@ -233,17 +232,18 @@ class ApproverConfig:
     """
 
     app_id: int
-    key_path_env: str = DEFAULT_APPROVER_KEY_PATH_ENV
+    key_path_env: str
 
     @classmethod
     def load(cls, path: Path) -> ApproverConfig:
         """Read the approver block out of the project config at ``path``.
 
         Raises :class:`ValueError` — the loader's uniform type — when the block is
-        absent, mistyped, or carries a key this reader does not know. Absence is an
-        error rather than a default: there is no App identity to fall back to, and
-        a silent default would post reviews as the wrong actor. An unknown key
-        fails loud for the same reason a typo'd one must not be ignored.
+        absent, incomplete, mistyped, or carries a key this reader does not know.
+        Every key is required and none is defaulted: there is no App identity to
+        fall back to, and a silent default would post reviews as the wrong actor.
+        An unknown key fails loud for the same reason a typo'd one must not be
+        ignored.
         """
         merge_policy = subtable(read_toml(path), _MERGE_POLICY_TABLE)
         if _APPROVER_TABLE not in merge_policy:
@@ -265,7 +265,7 @@ class ApproverConfig:
         if app_id <= 0:
             msg = f"app-id must be a positive integer, got {app_id}"
             raise ValueError(msg)
-        key_path_env = section.get("key-path-env", DEFAULT_APPROVER_KEY_PATH_ENV)
+        key_path_env = section.get("key-path-env")
         if not isinstance(key_path_env, str) or not _ENV_VAR_NAME_RE.fullmatch(key_path_env):
             msg = f"key-path-env must be a valid environment variable name, got {key_path_env!r}"
             raise ValueError(msg)

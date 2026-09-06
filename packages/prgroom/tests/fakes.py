@@ -1,4 +1,4 @@
-"""Test fakes for the subprocess and gh-protocol boundaries.
+"""Test fakes for the subprocess, gh-protocol, and App-HTTP boundaries.
 
 The gh/git adapters reach the outside world through a single seam — the
 :class:`~prgroom.proc.CommandRunner` Protocol. These fakes structurally satisfy
@@ -6,16 +6,19 @@ that Protocol so adapter tests inject recorded responses instead of mocking code
 we own. This is the spec's "mock only at the system boundary" discipline: the
 boundary is the subprocess call, and a runner is the smallest honest stand-in
 for it. :class:`RecordingGh` is the protocol-seam sibling for lifecycle verbs
-that take a :class:`~prgroom.gh.client.GhClient` directly.
+that take a :class:`~prgroom.gh.client.GhClient` directly, and
+:class:`RouteTableHttp` is the same for the App's own HTTP boundary.
 """
 
 from __future__ import annotations
 
+import json
 import subprocess
 from collections.abc import Sequence
 from typing import Any
 
 from prgroom.errors import ErrorCode, PrgroomError, Tier
+from prgroom.gh.app import GITHUB_API
 from prgroom.proc import CommandResult
 
 
@@ -110,6 +113,52 @@ class RecordingGh:
         self.graphql_calls.append((query, dict(variables)))
         self._maybe_fail("graphql")
         return {}
+
+
+class RouteTableHttp:
+    """An :class:`~prgroom.gh.app.HttpTransport` fake answering from a route table.
+
+    Keyed by ``(method, url-suffix-after the API root)``. A call no route matches
+    raises rather than returning a permissive default, so a request the code was
+    never meant to make fails the test that provoked it — which is also what lets
+    the refusal and no-op paths be asserted as the *absence* of a POST.
+
+    Every call is recorded as ``(method, url, headers, body)``; the routes and
+    their payloads stay in each test module, since what a route should answer is
+    exactly what those tests are pinning.
+    """
+
+    def __init__(self, routes: dict[tuple[str, str], tuple[int, Any]]) -> None:
+        self.routes = dict(routes)
+        self.calls: list[tuple[str, str, dict[str, str], bytes | None]] = []
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Any,
+        body: bytes | None = None,
+    ) -> tuple[int, Any]:
+
+        self.calls.append((method, url, dict(headers), body))
+        for (route_method, suffix), response in self.routes.items():
+            if route_method == method and url == GITHUB_API + suffix:
+                return response
+        msg = f"unexpected call: {method} {url}"
+        raise AssertionError(msg)
+
+    def bodies_posted_to(self, tail: str) -> list[Any]:
+        """The decoded JSON bodies of every POST whose URL ends with ``tail``."""
+        return [
+            json.loads(body)
+            for method, url, _, body in self.calls
+            if method == "POST" and url.endswith(tail) and body is not None
+        ]
+
+    def posted_reviews(self) -> list[Any]:
+        """The reviews submitted — the assertion most of these tests turn on."""
+        return self.bodies_posted_to("/reviews")
 
 
 class TimeoutRunner:

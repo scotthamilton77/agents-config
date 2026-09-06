@@ -29,7 +29,12 @@ from prgroom.gh.app import (
 )
 from prgroom.proc import CommandResult
 from prgroom.prsession.pr_ref import PRRef
-from tests.fakes import MissingBinaryRunner, RecordedRunner, TimeoutRunner
+from tests.fakes import (
+    MissingBinaryRunner,
+    RecordedRunner,
+    RouteTableHttp,
+    TimeoutRunner,
+)
 
 NOW = 1_000_000
 HEAD = "a" * 40
@@ -39,40 +44,6 @@ REF = PRRef(owner="octo", repo="demo", number=5)
 
 def fake_signer(payload: str) -> bytes:  # noqa: ARG001  # fixed signature for determinism
     return b"SIGNATURE"
-
-
-class RouteTableHttp:
-    """An :class:`HttpTransport` fake answering from a ``(method, suffix)`` table.
-
-    Records every call so a test can assert both what was sent and what was never
-    sent — the no-op and refusal paths are defined by the absence of a POST.
-    """
-
-    def __init__(self, routes: dict[tuple[str, str], tuple[int, Any]]) -> None:
-        self.routes = dict(routes)
-        self.calls: list[tuple[str, str, dict[str, str], bytes | None]] = []
-
-    def request(
-        self,
-        method: str,
-        url: str,
-        *,
-        headers: Any,
-        body: bytes | None = None,
-    ) -> tuple[int, Any]:
-        self.calls.append((method, url, dict(headers), body))
-        for (route_method, suffix), response in self.routes.items():
-            if route_method == method and url == GITHUB_API + suffix:
-                return response
-        msg = f"unexpected call: {method} {url}"
-        raise AssertionError(msg)
-
-    def bodies_posted_to(self, tail: str) -> list[Any]:
-        return [
-            json.loads(body)
-            for method, url, _, body in self.calls
-            if method == "POST" and url.endswith(tail) and body is not None
-        ]
 
 
 BASE_ROUTES: dict[tuple[str, str], tuple[int, Any]] = {

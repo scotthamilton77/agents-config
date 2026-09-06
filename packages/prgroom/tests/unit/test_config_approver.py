@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from prgroom.config import DEFAULT_APPROVER_KEY_PATH_ENV, ApproverConfig
+from prgroom.config import ApproverConfig
 
 VALID = """
 [merge-policy]
@@ -35,11 +35,12 @@ def test_a_valid_block_yields_the_app_id_and_env_var_name(tmp_path: Path) -> Non
     assert approver.key_path_env == "APPROVER_KEY_PATH"
 
 
-def test_key_path_env_is_optional_and_defaults(tmp_path: Path) -> None:
+def test_key_path_env_is_required_with_no_code_side_default(tmp_path: Path) -> None:
+    # A default here would put the key's env-var name in two places and let a
+    # block that never names one still resolve to something.
     body = '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\n'
-    assert ApproverConfig.load(write_config(tmp_path, body)).key_path_env == (
-        DEFAULT_APPROVER_KEY_PATH_ENV
-    )
+    with pytest.raises(ValueError, match="key-path-env"):
+        ApproverConfig.load(write_config(tmp_path, body))
 
 
 def test_other_merge_policy_keys_are_ignored_not_rejected(tmp_path: Path) -> None:
