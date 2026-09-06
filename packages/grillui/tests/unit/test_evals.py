@@ -52,6 +52,11 @@ from grillui.tiers import (
 CASE = "2026-09-04-first-rung-nothing-owed"
 CLI_CASE = "2026-09-04-expert-owed-rulings"
 
+# What the suite says of a driver that took no turn and gave no reason. A row
+# about a seat the transport answered for must not carry it: the two accounts
+# send whoever re-runs the case to different places.
+NEVER_REACHED = "the seat was never reached"
+
 
 def baseline_of(name: str) -> int:
     """The count a scripted seat reports for this case, read off the case.
@@ -411,9 +416,11 @@ def test_a_seat_the_transport_gave_up_on_is_a_red_row_naming_why(
     config = TierConfig.from_env({})
     driver = seat_driver(config, seat_of(case, config), tier=case.tier)
 
+    refusal = AgentUnreachableError(HEAVY_TIER, fault_of(fault))
+
     def gave_up(*_args: Any) -> str:
         time.sleep(0.2)
-        raise AgentUnreachableError(HEAVY_TIER, fault_of(fault))
+        raise refusal
 
     driver.cli = gave_up  # type: ignore[union-attr]
     monkeypatch.setattr(suite, "seat_driver", lambda *_args, **_kwargs: driver)
@@ -423,8 +430,13 @@ def test_a_seat_the_transport_gave_up_on_is_a_red_row_naming_why(
     run = json.loads((tmp_path / "matrix.json").read_text("utf-8"))[0]
     reason = run["checks"][the_reply_is_the_map_document.__name__]
     assert code == 1
-    assert reason is not None and said in reason, reason
+    assert said in str(refusal), refusal
+    # Exactly what the transport said, and nothing the runner added to it: a
+    # reason carrying the words of the transport and the runner's own guess at
+    # once tells whoever re-runs the case two incompatible things.
+    assert reason == str(refusal)
     assert all(run["checks"][one.__name__] == reason for one in DEPENDENT)
+    assert NEVER_REACHED not in json.dumps(run["checks"])
     assert run["wall_seconds"] > 0
 
 
@@ -507,6 +519,7 @@ def test_a_reply_the_appender_refuses_is_a_red_row_carrying_what_it_sent(
     assert code == 1
     assert reason is not None and "unknown node id" in reason, reason
     assert all(run["checks"][one.__name__] == reason for one in DEPENDENT)
+    assert NEVER_REACHED not in json.dumps(run["checks"])
     assert (kept / "1.txt").read_text(encoding="utf-8") == said
 
 
