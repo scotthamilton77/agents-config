@@ -485,6 +485,19 @@ class TestRoundsAndLedger:
         assert emitter._qualified("security", 2, "f1") == "security.r2.f1"
         assert (emitter._qualified("security", 2, "correctness.r1.")
                 == "security.r2.correctness.r1.")
+        assert (emitter._qualified("security", 2, "correctness.r1. ")
+                == "security.r2.correctness.r1. ")
+
+    def test_b4_a_disposition_id_carrying_whitespace_is_refused(self, repo, acs_file, tmp_path,
+                                                                capsys):
+        """A ledger id is the same token shape a report's finding id is, or the id the prompt
+        shows a reviewer is not the id anything cites."""
+        flat, _ = round2(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "fixed", "evidence": "regression test added"},
+            {"round": 1, "id": "f 2", "disposition": "advisory-deferred"},
+        ])
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "ledger-gap"
 
     def test_b4_unsupported_rebuttal_is_refused(self, repo, acs_file, tmp_path, capsys):
         """A prior mechanical finding marked rebutted without evidence never settles."""

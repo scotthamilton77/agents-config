@@ -47,9 +47,11 @@ ROUTE_KEYS = frozenset({*ROUTE_FIELDS, "substitution"})
 # closed shape that has no room for it, so it is matched on here and dropped on the way in.
 LEDGER_ONLY_FIELDS = ("lens",)
 
-# An id already carrying a lens-and-round prefix, which is left as written: it
+# A finding id is one whitespace-free token; an id whose whole shape is
+# {lens}.r{round}.{id} already carries its lens and round and is left as written: it
 # suppresses when it matches a settled item, and stays live when it matches none.
-QUALIFIED = re.compile(r"[^\s.]+\.r\d+\..+")
+TOKEN = re.compile(r"\S+")
+QUALIFIED = re.compile(r"[^\s.]+\.r\d+\.\S+")
 
 COPIED_FROM_ROUND = (
     "artifact_class", "round", "base_sha", "head_sha", "claim_id",
@@ -267,7 +269,7 @@ def qualified(lens: Any, round_no: Any, item: str) -> str:
     one; a lens-and-round prefix is written only by citing that item deliberately, and the
     prompt shows every lens the whole settled ledger, so any lens may write one.
     """
-    if blank(lens) or QUALIFIED.match(item):
+    if blank(lens) or QUALIFIED.fullmatch(item):
         return item
     return f"{lens}.r{round_no}.{item}"
 
@@ -336,11 +338,12 @@ def collect(
             finding = dict(raw)
             finding["lens"] = lens
             item = finding.get("id")
-            if blank(item):
+            if blank(item) or not TOKEN.fullmatch(item):
                 raise Refusal(
                     "bad-report",
-                    f"the {lens} report {path} carries a finding with no id; an unidentified "
-                    "finding can be neither dispositioned nor suppressed later",
+                    f"the {lens} report {path} carries a finding whose id is missing or is not "
+                    "one whitespace-free token; such a finding can be neither dispositioned nor "
+                    "suppressed later",
                 )
             if finding.get("type") == "mechanical" and blank(finding.get("evidence")):
                 # Never dropped and never left blocking: an unevidenced mechanical claim

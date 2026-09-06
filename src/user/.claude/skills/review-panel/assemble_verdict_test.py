@@ -539,6 +539,15 @@ class TestDuplicateIds:
         assert code == 2
         assert answer["errors"][0]["code"] == "bad-report"
 
+    @pytest.mark.parametrize("item", ["F 1", "F1 ", " F1", "F\t1"])
+    def test_a_finding_id_carrying_whitespace_refuses(self, round1, dest, item):
+        """An id is one token. Whitespace inside it makes the id the verdict carries
+        ambiguous to every reader that splits or quotes it."""
+        code, answer, _ = assemble(
+            round1, dest, findings={"correctness": [mechanical(item, "correctness")]})
+        assert code == 2
+        assert answer["errors"][0]["code"] == "bad-report"
+
 
 class TestIndictment:
     def test_b6_an_indictment_halts_the_round_on_the_upstream_defect(self, round1, dest):

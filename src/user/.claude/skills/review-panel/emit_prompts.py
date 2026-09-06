@@ -118,6 +118,13 @@ SCOPE_DELTA = (
 )
 
 
+# A finding id is one whitespace-free token; an id whose whole shape is
+# {lens}.r{round}.{id} already carries its lens and round and is left as written: it
+# suppresses when it matches a settled item, and stays live when it matches none.
+_TOKEN = re.compile(r"\S+")
+_QUALIFIED = re.compile(r"[^\s.]+\.r\d+\.\S+")
+
+
 class Refusal(Exception):
     """A typed refusal to emit; carries a stable machine-readable code."""
 
@@ -823,6 +830,12 @@ def build_ledger(
     ledger = []
     for entry in dispositions:
         key = (entry.get("round"), entry.get("id"))
+        if not isinstance(key[1], str) or not _TOKEN.fullmatch(key[1]):
+            raise Refusal(
+                "ledger-gap",
+                f"the disposition from round {key[0]} carries the id {key[1]!r}, which is not "
+                "one whitespace-free token; a ledger id cites a finding id and has its shape",
+            )
         raw_evidence = entry.get("evidence")
         if raw_evidence is not None and not isinstance(raw_evidence, str):
             raise Refusal(
@@ -977,11 +990,6 @@ def lens_tier(lens: dict, round_no: int) -> str:
     return lens.get("re_review_tier", lens["tier"])
 
 
-# An id already carrying a lens-and-round prefix, which is left as written: it
-# suppresses when it matches a settled item, and stays live when it matches none.
-_QUALIFIED = re.compile(r"[^\s.]+\.r\d+\..+")
-
-
 def _qualified(lens: Any, round_no: Any, item: str) -> str:
     """The id that cites a finding: {lens}.r{round}.{id}, left as written if already in it.
 
@@ -989,7 +997,7 @@ def _qualified(lens: Any, round_no: Any, item: str) -> str:
     the assembler cannot tell a re-citation of a settled item from a new finding wearing its
     number. What the prompt shows a reviewer is therefore the id that citation is matched on.
     """
-    if not lens or _QUALIFIED.match(item):
+    if not lens or _QUALIFIED.fullmatch(item):
         return item
     return f"{lens}.r{round_no}.{item}"
 
