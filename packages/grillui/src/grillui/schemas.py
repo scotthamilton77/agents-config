@@ -385,13 +385,17 @@ RULINGS_KEY = "rulings"
 STOP_KEY = "stop"
 
 # The decisions a turn ruled on that the dispatch never put in question, dropped
-# before the append. It rides the entry rather than being discarded silently
-# because the drop is the backend overriding what the seat said: a turn that
-# ruled on five decisions and had three struck reads, from the log alone, as a
-# turn that ruled on two -- and the difference between a seat that stayed inside
-# its obligation and one that was cut back to it is the whole signal for whether
-# the brief is working. Absent where nothing was dropped, so its presence is the
-# fact.
+# before the append. The drop is recorded rather than taken silently because it
+# is the backend overriding what the seat said: a turn cut back to its
+# obligation reads, from the log alone, exactly like a turn that stayed inside
+# it, and telling those two apart is the whole signal for whether the brief is
+# working.
+#
+# This key carries it on a turn that still had something to record, and is
+# absent from one where nothing was dropped, so its presence is the fact. A turn
+# whose whole content was unowed rulings has no entry to carry it -- striking
+# them leaves nothing to append -- and its drop rides the status lane instead,
+# under `STATUS_PHASE_RULINGS_DROPPED`.
 DROPPED_RULINGS_KEY = "rulings_dropped"
 
 # The verdict a backend-minted sub-update records, stamped when it is minted.

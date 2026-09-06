@@ -51,7 +51,15 @@ from grillui.drivers import (
     take_document,
 )
 from grillui.lane import DocumentRefusedError, Lane
-from grillui.projector import fold, landing, node_from_payload
+from grillui.projector import (
+    ALSO_QUEUES_AS_NOTICE,
+    LANDS_AT_ONCE,
+    LANDS_WHILE_UNANSWERED,
+    WAITS_IN_QUEUE,
+    fold,
+    node_from_payload,
+    queue,
+)
 from grillui.schemas import (
     DROPPED_RULINGS_KEY,
     FAST_TIER,
@@ -67,6 +75,7 @@ from grillui.schemas import (
     DispatchContext,
     EventSubmission,
     HandoffDecision,
+    LogEntry,
     MootnessObligation,
     Option,
     payload_problem,
@@ -1221,6 +1230,79 @@ RENDERED_NODE_FIELDS = {
 RENDERED_OPTION_FIELDS = set(Option.model_fields)
 
 
+PROBE = "probe"
+
+
+def _folded(kind: str, *, answered: bool) -> tuple[bool, bool]:
+    """Whether an update of this kind waited as a proposal, and whether it
+    queued at all, read off a log the fold actually walked.
+
+    One board with one answerable decision, answered or not, and the kind's own
+    example arriving on it. Both facts come from the readers a client uses --
+    the queue of proposals and the pending list -- so what is observed here is
+    the fold's behaviour rather than any statement about it.
+    """
+    seeded: list[dict[str, Any]] = [
+        {
+            "kind": "add-node",
+            "actor": "grill-master",
+            "payload": {
+                "target": "d1",
+                "short": "Store",
+                "title": "Which storage?",
+                "body": "Pick one.",
+                "prereqs": [],
+                "options": [{"id": "a", "text": "A log"}, {"id": "b", "text": "A table"}],
+            },
+        }
+    ]
+    if answered:
+        seeded.append(
+            {
+                "kind": "answer",
+                "actor": "human",
+                "payload": {"target": "d1", "answer": {"option": "a"}},
+            }
+        )
+    seeded.append(
+        {
+            "kind": kind,
+            "actor": "grill-master",
+            "payload": {
+                key: value for key, value in UPDATE_EXAMPLES[kind].items() if key != "kind"
+            },
+        }
+    )
+    entries = [
+        LogEntry(
+            seq=index,
+            epoch="e",
+            timestamp="t",
+            idempotency_key=PROBE if index == len(seeded) else f"seed-{index}",
+            channel="map",
+            **one,
+        )
+        for index, one in enumerate(seeded, 1)
+    ]
+    return PROBE in queue(entries), any(one.id == PROBE for one in fold("e", entries).pending)
+
+
+def _observed_landing(kind: str) -> str:
+    """The phrase the fold's own behaviour earns this kind.
+
+    The rendered claim is checked against this rather than against the helper
+    that renders it: a helper answering the same way for every kind would agree
+    with itself, and the only thing that catches it is the board.
+    """
+    waits, queued = _folded(kind, answered=False)
+    waits_once_answered, _ = _folded(kind, answered=True)
+    if waits:
+        said = WAITS_IN_QUEUE
+    else:
+        said = LANDS_WHILE_UNANSWERED if waits_once_answered else LANDS_AT_ONCE
+    return said + (ALSO_QUEUES_AS_NOTICE if queued and not waits else "")
+
+
 def test_the_per_kind_contract_is_rendered_from_the_appender_and_the_fold() -> None:
     """
     Given the per-kind contract in the grill-master's standing brief
@@ -1253,7 +1335,7 @@ def test_the_per_kind_contract_is_rendered_from_the_appender_and_the_fold() -> N
         assert _fields(block.group("optional")) == (
             (set(shape.model_fields) | set(example)) - {"kind"} - required
         ), kind
-        assert block.group("landing") == landing(kind), kind
+        assert block.group("landing") == _observed_landing(kind), kind
         assert json.loads(block.group("example")) == example, kind
         assert payload_problem(kind, example) is None, kind
         assert document_problem(document(updates=[example])) is None, kind
