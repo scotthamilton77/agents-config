@@ -46,7 +46,7 @@ inherits that user identity. There is no App-token path in any write call site.
 | Ad-hoc `gh` invocation from an agent's Bash tool | any agent session; no repo asset defines or constrains it | anything the token allows — the PR #397 `@codex review` trigger comment is this path | owner | No. Nothing marks it, nothing restricts it, and no deployed asset mentions it. This is the path that produced the observed failure |
 | `packages/vizsuite/src/vizsuite/adapters/gh/runner.py:60` (`pr_graphql`) — **no longer in this repository**; vizsuite was extracted to `scotthamilton77/vizsuite` on 2026-08-05, where this path is `src/vizsuite/adapters/gh/runner.py` | `vizsuite pr` reconcile | nothing — one read-only `gh api graphql` query per PR | owner | N/A — no write |
 | `.github/workflows/ci.yml` | GitHub Actions on PR/push | nothing — `actions/checkout`, `setup-uv`, `make ci`. No `GITHUB_TOKEN` use, no `gh` call, no comment or status write beyond the check the runner reports for itself | Actions runner | N/A — no write |
-| `merge-guard-approver-bot[bot]` (GitHub App, id `4275336`, configured at `project-config.toml` `[merge-policy.approver]`) | the merge-guard skill — **archived, not deployed** (see §2) | approving PR reviews | the App installation | **Yes.** Verified on PRs #250, #271, #353: `user.type == "Bot"`, login ends `[bot]`, `author_association == NONE`. Platform-attested; an agent holding only the owner's `gh` token cannot produce it |
+| `pr-hater[bot]` (GitHub App, id `4275336`, configured at `project-config.toml` `[merge-policy.approver]`) | the merge-guard skill — **archived, not deployed** (see §2) | approving PR reviews | the App installation | **Yes.** Verified on PRs #250, #271, #353: `user.type == "Bot"`, login ends `[bot]`, `author_association == NONE`. Platform-attested; an agent holding only the owner's `gh` token cannot produce it |
 
 **No write path exists** in `src/**`, `scripts/**`, `packages/installer/**`,
 `packages/workcli/**`, `packages/grind/**`, or `packages/pdlc/**`: a grep for
@@ -172,26 +172,22 @@ It needs its own tracker item; this record does not fix it.
 ## 3. Boundary against the S6 review contracts
 
 `docs/specs/2026-07-24-review-contracts-s6.md` Slice D already owns three things
-this record must not restate: **S6-D2** puts machine-posted PR comments and
-approvals on the App identity, reusing the merge-guard plumbing; **S6-D3** makes
+this record must not restate: **S6-D2** puts the verdict medium — the posted
+verdict review and the approval it authorizes — on the App identity, and nothing
+else; **S6-D3** makes
 merge eligibility require an App-posted terminal-clean verdict and rejects a
 verdict-shaped payload from any other identity, fail-closed; **S6-D4** makes a
 human PR comment an intervention that never enters the fix loop, and asserts
 machine and human comments are separable on the PR.
 
-**S6-D2 is written wider than S6 can deliver — a contradiction in that spec, not
-a gap this one fills.** Read literally, S6-D2 covers every machine-posted PR
-comment and approval, unqualified. prgroom's issue comments and review-thread
-replies are comments, so its text already reaches two of the eight write paths in
-§1: the `_post_reply` issue comment or thread reply, and the routed-memory thread
-reply. But S6's own §4 assigns prgroom's carve — the verdict harvester and the
-merge-eligibility evaluator — to S8, and no S6 criterion converts
-`prgroom.gh.client.GhCli` or names a grooming write. The criterion is therefore
-broader than the slice that owns it can satisfy, and an agent reading S6-D2 as met
-once the verdict medium ships will be wrong about every grooming write. That is
-flagged here for repair in S6 — a criterion that overstates its own slice is
-exactly the kind of contradiction to surface rather than route around — and this
-record claims none of S6-D2's scope as its own.
+**S6-D2 reaches the verdict medium and nothing else.** It says so in terms:
+non-verdict machine writes remain owner-credentialed after S6, and meeting the
+criterion is not a claim that they were converted. prgroom's issue comments and
+review-thread replies — two of the eight write paths in §1, the `_post_reply`
+issue comment or thread reply and the routed-memory thread reply — are therefore
+outside S6-D2, as is every other grooming write; S6's own §4 assigns prgroom's
+carve and the conversion of its shared `gh` client to S8. This record claims none
+of S6-D2's scope as its own and covers the owner-credentialed remainder.
 
 This record adds four things no S6 criterion delivers.
 
@@ -208,26 +204,27 @@ intervention and reports the prime directive's own metric wrong.
 
 **It covers the writes that are not comments, and the channel no criterion
 constrains.** Five owner-credentialed writes are neither a comment nor an
-approval, so they fall outside S6-D2's text entirely: the thread resolution, the
+approval, and none is the verdict medium, so S6-D2 does not reach them: the thread resolution, the
 reviewer re-request, the `human-review-required` label add, the commit/push
 path, and the PR-body PATCH — a PR body is not a comment. The PATCH is the mildest
 of the five: the splice leaves the body's authorship the PR author's, so it
 converts no attribution; it stays in the conversion enumeration as a write path
 rather than as something a reader can mistake for an instruction. The ad-hoc `gh` invocation is
-the harder case: a comment an agent types by hand is a machine-posted comment, so
-S6-D2's text nominally reaches it, but no criterion anywhere names or constrains
-that channel, and a property no mechanism enforces is not a control. That channel
-produced the observed failure.
+the harder case: a comment an agent types by hand is a machine-posted comment that
+is not the verdict medium, so S6-D2 does not reach it, and no criterion anywhere
+names or constrains that channel; a property no mechanism enforces is not a
+control. That channel produced the observed failure.
 
-**It states a reader-side obligation Slice D does not.** S6-D4 governs what the
-*fix loop* consumes. It says nothing about the merge hard line, and the hard line
-is where authorization actually lives. No S6 criterion requires an agent to check
-authorship before treating a comment as an instruction; `review-verdict`'s
-provenance rule is the only instance of that obligation in admitted source, and
-is scoped to verdict payloads. Extending it from "a verdict is only a verdict if the App
-posted it" to "a comment is only an instruction if a human wrote it" is this
-record's contribution, and it is a reader-side rule where every S6-D criterion is
-a writer-side or gate-side one.
+**It supplied the reader-side obligation Slice D now carries.** S6-D4 governs what
+the *fix loop* consumes, and it now names the hard line the eligibility contract
+must ship: an agent-authored comment is not human authorization, whichever
+identity it renders under. That line is this record's contribution.
+`review-verdict`'s provenance rule was the only instance of the obligation in
+admitted source, scoped to verdict payloads; extending it from "a verdict is only
+a verdict if the App posted it" to "a comment is only an instruction if a human
+wrote it" makes it a reader-side rule where every other S6-D criterion is
+writer-side or gate-side. No deployed asset carries the line yet — the
+eligibility contract that will is Slice D work.
 
 **It makes the grooming tool's own human-review constraint fail closed.** That
 constraint is a separate gate from the verdict-based merge-eligibility predicate
@@ -347,7 +344,8 @@ it closes the dangerous direction unconditionally, and it depends on no adoption
 no secret, and no conversion. It is the only option that is already true the
 moment it ships. (i) second because it fixes the false attribution (iv) leaves
 standing, it is continuous with work S6-D2 already mandates for a subset rather
-than new machinery, and the App is proven on this repo. Sequenced this way, each
+than new machinery, and the App identity is installed and its approvals count on
+this repo (only the client that posts as it is archive-only, Slice D's lift). Sequenced this way, each
 step is safe alone: (iv) does not depend on (i) being complete, and (i) improves
 observability without being load-bearing for authorization.
 
@@ -421,8 +419,8 @@ other.
   because a write that reaches GitHub any other way fails this criterion whatever
   introduced it. Binding the criterion to the client rather than to a
   call-site list also settles the paths the carve leaves undecided: whichever
-  grooming writes survive, they flow through the converted client. Machine-posted
-  comments and approvals stay S6-D2's (§3); the commit/push path is AUTH-C5's.
+  grooming writes survive, they flow through the converted client. The verdict
+  medium stays S6-D2's (§3); the commit/push path is AUTH-C5's.
   Observable: the actor GitHub records for a write made through the retained
   client — the comment's `user`, the thread's `resolvedBy`, the timeline event's
   `actor` — carries `type: "Bot"`. Inverse: a write that reaches GitHub without
@@ -485,15 +483,15 @@ other.
 Deploying any convention this record proposes — a separate tracker item, and
 deliberately so: a half-adopted marker is worse than none, because its absence
 stops meaning anything. Everything S6 Slice D already owns: the App identity for
-machine-posted comments and approvals (S6-D2 — §3 flags the contradiction between
-its text and what S6 delivers, for repair there), the **verdict-based**
+the verdict medium (S6-D2, scoped as §3 states), the **verdict-based**
 merge-eligibility predicate and its fail-closed provenance check (S6-D3), and the
 exclusion of human comments from the fix loop (S6-D4). prgroom's human-review
 constraint is a different gate from that predicate and is in scope here, at
 AUTH-C3 and AUTH-C4. The verdict harvester and merge-eligibility evaluator
 (S8, D13). The interventions-per-PR instrument (S10,
 D19) — this record establishes only that its substrate is not yet separable.
-Building or reconfiguring the merge-approver App, which pre-exists and is proven.
+Building or reconfiguring the merge-approver App identity, which is already installed
+with the grants it needs; lifting the archived client that posts as it is Slice D work.
 Repairing the unowned rule-based merge-authorization channel identified at the
 end of §2 — a real and more immediately reachable hole, needing its own item.
 Correcting `AGENTS.md` and the S6 spec's claim that three archived PR skills
