@@ -13,6 +13,7 @@ import io
 import json
 import urllib.error
 import urllib.request
+from http.client import IncompleteRead
 from typing import Any
 
 import pytest
@@ -140,3 +141,40 @@ def test_a_success_whose_body_is_not_json_is_a_coded_error_not_a_decode_tracebac
         UrllibTransport().request("GET", URL, headers={})
     assert caught.value.code is ErrorCode.RUNTIME_APPROVER_API_FAILED
     assert "<html>bad gateway</html>" in caught.value.detail
+
+
+class UnreadableResponse(FakeResponse):
+    """A response whose headers arrived and whose body then fails mid-read."""
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__(200, b"")
+        self._error = error
+
+    def read(self) -> bytes:
+        raise self._error
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(TimeoutError("timed out mid-body"), id="a-read-timeout"),
+        pytest.param(OSError("connection reset"), id="a-socket-error"),
+        pytest.param(IncompleteRead(b"partial"), id="an-incomplete-read"),
+    ],
+)
+def test_an_io_failure_while_reading_the_body_is_a_coded_error(
+    error: Exception, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub_urlopen(monkeypatch, UnreadableResponse(error))
+    with pytest.raises(PrgroomError) as caught:
+        UrllibTransport().request("GET", URL, headers={})
+    assert caught.value.code is ErrorCode.RUNTIME_APPROVER_API_FAILED
+
+
+def test_an_error_status_whose_body_cannot_be_read_still_reports_the_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    error = urllib.error.HTTPError(URL, 503, "Service Unavailable", {}, None)
+    monkeypatch.setattr(error, "read", lambda: (_ for _ in ()).throw(TimeoutError("no body")))
+    stub_urlopen(monkeypatch, error)
+    assert UrllibTransport().request("GET", URL, headers={})[0] == 503

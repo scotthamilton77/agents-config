@@ -204,13 +204,18 @@ class TestAttestationBody:
         assert FACTS in body
         assert APP_LOGIN in body
 
-    def test_claims_no_outcome_of_its_own(self) -> None:
-        # The body must not assert results it never checked; the caller's facts
-        # carry whatever was actually established.
-        body = attestation_body(APP_LOGIN, HEAD, "{}")
-        assert "authorization is decided outside this review" in body
-        assert "CI" not in body
-        assert "green" not in body
+    @pytest.mark.parametrize(
+        "claim", ["CI", "green", "triage", "triaged", "policy", "satisfied", "passed"]
+    )
+    def test_claims_no_outcome_of_its_own(self, claim: str) -> None:
+        # The body must not assert a CI, triage, or policy result it never
+        # checked; the caller's facts carry whatever was actually established.
+        assert claim not in attestation_body(APP_LOGIN, HEAD, "{}")
+
+    def test_the_body_says_authorization_is_decided_elsewhere(self) -> None:
+        assert "authorization is decided outside this review" in attestation_body(
+            APP_LOGIN, HEAD, "{}"
+        )
 
 
 class TestResolveKeyPath:

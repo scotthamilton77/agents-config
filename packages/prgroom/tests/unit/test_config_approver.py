@@ -79,8 +79,21 @@ def test_other_merge_policy_keys_are_ignored_not_rejected(tmp_path: Path) -> Non
             '[merge-policy.approver]\ntype = "github-app"\napp-id = true\n',
         ),
         (
-            "an env var name that is not one",
+            "an env var name starting with a digit",
             '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nkey-path-env = "9-BAD"\n',
+        ),
+        (
+            "an env var name with a hyphen after a legal first character",
+            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\n'
+            'key-path-env = "GOOD-NAME"\n',
+        ),
+        (
+            "an env var name with a dot",
+            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nkey-path-env = "APP.KEY"\n',
+        ),
+        (
+            "an env var name with a space",
+            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\nkey-path-env = "APP KEY"\n',
         ),
         (
             "an empty env var name",

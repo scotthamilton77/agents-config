@@ -23,8 +23,9 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
+from http.client import HTTPException
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.proc import DEFAULT_SUBPROCESS_TIMEOUT, CommandRunner
@@ -45,6 +46,12 @@ _JWT_LIFETIME_SECONDS = 540
 
 # Wall-clock budget for one API round trip, matching the subprocess seam's.
 _HTTP_TIMEOUT = 30.0
+
+# How much of a response body a diagnostic may quote. Bounded so a large or
+# hostile body cannot flood the log through an error path.
+_EXCERPT = 200
+
+T = TypeVar("T")
 
 # Signs the JWT's ``<header>.<claims>`` string, returning the raw signature.
 Signer = Callable[[str], bytes]
@@ -103,19 +110,10 @@ class UrllibTransport:
             with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:  # noqa: S310  # same https URL this module built
                 return int(response.status), _decode_json(response.read(), url)
         except urllib.error.HTTPError as exc:
-            # An error status still carries a body worth surfacing in the
-            # diagnostic; a non-JSON one (an HTML error page) degrades to text.
-            raw = exc.read()
-            try:
-                return exc.code, json.loads(raw or b"null")
-            except json.JSONDecodeError:
-                return exc.code, raw.decode(errors="replace")
-        except urllib.error.URLError as exc:
-            raise PrgroomError(
-                tier=Tier.RUNTIME_TERMINAL_USER,
-                code=ErrorCode.RUNTIME_APPROVER_API_FAILED,
-                detail=f"network failure calling {url}: {exc.reason}",
-            ) from exc
+            return exc.code, _error_body(exc)
+        except (OSError, HTTPException) as exc:
+            detail = f"network failure calling {url}: {exc}"
+            raise _api_failed(detail) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,21 +199,23 @@ def mint_installation_token(http: HttpTransport, jwt: str, ref: PRRef) -> Minted
             code=ErrorCode.RUNTIME_APPROVER_NOT_INSTALLED,
             detail=f"the App is not installed on {ref.owner}/{ref.repo}",
         )
-    installation: dict[str, Any] = _expect((status, payload), "installation lookup")
+    installation = _expect((status, payload), "installation lookup")
+    installation_id = _field(installation, "id", want=int, what="installation lookup")
     scope = json.dumps(
         {"repositories": [ref.repo], "permissions": {"pull_requests": "write"}}
     ).encode()
     minted: dict[str, Any] = _expect(
         http.request(
             "POST",
-            f"{GITHUB_API}/app/installations/{installation['id']}/access_tokens",
+            f"{GITHUB_API}/app/installations/{installation_id}/access_tokens",
             headers=headers,
             body=scope,
         ),
         "installation-token mint",
         want=201,
     )
-    return MintedApp(token=str(minted["token"]), login=f"{app['slug']}[bot]")
+    token = _field(minted, "token", want=str, what="installation-token mint")
+    return MintedApp(token=token, login=f"{_field(app, 'slug', want=str, what='app lookup')}[bot]")
 
 
 def read_head_sha(http: HttpTransport, token: str, ref: PRRef) -> str:
@@ -223,7 +223,7 @@ def read_head_sha(http: HttpTransport, token: str, ref: PRRef) -> str:
     pull: dict[str, Any] = _expect(
         http.request("GET", _pull_url(ref), headers=_bearer(token)), "pull request read"
     )
-    return str(pull["head"]["sha"])
+    return _field(pull, "head", "sha", want=str, what="pull request read")
 
 
 def iter_reviews(http: HttpTransport, token: str, ref: PRRef) -> Iterator[dict[str, Any]]:
@@ -264,7 +264,7 @@ def submit_review(
         http.request("POST", f"{_pull_url(ref)}/reviews", headers=_bearer(token), body=payload),
         "review submission",
     )
-    return int(review["id"])
+    return _field(review, "id", want=int, what="review submission")
 
 
 def _decode_json(raw: bytes, url: str) -> Any:
@@ -276,17 +276,56 @@ def _decode_json(raw: bytes, url: str) -> Any:
     try:
         return json.loads(raw or b"null")
     except json.JSONDecodeError as exc:
-        detail = f"non-JSON body from {url}: {raw.decode(errors='replace')[:200]}"
-        raise PrgroomError(
-            tier=Tier.RUNTIME_TERMINAL_USER,
-            code=ErrorCode.RUNTIME_APPROVER_API_FAILED,
-            detail=detail,
-        ) from exc
+        detail = f"non-JSON body from {url}: {raw.decode(errors='replace')[:_EXCERPT]}"
+        raise _api_failed(detail) from exc
 
 
 def _b64url(data: bytes) -> str:
     """Unpadded base64url — the JOSE segment encoding."""
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _api_failed(detail: str) -> PrgroomError:
+    return PrgroomError(
+        tier=Tier.RUNTIME_TERMINAL_USER,
+        code=ErrorCode.RUNTIME_APPROVER_API_FAILED,
+        detail=detail,
+    )
+
+
+def _error_body(exc: urllib.error.HTTPError) -> Any:
+    """An error status's body, best-effort: the status is the diagnostic that matters.
+
+    A non-JSON body (an HTML error page) degrades to text; a body that cannot be
+    read at all degrades to nothing.
+    """
+    try:
+        raw = exc.read()
+    except (OSError, HTTPException):
+        return None
+    try:
+        return json.loads(raw or b"null")
+    except json.JSONDecodeError:
+        return raw.decode(errors="replace")[:_EXCERPT]
+
+
+def _field(payload: Any, *path: str, want: type[T], what: str) -> T:
+    """Read a required field out of a response, or fail the call.
+
+    Every field this client reads routes through here, so a response that parsed
+    but does not carry what the next step needs is an API failure with a
+    diagnostic naming the field, never an index or type error at the call site.
+    """
+    node = payload
+    for depth, key in enumerate(path):
+        if not isinstance(node, dict) or key not in node:
+            detail = f"{what}: response has no {'.'.join(path[: depth + 1])}"
+            raise _api_failed(detail)
+        node = node[key]
+    if not isinstance(node, want):
+        detail = f"{what}: {'.'.join(path)} is {type(node).__name__}, not {want.__name__}"
+        raise _api_failed(detail)
+    return node
 
 
 def _sign_failed(detail: str) -> PrgroomError:
@@ -318,11 +357,8 @@ def _expect(response: tuple[int, Any], what: str, *, want: int = 200) -> Any:
     """Return an expected-status response's body; any other status fails loud."""
     status, payload = response
     if status != want:
-        raise PrgroomError(
-            tier=Tier.RUNTIME_TERMINAL_USER,
-            code=ErrorCode.RUNTIME_APPROVER_API_FAILED,
-            detail=f"{what}: HTTP {status}: {json.dumps(payload)[:200]}",
-        )
+        detail = f"{what}: HTTP {status}: {json.dumps(payload)[:_EXCERPT]}"
+        raise _api_failed(detail)
     return payload
 
 

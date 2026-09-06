@@ -277,3 +277,95 @@ def test_a_rejected_submission_detail_carries_the_status_and_a_body_excerpt() ->
         submit_review(RouteTableHttp(routes), "tok", REF, event="APPROVE", body="b", commit_id=HEAD)
     assert "422" in caught.value.detail
     assert "unprocessable" in caught.value.detail
+
+
+def routes_with(route: tuple[str, str], response: tuple[int, Any]) -> dict[tuple[str, str], Any]:
+    patched = dict(BASE_ROUTES)
+    patched[route] = response
+    return patched
+
+
+MINT_ROUTES_MISSING_A_FIELD = [
+    pytest.param(("GET", "/app"), (200, {}), id="app-lookup-without-a-slug"),
+    pytest.param(
+        ("GET", "/repos/octo/demo/installation"), (200, {}), id="installation-without-an-id"
+    ),
+    pytest.param(
+        ("POST", "/app/installations/42/access_tokens"), (201, {}), id="mint-without-a-token"
+    ),
+]
+
+MINT_ROUTES_WRONGLY_TYPED = [
+    pytest.param(("GET", "/app"), (200, {"slug": 5}), id="a-numeric-slug"),
+    pytest.param(
+        ("GET", "/repos/octo/demo/installation"), (200, {"id": "42"}), id="a-string-installation-id"
+    ),
+    pytest.param(
+        ("POST", "/app/installations/42/access_tokens"),
+        (201, {"token": {"nested": 1}}),
+        id="an-object-token",
+    ),
+]
+
+
+@pytest.mark.parametrize(("route", "response"), MINT_ROUTES_MISSING_A_FIELD)
+def test_a_mint_response_missing_a_field_is_a_coded_failure(
+    route: tuple[str, str], response: tuple[int, Any]
+) -> None:
+    with pytest.raises(PrgroomError) as caught:
+        mint_installation_token(RouteTableHttp(routes_with(route, response)), "jwt", REF)
+    assert caught.value.code is ErrorCode.RUNTIME_APPROVER_API_FAILED
+
+
+@pytest.mark.parametrize(("route", "response"), MINT_ROUTES_WRONGLY_TYPED)
+def test_a_mint_response_with_a_wrongly_typed_field_is_a_coded_failure(
+    route: tuple[str, str], response: tuple[int, Any]
+) -> None:
+    with pytest.raises(PrgroomError) as caught:
+        mint_installation_token(RouteTableHttp(routes_with(route, response)), "jwt", REF)
+    assert caught.value.code is ErrorCode.RUNTIME_APPROVER_API_FAILED
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({}, id="no-head-at-all"),
+        pytest.param({"head": {}}, id="a-head-without-a-sha"),
+        pytest.param({"head": {"sha": 7}}, id="a-numeric-sha"),
+        pytest.param({"head": "abc"}, id="a-head-that-is-not-an-object"),
+    ],
+)
+def test_a_pull_response_without_a_usable_head_sha_is_a_coded_failure(payload: Any) -> None:
+    http = RouteTableHttp(routes_with(("GET", "/repos/octo/demo/pulls/5"), (200, payload)))
+    with pytest.raises(PrgroomError) as caught:
+        read_head_sha(http, "tok", REF)
+    assert caught.value.code is ErrorCode.RUNTIME_APPROVER_API_FAILED
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [pytest.param({}, id="no-review-id"), pytest.param({"id": "99"}, id="a-string-review-id")],
+)
+def test_a_submission_response_without_a_usable_review_id_is_a_coded_failure(payload: Any) -> None:
+    http = RouteTableHttp(routes_with(("POST", "/repos/octo/demo/pulls/5/reviews"), (200, payload)))
+    with pytest.raises(PrgroomError) as caught:
+        submit_review(http, "tok", REF, event="APPROVE", body="b", commit_id=HEAD)
+    assert caught.value.code is ErrorCode.RUNTIME_APPROVER_API_FAILED
+
+
+def test_a_missing_field_diagnostic_names_the_field() -> None:
+    with pytest.raises(PrgroomError) as caught:
+        mint_installation_token(RouteTableHttp(routes_with(("GET", "/app"), (200, {}))), "jwt", REF)
+    assert "slug" in caught.value.detail
+
+
+def test_the_mint_calls_the_app_then_the_installation_then_the_token_post() -> None:
+    # The installation id the token POST addresses comes from the lookup, so an
+    # order that mints first could only be addressing a stale or guessed id.
+    http = RouteTableHttp(BASE_ROUTES)
+    mint_installation_token(http, "jwt", REF)
+    assert [(method, url.removeprefix(GITHUB_API)) for method, url, _, _ in http.calls] == [
+        ("GET", "/app"),
+        ("GET", "/repos/octo/demo/installation"),
+        ("POST", "/app/installations/42/access_tokens"),
+    ]
