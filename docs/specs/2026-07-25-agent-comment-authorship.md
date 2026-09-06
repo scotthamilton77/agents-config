@@ -348,7 +348,8 @@ it closes the dangerous direction unconditionally, and it depends on no adoption
 no secret, and no conversion. It is the only option that is already true the
 moment it ships. (i) second because it fixes the false attribution (iv) leaves
 standing, it is continuous with work S6-D2 already mandates for a subset rather
-than new machinery, and the App is proven on this repo. Sequenced this way, each
+than new machinery, and the App identity is installed and its approvals count on
+this repo (only the client that posts as it is archive-only, Slice D's lift). Sequenced this way, each
 step is safe alone: (iv) does not depend on (i) being complete, and (i) improves
 observability without being load-bearing for authorization.
 
@@ -494,7 +495,8 @@ constraint is a different gate from that predicate and is in scope here, at
 AUTH-C3 and AUTH-C4. The verdict harvester and merge-eligibility evaluator
 (S8, D13). The interventions-per-PR instrument (S10,
 D19) — this record establishes only that its substrate is not yet separable.
-Building or reconfiguring the merge-approver App, which pre-exists and is proven.
+Building or reconfiguring the merge-approver App identity, which is already installed
+with the grants it needs; lifting the archived client that posts as it is Slice D work.
 Repairing the unowned rule-based merge-authorization channel identified at the
 end of §2 — a real and more immediately reachable hole, needing its own item.
 Correcting `AGENTS.md` and the S6 spec's claim that three archived PR skills
