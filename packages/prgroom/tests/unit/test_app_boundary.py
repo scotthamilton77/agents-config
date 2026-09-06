@@ -284,7 +284,10 @@ def test_an_unexpected_status_at_any_endpoint_stops_the_flow(
     """
     if status == EXPECTED_STATUS[endpoint]:
         pytest.skip("the status this call expects")
-    http = RouteTableHttp(routes_with(endpoint, (status, BASE_ROUTES[endpoint][1])))
+    # Unique per endpoint, so an excerpt assertion cannot pass on a substring
+    # some other call happened to put in the message.
+    marker = f"body-of-{endpoint[0]}-{endpoint[1]}"
+    http = RouteTableHttp(routes_with(endpoint, (status, {"marker": marker})))
     with pytest.raises(PrgroomError) as caught:
         call_approve(http)
 
@@ -294,6 +297,13 @@ def test_an_unexpected_status_at_any_endpoint_stops_the_flow(
         else ErrorCode.RUNTIME_APPROVER_API_FAILED
     )
     assert caught.value.code is expected_code
+
+    if expected_code is ErrorCode.RUNTIME_APPROVER_API_FAILED:
+        # The status says what went wrong and the excerpt says what came back;
+        # a diagnostic carrying one without the other cannot be acted on.
+        rendered = caught.value.render()
+        assert str(status) in rendered
+        assert marker in rendered
 
     method, url, _, _ = http.calls[-1]
     assert (method, url) == (endpoint[0], GITHUB_API + endpoint[1])
