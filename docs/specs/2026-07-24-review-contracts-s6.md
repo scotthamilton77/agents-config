@@ -65,9 +65,9 @@ branch-resident verdict self-invalidates — committing it advances the head it
 must match — pollutes history, conflicts across concurrent PRs, and is
 writable by the reviewed party, which would demand a separate attestation
 layer to restore trust.) The medium is a **pull request review authored by
-the App**: its body carries the verdict JSON verbatim, one inline review
-comment per finding sits at the file and line the finding names (a finding
-with no locatable anchor lives in the body only; a clean verdict posts the
+the App**: its body carries the verdict JSON verbatim, an inline review
+comment sits at the file and line of each finding that names one (a finding
+with no locatable anchor lives in the body only, so a clean verdict posts the
 envelope with no inline comments), and the review is pinned to the reviewed
 head SHA. The review is submitted — a pending or draft review is not posted
 and is not a verdict. A check run is not required. The approval is a second,
@@ -490,7 +490,9 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   settings now; names the S8 merge-eligibility-evaluation handoff for the
   automated configuration check.
 - **S6-D7** No class contract declares a numeric round cap; the loop is
-  bounded by the trend checkpoint. Emitting the round after a due checkpoint
+  bounded by the trend checkpoint, which falls due after every second
+  consecutive non-clean round — the first after round 2, never after a clean
+  round. Emitting the round after a due checkpoint
   with no recorded checkpoint verdict is refused, and emitting any round after
   a terminate verdict (bounce upstream or escalate to the human) is refused
   with the escalation signal separable in the refusal (observable: the refusal

@@ -172,26 +172,22 @@ It needs its own tracker item; this record does not fix it.
 ## 3. Boundary against the S6 review contracts
 
 `docs/specs/2026-07-24-review-contracts-s6.md` Slice D already owns three things
-this record must not restate: **S6-D2** puts machine-posted PR comments and
-approvals on the App identity, reusing the merge-guard plumbing; **S6-D3** makes
+this record must not restate: **S6-D2** puts the verdict medium — the posted
+verdict review and the approval it authorizes — on the App identity, and nothing
+else; **S6-D3** makes
 merge eligibility require an App-posted terminal-clean verdict and rejects a
 verdict-shaped payload from any other identity, fail-closed; **S6-D4** makes a
 human PR comment an intervention that never enters the fix loop, and asserts
 machine and human comments are separable on the PR.
 
-**S6-D2 is written wider than S6 can deliver — a contradiction in that spec, not
-a gap this one fills.** Read literally, S6-D2 covers every machine-posted PR
-comment and approval, unqualified. prgroom's issue comments and review-thread
-replies are comments, so its text already reaches two of the eight write paths in
-§1: the `_post_reply` issue comment or thread reply, and the routed-memory thread
-reply. But S6's own §4 assigns prgroom's carve — the verdict harvester and the
-merge-eligibility evaluator — to S8, and no S6 criterion converts
-`prgroom.gh.client.GhCli` or names a grooming write. The criterion is therefore
-broader than the slice that owns it can satisfy, and an agent reading S6-D2 as met
-once the verdict medium ships will be wrong about every grooming write. That is
-flagged here for repair in S6 — a criterion that overstates its own slice is
-exactly the kind of contradiction to surface rather than route around — and this
-record claims none of S6-D2's scope as its own.
+**S6-D2 reaches the verdict medium and nothing else.** It says so in terms:
+non-verdict machine writes remain owner-credentialed after S6, and meeting the
+criterion is not a claim that they were converted. prgroom's issue comments and
+review-thread replies — two of the eight write paths in §1, the `_post_reply`
+issue comment or thread reply and the routed-memory thread reply — are therefore
+outside S6-D2, as is every other grooming write; S6's own §4 assigns prgroom's
+carve and the conversion of its shared `gh` client to S8. This record claims none
+of S6-D2's scope as its own and covers the owner-credentialed remainder.
 
 This record adds four things no S6 criterion delivers.
 
