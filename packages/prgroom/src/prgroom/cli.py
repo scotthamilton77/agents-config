@@ -1,4 +1,4 @@
-"""prgroom CLI root — typer app wiring the MVP verb set (§1).
+"""prgroom CLI root — typer app wiring every registered verb.
 
 Argument shapes here are intentionally minimal — they exist so
 ``prgroom <verb> --help`` works and so the entry point resolves.
@@ -29,14 +29,16 @@ from prgroom.agent.dispatcher import (
 )
 from prgroom.agent.subprocess_runner import SubprocessAgentRunner
 from prgroom.agent.usage import append_usage
-from prgroom.config import PrgroomConfig
+from prgroom.config import ApproverConfig, PrgroomConfig
 from prgroom.deps import Deps
 from prgroom.errors import ErrorCode, PreconditionError, PrgroomError, exit_code_for_tier
 from prgroom.escalation import Sink, StderrSink
 from prgroom.gh import GhClient
+from prgroom.gh.app import HttpTransport, UrllibTransport
 from prgroom.gh.client import GhCli
 from prgroom.git import GitCli, GitClient
 from prgroom.lifecycle import (
+    approve_pr,
     cluster_pr,
     fix_pr,
     is_graph_terminal,
@@ -48,13 +50,14 @@ from prgroom.lifecycle import (
     resolve_escalated_pr,
     resolve_pr,
 )
+from prgroom.lifecycle.approve import resolve_key_path
 from prgroom.lifecycle.human_review import derive_human_review, fetch_human_review_inputs
 from prgroom.lifecycle.locking import with_lock
 from prgroom.lifecycle.push import has_queued_fix_commits
 from prgroom.lifecycle.resolver import apply_retry_budget_gate, retry_budget_exhausted
 from prgroom.lifecycle.run import Mode, run_lifecycle, wait_lifecycle
 from prgroom.lifecycle.status import build_status
-from prgroom.proc import SubprocessRunner
+from prgroom.proc import CommandRunner, SubprocessRunner
 from prgroom.prsession.enums import DispositionKind
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.registry import resolve_store
@@ -95,6 +98,36 @@ def _build_git() -> GitClient:
     production-wiring line is exercised by the git fit tests against ``GitCli``.
     """
     return GitCli(SubprocessRunner())  # pragma: no cover - production boundary wiring
+
+
+def _build_http() -> HttpTransport:
+    """Build the production App-API transport (real network boundary).
+
+    A seam: tests monkeypatch this to inject a route-table fake. App-authenticated
+    calls cannot ride the ``gh`` CLI's own auth, so this boundary is separate from
+    the one :func:`_build_gh` wires.
+    """
+    return UrllibTransport()  # pragma: no cover - production boundary wiring
+
+
+def _build_runner() -> CommandRunner:
+    """Build the production subprocess runner for the JWT signer's ``openssl`` call.
+
+    A seam: tests monkeypatch this to inject a recorded-response runner.
+    """
+    return SubprocessRunner()  # pragma: no cover - production boundary wiring
+
+
+def _validated_head_sha(value: str) -> str:
+    """Normalize ``--head-sha`` to lowercase hex, rejecting anything else at parse.
+
+    Rejected here rather than at the API so a typo costs no network call, and
+    lowercased so a SHA pasted in uppercase still matches what GitHub reports.
+    """
+    if len(value) != 40 or not all(c in "0123456789abcdefABCDEF" for c in value):
+        msg = "must be a 40-character hex commit SHA"
+        raise typer.BadParameter(msg)
+    return value.lower()
 
 
 class ResolveAsKind(StrEnum):
@@ -656,6 +689,64 @@ def run(
     )
     if code != 0:
         raise typer.Exit(code=code)
+
+
+@app.command()
+def approve(
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+    head_sha: str = typer.Option(
+        ...,
+        "--head-sha",
+        callback=_validated_head_sha,
+        help="The 40-character head SHA this approval is pinned to.",
+    ),
+    facts: str = typer.Option(
+        "{}",
+        "--facts",
+        help="Authorizing facts JSON, recorded verbatim in the review body.",
+    ),
+    project_config: str = typer.Option(
+        "project-config.toml",
+        "--project-config",
+        # Square brackets are rich markup in help output, so the TOML table is
+        # named without them.
+        help="Project config whose merge-policy approver table names the App.",
+    ),
+) -> None:
+    """Submit the configured GitHub App's approving review, pinned to --head-sha.
+
+    Not a grooming verb: it reads and writes no state and takes no PR lock. It
+    attests one commit and never authorizes a merge. Nothing is retried — every
+    failure is a hand-off to a human, reported with its own error code — and an
+    approval this App has already posted at the same head is a success no-op.
+    The App's identity comes from the project config; its key path comes from the
+    environment variable that config names.
+    """
+    try:
+        ref = PRRef.parse(pr)
+        approver = _load_approver(Path(project_config))
+        key_path = resolve_key_path(approver, os.environ)
+        message = approve_pr(
+            http=_build_http(),
+            runner=_build_runner(),
+            ref=ref,
+            head_sha=head_sha,
+            facts=facts,
+            app_id=approver.app_id,
+            key_path=key_path,
+            now=int(Deps.system().clock.now().timestamp()),
+        )
+        sys.stdout.write(message + "\n")
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
+
+
+def _load_approver(path: Path) -> ApproverConfig:
+    """Read the approver block, mapping the loader's ``ValueError`` onto its code."""
+    try:
+        return ApproverConfig.load(path)
+    except ValueError as exc:
+        raise PreconditionError(ErrorCode.PRECONDITION_APPROVER_CONFIG, detail=str(exc)) from exc
 
 
 def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:

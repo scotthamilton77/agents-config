@@ -97,6 +97,10 @@ class ErrorCode(StrEnum):
     PRECONDITION_NO_STATE = "PRECONDITION_NO_STATE"
     PRECONDITION_LOCK_HELD = "PRECONDITION_LOCK_HELD"
     PRECONDITION_STORE_UNAVAILABLE = "PRECONDITION_STORE_UNAVAILABLE"
+    PRECONDITION_APPROVER_CONFIG = "PRECONDITION_APPROVER_CONFIG"
+    PRECONDITION_APPROVER_KEY_ENV_UNSET = "PRECONDITION_APPROVER_KEY_ENV_UNSET"
+    PRECONDITION_APPROVER_KEY_UNREADABLE = "PRECONDITION_APPROVER_KEY_UNREADABLE"
+    PRECONDITION_APPROVER_HEAD_MOVED = "PRECONDITION_APPROVER_HEAD_MOVED"
     # RUNTIME_*
     RUNTIME_GH_TRANSIENT = "RUNTIME_GH_TRANSIENT"
     RUNTIME_GH_TERMINAL = "RUNTIME_GH_TERMINAL"
@@ -108,6 +112,9 @@ class ErrorCode(StrEnum):
     RUNTIME_AGENT_TIMEOUT = "RUNTIME_AGENT_TIMEOUT"
     RUNTIME_CANCELLED_SIGINT = "RUNTIME_CANCELLED_SIGINT"
     RUNTIME_CANCELLED_SIGTERM = "RUNTIME_CANCELLED_SIGTERM"
+    RUNTIME_APPROVER_SIGN_FAILED = "RUNTIME_APPROVER_SIGN_FAILED"
+    RUNTIME_APPROVER_NOT_INSTALLED = "RUNTIME_APPROVER_NOT_INSTALLED"
+    RUNTIME_APPROVER_API_FAILED = "RUNTIME_APPROVER_API_FAILED"
     # CONTRACT_*
     CONTRACT_CLUSTER_MALFORMED = "CONTRACT_CLUSTER_MALFORMED"
     CONTRACT_CLUSTER_COVERAGE = "CONTRACT_CLUSTER_COVERAGE"
@@ -227,6 +234,29 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         why="--store/PRGROOM_STORE named an adapter not usable in this build",
         how="use --store file (the default); 'bd' is deferred to a later release",
     ),
+    ErrorCode.PRECONDITION_APPROVER_CONFIG: RegistryEntry(
+        what="the project config's approver block is missing or malformed",
+        why="`approve` takes the App's identity from that block; there is no flag fallback",
+        how=(
+            "add a [merge-policy.approver] table with type = 'github-app', a positive "
+            "app-id, and a key-path-env naming the env var that holds the key path"
+        ),
+    ),
+    ErrorCode.PRECONDITION_APPROVER_KEY_ENV_UNSET: RegistryEntry(
+        what="the environment variable named by key-path-env is unset or empty",
+        why="the App's private key is located indirectly so its path stays out of the config",
+        how="export the named variable with the path to the App's private key PEM",
+    ),
+    ErrorCode.PRECONDITION_APPROVER_KEY_UNREADABLE: RegistryEntry(
+        what="the App's private key file cannot be opened for reading",
+        why="the JWT cannot be signed without it, and a signer failure is not diagnosable",
+        how="check the path the env var names, and that its permissions allow this user",
+    ),
+    ErrorCode.PRECONDITION_APPROVER_HEAD_MOVED: RegistryEntry(
+        what="the PR's live head differs from the head SHA the approval was pinned to",
+        why="an approving review must attest the exact commit its caller decided on",
+        how="re-decide against the new head, then re-invoke `approve` with that SHA",
+    ),
     ErrorCode.RUNTIME_GH_TRANSIENT: RegistryEntry(
         what="gh API returned 5xx or rate-limited with Retry-After",
         why="the external service is degraded",
@@ -276,6 +306,21 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         what="SIGTERM received during a blocking internal (scheduler/container shutdown)",
         why="an external-initiated stop; non-retryable",
         how="inspect state via `prgroom status`; the scheduler must treat 143 as terminal",
+    ),
+    ErrorCode.RUNTIME_APPROVER_SIGN_FAILED: RegistryEntry(
+        what="openssl was missing, timed out, or refused to sign the App JWT",
+        why="RS256 signing is shelled out, so a missing or unusable key or binary fails here",
+        how="install openssl; confirm the key is an unencrypted PEM (an encrypted one is rejected)",
+    ),
+    ErrorCode.RUNTIME_APPROVER_NOT_INSTALLED: RegistryEntry(
+        what="the configured App has no installation on this repository",
+        why="an installation token can only be minted where the App is installed",
+        how="install the App on the repo from its settings page, then re-invoke",
+    ),
+    ErrorCode.RUNTIME_APPROVER_API_FAILED: RegistryEntry(
+        what="a GitHub App API call was unreachable or answered with an unexpected status",
+        why="the token mint or the review submission did not succeed; nothing was retried",
+        how="read the detail's status and body; fix the credential or permission, then re-invoke",
     ),
     ErrorCode.CONTRACT_CLUSTER_MALFORMED: RegistryEntry(
         what="cluster output JSON failed schema validation",

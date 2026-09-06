@@ -52,14 +52,15 @@ but the full gate must pass before push.
   agents are invoked only for the bounded fix/cluster steps.
 - **Injected I/O, pure lifecycle.** External access (GitHub, git, the state
   store, escalation sinks) is reached through Protocols — `GhClient` (`gh/`),
-  `GitClient` (`git/`), `Store` (`prsession/`), `EscalationSink`
+  `HttpTransport` (`gh/`, for App-authenticated calls the `gh` CLI's own auth
+  cannot carry), `GitClient` (`git/`), `Store` (`prsession/`), `EscalationSink`
   (`escalation.py`). Lifecycle functions take these as arguments and stay pure
   and testable; no module reaches a client from a global.
 - **Typed, self-diagnosing errors.** Expected failures are modeled
   (`PrgroomError` tiers, precondition errors with a structured what/why/how
   stderr block, `GhNotFoundError` as a typed-but-not-fatal 404 signal).
   Exit codes follow `sysexits`.
-- Layout: `cli.py` (the 11 verbs), `lifecycle/` (the run-loop, verb-error
+- Layout: `cli.py` (the registered verbs), `lifecycle/` (the run-loop, verb-error
   policy, quiescence), `prsession/` (state store + PR ref + memory), `gh/` /
   `git/` (Protocol adapters), `agent/` (cluster/fix dispatch), `deps.py`
   (clock/randomness injection seam), `config.py`, `errors.py`,
@@ -68,8 +69,11 @@ but the full gate must pass before push.
 ## Verbs
 
 `poll`, `cluster`, `fix`, `push`, `rereview`, `reply`, `resolve`,
-`resolve-escalated`, `wait`, `status`, `run`. `run` is the aggregate loop;
-`status` emits the merge-gate envelope. `sweep` (cross-PR autonomous mode) is
+`resolve-escalated`, `wait`, `status`, `run`, `approve`. `run` is the aggregate
+loop; `status` emits the merge-gate envelope. `approve` stands outside the
+grooming loop entirely — it submits a GitHub-App-authored approving review pinned
+to a head SHA the caller names, taking no PR lock and touching no grooming state.
+`sweep` (cross-PR autonomous mode) is
 design-of-record only (charter D13, "prgroom is carved, not finished",
 forbids building it) and is not a registered command.
 
@@ -111,7 +115,9 @@ possible for a no-installer or specific-checkout workflow.
 ## Do not run grooming against a live PR automatically
 
 Never invoke `prgroom run`/`push`/`reply`/`resolve` against a real PR to "try it
-out" — those verbs mutate GitHub. The gate's `prgroom --help` entry-verify is
+out" — those verbs mutate GitHub. `approve` is under the same ban and then some:
+it posts a review that a branch ruleset counts, so an exploratory run leaves an
+approval standing on somebody's PR. The gate's `prgroom --help` entry-verify is
 the only sanctioned automatic invocation.
 
 ## Observability channels

@@ -1,11 +1,13 @@
 # project-config.toml
 # Per-project configuration, read at the repository root.
 #
-# Two consumers read this file, and between them they read two sections:
+# Three consumers read this file, and between them they read three sections:
 #   installer -- [install] (the persisted profile selection; absent until the
 #                installer writes it)
 #   doc-lint  -- [project] (the name, as the work-item namespace this repo's
 #                own tracker mints under)
+#   prgroom   -- [merge-policy.approver] (the GitHub App identity the `approve`
+#                verb posts an approving review under)
 #
 # The `work` facade reads none of it. Its vocabulary lives in
 # .work/config.toml, which `work init` owns.
@@ -33,9 +35,10 @@ name = "agents-config"
 
 # ---------------------------------------------------------------------------
 # [merge-policy] — merge authorization.
-# Read by: no code. The root AGENTS.md sends a reader here to confirm that no
-#          rule-based policy is configured, so the live key below is the answer
-#          to that question and exists for that reason alone.
+# Read by: `prgroom approve`, and only the [merge-policy.approver] sub-table.
+#          No code reads merge-authorization: the root AGENTS.md sends a reader
+#          here to confirm that no rule-based policy is configured, so that key
+#          is the answer to that question and exists for that reason alone.
 #
 # Commented-out keys anticipate future work (agents-config-9k9.69) and are not
 # policy. Uncomment a key only in the change that deploys something reading it.
@@ -57,13 +60,18 @@ merge-authorization = "explicit"
 # merge-authorization = "rule-based"
 # merge-rule          = "bot-quiescence"
 
-# Anticipates future work: a GitHub-App-attested approving review satisfying branch
-# protection on an authorized autonomous merge.
+# The GitHub App identity `prgroom approve` submits an approving review under, so
+# that a merge a human has instructed can satisfy the branch ruleset's
+# approving-review requirement. The private key is never here: key-path-env names
+# the environment variable that holds its path. The App's login is read from the
+# App at runtime, so renaming it changes nothing here. An approval it posts attests
+# the head SHA it was handed and authorizes nothing — the instruction to merge is
+# still a human's, per merge-authorization above.
 # Design: docs/specs/2026-07-11-merge-approver-app-design.md
-# [merge-policy.approver]
-# type         = "github-app"
-# app-id       = 4275336
-# key-path-env = "MERGE_GUARD_APPROVER_KEY_PATH"
+[merge-policy.approver]
+type         = "github-app"
+app-id       = 4275336
+key-path-env = "MERGE_GUARD_APPROVER_KEY_PATH"
 
 # Anticipates future work: which reviews to expect, and how many human approvals a
 # merge needs. Reviews are fetched today — `prgroom poll` queries gh for review

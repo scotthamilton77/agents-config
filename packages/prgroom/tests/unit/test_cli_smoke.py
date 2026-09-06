@@ -33,31 +33,37 @@ MVP_VERBS = [
     "run",
 ]
 
+# `approve` is registered but is not a grooming verb: it takes no PR lock, reads
+# and writes no grooming state, and the `run` aggregate never threads it.
+NON_LIFECYCLE_VERBS = ["approve"]
+
+REGISTERED_VERBS = [*MVP_VERBS, *NON_LIFECYCLE_VERBS]
+
 
 def test_help_exits_zero() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
 
 
-@pytest.mark.parametrize("verb", MVP_VERBS)
-def test_help_lists_every_mvp_verb(verb: str) -> None:
+@pytest.mark.parametrize("verb", REGISTERED_VERBS)
+def test_help_lists_every_registered_verb(verb: str) -> None:
     result = runner.invoke(app, ["--help"])
     assert verb in result.output
 
 
-@pytest.mark.parametrize("verb", MVP_VERBS)
+@pytest.mark.parametrize("verb", REGISTERED_VERBS)
 def test_each_verb_has_its_own_help(verb: str) -> None:
     result = runner.invoke(app, [verb, "--help"])
     assert result.exit_code == 0
 
 
-def test_registered_commands_match_mvp_verbs_exactly() -> None:
+def test_registered_commands_match_the_expected_set_exactly() -> None:
     # The tests above only check that each expected verb is present; an
     # unintended extra command (e.g. a stub reintroduced without updating
-    # MVP_VERBS) would still pass them. Comparing the actual registered set
+    # the roster) would still pass them. Comparing the actual registered set
     # catches that.
     click_app = typer.main.get_command(app)
-    assert set(click_app.commands) == set(MVP_VERBS)
+    assert set(click_app.commands) == set(REGISTERED_VERBS)
 
 
 # Every MVP verb above is wired for real; behavior is covered by the per-verb

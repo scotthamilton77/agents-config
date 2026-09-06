@@ -7,6 +7,10 @@ verb-error policy. None of it touches the clock, RNG, or the network directly �
 time and randomness arrive via the injected :class:`~prgroom.deps.Deps` seams and
 every gh/git effect lives behind the verb internals.
 
+``approve_pr`` sits here as a verb body but outside that spine: the ``run``
+aggregate never threads it, it touches no grooming state, and it reaches GitHub
+under the App identity rather than the operator's ``gh`` auth.
+
 The terminal sets distinguish the two notions of "done" (§3.1):
 
 - **terminal-for-CLI** — the CLI takes no further autonomous action; re-entry
@@ -17,6 +21,7 @@ The terminal sets distinguish the two notions of "done" (§3.1):
 
 from __future__ import annotations
 
+from prgroom.lifecycle.approve import approve_pr
 from prgroom.lifecycle.cluster import cluster_pr
 from prgroom.lifecycle.fix import fix_pr
 from prgroom.lifecycle.poll import poll_pr
@@ -30,6 +35,7 @@ from prgroom.prsession.enums import PRPhase
 __all__ = [
     "GRAPH_TERMINAL_PHASES",
     "TERMINAL_FOR_CLI_PHASES",
+    "approve_pr",
     "cluster_pr",
     "fix_pr",
     "is_graph_terminal",

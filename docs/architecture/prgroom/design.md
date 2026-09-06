@@ -65,6 +65,8 @@ The `monitor-pr` skill that used to drive the interactive pattern was retired, a
 
 The table below is the MVP verb set (§1); all but `sweep` are user-facing subcommands today — `sweep`'s row states its design-of-record, unregistered status. `cap-guard` is a built **internal pre-push pipeline step** (a `VerbStep` threaded by `run`), not an exposed subcommand. `verify` is designed as a second internal step (§3.4/§6) but is not built into the pipeline — see §3.3 for the built order of record.
 
+The registered command surface is this set plus one verb that is not part of it: `approve` submits the GitHub-App-attested approving review, takes no PR lock, reads and writes no grooming state, and is never threaded by `run`. Its row is in the verb/contract table below.
+
 | Verb | Role |
 |---|---|
 | `poll <pr>` | Query gh for new comments, reviews, and CI status; update state. Short-circuits if SHA unchanged. |
@@ -603,6 +605,7 @@ Adapter selection is unbuilt: the CLI always constructs the stderr sink. Treat t
 | `resolve-escalated` | none | human-initiated single-item reclassification |
 | `wait` | none | sleep + re-poll; quiescence may transition phase |
 | `run` | Cluster + Fix chained | full lifecycle loop (§3.3) |
+| `approve` *(outside the grooming loop)* | none | mint a GitHub App installation token; refuse if the PR's live head is not the named one; POST an `APPROVE` review pinned to that head, or recognize the App's own existing approval there as a no-op |
 
 ### Contract is the API, runtime is swappable (per-contract TOML)
 
