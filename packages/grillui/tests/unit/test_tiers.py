@@ -26,6 +26,7 @@ from grillui.schemas import (
     MootnessObligation,
     Option,
     Thread,
+    ThreadConclusion,
     ThreadProjection,
 )
 from grillui.session import open_session
@@ -73,6 +74,7 @@ from grillui.tiers import (
     SUPERSEDE_RULE,
     SYSTEM_PROMPTS,
     THREAD_CLOSING,
+    THREAD_REPLY_RULE,
     TierConfig,
     UnknownTierError,
     UnreadableLimitError,
@@ -323,7 +325,9 @@ VOCABULARY = (
     "queue",
     "pending",
     "notice",
+    "grill-master",
     "thread",
+    "channel",
     "stub",
     "fold",
     "seq",
@@ -410,9 +414,15 @@ def test_the_baseline_says_what_the_reply_is_and_when_the_seat_is_called(
 
     assert "Your reply is one document" in brief
     assert "applies to the board at once or puts in the human's queue" in brief
-    assert "when the human does something your own channel owes a reply to" in brief
+    assert "when the human does something this discussion owes a reply to" in brief
     assert "and not otherwise" in brief
     assert "each time the human acts" not in brief
+    # The opening paragraph reaches for no word the glossary owes: `channel` and
+    # `thread` are both defined below it, and a term used above its own line is
+    # the defect the glossary exists to end.
+    opening = brief[: brief.index("These words mean one thing here")]
+    for term in ("channel", "thread", "grill-master"):
+        assert term not in opening, term
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
@@ -438,7 +448,19 @@ def test_the_glossary_governs_the_board_and_not_the_plan(tier: str, agent: str) 
     assert "in the board you are given, exactly" not in brief
     # A notice is an entry, not a message: `text` is the turn's only message.
     assert "one entry of the queue that the human reads rather than applies" in brief
-    assert "on nothing where it does not" in brief
+    assert "It is pinned to a decision where it names one in `target`" in brief
+    # The queue holds notices whether they name a decision or not, which is what
+    # the notice line and the informational contract both allow.
+    assert "the notices you sent, pinned to a decision or not" in brief
+    assert "to nothing where it does not" in brief
+    # `stands` is the verdict and nothing else. Used for a notice's placement it
+    # is the same word for two things in one prompt, and the reader meets the
+    # wrong one first.
+    assert "stands on a" not in brief
+    assert "standing on a" not in brief
+    # `notice` also names a string inside a mandate, so the line says so rather
+    # than leaving the example to contradict the glossary.
+    assert "a different thing under the same spelling" in brief
     # The page prints `title` as the question and `body` beneath it.
     assert "a `title` holding the question" in brief
     assert "a `body` stating the question more fully" in brief
@@ -466,7 +488,8 @@ def test_the_grill_master_brief_states_the_board_effects_the_seat_cannot_see(tie
 
     assert "until they apply it or dismiss it" in brief
     assert "A decision with a change of yours waiting on it cannot be answered" in brief
-    assert "A notice standing on a decision holds nothing up" in brief
+    assert "A notice pinned to a decision holds nothing up" in brief
+    assert "except an `elicit-alert` with `blocking` true, which locks its decision" in brief
     assert "every decision settled on top of it goes stale, transitively" in brief
     assert "judged with a `resolve-stale`" in brief
 
@@ -506,6 +529,12 @@ def test_the_grill_master_is_briefed_as_the_maps_author_on_either_tier(tier: str
 
     assert GRILL_MASTER_MANDATE in brief
     assert "You write the map, and you are the only agent that changes it" in brief
+    # Four things bring this turn about, and three of them are not an answer.
+    # A mandate written around the answer alone leaves the seat routing a folded
+    # conclusion looking for one, and reasoning from whichever it settles on.
+    assert "answers a decision, applies an invalidation, folds a thread, or asks for a" in brief
+    assert "Whichever of those it was, your work is the same" in brief
+    assert "The sections below say which one brought this turn about" in brief
     # Scoped to agents. The human's own answers settle decisions with no reply
     # of anyone's, and the board handed to this turn already carries them -- a
     # seat reading the clause without that scope is invited to re-record them
@@ -802,6 +831,31 @@ def test_a_tier_this_configuration_never_heard_of_has_no_limit_to_give() -> None
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_thread_agent_is_told_the_shape_its_driver_reads(tier: str) -> None:
+    """
+    Given the thread agent's brief on each tier
+    When it is read for what to send back
+    Then it says the ordinary reply is prose, that the object form exists for
+         the offer and carries `text` beside it, and that anything else is
+         recorded as the turn's prose exactly as written.
+
+    The driver reads a thread reply as prose unless it is an object carrying
+    `text` and the offer. The grill-master's brief spends a page on a document
+    shape; this seat's said only when to write one key of an object it was never
+    told the rest of. A seat that fills that in with the shape it read about
+    elsewhere has its JSON published to the human verbatim.
+    """
+    brief = system_prompt(tier, THREAD_AGENT)
+
+    assert THREAD_REPLY_RULE in brief
+    assert "Your reply is what you are saying to the human, as plain prose" in brief
+    assert "no JSON, no markdown wrapper, no keys" in brief
+    assert "send a JSON object carrying `text`, your prose, and `proposed_answer`" in brief
+    assert "recorded as the turn's prose exactly as you wrote it" in brief
+    assert THREAD_REPLY_RULE not in system_prompt(tier, GRILL_MASTER)
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
 def test_the_thread_agent_prompt_bars_an_offer_on_a_thread_anchoring_nothing(tier: str) -> None:
     """
     Given the thread-agent system prompt a driver composes for each tier
@@ -874,7 +928,7 @@ def test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_ca
     assert "If the human asks you to change the map" in brief
     assert "say plainly that you cannot" in brief
     assert "folding this thread is what puts your conclusion in front of the grill-master" in brief
-    assert "Agreeing to do it is a promise nothing keeps" in brief
+    assert "Agreeing to do it is a promise nothing keeps" not in brief
     # And no line naming it the map's author, on either tier: a brief that both
     # refuses a map change and claims sole authorship of the map is one the
     # refusal test alone would pass.
@@ -944,7 +998,10 @@ def test_the_brief_states_the_two_rules_the_gate_does_not_enforce(tier: str) -> 
 
     assert "An `add-node` carries `short` and `body`" in brief
     assert "arrives as a blank row the human cannot read" in brief
-    assert "A `revise` carries at least one of `short`, `title`, `body` or `options`" in brief
+    assert (
+        "A `revise` carries at least one of `short`, `title`, `body`, `options` or `prereqs`"
+        in brief
+    )
     assert "carrying none of them is accepted and changes nothing" in brief
 
 
@@ -1066,23 +1123,35 @@ def test_each_channel_closes_on_the_turn_its_role_actually_takes(
     entries: list[LogEntry],
 ) -> None:
     """
-    Given a map dispatch and a thread dispatch
+    Given a map dispatch answering a decision, a map dispatch routing a thread's
+          conclusion, and a thread dispatch
     When each prompt is read from its last line
-    Then the map is asked for its document and the thread is asked to answer
-         what the human said, and neither closing reaches the other channel.
+    Then both map turns are asked for the document in words that hold whatever
+         brought them about, the thread is asked to answer what the human said,
+         and neither closing reaches the other channel.
 
-    The human asked the map nothing; they answered a decision. A closing line
-    telling that turn to answer the last thing they said is a conversational ask
-    on a document turn, and it is the last line read before the reply is
-    written -- which is where a turn that owes updates and rulings writes a
-    paragraph about their option instead.
+    The human asked the map nothing; they answered a decision, or applied an
+    invalidation, or folded a thread, or called for a reassessment. A closing
+    line telling that turn to answer the last thing they said is a
+    conversational ask on a document turn, and one naming their answer is wrong
+    on the three map turns no answer caused.
     """
     on_the_map = compose("{}", dispatch_context(), entries)
+    routing = compose(
+        "{}", dispatch_context(conclusion=ThreadConclusion(thread="t-d1", text="x")), entries
+    )
     on_a_thread = compose("{}", dispatch_context("t-d1"), entries)
 
     assert on_the_map.endswith(MAP_CLOSING)
+    assert routing.endswith(MAP_CLOSING)
+    # The human folds; this turn acts on what was folded. Reusing the verb for
+    # the receiving turn gives one word two actors in the same prompt.
+    assert "send the updates it calls for" in routing
+    assert "fold it in as updates" not in routing
     assert "the rulings named in the obligation section above" in on_the_map
     assert "an empty list where this dispatch carries no such section" in on_the_map
+    # The closing holds for a turn no answer caused, so it names none.
+    assert "the human's answer" not in MAP_CLOSING
     assert THREAD_CLOSING not in on_the_map
 
     assert on_a_thread.endswith(THREAD_CLOSING)
@@ -1134,6 +1203,12 @@ def test_a_turn_on_the_map_thread_is_told_to_state_which_decisions_change_and_ho
     assert MAP_THREAD_MANDATE in prompt
     assert "which decisions change and how" in prompt
     assert "folding it is what hands your statement to the grill-master" in prompt
+    # The four verbs carry their meaning here. This seat's brief holds no update
+    # contract, so a bare "unsettled" is a word it has been given nowhere.
+    assert "invalidated so it stops being offered" in prompt
+    assert "revised so it asks a different question" in prompt
+    assert "unsettled so its answer is withdrawn and it can be answered again" in prompt
+    assert "added as a question the map does not carry" in prompt
 
 
 def test_the_map_thread_mandate_reaches_no_other_channel(entries: list[LogEntry]) -> None:

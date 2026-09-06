@@ -570,6 +570,11 @@ def test_the_conflict_dispatch_tells_the_turn_why_it_was_called(log: SessionLog)
     assert NOTICE in prompt
     assert SUPERSEDE_CONFLICT_RULE in prompt
     assert REASSESS_RULE not in prompt
+    # The human applied it, so it was never a notice: a notice is the queue entry
+    # they read rather than apply, and calling this one that contradicts the
+    # sentence beside it saying they had already acted.
+    assert "You withdrew your 'elicit-alert' change" in prompt
+    assert "'elicit-alert' notice" not in prompt
 
 
 def test_the_grill_masters_standing_brief_says_how_to_withdraw() -> None:

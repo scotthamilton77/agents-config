@@ -1169,8 +1169,12 @@ def test_the_document_rule_shows_one_example_per_kind_that_the_gate_would_take()
     An example a seat copied and had refused is worse than no example: the turn
     is lost for following the brief. So the examples are held as objects and put
     through the same two checks the turn will meet, rather than typed into prose
-    that nothing reads back. `basis` is not among them -- the appender does not
-    enforce it, and the basis rule is where it is asked for.
+    that nothing reads back.
+
+    `basis` is in no example, because the appender does not enforce it and an
+    example carrying it would teach the field as this kind's rather than as
+    every kind's. The format rule names it once as the field every update
+    carries whatever its kind, and the basis rule is what says what it is.
     """
     brief = system_prompt(HEAVY_TIER, GRILL_MASTER)
 
@@ -1179,7 +1183,8 @@ def test_the_document_rule_shows_one_example_per_kind_that_the_gate_would_take()
         assert payload_problem(kind, example) is None, kind
         assert document_problem(document(updates=[example])) is None, kind
         assert json.dumps(example) in brief, kind
-    assert "`basis`" not in DOCUMENT_FORMAT_RULE
+    assert all("basis" not in example for example in UPDATE_EXAMPLES.values())
+    assert "Every update also carries `basis`, whatever its kind" in DOCUMENT_FORMAT_RULE
     assert "`basis`" in BASIS_RULE
 
 
