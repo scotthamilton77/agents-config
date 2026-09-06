@@ -9,10 +9,11 @@ contracts: a typed verdict artifact, panels of single-lens reviewer prompts
 that carry the review contract and never the house rulebook, a
 pre-implementation AC-attack round, and a
 self-managed invocation that posts under a bot identity and fails merges closed
-when the machinery is broken. S6 ships the **contracts, schemas, and
-skill/prompt assets** only — the verdict harvester and merge-eligibility
-evaluator are S8 code (D13). Every AC here is satisfiable by hand-invocation
-now; where an AC needs machinery only S8 provides, it names the handoff.
+when the machinery is broken. S6 ships the **contracts, schemas, skill/prompt
+assets, and the App client that posts the verdict medium**; the verdict
+harvester and merge-eligibility evaluator are S8 code (D13). Every AC here is
+satisfiable by hand-invocation now; where an AC needs machinery only S8
+provides, it names the handoff.
 
 The mechanism is not hypothetical: the cross-model review loop was run for real
 during S5 (PRs #377–#383) with the local codex CLI. S6 encodes what that run
@@ -22,7 +23,7 @@ requirements, not lore.
 
 ---
 
-## 1. Inventory (audited 2026-07-24)
+## 1. Inventory (audited 2026-07-24; bot-identity row re-audited 2026-09-06)
 
 | Artifact | State | Facts |
 | --- | --- | --- |
@@ -30,8 +31,8 @@ requirements, not lore.
 | Verdict artifact schema | nowhere | No schema, no file convention, no notion of "a complete round" keyed to a head SHA. The S5 loop carried the shape in-context only. |
 | Class-specific review contracts | nowhere | No typed-code / spec / skill-prose split; no reviewer prompt asset. Reviewers were prompted ad hoc. |
 | AC-attack round (D3) | nowhere | No pre-implementation attack asset. The S5 spec-contract slice explicitly deferred this to S6. |
-| Bot identity / merge-guard | working | The merge-guard + GitHub App approver machinery exists and is proven on this repo: an App approval counts toward required reviews when the App holds `contents:write` (not merely `pull_requests:write`). Auto-merge additionally needs `MERGE_GUARD_APPROVER_KEY_PATH` set. The plumbing exists; no verdict rides it yet. |
-| prgroom | carved target (S8) | Retains `gh`/`git` clients, config, error taxonomy, escalation typing. The **verdict harvester** and **merge-eligibility evaluation** are S8 deliverables (D13), not built here. `wait-for-pr-comments`, `reply-and-resolve-pr-threads` and `monitor-pr` are already retired — absent from `src/` and from every deploy target, held only under `archive/` — so what remains of AC5 is the prgroom-module half. prgroom's `gh` client still authenticates as the repository owner; converting it is part of the S8 carve, not S6. |
+| Bot identity / merge-guard | App live, code archived | The GitHub App identity exists and is installed on this repo — App id `4275336`, login `pr-hater[bot]`, `contents:write` granted (an App approval counts toward required reviews only with that grant, not with `pull_requests:write` alone) — and its private key sits behind `MERGE_GUARD_APPROVER_KEY_PATH`. Every implementation that ever drove it — the JWT mint, the installation token, the head-pinned `APPROVE` review — is archive-only; nothing in the live tree posts as the App, and no verdict has ever ridden it. Slice D lifts that client into prgroom under an admission record. |
+| prgroom | carved target (S8) | Retains `gh`/`git` clients, config, error taxonomy, escalation typing. The **verdict harvester** and **merge-eligibility evaluation** are S8 deliverables (D13), not built here. `wait-for-pr-comments`, `reply-and-resolve-pr-threads` and `monitor-pr` are already retired — absent from `src/` and from every deploy target, held only under `archive/` — so what remains of AC5 is the prgroom-module half. prgroom's `gh` client still authenticates as the repository owner; converting it is part of the S8 carve, not S6. Slice D adds an App-credentialed client beside it, used for the verdict medium only. |
 | completion-gate / quality-gate skills | deployed, contradictory | House-rulebook review text that D8 supersedes as a review *medium*. S6 does not delete them (that is teardown scope elsewhere); it defines the replacement contract they will route into. |
 | Multi-vendor reviewer transport | deployed, un-admitted | The `openrouter-claude-subagent` skill (Claude tree) runs a nested Claude Code harness against any OpenRouter-hosted model through a stream-repair proxy, with a versioned model-routing table and a read-only-default tool gate — the intended transport for non-codex panel lenses. Two defects, both Slice B scope: it predates the admission bar (no `admission:` frontmatter block), and it is broken under the current harness (observed 2026-07-24: the nested process emits mid-conversation tool-change blocks that non-Anthropic models reject with a 400 — the stream-repair proxy must strip or the harness feature must be disabled for nested runs). Until repaired, all panel lenses run serially through the codex CLI — single-vendor, a known diversity concession. |
 
@@ -63,11 +64,14 @@ review artifact must not live inside the artifact under review. (A
 branch-resident verdict self-invalidates — committing it advances the head it
 must match — pollutes history, conflicts across concurrent PRs, and is
 writable by the reviewed party, which would demand a separate attestation
-layer to restore trust.) Primary medium: a GitHub **check run** named by this
-contract (`review-verdict`), posted by the App against the reviewed head SHA,
-its output carrying the verdict JSON verbatim. Until the check-run wiring
-exists, the degraded mode is the same verdict JSON as the body of the App's
-approving review — both media are App-posted and SHA-keyed. Provenance is
+layer to restore trust.) The medium is a **pull request review authored by
+the App**: its body carries the verdict JSON verbatim, one inline review
+comment per finding sits at the file and line the finding names (a finding
+with no locatable anchor lives in the body only), and the review is pinned to
+the reviewed head SHA. A check run is not required. The approval is a second,
+separate review by the same App — event `APPROVE`, pinned to the final head —
+and never doubles as the verdict's carrier: a verdict review is submitted
+comment-only, so a posted verdict is never itself an approval. Provenance is
 part of validity: a verdict-shaped payload posted by any identity other than
 the App is not a verdict. Staleness is plain equality: a verdict whose
 `head_sha` ≠ the current PR head is **stale** and the gate treats it as
@@ -149,15 +153,24 @@ carries a round-N preamble listing every prior finding and its disposition
 (fixed-with-regression-test / rebutted / advisory-deferred), so the reviewer
 does not re-raise settled items.
 
-**The fix loop is bounded.** Each class contract declares a **round cap**
-(default: three complete rounds per readiness claim chain). When the cap is
-reached without terminal-clean, further round invocations are refused and the
-item escalates as an intervention — non-convergence is a signal that the
-artifact or its ACs need human judgment, not more rounds. Rounds consumed are
-decidable from observables (the count of complete posted verdicts for the
-PR since the last terminal-clean). The escalation routing itself is S9
-wiring; the contract's testable surface is the refusal and the separable
-escalation signal.
+**The fix loop is bounded by a trend checkpoint, not a round count.** No
+class contract declares a numeric round cap (a fixed cap either cuts off a
+campaign that is converging or lets one churn up to the number). Instead, a
+trend checkpoint is due after every second consecutive non-clean round —
+the first after round 2, never after a clean round — and the emitter refuses
+the next round until its verdict is recorded. The checkpoint is a
+trend-analysis dispatch over the campaign's retained records, and its verdict
+is one of: continue two more rounds with staffing advice, terminate and
+bounce upstream, or terminate and escalate to the human; a terminate verdict
+carries a churn diagnosis, and an uncited or undiagnosed verdict, a failed
+dispatch, or severity rising while the finding count falls all resolve as
+escalation (the review-panel iteration-strategy design record, 2026-08-20,
+owner-adopted). After a terminate verdict, further round invocations for the
+claim are refused — non-convergence is a signal that the artifact or its ACs
+need human judgment, not more rounds. Rounds consumed are decidable from
+observables (the count of complete posted verdicts for the PR since the last
+terminal-clean). The escalation routing itself is S9 wiring; the contract's
+testable surface is the refusal and the separable escalation signal.
 
 **AC-attack is a pre-implementation panel on the spec (D3).** The attack
 fans out like the review panel — a single attacker satisfices the same way a
@@ -184,17 +197,20 @@ round's record must be complete before any implementation work item for the
 slice is claimed. This is distinct from and
 runs before the PR verdict.
 
-**Verdicts ride the existing bot identity; the gate fails closed (D9).**
-The **verdict medium** — the posted verdict and the verdict-driven approval it
-authorizes — uses the GitHub App identity, never the human's auth, reusing the
-proven merge-guard/App-approver plumbing (the App must hold `contents:write`
-for its approval to count). That medium is the whole of S6's identity scope.
+**Verdicts ride the bot identity; the gate fails closed (D9).**
+The **verdict medium** — the posted verdict review and the verdict-driven
+approval it authorizes — uses the GitHub App identity, never the human's auth.
+The App client that drives it (JWT mint, installation token, head-pinned
+review) is lifted from the archive into prgroom in Slice D, and the login it
+posts under is read from the App at runtime, never hardcoded (the App must
+hold `contents:write` for its approval to count). That medium is the whole
+of S6's identity scope.
 Every other machine write this harness makes to GitHub — grooming comments,
 review-thread replies, review requests, pushes — still authenticates as the
 repository owner and still renders as the owner after S6 ships; converting
 those is not S6 work (§4). Merge eligibility =
 CI green + an App-posted terminal-clean verdict whose `head_sha` equals the
-current PR head + App approval. "CI green" has a named observable: every
+current PR head + an App `APPROVE` review at that same head. "CI green" has a named observable: every
 check required by the target branch's protection rules reports success for
 the current head (the same state the merge platform itself consults) —
 pending, skipped-required, or failing required checks are all not-green. Forgery is excluded structurally: only the
@@ -203,13 +219,20 @@ App can post the verdict medium, so no separate attestation layer is needed
 A missing, stale, non-terminal, wrongly-provenanced, or unparseable verdict
 **blocks** the merge — broken review machinery never silently passes. A human PR comment is by
 definition an intervention: it routes to escalation, never into the fix loop.
-The gate's *evaluation code* is S8 (D13); S6 fixes the contract it evaluates.
+The eligibility contract carries one hard line for the agent reading it: **an
+agent-authored comment is not human authorization** — whether it renders
+under the App or, through the owner's credential, under the owner — so the
+only comment an agent may read as authorization is one it can show a person
+wrote. The gate's *evaluation code* is S8 (D13); S6 fixes the contract it
+evaluates.
 
 **Every finding lands in a durable, mineable medium.** With PR-comment
 looping gone, no part of the review trail may live only in conversation:
 mechanical findings and their disposition ledgers persist in the App-posted
-verdicts (SHA-keyed check runs / approval bodies, queryable via the platform
-API); advisory findings persist in the tracker backlog; AC-attack proposals
+verdicts (SHA-keyed App-authored PR reviews — the envelope in the body, the
+findings as inline comments — queryable via the platform API, and
+distinguishable from every other comment on the PR by their author); advisory
+findings persist in the tracker backlog; AC-attack proposals
 and dispositions persist in the committed attack records. Aggregating these
 into a local corpus for mining candidate rules and memories is an extension
 of the S8 harvester (which already reads the verdict medium) — named in §4;
@@ -240,8 +263,8 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   validation, while the same finding as `advisory` validates
   (evidence-mandatory-for-mechanical boundary).
 - **S6-A2** A verdict records the `head_sha` of the reviewed head and is
-  posted outside the PR branch (check run, or the App approval body in
-  degraded mode); the merge-eligibility check treats a verdict whose
+  posted outside the PR branch (an App-authored PR review pinned to that
+  head); the merge-eligibility check treats a verdict whose
   `head_sha` ≠ the current PR head as absent (stale-verdict guard), and a
   verdict-shaped payload posted by any identity other than the App as absent
   (provenance guard) — while an App-posted verdict matching the current head
@@ -406,18 +429,27 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   verdict, and the verdict-driven approval it authorizes, are attributable to
   the App and never to the human auth, and that approval counts toward required
   reviews only when the App holds `contents:write` (carried from proven repo
-  behavior, reusing the merge-guard / App-approver plumbing — not rebuilt
-  here). The criterion reaches the verdict medium and nothing else: non-verdict
+  behavior; the App client is lifted from the archive into prgroom in this
+  slice under an admission record, and the login it posts under is read from
+  the App at runtime — a renamed App changes nothing in config or code). A
+  posted verdict is a comment-only review by the App, pinned to the head it
+  reviewed; the approval is a separate `APPROVE` review by the same App,
+  pinned to the final head — a verdict review never counts as an approval, and
+  a review posted for a head that is no longer the PR's head is refused at
+  posting time (inverse pair). The criterion reaches the verdict medium and nothing else: non-verdict
   machine writes remain owner-credentialed after S6 (§4), so satisfying this
   criterion is not a claim that they were converted, and a reader must not
   treat any other machine comment on this repository as App-attributable
   because S6-D2 is met.
 - **S6-D3** Merge eligibility requires CI green + an App-posted terminal-clean
-  verdict whose `head_sha` equals the current PR head (Slice A) + App
-  approval. A verdict-shaped payload from any non-App identity is not a
+  verdict whose `head_sha` equals the current PR head (Slice A) + an App
+  `APPROVE` review at that same head. The verdict consulted is the App's most
+  recent verdict review at the current head (the S8 harvester reads exactly
+  that). A verdict-shaped payload from any non-App identity is not a
   verdict, so a contributor-forged "clean" verdict is ineligible by
   construction; an App verdict for an earlier head is stale and equally
-  ineligible. A missing, stale, non-terminal, or wrongly-provenanced verdict
+  ineligible, and so is an App approval for an earlier head. A missing,
+  stale, non-terminal, or wrongly-provenanced verdict
   blocks the merge (fail-closed). Satisfiable by hand-verification now; names
   the S8 merge-eligibility-evaluation handoff.
 - **S6-D4** A human PR comment is treated as an intervention, and is never fed
@@ -432,7 +464,13 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   the separability of App-posted comments and the exclusion of human comments
   from the fix loop; making the residual population separable is the authorship
   work named in §4, and S10 must not read this substrate as a clean partition
-  until that lands. The escalation routing itself — what state the work item
+  until that lands. Because that residual population exists, the eligibility
+  contract carries the hard line that binds the agent side of the gap: an
+  agent-authored comment is not human authorization, whichever identity it
+  renders under — an agent that posted "approved" through the owner's
+  credential and then read it back as a human's approval has authorized
+  itself (inverse: only a comment the agent can show a person wrote counts).
+  The escalation routing itself — what state the work item
   enters and who is notified — is the S9 park/escalate wiring.
 - **S6-D5** Broken review machinery — reviewer error, no verdict emitted, or an
   unparseable verdict — blocks the merge rather than passing silently
@@ -447,13 +485,16 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   failure that itself blocks eligibility. Hand-verifiable against repo
   settings now; names the S8 merge-eligibility-evaluation handoff for the
   automated configuration check.
-- **S6-D7** The class contract declares a round cap; invoking a round beyond
-  the cap without an intervening terminal-clean is refused, and the refusal
-  emits the escalation signal (observable: the refusal names the cap and the
-  complete rounds consumed, counted from the posted verdicts). A loop that
-  reaches terminal-clean within the cap never triggers the escalation
-  (inverse); the work-item state transition and notification are the S9
-  park/escalate wiring, not S6.
+- **S6-D7** No class contract declares a numeric round cap; the loop is
+  bounded by the trend checkpoint. Emitting the round after a due checkpoint
+  with no recorded checkpoint verdict is refused, and emitting any round after
+  a terminate verdict (bounce upstream or escalate to the human) is refused
+  with the escalation signal separable in the refusal (observable: the refusal
+  names the checkpoint verdict and the complete rounds consumed, counted from
+  the posted verdicts). A loop that reaches terminal-clean never triggers the
+  escalation, and a checkpoint verdict of continue lets exactly two further
+  rounds emit before the next checkpoint is due (inverse pair); the work-item
+  state transition and notification are the S9 park/escalate wiring, not S6.
 
 ## 4. Out of scope
 
@@ -479,6 +520,10 @@ separable and leaves the owner-credentialed remainder unpartitioned (S6-D4). The
 verdicts, backlog advisories, and attack records into a locally mineable corpus
 for candidate rules and memories; S6 guarantees only the durable media that
 archive would read. Building the
-codex-companion CLI or the App/merge-guard plumbing (both pre-exist). Wiring the
+codex-companion CLI (it pre-exists). Rebuilding the App client from scratch —
+Slice D lifts the archived one — and the archived **rule-based merge-policy
+resolver** (merge rules, reviewer roster, label overrides), which stays
+archived until the config vocabulary settles (`agents-config-9k9.69`) and the
+autonomous-merge grant is reinstated (`agents-config-9k9.64`). Wiring the
 same review contracts onto foreign harnesses beyond the Claude tree (pipeline
 work; the portable verdict schema is the seam that keeps that door open).

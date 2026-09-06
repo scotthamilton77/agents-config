@@ -3,7 +3,7 @@
 **Date:** 2026-07-11
 **Status:** Draft (pending review)
 **Bead:** agents-config-vaac.6
-**Decision:** A repo-scoped GitHub App identity (`merge-guard-approver[bot]`), driven
+**Decision:** A repo-scoped GitHub App identity (`pr-hater[bot]`), driven
 by the merge-guard skill at merge time, submits the approving review that satisfies
 branch protection's `required_approving_review_count` — only after the merge-guard
 eligibility floor has passed, pinned to the checked head SHA. The behavior is opt-in
@@ -75,7 +75,8 @@ whose approvals count toward `required_approving_review_count`).
 One-time manual setup per install target (owner does this; the agent cannot):
 
 1. GitHub → Settings → Developer settings → GitHub Apps → New GitHub App.
-   - Name: `merge-guard-approver` (display identity: `merge-guard-approver[bot]`).
+   - Name: `pr-hater` (display identity: `pr-hater[bot]`; the login is read from
+     the App at runtime, so renaming the App changes no config or code).
    - Webhook: **unchecked** (no hosted receiver).
    - Permissions: **Pull requests: Read & write** and **Contents: Read & write** —
      both required. Without `Contents: write`, GitHub records the App's approving
@@ -159,7 +160,7 @@ Behavior:
 4. `POST /repos/{repo}/pulls/{pr}/reviews` with `event: APPROVE`,
    `commit_id: <head-sha>`, and the attestation body:
 
-   > Automated policy attestation by merge-guard-approver[bot] — **not a human
+   > Automated policy attestation by pr-hater[bot] — **not a human
    > review**. The merge-guard eligibility floor passed at `<sha>` and the merge
    > was authorized under this repo's merge policy. Authorizing facts:
    > `<facts JSON>`.

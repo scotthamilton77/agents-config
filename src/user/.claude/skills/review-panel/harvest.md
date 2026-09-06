@@ -142,8 +142,8 @@ closed — never write a `clean` entry for a lens that never reported.
 
 ## Say a failover out loud
 
-A substitution written into the verdict has been recorded, not reported. The verdict goes to a
-check run; the operator reads your summary. So every failover appears in what you tell them, and it
+A substitution written into the verdict has been recorded, not reported. The verdict goes to the
+pull request as the App's review; the operator reads your summary. So every failover appears in what you tell them, and it
 appears even when the round comes out clean — a clean round that quietly lost a transport is the
 case most likely to go unmentioned.
 
