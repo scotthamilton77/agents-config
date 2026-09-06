@@ -230,13 +230,16 @@ def iter_reviews(http: HttpTransport, token: str, ref: PRRef) -> Iterator[dict[s
     """Yield every review on the PR, walking all pages oldest-first."""
     page = 1
     while True:
-        reviews: list[dict[str, Any]] = _expect(
-            http.request(
-                "GET",
-                f"{_pull_url(ref)}/reviews?per_page={REVIEWS_PER_PAGE}&page={page}",
-                headers=_bearer(token),
+        reviews = _reviews_page(
+            _expect(
+                http.request(
+                    "GET",
+                    f"{_pull_url(ref)}/reviews?per_page={REVIEWS_PER_PAGE}&page={page}",
+                    headers=_bearer(token),
+                ),
+                "reviews listing",
             ),
-            "reviews listing",
+            page,
         )
         yield from reviews
         if len(reviews) < REVIEWS_PER_PAGE:
@@ -307,6 +310,26 @@ def _error_body(exc: urllib.error.HTTPError) -> Any:
         return json.loads(raw or b"null")
     except json.JSONDecodeError:
         return raw.decode(errors="replace")[:_EXCERPT]
+
+
+def _reviews_page(payload: Any, page: int) -> list[dict[str, Any]]:
+    """Validate one page of the reviews listing before any of it is read.
+
+    The whole page is checked before a single entry is yielded: a caller that
+    consumed the entries preceding a bad one could miss the App's own approval
+    and post a duplicate.
+    """
+    if not isinstance(payload, list):
+        detail = f"reviews listing: page {page} is {type(payload).__name__}, not a list"
+        raise _api_failed(detail)
+    for index, review in enumerate(payload):
+        if not isinstance(review, dict):
+            detail = (
+                f"reviews listing: page {page} entry {index} is "
+                f"{type(review).__name__}, not an object"
+            )
+            raise _api_failed(detail)
+    return payload
 
 
 def _field(payload: Any, *path: str, want: type[T], what: str) -> T:

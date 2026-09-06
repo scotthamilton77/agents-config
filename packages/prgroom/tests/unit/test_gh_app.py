@@ -369,3 +369,42 @@ def test_the_mint_calls_the_app_then_the_installation_then_the_token_post() -> N
         ("GET", "/repos/octo/demo/installation"),
         ("POST", "/app/installations/42/access_tokens"),
     ]
+
+
+REVIEWS_PAGE_1 = ("GET", f"/repos/octo/demo/pulls/5/reviews?per_page={REVIEWS_PER_PAGE}&page=1")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({"reviews": []}, id="an-object-instead-of-a-page"),
+        pytest.param(7, id="a-number-instead-of-a-page"),
+        pytest.param("[]", id="a-string-instead-of-a-page"),
+        pytest.param(None, id="a-null-instead-of-a-page"),
+    ],
+)
+def test_a_reviews_page_that_is_not_a_list_is_a_coded_failure(payload: Any) -> None:
+    http = RouteTableHttp(routes_with(REVIEWS_PAGE_1, (200, payload)))
+    with pytest.raises(PrgroomError) as caught:
+        list(iter_reviews(http, "tok", REF))
+    assert caught.value.code is ErrorCode.RUNTIME_APPROVER_API_FAILED
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [pytest.param("APPROVED", id="a-string-entry"), pytest.param(None, id="a-null-entry")],
+)
+def test_a_reviews_page_carrying_a_non_object_entry_is_a_coded_failure(entry: Any) -> None:
+    http = RouteTableHttp(routes_with(REVIEWS_PAGE_1, (200, [{"id": 1}, entry])))
+    with pytest.raises(PrgroomError) as caught:
+        list(iter_reviews(http, "tok", REF))
+    assert caught.value.code is ErrorCode.RUNTIME_APPROVER_API_FAILED
+
+
+def test_a_bad_page_is_refused_before_any_of_it_is_yielded() -> None:
+    # The caller must not act on the entries preceding the bad one: a partially
+    # consumed page could miss the App's own approval and post a duplicate.
+    http = RouteTableHttp(routes_with(REVIEWS_PAGE_1, (200, [{"id": 1}, "junk"])))
+    reviews = iter_reviews(http, "tok", REF)
+    with pytest.raises(PrgroomError):
+        next(reviews)
