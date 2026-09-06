@@ -1,9 +1,9 @@
 {
   "tier": "fast",
-  "context_bytes": 17634,
+  "context_bytes": 27113,
   "samples": 1,
   "owed_rulings": [],
   "speech_limit": 1,
   "stop": false,
-  "prompt_tokens": 10573
+  "prompt_tokens": 12287
 }

@@ -51,6 +51,28 @@ CASE = "2026-09-04-first-rung-nothing-owed"
 CLI_CASE = "2026-09-04-expert-owed-rulings"
 
 
+def baseline_of(name: str) -> int:
+    """The count a scripted seat reports for this case, read off the case.
+
+    Taken from the case rather than typed beside it. Every run that uses one of
+    these is about the suite's plumbing -- that a sample is kept, that a matrix
+    cell is written, that an exit code follows the checks -- and not about the
+    number. A literal here goes red the next time a prompt change re-records a
+    baseline, for a reason that has nothing to do with what the test checks.
+
+    The one place the numbers are pinned by hand is the check that the recorded
+    baselines are the ones real runs measured, which is where a baseline edited
+    to whatever a later run happened to count gets caught.
+    """
+    counted = next(one for one in load_cases() if one.name == name).prompt_tokens
+    assert counted is not None, f"{name} records no baseline"
+    return counted
+
+
+COUNTED = baseline_of(CASE)
+CLI_COUNTED = baseline_of(CLI_CASE)
+
+
 def document(**overrides: Any) -> GrillMasterDocument:
     """A turn that passes every check, before an override breaks one."""
     return GrillMasterDocument.model_validate(
@@ -78,7 +100,7 @@ def cli_result(said: str | None, *, turns: int = 1) -> str:
             "usage": {
                 "input_tokens": 2,
                 "cache_creation_input_tokens": 0,
-                "cache_read_input_tokens": 5942,
+                "cache_read_input_tokens": CLI_COUNTED - 2,
                 "output_tokens": 40,
             },
         }
@@ -379,7 +401,7 @@ def test_a_check_that_does_not_apply_is_not_a_check_that_failed(
         suite,
         "replay",
         lambda _case, seat, _config: (
-            seats.append(seat) or (document().model_dump_json(), 9786, 40, 1, 1.0, None)
+            seats.append(seat) or (document().model_dump_json(), COUNTED, 40, 1, 1.0, None)
         ),
     )
 
@@ -552,7 +574,7 @@ def test_every_sample_is_taken_and_any_one_of_them_fails_the_run(
         *_args: object,
     ) -> tuple[str, int | None, int | None, int | None, float, str | None]:
         taken.append(replies[len(taken)])
-        return taken[-1], 9786, 40, 1, 1.0, None
+        return taken[-1], COUNTED, 40, 1, 1.0, None
 
     monkeypatch.setattr(suite, "replay", sampling)
 
@@ -701,7 +723,7 @@ def test_a_seat_named_twice_does_not_overwrite_its_own_record(
     import evals.__main__ as suite
 
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1, 1.0, None)
+        suite, "replay", lambda *_: (document().model_dump_json(), COUNTED, 40, 1, 1.0, None)
     )
 
     suite.main(["--case", CASE, "--seat", "codex:gpt-5.6-luna:medium", "--report", str(tmp_path)])
@@ -797,8 +819,8 @@ def test_the_measured_baselines_are_the_ones_recorded() -> None:
     expert = cases["2026-09-04-expert-owed-rulings"]
     first_rung = cases["2026-09-04-first-rung-nothing-owed"]
 
-    assert (expert.prompt_tokens, seat_of(expert, config)) == (5944, config.expert_seat)
-    assert (first_rung.prompt_tokens, seat_of(first_rung, config)) == (10573, config.map_seat)
+    assert (expert.prompt_tokens, seat_of(expert, config)) == (8342, config.expert_seat)
+    assert (first_rung.prompt_tokens, seat_of(first_rung, config)) == (12287, config.map_seat)
 
 
 def test_a_default_run_writes_a_dated_report_and_says_where(
@@ -814,7 +836,7 @@ def test_a_default_run_writes_a_dated_report_and_says_where(
 
     monkeypatch.setattr(suite, "REPORTS", tmp_path / "reports")
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1, 1.0, None)
+        suite, "replay", lambda *_: (document().model_dump_json(), COUNTED, 40, 1, 1.0, None)
     )
 
     suite.main(["--case", CASE])
@@ -838,7 +860,7 @@ def test_two_default_runs_do_not_share_one_report(
 
     monkeypatch.setattr(suite, "REPORTS", tmp_path / "reports")
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1, 1.0, None)
+        suite, "replay", lambda *_: (document().model_dump_json(), COUNTED, 40, 1, 1.0, None)
     )
 
     suite.main(["--case", CASE])
@@ -980,7 +1002,7 @@ def test_a_failed_check_exits_non_zero_and_the_report_holds_the_reply(
     import evals.__main__ as suite
 
     failing = document(rulings=[ruling("d9")]).model_dump_json()
-    monkeypatch.setattr(suite, "replay", lambda *_: (failing, 9786, 812, 1, 1.5, None))
+    monkeypatch.setattr(suite, "replay", lambda *_: (failing, COUNTED, 812, 1, 1.5, None))
 
     code = suite.main(["--case", CASE, "--report", str(tmp_path)])
 
@@ -990,7 +1012,7 @@ def test_a_failed_check_exits_non_zero_and_the_report_holds_the_reply(
     assert (kept / "1.txt").read_text(encoding="utf-8") == failing
     recorded = json.loads((kept / "1.json").read_text(encoding="utf-8"))
     assert recorded["wall_seconds"] == 1.5
-    assert recorded["prompt_tokens"] == 9786
+    assert recorded["prompt_tokens"] == COUNTED
     assert recorded["output_tokens"] == 812
 
 
@@ -1000,7 +1022,7 @@ def test_a_run_whose_checks_all_pass_exits_zero(
     import evals.__main__ as suite
 
     monkeypatch.setattr(
-        suite, "replay", lambda *_: (document().model_dump_json(), 9786, 40, 1, 1.0, None)
+        suite, "replay", lambda *_: (document().model_dump_json(), COUNTED, 40, 1, 1.0, None)
     )
 
     assert suite.main(["--case", CASE, "--report", str(tmp_path)]) == 0

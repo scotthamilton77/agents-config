@@ -83,6 +83,7 @@ from grillui.schemas import (
 from grillui.tiers import (
     BASIS_RULE,
     DOCUMENT_FORMAT_RULE,
+    KIND_VISIBILITY,
     MOOTNESS_OBLIGATION_RULE,
     MOOTNESS_RESTING_RULE,
     UPDATE_EXAMPLES,
@@ -726,6 +727,12 @@ def test_the_two_obligation_rules_each_state_all_three_rulings() -> None:
     for rule in (MOOTNESS_OBLIGATION_RULE, MOOTNESS_RESTING_RULE):
         for verdict in ("invalidate", "revise", "stands"):
             assert f"`{verdict}`" in rule, f"{verdict} is not stated as a way out"
+    # And what becomes of one that arrives alone. "Counts only" says when a
+    # ruling is credited and never what happens when it is not, so a seat
+    # reading it can take an uncredited verdict for a verdict the human sees.
+    for rule in (MOOTNESS_OBLIGATION_RULE, MOOTNESS_RESTING_RULE):
+        assert "ruling that arrives without its update is discarded" in rule
+        assert "the human is shown that decision as unruled" in rule
 
 
 def test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision(
@@ -1168,8 +1175,12 @@ def test_the_document_rule_shows_one_example_per_kind_that_the_gate_would_take()
     An example a seat copied and had refused is worse than no example: the turn
     is lost for following the brief. So the examples are held as objects and put
     through the same two checks the turn will meet, rather than typed into prose
-    that nothing reads back. `basis` is not among them -- the appender does not
-    enforce it, and the basis rule is where it is asked for.
+    that nothing reads back.
+
+    `basis` is in no example, because the appender does not enforce it and an
+    example carrying it would teach the field as this kind's rather than as
+    every kind's. The format rule names it once as the field every update
+    carries whatever its kind, and the basis rule is what says what it is.
     """
     brief = system_prompt(HEAVY_TIER, GRILL_MASTER)
 
@@ -1178,7 +1189,8 @@ def test_the_document_rule_shows_one_example_per_kind_that_the_gate_would_take()
         assert payload_problem(kind, example) is None, kind
         assert document_problem(document(updates=[example])) is None, kind
         assert json.dumps(example) in brief, kind
-    assert "`basis`" not in DOCUMENT_FORMAT_RULE
+    assert all("basis" not in example for example in UPDATE_EXAMPLES.values())
+    assert "Every update also carries `basis`, whatever its kind" in DOCUMENT_FORMAT_RULE
     assert "`basis`" in BASIS_RULE
 
 
@@ -1191,6 +1203,7 @@ CONTRACT_BLOCK = re.compile(
     r"^  - `(?P<kind>[a-z-]+)`: .+\n"
     r"    Required: (?P<required>.+?)\. Optional: (?P<optional>.+?)\.\n"
     r"    It (?P<landing>.+?)\.\n"
+    r"    The human then sees (?P<seen>.+?)\.\n"
     r"    Example: (?P<example>\{.*\})$",
     re.MULTILINE,
 )
@@ -1312,8 +1325,9 @@ def test_the_per_kind_contract_is_rendered_from_the_appender_and_the_fold() -> N
          it calls required are exactly those the gate refuses an update for
          missing; the fields it calls optional are exactly the rest of the shape
          and the example; the landing it claims is the fold's own answer; each
-         example passes the shape and the gate; and the add-node example carries
-         every field a node is rendered from, options included.
+         block states what the human is then looking at; each example passes the
+         shape and the gate; and the add-node example carries every field a node
+         is rendered from, options included.
 
     The prompt is the seat's whole contract, so a contract that disagrees with
     the gate is a seat writing updates the gate refuses, and one that shows an
@@ -1336,6 +1350,7 @@ def test_the_per_kind_contract_is_rendered_from_the_appender_and_the_fold() -> N
             (set(shape.model_fields) | set(example)) - {"kind"} - required
         ), kind
         assert block.group("landing") == _observed_landing(kind), kind
+        assert block.group("seen") == KIND_VISIBILITY[kind], kind
         assert json.loads(block.group("example")) == example, kind
         assert payload_problem(kind, example) is None, kind
         assert document_problem(document(updates=[example])) is None, kind

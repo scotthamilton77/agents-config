@@ -1826,10 +1826,13 @@ Each criterion is mechanically checkable and convertible to a red test.
   posts. An Enter arriving while an IME composition is in progress posts nothing. The hint
   beside the box names Enter and Shift+Enter. Verified in a browser.
 - **GUI-A88** The grill-master's standing brief, on the fast tier and on the heavy one,
-  obliges a ruling per decision the human's answer puts in question — `invalidate` where it
-  moots the decision, carrying that answer as its rationale — and refuses narrating a
-  decision as dead in place of ruling it. A thread agent's brief carries no such obligation
-  and no sentence of the grill-master's role.
+  asks for rulings in one place only — the obligation section a dispatch carries when the
+  human's answer puts decisions in question, naming them by id — and states that every
+  other turn sends an empty list; that section obliges a ruling per named decision,
+  `invalidate` where the answer moots it, carrying that answer as its rationale, and an
+  `invalidate` or `revise` ruling without its update is discarded rather than credited as
+  a ruling. A thread agent's brief carries no such obligation and no sentence of the
+  grill-master's role.
 - **GUI-A89** A thread agent's standing brief, on either tier, says that it cannot change
   the map and that folding the thread is what puts its conclusion in front of the
   grill-master who acts on it — rather than leaving it to agree to a change it cannot make —
@@ -2182,7 +2185,7 @@ opens one proves something else.
 - GUI-A86 | probe: packages/grillui/tests/browser/thread_controls_probe.py::main
 - GUI-A87 | test: packages/grillui/tests/unit/test_page.py::test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_takes
 - GUI-A92 | probe: packages/grillui/tests/browser/chord_probe.py::main
-- GUI-A88 | test: packages/grillui/tests/unit/test_tiers.py::test_the_grill_master_brief_obliges_a_ruling_on_each_decision_an_answer_bears_on
+- GUI-A88 | test: packages/grillui/tests/unit/test_tiers.py::test_the_grill_master_brief_asks_for_rulings_nowhere_but_the_obligation_section
 - GUI-A89 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_can
 - GUI-A90 | probe: packages/grillui/tests/browser/thread_wait_probe.py::main
 - GUI-A93 | test: packages/grillui/tests/unit/test_tiers.py::test_a_turn_on_the_map_thread_is_told_to_state_which_decisions_change_and_how

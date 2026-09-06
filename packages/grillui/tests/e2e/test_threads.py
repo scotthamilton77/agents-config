@@ -141,10 +141,15 @@ def test_every_thread_turn_is_briefed_with_the_legend_that_says_who_proposed_a_m
     """
     Given a thread on a decision
     When its agent takes a turn
-    Then the standing brief it was sent carries the board legend whole, including
-         the sentence saying that a change in `history` names who proposed it and
-         what was ruled -- so an agent asked why the board moved quotes the record
-         rather than inferring a cause from the shape of the graph.
+    Then the standing brief it was sent carries the board legend, and the glossary
+         definitions it leans on: that a `history` entry names who proposed the
+         change and what was judged -- so an agent asked why the board moved
+         quotes the record rather than inferring a cause from the shape of the
+         graph.
+
+    The fields are defined once, in the baseline both roles read, because the
+    grill-master is handed the same board and a field defined for one seat and
+    left blank for the other is the same defect twice.
     """
     session = launcher(handoff=handoff(PLAN))
     session.stub.script("Retention is what that turns on.")
@@ -158,5 +163,7 @@ def test_every_thread_turn_is_briefed_with_the_legend_that_says_who_proposed_a_m
     assert len(session.stub.calls) == 1, session.stub.calls
     brief = session.stub.system_of(0)
     assert BOARD_LEGEND in brief, brief
-    assert "`proposed_by`, the agent whose queued update the human's apply landed" in brief
-    assert "an entry carrying neither is a move nobody proposed and no ruling produced" in brief
+    assert "quoting the decision's `rationale` or an entry of its `history`" in brief
+    assert "`proposed_by` where an agent's queued change was applied" in brief
+    assert "`verdict` where one was judged" in brief
+    assert "no `proposed_by` and no `verdict` is a move nobody proposed and nobody judged" in brief
