@@ -977,6 +977,10 @@ def lens_tier(lens: dict, round_no: int) -> str:
     return lens.get("re_review_tier", lens["tier"])
 
 
+# An id already carrying a lens-and-round prefix, which cites one settled item and nothing else.
+_QUALIFIED = re.compile(r"[^\s.]+\.r\d+\.")
+
+
 def _qualified(lens: Any, round_no: Any, item: str) -> str:
     """The id that cites a finding: {lens}.r{round}.{id}, left as written if already in it.
 
@@ -984,9 +988,7 @@ def _qualified(lens: Any, round_no: Any, item: str) -> str:
     the assembler cannot tell a re-citation of a settled item from a new finding wearing its
     number. What the prompt shows a reviewer is therefore the id that citation is matched on.
     """
-    if not lens:
-        return item
-    if re.match(rf"{re.escape(str(lens))}\.r\d+\.", item):
+    if not lens or _QUALIFIED.match(item):
         return item
     return f"{lens}.r{round_no}.{item}"
 

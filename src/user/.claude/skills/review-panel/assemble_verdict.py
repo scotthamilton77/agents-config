@@ -47,6 +47,9 @@ ROUTE_KEYS = frozenset({*ROUTE_FIELDS, "substitution"})
 # closed shape that has no room for it, so it is matched on here and dropped on the way in.
 LEDGER_ONLY_FIELDS = ("lens",)
 
+# An id already carrying a lens-and-round prefix, which cites one settled item and nothing else.
+QUALIFIED = re.compile(r"[^\s.]+\.r\d+\.")
+
 COPIED_FROM_ROUND = (
     "artifact_class", "round", "base_sha", "head_sha", "claim_id",
     "retained_categories", "staffing_record",
@@ -260,11 +263,10 @@ def qualified(lens: Any, round_no: Any, item: str) -> str:
 
     Reviewers number findings f1..fN fresh every round, so bare ids collide across rounds.
     Matching on the bare id suppresses a live finding whose number happens to match a settled
-    one; only a lens-and-round-qualified id can be written by citing that item deliberately.
+    one; a lens-and-round prefix is written only by citing that item deliberately, and the
+    prompt shows every lens the whole settled ledger, so any lens may write one.
     """
-    if blank(lens):
-        return item
-    if re.match(rf"{re.escape(str(lens))}\.r\d+\.", item):
+    if blank(lens) or QUALIFIED.match(item):
         return item
     return f"{lens}.r{round_no}.{item}"
 

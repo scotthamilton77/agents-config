@@ -743,7 +743,8 @@ class TestSuppression:
     """PANEL-B11 over a real second round: the ledger is the one the emitter wrote."""
 
     def test_the_emitted_ledger_carries_the_lens_that_raised_each_settled_item(self, round2):
-        """Suppression matches on lens and id, so the ledger has to carry the lens."""
+        """Suppression matches the qualified id, which carries the lens and the round of the
+        item it cites, so the ledger has to carry the lens."""
         source, directory = round2
         ledger = source.meta(directory)["prior_dispositions"]
         assert {(entry["lens"], entry["id"]) for entry in ledger} == {
@@ -808,8 +809,9 @@ class TestSuppression:
         ]})
         assert set(index) == {"correctness.r1.f1", "security.r1.f2"}
 
-    def test_b11_the_same_id_from_another_lens_is_not_suppressed(self, round2, dest):
-        """Exact re-citation only: a different lens raising that id is a different claim."""
+    def test_b11_another_lens_citing_the_settled_id_is_suppressed(self, round2, dest):
+        """A settled item is settled whichever lens raised it first, and every lens is shown
+        the id that cites it, so writing that id is a citation whoever writes it."""
         source, directory = round2
         code, answer, out = assemble(
             source, dest, round_dir=directory,
@@ -818,8 +820,23 @@ class TestSuppression:
                 round_dir=directory),
         )
         assert code == 0, answer
-        assert answer["suppressed"] == 0
-        assert answer["mechanical"] == 1
+        assert answer["suppressed"] == 1
+        assert answer["verdict"] == "clean"
+        assert suppressions_of(out) == [{
+            "lens": "security", "finding_id": "correctness.r1.F1", "settled_id": "F1",
+            "settled_round": 1, "disposition": "rebutted",
+        }]
+
+    def test_b11_another_lens_reusing_a_settled_number_is_not_suppressed(self, round2, dest):
+        """A bare number is nobody's citation: the lens that raised it this round owns it."""
+        source, directory = round2
+        code, answer, out = assemble(
+            source, dest, round_dir=directory,
+            reports=source.reports(
+                dest, {"security": [mechanical("F1", "security")]}, round_dir=directory),
+        )
+        assert code == 0, answer
+        assert (answer["suppressed"], answer["mechanical"]) == (0, 1)
         assert suppressions_of(out) == []
         assert validate(out, source.staffing) == (0, {"valid": True})
 
