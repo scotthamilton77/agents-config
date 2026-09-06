@@ -433,35 +433,48 @@ def test_a_run_stating_no_timeout_seats_its_turns_behind_the_suites_own(
 ) -> None:
     """
     Given a run whose environment states no request timeout, and then one
-          stating seven seconds, each seating a case on its own seat and on an
-          added one
+          stating seven seconds, each seating a case on its own seat and on one
+          of every transport a seat can sit on
     When each builds the drivers those seats take their turns on
     Then every driver of the first carries the floor and every driver of the
          second exactly the seven it asked for: the turns here are the longest
          a seat takes, and one killed on the clock leaves no reply to judge --
-         a row about the runner rather than about the prompt, on whichever seat
-         the shorter default reached.
+         a row about the runner rather than about the prompt, on whichever
+         transport the shorter default reached. Each transport carries the
+         limit its own way, so a run held to one of them is a run whose other
+         two can go back to the default unnoticed.
     """
     import evals.__main__ as suite
 
     built: list[float] = []
     seated = suite.seat_driver
 
+    def refuse(*_args: Any, **_kwargs: Any) -> str:
+        raise AgentUnreachableError(FAST_TIER)
+
     def spy(*args: Any, **kwargs: Any) -> Any:
         driver = seated(*args, **kwargs)
-        built.append(driver.cli.keywords["timeout"])
-        driver.cli = lambda *_args: codex_stream(document().model_dump_json())
+        # A CLI seat holds the limit on the partial it sends through and a
+        # hosted one on the transport object; what the seat replies is not this
+        # test's question, so each seam refuses rather than reaching a model.
+        seam = getattr(driver, "cli", None)
+        built.append(driver.transport.timeout if seam is None else seam.keywords["timeout"])
+        if seam is None:
+            driver.transport = refuse
+        else:
+            driver.cli = refuse
         return driver
 
     monkeypatch.setattr(suite, "seat_driver", spy)
 
-    added = ["--seat", "codex:another-model:medium"]
+    seats = ("codex:another-model:medium", "claude:another-model:xhigh", "openrouter:hosted")
+    added = [arg for seat in seats for arg in ("--seat", seat)]
     monkeypatch.delenv(REQUEST_TIMEOUT_ENV, raising=False)
     suite.main(["--case", CASE, *added, "--report", str(tmp_path / "unstated")])
     monkeypatch.setenv(REQUEST_TIMEOUT_ENV, "7")
     suite.main(["--case", CASE, *added, "--report", str(tmp_path / "stated")])
 
-    assert built == [300.0, 300.0, 7.0, 7.0]
+    assert built == [300.0] * 4 + [7.0] * 4
 
 
 def test_a_reply_the_appender_refuses_is_a_red_row_carrying_what_it_sent(
