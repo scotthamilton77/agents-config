@@ -819,8 +819,8 @@ def test_the_measured_baselines_are_the_ones_recorded() -> None:
     expert = cases["2026-09-04-expert-owed-rulings"]
     first_rung = cases["2026-09-04-first-rung-nothing-owed"]
 
-    assert (expert.prompt_tokens, seat_of(expert, config)) == (7306, config.expert_seat)
-    assert (first_rung.prompt_tokens, seat_of(first_rung, config)) == (11505, config.map_seat)
+    assert (expert.prompt_tokens, seat_of(expert, config)) == (8342, config.expert_seat)
+    assert (first_rung.prompt_tokens, seat_of(first_rung, config)) == (12287, config.map_seat)
 
 
 def test_a_default_run_writes_a_dated_report_and_says_where(
