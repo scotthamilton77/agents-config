@@ -33,7 +33,7 @@ var EMISSIONS = {
 var PROPOSABLE_KINDS = ["add-node", "revise", "invalidate", "settle", "unsettle", "resolve-stale"];
 var NOTICE_KINDS = ["informational", "elicit-alert"];
 var MAP_MUTATION_KINDS = ["add-node", "invalidate", "revise", "settle", "unsettle", "resolve-stale", "elicit-alert", "fold"];
-var STATUS_PHASES = ["accepted", "composing", "replied", "error", "transferred"];
+var STATUS_PHASES = ["accepted", "composing", "replied", "error", "transferred", "rulings-dropped"];
 var AGENT_ACTORS = ["grill-master", "thread-agent"];
 var CLAIM_STATES = ["granted", "refused", "superseded"];
 // The three payload keys this page reads a tier off, spelled the backend's way.

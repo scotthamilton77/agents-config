@@ -60,6 +60,7 @@ from grillui.schemas import (
     PAYLOAD_SHAPES,
     SESSION_START_KIND,
     Thread,
+    update_problem,
 )
 
 if TYPE_CHECKING:
@@ -537,8 +538,30 @@ UPDATE_EXAMPLES: dict[str, dict[str, Any]] = {
         "short": "Log compaction",
         "title": "How is the log compacted?",
         "body": "The log grows for the whole session, and nothing trims it.",
-        "options": [{"id": "a", "text": "Never"}, {"id": "b", "text": "On a size bound"}],
+        "options": [
+            {
+                "id": "a",
+                "text": "Never",
+                "pcr": ["a complete record", "unbounded growth", "a size ceiling"],
+                "puts_in_question": ["d2"],
+            },
+            {
+                "id": "b",
+                "text": "On a size bound",
+                "pcr": ["a bounded log", "older turns", "where the bound sits"],
+                "puts_in_question": [],
+            },
+        ],
         "prereqs": ["d1"],
+        "talk": {"why": "Recovery rests on it.", "zoom": "Consider a crash mid-write."},
+        "mandate": {
+            "threadId": "t-compaction",
+            "scope": "retention",
+            "title": "Compaction policy",
+            "notice": "Any answer opens this thread.",
+        },
+        "fogUntil": "d1",
+        "fogTitle": "Settle the store first",
     },
     "elicit-alert": {
         "kind": "elicit-alert",
@@ -603,23 +626,38 @@ def _named(fields: Iterable[str]) -> str:
     return ", ".join(f"`{one}`" for one in fields)
 
 
+def required_fields(kind: str) -> list[str]:
+    """The fields an update of this kind is refused for leaving out.
+
+    Asked of the gate rather than read off the payload shape, by taking the
+    example apart a field at a time and keeping the ones whose absence the gate
+    refuses. The shape is not the whole of what the gate enforces -- a `settle`
+    passes its shape without an answer and is refused for having none -- so a
+    contract built from the shape alone tells a seat a field is optional that
+    costs it the turn.
+    """
+    example = UPDATE_EXAMPLES[kind]
+    return sorted(
+        name
+        for name in example
+        if name != "kind"
+        and update_problem({key: value for key, value in example.items() if key != name})
+        is not None
+    )
+
+
 def kind_contract(kind: str) -> str:
     """One kind's whole contract, rendered from the objects that enforce it.
 
-    The required list is the appender's own shape, so a field named here is a
-    field an update is refused for missing and no other. The optional list is
-    the rest of that shape together with the fields the example carries beyond
-    it -- which are the ones the board reads off a payload without the appender
-    demanding them, and exactly the ones a seat copying the example would
-    otherwise drop.
+    The required list is what the gate refuses an update for missing. The
+    optional list is everything else the shape declares or the example carries
+    -- the fields the board reads off a payload without the gate demanding them,
+    and exactly the ones a seat copying the example would otherwise drop.
     """
     shape = PAYLOAD_SHAPES[kind]
     example = UPDATE_EXAMPLES[kind]
-    required = sorted(name for name, one in shape.model_fields.items() if one.is_required())
-    optional = sorted(
-        {name for name, one in shape.model_fields.items() if not one.is_required()}
-        | {name for name in example if name != "kind" and name not in shape.model_fields}
-    )
+    required = required_fields(kind)
+    optional = sorted((set(shape.model_fields) | set(example)) - {"kind", *required})
     return (
         f"  - `{kind}`: {KIND_DEFINITIONS[kind]}.\n"
         f"    Required: {_named(required)}. Optional: {_named(optional) or 'nothing'}.\n"

@@ -85,14 +85,12 @@ from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import PayloadRefusedError
 from grillui.projector import fold
 from grillui.schemas import (
-    ANSWER_KINDS,
     CONTEXT_BYTES_KEY,
     CONTEXT_LIMIT_KEY,
     DROPPED_RULINGS_KEY,
     EFFORT_KEY,
     FAST_TIER,
     FOLD_KIND,
-    FOLDABLE_KINDS,
     FOLLOWED_TRANSFER_KEY,
     HEAVY_TIER,
     MAP_CHANNEL,
@@ -102,6 +100,7 @@ from grillui.schemas import (
     RECOMMENDATION_KEY,
     RULING_STANDS,
     RULINGS_KEY,
+    STATUS_PHASE_RULINGS_DROPPED,
     STATUS_PHASE_TRANSFERRED,
     STOP_KEY,
     SUPERSEDES_KEY,
@@ -115,9 +114,8 @@ from grillui.schemas import (
     RejectedReceipt,
     Ruling,
     Stop,
-    answer_problem,
     fault_summary,
-    payload_problem,
+    update_problem,
 )
 from grillui.tiers import (
     API_KEY_ENV,
@@ -1272,41 +1270,10 @@ def document_problem(reply: str) -> str | None:
     if document.supersedes and not sub_updates(document):
         return "supersedes: a withdrawal needs `text`, an update or a ruling to ride on"
     for index, update in enumerate(document.updates):
-        problem = _update_problem(update)
+        problem = update_problem(update)
         if problem is not None:
             return f"updates.{index}: {problem}"
     return None
-
-
-def _update_problem(update: Mapping[str, Any]) -> str | None:
-    """Why the appender would refuse this update, or None where it would take it.
-
-    The turn's own updates and no others: the notice, the `stands` informationals
-    and the stop notice are minted by the code below out of fields the shape has
-    already validated, so gate-judging them would put the backend's own bytes on
-    the seat's retry.
-
-    The shape is judged by the same function the appender judges it with, so the
-    two cannot drift into refusing different bytes. What is added here is what
-    that function has no answer for: it holds no shape for a kind outside the
-    vocabulary, so an unknown one passes it and is refused at the append instead;
-    and the answer an agent settles with is checked against the board there,
-    which this reader does not have. It asks the smaller question a boardless
-    reader can -- whether an answer is carried at all -- and leaves whether the
-    option is one the decision offers to the appender.
-    """
-    kind = update.get("kind")
-    if not isinstance(kind, str):
-        return "an update names no kind"
-    if kind not in FOLDABLE_KINDS:
-        return f"{kind!r} is not a kind an update may carry"
-    problem = payload_problem(kind, update)
-    if problem is not None:
-        return problem
-    if kind not in ANSWER_KINDS and "answer" not in update:
-        return None
-    refused = answer_problem(update.get("answer"), None)
-    return None if refused is None else f"{kind!r} payload: {refused[0]}: {refused[1]}"
 
 
 def read_document(reply: str) -> GrillMasterDocument:
@@ -1447,10 +1414,11 @@ def owed_rulings(
 
     A ruling is owed only where the dispatch carried an obligation, and then
     only on the decisions that obligation named. Everything else is a verdict
-    nobody asked for: the evidence is a turn dispatched with no obligation at
-    all that ruled `stands` on all five decisions on the board, including two
-    the human had already settled, and put each `why` in front of them as a
-    notice.
+    nobody asked for, and an unstruck one is not harmless: a `stands` mints a
+    notice pinned to the decision it rules, so a turn ruling across the whole
+    board puts a line on every decision the human has already dealt with, and
+    the board that was showing them what is left to answer is showing them a
+    shelf of agreement instead.
 
     Struck here rather than left to the seat because the brief is advice and
     this is the gate: whatever any seat on any rung decides to rule, the entry
@@ -1504,6 +1472,17 @@ def record_document(
         # check upstream exists to decide about. Raising here would skip the
         # ladder that owes this case a hand-up and then a notice.
         #
+        # A strike still goes on the record. There is no entry to put it on --
+        # a turn whose whole content was unowed rulings has none -- so it rides
+        # the lane, which is where a fact the backend authored and nobody has to
+        # act on belongs. Written before the refusal below, because a turn that
+        # both withdrew and had rulings struck loses the record otherwise.
+        if struck:
+            log.emit_status(
+                STATUS_PHASE_RULINGS_DROPPED,
+                f"rulings on {', '.join(struck)} were not owed by this turn",
+                MAP_CHANNEL,
+            )
         # A withdrawal is the exception: `supersedes` rides on an entry, so a
         # turn that withdrew something and gave nothing to record it on has
         # lost the gesture. That is a failed turn rather than a silent drop.

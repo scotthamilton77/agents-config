@@ -61,10 +61,12 @@ from grillui.schemas import (
     RULING_STANDS,
     RULINGS_KEY,
     STATUS_PHASE_ERROR,
+    STATUS_PHASE_RULINGS_DROPPED,
     STOP_KEY,
     VERDICT_KEY,
     DispatchContext,
     EventSubmission,
+    HandoffDecision,
     MootnessObligation,
     Option,
     payload_problem,
@@ -187,6 +189,15 @@ def errors(log: SessionLog) -> list[str]:
         str(entry.payload.get("detail"))
         for entry in log.entries()
         if entry.kind == "status" and entry.payload.get("phase") == STATUS_PHASE_ERROR
+    ]
+
+
+def struck(log: SessionLog) -> list[str]:
+    """What the lane recorded as ruled on and not owed, in order."""
+    return [
+        str(entry.payload.get("detail"))
+        for entry in log.entries()
+        if entry.kind == "status" and entry.payload.get("phase") == STATUS_PHASE_RULINGS_DROPPED
     ]
 
 
@@ -1022,11 +1033,11 @@ def test_a_turn_owing_nothing_lands_no_rulings_and_no_stands_notices(log: Sessio
     Then the entry carries no rulings, no `stands` notice reaches the human, and
          the entry names all three ids as struck.
 
-    This is the incident the filter exists for: a turn dispatched with no
-    obligation ruled `stands` on five decisions, two of them already settled,
-    and every `why` landed in front of the human as an informational. Whether
-    the seat is told to do that is the brief's problem; that it cannot is this
-    one.
+    Ruling across the whole board on a turn that owed nothing is what the filter
+    is for. Each `stands` would otherwise mint a notice pinned to the decision
+    it rules, so the human meets a line of agreement on every question rather
+    than the ones their answer actually disturbed. Whether the seat is told to
+    rule that widely is the brief's problem; that it cannot is this one.
     """
     only = ScriptedFast(
         replies=[document(text="Nothing else moves.", rulings=[ruling(one) for one in NODES])]
@@ -1043,6 +1054,30 @@ def test_a_turn_owing_nothing_lands_no_rulings_and_no_stands_notices(log: Sessio
     # is a notice pinned to a decision, which is the only shape a `stands` why
     # reaches the board in.
     assert [one.target for one in board.pending if one.kind == "informational"] == [None]
+
+
+def test_a_turn_carrying_only_unowed_rulings_records_the_drop_with_no_entry(
+    log: SessionLog,
+) -> None:
+    """
+    Given a turn owing nothing whose whole content is one ruling, so that
+          striking it leaves the turn with nothing to say
+    When the map turn is taken
+    Then no entry is appended, and the lane carries the id that was struck.
+
+    The empty-turn rule stands: every entry shape here holds content, and
+    inventing some would put words in the agent's mouth. What must not happen is
+    the strike going unrecorded, because a turn cut back to nothing and a turn
+    that said nothing are different facts and only one of them is about the
+    seat.
+    """
+    only = ScriptedFast(replies=[document(text="", rulings=[ruling("d2")])])
+    seed(log)
+
+    answer(Lane(log, FastDriver(TierConfig(), only)), option="a")
+
+    assert replies(log) == []
+    assert struck(log) == ["rulings on d2 were not owed by this turn"]
 
 
 def test_the_rulings_that_survive_are_the_ones_the_obligation_named() -> None:
@@ -1157,23 +1192,54 @@ def _fields(said: str) -> set[str]:
     return set() if said == "nothing" else {one.strip(" `") for one in said.split(",")}
 
 
+def _refused_without(example: dict[str, Any]) -> set[str]:
+    """The example's fields whose removal the document gate refuses.
+
+    Asked of the gate here as well as in the renderer, and asked of it by taking
+    a real example apart, so the two answers agree only where the gate says the
+    same thing to both.
+    """
+    return {
+        name
+        for name in example
+        if name != "kind"
+        and document_problem(
+            document(updates=[{key: value for key, value in example.items() if key != name}])
+        )
+        is not None
+    }
+
+
+# What a node carries when its author states it, as against what the board adds
+# once it is on there: the same shape minus the status, answer, rationale and
+# lock the images own. An add-node payload is exactly one of these, so this is
+# the field set the page renders a new decision from -- read off the model
+# rather than listed by hand. `id` is out because the backend mints it.
+RENDERED_NODE_FIELDS = {
+    (one.alias or name) for name, one in HandoffDecision.model_fields.items()
+} - {"id"}
+RENDERED_OPTION_FIELDS = set(Option.model_fields)
+
+
 def test_the_per_kind_contract_is_rendered_from_the_appender_and_the_fold() -> None:
     """
     Given the per-kind contract in the grill-master's standing brief
-    When each block is read back out of the brief the seat is sent
-    Then the brief names a kind exactly when the appender folds it, every field
-         it calls required is one that kind's shape requires, every field it
-         calls optional is one the shape or the example carries, the landing it
-         claims is the fold's own answer for that kind, and each example passes
-         both the shape and the document gate -- with an `add-node` carrying the
-         `short` and `body` the board renders a node by.
+    When each block is parsed back out of the brief the seat is sent and held to
+         the gate, the fold and the node shape
+    Then the brief names a kind exactly when the appender folds it; the fields
+         it calls required are exactly those the gate refuses an update for
+         missing; the fields it calls optional are exactly the rest of the shape
+         and the example; the landing it claims is the fold's own answer; each
+         example passes the shape and the gate; and the add-node example carries
+         every field a node is rendered from, options included.
 
-    The prompt is the seat's whole contract, so a prompt that disagrees with the
-    appender is a seat writing updates that are refused and a seat leaving out
-    fields the board needs. The evidence is a turn that copied the add-node
-    example's field set exactly and shipped a node the board could only label by
-    its id. Everything structural here is therefore read off the objects that
-    enforce it, and this reads the rendered result back to prove it.
+    The prompt is the seat's whole contract, so a contract that disagrees with
+    the gate is a seat writing updates the gate refuses, and one that shows an
+    incomplete node is a seat shipping decisions the board can only label by
+    their ids. Both sides are therefore read off the objects that enforce them,
+    and the rendered text is parsed back rather than rebuilt: a block composed
+    from the renderer's own inputs would agree with it by construction and
+    notice nothing, a block hand-edited into the prompt included.
     """
     brief = system_prompt(HEAVY_TIER, GRILL_MASTER)
     blocks = {one.group("kind"): one for one in CONTRACT_BLOCK.finditer(brief)}
@@ -1183,17 +1249,18 @@ def test_the_per_kind_contract_is_rendered_from_the_appender_and_the_fold() -> N
         shape = PAYLOAD_SHAPES[kind]
         example = UPDATE_EXAMPLES[kind]
         required = _fields(block.group("required"))
-        assert required == {
-            name for name, one in shape.model_fields.items() if one.is_required()
-        }, kind
-        for name in required:
-            assert shape.model_fields[name].is_required(), f"{kind}.{name} is not required"
-        assert _fields(block.group("optional")) <= (set(shape.model_fields) | set(example)), kind
+        assert required == _refused_without(example), kind
+        assert _fields(block.group("optional")) == (
+            (set(shape.model_fields) | set(example)) - {"kind"} - required
+        ), kind
         assert block.group("landing") == landing(kind), kind
         assert json.loads(block.group("example")) == example, kind
         assert payload_problem(kind, example) is None, kind
         assert document_problem(document(updates=[example])) is None, kind
     added = json.loads(blocks["add-node"].group("example"))
+    assert set(added) >= RENDERED_NODE_FIELDS, RENDERED_NODE_FIELDS - set(added)
+    for offered in added["options"]:
+        assert set(offered) >= RENDERED_OPTION_FIELDS, RENDERED_OPTION_FIELDS - set(offered)
     node = node_from_payload(added, "n-1")
     assert node.short and node.body and node.title and node.options
 
