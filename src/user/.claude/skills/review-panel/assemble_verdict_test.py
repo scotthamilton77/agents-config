@@ -823,8 +823,11 @@ class TestSuppression:
             {"round": 1, "id": "correctness.r1.f1", "lens": "correctness",
              "disposition": "fixed"},
             {"round": 1, "id": "f2", "lens": "security", "disposition": "advisory-deferred"},
+            {"round": 1, "id": "security.r1.", "lens": "security", "disposition": "fixed"},
         ]})
-        assert set(index) == {"correctness.r1.f1", "security.r1.f2"}
+        assert set(index) == {
+            "correctness.r1.f1", "security.r1.f2", "security.r1.security.r1."
+        }
 
     def test_b11_another_lens_citing_the_settled_id_is_suppressed(self, round2, dest):
         """A settled item is settled whichever lens raised it first, and every lens is shown
@@ -846,7 +849,7 @@ class TestSuppression:
         }]
 
     def test_b11_another_lens_reusing_a_settled_number_is_not_suppressed(self, round2, dest):
-        """A bare number is nobody's citation: the lens that raised it this round owns it."""
+        """A bare id is nobody's citation: the lens that raised it this round owns it."""
         source, directory = round2
         code, answer, out = assemble(
             source, dest, round_dir=directory,

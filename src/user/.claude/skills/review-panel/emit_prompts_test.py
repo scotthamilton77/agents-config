@@ -478,10 +478,13 @@ class TestRoundsAndLedger:
 
     def test_b4_an_id_already_carrying_a_lens_and_round_prefix_is_shown_as_written(self):
         """The prompt and the assembler read ids by one rule, or the id a reviewer is shown
-        is not the id its citation is matched on: any lens-and-round prefix cites a settled
-        item, whichever lens wrote it, and a bare id qualifies under the lens raising it."""
+        is not the id its citation is matched on: an id carrying a lens-and-round prefix and
+        something after it is left as written, whichever lens wrote it, and every other id
+        qualifies under the lens raising it."""
         assert emitter._qualified("security", 2, "correctness.r1.f1") == "correctness.r1.f1"
         assert emitter._qualified("security", 2, "f1") == "security.r2.f1"
+        assert (emitter._qualified("security", 2, "correctness.r1.")
+                == "security.r2.correctness.r1.")
 
     def test_b4_unsupported_rebuttal_is_refused(self, repo, acs_file, tmp_path, capsys):
         """A prior mechanical finding marked rebutted without evidence never settles."""

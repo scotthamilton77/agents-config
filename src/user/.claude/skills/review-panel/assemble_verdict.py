@@ -47,8 +47,9 @@ ROUTE_KEYS = frozenset({*ROUTE_FIELDS, "substitution"})
 # closed shape that has no room for it, so it is matched on here and dropped on the way in.
 LEDGER_ONLY_FIELDS = ("lens",)
 
-# An id already carrying a lens-and-round prefix, which cites one settled item and nothing else.
-QUALIFIED = re.compile(r"[^\s.]+\.r\d+\.")
+# An id already carrying a lens-and-round prefix, which is left as written: it
+# suppresses when it matches a settled item, and stays live when it matches none.
+QUALIFIED = re.compile(r"[^\s.]+\.r\d+\..+")
 
 COPIED_FROM_ROUND = (
     "artifact_class", "round", "base_sha", "head_sha", "claim_id",

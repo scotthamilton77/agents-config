@@ -977,8 +977,9 @@ def lens_tier(lens: dict, round_no: int) -> str:
     return lens.get("re_review_tier", lens["tier"])
 
 
-# An id already carrying a lens-and-round prefix, which cites one settled item and nothing else.
-_QUALIFIED = re.compile(r"[^\s.]+\.r\d+\.")
+# An id already carrying a lens-and-round prefix, which is left as written: it
+# suppresses when it matches a settled item, and stays live when it matches none.
+_QUALIFIED = re.compile(r"[^\s.]+\.r\d+\..+")
 
 
 def _qualified(lens: Any, round_no: Any, item: str) -> str:
