@@ -88,6 +88,7 @@ from grillui.schemas import (
     ANSWER_KINDS,
     CONTEXT_BYTES_KEY,
     CONTEXT_LIMIT_KEY,
+    DROPPED_RULINGS_KEY,
     EFFORT_KEY,
     FAST_TIER,
     FOLD_KIND,
@@ -110,6 +111,7 @@ from grillui.schemas import (
     DispatchContext,
     EventSubmission,
     GrillMasterDocument,
+    MootnessObligation,
     RejectedReceipt,
     Ruling,
     Stop,
@@ -864,7 +866,7 @@ class FastDriver:
         # that costs nothing -- a refusal raises out of the block before either
         # is written, and nothing else could have read the log in between.
         with log.appending():
-            record_reply(log, self.tier, channel, reply, attribution)
+            record_reply(log, self.tier, channel, reply, attribution, context.mootness)
             if advice is not None and self.config.autonomous:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, model)
@@ -962,7 +964,7 @@ class HeavyDriver:
         # and conditional on the reply -- a refusal raises out of the block
         # before anything is said about a turn that never happened.
         with log.appending():
-            record_reply(log, self.tier, channel, reply, attribution)
+            record_reply(log, self.tier, channel, reply, attribution, context.mootness)
             measured.warn(log, model)
 
 
@@ -1052,7 +1054,7 @@ class CodexDriver:
         # one: the transfer a policy buys and the warning this turn measured are
         # about the reply immediately above them.
         with log.appending():
-            record_reply(log, self.tier, channel, reply, attribution)
+            record_reply(log, self.tier, channel, reply, attribution, context.mootness)
             if advice is not None and self.config.autonomous:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, seat.model)
@@ -1438,8 +1440,39 @@ def stop_notice(stop: Stop) -> list[dict[str, Any]]:
     return [{"kind": "informational", "text": f"{said} {stop.why}" if stop.why else said}]
 
 
+def owed_rulings(
+    document: GrillMasterDocument, owed: MootnessObligation | None
+) -> tuple[GrillMasterDocument, list[str]]:
+    """The turn with its unowed rulings struck, and the ids that were struck.
+
+    A ruling is owed only where the dispatch carried an obligation, and then
+    only on the decisions that obligation named. Everything else is a verdict
+    nobody asked for: the evidence is a turn dispatched with no obligation at
+    all that ruled `stands` on all five decisions on the board, including two
+    the human had already settled, and put each `why` in front of them as a
+    notice.
+
+    Struck here rather than left to the seat because the brief is advice and
+    this is the gate: whatever any seat on any rung decides to rule, the entry
+    carries only what was asked for. The whole document is rebuilt rather than
+    the entry patched, so the `stands` notices minted downstream are minted from
+    the same list the entry records -- a filter applied to one and not the other
+    is how a notice for a struck ruling reaches the human anyway.
+    """
+    wanted = set() if owed is None else set(owed.ids)
+    kept = [one for one in document.rulings if one.decision in wanted]
+    struck = [one.decision for one in document.rulings if one.decision not in wanted]
+    if not struck:
+        return document, []
+    return document.model_copy(update={"rulings": kept}), struck
+
+
 def record_document(
-    log: SessionLog, tier: str, document: GrillMasterDocument, attribution: dict[str, Any]
+    log: SessionLog,
+    tier: str,
+    document: GrillMasterDocument,
+    attribution: dict[str, Any],
+    owed: MootnessObligation | None = None,
 ) -> None:
     """Put a grill-master turn into the log, whole.
 
@@ -1454,7 +1487,12 @@ def record_document(
     event of its own. They ride on every turn, empty or not: the obligation
     check reads coverage off them, and a key that is sometimes absent is a check
     that sometimes reads a turn that ruled as a turn that could not.
+
+    `owed` is what this turn's dispatch put in question, and the rulings are cut
+    to it before anything is built out of them. A turn that owed nothing lands
+    no rulings and mints no `stands` notice, whatever it sent.
     """
+    document, struck = owed_rulings(document, owed)
     updates = sub_updates(document)
     if not updates:
         # Every key validated and the turn still carries nothing: no notice, no
@@ -1474,10 +1512,12 @@ def record_document(
         return
     if document.supersedes:
         updates[0] = {**updates[0], SUPERSEDES_KEY: document.supersedes}
-    judgement = {
+    judgement: dict[str, Any] = {
         RULINGS_KEY: [one.model_dump() for one in document.rulings],
         STOP_KEY: document.stop.model_dump(),
     }
+    if struck:
+        judgement[DROPPED_RULINGS_KEY] = struck
     # The turn spoke and did nothing else: with one sub-update and a notice in
     # it, the notice is what that one is, since everything else contributed
     # none. It rides as the entry itself rather than inside a fold.
@@ -1492,7 +1532,12 @@ def record_document(
 
 
 def record_reply(
-    log: SessionLog, tier: str, channel: str, text: str, attribution: dict[str, Any]
+    log: SessionLog,
+    tier: str,
+    channel: str,
+    text: str,
+    attribution: dict[str, Any],
+    owed: MootnessObligation | None = None,
 ) -> None:
     """Put the turn into the log, attributed.
 
@@ -1519,9 +1564,13 @@ def record_reply(
     the answer it offered, because that is what each is: this turn replacing
     what a previous one told the human, or putting to them what it takes the
     thread to have settled, in the same breath as it says the new thing.
+
+    `owed` is the dispatch's mootness obligation, and it reaches only the map
+    turn: a thread agent rules on nothing, so there is nothing there to cut to
+    an obligation it was never given.
     """
     if channel == MAP_CHANNEL:
-        record_document(log, tier, read_document(text), attribution)
+        record_document(log, tier, read_document(text), attribution, owed)
         return
     prose, updates, superseded, proposal = declared_updates(text)
     refusal = _proposal_refusal(log, channel, text, proposal)

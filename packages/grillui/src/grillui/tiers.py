@@ -50,18 +50,20 @@ from typing import TYPE_CHECKING, Any
 
 from grillui.dispatch import GRILL_MASTER, THREAD_AGENT
 from grillui.escalation import INVALIDATE_KIND, turns_of
+from grillui.projector import landing
 from grillui.schemas import (
     FAST_TIER,
     FOLDABLE_KINDS,
     HEAVY_TIER,
     MAP_CHANNEL,
     MAP_THREAD_KIND,
+    PAYLOAD_SHAPES,
     SESSION_START_KIND,
     Thread,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from grillui.schemas import DispatchContext, LogEntry, MootnessObligation
 
@@ -532,7 +534,9 @@ BOARD_LEGEND = (
 UPDATE_EXAMPLES: dict[str, dict[str, Any]] = {
     "add-node": {
         "kind": "add-node",
+        "short": "Log compaction",
         "title": "How is the log compacted?",
+        "body": "The log grows for the whole session, and nothing trims it.",
         "options": [{"id": "a", "text": "Never"}, {"id": "b", "text": "On a size bound"}],
         "prereqs": ["d1"],
     },
@@ -544,15 +548,85 @@ UPDATE_EXAMPLES: dict[str, dict[str, Any]] = {
     },
     "informational": {"kind": "informational", "target": "d1", "text": "what you are telling them"},
     "invalidate": {"kind": "invalidate", "target": "d1", "why": "the answer left it no question"},
-    "resolve-stale": {"kind": "resolve-stale", "target": "d1"},
-    "revise": {"kind": "revise", "target": "d1", "title": "How is the log compacted, given b?"},
+    "resolve-stale": {
+        "kind": "resolve-stale",
+        "target": "d1",
+        "why": "the answer it rested on came back unchanged",
+    },
+    "revise": {
+        "kind": "revise",
+        "target": "d1",
+        "short": "Log compaction, given b",
+        "title": "How is the log compacted, given b?",
+        "body": "A size bound was taken, so what remains is where the bound is drawn.",
+        "prereqs": ["d1"],
+        "options": [{"id": "a", "text": "At 10MB"}, {"id": "b", "text": "At 100MB"}],
+    },
     "settle": {
         "kind": "settle",
         "target": "d1",
         "answer": {"option": "a", "text": "the answer in their words"},
+        "why": "they said so in as many words",
     },
-    "unsettle": {"kind": "unsettle", "target": "d1"},
+    "unsettle": {
+        "kind": "unsettle",
+        "target": "d1",
+        "why": "the answer rested on a figure that moved",
+    },
 }
+
+# What each kind is for, in one line. This is the whole of the hand-written
+# prose in the per-kind contract below: which fields a kind requires, which it
+# may also carry and what the backend does with it are read off the appender's
+# shape and the fold's own rule, so the contract cannot tell a seat a field is
+# required that the appender never asks for, nor promise a landing the fold
+# does not perform.
+KIND_DEFINITIONS: dict[str, str] = {
+    "add-node": "put a new question on the board, with the options it can be answered from",
+    "elicit-alert": (
+        "name something this decision rests on that nobody has supplied; `blocking` true says "
+        "the decision cannot be answered until they supply it"
+    ),
+    "informational": "tell the human something, changing no decision",
+    "invalidate": "the decision has no question left to ask, and stops being offered",
+    "resolve-stale": "judge a decision that went stale under a withdrawn answer",
+    "revise": (
+        "change what a decision asks: every field you supply replaces what is there, and "
+        "every field you leave out stands"
+    ),
+    "settle": "record the answer the human gave, in their words",
+    "unsettle": "withdraw an answer, putting the decision back on the frontier",
+}
+
+
+def _named(fields: Iterable[str]) -> str:
+    return ", ".join(f"`{one}`" for one in fields)
+
+
+def kind_contract(kind: str) -> str:
+    """One kind's whole contract, rendered from the objects that enforce it.
+
+    The required list is the appender's own shape, so a field named here is a
+    field an update is refused for missing and no other. The optional list is
+    the rest of that shape together with the fields the example carries beyond
+    it -- which are the ones the board reads off a payload without the appender
+    demanding them, and exactly the ones a seat copying the example would
+    otherwise drop.
+    """
+    shape = PAYLOAD_SHAPES[kind]
+    example = UPDATE_EXAMPLES[kind]
+    required = sorted(name for name, one in shape.model_fields.items() if one.is_required())
+    optional = sorted(
+        {name for name, one in shape.model_fields.items() if not one.is_required()}
+        | {name for name in example if name != "kind" and name not in shape.model_fields}
+    )
+    return (
+        f"  - `{kind}`: {KIND_DEFINITIONS[kind]}.\n"
+        f"    Required: {_named(required)}. Optional: {_named(optional) or 'nothing'}.\n"
+        f"    It {landing(kind)}.\n"
+        f"    Example: {json.dumps(example)}\n"
+    )
+
 
 DOCUMENT_FORMAT_RULE = (
     "Every turn you take is one JSON object and nothing else: no prose outside it, no "
@@ -563,11 +637,12 @@ DOCUMENT_FORMAT_RULE = (
     "- `updates`: the map updates you are proposing. "
     f"`kind` is one of {', '.join(sorted(FOLDABLE_KINDS))} and nothing else; the "
     "backend refuses a kind outside that list, and the refusal takes the whole turn with it. "
-    "Each example below shows one update of its kind, carrying every field that kind "
-    "requires, and an update missing one of those is refused the same way -- a `settle` in "
-    "particular carries its `answer` nested under that key, holding `option`, `text` or "
-    "both, and never as top-level fields:\n"
-    + "".join(f"  - {json.dumps(one)}\n" for one in UPDATE_EXAMPLES.values())
+    "Each kind below states what it is for, the fields the backend requires, the fields it "
+    "may also carry, what the backend does with it when it arrives, and one example. An "
+    "update missing a required field is refused the same way an unknown kind is -- a "
+    "`settle` in particular carries its `answer` nested under that key, holding `option`, "
+    "`text` or both, and never as top-level fields:\n"
+    + "".join(kind_contract(kind) for kind in sorted(FOLDABLE_KINDS))
     + "- `supersedes`: the ids of pending items of yours you are withdrawing.\n"
     "- `rulings`: your judgement on the decisions this gesture put in question, each {"
     '"decision": "d2", "ruling": "invalidate" | "revise" | "stands", "why": "one line"}.\n'

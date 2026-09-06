@@ -749,6 +749,36 @@ def _proposes(board: _Board, actor: str, kind: str, payload: Mapping[str, object
     return node is not None and node.answer is not None
 
 
+# How an update of a given kind reaches the board, in the words an agent is
+# briefed with. They are phrases rather than a table because the table is the
+# rule above, and a second table beside it is the thing that drifts: the brief
+# asks the rule itself and renders whichever of these it answers with.
+LANDS_AT_ONCE = "lands on the board as soon as it arrives"
+LANDS_WHILE_UNANSWERED = (
+    "lands while the decision carries no answer, and waits in the human's queue once it has one"
+)
+WAITS_IN_QUEUE = "always waits in the human's queue until the human applies it"
+ALSO_QUEUES_AS_NOTICE = ", and joins the human's queue as a notice"
+
+
+def landing(kind: str) -> str:
+    """What the fold does with an agent's update of this kind, said in a phrase.
+
+    Asked of the rule rather than restated beside it, and asked twice -- against
+    a decision nobody has answered and against that same decision answered --
+    because an answer on the target is the only thing the rule varies on. A
+    kind whose behaviour the rule changes is a kind whose brief changes with
+    it, which is the whole reason this is a function and not a table.
+    """
+    board = _Board(decisions={"d": Decision(id="d")})
+    payload = {"target": "d"}
+    unanswered = _proposes(board, "grill-master", kind, payload)
+    board.decisions["d"].answer = Answer(option="a", text="the answer")
+    answered = _proposes(board, "grill-master", kind, payload)
+    said = WAITS_IN_QUEUE if unanswered else LANDS_WHILE_UNANSWERED if answered else LANDS_AT_ONCE
+    return said + (ALSO_QUEUES_AS_NOTICE if kind in _NOTICE_KINDS else "")
+
+
 def _queue(
     board: _Board, entry: LogEntry, kind: str, payload: Mapping[str, object], key: str
 ) -> None:

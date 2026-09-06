@@ -375,6 +375,16 @@ FROM_THREAD_KEY = "from_thread"
 RULINGS_KEY = "rulings"
 STOP_KEY = "stop"
 
+# The decisions a turn ruled on that the dispatch never put in question, dropped
+# before the append. It rides the entry rather than being discarded silently
+# because the drop is the backend overriding what the seat said: a turn that
+# ruled on five decisions and had three struck reads, from the log alone, as a
+# turn that ruled on two -- and the difference between a seat that stayed inside
+# its obligation and one that was cut back to it is the whole signal for whether
+# the brief is working. Absent where nothing was dropped, so its presence is the
+# fact.
+DROPPED_RULINGS_KEY = "rulings_dropped"
+
 # The verdict a backend-minted sub-update records, stamped when it is minted.
 # A `stands` ruling queues no change, so the only thing on the board it produced
 # is the informational the driver mints for it -- and a document may carry its
