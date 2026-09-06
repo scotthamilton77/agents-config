@@ -104,7 +104,9 @@ UNTRUSTED_NOTICE = (
 )
 SETTLED_ITEMS = (
     "The fenced section lists items already dispositioned in an earlier round, across every "
-    "lens. Each is settled: do not re-raise it, whichever lens raised it first."
+    "lens, each under the id that cites it. Each is settled: do not re-raise it, whichever "
+    "lens raised it first. To refer to one, carry its id exactly as listed; a finding you "
+    "raise this round is new, and carries an id of your own rather than a settled item's."
 )
 SCOPE_FULL = (
     "Re-read the whole artifact this round, not only what changed since you last judged it."
@@ -975,6 +977,20 @@ def lens_tier(lens: dict, round_no: int) -> str:
     return lens.get("re_review_tier", lens["tier"])
 
 
+def _qualified(lens: Any, round_no: Any, item: str) -> str:
+    """The id that cites a finding: {lens}.r{round}.{id}, left as written if already in it.
+
+    Reviewers number findings f1..fN fresh every round, so bare ids collide across rounds and
+    the assembler cannot tell a re-citation of a settled item from a new finding wearing its
+    number. What the prompt shows a reviewer is therefore the id that citation is matched on.
+    """
+    if not lens:
+        return item
+    if re.match(rf"{re.escape(str(lens))}\.r\d+\.", item):
+        return item
+    return f"{lens}.r{round_no}.{item}"
+
+
 def _render_findings(findings: list[dict], ledger: list[dict]) -> str:
     if not findings:
         return "None: this lens raised nothing in an earlier round.\n"
@@ -983,8 +999,9 @@ def _render_findings(findings: list[dict], ledger: list[dict]) -> str:
     for finding in sorted(findings, key=lambda f: (f.get("round") or 0, f.get("id") or "")):
         key = (finding.get("round"), finding.get("id"))
         entry = by_key.get(key, {})
+        cites = _qualified(finding.get("lens"), key[0], key[1])
         lines.append(
-            f"- round {key[0]}, finding {key[1]} ({finding.get('type')}, criterion "
+            f"- round {key[0]}, finding {cites} ({finding.get('type')}, criterion "
             f"{finding.get('ac')}): {finding.get('claim')}\n"
             f"  disposition: {entry.get('disposition', 'none recorded')}"
             + (f" — {entry['evidence']}" if entry.get("evidence") else "")
@@ -996,8 +1013,9 @@ def _render_ledger(ledger: list[dict]) -> str:
     if not ledger:
         return "None: nothing has been dispositioned yet.\n"
     lines = [
-        f"- round {item['round']}, finding {item['id']} (raised by {item.get('lens')}): "
-        f"{item['disposition']}"
+        f"- round {item['round']}, finding "
+        f"{_qualified(item.get('lens'), item['round'], item['id'])} "
+        f"(raised by {item.get('lens')}): {item['disposition']}"
         + (f" — {item['evidence']}" if item.get("evidence") else "")
         + (f" [carried by {item['work_item']}]" if item.get("work_item") else "")
         for item in ledger

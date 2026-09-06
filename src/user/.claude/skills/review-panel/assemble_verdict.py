@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -42,8 +43,8 @@ ROUTE_FIELDS = ("lens", "vendor", "transport", "model")
 ROUTE_KEYS = frozenset({*ROUTE_FIELDS, "substitution"})
 
 # The ledger the emitter writes carries the lens that raised each settled item, which is
-# what suppression matches on. The envelope's disposition entries are a closed shape that
-# has no room for it, so it is matched on here and dropped on the way in.
+# half of the qualified id suppression matches on. The envelope's disposition entries are a
+# closed shape that has no room for it, so it is matched on here and dropped on the way in.
 LEDGER_ONLY_FIELDS = ("lens",)
 
 COPIED_FROM_ROUND = (
@@ -254,20 +255,34 @@ def check_authorized(staffed: list[str], routes: dict[str, dict], claims: list[d
         )
 
 
-def settled_index(round_meta: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
-    """Settled items keyed by the lens and id that would re-cite them.
+def qualified(lens: Any, round_no: Any, item: str) -> str:
+    """The id that cites a finding: {lens}.r{round}.{id}, left as written if already in it.
+
+    Reviewers number findings f1..fN fresh every round, so bare ids collide across rounds.
+    Matching on the bare id suppresses a live finding whose number happens to match a settled
+    one; only a lens-and-round-qualified id can be written by citing that item deliberately.
+    """
+    if blank(lens):
+        return item
+    if re.match(rf"{re.escape(str(lens))}\.r\d+\.", item):
+        return item
+    return f"{lens}.r{round_no}.{item}"
+
+
+def settled_index(round_meta: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Settled items keyed by the qualified id that would re-cite them.
 
     Matching is exact re-citation and nothing else: a fuzzy match would suppress a live
     finding on a resemblance no one can audit.
     """
-    index: dict[tuple[str, str], dict[str, Any]] = {}
+    index: dict[str, dict[str, Any]] = {}
     for entry in round_meta.get("prior_dispositions", []):
         if not isinstance(entry, dict):
             continue
         lens, item = entry.get("lens"), entry.get("id")
         if blank(lens) or blank(item):
             continue
-        index[(lens, item)] = entry
+        index[qualified(lens, entry.get("round"), item)] = entry
     return index
 
 
@@ -300,7 +315,7 @@ def read_report(lens: str, path: str) -> dict[str, Any]:
 
 
 def collect(
-    staffed: list[str], reports: dict[str, str], settled: dict[tuple[str, str], dict]
+    staffed: list[str], reports: dict[str, str], settled: dict[str, dict], round_no: Any
 ) -> tuple[list[dict], list[dict], dict[str, str]]:
     """Findings, suppressions, and each lens's own verdict, in the round's lens order."""
     findings: list[dict[str, Any]] = []
@@ -329,7 +344,7 @@ def collect(
                 # cannot be acted on, and the marker keeps the demotion countable.
                 finding["type"] = "advisory"
                 finding["downgraded_from"] = "mechanical"
-            match = settled.get((lens, item))
+            match = settled.get(qualified(lens, round_no, item))
             if match is not None:
                 suppressions.append({
                     "lens": lens,
@@ -478,7 +493,9 @@ def assemble(args: argparse.Namespace) -> dict[str, Any]:
     check_coverage(staffed, reports, routes)
     check_authorized(staffed, routes, read_claims(directory))
 
-    findings, suppressions, lens_verdicts = collect(staffed, reports, settled_index(round_meta))
+    findings, suppressions, lens_verdicts = collect(
+        staffed, reports, settled_index(round_meta), round_meta.get("round")
+    )
     envelope: dict[str, Any] = {
         "schema_version": "3",
         **{key: round_meta.get(key) for key in COPIED_FROM_ROUND},

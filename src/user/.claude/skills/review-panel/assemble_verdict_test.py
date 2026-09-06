@@ -750,13 +750,33 @@ class TestSuppression:
             ("correctness", "F1"), ("security", "F2")
         }
 
-    def test_b11_an_exact_re_citation_of_a_settled_item_is_suppressed(self, round2, dest):
-        """A settled item does not re-enter the campaign, whatever the lens says this round."""
+    def test_b11_a_settled_id_reused_by_a_fresh_finding_is_not_suppressed(self, round2, dest):
+        """Reviewers number findings f1..fN fresh each round, so a bare id that happens to
+        match a settled one is a new claim rather than a citation of it."""
         source, directory = round2
         code, answer, out = assemble(
             source, dest, round_dir=directory,
             reports=source.reports(
                 dest, {"correctness": [mechanical("F1", "correctness")]}, round_dir=directory),
+        )
+        assert code == 0, answer
+        assert (answer["suppressed"], answer["mechanical"]) == (0, 1)
+        assert suppressions_of(out) == []
+        raised = json.loads(out.read_text(encoding="utf-8"))["findings"]
+        assert [(item["lens"], item["id"], item["type"]) for item in raised] == [
+            ("correctness", "F1", "mechanical")
+        ]
+        assert validate(out, source.staffing) == (0, {"valid": True})
+
+    def test_b11_an_exact_re_citation_of_a_settled_item_is_suppressed(self, round2, dest):
+        """A settled item does not re-enter the campaign, whatever the lens says this round.
+        The citation is the settled item's qualified id, which names the round it settled in."""
+        source, directory = round2
+        code, answer, out = assemble(
+            source, dest, round_dir=directory,
+            reports=source.reports(
+                dest, {"correctness": [mechanical("correctness.r1.F1", "correctness")]},
+                round_dir=directory),
         )
         assert code == 0, answer
         assert answer["suppressed"] == 1
@@ -769,13 +789,24 @@ class TestSuppression:
         code, _, out = assemble(
             source, dest, round_dir=directory,
             reports=source.reports(
-                dest, {"correctness": [mechanical("F1", "correctness")]}, round_dir=directory),
+                dest, {"correctness": [mechanical("correctness.r1.F1", "correctness")]},
+                round_dir=directory),
         )
         assert code == 0
         assert suppressions_of(out) == [{
-            "lens": "correctness", "finding_id": "F1", "settled_id": "F1",
+            "lens": "correctness", "finding_id": "correctness.r1.F1", "settled_id": "F1",
             "settled_round": 1, "disposition": "rebutted",
         }]
+
+    def test_b11_a_ledger_id_already_qualified_is_keyed_as_written(self):
+        """Ids qualified where the finding was extracted reach the ledger already carrying
+        lens and round; the index keys those as written rather than qualifying them twice."""
+        index = assembler.settled_index({"prior_dispositions": [
+            {"round": 1, "id": "correctness.r1.f1", "lens": "correctness",
+             "disposition": "fixed"},
+            {"round": 1, "id": "f2", "lens": "security", "disposition": "advisory-deferred"},
+        ]})
+        assert set(index) == {"correctness.r1.f1", "security.r1.f2"}
 
     def test_b11_the_same_id_from_another_lens_is_not_suppressed(self, round2, dest):
         """Exact re-citation only: a different lens raising that id is a different claim."""
@@ -783,7 +814,8 @@ class TestSuppression:
         code, answer, out = assemble(
             source, dest, round_dir=directory,
             reports=source.reports(
-                dest, {"security": [mechanical("F1", "security")]}, round_dir=directory),
+                dest, {"security": [mechanical("correctness.r1.F1", "security")]},
+                round_dir=directory),
         )
         assert code == 0, answer
         assert answer["suppressed"] == 0

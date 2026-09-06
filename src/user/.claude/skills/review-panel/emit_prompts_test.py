@@ -452,14 +452,29 @@ class TestRoundsAndLedger:
         assert code == 0
         emitted = prompts(out_dir)
         correctness = emitted["correctness"]
-        assert "round 1, finding f1" in correctness
+        assert "round 1, finding correctness.r1.f1" in correctness
         assert "disposition: fixed" in correctness
         assert "the reader drops the trailing record" in correctness
         # f2 belongs to another lens: its disposition travels, its claim text does not.
-        assert "round 1, finding f2 (raised by security): advisory-deferred" in correctness
+        assert ("round 1, finding security.r1.f2 (raised by security): advisory-deferred"
+                in correctness)
         assert "the temp path is world-readable" not in correctness
         assert "None: this lens raised nothing in an earlier round." in emitted["test-adequacy"]
-        assert "round 1, finding f1" in emitted["test-adequacy"]
+        assert "round 1, finding correctness.r1.f1" in emitted["test-adequacy"]
+
+    def test_b4_the_settled_ledger_names_each_item_by_the_id_that_cites_it(
+        self, repo, acs_file, tmp_path, capsys
+    ):
+        """Suppression matches an exact re-citation, so the prompt shows the id that cites a
+        settled item — lens and round included — and says a fresh finding never wears one."""
+        flat, out_dir = round2(tmp_path, repo, acs_file, SETTLED)
+        code, _ = run(flat, capsys)
+        assert code == 0
+        correctness = prompts(out_dir)["correctness"]
+        assert emitter.SETTLED_ITEMS in correctness
+        assert "each under the id that cites it" in correctness
+        assert "carry its id exactly as listed" in correctness
+        assert "round 1, finding correctness.r1.f1 (raised by correctness): fixed" in correctness
 
     def test_b4_unsupported_rebuttal_is_refused(self, repo, acs_file, tmp_path, capsys):
         """A prior mechanical finding marked rebutted without evidence never settles."""
