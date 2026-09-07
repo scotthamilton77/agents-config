@@ -219,6 +219,18 @@ class TestARejectedVerdictCostsNoApiCall:
             pytest.param('{"head_sha": null, "findings": []}', id="a-null-head-sha"),
             pytest.param('{"head_sha": "", "findings": []}', id="an-empty-head-sha"),
             pytest.param('{"head_sha": "abc", "findings": []}', id="an-abbreviated-head-sha"),
+            pytest.param(
+                '{"head_sha": "' + "z" * 40 + '", "findings": []}',
+                id="a-forty-character-head-sha-that-is-not-hex",
+            ),
+            pytest.param(
+                '{"head_sha": "' + HEAD + '\\n", "findings": []}',
+                id="a-head-sha-carrying-a-trailing-newline",
+            ),
+            pytest.param(
+                '{"head_sha": "' + HEAD + 'a", "findings": []}',
+                id="a-head-sha-one-character-too-long",
+            ),
             pytest.param('{"head_sha": "' + HEAD + '"}', id="an-envelope-with-no-findings"),
             pytest.param(
                 '{"head_sha": "' + HEAD + '", "findings": {}}', id="findings-as-an-object"
@@ -515,3 +527,21 @@ def test_the_verb_builds_no_store_so_it_can_read_or_write_no_grooming_state(
     wire(monkeypatch, http)
     assert invoke(config, verdict).exit_code == 0
     assert built == []
+
+
+def test_a_verdict_holding_only_the_fields_this_verb_reads_is_accepted(
+    workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The reader takes the head SHA, the findings list and the fields it anchors
+    # on. Requiring any other envelope or finding field would make this verb a
+    # second validator of a document already validated where it was assembled.
+    config, verdict = workspace
+    verdict.write_text(
+        json.dumps({"head_sha": HEAD, "findings": [{"id": "f1", "evidence": f"{APP_PY}:3"}]})
+    )
+    http = transport(BASE_ROUTES)
+    wire(monkeypatch, http)
+    result = invoke(config, verdict)
+    assert result.exit_code == 0
+    (posted,) = http.posted_reviews()
+    assert posted["comments"][0]["path"] == APP_PY

@@ -70,8 +70,10 @@ _RIGHT = "RIGHT"
 # boundary refuses a number with anything glued to it, so `app.py:3junk` names no
 # line rather than line 3.
 #
-# ponytail: a path containing a space is not findable this way and lands
-# body-only; making it findable needs the finding to quote it.
+# A path containing a space is not findable this way, because nothing
+# distinguishes the path's own space from the space that ends it; such a finding
+# lands in the body alone. Making one findable would need the finding to quote
+# the path.
 _ANCHOR = re.compile(r"(?P<path>[^\s:]+):(?P<lines>\d+(?:-\d+)?)(?![\w-])")
 
 # The header of one unified-diff hunk. Its right-hand count is the number of
@@ -342,13 +344,17 @@ _DELIMITERS = "`'\"()[]{}<>,;!?"
 def _resolve_path(named: str, spans: Mapping[str, list[tuple[int, int]]]) -> str | None:
     """The one changed file ``named`` identifies, or nothing if zero or several do.
 
-    Surrounding punctuation is stripped before the comparison, because a path
-    written inside backticks or parentheses is the same path. Only the ends are
-    trimmed, so a name carrying those characters between its own is untouched.
+    The token is tried exactly as written before it is tried trimmed, because
+    trimming is a fallback for prose that wrapped a path and never a rewrite of
+    one: a file whose name ends in punctuation would otherwise be shadowed by the
+    file whose name is that one trimmed.
     """
-    segments = named.strip(_DELIMITERS).split("/")
-    matches = [path for path in spans if path.split("/")[-len(segments) :] == segments]
-    return matches[0] if len(matches) == 1 else None
+    for candidate in (named, named.strip(_DELIMITERS)):
+        segments = candidate.split("/")
+        matches = [path for path in spans if path.split("/")[-len(segments) :] == segments]
+        if len(matches) == 1:
+            return matches[0]
+    return None
 
 
 def _required(

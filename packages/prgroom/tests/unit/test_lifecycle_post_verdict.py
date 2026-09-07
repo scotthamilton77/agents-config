@@ -356,6 +356,14 @@ def test_the_claim_is_read_when_the_evidence_holds_no_anchor() -> None:
     assert place_anchor(item, SPANS) == Anchor(APP_PY, 3, 3)
 
 
+def test_a_name_ending_in_punctuation_beats_the_trimmed_one_it_shadows() -> None:
+    # Trimming is a fallback for prose that wrapped a path, never a rewrite of a
+    # path: when the token names a changed file exactly, that file is the answer.
+    spans = {"src/report": [(1, 5)], "src/report?": [(1, 5)]}
+    item = finding("f1", evidence="src/report?:3")
+    assert place_anchor(item, spans) == Anchor("src/report?", 3, 3)
+
+
 def test_a_finding_carrying_neither_field_anchors_nothing() -> None:
     assert place_anchor(finding("f1"), SPANS) is None
 
