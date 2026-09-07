@@ -833,6 +833,16 @@ def load_dispositions(path: str | None) -> list[dict]:
         raise Refusal("ledger-gap", f"cannot read the --disposition file {path}: {exc}") from exc
     if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
         raise Refusal("ledger-gap", "--disposition must be a JSON array of disposition objects")
+    for entry in value:
+        # Vocabulary at the read, ahead of every reader: a word the ledger does not know settles
+        # nothing, so no gate downstream should have to decide what it meant.
+        if entry.get("disposition") not in DISPOSITIONS:
+            raise Refusal(
+                "ledger-gap",
+                f"finding {entry.get('id')} from round {entry.get('round')} carries the unknown "
+                f"disposition {entry.get('disposition')!r}; a finding settles only as one of: "
+                + ", ".join(DISPOSITIONS),
+            )
     return value
 
 
@@ -869,12 +879,6 @@ def build_ledger(
         work_item = str(entry.get("work_item") or "")
         disposition = entry.get("disposition")
         mechanical = type_of.get(key) == "mechanical"
-        if disposition not in DISPOSITIONS:
-            raise Refusal(
-                "ledger-gap",
-                f"finding {key[1]} from round {key[0]} carries the unknown disposition "
-                f"{disposition!r}; a finding settles only as one of: " + ", ".join(DISPOSITIONS),
-            )
         if disposition == "rebutted" and not evidence.strip():
             raise Refusal(
                 "unsupported-rebuttal",

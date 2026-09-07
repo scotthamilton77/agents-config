@@ -1444,6 +1444,19 @@ class TestSweep:
         assert code == 2 and result["errors"][0]["code"] == "unsupported-rebuttal"
         assert len(loads) == 1
 
+    def test_b4_an_unknown_disposition_refuses_at_the_ledger_not_the_gate(self, repo, acs_file,
+                                                                           tmp_path, capsys):
+        """The ledger's vocabulary is read before anything judges the campaign's position, so a
+        word it does not know is a gap in the ledger — not a sweep that is not due."""
+        flat, out_dir = self._settled_campaign(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "waived"},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "ledger-gap"
+        assert "waived" in result["errors"][0]["message"]
+        assert not out_dir.exists()
+
     def test_b4_a_first_round_sweep_is_refused(self, repo, acs_file, tmp_path, capsys):
         """Round 1 is already a whole-artifact read; there is no delta campaign to close."""
         staffing = write_json(tmp_path / "sweep-staffing.json", staffing_record(
