@@ -106,18 +106,23 @@ def wire(monkeypatch: pytest.MonkeyPatch, http: RouteTableHttp) -> None:
     )
 
 
+def run_cli(*args: str) -> Any:
+    """Invoke the CLI and require the failure contract every path it takes must meet.
+
+    A coded exit is the whole of what this verb reports, so a traceback reaching
+    the operator means an exception escaped its handler — and the exit status
+    alone cannot tell the two apart. Asserting it here rather than in each error
+    test covers the paths this module gains later as well as the ones it has.
+    """
+    result = runner.invoke(cli.app, list(args))
+    assert "Traceback" not in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    return result
+
+
 def invoke(config: Path, verdict: Path, *extra: str) -> Any:
-    return runner.invoke(
-        cli.app,
-        [
-            "post-verdict",
-            PR_ARG,
-            "--verdict",
-            str(verdict),
-            "--project-config",
-            str(config),
-            *extra,
-        ],
+    return run_cli(
+        "post-verdict", PR_ARG, "--verdict", str(verdict), "--project-config", str(config), *extra
     )
 
 
@@ -177,7 +182,7 @@ def test_the_verdict_is_required(
     config, _ = workspace
     http = transport({})
     wire(monkeypatch, http)
-    result = runner.invoke(cli.app, ["post-verdict", PR_ARG, "--project-config", str(config)])
+    result = run_cli("post-verdict", PR_ARG, "--project-config", str(config))
     assert result.exit_code == 2
     assert http.calls == []
 
@@ -445,7 +450,7 @@ class TestDefaultProjectConfigPath:
         monkeypatch.chdir(tmp_path)
         http = transport(BASE_ROUTES)
         wire(monkeypatch, http)
-        result = runner.invoke(cli.app, ["post-verdict", PR_ARG, "--verdict", str(verdict)])
+        result = run_cli("post-verdict", PR_ARG, "--verdict", str(verdict))
         assert result.exit_code == 0
         assert len(http.posted_reviews()) == 1
 
