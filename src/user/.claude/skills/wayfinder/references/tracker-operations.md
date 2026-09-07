@@ -26,4 +26,4 @@ If tracks are configured and required, the facade refuses the map's create until
 
 ## Labels
 
-Two survive, and only two. `wayfinder:map`, because enumerating maps — `work list --label wayfinder:map` — has no other expression, the container noun being shared with ordinary containers. `wayfinder:afk`, because whether a session may resolve a ticket without the human is the thing a session filters on when it fans out, and no field carries it. Everything else the label scheme once carried is now the noun, which is a first-class field; a label restating a field is duplication.
+Two labels, and only two. `wayfinder:map`, because enumerating maps — `work list --label wayfinder:map` — has no other expression, the container noun being shared with ordinary containers. `wayfinder:afk`, because whether a session may resolve a ticket without the human is the thing a session filters on when it fans out, and no field carries it. The ticket's kind is the noun, which is a first-class field; a label restating a field is duplication.
