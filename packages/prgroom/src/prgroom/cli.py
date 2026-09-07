@@ -53,13 +53,14 @@ from prgroom.lifecycle import (
 from prgroom.lifecycle.approve import resolve_key_path
 from prgroom.lifecycle.human_review import derive_human_review, fetch_human_review_inputs
 from prgroom.lifecycle.locking import with_lock
+from prgroom.lifecycle.post_verdict import load_verdict, post_verdict_pr
 from prgroom.lifecycle.push import has_queued_fix_commits
 from prgroom.lifecycle.resolver import apply_retry_budget_gate, retry_budget_exhausted
 from prgroom.lifecycle.run import Mode, run_lifecycle, wait_lifecycle
 from prgroom.lifecycle.status import build_status
 from prgroom.proc import CommandRunner, SubprocessRunner
 from prgroom.prsession.enums import DispositionKind
-from prgroom.prsession.pr_ref import PRRef
+from prgroom.prsession.pr_ref import PRRef, is_commit_sha
 from prgroom.prsession.registry import resolve_store
 from prgroom.prsession.state import PRGroomingState, ReviewItem, bootstrap_state
 from prgroom.prsession.store import StateNotFoundError, Store
@@ -70,6 +71,11 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+# The verbs that reach GitHub as the App rather than as the operator. Neither
+# reads or writes grooming state, so neither may be blocked by a store it would
+# never open — the root callback builds none for them.
+_STORELESS_VERBS = frozenset({"approve", "post-verdict"})
 
 
 def _build_store(name: str | None) -> Store:
@@ -124,7 +130,7 @@ def _validated_head_sha(value: str) -> str:
     Rejected here rather than at the API so a typo costs no network call, and
     lowercased so a SHA pasted in uppercase still matches what GitHub reports.
     """
-    if len(value) != 40 or not all(c in "0123456789abcdefABCDEF" for c in value):
+    if not is_commit_sha(value):
         msg = "must be a 40-character hex commit SHA"
         raise typer.BadParameter(msg)
     return value.lower()
@@ -203,11 +209,11 @@ def _root(
     stashed on ``ctx.obj`` for the verbs to consume. Precedence (flag > env >
     default) lives in :func:`resolve_store`, the single source of truth.
 
-    ``approve`` is exempt: it holds no grooming state, so a store it would never
-    open must not stand between a human-instructed merge and the review that
-    unblocks it.
+    The App-review verbs are exempt: they hold no grooming state, so a store
+    neither would ever open must not stand between a human-instructed merge and
+    the review that unblocks it, nor between a finished round and its verdict.
     """
-    if ctx.invoked_subcommand == "approve":
+    if ctx.invoked_subcommand in _STORELESS_VERBS:
         return
     try:
         ctx.obj = _build_store(store)
@@ -738,6 +744,49 @@ def approve(
             ref=ref,
             head_sha=head_sha,
             facts=facts,
+            app_id=approver.app_id,
+            key_path=key_path,
+            now=int(Deps.system().clock.now().timestamp()),
+        )
+        sys.stdout.write(message + "\n")
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
+
+
+@app.command(name="post-verdict")
+def post_verdict(
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+    verdict: str = typer.Option(
+        ...,
+        "--verdict",
+        help="Path to the assembled round verdict; its text becomes the review body.",
+    ),
+    project_config: str = typer.Option(
+        "project-config.toml",
+        "--project-config",
+        # Square brackets are rich markup in help output, so the TOML table is
+        # named without them.
+        help="Project config whose merge-policy approver table names the App.",
+    ),
+) -> None:
+    """Submit the configured GitHub App's comment-only review carrying a verdict.
+
+    Not a grooming verb: it reads and writes no state and takes no PR lock. The
+    body is the verdict file's own text, one inline comment sits at each finding
+    that names a line the diff touches, and the review is pinned to the head the
+    verdict declares — refused outright if the PR has moved off it. It never
+    approves, and a verdict already posted at that head is a success no-op.
+    """
+    try:
+        ref = PRRef.parse(pr)
+        loaded = load_verdict(Path(verdict))
+        approver = _load_approver(Path(project_config))
+        key_path = resolve_key_path(approver, os.environ)
+        message = post_verdict_pr(
+            http=_build_http(),
+            runner=_build_runner(),
+            ref=ref,
+            verdict=loaded,
             app_id=approver.app_id,
             key_path=key_path,
             now=int(Deps.system().clock.now().timestamp()),

@@ -1,4 +1,9 @@
-"""PRRef — the per-PR identity used as the Store key (§2)."""
+"""PRRef — the per-PR identity used as the Store key (§2) — and the commit-id shape.
+
+Both identify a thing this CLI addresses by name rather than by content, and both
+are validated before anything is spent on them: a ref that cannot resolve to a PR
+and a SHA that cannot be a commit are refused at their entry point, not at the API.
+"""
 
 from __future__ import annotations
 
@@ -19,6 +24,16 @@ _URL = re.compile(
     rf"^https?://github\.com/(?P<owner>{_SLUG})/(?P<repo>{_SLUG})/pull/(?P<number>[1-9]\d*)(?:[/#?].*)?$"
 )
 _BARE_NUMBER = re.compile(r"^(?P<number>[1-9]\d*)$")
+
+# A full git object id. Abbreviations are refused everywhere a commit is named:
+# a review is pinned by comparing against what GitHub reports, which is always
+# the full id, and a prefix would compare unequal to the head it does identify.
+_COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
+
+
+def is_commit_sha(value: str) -> bool:
+    """True iff ``value`` is a 40-character hex commit id, in either case."""
+    return _COMMIT_SHA.match(value) is not None
 
 
 @dataclass(frozen=True, slots=True)

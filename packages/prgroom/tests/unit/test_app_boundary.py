@@ -4,7 +4,8 @@ Whatever shape a response arrives in, only a :class:`PrgroomError` may leave the
 client, and a read the client could not trust may not be followed by a review
 submission. The corpus sweeps every payload position the client reads against
 every JSON shape it could hold, so a field added later is covered without a new
-test.
+test — and it sweeps both flows that reach GitHub as the App, because each calls
+a different set of endpoints on the way to the same single submission.
 """
 
 from __future__ import annotations
@@ -13,14 +14,17 @@ import io
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from prgroom.errors import ErrorCode, PrgroomError
-from prgroom.gh.app import GITHUB_API, REVIEWS_PER_PAGE, UrllibTransport
+from prgroom.gh.app import FILES_PER_PAGE, GITHUB_API, REVIEWS_PER_PAGE, UrllibTransport
 from prgroom.lifecycle.approve import approve_pr
+from prgroom.lifecycle.post_verdict import Verdict, post_verdict_pr
 from prgroom.proc import CommandResult
 from prgroom.prsession.pr_ref import PRRef
 from tests.fakes import RecordedRunner, RouteTableHttp
@@ -29,6 +33,7 @@ HEAD = "a" * 40
 APP_ID = 4275336
 KEY_PATH = Path("/keys/app.pem")
 REF = PRRef(owner="octo", repo="demo", number=5)
+LOGIN = "pr-hater[bot]"
 
 PULL = "/repos/octo/demo/pulls/5"
 APP = ("GET", "/app")
@@ -36,7 +41,18 @@ INSTALLATION = ("GET", "/repos/octo/demo/installation")
 TOKEN = ("POST", "/app/installations/42/access_tokens")
 PULL_READ = ("GET", PULL)
 REVIEWS_PAGE_1 = ("GET", f"{PULL}/reviews?per_page={REVIEWS_PER_PAGE}&page=1")
+FILES_PAGE_1 = ("GET", f"{PULL}/files?per_page={FILES_PER_PAGE}&page=1")
 SUBMIT = ("POST", f"{PULL}/reviews")
+
+CHANGED = "src/app.py"
+FILES: list[dict[str, Any]] = [{"filename": CHANGED, "patch": "@@ -1,2 +1,4 @@\n+added\n"}]
+
+VERDICT_TEXT = json.dumps({"head_sha": HEAD, "findings": [{"id": "f1"}]})
+VERDICT = Verdict(
+    text=VERDICT_TEXT,
+    head_sha=HEAD,
+    findings=({"id": "f1", "evidence": f"{CHANGED}:2 is wrong"},),
+)
 
 BASE_ROUTES: dict[tuple[str, str], tuple[int, Any]] = {
     APP: (200, {"slug": "pr-hater"}),
@@ -44,6 +60,7 @@ BASE_ROUTES: dict[tuple[str, str], tuple[int, Any]] = {
     TOKEN: (201, {"token": "tok"}),
     PULL_READ: (200, {"head": {"sha": HEAD}}),
     REVIEWS_PAGE_1: (200, []),
+    FILES_PAGE_1: (200, FILES),
     SUBMIT: (200, {"id": 99}),
 }
 
@@ -51,51 +68,6 @@ BASE_ROUTES: dict[tuple[str, str], tuple[int, Any]] = {
 # because a JSON boolean decodes to a Python bool, which is an int subclass and
 # would otherwise satisfy an integer check.
 SHAPES: list[Any] = [None, True, False, 0, 1, -1, 3.5, "", "text", [], [1], {}, {"x": 1}]
-
-# The reads that precede the submission: a failure in any of them leaves the PR
-# untouched.
-READ_ROUTES = [APP, INSTALLATION, TOKEN, PULL_READ, REVIEWS_PAGE_1]
-
-MATCHING = {"state": "APPROVED", "commit_id": HEAD, "user": {"login": "pr-hater[bot]"}}
-
-# Entries the scan cannot trust: it matched this App's approval and then could not
-# read the id naming it, or could not read a login at all. Acting on a page it
-# half-understood is how a duplicate approval gets posted.
-REVIEW_ENTRIES_REJECTED = [
-    pytest.param({**MATCHING}, id="a-match-with-no-id"),
-    pytest.param({**MATCHING, "id": "7"}, id="a-match-with-a-string-id"),
-    pytest.param({**MATCHING, "id": True}, id="a-match-with-a-boolean-id"),
-    pytest.param({**MATCHING, "id": None}, id="a-match-with-a-null-id"),
-    pytest.param({**MATCHING, "id": [7]}, id="a-match-with-a-list-id"),
-    pytest.param({**MATCHING, "user": "malformed"}, id="a-string-user"),
-    pytest.param({**MATCHING, "user": []}, id="a-list-user"),
-    pytest.param({**MATCHING, "user": {}}, id="a-user-with-no-login"),
-    pytest.param({**MATCHING, "user": {"login": 7}}, id="a-numeric-login"),
-]
-
-# Well-formed entries that are simply not this App's approval at this head. A null
-# user is GitHub's shape for a deleted account.
-REVIEW_ENTRIES_NOT_MATCHING = [
-    pytest.param({**MATCHING, "id": 7, "user": None}, id="a-deleted-reviewer"),
-    pytest.param({**MATCHING, "id": 7, "state": "COMMENTED"}, id="a-comment-only-review"),
-    pytest.param({**MATCHING, "id": 7, "commit_id": "b" * 40}, id="an-approval-of-another-head"),
-    pytest.param({"id": 7}, id="an-entry-carrying-only-an-id"),
-    pytest.param({}, id="an-empty-entry"),
-]
-
-# Each read field, the response carrying it, and the exact type it must be.
-FIELD_CASES = [
-    pytest.param(APP, 200, "slug", str, id="the-app-slug"),
-    pytest.param(INSTALLATION, 200, "id", int, id="the-installation-id"),
-    pytest.param(TOKEN, 201, "token", str, id="the-token"),
-    pytest.param(SUBMIT, 200, "id", int, id="the-submitted-review-id"),
-]
-
-UNDECODABLE = [
-    pytest.param(bytes([255]), id="a-lone-continuation-byte"),
-    pytest.param(b'{"slug": "\xff\xfe"}', id="invalid-utf8-inside-valid-json-syntax"),
-    pytest.param(b"\xc3\x28", id="a-truncated-multibyte-sequence"),
-]
 
 
 def signing_runner() -> RecordedRunner:
@@ -115,9 +87,48 @@ def call_approve(http: RouteTableHttp) -> str:
     )
 
 
-def run_approve(routes: dict[tuple[str, str], tuple[int, Any]]) -> tuple[str, RouteTableHttp]:
-    http = RouteTableHttp(routes)
-    return call_approve(http), http
+def call_post_verdict(http: RouteTableHttp) -> str:
+    return post_verdict_pr(
+        http=http,
+        runner=signing_runner(),
+        ref=REF,
+        verdict=VERDICT,
+        app_id=APP_ID,
+        key_path=KEY_PATH,
+        now=1_000_000,
+    )
+
+
+@dataclass(frozen=True)
+class Flow:
+    """One App-authored path to a single review submission.
+
+    The two differ in which endpoints they read on the way and in what makes a
+    listed review their own; everything the boundary property asserts is the same
+    for both, which is why they are swept together rather than duplicated.
+    """
+
+    call: Callable[[RouteTableHttp], str]
+    read_routes: list[tuple[str, str]]
+    own_review: dict[str, Any]
+
+
+APPROVE_FLOW = Flow(
+    call=call_approve,
+    read_routes=[APP, INSTALLATION, TOKEN, PULL_READ, REVIEWS_PAGE_1],
+    own_review={"state": "APPROVED", "commit_id": HEAD, "user": {"login": LOGIN}},
+)
+
+POST_VERDICT_FLOW = Flow(
+    call=call_post_verdict,
+    read_routes=[APP, INSTALLATION, TOKEN, PULL_READ, REVIEWS_PAGE_1, FILES_PAGE_1],
+    own_review={"body": VERDICT_TEXT, "commit_id": HEAD, "user": {"login": LOGIN}},
+)
+
+FLOWS = [
+    pytest.param(APPROVE_FLOW, id="the-approval"),
+    pytest.param(POST_VERDICT_FLOW, id="the-verdict-posting"),
+]
 
 
 def routes_with(route: tuple[str, str], response: tuple[int, Any]) -> dict[tuple[str, str], Any]:
@@ -127,7 +138,10 @@ def routes_with(route: tuple[str, str], response: tuple[int, Any]) -> dict[tuple
 
 
 def assert_only_prgroom_error_escapes(
-    routes: dict[tuple[str, str], tuple[int, Any]], *, submission_reachable: bool
+    flow: Flow,
+    routes: dict[tuple[str, str], tuple[int, Any]],
+    *,
+    submission_reachable: bool,
 ) -> None:
     """Run the flow and require that any failure is a coded one.
 
@@ -137,7 +151,7 @@ def assert_only_prgroom_error_escapes(
     """
     http = RouteTableHttp(routes)
     try:
-        call_approve(http)
+        flow.call(http)
     except PrgroomError:
         if not submission_reachable:
             assert http.posted_reviews() == []
@@ -145,66 +159,182 @@ def assert_only_prgroom_error_escapes(
         pytest.fail(f"{type(exc).__name__} escaped the App client: {exc}")
 
 
-@pytest.mark.parametrize("route", READ_ROUTES, ids=lambda r: f"{r[0]}-{r[1]}")
+@pytest.mark.parametrize("flow", FLOWS)
 @pytest.mark.parametrize("shape", SHAPES, ids=repr)
-def test_a_malformed_body_on_any_read_is_a_coded_failure(
-    route: tuple[str, str], shape: Any
-) -> None:
+def test_a_malformed_body_on_any_read_is_a_coded_failure(flow: Flow, shape: Any) -> None:
+    for route in flow.read_routes:
+        assert_only_prgroom_error_escapes(
+            flow, routes_with(route, (BASE_ROUTES[route][0], shape)), submission_reachable=False
+        )
+
+
+@pytest.mark.parametrize("flow", FLOWS)
+@pytest.mark.parametrize("shape", SHAPES, ids=repr)
+def test_a_malformed_submission_response_is_a_coded_failure(flow: Flow, shape: Any) -> None:
     assert_only_prgroom_error_escapes(
-        routes_with(route, (BASE_ROUTES[route][0], shape)), submission_reachable=False
+        flow, routes_with(SUBMIT, (200, shape)), submission_reachable=True
     )
 
 
-@pytest.mark.parametrize("shape", SHAPES, ids=repr)
-def test_a_malformed_submission_response_is_a_coded_failure(shape: Any) -> None:
-    assert_only_prgroom_error_escapes(routes_with(SUBMIT, (200, shape)), submission_reachable=True)
+# Entries the scan cannot trust: it matched this App's review and then could not
+# read the id naming it, or could not read a login at all. Acting on a page it
+# half-understood is how a duplicate review gets posted.
+REVIEW_OVERRIDES_REJECTED = [
+    pytest.param({}, id="a-match-with-no-id"),
+    pytest.param({"id": "7"}, id="a-match-with-a-string-id"),
+    pytest.param({"id": True}, id="a-match-with-a-boolean-id"),
+    pytest.param({"id": None}, id="a-match-with-a-null-id"),
+    pytest.param({"id": [7]}, id="a-match-with-a-list-id"),
+    pytest.param({"user": "malformed"}, id="a-string-user"),
+    pytest.param({"user": []}, id="a-list-user"),
+    pytest.param({"user": {}}, id="a-user-with-no-login"),
+    pytest.param({"user": {"login": 7}}, id="a-numeric-login"),
+]
+
+# Well-formed entries that are simply not this App's review of this head, built
+# from the flow's own review so each differs from a match in exactly one way. A
+# null user is GitHub's shape for a deleted account.
+Entry = Callable[[dict[str, Any]], dict[str, Any]]
+
+REVIEW_ENTRIES_NOT_MATCHING = [
+    pytest.param(lambda own: {**own, "id": 7, "user": None}, id="a-deleted-reviewer"),
+    pytest.param(lambda own: {**own, "id": 7, "commit_id": "b" * 40}, id="another-head"),
+    pytest.param(
+        lambda own: {**own, "id": 7, "state": "CHANGES_REQUESTED", "body": "not this verdict"},
+        id="another-review-by-this-app",
+    ),
+    pytest.param(
+        lambda own: {**own, "id": 7, "user": {"login": "someone-else"}}, id="another-identity"
+    ),
+    pytest.param(lambda _own: {"id": 7}, id="an-entry-carrying-only-an-id"),
+    pytest.param(lambda _own: {}, id="an-empty-entry"),
+]
 
 
-@pytest.mark.parametrize("entry", REVIEW_ENTRIES_REJECTED)
-def test_a_review_entry_the_scan_cannot_trust_is_a_coded_failure(entry: Any) -> None:
+@pytest.mark.parametrize("flow", FLOWS)
+@pytest.mark.parametrize("overrides", REVIEW_OVERRIDES_REJECTED)
+def test_a_review_entry_the_scan_cannot_trust_is_a_coded_failure(
+    flow: Flow, overrides: dict[str, Any]
+) -> None:
+    entry = {**flow.own_review, **overrides}
     http = RouteTableHttp(routes_with(REVIEWS_PAGE_1, (200, [entry])))
     with pytest.raises(PrgroomError):
-        call_approve(http)
+        flow.call(http)
     assert http.posted_reviews() == []
 
 
+@pytest.mark.parametrize("flow", FLOWS)
 @pytest.mark.parametrize("entry", REVIEW_ENTRIES_NOT_MATCHING)
-def test_a_well_formed_entry_that_is_not_the_approval_lets_the_flow_post(entry: Any) -> None:
-    _, http = run_approve(routes_with(REVIEWS_PAGE_1, (200, [entry])))
+def test_a_well_formed_entry_that_is_not_this_review_lets_the_flow_post(
+    flow: Flow, entry: Entry
+) -> None:
+    http = RouteTableHttp(routes_with(REVIEWS_PAGE_1, (200, [entry(flow.own_review)])))
+    flow.call(http)
     assert len(http.posted_reviews()) == 1
 
 
+@pytest.mark.parametrize("flow", FLOWS)
+def test_this_flows_own_review_short_circuits_the_submission(flow: Flow) -> None:
+    http = RouteTableHttp(routes_with(REVIEWS_PAGE_1, (200, [{**flow.own_review, "id": 7}])))
+    message = flow.call(http)
+    assert http.posted_reviews() == []
+    assert "review 7" in message
+
+
+@pytest.mark.parametrize("flow", FLOWS)
 @pytest.mark.parametrize("shape", SHAPES, ids=repr)
-def test_a_malformed_entry_beside_a_good_one_is_a_coded_failure(shape: Any) -> None:
+def test_a_malformed_entry_beside_a_good_one_is_a_coded_failure(flow: Flow, shape: Any) -> None:
     assert_only_prgroom_error_escapes(
+        flow,
         routes_with(REVIEWS_PAGE_1, (200, [{"id": 1, "state": "COMMENTED"}, shape])),
         submission_reachable=False,
     )
 
 
+# Entries the files listing cannot be trusted with: a name the client cannot read
+# is a file an anchor may name, and a patch in an unreadable shape is a file whose
+# lines could not be enumerated. Either one demotes an anchor silently.
+FILE_ENTRIES_REJECTED = [
+    pytest.param({}, id="an-entry-with-no-filename"),
+    pytest.param({"filename": 7}, id="a-numeric-filename"),
+    pytest.param({"filename": True}, id="a-boolean-filename"),
+    pytest.param({"filename": []}, id="a-list-filename"),
+    pytest.param({"filename": {"path": CHANGED}}, id="an-object-filename"),
+    pytest.param({"filename": CHANGED, "patch": 7}, id="a-numeric-patch"),
+    pytest.param({"filename": CHANGED, "patch": True}, id="a-boolean-patch"),
+    pytest.param({"filename": CHANGED, "patch": []}, id="a-list-patch"),
+    pytest.param({"filename": CHANGED, "patch": {"diff": ""}}, id="an-object-patch"),
+]
+
+# Well-formed entries that simply make no line commentable.
+FILE_ENTRIES_WITHOUT_LINES = [
+    pytest.param({"filename": CHANGED}, id="a-file-reported-without-a-patch"),
+    pytest.param({"filename": CHANGED, "patch": None}, id="a-file-whose-patch-is-null"),
+    pytest.param({"filename": CHANGED, "patch": ""}, id="a-file-whose-patch-is-empty"),
+    pytest.param({"filename": "other.py", "patch": "@@ -1 +1 @@\n"}, id="an-unrelated-file"),
+]
+
+
+@pytest.mark.parametrize("entry", FILE_ENTRIES_REJECTED)
+def test_a_files_entry_the_client_cannot_read_is_a_coded_failure(entry: Any) -> None:
+    http = RouteTableHttp(routes_with(FILES_PAGE_1, (200, [entry])))
+    with pytest.raises(PrgroomError):
+        call_post_verdict(http)
+    assert http.posted_reviews() == []
+
+
+@pytest.mark.parametrize("entry", FILE_ENTRIES_WITHOUT_LINES)
+def test_a_files_entry_with_no_commentable_line_still_posts_the_envelope(entry: Any) -> None:
+    http = RouteTableHttp(routes_with(FILES_PAGE_1, (200, [entry])))
+    message = call_post_verdict(http)
+    (posted,) = http.posted_reviews()
+    assert "comments" not in posted
+    assert "no line in the diff for finding f1" in message
+
+
+@pytest.mark.parametrize("shape", SHAPES, ids=repr)
+def test_a_malformed_files_entry_beside_a_good_one_is_a_coded_failure(shape: Any) -> None:
+    assert_only_prgroom_error_escapes(
+        POST_VERDICT_FLOW,
+        routes_with(FILES_PAGE_1, (200, [*FILES, shape])),
+        submission_reachable=False,
+    )
+
+
+# Each read field, the response carrying it, and the exact type it must be.
+FIELD_CASES = [
+    pytest.param(APP, 200, "slug", str, id="the-app-slug"),
+    pytest.param(INSTALLATION, 200, "id", int, id="the-installation-id"),
+    pytest.param(TOKEN, 201, "token", str, id="the-token"),
+    pytest.param(SUBMIT, 200, "id", int, id="the-submitted-review-id"),
+]
+
+UNDECODABLE = [
+    pytest.param(bytes([255]), id="a-lone-continuation-byte"),
+    pytest.param(b'{"slug": "\xff\xfe"}', id="invalid-utf8-inside-valid-json-syntax"),
+    pytest.param(b"\xc3\x28", id="a-truncated-multibyte-sequence"),
+]
+
+
+@pytest.mark.parametrize("flow", FLOWS)
 @pytest.mark.parametrize(("route", "status", "field", "want"), FIELD_CASES)
 @pytest.mark.parametrize("shape", SHAPES, ids=repr)
 def test_a_read_field_of_the_wrong_type_is_rejected(
-    route: tuple[str, str], status: int, field: str, want: type, shape: Any
+    flow: Flow, route: tuple[str, str], status: int, field: str, want: type, shape: Any
 ) -> None:
     if type(shape) is want:
         pytest.skip("the type this field requires")
     with pytest.raises(PrgroomError):
-        run_approve(routes_with(route, (status, {field: shape})))
+        flow.call(RouteTableHttp(routes_with(route, (status, {field: shape}))))
 
 
+@pytest.mark.parametrize("flow", FLOWS)
 @pytest.mark.parametrize("shape", SHAPES, ids=repr)
-def test_a_head_sha_of_the_wrong_type_is_rejected(shape: Any) -> None:
+def test_a_head_sha_of_the_wrong_type_is_rejected(flow: Flow, shape: Any) -> None:
     if type(shape) is str:
         pytest.skip("the type this field requires")
     with pytest.raises(PrgroomError):
-        run_approve(routes_with(PULL_READ, (200, {"head": {"sha": shape}})))
-
-
-def test_the_apps_own_approval_still_short_circuits() -> None:
-    message, http = run_approve(routes_with(REVIEWS_PAGE_1, (200, [{**MATCHING, "id": 7}])))
-    assert http.posted_reviews() == []
-    assert "review 7" in message
+        flow.call(RouteTableHttp(routes_with(PULL_READ, (200, {"head": {"sha": shape}}))))
 
 
 class FakeResponse:
@@ -254,6 +384,7 @@ EXPECTED_STATUS = {
     TOKEN: 201,
     PULL_READ: 200,
     REVIEWS_PAGE_1: 200,
+    FILES_PAGE_1: 200,
     SUBMIT: 200,
 }
 
@@ -267,14 +398,16 @@ ENDPOINTS = [
     pytest.param(TOKEN, id="the-token-mint"),
     pytest.param(PULL_READ, id="the-live-head-read"),
     pytest.param(REVIEWS_PAGE_1, id="the-reviews-listing"),
+    pytest.param(FILES_PAGE_1, id="the-files-listing"),
     pytest.param(SUBMIT, id="the-review-submission"),
 ]
 
 
+@pytest.mark.parametrize("flow", FLOWS)
 @pytest.mark.parametrize("endpoint", ENDPOINTS)
 @pytest.mark.parametrize("status", STATUSES)
 def test_an_unexpected_status_at_any_endpoint_stops_the_flow(
-    endpoint: tuple[str, str], status: int
+    flow: Flow, endpoint: tuple[str, str], status: int
 ) -> None:
     """A status the call did not ask for ends the run where it happened.
 
@@ -284,12 +417,14 @@ def test_an_unexpected_status_at_any_endpoint_stops_the_flow(
     """
     if status == EXPECTED_STATUS[endpoint]:
         pytest.skip("the status this call expects")
+    if endpoint not in flow.read_routes and endpoint != SUBMIT:
+        pytest.skip("an endpoint this flow never calls")
     # Unique per endpoint, so an excerpt assertion cannot pass on a substring
     # some other call happened to put in the message.
     marker = f"body-of-{endpoint[0]}-{endpoint[1]}"
     http = RouteTableHttp(routes_with(endpoint, (status, {"marker": marker})))
     with pytest.raises(PrgroomError) as caught:
-        call_approve(http)
+        flow.call(http)
 
     expected_code = (
         ErrorCode.RUNTIME_APPROVER_NOT_INSTALLED
@@ -309,3 +444,14 @@ def test_an_unexpected_status_at_any_endpoint_stops_the_flow(
     assert (method, url) == (endpoint[0], GITHUB_API + endpoint[1])
     if endpoint is not SUBMIT:
         assert http.posted_reviews() == []
+
+
+@pytest.mark.parametrize("flow", FLOWS)
+def test_a_flow_calls_no_endpoint_outside_its_declared_set(flow: Flow) -> None:
+    # Guards the sweeps themselves: a flow that grew an endpoint the corpus does
+    # not list would be swept for statuses and shapes at every position but that
+    # one, and the gap would not show as a failure anywhere.
+    http = RouteTableHttp(BASE_ROUTES)
+    flow.call(http)
+    declared = {GITHUB_API + suffix for _, suffix in [*flow.read_routes, SUBMIT]}
+    assert {url for _, url, _, _ in http.calls} == declared

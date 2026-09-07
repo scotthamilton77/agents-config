@@ -216,3 +216,23 @@ upstream-defect halt when a finding indicts the criteria themselves.
 A findings round then emits its fix dispatch — `emit_fix_dispatch.py --verdict <path> --out
 <path>` — every mechanical finding referenced in full plus the four fix clauses; hand it to the
 fixer whole. A clean round emits none.
+
+## Posting a pull request's verdict
+
+When the target is a pull request, post the verdict to it as soon as it assembles and before the
+fixer's work reaches the branch. A fix moves the head, and a verdict is only postable against the
+head it judged — post late and the round's record is stranded off the commit it speaks about.
+
+```bash
+prgroom post-verdict <pr> --verdict <path>
+```
+
+That submits the reviewing App's comment-only review pinned to the reviewed head: the verdict's own
+bytes as the body, and an inline comment carrying the finding's JSON at each finding whose evidence
+names a file and line the diff touches. A finding it cannot place lands in the body alone and is
+named on stdout — read that list, because a finding nobody sees at the line is a finding the fixer
+is likelier to skim past. It refuses when the live head has already moved, reposting the same
+verdict at the same head posts nothing, and it never approves: the approval is a separate review,
+decided separately and on its own evidence.
+
+A verdict for any other target is not posted anywhere — it is a file you hand on directly.

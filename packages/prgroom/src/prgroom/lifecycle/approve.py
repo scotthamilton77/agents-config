@@ -22,10 +22,9 @@ from prgroom.gh.app import (
     HttpTransport,
     MintedApp,
     build_jwt,
-    iter_reviews,
+    find_own_review,
     mint_installation_token,
     openssl_signer,
-    read_field,
     read_head_sha,
     submit_review,
 )
@@ -128,17 +127,16 @@ def _existing_approval_id(
     """The id of this App's own APPROVED review at ``head_sha``, if one is there.
 
     All three conditions matter: another actor's approval does not license this
-    one, a comment-only review by the App is not an approval, and an approval of
-    an earlier head does not attest the current one.
+    one (the identity filter the scan applies), a comment-only review by the App
+    is not an approval, and an approval of an earlier head does not attest the
+    current one.
     """
-    for review in iter_reviews(http, minted.token, ref):
-        if review.get("user") is None:
-            continue
-        login = read_field(review, "user", "login", want=str, what="reviews listing")
-        if (
-            login == minted.login
-            and review.get("state") == _APPROVED_STATE
-            and review.get("commit_id") == head_sha
-        ):
-            return read_field(review, "id", want=int, what="reviews listing")
-    return None
+    return find_own_review(
+        http,
+        minted.token,
+        ref,
+        minted.login,
+        match=lambda review: (
+            review.get("state") == _APPROVED_STATE and review.get("commit_id") == head_sha
+        ),
+    )

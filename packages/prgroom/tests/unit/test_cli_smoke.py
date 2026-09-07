@@ -36,9 +36,9 @@ MVP_VERBS = [
     "run",
 ]
 
-# `approve` is registered but is not a grooming verb: it takes no PR lock, reads
-# and writes no grooming state, and the `run` aggregate never threads it.
-NON_LIFECYCLE_VERBS = ["approve"]
+# Registered, but not grooming verbs: each takes no PR lock, reads and writes no
+# grooming state, and the `run` aggregate never threads either.
+NON_LIFECYCLE_VERBS = ["approve", "post-verdict"]
 
 REGISTERED_VERBS = [*MVP_VERBS, *NON_LIFECYCLE_VERBS]
 

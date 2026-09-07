@@ -7,9 +7,10 @@ verb-error policy. None of it touches the clock, RNG, or the network directly โ€
 time and randomness arrive via the injected :class:`~prgroom.deps.Deps` seams and
 every gh/git effect lives behind the verb internals.
 
-``approve_pr`` sits here as a verb body but outside that spine: the ``run``
-aggregate never threads it, it touches no grooming state, and it reaches GitHub
-under the App identity rather than the operator's ``gh`` auth.
+``approve_pr`` and ``post_verdict_pr`` sit here as verb bodies but outside that
+spine: the ``run`` aggregate never threads either, neither touches grooming
+state, and both reach GitHub under the App identity rather than the operator's
+``gh`` auth.
 
 The terminal sets distinguish the two notions of "done" (ยง3.1):
 

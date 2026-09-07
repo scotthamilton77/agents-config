@@ -8,10 +8,12 @@ content under `src/`, **this is real code with a real quality gate.**
 clusters it, dispatches fixes, pushes, replies, and resolves threads — as
 locked, resumable lifecycle verbs rather than model-driven prose.
 
-**Nothing drives it today.** Charter D13 ("prgroom is carved, not finished")
-scopes this package to slice S8; no deployed asset invokes it and no harness
-path depends on it. Read its lifecycle verbs as a designed surface, not a
-running one.
+**Almost nothing drives it today.** Charter D13 ("prgroom is carved, not
+finished") scopes this package to slice S8. `post-verdict` is the one exception:
+the `review-panel` skill's round procedure names it as the step that posts an
+assembled verdict to a pull request. No deployed asset invokes any other verb and
+no harness path depends on the grooming loop — read those lifecycle verbs as a
+designed surface, not a running one.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
@@ -69,10 +71,15 @@ but the full gate must pass before push.
 ## Verbs
 
 `poll`, `cluster`, `fix`, `push`, `rereview`, `reply`, `resolve`,
-`resolve-escalated`, `wait`, `status`, `run`, `approve`. `run` is the aggregate
-loop; `status` emits the merge-gate envelope. `approve` stands outside the
-grooming loop entirely — it submits a GitHub-App-authored approving review pinned
-to a head SHA the caller names, taking no PR lock and touching no grooming state.
+`resolve-escalated`, `wait`, `status`, `run`, `approve`, `post-verdict`. `run` is
+the aggregate loop; `status` emits the merge-gate envelope. `approve` and
+`post-verdict` stand outside the grooming loop entirely — both reach GitHub under
+the App identity, take no PR lock and touch no grooming state. `approve` submits
+an approving review pinned to a head SHA the caller names; `post-verdict` submits
+a comment-only review carrying a review round's verdict, pinned to the head that
+verdict declares, with an inline comment at each finding that names a line the
+diff touches. The two reviews are deliberately separate: a verdict says what a
+round found and never that a change may merge.
 `sweep` (cross-PR autonomous mode) is
 design-of-record only (charter D13, "prgroom is carved, not finished",
 forbids building it) and is not a registered command.
@@ -120,8 +127,11 @@ possible for a no-installer or specific-checkout workflow.
 Never invoke `prgroom run`/`push`/`reply`/`resolve` against a real PR to "try it
 out" — those verbs mutate GitHub. `approve` is under the same ban and then some:
 it posts a review that a branch ruleset counts, so an exploratory run leaves an
-approval standing on somebody's PR. The gate's `prgroom --help` entry-verify is
-the only sanctioned automatic invocation.
+approval standing on somebody's PR. `post-verdict` is banned on the same footing
+— it posts a review and inline comments under the App identity, and a downstream
+gate reads an App-posted verdict at the current head as the round's result, so an
+exploratory run plants one nobody ran a round for. The gate's `prgroom --help`
+entry-verify is the only sanctioned automatic invocation.
 
 ## Observability channels
 

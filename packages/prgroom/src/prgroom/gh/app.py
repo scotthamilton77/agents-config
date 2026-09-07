@@ -21,7 +21,7 @@ import json
 import subprocess
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from http.client import HTTPException
 from pathlib import Path
@@ -38,6 +38,11 @@ GITHUB_API = "https://api.github.com"
 # page 1 on a heavily-reviewed PR; every caller walks all pages rather than
 # trusting the first one.
 REVIEWS_PER_PAGE = 100
+
+# The same ceiling for the changed-files collection, walked the same way: a file
+# an anchor names can sit on any page, and a partial listing would silently
+# demote a placeable anchor to body-only.
+FILES_PER_PAGE = 100
 
 # The App JWT's life: ``iat`` is backdated to absorb clock skew against GitHub's
 # clock, and ``exp`` stays inside the 10-minute ceiling the API accepts.
@@ -230,23 +235,39 @@ def read_head_sha(http: HttpTransport, token: str, ref: PRRef) -> str:
 
 def iter_reviews(http: HttpTransport, token: str, ref: PRRef) -> Iterator[dict[str, Any]]:
     """Yield every review on the PR, walking all pages oldest-first."""
-    page = 1
-    while True:
-        reviews = _reviews_page(
-            _expect(
-                http.request(
-                    "GET",
-                    f"{_pull_url(ref)}/reviews?per_page={REVIEWS_PER_PAGE}&page={page}",
-                    headers=_bearer(token),
-                ),
-                "reviews listing",
-            ),
-            page,
-        )
-        yield from reviews
-        if len(reviews) < REVIEWS_PER_PAGE:
-            return
-        page += 1
+    yield from _paginate(http, token, ref, "reviews", REVIEWS_PER_PAGE, "reviews listing")
+
+
+def iter_files(http: HttpTransport, token: str, ref: PRRef) -> Iterator[dict[str, Any]]:
+    """Yield every file the PR's diff touches, walking all pages."""
+    yield from _paginate(http, token, ref, "files", FILES_PER_PAGE, "files listing")
+
+
+def find_own_review(
+    http: HttpTransport,
+    token: str,
+    ref: PRRef,
+    login: str,
+    *,
+    match: Callable[[dict[str, Any]], bool],
+) -> int | None:
+    """The id of the first review by ``login`` that ``match`` accepts, if one is there.
+
+    Both idempotence checks run through here so the reading of an untrusted page
+    is decided once: a null user is GitHub's shape for a deleted account and is
+    skipped, while a login or an id the page carries in the wrong shape fails the
+    call. Acting on a page the scan half-understood is how a duplicate review gets
+    posted, and ``match`` is only ever consulted for a review already known to be
+    this identity's.
+    """
+    for review in iter_reviews(http, token, ref):
+        if review.get("user") is None:
+            continue
+        if read_field(review, "user", "login", want=str, what="reviews listing") != login:
+            continue
+        if match(review):
+            return read_field(review, "id", want=int, what="reviews listing")
+    return None
 
 
 def submit_review(
@@ -257,19 +278,64 @@ def submit_review(
     event: str,
     body: str,
     commit_id: str,
+    comments: Sequence[Mapping[str, Any]] = (),
 ) -> int:
     """Submit one review of ``event`` kind pinned to ``commit_id``; return its id.
 
     ``event`` is a parameter so the same call posts a comment-only review as
     readily as an approval — the pinning and the identity are what this function
-    owns, not the verdict.
+    owns, not the verdict. ``comments`` are inline review comments submitted in
+    the same request: GitHub rejects the whole submission when one of them names a
+    line outside the diff, so a caller passes only anchors it has already placed
+    against the diff, and an empty sequence sends no ``comments`` key at all.
     """
-    payload = json.dumps({"event": event, "commit_id": commit_id, "body": body}).encode()
+    fields: dict[str, Any] = {"event": event, "commit_id": commit_id, "body": body}
+    if comments:
+        fields["comments"] = [dict(comment) for comment in comments]
     review: dict[str, Any] = _expect(
-        http.request("POST", f"{_pull_url(ref)}/reviews", headers=_bearer(token), body=payload),
+        http.request(
+            "POST",
+            f"{_pull_url(ref)}/reviews",
+            headers=_bearer(token),
+            body=json.dumps(fields).encode(),
+        ),
         "review submission",
     )
     return read_field(review, "id", want=int, what="review submission")
+
+
+def _paginate(
+    http: HttpTransport,
+    token: str,
+    ref: PRRef,
+    collection: str,
+    per_page: int,
+    what: str,
+) -> Iterator[dict[str, Any]]:
+    """Walk every page of one of the PR's sub-collections, in the order it returns.
+
+    A short page ends the walk; a full one is followed by another request, so a
+    collection whose last page happens to be full costs one extra empty read
+    rather than a silently truncated result.
+    """
+    page = 1
+    while True:
+        entries = _object_page(
+            _expect(
+                http.request(
+                    "GET",
+                    f"{_pull_url(ref)}/{collection}?per_page={per_page}&page={page}",
+                    headers=_bearer(token),
+                ),
+                what,
+            ),
+            what,
+            page,
+        )
+        yield from entries
+        if len(entries) < per_page:
+            return
+        page += 1
 
 
 def _decode_json(raw: bytes, url: str) -> Any:
@@ -314,22 +380,19 @@ def _error_body(exc: urllib.error.HTTPError) -> Any:
         return raw.decode(errors="replace")[:_EXCERPT]
 
 
-def _reviews_page(payload: Any, page: int) -> list[dict[str, Any]]:
-    """Validate one page of the reviews listing before any of it is read.
+def _object_page(payload: Any, what: str, page: int) -> list[dict[str, Any]]:
+    """Validate one page of a listing before any of it is read.
 
     The whole page is checked before a single entry is yielded: a caller that
-    consumed the entries preceding a bad one could miss the App's own approval
-    and post a duplicate.
+    consumed the entries preceding a bad one could miss the App's own review and
+    post a duplicate, or miss a changed file and demote a placeable anchor.
     """
     if not isinstance(payload, list):
-        detail = f"reviews listing: page {page} is {type(payload).__name__}, not a list"
+        detail = f"{what}: page {page} is {type(payload).__name__}, not a list"
         raise _api_failed(detail)
-    for index, review in enumerate(payload):
-        if not isinstance(review, dict):
-            detail = (
-                f"reviews listing: page {page} entry {index} is "
-                f"{type(review).__name__}, not an object"
-            )
+    for index, entry in enumerate(payload):
+        if not isinstance(entry, dict):
+            detail = f"{what}: page {page} entry {index} is {type(entry).__name__}, not an object"
             raise _api_failed(detail)
     return payload
 
