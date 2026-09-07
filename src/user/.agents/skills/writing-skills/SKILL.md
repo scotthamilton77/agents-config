@@ -50,7 +50,14 @@ is subordinate to both. Not carried from upstream: skill-creator's
 references/schemas.md, which specifies the evals, grading, metrics and
 benchmark JSON that upstream's eval harness reads — no such harness exists
 here, and the one eval shape this skill uses is defined inline in
-references/testing-methodology.md.
+references/testing-methodology.md. Also not carried: superpowers'
+examples/CLAUDE_MD_TESTING.md, whose every scenario is premised on the agent
+discovering skills by shelling out over `~/.claude/skills/` and on a CLAUDE.md
+that nags it into doing so. Skill metadata sits in context and the host invokes
+the skill directly, which is what this body teaches — so the example
+contradicted the mechanism the skill exists to teach, and its framing does not
+survive editing the paths. It was also an unrun test plan, ending in Next Steps
+with predicted results.
 
 Documented divergences in the vendored bodies that are carried:
   - scripts/render-graphs.js — patched to exit non-zero on render failure
@@ -64,6 +71,12 @@ Documented divergences in the vendored bodies that are carried:
   - references/testing-skills-with-subagents.md — line "Add symptoms of ABOUT
     to violate." repaired to "Add symptoms of when you're ABOUT to violate
     the rule." (upstream truncation typo).
+  - references/testing-skills-with-subagents.md — three sections removed. Two
+    were dated authoring logs of one 2025 session, the shape the sibling
+    references/anti-patterns.md names as an anti-pattern in its own first row.
+    The third reproduced the file's earlier mapping table verbatim in a new
+    column layout, making it the fifth statement of one cycle inside one file.
+    The end recap after it is kept.
   - This SKILL.md body was 2.9x over the deployed skill-body token cap. Six
     sections moved verbatim into project-added references — descriptions.md,
     testing-methodology.md, bulletproofing.md, checklist.md, anatomy.md,
@@ -192,7 +205,6 @@ usually mean it is doing two jobs and should be split.
 a rule (depth-1 discovery, `name:` matching the folder, the 1024-char frontmatter
 limit), use a MUST even in a technique document: the register split governs
 *judgment-call* prose, not constraints the host rejects anyway.
-
 ## The Iron Law
 
 ```
@@ -236,7 +248,7 @@ untested code.
 | `bulletproofing.md` | Hardening a discipline skill |
 | `anti-patterns.md` | Reviewing; adding a flowchart or example |
 | `anthropic-best-practices.md` | Anthropic's longer-form guidance |
-| `persuasion-principles.md` | Why discipline prose sticks |
+| `persuasion-principles.md` | Background only — read `anti-patterns.md` on it first |
 | `graphviz-conventions.dot` | Flowchart style |
 
 `anthropic-best-practices.md` is vendored at a pin: this skill and your
