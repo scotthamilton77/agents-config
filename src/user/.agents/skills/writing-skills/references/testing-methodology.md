@@ -78,10 +78,7 @@ A bad query:
    (correctly skipped), false-positives (incorrectly triggered).
 4. Iterate the description against the failures. Re-run.
 
-Automation of this loop (a scripted optimizer that proposes description
-edits, splits train/test, and runs to convergence) is the future home of
-`scripts/run_loop.py` — not yet shipped in this skill. The
-`evals/trigger-eval.json` shape is defined inline above.
+The `evals/trigger-eval.json` shape is defined inline above.
 
 ### How triggering actually works
 

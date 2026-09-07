@@ -66,6 +66,9 @@ What goes wrong, and how to fix it.
 Concrete results — only if you have them and they're load-bearing.
 ```
 
+Gloss domain jargon on first use — the agent reading the skill may be serving
+a non-technical user.
+
 ## Cross-Referencing Other Skills
 
 Use the skill name with an explicit requirement marker:
@@ -83,15 +86,3 @@ Don't write skills containing malware, exploit code, hidden data
 exfiltration, or anything that would compromise security beyond what the
 skill plainly advertises. Roleplay framings ("respond as a senior reviewer")
 are fine; a skill that secretly logs to a remote endpoint is not.
-
-## User-Communication Calibration
-
-Skills are used by agents who serve users at very different technical levels.
-Pay attention to context cues in the conversation before assuming vocabulary:
-
-- "Evaluation" and "benchmark" are borderline — usually OK, but watch for
-  cues that the user is new to coding.
-- "JSON" and "assertion" — wait for clear signals the user knows these terms
-  before using them without a brief gloss.
-
-A one-line definition costs nothing; a confused user costs the conversation.

@@ -5,10 +5,6 @@ find loopholes under pressure. The techniques here apply primarily to
 discipline-type skills; technique and reference skills usually don't need
 them.
 
-**Psychology background:** see `persuasion-principles.md` for the research
-foundation (Cialdini, Meincke et al.) on authority, commitment, scarcity,
-social proof, and unity — the levers that make discipline-skill prose stick.
-
 ## Close Every Loophole Explicitly
 
 Don't just state the rule — forbid specific workarounds:

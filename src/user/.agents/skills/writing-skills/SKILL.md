@@ -57,7 +57,7 @@ Documented divergences in the vendored bodies that are carried:
     (upstream bug; not yet fixed in the source repo). Later given a
     `module.exports` and a `require.main === module` guard so its pure
     helpers are reachable from scripts/render-graphs_test.js.
-  - references/anthropic-best-practices.md, references/persuasion-principles.md,
+  - references/anthropic-best-practices.md,
     references/testing-skills-with-subagents.md — each gained a "## Contents"
     TOC near the top per the project skill primer's >100-line requirement;
     existing content preserved.
@@ -192,7 +192,6 @@ usually mean it is doing two jobs and should be split.
 a rule (depth-1 discovery, `name:` matching the folder, the 1024-char frontmatter
 limit), use a MUST even in a technique document: the register split governs
 *judgment-call* prose, not constraints the host rejects anyway.
-
 ## The Iron Law
 
 ```
@@ -236,7 +235,6 @@ untested code.
 | `bulletproofing.md` | Hardening a discipline skill |
 | `anti-patterns.md` | Reviewing; adding a flowchart or example |
 | `anthropic-best-practices.md` | Anthropic's longer-form guidance |
-| `persuasion-principles.md` | Why discipline prose sticks |
 | `graphviz-conventions.dot` | Flowchart style |
 
 `anthropic-best-practices.md` is vendored at a pin: this skill and your

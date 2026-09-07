@@ -41,4 +41,4 @@ One excellent example beats many mediocre ones.
 Don't implement the same example in five languages. Don't write generic
 templates. Agents are good at porting; one strong example is enough.
 
-A worked example of skill testing lives in `../examples/CLAUDE_MD_TESTING.md`.
+The trigger-eval loop, with the eval shape it reads, is in `testing-methodology.md`.

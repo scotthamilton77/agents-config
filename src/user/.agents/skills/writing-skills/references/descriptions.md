@@ -41,10 +41,11 @@ description: Use when executing implementation plans with independent tasks in t
 
 ## Be pushy by
 
-- Listing multiple phrasings of the same intent (formal, casual, abbreviated).
-- Naming adjacent symptoms ("flaky," "hangs," "zombie process," "works
-  locally but fails in CI") so keyword search finds the skill.
-- Anticipating sloppy phrasing — typos, lowercase, "uhh," "kind of."
+- Listing every distinct **branch** — a case the skill handles differently.
+  One trigger per branch; two spellings of one branch are that branch written twice.
+- Naming adjacent symptoms that are their own branch ("flaky," "hangs,"
+  "zombie process," "works locally but fails in CI") — the situations a user
+  lands in, not restatements of one situation.
 - Including cases where the user doesn't name the skill or its concepts.
 
 ## Be process-free by
@@ -56,9 +57,9 @@ description: Use when executing implementation plans with independent tasks in t
 
 ## Keyword coverage
 
-Use the words an agent would actually search for — error messages, symptoms,
-synonyms, tool names. "Hook timed out," "ENOTEMPTY," "race condition,"
-"flaky," "pollution," "teardown."
+Name the situations an agent would recognise — error messages, symptoms, tool
+names. "Hook timed out," "ENOTEMPTY," "race condition," "flaky," "pollution,"
+"teardown." Those are distinct symptoms; three spellings of one of them are not.
 
 ## Naming
 
