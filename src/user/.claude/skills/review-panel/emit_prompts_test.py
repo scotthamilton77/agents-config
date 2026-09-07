@@ -1338,10 +1338,11 @@ class TestSweep:
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "sweep-not-due"
 
-    def _settled_campaign(self, tmp_path, repo, acs_file, dispositions, **overrides):
+    def _settled_campaign(self, tmp_path, repo, acs_file, dispositions, verdict=None,
+                          **overrides):
         """Round 1 raised a blocking finding, the ledger settled it, and the head never moved —
         so no delta round can staff a lens and the sweep is the only round left to run."""
-        prior = write_json(tmp_path / "verdict-1.json", verdict_round1(repo))
+        prior = write_json(tmp_path / "verdict-1.json", verdict or verdict_round1(repo))
         ledger = write_json(tmp_path / "dispositions.json", dispositions)
         staffing = write_json(tmp_path / "sweep-staffing.json", staffing_record(
             TYPED_CODE_FRONTIER, decision="sweep-contract"))
@@ -1455,6 +1456,19 @@ class TestSweep:
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "ledger-gap"
         assert "waived" in result["errors"][0]["message"]
+        assert not out_dir.exists()
+
+    def test_b4_a_bare_rebuttal_is_refused_beside_a_blocking_finding(self, repo, acs_file,
+                                                                     tmp_path, capsys):
+        """A rebuttal's evidence is audited before anything rules on the campaign's position, so
+        a bare assertion is not covered by a second finding the gate would refuse for anyway."""
+        flat, out_dir = self._settled_campaign(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "rebutted", "evidence": "  "},
+            {"round": 1, "id": "f3", "disposition": "advisory-deferred"},
+        ], verdict=verdict_doc(repo, 1, repo.head, TYPED_CODE_LENSES,
+                               [mechanical("f1"), mechanical("f3", "security")]))
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "unsupported-rebuttal"
         assert not out_dir.exists()
 
     def test_b4_a_first_round_sweep_is_refused(self, repo, acs_file, tmp_path, capsys):

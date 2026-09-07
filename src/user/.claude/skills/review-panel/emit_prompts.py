@@ -834,14 +834,45 @@ def load_dispositions(path: str | None) -> list[dict]:
     if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
         raise Refusal("ledger-gap", "--disposition must be a JSON array of disposition objects")
     for entry in value:
-        # Vocabulary at the read, ahead of every reader: a word the ledger does not know settles
-        # nothing, so no gate downstream should have to decide what it meant.
-        if entry.get("disposition") not in DISPOSITIONS:
+        # Everything an entry can be judged on by itself is judged here, ahead of every reader:
+        # a malformed entry settles nothing, so no gate downstream reads one and rules on the
+        # campaign instead. What needs the finding it cites is the ledger's to check.
+        round_no, finding_id = entry.get("round"), entry.get("id")
+        if not isinstance(finding_id, str) or not _TOKEN.fullmatch(finding_id):
             raise Refusal(
                 "ledger-gap",
-                f"finding {entry.get('id')} from round {entry.get('round')} carries the unknown "
-                f"disposition {entry.get('disposition')!r}; a finding settles only as one of: "
+                f"the disposition from round {round_no} carries the id {finding_id!r}, which is "
+                "not one whitespace-free token; a ledger id cites a finding id and has its shape",
+            )
+        raw_evidence = entry.get("evidence")
+        if raw_evidence is not None and not isinstance(raw_evidence, str):
+            raise Refusal(
+                "ledger-gap",
+                f"finding {finding_id} from round {round_no} carries "
+                f"{type(raw_evidence).__name__}-typed evidence; evidence is prose or absent",
+            )
+        evidence = raw_evidence or ""
+        work_item = str(entry.get("work_item") or "")
+        disposition = entry.get("disposition")
+        if disposition not in DISPOSITIONS:
+            raise Refusal(
+                "ledger-gap",
+                f"finding {finding_id} from round {round_no} carries the unknown "
+                f"disposition {disposition!r}; a finding settles only as one of: "
                 + ", ".join(DISPOSITIONS),
+            )
+        if disposition == "rebutted" and not evidence.strip():
+            raise Refusal(
+                "unsupported-rebuttal",
+                f"finding {finding_id} from round {round_no} is marked rebutted with no "
+                "evidence; an unsupported rebuttal never settles a finding",
+            )
+        if disposition == "transferred" and (not evidence.strip() or not work_item.strip()):
+            raise Refusal(
+                "unsupported-transfer",
+                f"finding {finding_id} from round {round_no} is transferred out of the campaign "
+                "without both halves of the claim: evidence showing the defect predates the "
+                "change, and the work item now accountable for it",
             )
     return value
 
@@ -851,8 +882,10 @@ def build_ledger(
 ) -> list[dict]:
     """Pair every prior mechanical finding with its supplied disposition, or refuse.
 
-    Dispositions supplied for non-mechanical findings (a deferred advisory) also join the
-    ledger: the round is protected from re-raising them too.
+    Every entry arrives already checked against everything it can be judged on alone; what is
+    left here needs the finding cited, its type or its class. Dispositions supplied for
+    non-mechanical findings (a deferred advisory) also join the ledger: the round is protected
+    from re-raising them too.
     """
     lens_of = {(f.get("round"), f.get("id")): f.get("lens") for f in prior_findings}
     type_of = {(f.get("round"), f.get("id")): f.get("type") for f in prior_findings}
@@ -862,44 +895,17 @@ def build_ledger(
     ledger = []
     for entry in dispositions:
         key = (entry.get("round"), entry.get("id"))
-        if not isinstance(key[1], str) or not _TOKEN.fullmatch(key[1]):
-            raise Refusal(
-                "ledger-gap",
-                f"the disposition from round {key[0]} carries the id {key[1]!r}, which is not "
-                "one whitespace-free token; a ledger id cites a finding id and has its shape",
-            )
-        raw_evidence = entry.get("evidence")
-        if raw_evidence is not None and not isinstance(raw_evidence, str):
-            raise Refusal(
-                "ledger-gap",
-                f"finding {key[1]} from round {key[0]} carries "
-                f"{type(raw_evidence).__name__}-typed evidence; evidence is prose or absent",
-            )
-        evidence = raw_evidence or ""
+        evidence = entry.get("evidence") or ""
         work_item = str(entry.get("work_item") or "")
         disposition = entry.get("disposition")
         mechanical = type_of.get(key) == "mechanical"
-        if disposition == "rebutted" and not evidence.strip():
+        if disposition == "transferred" and mechanical:
             raise Refusal(
-                "unsupported-rebuttal",
-                f"finding {key[1]} from round {key[0]} is marked rebutted with no evidence; an "
-                "unsupported rebuttal never settles a finding",
+                "untransferable-blocking",
+                f"finding {key[1]} from round {key[0]} blocks this change, and a blocking "
+                "finding is not transferable however old the defect is; fix it or rebut it "
+                "inside this campaign",
             )
-        if disposition == "transferred":
-            if mechanical:
-                raise Refusal(
-                    "untransferable-blocking",
-                    f"finding {key[1]} from round {key[0]} blocks this change, and a blocking "
-                    "finding is not transferable however old the defect is; fix it or rebut it "
-                    "inside this campaign",
-                )
-            if not evidence.strip() or not work_item.strip():
-                raise Refusal(
-                    "unsupported-transfer",
-                    f"finding {key[1]} from round {key[0]} is transferred out of the campaign "
-                    "without both halves of the claim: evidence showing the defect predates the "
-                    "change, and the work item now accountable for it",
-                )
         if disposition == "fixed" and mechanical and artifact_class == "typed-code":
             if "test" not in evidence.lower():
                 raise Refusal(
