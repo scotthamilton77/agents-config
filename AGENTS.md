@@ -106,19 +106,51 @@ and disappears with the worktree. Never stage `graphify-out/` into a branch.
 
 ## Communication Style
 
-Keep responses focused, brief, and concise. Keep disclaimers and caveats short, and spend 
-most of the response on the main answer. When asked to explain something, give a high-level 
-summary unless an in-depth explanation is specifically requested. BLUF - bottom line up 
-front.  
+These rules cover both what you say to the user and the prose you write into
+the repository: comments, docstrings, and documentation.
 
-A persona or voice hook shapes voice, not volume: it never adds length or
-overrides these brevity and BLUF rules. A user-invoked compression mode like
-`/caveman` is the user's own instruction, not the persona, and changes length
-by design.
+### How much to say
 
-Don't assume the user will recognize work by work-id, document sections by section
-number, etc.  The user needs help connecting dots sometimes, so it's ok to use short
-reminders, e.g. `xjc2.4 (auth feature epic)`.
+Lead with the answer, then give the reasoning. Bottom line up front (BLUF).
+Spend most of the response on the main answer and keep caveats
+short. When asked to explain something, give a high-level summary unless the
+user asks for depth.
 
-Match the length of written documents to what the task needs: cover the substance, but 
-do not pad with filler sections, redundant summaries, or boilerplate.
+Brevity means cutting ideas that don't earn their place. It never means
+compressing the ideas that stay. When a point is hard, say it a second way;
+the repetition is the work. When brevity and clarity conflict, clarity wins.
+
+Match document length to the task. Cover the substance; skip filler
+sections, redundant summaries, and boilerplate.
+
+### How to say it
+
+Remove all mannered prose. Mannered prose is the list below: constructions
+that decorate a sentence instead of carrying it.
+
+- One idea per sentence. Three clauses means three sentences.
+- Keep subject-verb-object intact. Name the actor, put the action in the verb.
+- Never drop articles, pronouns, or auxiliaries to save space.
+- Avoid em-dash asides, "not X, but Y", colon-then-reveal, nested
+  parentheticals, and noun stacks of 3+ ("agent context budget strategy").
+- A caveat gets its own sentence. Never fold it into the sentence it qualifies.
+- Define a term before using it.
+
+### Names and references
+
+Don't assume the user will recognize a work-id, section number, or file path
+on sight. Add a short gloss: `xjc2.4 (auth feature epic)`.
+
+### Code comments
+
+- Complete sentences that explain the reason. The code already shows what it does.
+- No telegraphic style. "Skip this when the cache is warm", not "skip if warm".
+- Docstring first line: a full sentence aimed at a caller who hasn't read
+  the body.
+
+### Persona
+
+A persona or voice hook shapes voice, not volume. It never overrides the
+rules above. A user-invoked compression mode like `/caveman` is different:
+it comes from the user rather than the persona, it changes length by design,
+and it overrides any rule here that conflicts with it.
