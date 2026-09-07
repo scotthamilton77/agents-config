@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 
 from grillui.api import create_app
 from grillui.dispatch import agent_for
+from grillui.drivers import CLAUDE_CONFIG_ENV, CODEX_HOME_ENV
 from grillui.lane import Lane
 from grillui.log import HANDOFF_FILE, LOG_FILE, SessionLog
 from grillui.schemas import (
@@ -364,6 +365,21 @@ def dispatch_context(
         image2=ThreadProjection(epoch="e", seq=0),
         conclusion=conclusion,
     )
+
+
+@pytest.fixture(autouse=True)
+def transcript_stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point both CLI transcript stores at this test's own directory.
+
+    Autouse because the default is the machine's: a driver built without a
+    store named looks under the developer's own `~/.claude` or `~/.codex`, and
+    a suite that read there would be asserting against whatever they happened
+    to run that morning. Nothing here writes to either, but a store nobody
+    aimed is one chain id away from copying a real conversation into a test's
+    session directory.
+    """
+    monkeypatch.setenv(CLAUDE_CONFIG_ENV, str(tmp_path / "claude-store"))
+    monkeypatch.setenv(CODEX_HOME_ENV, str(tmp_path / "codex-store"))
 
 
 @pytest.fixture

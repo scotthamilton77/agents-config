@@ -58,6 +58,7 @@ from grillui.drivers import (
 from grillui.escalation import in_expert_mode
 from grillui.lane import AgentUnreachableError, DocumentRefusedError, Lane
 from grillui.schemas import (
+    CHAIN_KEY,
     DROPPED_RULINGS_KEY,
     EFFORT_KEY,
     FAST_TIER,
@@ -285,6 +286,7 @@ def test_the_map_and_a_thread_take_the_same_rung_on_seats_configured_apart(
         TIER_KEY: FAST_TIER,
         MODEL_KEY: DEFAULT_MAP_MODEL,
         EFFORT_KEY: DEFAULT_MAP_EFFORT,
+        CHAIN_KEY: "thread-1",
         "text": MAP_SAID,
     }
     assert on_thread == {TIER_KEY: FAST_TIER, MODEL_KEY: DEFAULT_FAST_MODEL, "text": THREAD_SAID}

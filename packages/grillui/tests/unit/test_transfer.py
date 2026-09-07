@@ -60,6 +60,7 @@ from grillui.escalation import CONDITION_IRREDUCIBLE
 from grillui.lane import Lane
 from grillui.log import LOG_FILE, SessionLog
 from grillui.schemas import (
+    CHAIN_KEY,
     EFFORT_KEY,
     FAST_TIER,
     FOLLOWED_TRANSFER_KEY,
@@ -326,6 +327,7 @@ def test_activating_transfer_takes_the_next_map_turn_to_the_heavy_tier(
             MODEL_KEY: HEAVY_MODEL,
             EFFORT_KEY: DEFAULT_HEAVY_EFFORT,
             FOLLOWED_TRANSFER_KEY: True,
+            CHAIN_KEY: "chain-1",
         },
     ]
 
@@ -363,6 +365,7 @@ def test_an_escalated_thread_hands_the_heavy_tier_its_own_accumulated_turns(
         MODEL_KEY: HEAVY_MODEL,
         EFFORT_KEY: DEFAULT_HEAVY_EFFORT,
         FOLLOWED_TRANSFER_KEY: True,
+        CHAIN_KEY: "chain-1",
     }
 
 
@@ -592,6 +595,7 @@ def test_a_policy_escalation_is_named_on_the_lane_and_on_the_turn_it_bought(
             MODEL_KEY: HEAVY_MODEL,
             EFFORT_KEY: DEFAULT_HEAVY_EFFORT,
             FOLLOWED_TRANSFER_KEY: True,
+            CHAIN_KEY: "chain-1",
             TRANSFER_SOURCE_KEY: TRANSFER_SOURCE_POLICY,
         },
         {
@@ -600,6 +604,7 @@ def test_a_policy_escalation_is_named_on_the_lane_and_on_the_turn_it_bought(
             MODEL_KEY: HEAVY_MODEL,
             EFFORT_KEY: DEFAULT_HEAVY_EFFORT,
             FOLLOWED_TRANSFER_KEY: True,
+            CHAIN_KEY: "chain-1",
         },
     ]
     authored = {entry.kind for entry in log.entries() if entry.actor == "backend"}
