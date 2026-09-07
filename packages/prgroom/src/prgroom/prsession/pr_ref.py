@@ -28,12 +28,16 @@ _BARE_NUMBER = re.compile(r"^(?P<number>[1-9]\d*)$")
 # A full git object id. Abbreviations are refused everywhere a commit is named:
 # a review is pinned by comparing against what GitHub reports, which is always
 # the full id, and a prefix would compare unequal to the head it does identify.
-_COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
+_COMMIT_SHA = re.compile(r"[0-9a-fA-F]{40}")
 
 
 def is_commit_sha(value: str) -> bool:
-    """True iff ``value`` is a 40-character hex commit id, in either case."""
-    return _COMMIT_SHA.match(value) is not None
+    """True iff ``value`` is a 40-character hex commit id, in either case.
+
+    Matched whole rather than anchored: ``$`` also matches before a trailing
+    newline, and an id read out of a file arrives carrying one.
+    """
+    return _COMMIT_SHA.fullmatch(value) is not None
 
 
 @dataclass(frozen=True, slots=True)
