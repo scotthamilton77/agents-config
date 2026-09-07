@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 from prgroom.errors import ErrorCode, PrgroomError
+from prgroom.gh import app
 from prgroom.gh.app import GITHUB_API, UrllibTransport
 
 URL = f"{GITHUB_API}/app"
@@ -51,7 +52,7 @@ def stub_urlopen(monkeypatch: pytest.MonkeyPatch, result: Any) -> list[urllib.re
             raise result
         return result
 
-    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setattr(app._OPENER, "open", fake)
     return seen
 
 
@@ -178,3 +179,21 @@ def test_an_error_status_whose_body_cannot_be_read_still_reports_the_status(
     monkeypatch.setattr(error, "read", lambda: (_ for _ in ()).throw(TimeoutError("no body")))
     stub_urlopen(monkeypatch, error)
     assert UrllibTransport().request("GET", URL, headers={})[0] == 503
+
+
+def test_a_redirect_is_reported_as_the_status_it_answered_on() -> None:
+    # The opener the transport calls carries a handler that declines every
+    # redirect, so a 3xx surfaces as that endpoint's unexpected status instead of
+    # a request to somewhere the caller never named.
+    handler = next(
+        h for h in app._OPENER.handlers if isinstance(h, urllib.request.HTTPRedirectHandler)
+    )
+    declined = handler.redirect_request(
+        urllib.request.Request(f"{GITHUB_API}/app"),  # noqa: S310  # never opened; the handler only inspects it
+        io.BytesIO(b""),
+        301,
+        "Moved Permanently",
+        {"location": "https://elsewhere.example/app"},
+        "https://elsewhere.example/app",
+    )
+    assert declined is None

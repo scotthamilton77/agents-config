@@ -123,7 +123,7 @@ reply. `assemble_verdict.py` builds the schema-v3 envelope from `round.json`, th
 ledger, one ingested report per staffed lens, and the routes that actually ran them: coverage
 fails closed, an unauthorized dispatch is refused, an unevidenced mechanical finding downgrades
 to advisory with the demotion marked, a settled-item re-citation is suppressed with the match
-recorded beside the verdict. It prints the
-distinct-vendor count (one means the panel collapsed) and `--indict` turns a criteria-indicting
-finding into the upstream-defect halt. `harvest.md` holds the operating doctrine — the round's
-records, transports and failover, a dead route vs a failed reviewer, what each refusal obliges.
+recorded. It prints the distinct-vendor count (one means collapse) and `--indict` turns a
+criteria-indicting finding into the upstream-defect halt. `harvest.md` holds the operating
+doctrine — posting a pull request's verdict, the round's records, transports and failover, a
+dead route vs a failed reviewer, what each refusal obliges.

@@ -8,10 +8,11 @@ content under `src/`, **this is real code with a real quality gate.**
 clusters it, dispatches fixes, pushes, replies, and resolves threads — as
 locked, resumable lifecycle verbs rather than model-driven prose.
 
-**Nothing drives it today.** Charter D13 ("prgroom is carved, not finished")
-scopes this package to slice S8; no deployed asset invokes it and no harness
-path depends on it. Read its lifecycle verbs as a designed surface, not a
-running one.
+**`post-verdict` is the only verb anything invokes.** The `review-panel` skill's
+round procedure names it as the step that posts an assembled verdict to a pull
+request. Every other verb is a designed surface with no caller: nothing invokes
+the grooming loop and no harness path depends on it. This package is deliberately
+carved rather than finished, so read an unbuilt verb as a decision, not a gap.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
@@ -74,10 +75,15 @@ but the full gate must pass before push.
 ## Verbs
 
 `poll`, `cluster`, `fix`, `push`, `rereview`, `reply`, `resolve`,
-`resolve-escalated`, `wait`, `status`, `run`, `approve`. `run` is the aggregate
-loop; `status` emits the merge-gate envelope. `approve` stands outside the
-grooming loop entirely — it submits a GitHub-App-authored approving review pinned
-to a head SHA the caller names, taking no PR lock and touching no grooming state.
+`resolve-escalated`, `wait`, `status`, `run`, `approve`, `post-verdict`. `run` is
+the aggregate loop; `status` emits the merge-gate envelope. `approve` and
+`post-verdict` stand outside the grooming loop entirely — both reach GitHub under
+the App identity, take no PR lock and touch no grooming state. `approve` submits
+an approving review pinned to a head SHA the caller names; `post-verdict` submits
+a comment-only review carrying a review round's verdict, pinned to the head that
+verdict declares, with an inline comment at each finding that names a line the
+diff touches. The two reviews are deliberately separate: a verdict says what a
+round found and never that a change may merge.
 `sweep` (cross-PR autonomous mode) is
 design-of-record only (charter D13, "prgroom is carved, not finished",
 forbids building it) and is not a registered command.
@@ -101,7 +107,22 @@ exists.
   `RecordingGh`, the reply-surface `GhClient` recorder shared by the reply
   test modules — it records every call and those tests assert exact call
   lists; and `RouteTableHttp`, the App-HTTP seam recorder, which raises on any
-  route it was not given. In all three the permissive-default masking risk
+  route it was not given and on any request not carrying the credential that
+  request should be authorized by. That credential rule is shared rather than
+  per-file precisely because it has to cover call sites nobody has written yet:
+  a flow that drops or swaps a token is a defect no per-call assertion catches
+  until someone remembers to write one.
+- No test reaches the network, a real key, or `openssl`: an App test injects the
+  HTTP transport and the command runner at their build seams. A new test that
+  forgets either seam shells out for real, and nothing stops it — so wire both
+  before asserting anything, and treat a test that suddenly slows down as one
+  that found the network.
+- The verdict schema lives with the skill that assembles verdicts, and this
+  package carries no copy. `post-verdict` reads the head SHA, the findings list
+  and the fields it anchors on, refuses those when they are absent or mistyped,
+  and passes over every other field without inspecting it. Validating against a
+  schema here would be a second opinion on a document already validated where it
+  was built, and two copies drift. In all three the permissive-default masking risk
   per-file fakes guard against does not apply, which is the only reason they
   are shared. Don't grow any of them into a general-purpose fake — a
   `RouteTableHttp` route table stays in the test module that asserts it.
@@ -125,8 +146,11 @@ possible for a no-installer or specific-checkout workflow.
 Never invoke `prgroom run`/`push`/`reply`/`resolve` against a real PR to "try it
 out" — those verbs mutate GitHub. `approve` is under the same ban and then some:
 it posts a review that a branch ruleset counts, so an exploratory run leaves an
-approval standing on somebody's PR. The gate's `prgroom --help` entry-verify is
-the only sanctioned automatic invocation.
+approval standing on somebody's PR. `post-verdict` is banned on the same footing
+— it posts a review and inline comments under the App identity, and a downstream
+gate reads an App-posted verdict at the current head as the round's result, so an
+exploratory run plants one nobody ran a round for. The gate's `prgroom --help`
+entry-verify is the only sanctioned automatic invocation.
 
 ## Observability channels
 

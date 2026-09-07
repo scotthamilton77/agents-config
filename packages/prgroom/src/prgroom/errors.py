@@ -101,6 +101,9 @@ class ErrorCode(StrEnum):
     PRECONDITION_APPROVER_KEY_ENV_UNSET = "PRECONDITION_APPROVER_KEY_ENV_UNSET"
     PRECONDITION_APPROVER_KEY_UNREADABLE = "PRECONDITION_APPROVER_KEY_UNREADABLE"
     PRECONDITION_APPROVER_HEAD_MOVED = "PRECONDITION_APPROVER_HEAD_MOVED"
+    PRECONDITION_VERDICT_UNREADABLE = "PRECONDITION_VERDICT_UNREADABLE"
+    PRECONDITION_VERDICT_MALFORMED = "PRECONDITION_VERDICT_MALFORMED"
+    PRECONDITION_VERDICT_TOO_LARGE = "PRECONDITION_VERDICT_TOO_LARGE"
     # RUNTIME_*
     RUNTIME_GH_TRANSIENT = "RUNTIME_GH_TRANSIENT"
     RUNTIME_GH_TERMINAL = "RUNTIME_GH_TERMINAL"
@@ -253,9 +256,24 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         how="check the path the env var names, and that its permissions allow this user",
     ),
     ErrorCode.PRECONDITION_APPROVER_HEAD_MOVED: RegistryEntry(
-        what="the PR's live head differs from the head SHA the approval was pinned to",
-        why="an approving review must attest the exact commit its caller decided on",
-        how="re-decide against the new head, then re-invoke `approve` with that SHA",
+        what="the PR's live head differs from the head SHA the review was pinned to",
+        why="a review the App submits must speak about the exact commit it was decided on",
+        how="re-decide or re-review against the new head, then re-invoke with that SHA",
+    ),
+    ErrorCode.PRECONDITION_VERDICT_UNREADABLE: RegistryEntry(
+        what="the verdict file could not be opened",
+        why="the verdict's own bytes are what gets posted, so there is nothing to post without it",
+        how="check the path passed to --verdict, and that its permissions allow this user",
+    ),
+    ErrorCode.PRECONDITION_VERDICT_MALFORMED: RegistryEntry(
+        what="the verdict file is not JSON, or lacks a field the posting needs",
+        why="the head it reviewed and its findings decide where the review is pinned and anchored",
+        how="re-assemble the verdict; the detail names the field and what arrived instead",
+    ),
+    ErrorCode.PRECONDITION_VERDICT_TOO_LARGE: RegistryEntry(
+        what="the verdict is longer than a review body may be",
+        why="a truncated verdict is a different document that still reads as the round's result",
+        how="shorten the round's findings or split the round; nothing is truncated automatically",
     ),
     ErrorCode.RUNTIME_GH_TRANSIENT: RegistryEntry(
         what="gh API returned 5xx or rate-limited with Retry-After",

@@ -25,6 +25,7 @@ from tests.fakes import RecordedRunner, RouteTableHttp
 
 runner = CliRunner()
 
+APP_ID = 4275336
 HEAD = "a" * 40
 MOVED = "b" * 40
 PULL = "/repos/octo/demo/pulls/5"
@@ -50,6 +51,15 @@ type         = "github-app"
 app-id       = 4275336
 key-path-env = "APPROVER_KEY_PATH"
 """
+
+
+def transport(routes: dict[tuple[str, str], tuple[int, Any]]) -> RouteTableHttp:
+    """The App-HTTP fake with its credential rule armed for this App.
+
+    Every construction in this module goes through here, so a call site that
+    drops or swaps a credential is refused wherever one is added.
+    """
+    return RouteTableHttp(routes, app_id=APP_ID)
 
 
 @pytest.fixture
@@ -104,7 +114,7 @@ def test_the_happy_path_posts_and_reports_the_review_on_stdout(
     approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config, _ = approver_env
-    http = RouteTableHttp(BASE_ROUTES)
+    http = transport(BASE_ROUTES)
     wire(monkeypatch, http)
     result = invoke(config, "--facts", '{"why": "instructed"}')
     assert result.exit_code == 0
@@ -124,7 +134,7 @@ def test_an_existing_approval_at_the_head_exits_zero_without_posting(
         200,
         [{"id": 7, "state": "APPROVED", "commit_id": HEAD, "user": {"login": "pr-hater[bot]"}}],
     )
-    http = RouteTableHttp(routes)
+    http = transport(routes)
     wire(monkeypatch, http)
     result = invoke(config)
     assert result.exit_code == 0
@@ -136,7 +146,7 @@ def test_facts_default_to_an_empty_object(
     approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config, _ = approver_env
-    http = RouteTableHttp(BASE_ROUTES)
+    http = transport(BASE_ROUTES)
     wire(monkeypatch, http)
     assert invoke(config).exit_code == 0
     (posted,) = http.posted_reviews()
@@ -150,7 +160,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, _ = approver_env
         routes = dict(BASE_ROUTES)
         routes[("GET", PULL)] = (200, {"head": {"sha": MOVED}})
-        http = RouteTableHttp(routes)
+        http = transport(routes)
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 2
@@ -162,7 +172,7 @@ class TestFailuresAreCodedNotTracebacks:
     ) -> None:
         config = tmp_path / "project-config.toml"
         config.write_text('[merge-policy]\nmerge-authorization = "explicit"\n')
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 2
@@ -174,7 +184,7 @@ class TestFailuresAreCodedNotTracebacks:
     ) -> None:
         config = tmp_path / "project-config.toml"
         config.write_text('[merge-policy.approver]\ntype = "github-app"\napp-id = -1\n')
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 2
@@ -187,7 +197,7 @@ class TestFailuresAreCodedNotTracebacks:
         config = tmp_path / "project-config.toml"
         config.write_text(CONFIG)
         monkeypatch.delenv("APPROVER_KEY_PATH", raising=False)
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 2
@@ -200,7 +210,7 @@ class TestFailuresAreCodedNotTracebacks:
         config = tmp_path / "project-config.toml"
         config.write_text(CONFIG)
         monkeypatch.setenv("APPROVER_KEY_PATH", str(tmp_path / "nowhere" / "app.pem"))
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 2
@@ -213,7 +223,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, _ = approver_env
         routes = dict(BASE_ROUTES)
         routes[("GET", "/repos/octo/demo/installation")] = (404, {"message": "Not Found"})
-        wire(monkeypatch, RouteTableHttp(routes))
+        wire(monkeypatch, transport(routes))
         result = invoke(config)
         assert result.exit_code == 77
         assert ErrorCode.RUNTIME_APPROVER_NOT_INSTALLED.value in result.output
@@ -224,7 +234,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, _ = approver_env
         routes = dict(BASE_ROUTES)
         routes[("POST", "/app/installations/42/access_tokens")] = (401, {"message": "bad creds"})
-        wire(monkeypatch, RouteTableHttp(routes))
+        wire(monkeypatch, transport(routes))
         result = invoke(config)
         assert result.exit_code == 77
         assert ErrorCode.RUNTIME_APPROVER_API_FAILED.value in result.output
@@ -235,7 +245,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, _ = approver_env
         routes = dict(BASE_ROUTES)
         routes[("POST", f"{PULL}/reviews")] = (422, {"message": "unprocessable"})
-        wire(monkeypatch, RouteTableHttp(routes))
+        wire(monkeypatch, transport(routes))
         result = invoke(config)
         assert result.exit_code == 77
         assert ErrorCode.RUNTIME_APPROVER_API_FAILED.value in result.output
@@ -244,7 +254,7 @@ class TestFailuresAreCodedNotTracebacks:
         self, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config, _ = approver_env
-        http = RouteTableHttp(BASE_ROUTES)
+        http = transport(BASE_ROUTES)
         monkeypatch.setattr(cli, "_build_http", lambda: http)
         monkeypatch.setattr(
             cli,
@@ -264,11 +274,11 @@ class TestFailuresAreCodedNotTracebacks:
         config, _ = approver_env
         moved_routes = dict(BASE_ROUTES)
         moved_routes[("GET", PULL)] = (200, {"head": {"sha": MOVED}})
-        wire(monkeypatch, RouteTableHttp(moved_routes))
+        wire(monkeypatch, transport(moved_routes))
         moved = invoke(config)
         failed_routes = dict(BASE_ROUTES)
         failed_routes[("POST", "/app/installations/42/access_tokens")] = (500, {"message": "boom"})
-        wire(monkeypatch, RouteTableHttp(failed_routes))
+        wire(monkeypatch, transport(failed_routes))
         failed = invoke(config)
         assert moved.exit_code != failed.exit_code
 
@@ -279,7 +289,7 @@ class TestArgumentValidation:
         self, bad: str, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config, _ = approver_env
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         result = invoke(config, head=bad)
         assert result.exit_code == 2
@@ -289,7 +299,7 @@ class TestArgumentValidation:
         self, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config, _ = approver_env
-        http = RouteTableHttp(BASE_ROUTES)
+        http = transport(BASE_ROUTES)
         wire(monkeypatch, http)
         result = invoke(config, head=HEAD.upper())
         assert result.exit_code == 0
@@ -300,7 +310,7 @@ class TestArgumentValidation:
         self, approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config, _ = approver_env
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         result = runner.invoke(
             cli.app,
@@ -324,7 +334,7 @@ class TestOutsideTheGroomingLoop:
             raise PreconditionError(ErrorCode.PRECONDITION_STORE_UNAVAILABLE)
 
         monkeypatch.setattr(cli, "_build_store", unusable_store)
-        http = RouteTableHttp(BASE_ROUTES)
+        http = transport(BASE_ROUTES)
         wire(monkeypatch, http)
         result = invoke(config)
         assert result.exit_code == 0
@@ -343,7 +353,7 @@ class TestNoRetryAndNoOverride:
         config, _ = approver_env
         routes = dict(BASE_ROUTES)
         routes[("POST", "/app/installations/42/access_tokens")] = (500, {"message": "boom"})
-        http = RouteTableHttp(routes)
+        http = transport(routes)
         wire(monkeypatch, http)
         assert invoke(config).exit_code == 77
         mints = [url for _, url, _, _ in http.calls if url.endswith("/access_tokens")]
@@ -363,7 +373,7 @@ class TestDefaultProjectConfigPath:
         (tmp_path / "project-config.toml").write_text(CONFIG)
         monkeypatch.setenv("APPROVER_KEY_PATH", str(key))
         monkeypatch.chdir(tmp_path)
-        http = RouteTableHttp(BASE_ROUTES)
+        http = transport(BASE_ROUTES)
         wire(monkeypatch, http)
         result = runner.invoke(cli.app, ["approve", PR_ARG, "--head-sha", HEAD])
         assert result.exit_code == 0
@@ -378,7 +388,7 @@ class TestUnreadableProjectConfig:
             pytest.skip("root reads a mode-000 file, so the failure cannot be provoked")
         config, _ = approver_env
         config.chmod(0o000)
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         try:
             result = invoke(config)
@@ -393,7 +403,7 @@ def test_head_sha_is_required_and_its_absence_costs_no_network_call(
     approver_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config, _ = approver_env
-    http = RouteTableHttp({})
+    http = transport({})
     wire(monkeypatch, http)
     result = runner.invoke(cli.app, ["approve", PR_ARG, "--project-config", str(config)])
     assert result.exit_code == 2
@@ -407,7 +417,7 @@ def test_facts_reach_the_review_body_byte_for_byte(
     # not reproduce, so a body built by re-serializing the input fails here.
     facts = '{ "rule":"instructed",   "b":1,\t"a":[2,3] }'
     config, _ = approver_env
-    http = RouteTableHttp(BASE_ROUTES)
+    http = transport(BASE_ROUTES)
     wire(monkeypatch, http)
     assert invoke(config, "--facts", facts).exit_code == 0
     (posted,) = http.posted_reviews()
@@ -425,7 +435,7 @@ def test_an_unreadable_key_file_is_refused_before_any_api_call(
     config = tmp_path / "project-config.toml"
     config.write_text(CONFIG)
     monkeypatch.setenv("APPROVER_KEY_PATH", str(key))
-    http = RouteTableHttp({})
+    http = transport({})
     wire(monkeypatch, http)
     try:
         result = invoke(config)

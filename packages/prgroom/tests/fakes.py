@@ -12,6 +12,7 @@ that take a :class:`~prgroom.gh.client.GhClient` directly, and
 
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 from collections.abc import Sequence
@@ -115,6 +116,11 @@ class RecordingGh:
         return {}
 
 
+def _padded(segment: str) -> str:
+    """Restore the padding a JOSE segment drops, so base64 will decode it."""
+    return segment + "=" * (-len(segment) % 4)
+
+
 class RouteTableHttp:
     """An :class:`~prgroom.gh.app.HttpTransport` fake answering from a route table.
 
@@ -126,11 +132,25 @@ class RouteTableHttp:
     Every call is recorded as ``(method, url, headers, body)``; the routes and
     their payloads stay in each test module, since what a route should answer is
     exactly what those tests are pinning.
+
+    It also refuses a request that does not carry the credential that request
+    should have been authorized by — an App-level call must carry a JWT, and a
+    PR-scoped call must carry the very token this fake minted. That rule lives
+    here rather than in a per-call assertion because it has to cover call sites
+    nobody has written yet: an App flow that drops or swaps a credential is a
+    real defect, and one that reaches GitHub unauthorized would be found in
+    production rather than in a test. Pass ``app_id`` to have the JWT's issuer
+    checked too; a caller driving one client function with a hand-made token
+    omits it and only the shape is enforced.
     """
 
-    def __init__(self, routes: dict[tuple[str, str], tuple[int, Any]]) -> None:
+    def __init__(
+        self, routes: dict[tuple[str, str], tuple[int, Any]], *, app_id: int | None = None
+    ) -> None:
         self.routes = dict(routes)
         self.calls: list[tuple[str, str, dict[str, str], bytes | None]] = []
+        self._app_id = app_id
+        self._minted: str | None = None
 
     def request(
         self,
@@ -142,11 +162,47 @@ class RouteTableHttp:
     ) -> tuple[int, Any]:
 
         self.calls.append((method, url, dict(headers), body))
+        self._check_credential(method, url, dict(headers))
         for (route_method, suffix), response in self.routes.items():
             if route_method == method and url == GITHUB_API + suffix:
+                self._remember_minted_token(url, response)
                 return response
         msg = f"unexpected call: {method} {url}"
         raise AssertionError(msg)
+
+    def _check_credential(self, method: str, url: str, headers: dict[str, str]) -> None:
+        """Refuse a call whose bearer is not the one that call should carry."""
+        authorization = headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            msg = f"{method} {url} carried no bearer credential: {authorization!r}"
+            raise AssertionError(msg)
+        credential = authorization.removeprefix("Bearer ")
+        if "/pulls/" in url:
+            # Everything under the PR rides the installation token, and only the
+            # one this fake handed out. A mint that never produced a readable
+            # token leaves nothing to compare against.
+            if self._minted is not None and credential != self._minted:
+                msg = f"{method} {url} carried {credential!r}, not the minted {self._minted!r}"
+                raise AssertionError(msg)
+            return
+        if self._app_id is None:
+            return  # a caller driving one client function brought its own token
+        segments = credential.split(".")
+        if len(segments) != 3 or not all(segments):  # a JWT's three segments
+            msg = f"{method} {url} carried {credential!r}, which is not a signed JWT"
+            raise AssertionError(msg)
+        claims = json.loads(base64.urlsafe_b64decode(_padded(segments[1])))
+        if claims.get("iss") != str(self._app_id):
+            msg = f"{method} {url} carried a JWT issued by {claims.get('iss')!r}"
+            raise AssertionError(msg)
+
+    def _remember_minted_token(self, url: str, response: tuple[int, Any]) -> None:
+        """Record the token this fake just handed out, so later calls must use it."""
+        if not url.endswith("/access_tokens"):
+            return
+        payload = response[1]
+        if isinstance(payload, dict) and isinstance(payload.get("token"), str):
+            self._minted = payload["token"]
 
     def bodies_posted_to(self, tail: str) -> list[Any]:
         """The decoded JSON bodies of every POST whose URL ends with ``tail``."""

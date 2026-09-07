@@ -21,7 +21,7 @@ import json
 import subprocess
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from http.client import HTTPException
 from pathlib import Path
@@ -38,6 +38,11 @@ GITHUB_API = "https://api.github.com"
 # page 1 on a heavily-reviewed PR; every caller walks all pages rather than
 # trusting the first one.
 REVIEWS_PER_PAGE = 100
+
+# The same ceiling for the changed-files collection, walked the same way: a file
+# an anchor names can sit on any page, and a partial listing would silently
+# demote a placeable anchor to body-only.
+FILES_PER_PAGE = 100
 
 # The App JWT's life: ``iat`` is backdated to absorb clock skew against GitHub's
 # clock, and ``exp`` stays inside the 10-minute ceiling the API accepts.
@@ -75,6 +80,24 @@ class HttpTransport(Protocol):
     ) -> tuple[int, Any]: ...  # pragma: no cover  # the API returns object|array; callers narrow
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuses to follow a redirect, so the caller sees the status it answered on.
+
+    Returning no request is how a handler declines: urllib raises the original
+    3xx as an error, which is what an endpoint answering anything other than its
+    expected status must look like here.
+    """
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002  # the base signature; declining needs none of it
+        return None
+
+
+# The default opener follows redirects. Every call here names an endpoint whose
+# expected status is known, so a 3xx is that endpoint failing, never a route to
+# somewhere else.
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 class UrllibTransport:
     """Production transport. Structurally satisfies :class:`HttpTransport`.
 
@@ -107,7 +130,7 @@ class UrllibTransport:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:  # noqa: S310  # same https URL this module built
+            with _OPENER.open(request, timeout=_HTTP_TIMEOUT) as response:
                 return int(response.status), _decode_json(response.read(), url)
         except urllib.error.HTTPError as exc:
             return exc.code, _error_body(exc)
@@ -214,7 +237,7 @@ def mint_installation_token(http: HttpTransport, jwt: str, ref: PRRef) -> Minted
         "installation-token mint",
         want=201,
     )
-    token = read_field(minted, "token", want=str, what="installation-token mint")
+    token = read_field(minted, "token", want=str, what="installation-token mint", status=201)
     return MintedApp(
         token=token, login=f"{read_field(app, 'slug', want=str, what='app lookup')}[bot]"
     )
@@ -230,23 +253,53 @@ def read_head_sha(http: HttpTransport, token: str, ref: PRRef) -> str:
 
 def iter_reviews(http: HttpTransport, token: str, ref: PRRef) -> Iterator[dict[str, Any]]:
     """Yield every review on the PR, walking all pages oldest-first."""
-    page = 1
-    while True:
-        reviews = _reviews_page(
-            _expect(
-                http.request(
-                    "GET",
-                    f"{_pull_url(ref)}/reviews?per_page={REVIEWS_PER_PAGE}&page={page}",
-                    headers=_bearer(token),
-                ),
-                "reviews listing",
-            ),
-            page,
-        )
-        yield from reviews
-        if len(reviews) < REVIEWS_PER_PAGE:
-            return
-        page += 1
+    yield from _paginate(http, token, ref, "reviews", REVIEWS_PER_PAGE, "reviews listing")
+
+
+def iter_files(http: HttpTransport, token: str, ref: PRRef) -> Iterator[dict[str, Any]]:
+    """Yield every file the PR's diff touches, walking all pages."""
+    yield from _paginate(http, token, ref, "files", FILES_PER_PAGE, "files listing")
+
+
+def find_own_review(
+    http: HttpTransport,
+    token: str,
+    ref: PRRef,
+    login: str,
+    *,
+    match: Callable[[dict[str, Any]], bool],
+) -> int | None:
+    """The id of the first review by ``login`` that ``match`` accepts, if one is there.
+
+    Both idempotence checks run through here so the reading of an untrusted page
+    is decided once: a null user is GitHub's shape for a deleted account and is
+    skipped, while a login or an id the page carries in the wrong shape fails the
+    call. Acting on a page the scan half-understood is how a duplicate review gets
+    posted, and ``match`` is only ever consulted for a review already known to be
+    this identity's.
+    """
+    for review in iter_reviews(http, token, ref):
+        if review.get("user") is None:
+            continue
+        if read_field(review, "user", "login", want=str, what="reviews listing") != login:
+            continue
+        if match(review):
+            return read_field(review, "id", want=int, what="reviews listing")
+    return None
+
+
+def review_field(review: dict[str, Any], key: str) -> str | None:
+    """A listed review's string field, or ``None`` when it is absent.
+
+    Every predicate deciding whether a listed review is the one already posted
+    reads through here, so a field arriving in a shape the scan cannot compare
+    fails the call instead of quietly comparing unequal. A false non-match posts
+    a second review; that is the failure this exists to prevent, and an absent
+    field is the only shape it is safe to read as "not this one".
+    """
+    if key not in review:
+        return None
+    return read_field(review, key, want=str, what="reviews listing")
 
 
 def submit_review(
@@ -257,19 +310,64 @@ def submit_review(
     event: str,
     body: str,
     commit_id: str,
+    comments: Sequence[Mapping[str, Any]] = (),
 ) -> int:
     """Submit one review of ``event`` kind pinned to ``commit_id``; return its id.
 
     ``event`` is a parameter so the same call posts a comment-only review as
     readily as an approval — the pinning and the identity are what this function
-    owns, not the verdict.
+    owns, not the verdict. ``comments`` are inline review comments submitted in
+    the same request: GitHub rejects the whole submission when one of them names a
+    line outside the diff, so a caller passes only anchors it has already placed
+    against the diff, and an empty sequence sends no ``comments`` key at all.
     """
-    payload = json.dumps({"event": event, "commit_id": commit_id, "body": body}).encode()
+    fields: dict[str, Any] = {"event": event, "commit_id": commit_id, "body": body}
+    if comments:
+        fields["comments"] = [dict(comment) for comment in comments]
     review: dict[str, Any] = _expect(
-        http.request("POST", f"{_pull_url(ref)}/reviews", headers=_bearer(token), body=payload),
+        http.request(
+            "POST",
+            f"{_pull_url(ref)}/reviews",
+            headers=_bearer(token),
+            body=json.dumps(fields).encode(),
+        ),
         "review submission",
     )
     return read_field(review, "id", want=int, what="review submission")
+
+
+def _paginate(
+    http: HttpTransport,
+    token: str,
+    ref: PRRef,
+    collection: str,
+    per_page: int,
+    what: str,
+) -> Iterator[dict[str, Any]]:
+    """Walk every page of one of the PR's sub-collections, in the order it returns.
+
+    A short page ends the walk; a full one is followed by another request, so a
+    collection whose last page happens to be full costs one extra empty read
+    rather than a silently truncated result.
+    """
+    page = 1
+    while True:
+        entries = _object_page(
+            _expect(
+                http.request(
+                    "GET",
+                    f"{_pull_url(ref)}/{collection}?per_page={per_page}&page={page}",
+                    headers=_bearer(token),
+                ),
+                what,
+            ),
+            what,
+            page,
+        )
+        yield from entries
+        if len(entries) < per_page:
+            return
+        page += 1
 
 
 def _decode_json(raw: bytes, url: str) -> Any:
@@ -314,27 +412,31 @@ def _error_body(exc: urllib.error.HTTPError) -> Any:
         return raw.decode(errors="replace")[:_EXCERPT]
 
 
-def _reviews_page(payload: Any, page: int) -> list[dict[str, Any]]:
-    """Validate one page of the reviews listing before any of it is read.
+def _object_page(payload: Any, what: str, page: int, status: int = 200) -> list[dict[str, Any]]:
+    """Validate one page of a listing before any of it is read.
 
     The whole page is checked before a single entry is yielded: a caller that
-    consumed the entries preceding a bad one could miss the App's own approval
-    and post a duplicate.
+    consumed the entries preceding a bad one could miss the App's own review and
+    post a duplicate, or miss a changed file and demote a placeable anchor.
     """
     if not isinstance(payload, list):
-        detail = f"reviews listing: page {page} is {type(payload).__name__}, not a list"
+        detail = _diagnostic(
+            what, status, payload, f"page {page} is {type(payload).__name__}, not a list"
+        )
         raise _api_failed(detail)
-    for index, review in enumerate(payload):
-        if not isinstance(review, dict):
-            detail = (
-                f"reviews listing: page {page} entry {index} is "
-                f"{type(review).__name__}, not an object"
+    for index, entry in enumerate(payload):
+        if not isinstance(entry, dict):
+            detail = _diagnostic(
+                what,
+                status,
+                payload,
+                f"page {page} entry {index} is {type(entry).__name__}, not an object",
             )
             raise _api_failed(detail)
     return payload
 
 
-def read_field(payload: Any, *path: str, want: type[T], what: str) -> T:
+def read_field(payload: Any, *path: str, want: type[T], what: str, status: int = 200) -> T:
     """Read a required field out of a response, or fail the call.
 
     Every field this client reads routes through here, so a response that parsed
@@ -344,15 +446,25 @@ def read_field(payload: Any, *path: str, want: type[T], what: str) -> T:
     node = payload
     for depth, key in enumerate(path):
         if not isinstance(node, dict) or key not in node:
-            detail = f"{what}: response has no {'.'.join(path[: depth + 1])}"
-            raise _api_failed(detail)
+            missing = f"response has no {'.'.join(path[: depth + 1])}"
+            raise _api_failed(_diagnostic(what, status, payload, missing))
         node = node[key]
     # bool is an int subclass, so a JSON boolean would otherwise satisfy an int
     # field and go on to address an installation or name a review.
     if not isinstance(node, want) or (want is not bool and isinstance(node, bool)):
-        detail = f"{what}: {'.'.join(path)} is {type(node).__name__}, not {want.__name__}"
-        raise _api_failed(detail)
+        wrong = f"{'.'.join(path)} is {type(node).__name__}, not {want.__name__}"
+        raise _api_failed(_diagnostic(what, status, payload, wrong))
     return node
+
+
+def _diagnostic(what: str, status: int, payload: Any, problem: str) -> str:
+    """One shape for every failed read: the call, its status, the problem, the body.
+
+    A read that fails on a status the call expected still failed on a response,
+    and naming the problem without what arrived leaves the reader guessing which
+    of the two is wrong — the API or this client's expectation of it.
+    """
+    return f"{what}: HTTP {status}: {problem}: {json.dumps(payload, default=repr)[:_EXCERPT]}"
 
 
 def _sign_failed(detail: str) -> PrgroomError:

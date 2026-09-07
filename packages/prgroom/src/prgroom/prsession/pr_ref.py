@@ -1,4 +1,9 @@
-"""PRRef — the per-PR identity used as the Store key (§2)."""
+"""PRRef — the per-PR identity used as the state store's key — and the commit-id shape.
+
+Both identify a thing this CLI addresses by name rather than by content, and both
+are validated before anything is spent on them: a ref that cannot resolve to a PR
+and a SHA that cannot be a commit are refused at their entry point, not at the API.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,20 @@ _URL = re.compile(
 )
 _BARE_NUMBER = re.compile(r"^(?P<number>[1-9]\d*)$")
 
+# A full git object id. Abbreviations are refused everywhere a commit is named:
+# a review is pinned by comparing against what GitHub reports, which is always
+# the full id, and a prefix would compare unequal to the head it does identify.
+_COMMIT_SHA = re.compile(r"[0-9a-fA-F]{40}")
+
+
+def is_commit_sha(value: str) -> bool:
+    """True iff ``value`` is a 40-character hex commit id, in either case.
+
+    Matched whole rather than anchored: ``$`` also matches before a trailing
+    newline, and an id read out of a file arrives carrying one.
+    """
+    return _COMMIT_SHA.fullmatch(value) is not None
+
 
 @dataclass(frozen=True, slots=True)
 class PRRef:
@@ -31,7 +50,7 @@ class PRRef:
 
     @classmethod
     def parse(cls, text: str, *, default_repo: tuple[str, str] | None = None) -> PRRef:
-        """Parse a CLI PR-ref string into a :class:`PRRef` (§1, §3.6).
+        """Parse a CLI PR-ref string into a :class:`PRRef`.
 
         Accepts ``owner/repo#<n>``, a full ``https://github.com/owner/repo/pull/<n>``
         URL (with an optional trailing path), or a bare ``<n>`` when ``default_repo``
@@ -54,7 +73,7 @@ class PRRef:
         raise PreconditionError(ErrorCode.PRECONDITION_BAD_PR_REF, detail=text)
 
     def slug(self) -> str:
-        """Filesystem-/label-safe stem: ``<owner>-<repo>-<n>`` (§2 file adapter, bd label)."""
+        """Filesystem-/label-safe stem: ``<owner>-<repo>-<n>``, used by the file store."""
         return f"{self.owner}-{self.repo}-{self.number}"
 
     def display(self) -> str:
