@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from grillui.drivers import CLAUDE_CONFIG_ENV, CODEX_HOME_ENV
 from grillui.launch import RunStop, launch
 from grillui.log import HANDOFF_FILE, LOG_FILE, read_entries
 from grillui.tiers import API_BASE_ENV, API_KEY_ENV
@@ -74,12 +75,14 @@ POLL = 0.05
 NEVER_STARTED = "the backend never started answering"
 
 # The settings a scenario may not choose. Three are the guard itself -- the
-# endpoint, the bearer, and the PATH a seat is resolved on -- and the fourth is
-# where the shims read their script from. Naming any of them puts a real CLI or
-# the network back within reach of a turn, so they are applied last and a caller
-# that names one is refused rather than quietly overridden. A safety property
-# that holds only for callers who did not ask otherwise is not one.
-GUARDED = (API_BASE_ENV, API_KEY_ENV, SCRIPT_ENV, "PATH")
+# endpoint, the bearer, and the PATH a seat is resolved on -- the fourth is
+# where the shims read their script from, and the last two are where each CLI
+# keeps its transcripts. Naming any of them puts a real CLI, the network or the
+# human's own transcript store back within reach of a turn, so they are applied
+# last and a caller that names one is refused rather than quietly overridden. A
+# safety property that holds only for callers who did not ask otherwise is not
+# one.
+GUARDED = (API_BASE_ENV, API_KEY_ENV, SCRIPT_ENV, "PATH", CLAUDE_CONFIG_ENV, CODEX_HOME_ENV)
 
 # What a scenario is allowed to configure at all: this session's own settings and
 # nothing else. An allow-list rather than a longer `GUARDED`, because the escape
@@ -367,17 +370,23 @@ class Session:
             self._configured = None
 
 
-def _turn_workers() -> list[str]:
-    """Turn workers still on their feet anywhere in this process.
+# What a thread this harness has to wait for is called: the lane names a turn
+# for its channel and a driver names a copy for its chain, and neither hands
+# anybody a handle to hold.
+WORKERS = ("turn-", "transcript-")
 
-    The lane names each thread for the channel it is taking a turn on, which is
-    what makes them findable at all -- they are daemon threads nobody holds a
-    handle to. Scoped to the process rather than to one session on purpose: the
-    environment they would spawn a seat into is the process's, so another
-    session's straggler is exactly as able to reach a real binary as this one's.
+
+def _turn_workers() -> list[str]:
+    """Turn workers and the copies they started, still on their feet anywhere in
+    this process.
+
+    Scoped to the process rather than to one session on purpose: what they read
+    and what they would spawn a seat into is the process's environment, so
+    another session's straggler reaches the machine's real store and a real
+    binary exactly as readily as this one's.
     """
     return sorted(
-        one.name for one in threading.enumerate() if one.name.startswith("turn-") and one.is_alive()
+        one.name for one in threading.enumerate() if one.name.startswith(WORKERS) and one.is_alive()
     )
 
 
@@ -423,15 +432,16 @@ def start(
     already holds a log resumes from it, which is the same rule a restarted
     backend follows and is what one scenario is about.
 
-    `config` is the session's own configuration, on top of the three settings
-    every scenario needs: the stub's endpoint, a bearer that reaches nothing,
-    and a PATH holding the shims and nothing else.
+    `config` is the session's own configuration, on top of the settings every
+    scenario needs: the stub's endpoint, a bearer that reaches nothing, a PATH
+    holding the shims and nothing else, and a transcript store per CLI that is
+    this scenario's own rather than the machine's.
 
     That PATH is the guard rather than a convenience. Prepending the shims would
     leave a real `codex` or `claude` reachable the moment a setting was wrong or
     a lookup missed, and a scenario that reached one would spend a real account
-    and read as a passing scripted seat -- which is exactly what happened while
-    this was being built. A PATH with nowhere else to look cannot do that: the
+    and read as a passing scripted seat. A PATH with nowhere else to look
+    cannot do that: the
     only thing either driver spawns is the seat, and an unreachable one fails
     the turn in milliseconds instead.
     """
@@ -455,6 +465,11 @@ def start(
         API_BASE_ENV: stub.api_base,
         API_KEY_ENV: STUB_KEY,
         SCRIPT_ENV: str(directory / SCRATCH),
+        # Each CLI's own transcript store, moved into this scenario's scratch.
+        # A backend left pointing at the real ones would have every turn copy
+        # out of -- and a shim write into -- the human's own history.
+        CLAUDE_CONFIG_ENV: str(directory / SCRATCH / "claude-store"),
+        CODEX_HOME_ENV: str(directory / SCRATCH / "codex-store"),
         "PATH": f"{SHIM_DIR}{os.pathsep}{_interpreter_dir(directory / SCRATCH)}",
     }
     out = StringIO()

@@ -63,6 +63,7 @@ human watches a timer against.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
@@ -82,9 +83,10 @@ from pydantic import ValidationError
 from grillui.dispatch import GRILL_MASTER
 from grillui.escalation import in_expert_mode, recommend, transfer_source, turns_of
 from grillui.lane import AgentUnreachableError, DocumentRefusedError
-from grillui.log import PayloadRefusedError
+from grillui.log import TRANSCRIPT_DIR, PayloadRefusedError
 from grillui.projector import fold
 from grillui.schemas import (
+    CHAIN_KEY,
     CONTEXT_BYTES_KEY,
     CONTEXT_LIMIT_KEY,
     DROPPED_RULINGS_KEY,
@@ -678,6 +680,184 @@ def read_codex_reply(printed: str) -> tuple[str | None, str | None, int | None]:
     return said, thread_id, counted
 
 
+# Where each CLI keeps its own store, as each CLI is told to keep it. Read at
+# the moment a transcript is looked for rather than once at import, because a
+# test points a driver at a temporary store and a backend is entitled to be
+# started with either set.
+CLAUDE_CONFIG_ENV = "CLAUDE_CONFIG_DIR"
+CODEX_HOME_ENV = "CODEX_HOME"
+
+
+class TranscriptStore(Protocol):
+    """Where one transport keeps the transcript of one chain.
+
+    A seam rather than a constant path: the layout is the CLI's own and moves
+    when it moves, so a driver is built with the store its transport keeps
+    rather than deriving one it cannot promise.
+    """
+
+    def __call__(self, directory: Path, chain: str, /) -> Path: ...
+
+
+def claude_transcript(directory: Path, chain: str, /) -> Path:
+    """Where the Claude CLI keeps one chain's transcript.
+
+    `$CLAUDE_CONFIG_DIR` or `~/.claude`, then `projects`, then the working
+    directory the turn ran in with every `/` written as `-`, then the chain's
+    own id and `.jsonl`. The directory is resolved first: the CLI encodes the
+    path its process is actually standing in, so a turn run in `/tmp/x` on macOS
+    is filed under `-private-tmp-x` and a locator trusting the name it was given
+    would look in a directory that never existed.
+    """
+    home = Path(os.environ.get(CLAUDE_CONFIG_ENV) or Path.home() / ".claude")
+    return home / "projects" / str(directory.resolve()).replace("/", "-") / f"{chain}.jsonl"
+
+
+def codex_transcript(_directory: Path, chain: str, /) -> Path:
+    """Where the Codex CLI keeps one thread's rollout.
+
+    `$CODEX_HOME` or `~/.codex`, then `sessions`, then the year, month and day
+    the thread opened on, then `rollout-<timestamp>-<thread id>.jsonl`. Neither
+    the date nor the timestamp can be computed here: both are the CLI's local
+    clock at the moment the thread opened, and a thread resumed the next morning
+    stays filed under the day it started. So the thread's id is what is matched
+    and the rest of the name is a wildcard, and the unmatched pattern is what
+    comes back when nothing is there -- a reader of the failure is told where
+    this looked. The working directory has no part in this layout; it is taken
+    only so both stores answer to one shape.
+    """
+    home = Path(os.environ.get(CODEX_HOME_ENV) or Path.home() / ".codex")
+    # Escaped, because the id is the CLI's: a `*` in one would otherwise match
+    # every rollout in the store and copy another conversation under this
+    # chain's name.
+    pattern = f"sessions/*/*/*/rollout-*-{glob.escape(chain)}.jsonl"
+    found = sorted(home.glob(pattern))
+    return found[-1] if found else home / pattern
+
+
+# What a chain the copy will not build a path out of is told. A CLI reports its
+# own id and nothing checks it, so an id carrying a path would put the
+# destination wherever it pointed.
+NOT_A_NAME = "it is not a single file name"
+
+
+def _no_copy(chain: str, looked: Path | None, fault: object, out: TextIO | None = None) -> None:
+    """The one line a copy that did not happen leaves behind.
+
+    One line whatever it is handed. A fault carrying a line break would
+    otherwise write two, and the count of lines is how a reader counts failed
+    copies.
+    """
+    where = "nowhere -- the store could not be asked" if looked is None else str(looked)
+    said = f"grillui: chain {chain} kept no transcript copy from {where}: {fault}"
+    print(" ".join(said.split()), file=sys.stderr if out is None else out, flush=True)
+
+
+def copy_transcript(directory: Path, chain: str, source: Path, out: TextIO | None = None) -> None:
+    """Put a copy of this chain's transcript in the session's own directory.
+
+    The whole file every time. A chain's transcript grows across the turns taken
+    on it, so each copy is a snapshot of the conversation so far and replaces
+    the one the previous turn left -- there is no partial state to keep in step.
+
+    Written under a name nothing can predict and moved onto the final one, so a
+    reader of the session directory sees the previous copy or this one and never
+    half of either.
+
+    Nothing here may cost the turn, which has already been answered and
+    recorded. A source the CLI has pruned, a destination that will not take a
+    write: each is one line on stderr naming the chain and where this looked.
+    """
+    try:
+        # Read before anything is created. A chain the CLI has already pruned is
+        # the ordinary case, and a copy that made its directory first would
+        # leave an empty one behind on every one of them -- in a session
+        # directory a caller may already be finished with.
+        found = source.read_bytes()
+        into = directory / TRANSCRIPT_DIR
+        into.mkdir(parents=True, exist_ok=True)
+        handle, scratch = tempfile.mkstemp(dir=into, suffix=".tmp")
+        try:
+            with os.fdopen(handle, "wb") as file:
+                file.write(found)
+            Path(scratch).replace(into / f"{chain}.jsonl")
+        finally:
+            # A no-op once the rename has happened, and the only thing standing
+            # between a failed write and a scratch file left in the archive.
+            Path(scratch).unlink(missing_ok=True)
+    except Exception as fault:
+        _no_copy(chain, source, fault, out)
+
+
+def _copy_behind(
+    after: threading.Thread | None,
+    directory: Path,
+    chain: str,
+    source: Path,
+    out: TextIO | None,
+) -> None:
+    """This chain's copy, once the one started before it has finished."""
+    if after is not None:
+        after.join()
+    copy_transcript(directory, chain, source, out)
+
+
+def copy_in_background(
+    directory: Path,
+    chain: str,
+    store: TranscriptStore,
+    after: threading.Thread | None = None,
+    out: TextIO | None = None,
+) -> threading.Thread | None:
+    """Start this chain's copy and hand back the thread taking it, or nothing
+    where there was no copy to start.
+
+    The store is asked here, on the thread that took the turn, so the
+    environment naming it is the one the turn ran under. Asked from the copy, it
+    would be read whenever that thread got to it, by which time the environment
+    is whatever the process has since made it.
+
+    `after` is the copy the previous turn on this chain started, and this one
+    goes behind it. Two copies of one conversation are two snapshots of a file
+    that grows, so the one read last has to be the one published last; left
+    unordered, a stalled earlier copy lands on top of a later one and the
+    session keeps the older conversation.
+
+    Off the human's wait: the reply is on the log before this is called and the
+    turn returns without joining.
+
+    Not a daemon, and said so rather than left to the default. A thread inherits
+    its creator's flag, and every turn runs on the lane's, which is a daemon --
+    so an unstated flag makes this one too, and a backend stopped in the seconds
+    after a turn kills it holding the copy the session was kept for. That is the
+    ordinary end of a session, not a corner.
+
+    Nothing here may cost the turn either. A chain that is not one file name, a
+    store that raises, an interpreter with no thread to give: each is the same
+    line a failed copy writes, and the turn stays the successful turn it was.
+    """
+    if Path(chain).parts != (chain,) or chain == os.pardir:
+        _no_copy(chain, None, NOT_A_NAME, out)
+        return None
+    try:
+        source = store(directory, chain)
+    except Exception as fault:
+        _no_copy(chain, None, fault, out)
+        return None
+    copying = threading.Thread(
+        target=_copy_behind,
+        args=(after, directory, chain, source, out),
+        name=f"transcript-{chain}",
+        daemon=False,
+    )
+    try:
+        copying.start()
+    except RuntimeError as fault:
+        _no_copy(chain, source, fault, out)
+        return None
+    return copying
+
+
 def sent_bytes(system: str, prompt: str) -> int:
     """How big this turn's request was, in bytes.
 
@@ -891,7 +1071,17 @@ class HeavyDriver:
     cli: ClaudeCli = run_claude_cli
     tier: str = HEAVY_TIER
     seat: Seat | None = None
+    transcript: TranscriptStore = claude_transcript
     _turn: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
+    # Held across reading the copy this driver last started, starting the next
+    # one behind it, and storing that. The three steps are one turn's, and two
+    # turns are two threads here: split between them, they leave two copies of
+    # one chain with no order.
+    _handoff: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
+    # The copy this driver's last turn started. The turn never joins it, and
+    # nothing else holds a handle to it, so without this the thread is
+    # unreachable the moment the turn walks away from it.
+    copying: threading.Thread | None = field(default=None, repr=False, init=False)
 
     def run(self, log: SessionLog, dispatch: Path, /) -> None:
         recorded = dispatch.read_text(encoding="utf-8")
@@ -935,7 +1125,7 @@ class HeavyDriver:
         with self._turn:
             if cold:
                 forget_resume(log.directory, channel, chains)
-            reply, _chain, prompt_tokens = (
+            reply, chain, prompt_tokens = (
                 take_document(self.tier, prompt, ask, _first)
                 if context.agent == GRILL_MASTER
                 else ask(prompt)
@@ -958,6 +1148,8 @@ class HeavyDriver:
             # claim it was asked for.
             FOLLOWED_TRANSFER_KEY: in_expert_mode(entries, channel),
         }
+        if chain is not None:
+            attribution[CHAIN_KEY] = chain
         # Only where the policy moved the channel. A human gesture writes no
         # source, so the log a `gated` session keeps is unchanged.
         source = transfer_source(entries, channel)
@@ -972,6 +1164,11 @@ class HeavyDriver:
         with log.appending():
             record_reply(log, self.tier, channel, reply, attribution, context.mootness)
             measured.warn(log, model)
+        if chain is not None:
+            with self._handoff:
+                self.copying = copy_in_background(
+                    log.directory, chain, self.transcript, self.copying
+                )
 
 
 @dataclass
@@ -995,7 +1192,17 @@ class CodexDriver:
     cli: CodexCli = run_codex_cli
     tier: str = FAST_TIER
     seat: Seat | None = None
+    transcript: TranscriptStore = codex_transcript
     _turn: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
+    # Held across reading the copy this driver last started, starting the next
+    # one behind it, and storing that. The three steps are one turn's, and two
+    # turns are two threads here: split between them, they leave two copies of
+    # one chain with no order.
+    _handoff: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
+    # The copy this driver's last turn started. The turn never joins it, and
+    # nothing else holds a handle to it, so without this the thread is
+    # unreachable the moment the turn walks away from it.
+    copying: threading.Thread | None = field(default=None, repr=False, init=False)
     _counted: dict[str, tuple[str | None, int]] = field(
         default_factory=dict, repr=False, init=False
     )
@@ -1044,7 +1251,7 @@ class CodexDriver:
             if cold:
                 forget_resume(log.directory, channel, CODEX_RESUME_FILE)
                 self._counted.pop(channel, None)
-            reply, _thread, prompt_tokens = (
+            reply, chain, prompt_tokens = (
                 take_document(self.tier, prompt, ask, _first) if ruling_turn else ask(prompt)
             )
         # The count is what this turn was given, out of a total the thread keeps,
@@ -1055,6 +1262,8 @@ class CodexDriver:
             self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, seat.model
         )
         attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
+        if chain is not None:
+            attribution[CHAIN_KEY] = chain
         advice = advise(log, entries, channel, attribution)
         # One hold of the append lock, for the reason every other seat takes
         # one: the transfer a policy buys and the warning this turn measured are
@@ -1064,6 +1273,11 @@ class CodexDriver:
             if advice is not None and self.config.autonomous:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, seat.model)
+        if chain is not None:
+            with self._handoff:
+                self.copying = copy_in_background(
+                    log.directory, chain, self.transcript, self.copying
+                )
 
     def _read_since(self, channel: str, thread: str | None, total: int | None) -> int | None:
         """What this turn was given, out of the running total the thread reports.

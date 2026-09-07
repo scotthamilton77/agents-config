@@ -339,6 +339,14 @@ Tier = Literal["fast", "heavy"]
 TIERS: frozenset[str] = frozenset(get_args(Tier))
 MODEL_KEY = "model"
 EFFORT_KEY = "effort"
+# `CHAIN_KEY` rides a reply from a transport that holds a conversation open --
+# the two CLI seats -- and names the chain that turn ran on. It is on the log
+# rather than only in the chain file because that file forgets a channel's chain
+# on a cold reopen: afterwards the reply is the only record of which
+# conversation answered, and of which kept transcript belongs to it. A turn
+# whose CLI reported no chain carries no key at all, and a turn over HTTP has no
+# chain to name.
+CHAIN_KEY = "chain"
 # What the turn's context cost, so a session that is filling one up says so
 # while it is still running rather than in the transcript afterwards.
 # `CONTEXT_BYTES_KEY` rides every agent reply, because the prompt was composed

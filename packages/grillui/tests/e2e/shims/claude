@@ -14,6 +14,7 @@ importing it, and records a violation instead of exiting on one.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _shim import emit, flag_value, record, stdin_is_closed, turns  # noqa: E402
 
 NAME = "claude"
+
+# Where this CLI keeps a chain's transcript, spelled out here rather than
+# imported: the driver has to find the file without being told where it is, and
+# a shim that wrote wherever the driver looked would agree with it by
+# construction. The layout is the real one -- the config directory, `projects`,
+# the working directory of this process with every separator written as `-`,
+# and the chain's own id.
+CONFIG_ENV = "CLAUDE_CONFIG_DIR"
 
 # What the seat is seeded with beyond its brief, and it is nothing: no tool, no
 # settings file, no MCP server. Each is named with the value it must carry --
@@ -84,7 +93,31 @@ def main() -> None:
     scripted = turns(NAME)
     if index >= len(scripted):
         raise SystemExit(f"{NAME} shim: no turn {index} is scripted")
-    emit(scripted[index], [json.dumps(printed(scripted[index], flag_value(argv, "--resume")))])
+    said = printed(scripted[index], flag_value(argv, "--resume"))
+    keep(str(said["session_id"]), argv[-1] if argv else "")
+    emit(scripted[index], [json.dumps(said)])
+
+
+def keep(chain: str, prompt: str) -> None:
+    """Leave this turn on the chain's transcript, where the CLI leaves it.
+
+    Appended rather than rewritten, because that is what a chain's transcript
+    is: one file per conversation that grows by a turn each time. The copy the
+    backend keeps is a snapshot of it, so a scenario reading that copy is
+    reading the whole conversation and not the last exchange.
+
+    A run with no config directory in the environment writes nothing at all. The
+    harness always sets one, and a shim that fell back to the CLI's default
+    would be writing into a human's own history the one time the harness did
+    not.
+    """
+    home = os.environ.get(CONFIG_ENV)
+    if not home:
+        return
+    into = Path(home) / "projects" / str(Path.cwd().resolve()).replace("/", "-")
+    into.mkdir(parents=True, exist_ok=True)
+    with (into / f"{chain}.jsonl").open("a", encoding="utf-8") as file:
+        file.write(json.dumps({"type": "user", "text": prompt}) + "\n")
 
 
 def printed(turn: dict[str, Any], resumed: str | None) -> dict[str, Any]:
