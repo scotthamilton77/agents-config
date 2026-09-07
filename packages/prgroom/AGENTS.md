@@ -118,10 +118,11 @@ exists.
   before asserting anything, and treat a test that suddenly slows down as one
   that found the network.
 - The verdict schema lives with the skill that assembles verdicts, and this
-  package carries no copy. `post-verdict` reads only the fields it uses and
-  refuses the rest as malformed; validating a verdict against a schema here
-  would be a second opinion on a document already validated where it was built,
-  and two copies drift. In all three the permissive-default masking risk
+  package carries no copy. `post-verdict` reads the head SHA, the findings list
+  and the fields it anchors on, refuses those when they are absent or mistyped,
+  and passes over every other field without inspecting it. Validating against a
+  schema here would be a second opinion on a document already validated where it
+  was built, and two copies drift. In all three the permissive-default masking risk
   per-file fakes guard against does not apply, which is the only reason they
   are shared. Don't grow any of them into a general-purpose fake — a
   `RouteTableHttp` route table stays in the test module that asserts it.

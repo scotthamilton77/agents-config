@@ -47,6 +47,7 @@ NOTES_A = "docs/a/notes.md"
 NOTES_B = "docs/b/notes.md"
 BINARY = "assets/logo.png"
 MAKEFILE = "Makefile"
+ODD = "src/name@host(v2)~1.py"
 
 # One changed-files listing standing in for a real diff: two hunks in one file
 # (so a range straddling them is unplaceable), a file named the short way in
@@ -56,6 +57,7 @@ FILES: list[dict[str, Any]] = [
     # that stopped at the first entry it could take no spans from would leave
     # every later file unanchorable.
     {"filename": BINARY, "status": "added"},
+    {"filename": "assets/icon.png", "status": "added", "patch": None},
     {
         "filename": APP_PY,
         "patch": (
@@ -71,6 +73,7 @@ FILES: list[dict[str, Any]] = [
     },
     {"filename": TEST_APPROVE, "patch": "@@ -70,2 +72,5 @@ def test_x():\n+    pass\n"},
     {"filename": MAKEFILE, "patch": "@@ -1,2 +1,5 @@\n+all:\n"},
+    {"filename": ODD, "patch": "@@ -1,2 +1,5 @@\n+x\n"},
     {"filename": NOTES_A, "patch": "@@ -1 +1 @@\n-a\n+b\n"},
     {"filename": NOTES_B, "patch": "@@ -1 +1 @@\n-a\n+b\n"},
 ]
@@ -79,9 +82,11 @@ SPANS = {
     APP_PY: [(1, 6), (50, 59)],
     TEST_APPROVE: [(72, 76)],
     MAKEFILE: [(1, 5)],
+    ODD: [(1, 5)],
     NOTES_A: [(1, 1)],
     NOTES_B: [(1, 1)],
     BINARY: [],
+    "assets/icon.png": [],
 }
 
 BASE_ROUTES: dict[tuple[str, str], tuple[int, Any]] = {
@@ -308,6 +313,12 @@ ANCHOR_FORMS = [
     pytest.param(f"{APP_PY}:0 is wrong", None, id="a-line-before-the-file-starts"),
     pytest.param("version 1.2:3 shipped", None, id="a-numeric-token-that-is-not-a-path"),
     pytest.param(f"{MAKEFILE}:3 is wrong", Anchor(MAKEFILE, 3, 3), id="a-path-with-no-extension"),
+    pytest.param(
+        f"{ODD}:3 is wrong", Anchor(ODD, 3, 3), id="a-path-of-legal-but-unusual-characters"
+    ),
+    pytest.param(f"({APP_PY}:3)", Anchor(APP_PY, 3, 3), id="an-anchor-inside-parentheses"),
+    pytest.param(f"'{APP_PY}:3'", Anchor(APP_PY, 3, 3), id="an-anchor-inside-quotes"),
+    pytest.param(f"see {APP_PY}:3, then stop", Anchor(APP_PY, 3, 3), id="an-anchor-before-a-comma"),
     pytest.param(f"{APP_PY}:3junk is wrong", None, id="a-line-with-a-character-glued-to-it"),
     pytest.param(f"{APP_PY}:3-5x is wrong", None, id="a-range-with-a-character-glued-to-it"),
     pytest.param(f"{APP_PY}:3.", Anchor(APP_PY, 3, 3), id="an-anchor-ending-a-sentence"),
@@ -393,8 +404,9 @@ class TestTheHeadItReviewed:
         assert caught.value.code is ErrorCode.PRECONDITION_APPROVER_HEAD_MOVED
         assert http.posted_reviews() == []
 
-    def test_the_refusal_reads_the_head_before_it_reads_the_diff(self) -> None:
-        # Nothing is spent listing a diff for a verdict that cannot be posted.
+    def test_the_refusal_reads_the_head_before_anything_is_listed(self) -> None:
+        # Nothing is spent listing for a verdict that cannot be posted, and the
+        # head read is the last call the flow makes.
         routes = dict(BASE_ROUTES)
         routes[("GET", PULL)] = (200, {"head": {"sha": MOVED}})
         http = transport(routes)
@@ -408,7 +420,8 @@ class TestTheHeadItReviewed:
                 key_path=KEY_PATH,
                 now=1_000_000,
             )
-        assert not [url for _, url, _, _ in http.calls if "/files" in url]
+        assert not [url for _, url, _, _ in http.calls if "/files" in url or "/reviews" in url]
+        assert http.calls[-1][1].endswith(PULL)
 
 
 class TestPostingTwiceIsANoOp:

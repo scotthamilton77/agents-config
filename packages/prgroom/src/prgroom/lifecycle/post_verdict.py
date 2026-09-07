@@ -60,14 +60,19 @@ _RIGHT = "RIGHT"
 
 # A location as findings write one: a path, then a line or an inclusive line
 # range. Nothing else is recognized — a bare path names no line, and
-# `path:symbol` names a symbol whose line only the repository knows. The path
-# carries no extension requirement, because what makes a path a path here is
-# that it resolves against the diff, not that it is spelled with a dot: an
-# extensionless `Makefile` is as nameable as `app.py`, and a dotted token that
-# names no changed file resolves to nothing either way. The trailing boundary
-# refuses a number with anything glued to it, so `app.py:3junk` names no line
-# rather than line 3.
-_ANCHOR = re.compile(r"(?P<path>[\w.+-]+(?:/[\w.+-]+)*):(?P<lines>\d+(?:-\d+)?)(?![\w-])")
+# `path:symbol` names a symbol whose line only the repository knows.
+#
+# The path is any run of characters that is not whitespace and not the colon
+# separating it from the line. Enumerating the characters a path may contain is
+# the wrong shape for this: a filename may hold anything a filesystem allows, so
+# a set narrow enough to exclude prose also excludes legal names. What decides
+# that a token is a path is that it resolves against the diff. The trailing
+# boundary refuses a number with anything glued to it, so `app.py:3junk` names no
+# line rather than line 3.
+#
+# ponytail: a path containing a space is not findable this way and lands
+# body-only; making it findable needs the finding to quote it.
+_ANCHOR = re.compile(r"(?P<path>[^\s:]+):(?P<lines>\d+(?:-\d+)?)(?![\w-])")
 
 # The header of one unified-diff hunk. Its right-hand count is the number of
 # lines the hunk holds on the new side, an absent count meaning one.
@@ -330,9 +335,18 @@ def post_verdict_pr(
     return "\n".join(lines)
 
 
+# What prose wraps a path in, and never part of the path itself.
+_DELIMITERS = "`'\"()[]{}<>,;!?"
+
+
 def _resolve_path(named: str, spans: Mapping[str, list[tuple[int, int]]]) -> str | None:
-    """The one changed file ``named`` identifies, or nothing if zero or several do."""
-    segments = named.split("/")
+    """The one changed file ``named`` identifies, or nothing if zero or several do.
+
+    Surrounding punctuation is stripped before the comparison, because a path
+    written inside backticks or parentheses is the same path. Only the ends are
+    trimmed, so a name carrying those characters between its own is untouched.
+    """
+    segments = named.strip(_DELIMITERS).split("/")
     matches = [path for path in spans if path.split("/")[-len(segments) :] == segments]
     return matches[0] if len(matches) == 1 else None
 
