@@ -17,7 +17,7 @@ Lens sets, mandates, tiers, transports, and the profile table are data in
 
 Classes stay coarse — `typed-code`, `spec-code`, `spec`, `prose` — and each declares its lens roster. The
 target's artifact type resolves against the profile table: each row carries default staffing, a
-force ceiling staffing subtracts below and never exceeds, a precondition set, and a no-gate
+force ceiling only a sweep exceeds, a precondition set, and a no-gate
 marker — the only route to an empty precondition set. Minimum rows: prototype (no-gate,
 zero-force), changelog (mechanical-only), agent-instruction-prose (writing-skills
 mandates), spec, general-docs, typed-code. An unlisted type names a listed profile with a
@@ -44,8 +44,8 @@ gap nor re-derives mechanical verification. A no-gate profile passes on empty ev
 
 Every round's emission consumes a staffing record: the staffed subset (subtract-only from the
 roster), the recommending model (foreign, mid-tier), a
-rationale per excluded roster lens, and, interactively, the user's edit as the decision. The emitter checks the record against the roster and the force ceiling;
-the verdict validator checks lens coverage against the record. A zero-lens decision with a
+rationale per excluded roster lens, and, interactively, the user's edit as the decision. The emitter checks the record against the roster, and the ceiling on any
+round but a sweep; the verdict validator checks lens coverage against the record. A zero-lens decision with a
 justification is itself the terminal record, and no verdict exists; a zero-lens outcome from a
 missing or failed recommendation is refused instead.
 
