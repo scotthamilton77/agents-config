@@ -523,6 +523,8 @@ def test_an_apply_naming_a_proposal_that_is_already_gone_is_refused(
 
     assert again["status"] == "rejected"
     assert again["reason"] == REASON_UNKNOWN_PENDING
+    assert waiting[0] in again["detail"]
+    assert "already applied or dismissed, or it was never sent" in again["detail"]
 
 
 def test_an_apply_of_a_proposal_the_human_moved_under_is_a_conflict(

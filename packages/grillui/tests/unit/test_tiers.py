@@ -1063,6 +1063,12 @@ def test_the_grill_master_brief_gives_a_gap_a_kind_and_a_way_out_of_it(tier: str
     assert "`blocking` true locks the decision" in brief
     assert "dismissing the alert" in brief
     assert "by withdrawing it -- naming its id in `supersedes`" in brief
+    assert "the reply's list of your own pending items you take back" in brief
+    # `supersedes` is defined in the reply contract, which is read after this
+    # rule -- so the definition travels with the first use or the seat meets the
+    # field as a bare word.
+    assert brief.index(GAP_RULE) > brief.index(OPTION_REFERENCE_RULE)
+    assert brief.index(GAP_RULE) < brief.index(DOCUMENT_FORMAT_RULE)
     assert "whose `text` says what they supplied" in brief
     assert "`blocking` false leaves the decision answerable" in brief
     assert "no control of theirs unlocks it" not in brief

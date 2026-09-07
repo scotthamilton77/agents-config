@@ -40,10 +40,6 @@ ALERTS_ON_D2 = document(
 )
 
 
-# One turn that both proposes a change to d2 and raises an alert on it, so the
-# decision is held twice over. An `invalidate` is the update that always waits
-# for the human, which is what puts a live proposal on the queue beside the
-# alert.
 # Two alerts on d2 in one turn, and only the second locks it. The board reads
 # the last alert on a decision, so the first supplies no lock and dismissing it
 # would move nothing -- and once the second is gone the first is what the board
@@ -66,6 +62,10 @@ TWO_ALERTS_ON_D2 = document(
     ],
 )
 
+# One turn that both proposes a change to d2 and raises an alert on it, so the
+# decision is held twice over. An `invalidate` is the update that always waits
+# for the human, which is what puts a live proposal on the queue beside the
+# alert.
 ALERT_UNDER_A_CHANGE = document(
     "d2 may be moot, and it rests on something nobody has supplied.",
     updates=[
