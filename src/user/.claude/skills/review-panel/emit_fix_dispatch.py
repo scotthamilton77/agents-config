@@ -150,7 +150,10 @@ def _finding_block(finding: dict[str, Any]) -> str:
 CLAUSES = (
     (
         "Smallest net change",
-        "Make the change that closes the finding and stop there. No over-explaining, no "
+        "Make the change that closes the finding and stop there. When the criterion is an "
+        "enumeration, a grammar, or a universal, the change that closes the finding is the one "
+        "that closes the whole set — a sweep or a property, not a pin for the corner the finding "
+        "names, because the next round names the next corner. No over-explaining, no "
         "unnecessary code, no prose that restates what the artifact already says. A fix round is "
         "where surface gets minted, and every line minted here is reviewed next round.",
     ),

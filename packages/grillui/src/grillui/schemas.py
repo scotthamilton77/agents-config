@@ -508,8 +508,11 @@ class Decision(Strict):
     `rationale` is the `why` of the last event that changed this decision's
     status, which is what keeps an invalidation and its justification one item
     rather than two: the block and the reasoning for it reach the page together.
-    `locked` is the standing blocking flag of the most recent elicit-alert on
-    this decision, and a locked decision is not answerable now.
+    `locked` is the queue's hold on this decision, and a locked decision is not
+    answerable now. Two things in the queue take it: a change waiting to land on
+    it, and the most recent elicit-alert still queued against it declaring
+    itself blocking. Both are read off the queue as it stands, so the gesture
+    that ends the entry ends the lock.
     """
 
     id: str

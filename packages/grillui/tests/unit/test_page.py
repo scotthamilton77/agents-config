@@ -358,6 +358,31 @@ def test_the_page_never_decides_which_changes_waited() -> None:
     assert "autoApplies" not in source
 
 
+def test_an_agents_alert_carries_the_gesture_that_lifts_the_lock_it_took() -> None:
+    """A blocking alert is the only message on the board that shuts a decision,
+    so the message itself is where the control that reopens it belongs.
+
+    Read off the rendering site and the dispatch table together, because a
+    button wired to nothing is a control the human presses and no lock lifts.
+    The gesture is the queue's own dismiss -- the same one that ends a waiting
+    change -- so the human has one way out of both locks rather than two.
+    """
+    assert 'data-act="dismissone"' in function_body("infoNote")
+    assert 'case "dismissone": dismissPending([uid]); break;' in page_source()
+
+
+def test_a_lock_with_no_thread_behind_it_is_explained_as_the_alert_it_is() -> None:
+    """An alert lock has no thread, so the copy for it must not send the human
+    looking for one to conclude.
+
+    Both places that put a hold into words read the same classification, and the
+    count is on both of them: a hold the classifier tells apart and the copy
+    does not is a lock explained by whatever branch happens to be last.
+    """
+    assert 'kind: "alert", threads: []' in function_body("holdOn")
+    assert page_source().count('lock.kind === "alert"') == 2
+
+
 # ---------------------------------------------------------------- GUI-A14
 
 

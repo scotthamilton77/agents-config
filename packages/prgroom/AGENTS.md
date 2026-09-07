@@ -32,6 +32,11 @@ It runs, in order: `ruff check` (lint), `ruff format --check` (formatting),
 `make ci` runs — read the `ci` target in the root `Makefile` for the current
 membership rather than a copy here.
 
+`make mutants-prgroom` is a separate, advisory gate: it runs the suite against
+generated mutants of the modules a change touches and prints every mutant the
+tests failed to kill. It answers what the coverage floor cannot — whether a
+covered line is actually asserted. It is not part of `make ci-prgroom`.
+
 Do **not** hand-pick a subset (e.g. `ruff check` alone). `ruff check` (linter)
 and `ruff format` (formatter) are orthogonal — passing one says nothing about
 the other. The `Makefile` is the single source of truth for the gate; mirror it

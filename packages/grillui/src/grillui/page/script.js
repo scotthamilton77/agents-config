@@ -860,6 +860,13 @@ function noticeHomes(item) {
 function noticesOn(id) {
   return notices().filter(function (n) { return noticeHomes(n).indexOf(id) >= 0; });
 }
+// The alert whose blocking flag decides this decision's lock: the last live one
+// on it, which is the one the board reads. An older alert under it is still on
+// the queue and still worth reading, but dismissing it moves no lock, so it is
+// not where the control that lifts one belongs.
+function holdingAlert(id) {
+  return noticesOn(id).filter(function (n) { return n.kind === "elicit-alert"; }).pop() || null;
+}
 // A notice the human has not read yet. The message itself stays on the board
 // once read — it is board content and this page does not delete board content —
 // but the marker that says look at this comes off, which is the whole of what
@@ -911,7 +918,11 @@ function holdOn(id) {
   if (mandateHolding(id)) return { kind: "elicitation", threads: [d.mandate.threadId] };
   var blocking = blockingThreads(id);
   if (blocking.length) return { kind: "elicitation", threads: blocking };
-  if (d.locked) return { kind: "elicitation", threads: [] };
+  // A lock nothing above accounted for is a blocking alert's. It has no thread
+  // to conclude, so it is classified apart: told to conclude a thread that does
+  // not exist, the human goes looking instead of pressing the control that
+  // lifts it.
+  if (d.locked) return { kind: "alert", threads: [] };
   return null;
 }
 function conflictOn(id) {
@@ -1174,7 +1185,9 @@ function armBlock(id) {
   var d = node(id);
   if (!d) return "it is not on the board";
   var lock = holdOn(id);
-  if (lock) return lock.kind === "pending" ? "a change is waiting on it" : "a thread must conclude first";
+  if (lock) return lock.kind === "pending" ? "a change is waiting on it"
+    : lock.kind === "alert" ? "an alert is holding it"
+    : "a thread must conclude first";
   if (mandateOpen(d)) return "its mandated thread has to conclude first";
   var st = statusOf(id);
   if (st === "fogged") return "it is in the fog until " + d.fogUntil + " settles";
@@ -1687,11 +1700,21 @@ function isExpanded(id) {
 // queue names the sequence it came from.
 function infoNote(n) {
   var unread = !isRead(n.id);
+  // The lock a blocking alert took is the human's to lift, and the alert that
+  // took it is where they meet it. Two conditions, and each rules out a press
+  // that would free nothing: the decision's hold has to be the alert hold --
+  // where a change is also waiting, the inbox is the way out instead -- and
+  // this has to be the alert supplying it, not an older one under it. A message
+  // is board content and this page does not delete board content, so the
+  // control is here to reopen a decision rather than to tidy the queue.
+  var holding = n.target && (holdOn(n.target) || {}).kind === "alert" &&
+    (holdingAlert(n.target) || {}).id === n.id;
   return '<div class="infonote">' + (unread ? '<span class="unreadmark">●</span> ' : "") +
     "✉ <strong>" + esc(tierLabel(tierAt(n.authored_at)) || "Agent") + ", " +
     esc(n.kind === "elicit-alert" ? "alert" : "informational") +
     ":</strong> " + esc(summarise(n)) + ' <span class="did">' + esc(stampOf(n)) + "</span>" +
     '<div style="margin-top:6px"><button class="btn sm" data-act="discussnotice" data-uid="' + esc(n.id) + '">Discuss</button>' +
+    (holding ? ' <button class="btn sm warn" data-act="dismissone" data-uid="' + esc(n.id) + '">Dismiss it</button>' : "") +
     (unread ? ' <button class="btn sm" data-act="marknote" data-nid="' + esc(n.id) + '">Mark as read</button>' : "") +
     "</div></div>";
 }
@@ -1817,7 +1840,9 @@ function renderColumn() {
     h += '<div style="margin-top:5px">' + pill(st) +
       (UI.fresh.indexOf(id) >= 0 ? ' <span class="pill new">new</span>' : "") +
       (lock ? ' <span class="pill locked">🔒 locked · ' +
-        (lock.kind === "pending" ? "a change is waiting" : "a thread must conclude") + "</span>" : "") + "</div>";
+        (lock.kind === "pending" ? "a change is waiting"
+          : lock.kind === "alert" ? "an alert is holding it"
+          : "a thread must conclude") + "</span>" : "") + "</div>";
 
     if (!expanded) {
       h += '<div class="oneline">' + esc(answerTextOf(id) ||

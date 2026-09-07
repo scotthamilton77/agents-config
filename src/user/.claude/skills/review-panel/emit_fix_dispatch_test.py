@@ -250,6 +250,12 @@ class TestCompleteness:
         assert f"{emitter.TRIVIALITY_BOUNDARY} lines" in dispatch
         assert dispatcher.TRIVIALITY_BOUNDARY == emitter.TRIVIALITY_BOUNDARY
 
+    def test_b5_the_smallest_change_clause_closes_the_class_not_the_corner(self, dispatch):
+        """A per-corner pin on an enumerated criterion is what mints the next round's finding."""
+        clause = dispatch.split("Smallest net change", 1)[1].split("Mutation evidence", 1)[0]
+        assert "closes the whole set" in clause
+        assert "not a pin for the corner" in clause
+
     def test_b5_the_mutation_clause_asks_for_the_observation_the_ledger_requires(self, dispatch):
         """Clause 2 and the ledger's unsupported-fix refusal ask for the same thing."""
         clause = dispatch.split("Mutation evidence for code fixes", 1)[1]

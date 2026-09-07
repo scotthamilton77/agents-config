@@ -166,15 +166,17 @@ _REVISABLE_TEXT = ("short", "title", "body")
 class _Board:
     """The fold's running state, keyed the way the images are read.
 
-    The last six fields are the fold's own bookkeeping: who authored each queue
-    entry, the verdict the authoring turn ruled on it, the update bytes a queued
-    proposal is holding, which entries the human has since dealt with and when,
-    when the human last changed each decision, and the withdrawals that arrived
-    too late. Keeping them here rather than in image 1 is what lets the queue
-    answer "whose was this?", "what was ruled?", "what would it do?" and "was
-    this already acted on?" without image 1 growing a field the protocol never
-    declared. Only the first two reach an image at all, and only once the human
-    has applied the entry: they are then history, which is image 2's alone.
+    The last seven fields are the fold's own bookkeeping: who authored each
+    queue entry, the verdict the authoring turn ruled on it, the update bytes a
+    queued proposal is holding, whether a queued alert declared itself blocking,
+    which entries the human has since dealt with and when, when the human last
+    changed each decision, and the withdrawals that arrived too late. Keeping
+    them here rather than in image 1 is what lets the queue answer "whose was
+    this?", "what was ruled?", "what would it do?", "does this hold its decision
+    shut?" and "was this already acted on?" without image 1 growing a field the
+    protocol never declared. Only the first two reach an image at all, and only
+    once the human has applied the entry: they are then history, which is image
+    2's alone.
     """
 
     decisions: dict[str, Decision] = field(default_factory=dict)
@@ -185,6 +187,7 @@ class _Board:
     author_of: dict[str, str] = field(default_factory=dict)
     verdicts: dict[str, tuple[RulingKind, str]] = field(default_factory=dict)
     proposals: dict[str, dict[str, Any]] = field(default_factory=dict)
+    alerts: dict[str, bool] = field(default_factory=dict)
     dealt: dict[str, tuple[PendingUpdate, int]] = field(default_factory=dict)
     touched: dict[str, int] = field(default_factory=dict)
     conflicts: list[SupersedeConflict] = field(default_factory=list)
@@ -293,12 +296,29 @@ def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
             node.status = "fogged"
     # A decision with a change waiting on it is not a decision anyone should be
     # answering: the frontier already skips a locked node, so the queue's hold
-    # on it is the same lock a blocking alert takes. A withdrawn proposal is not
-    # one -- the author took it back, and the page has dropped it.
+    # on it is the same lock a blocking alert takes. Both are read off the queue
+    # as it now stands, which is what makes them end the same way -- the entry
+    # leaves on a dismiss or is marked on a withdrawal, and the lock goes with
+    # it. A lock outliving the thing that took it is a decision nobody can
+    # answer for the rest of the session.
+    #
+    # The alerts are gathered rather than applied in place because an alert
+    # states what is true of its decision now: the last one still queued is the
+    # one that speaks, so an older blocking alert does not out-vote a newer
+    # alert saying the gap is filled. A proposal never yields to one -- a change
+    # waiting on a decision holds it whatever any alert says about it.
+    alerted: dict[str, bool] = {}
     for item in board.pending:
         blocked = board.decisions.get(item.target or "")
-        if blocked is not None and item.id in board.proposals and not item.superseded:
+        if blocked is None or item.superseded:
+            continue
+        if item.id in board.proposals:
             blocked.locked = True
+        elif item.id in board.alerts:
+            alerted[blocked.id] = board.alerts[item.id]
+    for node_id, blocking in alerted.items():
+        if blocking:
+            board.decisions[node_id].locked = True
     frontier = [
         node.id
         for node in board.decisions.values()
@@ -705,13 +725,18 @@ def _resolve_stale(board: _Board, payload: Mapping[str, object]) -> None:
 def _notice(
     board: _Board, entry: LogEntry, kind: str, payload: Mapping[str, object], key: str
 ) -> None:
-    """A notice addressed to the human joins the pending queue; an alert that
-    declares itself blocking also locks the decision it is about, so nobody
-    answers a question the agent has just said is in question."""
+    """A notice addressed to the human joins the pending queue; an alert brings
+    its blocking flag with it, and while it is queued and says true the decision
+    it is about is locked, so nobody answers a question the agent has just said
+    is in question.
+
+    The flag is recorded against the queue entry rather than written onto the
+    decision, because a lock written during the walk is one the walk alone can
+    lift: the fold reads the queue instead, so the human ending the entry ends
+    the lock.
+    """
     if kind == "elicit-alert":
-        node = board.node(payload)
-        if node is not None:
-            node.locked = payload.get("blocking") is True
+        board.alerts[key] = payload.get("blocking") is True
     board.pending.append(
         PendingUpdate(
             id=key,

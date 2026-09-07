@@ -258,8 +258,10 @@ def dismisses_first_rung(
     Two things in that queue are not this gesture. The queue holds notices as
     well as proposals -- the backend's own word that a turn left decisions
     unruled among them -- and a notice is something the human was told rather
-    than something a seat offered them, so the kind is checked here and not left
-    to the appender's separate refusal of a notice as a thing to dismiss. And a
+    than something a seat offered them. The kind test is the whole of what keeps
+    those out: the appender takes a dismiss on a notice, because that is how the
+    human lifts the lock a blocking alert took, so a gesture that ends a message
+    would otherwise read as a seat being overruled. And a
     proposal the expert authored says nothing about the rung below it: an
     unattributed one is not the expert's and counts, since every seat that takes
     a turn names itself and an entry that named none was authored by no seat at
