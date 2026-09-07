@@ -80,6 +80,24 @@ class HttpTransport(Protocol):
     ) -> tuple[int, Any]: ...  # pragma: no cover  # the API returns object|array; callers narrow
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuses to follow a redirect, so the caller sees the status it answered on.
+
+    Returning no request is how a handler declines: urllib raises the original
+    3xx as an error, which is what an endpoint answering anything other than its
+    expected status must look like here.
+    """
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002  # the base signature; declining needs none of it
+        return None
+
+
+# The default opener follows redirects. Every call here names an endpoint whose
+# expected status is known, so a 3xx is that endpoint failing, never a route to
+# somewhere else.
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 class UrllibTransport:
     """Production transport. Structurally satisfies :class:`HttpTransport`.
 
@@ -112,7 +130,7 @@ class UrllibTransport:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:  # noqa: S310  # same https URL this module built
+            with _OPENER.open(request, timeout=_HTTP_TIMEOUT) as response:
                 return int(response.status), _decode_json(response.read(), url)
         except urllib.error.HTTPError as exc:
             return exc.code, _error_body(exc)

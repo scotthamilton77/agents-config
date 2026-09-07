@@ -577,3 +577,24 @@ def test_a_verdict_holding_only_the_fields_this_verb_reads_is_accepted(
     (posted,) = http.posted_reviews()
     assert posted["body"] == verdict.read_text()
     assert len(posted.get("comments", [])) == comments
+
+
+def test_a_line_number_longer_than_any_file_is_not_a_line_number(
+    workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Driven through the CLI because the defect this pins is a traceback reaching
+    # the operator after the network calls, which a call to the resolver alone
+    # would not show.
+    config, verdict = workspace
+    verdict.write_text(
+        json.dumps(
+            {"head_sha": HEAD, "findings": [{"id": "f1", "evidence": f"{APP_PY}:{'9' * 5000}"}]}
+        )
+    )
+    http = transport(BASE_ROUTES)
+    wire(monkeypatch, http)
+    result = invoke(config, verdict)
+    assert result.exit_code == 0
+    (posted,) = http.posted_reviews()
+    assert "comments" not in posted
+    assert "no line in the diff for finding f1" in result.output

@@ -67,13 +67,14 @@ _RIGHT = "RIGHT"
 # nor the colon before the line, and no narrower: a filename may hold anything a
 # filesystem allows, and a set narrow enough to exclude prose also excludes
 # legal names. The trailing boundary refuses a number with anything glued to it,
-# so `app.py:3junk` names no line rather than line 3.
+# so `app.py:3junk` names no line rather than line 3, and it bounds the digit
+# run, because a line number longer than any file is not a line number.
 #
 # A path containing a space is not findable this way, because nothing
 # distinguishes the path's own space from the space that ends it; such a finding
 # lands in the body alone. Making one findable would need the finding to quote
 # the path.
-_ANCHOR = re.compile(r"(?P<path>[^\s:]+):(?P<lines>\d+(?:-\d+)?)(?![\w-])")
+_ANCHOR = re.compile(r"(?P<path>[^\s:]+):(?P<lines>\d{1,9}(?:-\d{1,9})?)(?![\w-])")
 
 # The header of one unified-diff hunk. Its right-hand count is the number of
 # lines the hunk holds on the new side, an absent count meaning one.

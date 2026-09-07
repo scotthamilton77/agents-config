@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from prgroom.errors import ErrorCode, PrgroomError
+from prgroom.gh import app
 from prgroom.gh.app import FILES_PER_PAGE, GITHUB_API, REVIEWS_PER_PAGE, UrllibTransport
 from prgroom.lifecycle.approve import approve_pr
 from prgroom.lifecycle.post_verdict import Verdict, post_verdict_pr
@@ -393,7 +394,7 @@ class FakeResponse:
 def test_a_success_body_that_is_not_valid_utf8_is_a_coded_failure(
     raw: bytes, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: FakeResponse(200, raw))
+    monkeypatch.setattr(app._OPENER, "open", lambda *_a, **_k: FakeResponse(200, raw))
     with pytest.raises(PrgroomError):
         UrllibTransport().request("GET", f"{GITHUB_API}/app", headers={})
 
@@ -403,7 +404,7 @@ def test_an_error_body_that_is_not_valid_utf8_still_reports_its_status(
     raw: bytes, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     error = urllib.error.HTTPError(f"{GITHUB_API}/app", 502, "Bad Gateway", {}, io.BytesIO(raw))
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: (_ for _ in ()).throw(error))
+    monkeypatch.setattr(app._OPENER, "open", lambda *_a, **_k: (_ for _ in ()).throw(error))
     assert UrllibTransport().request("GET", f"{GITHUB_API}/app", headers={})[0] == 502
 
 
