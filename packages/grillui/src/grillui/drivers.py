@@ -1031,6 +1031,11 @@ def capped(entries: Sequence[LogEntry], channel: str, advice: Recommendation | N
     Read over the whole log rather than off the channel's current mode, so a
     channel the human sent back down after such a move is not bought again by
     the next reply asking for the same thing. The way back down is theirs.
+
+    Asked of the log as it stands under the hold that writes the entry, never of
+    the reading the turn opened with. Turns on a channel run on threads of their
+    own, so two of them read the log before either writes, and a cap decided
+    against those readings is a cap they pass together.
     """
     return (
         advice is not None
@@ -1093,7 +1098,7 @@ class FastDriver:
         # is written, and nothing else could have read the log in between.
         with log.appending():
             record_reply(log, self.tier, channel, reply, attribution, context.mootness)
-            spend = self.config.autonomous and not capped(entries, channel, advice)
+            spend = self.config.autonomous and not capped(log.entries(), channel, advice)
             if advice is not None and spend:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, model)
@@ -1311,7 +1316,7 @@ class CodexDriver:
         # about the reply immediately above them.
         with log.appending():
             record_reply(log, self.tier, channel, reply, attribution, context.mootness)
-            spend = self.config.autonomous and not capped(entries, channel, advice)
+            spend = self.config.autonomous and not capped(log.entries(), channel, advice)
             if advice is not None and spend:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, seat.model)
@@ -1488,7 +1493,7 @@ def declared_updates(
     said; the fold decides what the board can do with it, so an offer and the
     prose it rode in on cannot be judged by two readers that disagree.
     """
-    document = _document(reply)
+    document = _declaring(reply)
     if document is None:
         return reply, [], [], None, []
     prose = document.get("text")
@@ -1509,6 +1514,20 @@ def declared_updates(
         proposal,
         asked,
     )
+
+
+def _declaring(reply: str) -> dict[str, Any] | None:
+    """The object a thread reply declares through, or None where it is prose.
+
+    A reply naming the read key in a shape the field does not take declares
+    nothing, whatever else the object carries: the field is closed, so an object
+    that half-shapes it is a guess, and a guess is published to the human
+    verbatim rather than mined for the parts that happened to parse.
+    """
+    document = _document(reply)
+    if document is None or (NEEDS_TO_READ_KEY in document and not reads_asked(document)):
+        return None
+    return document
 
 
 def _document(reply: str) -> dict[str, Any] | None:
@@ -1603,7 +1622,7 @@ def _proposal_refusal(
     -- and the map channel and the session-scoped thread anchor nothing, so an
     offer arriving on either is answered by the same question.
     """
-    document = _document(reply)
+    document = _declaring(reply)
     if document is None or PROPOSED_ANSWER_KEY not in document:
         return None
     offered = document[PROPOSED_ANSWER_KEY]

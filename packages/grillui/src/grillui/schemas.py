@@ -384,15 +384,8 @@ FROM_THREAD_KEY = "from_thread"
 
 # What a thread seat asks to read when it cannot answer without reading
 # something it was not given: a list of non-empty strings, each a path or
-# pattern in the project or a document outside it. It rides the same object the
-# offer does, for the same reason and one more.
-#
-# The one more is what makes it closed rather than prose a reader parses. An
-# escalation condition reads this key, and that condition spends the human's
-# expert seat; a condition matching on wording would fire on a seat musing that
-# it would help to see the code, which is the model's opinion of its own reach
-# in another costume. A key the seat either sends or does not is a request it
-# made, and a reply that half-shapes it is prose like any other.
+# pattern in the project or a document outside it. A payload key on the turn
+# that made the request, riding the same object the offer does.
 NEEDS_TO_READ_KEY = "needs_to_read"
 
 # The grill-master's judgement on the decisions a gesture put in question, and

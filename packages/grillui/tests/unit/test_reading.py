@@ -28,12 +28,14 @@ Nothing here reaches a network or a model.
 from __future__ import annotations
 
 import json
+import threading
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from conftest import dispatch_context, event, post, seed_node
+from conftest import TIMEOUT, dispatch_context, event, post, seed_node
 
-from grillui.drivers import declared_updates, record_reply
+from grillui.dispatch import record_dispatch
+from grillui.drivers import FastDriver, declared_updates, record_reply
 from grillui.escalation import (
     ASKED_TO_READ,
     CONDITION_IRREDUCIBLE,
@@ -47,13 +49,22 @@ from grillui.schemas import (
     FAST_TIER,
     MAP_CHANNEL,
     NEEDS_TO_READ_KEY,
+    PROPOSED_ANSWER_KEY,
+    STATUS_KIND,
+    STATUS_PHASE_TRANSFERRED,
     Actor,
     Decision,
     Image2,
     LogEntry,
     Thread,
 )
-from grillui.tiers import READ_REQUEST_RULE, compose, system_prompt
+from grillui.tiers import (
+    POLICY_AUTONOMOUS,
+    READ_REQUEST_RULE,
+    TierConfig,
+    compose,
+    system_prompt,
+)
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
@@ -67,6 +78,31 @@ READS = ["src/grillui/log.py", "the vendor's retention note"]
 
 # What a seat writes when it asks well, as the driver reads it back.
 ASKING = json.dumps({"text": SAID, NEEDS_TO_READ_KEY: READS})
+OFFER = {"decision": NODE, "option": None, "text": "Thirty days", "because": "the thread said so"}
+
+# Every shape the field does not take. Each is malformed for one reason, so a
+# reader that took any of them would be taking that reason.
+MALFORMED: list[tuple[str, Any]] = [
+    ("not a list at all", "src/grillui/log.py"),
+    ("a list of nothing", []),
+    ("an item that is not a string", ["src/grillui/log.py", 3]),
+    ("an item that is empty", ["src/grillui/log.py", "   "]),
+    ("an object rather than a list", {"path": "src/grillui/log.py"}),
+]
+
+# The prompt a thread turn composes when it asked for nothing, stated whole. A
+# literal rather than a second call, so a change anywhere in the composition --
+# a heading, a blank line, the order of the sections -- is a failure here.
+NO_FIELD_PROMPT = (
+    "## Briefing\n\n"
+    "No briefing was recorded for this session.\n\n"
+    "## The board, whole\n\n"
+    "{}\n\n"
+    f"## This channel ({THREAD})\n\n"
+    f"thread-agent: {SAID}\n\n"
+    "## Your turn\n\n"
+    "Answer the last thing the human said, under the rules you were given."
+)
 
 
 def board(*dependents: str) -> Image2:
@@ -134,27 +170,27 @@ def test_a_reply_asking_to_read_is_a_declaring_shape_on_its_own() -> None:
     assert (updates, superseded, proposal) == ([], [], None)
 
 
-@pytest.mark.parametrize(
-    ("case", "value"),
-    [
-        ("not a list at all", "src/grillui/log.py"),
-        ("a list of nothing", []),
-        ("an item that is not a string", ["src/grillui/log.py", 3]),
-        ("an item that is empty", ["src/grillui/log.py", "   "]),
-        ("an object rather than a list", {"path": "src/grillui/log.py"}),
-    ],
-)
-def test_a_half_shaped_request_is_the_turns_prose_exactly_as_written(case: str, value: Any) -> None:
+@pytest.mark.parametrize(("case", "value"), MALFORMED)
+@pytest.mark.parametrize("beside", [None, OFFER], ids=["alone", "beside an offer"])
+def test_a_half_shaped_request_is_the_turns_prose_exactly_as_written(
+    case: str, value: Any, beside: dict[str, Any] | None
+) -> None:
     """
-    Given a reply naming the key in a shape the field does not take
+    Given a reply naming the key in a shape the field does not take, with and
+         without a well-formed offer beside it
     When the driver reads what the turn declared
     Then the whole reply is the turn's prose, byte for byte, and nothing is
-         declared -- the rule the half-shaped offer already follows.
+         declared.
 
-    Guessing at a half-shaped request is how a condition that spends the expert
-    seat comes to fire on bytes no seat meant as a request.
+    Whatever else the object carries goes with it. An object the seat
+    half-shaped is a guess, and mining a guess for the parts that happened to
+    parse is how a condition that spends the expert seat comes to act on bytes
+    no seat meant as a request.
     """
-    reply = json.dumps({"text": SAID, NEEDS_TO_READ_KEY: value})
+    said: dict[str, Any] = {"text": SAID, NEEDS_TO_READ_KEY: value}
+    if beside is not None:
+        said[PROPOSED_ANSWER_KEY] = beside
+    reply = json.dumps(said)
 
     assert declared_updates(reply) == (reply, [], [], None, []), case
 
@@ -184,24 +220,39 @@ def test_the_request_lands_on_the_turns_own_entry_and_the_appender_takes_it(
     assert written["payload"][NEEDS_TO_READ_KEY] == READS
 
 
+@pytest.mark.parametrize(("case", "value"), MALFORMED)
+@pytest.mark.parametrize("beside", [None, OFFER], ids=["alone", "beside an offer"])
 def test_a_half_shaped_request_reaches_the_log_as_prose_and_not_as_a_key(
-    client: TestClient, log: SessionLog
+    client: TestClient,
+    log: SessionLog,
+    case: str,
+    value: Any,
+    beside: dict[str, Any] | None,
 ) -> None:
     """
-    Given a thread agent naming the key in a shape the field does not take
+    Given a thread agent naming the key in a shape the field does not take,
+         with and without a well-formed offer beside it
     When the driver records the reply
-    Then the human is shown the bytes the seat wrote, and no key rides the
-         payload for a condition to read.
+    Then the human is shown the bytes the seat wrote, and neither the request
+         nor the offer rides the payload.
+
+    Pinned on the entry rather than on the reader alone: what a condition reads
+    and what the human is shown are both this payload, and a reader that
+    refused the shape while the writer kept a key would leave them disagreeing.
     """
     seed_node(client, log.epoch, NODE)
     open_thread(client, log.epoch)
-    reply = json.dumps({"text": SAID, NEEDS_TO_READ_KEY: []})
+    said: dict[str, Any] = {"text": SAID, NEEDS_TO_READ_KEY: value}
+    if beside is not None:
+        said[PROPOSED_ANSWER_KEY] = beside
+    reply = json.dumps(said)
 
     record_reply(log, FAST_TIER, THREAD, reply, {"tier": FAST_TIER})
 
     written = json.loads((log.directory / LOG_FILE).read_text(encoding="utf-8").splitlines()[-1])
-    assert written["payload"]["text"] == reply
-    assert NEEDS_TO_READ_KEY not in written["payload"]
+    assert written["payload"]["text"] == reply, case
+    assert NEEDS_TO_READ_KEY not in written["payload"], case
+    assert PROPOSED_ANSWER_KEY not in written["payload"], case
 
 
 # ── the fourth condition, read in code off the field ──
@@ -304,19 +355,23 @@ def test_the_expert_prompt_carries_the_request_beside_the_prose() -> None:
     assert f"thread-agent: {SAID}" in prompt
 
 
-def test_a_reply_without_the_field_composes_exactly_as_it_did_before() -> None:
+def test_a_reply_without_the_field_composes_the_prompt_it_always_composed() -> None:
     """
-    Given the same thread turn recorded with no request, and with one the seat
-         half-shaped
+    Given a thread turn recorded with no request, and one with a request the
+         seat half-shaped
     When each prompt is composed
-    Then the two are byte-equal: a reply that made no well-formed request adds
-         nothing to what the seat above is handed.
+    Then both are the prompt this composition has always produced, stated here
+         in full.
+
+    Against a literal rather than against another composition: two values from
+    the same call agree with each other whatever the call does, so a change to
+    the ordinary prompt would move both and be seen by neither.
     """
     plain = compose("{}", dispatch_context(THREAD), [entry(SAID)])
     half = compose("{}", dispatch_context(THREAD), [entry(SAID, **{NEEDS_TO_READ_KEY: []})])
 
-    assert half == plain
-    assert ASKED_TO_READ not in plain
+    assert plain == NO_FIELD_PROMPT
+    assert half == NO_FIELD_PROMPT
 
 
 # ── the seat is told ──
@@ -343,3 +398,54 @@ def test_the_thread_seat_is_told_it_cannot_read_and_how_to_ask(tier: str) -> Non
     assert "do not guess at the content" in brief
     assert "hand this conversation to a seat that can read" in brief
     assert READ_REQUEST_RULE not in system_prompt(tier, "grill-master")
+
+
+def transfers(log: SessionLog, channel: str) -> list[str]:
+    """What the lane said each time the policy moved this one channel."""
+    return [
+        str(one.payload.get("detail"))
+        for one in log.entries()
+        if one.kind == STATUS_KIND
+        and one.channel == channel
+        and one.payload.get("phase") == STATUS_PHASE_TRANSFERRED
+    ]
+
+
+def test_two_turns_overlapping_on_one_channel_buy_one_transfer(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an autonomous session and two first-rung turns on one thread, each
+         held at its transport until the other has read the log
+    When both replies ask to read and both land
+    Then the lane carries one transfer.
+
+    Turns on a channel run on threads of their own, so both read the log before
+    either writes. A cap decided against the reading a turn opened with is a cap
+    two turns pass together, and the human pays for the expert twice on one
+    request.
+    """
+    seed_node(client, log.epoch, NODE)
+    open_thread(client, log.epoch)
+    both = threading.Barrier(2, timeout=TIMEOUT)
+
+    def held(**_asked: Any) -> tuple[str, None]:
+        """A seat that does not answer until the other turn has read the log."""
+        both.wait()
+        return ASKING, None
+
+    driver = FastDriver(TierConfig(escalation_policy=POLICY_AUTONOMOUS), held)
+    running = [
+        threading.Thread(target=driver.run, args=(log, record_dispatch(log, channel=THREAD)))
+        for _ in range(2)
+    ]
+    for one in running:
+        one.start()
+    for one in running:
+        one.join(TIMEOUT)
+        assert not one.is_alive(), "a turn outlived its timeout"
+
+    assert transfers(log, THREAD) == [
+        "the escalation policy moved this channel to the expert tier: "
+        "the seat asked to read something it was not given"
+    ]

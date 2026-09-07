@@ -796,3 +796,27 @@ def test_the_cap_is_this_conditions_alone_and_the_human_conditions_stay_standing
         POLICY_MOVED + CONDITION_TOOL_NEED,
         POLICY_MOVED + CONDITION_IRREDUCIBLE,
     ]
+
+
+def test_a_thread_that_spent_the_cap_leaves_another_threads_first_move_to_buy(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an autonomous session whose seat asks to read on every thread
+    When one thread has already spent its move on the request and a second
+         thread's seat asks
+    Then each thread carries its own transfer.
+
+    The cap is one channel's. Escalating one thread says nothing about any
+    other, and a cap kept for the session would answer the second thread's seat
+    by leaving it stuck on a rung that cannot read.
+    """
+    seed_node(client, log.epoch, NODE)
+    fast, heavy, _cli = both_tiers(POLICY_AUTONOMOUS, ASKED_TO_READ_REPLY)
+    lane = Lane(log, fast, heavy)
+
+    run_turns(lane, opened(MINE, "open-mine", THREAD_OPENED))
+    run_turns(lane, opened(OTHER, "open-other", THREAD_OPENED))
+
+    assert transfers(log, MINE) == [POLICY_MOVED + CONDITION_TOOL_NEED]
+    assert transfers(log, OTHER) == [POLICY_MOVED + CONDITION_TOOL_NEED]
