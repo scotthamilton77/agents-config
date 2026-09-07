@@ -289,6 +289,11 @@ ANCHOR_FORMS = [
         Anchor(APP_PY, 3, 3),
         id="an-unresolvable-path-before-a-resolvable-one",
     ),
+    pytest.param(
+        f"{APP_PY}:59-50 and {APP_PY}:3",
+        Anchor(APP_PY, 3, 3),
+        id="a-reversed-range-before-a-placeable-one",
+    ),
     pytest.param("gh/app.py:_decode_hex_signature uses it", None, id="a-path-and-symbol"),
     pytest.param("docs/architecture/prgroom/design.md says so", None, id="a-path-with-no-line"),
     pytest.param("test_config_approver.py (lines 78-91)", None, id="line-numbers-written-as-prose"),
