@@ -1383,13 +1383,16 @@ class TestSweep:
     def test_b4_an_unsupported_rebuttal_still_refuses_at_the_ledger(self, repo, acs_file,
                                                                     tmp_path, capsys):
         """The gate reads the disposition word; the ledger still audits the evidence behind it,
-        so a bare assertion opens nothing."""
-        flat, _ = self._settled_campaign(tmp_path, repo, acs_file, [
+        so a bare assertion opens nothing — and a refused round leaves no artifact behind, since
+        a prompt on disk is a dispatch someone can fly."""
+        flat, out_dir = self._settled_campaign(tmp_path, repo, acs_file, [
             {"round": 1, "id": "f1", "disposition": "rebutted", "evidence": "  "},
             {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
         ])
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "unsupported-rebuttal"
+        assert not out_dir.exists()
+        assert "terminal" not in result
 
     def test_b4_a_zero_seat_sweep_cannot_terminate_on_an_unaudited_ledger(self, repo, acs_file,
                                                                           tmp_path, capsys):
