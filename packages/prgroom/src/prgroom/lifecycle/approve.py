@@ -26,6 +26,7 @@ from prgroom.gh.app import (
     mint_installation_token,
     openssl_signer,
     read_head_sha,
+    review_field,
     submit_review,
 )
 from prgroom.proc import CommandRunner
@@ -137,6 +138,7 @@ def _existing_approval_id(
         ref,
         minted.login,
         match=lambda review: (
-            review.get("state") == _APPROVED_STATE and review.get("commit_id") == head_sha
+            review_field(review, "state") == _APPROVED_STATE
+            and review_field(review, "commit_id") == head_sha
         ),
     )

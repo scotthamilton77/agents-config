@@ -219,7 +219,7 @@ def mint_installation_token(http: HttpTransport, jwt: str, ref: PRRef) -> Minted
         "installation-token mint",
         want=201,
     )
-    token = read_field(minted, "token", want=str, what="installation-token mint")
+    token = read_field(minted, "token", want=str, what="installation-token mint", status=201)
     return MintedApp(
         token=token, login=f"{read_field(app, 'slug', want=str, what='app lookup')}[bot]"
     )
@@ -268,6 +268,20 @@ def find_own_review(
         if match(review):
             return read_field(review, "id", want=int, what="reviews listing")
     return None
+
+
+def review_field(review: dict[str, Any], key: str) -> str | None:
+    """A listed review's string field, or ``None`` when it is absent.
+
+    Every predicate deciding whether a listed review is the one already posted
+    reads through here, so a field arriving in a shape the scan cannot compare
+    fails the call instead of quietly comparing unequal. A false non-match posts
+    a second review; that is the failure this exists to prevent, and an absent
+    field is the only shape it is safe to read as "not this one".
+    """
+    if key not in review:
+        return None
+    return read_field(review, key, want=str, what="reviews listing")
 
 
 def submit_review(
@@ -380,7 +394,7 @@ def _error_body(exc: urllib.error.HTTPError) -> Any:
         return raw.decode(errors="replace")[:_EXCERPT]
 
 
-def _object_page(payload: Any, what: str, page: int) -> list[dict[str, Any]]:
+def _object_page(payload: Any, what: str, page: int, status: int = 200) -> list[dict[str, Any]]:
     """Validate one page of a listing before any of it is read.
 
     The whole page is checked before a single entry is yielded: a caller that
@@ -388,16 +402,23 @@ def _object_page(payload: Any, what: str, page: int) -> list[dict[str, Any]]:
     post a duplicate, or miss a changed file and demote a placeable anchor.
     """
     if not isinstance(payload, list):
-        detail = f"{what}: page {page} is {type(payload).__name__}, not a list"
+        detail = _diagnostic(
+            what, status, payload, f"page {page} is {type(payload).__name__}, not a list"
+        )
         raise _api_failed(detail)
     for index, entry in enumerate(payload):
         if not isinstance(entry, dict):
-            detail = f"{what}: page {page} entry {index} is {type(entry).__name__}, not an object"
+            detail = _diagnostic(
+                what,
+                status,
+                payload,
+                f"page {page} entry {index} is {type(entry).__name__}, not an object",
+            )
             raise _api_failed(detail)
     return payload
 
 
-def read_field(payload: Any, *path: str, want: type[T], what: str) -> T:
+def read_field(payload: Any, *path: str, want: type[T], what: str, status: int = 200) -> T:
     """Read a required field out of a response, or fail the call.
 
     Every field this client reads routes through here, so a response that parsed
@@ -407,15 +428,25 @@ def read_field(payload: Any, *path: str, want: type[T], what: str) -> T:
     node = payload
     for depth, key in enumerate(path):
         if not isinstance(node, dict) or key not in node:
-            detail = f"{what}: response has no {'.'.join(path[: depth + 1])}"
-            raise _api_failed(detail)
+            missing = f"response has no {'.'.join(path[: depth + 1])}"
+            raise _api_failed(_diagnostic(what, status, payload, missing))
         node = node[key]
     # bool is an int subclass, so a JSON boolean would otherwise satisfy an int
     # field and go on to address an installation or name a review.
     if not isinstance(node, want) or (want is not bool and isinstance(node, bool)):
-        detail = f"{what}: {'.'.join(path)} is {type(node).__name__}, not {want.__name__}"
-        raise _api_failed(detail)
+        wrong = f"{'.'.join(path)} is {type(node).__name__}, not {want.__name__}"
+        raise _api_failed(_diagnostic(what, status, payload, wrong))
     return node
+
+
+def _diagnostic(what: str, status: int, payload: Any, problem: str) -> str:
+    """One shape for every failed read: the call, its status, the problem, the body.
+
+    A read that fails on a status the call expected still failed on a response,
+    and naming the problem without what arrived leaves the reader guessing which
+    of the two is wrong — the API or this client's expectation of it.
+    """
+    return f"{what}: HTTP {status}: {problem}: {json.dumps(payload, default=repr)[:_EXCERPT]}"
 
 
 def _sign_failed(detail: str) -> PrgroomError:

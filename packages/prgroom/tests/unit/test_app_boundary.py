@@ -131,7 +131,12 @@ APPROVE_FLOW = Flow(
 POST_VERDICT_FLOW = Flow(
     call=call_post_verdict,
     read_routes=[APP, INSTALLATION, TOKEN, PULL_READ, REVIEWS_PAGE_1, FILES_PAGE_1],
-    own_review={"body": VERDICT_TEXT, "commit_id": HEAD, "user": {"login": LOGIN}},
+    own_review={
+        "state": "COMMENTED",
+        "body": VERDICT_TEXT,
+        "commit_id": HEAD,
+        "user": {"login": LOGIN},
+    },
 )
 
 FLOWS = [
@@ -161,7 +166,13 @@ def assert_only_prgroom_error_escapes(
     http = transport(routes)
     try:
         flow.call(http)
-    except PrgroomError:
+    except PrgroomError as err:
+        # A malformed body is a failed API call, and its diagnostic has to say so
+        # with the status the call answered on and what it answered with — a bare
+        # code leaves the reader unable to tell a broken API from a wrong
+        # expectation of it.
+        assert err.code is ErrorCode.RUNTIME_APPROVER_API_FAILED
+        assert "HTTP " in err.render()
         if not submission_reachable:
             assert http.posted_reviews() == []
     except Exception as exc:  # the property under test is that this never happens
@@ -198,6 +209,9 @@ REVIEW_OVERRIDES_REJECTED = [
     pytest.param({"user": []}, id="a-list-user"),
     pytest.param({"user": {}}, id="a-user-with-no-login"),
     pytest.param({"user": {"login": 7}}, id="a-numeric-login"),
+    pytest.param({"id": 7, "commit_id": 3}, id="a-numeric-commit-id"),
+    pytest.param({"id": 7, "commit_id": []}, id="a-list-commit-id"),
+    pytest.param({"id": 7, "state": 3}, id="a-numeric-state"),
 ]
 
 # Well-formed entries that are simply not this App's review of this head, built
@@ -285,6 +299,17 @@ FILE_ENTRIES_WITHOUT_LINES = [
     pytest.param({"filename": CHANGED, "patch": ""}, id="a-file-whose-patch-is-empty"),
     pytest.param({"filename": "other.py", "patch": "@@ -1 +1 @@\n"}, id="an-unrelated-file"),
 ]
+
+
+@pytest.mark.parametrize("body", [3, [], {}, True], ids=repr)
+def test_a_body_the_verdict_scan_cannot_compare_is_a_coded_failure(body: Any) -> None:
+    # Only the verdict posting reads a review's body, so this one is not swept
+    # over both flows. Reading it as a non-match would post the verdict twice.
+    entry = {**POST_VERDICT_FLOW.own_review, "id": 7, "body": body}
+    http = transport(routes_with(REVIEWS_PAGE_1, (200, [entry])))
+    with pytest.raises(PrgroomError):
+        call_post_verdict(http)
+    assert http.posted_reviews() == []
 
 
 @pytest.mark.parametrize("entry", FILE_ENTRIES_REJECTED)
@@ -456,6 +481,23 @@ def test_an_unexpected_status_at_any_endpoint_stops_the_flow(
     assert (method, url) == (endpoint[0], GITHUB_API + endpoint[1])
     if endpoint is not SUBMIT:
         assert http.posted_reviews() == []
+
+
+@pytest.mark.parametrize("flow", FLOWS)
+def test_this_flows_own_review_is_found_beyond_the_first_page(flow: Flow) -> None:
+    # A full page carrying no match is followed by the next one, and a match found
+    # there still short-circuits. Stopping at a full page posts a second review.
+    filler = [{"id": n, "user": {"login": "someone-else"}} for n in range(REVIEWS_PER_PAGE)]
+    routes = dict(BASE_ROUTES)
+    routes[REVIEWS_PAGE_1] = (200, filler)
+    routes[("GET", f"{PULL}/reviews?per_page={REVIEWS_PER_PAGE}&page=2")] = (
+        200,
+        [{**flow.own_review, "id": 7}],
+    )
+    http = transport(routes)
+    message = flow.call(http)
+    assert http.posted_reviews() == []
+    assert "review 7" in message
 
 
 @pytest.mark.parametrize("flow", FLOWS)

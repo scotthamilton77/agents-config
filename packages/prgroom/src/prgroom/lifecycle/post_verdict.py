@@ -34,12 +34,17 @@ from prgroom.gh.app import (
     openssl_signer,
     read_field,
     read_head_sha,
+    review_field,
     submit_review,
 )
 from prgroom.proc import CommandRunner
 from prgroom.prsession.pr_ref import PRRef, is_commit_sha
 
 COMMENT_EVENT = "COMMENT"
+
+# The state GitHub reports for a submitted comment-only review — what this verb's
+# own posting comes back as, and the only state its idempotence check accepts.
+COMMENT_STATE = "COMMENTED"
 
 # The ceiling GitHub puts on a comment body. A verdict past it is refused rather
 # than truncated: a truncated verdict is a different document that still reads as
@@ -53,12 +58,16 @@ MAX_BODY_CHARS = 65536
 # lines the change deleted, and no finding about the new head is about those.
 _RIGHT = "RIGHT"
 
-# A location as findings write one: a path with a file extension, then a line or
-# an inclusive line range. Nothing else is recognized — a bare path names no line,
-# and `path:symbol` names a symbol whose line only the repository knows.
-_ANCHOR = re.compile(
-    r"(?P<path>[\w.+-]+(?:/[\w.+-]+)*\.[A-Za-z][\w+-]*):(?P<start>\d+)(?:-(?P<end>\d+))?"
-)
+# A location as findings write one: a path, then a line or an inclusive line
+# range. Nothing else is recognized — a bare path names no line, and
+# `path:symbol` names a symbol whose line only the repository knows. The path
+# carries no extension requirement, because what makes a path a path here is
+# that it resolves against the diff, not that it is spelled with a dot: an
+# extensionless `Makefile` is as nameable as `app.py`, and a dotted token that
+# names no changed file resolves to nothing either way. The trailing boundary
+# refuses a number with anything glued to it, so `app.py:3junk` names no line
+# rather than line 3.
+_ANCHOR = re.compile(r"(?P<path>[\w.+-]+(?:/[\w.+-]+)*):(?P<lines>\d+(?:-\d+)?)(?![\w-])")
 
 # The header of one unified-diff hunk. Its right-hand count is the number of
 # lines the hunk holds on the new side, an absent count meaning one.
@@ -140,6 +149,12 @@ def load_verdict(path: Path) -> Verdict:
                     f"{type(finding[optional]).__name__}, not a string"
                 )
                 raise _malformed(detail)
+        # A finding that says neither what it found nor where cannot be placed and
+        # cannot be read; it is a shape no round produces, and posting it would
+        # put an id on a pull request with nothing attached to it.
+        if not any(finding.get(field, "").strip() for field in ("evidence", "claim")):
+            detail = f"{path}: findings[{index}] carries neither evidence nor claim"
+            raise _malformed(detail)
     return Verdict(text=text, head_sha=head_sha.lower(), findings=tuple(findings))
 
 
@@ -207,8 +222,9 @@ def place_anchor(
             path = _resolve_path(match["path"], spans)
             if path is None:
                 continue
-            start = int(match["start"])
-            end = start if match["end"] is None else int(match["end"])
+            first, _, last = match["lines"].partition("-")
+            start = int(first)
+            end = int(last) if last else start
             if end < start:
                 continue
             if any(low <= start and end <= high for low, high in spans[path]):
@@ -281,8 +297,13 @@ def post_verdict_pr(
         minted.token,
         ref,
         minted.login,
+        # Comment-only, because an approval carrying this text would still be an
+        # approval: recognizing one as the verdict already posted would leave the
+        # round's result unposted and an approval standing in its place.
         match=lambda review: (
-            review.get("commit_id") == verdict.head_sha and review.get("body") == verdict.text
+            review_field(review, "state") == COMMENT_STATE
+            and review_field(review, "commit_id") == verdict.head_sha
+            and review_field(review, "body") == verdict.text
         ),
     )
     if existing is not None:

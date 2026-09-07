@@ -1,4 +1,4 @@
-"""PRRef — the per-PR identity used as the Store key (§2) — and the commit-id shape.
+"""PRRef — the per-PR identity used as the state store's key — and the commit-id shape.
 
 Both identify a thing this CLI addresses by name rather than by content, and both
 are validated before anything is spent on them: a ref that cannot resolve to a PR
@@ -50,7 +50,7 @@ class PRRef:
 
     @classmethod
     def parse(cls, text: str, *, default_repo: tuple[str, str] | None = None) -> PRRef:
-        """Parse a CLI PR-ref string into a :class:`PRRef` (§1, §3.6).
+        """Parse a CLI PR-ref string into a :class:`PRRef`.
 
         Accepts ``owner/repo#<n>``, a full ``https://github.com/owner/repo/pull/<n>``
         URL (with an optional trailing path), or a bare ``<n>`` when ``default_repo``
@@ -73,7 +73,7 @@ class PRRef:
         raise PreconditionError(ErrorCode.PRECONDITION_BAD_PR_REF, detail=text)
 
     def slug(self) -> str:
-        """Filesystem-/label-safe stem: ``<owner>-<repo>-<n>`` (§2 file adapter, bd label)."""
+        """Filesystem-/label-safe stem: ``<owner>-<repo>-<n>``, used by the file store."""
         return f"{self.owner}-{self.repo}-{self.number}"
 
     def display(self) -> str:

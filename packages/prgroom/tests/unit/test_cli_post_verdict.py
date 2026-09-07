@@ -248,6 +248,19 @@ class TestARejectedVerdictCostsNoApiCall:
                 '{"head_sha": "' + HEAD + '", "findings": [{"id": "f1", "claim": []}]}',
                 id="a-finding-with-a-list-claim",
             ),
+            pytest.param(
+                '{"head_sha": "' + HEAD + '", "findings": [{"id": "f1"}]}',
+                id="a-finding-with-neither-evidence-nor-claim",
+            ),
+            pytest.param(
+                '{"head_sha": "' + HEAD + '", "findings": [{"id": "f1", "evidence": "  "}]}',
+                id="a-finding-whose-evidence-is-blank",
+            ),
+            pytest.param(
+                '{"head_sha": "' + HEAD + '", "findings": [{"id": "f1", "claim": "", '
+                '"evidence": ""}]}',
+                id="a-finding-whose-evidence-and-claim-are-both-empty",
+            ),
         ],
     )
     def test_a_malformed_verdict_is_the_malformed_error(
@@ -407,3 +420,98 @@ class TestDefaultProjectConfigPath:
         result = runner.invoke(cli.app, ["post-verdict", PR_ARG, "--verdict", str(verdict)])
         assert result.exit_code == 0
         assert len(http.posted_reviews()) == 1
+
+
+def test_an_uppercase_head_sha_is_lowercased_before_it_is_compared_and_pinned(
+    workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # GitHub reports a head in lowercase, so a verdict written in uppercase must be
+    # folded before the comparison or it reads as a head that moved.
+    config, verdict = workspace
+    envelope = json.loads(verdict.read_text())
+    envelope["head_sha"] = HEAD.upper()
+    verdict.write_text(json.dumps(envelope))
+    http = transport(BASE_ROUTES)
+    wire(monkeypatch, http)
+    result = invoke(config, verdict)
+    assert result.exit_code == 0
+    (posted,) = http.posted_reviews()
+    assert posted["commit_id"] == HEAD
+
+
+def test_a_bad_verdict_is_reported_even_when_the_config_is_bad_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The verdict is read first, so the caller learns which of the two inputs to
+    # fix rather than being sent to the config for a fault that is not there.
+    config = tmp_path / "project-config.toml"
+    config.write_text('[merge-policy]\nmerge-authorization = "explicit"\n')
+    verdict = tmp_path / "verdict.json"
+    verdict.write_text("not json at all")
+    http = transport({})
+    wire(monkeypatch, http)
+    result = invoke(config, verdict)
+    assert result.exit_code == 2
+    assert ErrorCode.PRECONDITION_VERDICT_MALFORMED.value in result.output
+    assert ErrorCode.PRECONDITION_APPROVER_CONFIG.value not in result.output
+    assert http.calls == []
+
+
+class TestTheAppKeyReachesTheCallerThroughThisVerb:
+    """Each App-key failure has its own code, and each must arrive through here.
+
+    Reaching them only through the approving verb would leave this one free to
+    swallow, mislabel, or never reach any of them.
+    """
+
+    def test_an_unset_key_env_var_is_refused_before_any_api_call(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config, verdict = workspace
+        monkeypatch.delenv("APPROVER_KEY_PATH", raising=False)
+        http = transport({})
+        wire(monkeypatch, http)
+        result = invoke(config, verdict)
+        assert result.exit_code == 2
+        assert ErrorCode.PRECONDITION_APPROVER_KEY_ENV_UNSET.value in result.output
+        assert http.calls == []
+
+    def test_a_key_that_is_not_there_is_refused_before_any_api_call(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        config, verdict = workspace
+        monkeypatch.setenv("APPROVER_KEY_PATH", str(tmp_path / "nowhere" / "app.pem"))
+        http = transport({})
+        wire(monkeypatch, http)
+        result = invoke(config, verdict)
+        assert result.exit_code == 2
+        assert ErrorCode.PRECONDITION_APPROVER_KEY_UNREADABLE.value in result.output
+        assert http.calls == []
+
+    def test_a_failed_signature_exits_with_the_terminal_environment_code(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config, verdict = workspace
+        http = transport(BASE_ROUTES)
+        monkeypatch.setattr(cli, "_build_http", lambda: http)
+        monkeypatch.setattr(
+            cli, "_build_runner", lambda: RecordedRunner([CommandResult(1, "", "bad decrypt")])
+        )
+        result = invoke(config, verdict)
+        assert result.exit_code == 77
+        assert ErrorCode.RUNTIME_APPROVER_SIGN_FAILED.value in result.output
+        assert http.calls == []
+
+
+def test_the_verb_builds_no_store_so_it_can_read_or_write_no_grooming_state(
+    workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The lock is taken through the store, so a verb that builds none takes none
+    # and reaches no grooming state at all.
+    built: list[str | None] = []
+    monkeypatch.setattr(cli, "_build_store", lambda name: built.append(name))
+    config, verdict = workspace
+    http = transport(BASE_ROUTES)
+    wire(monkeypatch, http)
+    assert invoke(config, verdict).exit_code == 0
+    assert built == []

@@ -8,12 +8,11 @@ content under `src/`, **this is real code with a real quality gate.**
 clusters it, dispatches fixes, pushes, replies, and resolves threads — as
 locked, resumable lifecycle verbs rather than model-driven prose.
 
-**Almost nothing drives it today.** Charter D13 ("prgroom is carved, not
-finished") scopes this package to slice S8. `post-verdict` is the one exception:
-the `review-panel` skill's round procedure names it as the step that posts an
-assembled verdict to a pull request. No deployed asset invokes any other verb and
-no harness path depends on the grooming loop — read those lifecycle verbs as a
-designed surface, not a running one.
+**`post-verdict` is the only verb anything invokes.** The `review-panel` skill's
+round procedure names it as the step that posts an assembled verdict to a pull
+request. Every other verb is a designed surface with no caller: nothing invokes
+the grooming loop and no harness path depends on it. This package is deliberately
+carved rather than finished, so read an unbuilt verb as a decision, not a gap.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
@@ -112,7 +111,17 @@ exists.
   request should be authorized by. That credential rule is shared rather than
   per-file precisely because it has to cover call sites nobody has written yet:
   a flow that drops or swaps a token is a defect no per-call assertion catches
-  until someone remembers to write one. In all three the permissive-default masking risk
+  until someone remembers to write one.
+- No test reaches the network, a real key, or `openssl`: an App test injects the
+  HTTP transport and the command runner at their build seams. A new test that
+  forgets either seam shells out for real, and nothing stops it — so wire both
+  before asserting anything, and treat a test that suddenly slows down as one
+  that found the network.
+- The verdict schema lives with the skill that assembles verdicts, and this
+  package carries no copy. `post-verdict` reads only the fields it uses and
+  refuses the rest as malformed; validating a verdict against a schema here
+  would be a second opinion on a document already validated where it was built,
+  and two copies drift. In all three the permissive-default masking risk
   per-file fakes guard against does not apply, which is the only reason they
   are shared. Don't grow any of them into a general-purpose fake — a
   `RouteTableHttp` route table stays in the test module that asserts it.

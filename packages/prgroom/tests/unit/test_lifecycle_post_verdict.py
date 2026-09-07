@@ -46,6 +46,7 @@ TEST_APPROVE = "packages/prgroom/tests/unit/test_cli_approve.py"
 NOTES_A = "docs/a/notes.md"
 NOTES_B = "docs/b/notes.md"
 BINARY = "assets/logo.png"
+MAKEFILE = "Makefile"
 
 # One changed-files listing standing in for a real diff: two hunks in one file
 # (so a range straddling them is unplaceable), a file named the short way in
@@ -69,6 +70,7 @@ FILES: list[dict[str, Any]] = [
         ),
     },
     {"filename": TEST_APPROVE, "patch": "@@ -70,2 +72,5 @@ def test_x():\n+    pass\n"},
+    {"filename": MAKEFILE, "patch": "@@ -1,2 +1,5 @@\n+all:\n"},
     {"filename": NOTES_A, "patch": "@@ -1 +1 @@\n-a\n+b\n"},
     {"filename": NOTES_B, "patch": "@@ -1 +1 @@\n-a\n+b\n"},
 ]
@@ -76,6 +78,7 @@ FILES: list[dict[str, Any]] = [
 SPANS = {
     APP_PY: [(1, 6), (50, 59)],
     TEST_APPROVE: [(72, 76)],
+    MAKEFILE: [(1, 5)],
     NOTES_A: [(1, 1)],
     NOTES_B: [(1, 1)],
     BINARY: [],
@@ -304,6 +307,15 @@ ANCHOR_FORMS = [
     pytest.param(f"{APP_PY}:59-50 is backwards", None, id="a-reversed-range"),
     pytest.param(f"{APP_PY}:0 is wrong", None, id="a-line-before-the-file-starts"),
     pytest.param("version 1.2:3 shipped", None, id="a-numeric-token-that-is-not-a-path"),
+    pytest.param(f"{MAKEFILE}:3 is wrong", Anchor(MAKEFILE, 3, 3), id="a-path-with-no-extension"),
+    pytest.param(f"{APP_PY}:3junk is wrong", None, id="a-line-with-a-character-glued-to-it"),
+    pytest.param(f"{APP_PY}:3-5x is wrong", None, id="a-range-with-a-character-glued-to-it"),
+    pytest.param(f"{APP_PY}:3.", Anchor(APP_PY, 3, 3), id="an-anchor-ending-a-sentence"),
+    pytest.param(
+        f"no anchor here, but {APP_PY}:3 in the claim",
+        Anchor(APP_PY, 3, 3),
+        id="an-anchor-after-prose",
+    ),
 ]
 
 
@@ -323,6 +335,13 @@ def test_the_claim_is_read_when_the_evidence_names_nothing(
 
 def test_the_evidence_is_preferred_over_the_claim() -> None:
     item = finding("f1", claim=f"{TEST_APPROVE}:74", evidence=f"{APP_PY}:3")
+    assert place_anchor(item, SPANS) == Anchor(APP_PY, 3, 3)
+
+
+def test_the_claim_is_read_when_the_evidence_holds_no_anchor() -> None:
+    # Present-but-unanchorable evidence is not absent evidence: a search that only
+    # consulted the claim when evidence was missing would lose this finding's line.
+    item = finding("f1", evidence="a paragraph naming no location", claim=f"{APP_PY}:3")
     assert place_anchor(item, SPANS) == Anchor(APP_PY, 3, 3)
 
 
@@ -430,10 +449,21 @@ class TestPostingTwiceIsANoOp:
         _, http = post(verdict_of(), self.routes_with_review(self.existing(**overrides)))
         assert len(http.posted_reviews()) == 1
 
-    def test_the_apps_own_approval_at_the_head_does_not_suppress_the_verdict(self) -> None:
+    @pytest.mark.parametrize(
+        "body",
+        [
+            pytest.param("Automated attestation", id="carrying-an-attestation-body"),
+            pytest.param(None, id="carrying-the-verdict-text-itself"),
+        ],
+    )
+    def test_the_apps_own_approval_at_the_head_does_not_suppress_the_verdict(
+        self, body: str | None
+    ) -> None:
         # The approval and the verdict are two separate reviews; finding one must
-        # never be read as having posted the other.
-        approval = self.existing(state="APPROVED", body="Automated attestation")
+        # never be read as having posted the other — least of all an approval that
+        # happens to carry the verdict's text, where suppressing would leave the
+        # round's result unposted and an approval standing in its place.
+        approval = self.existing(state="APPROVED", **({} if body is None else {"body": body}))
         _, http = post(verdict_of(), self.routes_with_review(approval))
         assert len(http.posted_reviews()) == 1
 
