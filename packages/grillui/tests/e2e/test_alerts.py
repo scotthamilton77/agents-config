@@ -145,9 +145,9 @@ def test_an_alert_under_a_waiting_change_offers_no_dismissal_that_would_free_not
          that is waiting.
 
     The control exists to reopen a decision, so it is offered only where
-    pressing it would. Dismissing this alert leaves the change still holding the
-    decision: a button here is one the human presses to no effect, and the
-    caption would be sending them at the wrong hold.
+    pressing it would reopen one. Dismissing this alert leaves the change still
+    holding the decision: a button here is one the human presses to no effect,
+    and the caption would be sending them at the wrong hold.
     """
     session = launcher(handoff=handoff(PLAN))
     session.script_codex(turn(ALERT_UNDER_A_CHANGE), turn(document("Noted.")))

@@ -948,7 +948,13 @@ def _two_seats() -> tuple[SpyDriver, SpyDriver]:
     return SpyDriver(tier=FAST_TIER, reply="Noted."), SpyDriver(tier=HEAVY_TIER, reply="Noted.")
 
 
-def _alert(log: SessionLog, key: str, target: str = "d3", tier: str = FAST_TIER) -> str:
+def _alert(
+    log: SessionLog,
+    key: str,
+    target: str = "d3",
+    tier: str = FAST_TIER,
+    blocking: bool = False,
+) -> str:
     """One notice on the queue, whose pending id is its key."""
     receipt = log.submit(
         [
@@ -959,7 +965,7 @@ def _alert(log: SessionLog, key: str, target: str = "d3", tier: str = FAST_TIER)
                 payload={
                     "target": target,
                     "text": "This answer may not survive the retention question.",
-                    "blocking": False,
+                    "blocking": blocking,
                     TIER_KEY: tier,
                 },
             )
@@ -1583,24 +1589,31 @@ def test_a_dismissal_the_queue_refuses_is_no_signal(log: SessionLog) -> None:
     assert _transfers(log) == []
 
 
-def test_dismissing_a_notice_the_queue_accepts_is_no_signal(log: SessionLog) -> None:
+@pytest.mark.parametrize("blocking", [True, False])
+def test_dismissing_a_notice_the_queue_accepts_is_no_signal(
+    blocking: bool, log: SessionLog
+) -> None:
     """
     Given two notices on the queue, which the human may dismiss
     When both dismissals land, and one real dismissal follows
     Then nothing is written to the lane.
 
     A notice is something the human was told, and being done with it is not
-    overruling the seat that told them -- an alert's dismissal is how they lift
-    the lock it took. The queue is full of notices, the backend's own
-    unmet-obligation ones among them, so counting these would move the channel
-    on a human clearing their inbox.
+    overruling the seat that told them. The queue is full of notices, the
+    backend's own unmet-obligation ones among them, so counting these would move
+    the channel on a human clearing their inbox.
+
+    Parametrised over the flag because the blocking case is the one the human
+    presses most deliberately: dismissing it is how they lift the lock it took,
+    and a policy that read that as the seat being overruled would answer their
+    only way out of a locked decision by moving the channel under them.
     """
     first, expert = _two_seats()
     lane = Lane(log, first, expert=expert)
     _seed_resting(log)
 
-    _dismiss(lane, _alert(log, "notice-one"))
-    _dismiss(lane, _alert(log, "notice-two"))
+    _dismiss(lane, _alert(log, "notice-one", blocking=blocking))
+    _dismiss(lane, _alert(log, "notice-two", blocking=blocking))
     _dismiss(lane, _proposal(log, "prop-1"))
 
     assert _transfers(log) == []

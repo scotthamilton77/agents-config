@@ -502,7 +502,10 @@ def test_a_later_alert_that_does_not_block_lifts_the_lock(
     Then the decision is answerable again.
 
     The lock is the standing state of the most recent alert, so an alert that
-    could only ever lock would be a decision nobody can ever answer.
+    could only ever lock would be a decision nobody can ever answer. The older
+    alert is still queued and still stands: what lifted the lock is the newer
+    one out-voting it, and a board that unlocked by dropping what it had already
+    told the human would be taking the message back to move the lock.
     """
     seed_node(client, log.epoch)
     alert = {"target": SEED_NODE, "text": "the licence terms may rule this out"}
@@ -514,6 +517,10 @@ def test_a_later_alert_that_does_not_block_lifts_the_lock(
         event("elicit-alert", key="alert-2", blocking=False, target=SEED_NODE, text="terms are ok"),
     )
 
+    assert [(item["id"], item["superseded"]) for item in image1(client)["pending"]] == [
+        ("alert-1", False),
+        ("alert-2", False),
+    ]
     assert decisions(client)[SEED_NODE]["locked"] is False
     assert image1(client)["frontier"] == [SEED_NODE]
 
