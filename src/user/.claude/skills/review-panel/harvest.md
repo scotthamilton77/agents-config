@@ -228,8 +228,9 @@ prgroom post-verdict <pr> --verdict <path>
 ```
 
 That submits the reviewing App's comment-only review pinned to the reviewed head: the verdict's own
-bytes as the body, and an inline comment carrying the finding's JSON at each finding whose evidence
-names a file and line the diff touches. A finding it cannot place lands in the body alone and is
+bytes as the body, and an inline comment carrying the finding's JSON at each finding that names a
+file and line the diff touches — in its evidence, or failing that in its claim. A finding whose
+location is a path with no line, a symbol, or a file the diff leaves alone lands in the body alone and is
 named on stdout — read that list, because a finding nobody sees at the line is a finding the fixer
 is likelier to skim past. It refuses when the live head has already moved, reposting the same
 verdict at the same head posts nothing, and it never approves: the approval is a separate review,

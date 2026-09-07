@@ -131,7 +131,7 @@ def load_verdict(path: Path) -> Verdict:
             detail=f"{path} is {len(text)} characters; the limit is {MAX_BODY_CHARS}",
         )
     try:
-        payload = json.loads(text)
+        payload = json.loads(text, parse_constant=_not_json)
     except ValueError as exc:
         detail = f"{path} is not JSON: {exc}"
         raise _malformed(detail) from exc
@@ -353,6 +353,10 @@ def _resolve_path(named: str, spans: Mapping[str, list[tuple[int, int]]]) -> str
         matches = [path for path in spans if path.split("/")[-len(segments) :] == segments]
         if len(matches) == 1:
             return matches[0]
+        if matches:
+            # The token names changed files, just not one of them. Trimming from
+            # here could only reach a file the finding did not write.
+            return None
     return None
 
 
@@ -372,6 +376,16 @@ def _required(
         detail = f"{prefix} is empty"
         raise _malformed(detail)
     return value
+
+
+def _not_json(name: str) -> Any:
+    """Refuse the JavaScript constants Python's decoder accepts and JSON has not.
+
+    A verdict is posted verbatim, so a document that only Python can read would
+    go out as one anything else rejects.
+    """
+    msg = f"{name} is not a JSON value"
+    raise ValueError(msg)
 
 
 def _malformed(detail: str) -> PreconditionError:

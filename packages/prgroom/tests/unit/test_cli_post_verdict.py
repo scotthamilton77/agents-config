@@ -253,6 +253,22 @@ class TestARejectedVerdictCostsNoApiCall:
                 id="a-finding-with-a-blank-id",
             ),
             pytest.param(
+                '{"head_sha": "' + HEAD + '", "findings": [{"id": " ", "evidence": "x.py:1"}]}',
+                id="a-blank-id-on-an-otherwise-complete-finding",
+            ),
+            pytest.param(
+                '{"head_sha": "' + HEAD + '", "findings": [], "extra": NaN}',
+                id="a-javascript-numeric-constant",
+            ),
+            pytest.param(
+                '{"head_sha": "' + HEAD + '", "findings": [], "extra": Infinity}',
+                id="a-javascript-infinity",
+            ),
+            pytest.param(
+                '{"head_sha": "' + HEAD + '", "findings": [], "extra": -Infinity}',
+                id="a-javascript-negative-infinity",
+            ),
+            pytest.param(
                 '{"head_sha": "' + HEAD + '", "findings": [{"id": "f1", "evidence": 7}]}',
                 id="a-finding-with-numeric-evidence",
             ),

@@ -364,6 +364,13 @@ def test_a_name_ending_in_punctuation_beats_the_trimmed_one_it_shadows() -> None
     assert place_anchor(item, spans) == Anchor("src/report?", 3, 3)
 
 
+def test_an_ambiguous_exact_name_anchors_nothing_rather_than_trimming_to_a_third() -> None:
+    # The token names two changed files, so it names none of them. Trimming from
+    # there could only reach a file the finding did not write.
+    spans = {"a/report?": [(1, 5)], "b/report?": [(1, 5)], "src/report": [(1, 5)]}
+    assert place_anchor(finding("f1", evidence="report?:3"), spans) is None
+
+
 def test_a_finding_carrying_neither_field_anchors_nothing() -> None:
     assert place_anchor(finding("f1"), SPANS) is None
 
