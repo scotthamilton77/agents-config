@@ -76,6 +76,13 @@ IMAGE1_FILE = "image1.json"
 IMAGE2_FILE = "image2.json"
 HANDOFF_FILE = "handoff.json"
 RESULT_FILE = "result.json"
+TRANSCRIPT_DIR = "transcripts"
+"""Where a copy of each CLI chain's own transcript is kept, one file per chain.
+
+Copied rather than pointed at. A CLI prunes its store on a retention window, so
+a reference into it reads for a few weeks and then names nothing; the session
+directory is what is archived, and after that pruning it is the only place the
+turn's reads can still be recovered from."""
 
 
 class CorruptLogError(RuntimeError):

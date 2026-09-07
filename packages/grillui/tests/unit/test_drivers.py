@@ -64,6 +64,7 @@ from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import LOG_FILE, SessionLog
 from grillui.projector import fold
 from grillui.schemas import (
+    CHAIN_KEY,
     CONTEXT_BYTES_KEY,
     CONTEXT_LIMIT_KEY,
     EFFORT_KEY,
@@ -202,7 +203,8 @@ def test_a_heavy_turn_is_attributed_and_says_whether_it_followed_a_transfer(
     Given a human turn carrying the transfer the human activated
     When the heavy tier takes it
     Then the log attributes the turn to the heavy tier, to the configured Claude
-         model, and records that it followed a transfer.
+         model, to the chain the CLI answered on, and records that it followed a
+         transfer.
     """
     log = briefed(session_dir)
     human_turn(log, "Take this one to the expert.", **{TRANSFER_FLAG: True})
@@ -216,6 +218,7 @@ def test_a_heavy_turn_is_attributed_and_says_whether_it_followed_a_transfer(
             MODEL_KEY: "claude-configured",
             EFFORT_KEY: "max",
             FOLLOWED_TRANSFER_KEY: True,
+            CHAIN_KEY: "chain-1",
         }
     ]
 

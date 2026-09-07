@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from grillui.drivers import CLAUDE_CONFIG_ENV, CODEX_HOME_ENV
 from grillui.launch import RunStop, launch
 from grillui.log import HANDOFF_FILE, LOG_FILE, read_entries
 from grillui.tiers import API_BASE_ENV, API_KEY_ENV
@@ -74,12 +75,14 @@ POLL = 0.05
 NEVER_STARTED = "the backend never started answering"
 
 # The settings a scenario may not choose. Three are the guard itself -- the
-# endpoint, the bearer, and the PATH a seat is resolved on -- and the fourth is
-# where the shims read their script from. Naming any of them puts a real CLI or
-# the network back within reach of a turn, so they are applied last and a caller
-# that names one is refused rather than quietly overridden. A safety property
-# that holds only for callers who did not ask otherwise is not one.
-GUARDED = (API_BASE_ENV, API_KEY_ENV, SCRIPT_ENV, "PATH")
+# endpoint, the bearer, and the PATH a seat is resolved on -- the fourth is
+# where the shims read their script from, and the last two are where each CLI
+# keeps its transcripts. Naming any of them puts a real CLI, the network or the
+# human's own transcript store back within reach of a turn, so they are applied
+# last and a caller that names one is refused rather than quietly overridden. A
+# safety property that holds only for callers who did not ask otherwise is not
+# one.
+GUARDED = (API_BASE_ENV, API_KEY_ENV, SCRIPT_ENV, "PATH", CLAUDE_CONFIG_ENV, CODEX_HOME_ENV)
 
 # What a scenario is allowed to configure at all: this session's own settings and
 # nothing else. An allow-list rather than a longer `GUARDED`, because the escape
@@ -423,9 +426,10 @@ def start(
     already holds a log resumes from it, which is the same rule a restarted
     backend follows and is what one scenario is about.
 
-    `config` is the session's own configuration, on top of the three settings
-    every scenario needs: the stub's endpoint, a bearer that reaches nothing,
-    and a PATH holding the shims and nothing else.
+    `config` is the session's own configuration, on top of the settings every
+    scenario needs: the stub's endpoint, a bearer that reaches nothing, a PATH
+    holding the shims and nothing else, and a transcript store per CLI that is
+    this scenario's own rather than the machine's.
 
     That PATH is the guard rather than a convenience. Prepending the shims would
     leave a real `codex` or `claude` reachable the moment a setting was wrong or
@@ -455,6 +459,11 @@ def start(
         API_BASE_ENV: stub.api_base,
         API_KEY_ENV: STUB_KEY,
         SCRIPT_ENV: str(directory / SCRATCH),
+        # Each CLI's own transcript store, moved into this scenario's scratch.
+        # A backend left pointing at the real ones would have every turn copy
+        # out of -- and a shim write into -- the human's own history.
+        CLAUDE_CONFIG_ENV: str(directory / SCRATCH / "claude-store"),
+        CODEX_HOME_ENV: str(directory / SCRATCH / "codex-store"),
         "PATH": f"{SHIM_DIR}{os.pathsep}{_interpreter_dir(directory / SCRATCH)}",
     }
     out = StringIO()
