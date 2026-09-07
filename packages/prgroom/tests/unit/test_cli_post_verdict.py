@@ -598,3 +598,48 @@ def test_a_line_number_longer_than_any_file_is_not_a_line_number(
     (posted,) = http.posted_reviews()
     assert "comments" not in posted
     assert "no line in the diff for finding f1" in result.output
+
+
+@pytest.mark.parametrize(
+    ("patch", "kind"),
+    [
+        pytest.param("@@ -1 +" + "9" * 5000 + " @@\n+x\n", "start", id="an-over-long-hunk-start"),
+        pytest.param("@@ -1 +1," + "9" * 5000 + " @@\n+x\n", "count", id="an-over-long-hunk-count"),
+    ],
+)
+def test_a_hunk_header_number_longer_than_any_file_yields_no_span(
+    patch: str, kind: str, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Driven through the CLI: the failure this pins is a traceback reaching the
+    # operator once the diff has already been fetched.
+    del kind
+    config, verdict = workspace
+    routes = dict(BASE_ROUTES)
+    routes[("GET", f"{PULL}/files?per_page={FILES_PER_PAGE}&page=1")] = (
+        200,
+        [{"filename": APP_PY, "patch": patch}],
+    )
+    http = transport(routes)
+    wire(monkeypatch, http)
+    result = invoke(config, verdict)
+    assert result.exit_code == 0
+    assert "comments" not in http.posted_reviews()[0]
+
+
+def test_a_pr_number_longer_than_any_repo_is_a_coded_refusal(
+    workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config, verdict = workspace
+    http = transport({})
+    wire(monkeypatch, http)
+    result = run_cli(
+        "post-verdict",
+        "octo/demo#" + "9" * 5000,
+        "--verdict",
+        str(verdict),
+        "--project-config",
+        str(config),
+    )
+    assert result.exit_code == 2
+    assert ErrorCode.PRECONDITION_BAD_PR_REF.value in result.output
+    assert http.calls == []

@@ -78,7 +78,12 @@ _ANCHOR = re.compile(r"(?P<path>[^\s:]+):(?P<lines>\d{1,9}(?:-\d{1,9})?)(?![\w-]
 
 # The header of one unified-diff hunk. Its right-hand count is the number of
 # lines the hunk holds on the new side, an absent count meaning one.
-_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@", re.MULTILINE)
+# Every digit run is bounded: a line number longer than any file is not a line
+# number, and an unbounded one reaches a conversion Python refuses.
+_HUNK = re.compile(
+    r"^@@ -\d{1,9}(?:,\d{1,9})? \+(?P<start>\d{1,9})(?:,(?P<count>\d{1,9}))? @@",
+    re.MULTILINE,
+)
 
 T = TypeVar("T")
 
