@@ -3,6 +3,7 @@
         verify-entry-installer \
         ci-prgroom test-prgroom lint-prgroom format-check-prgroom \
         typecheck-prgroom cov-prgroom audit-prgroom verify-entry-prgroom \
+        mutants-prgroom \
         ci-grind test-grind lint-grind format-check-grind \
         typecheck-grind cov-grind audit-grind verify-entry-grind \
         ci-gitclean test-gitclean lint-gitclean format-check-gitclean \
@@ -126,6 +127,20 @@ audit-prgroom:
 # prgroom venv where the entry point is installed is selected.
 verify-entry-prgroom:
 	uv --project $(PRGROOM) run prgroom --help > /dev/null
+
+# mutants-prgroom runs the suite against generated mutants and fails when the
+# survivors exceed the pyproject threshold — the check the coverage floor cannot
+# make, since a line can be executed by a test that would not notice it change.
+# It is not part of ci-prgroom: the module set it reads from a diff is a
+# working-tree question, not a build-wide one.
+#
+#   make mutants-prgroom                          # modules changed vs origin/main
+#   make mutants-prgroom BASE=<ref>               # ... vs another ref
+#   make mutants-prgroom MODULES="gh/app.py cli.py"
+#   make mutants-prgroom ALL=1                    # every module in the package
+mutants-prgroom:
+	cd $(PRGROOM) && uv run python scripts/mutation_gate.py \
+	    $(if $(MODULES),--modules $(MODULES)) $(if $(BASE),--base $(BASE)) $(if $(ALL),--all)
 
 # ── grind (mirrors the ci-installer block one-for-one; enforced via the
 # top-level `ci:` aggregate). ──
