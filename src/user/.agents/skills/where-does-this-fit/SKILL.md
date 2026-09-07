@@ -23,24 +23,9 @@ Before explaining anything, verify the project's goals and architecture are avai
 2. Referenced in-project docs — specs, ADRs, and architecture pages the orientation file points at.
 3. A knowledge graph, if the project builds one.
 
-```dot
-digraph preflight {
-    "Architecture documented?" [shape=diamond];
-    "Stale or incomplete?" [shape=diamond];
-    "Proceed to explanation" [shape=box];
-    "Flag staleness, reason from verifiable state" [shape=box];
-    "State gap honestly; offer to document" [shape=box];
+Not documented at all, documented but stale, or current — each takes a different route:
 
-    "Architecture documented?" -> "Stale or incomplete?" [label="yes"];
-    "Architecture documented?" -> "State gap honestly; offer to document" [label="no"];
-    "Stale or incomplete?" -> "Flag staleness, reason from verifiable state" [label="yes"];
-    "Stale or incomplete?" -> "Proceed to explanation" [label="no"];
-}
-```
-
-**If documentation is insufficient:** do not fabricate context. State the problem clearly:
-
-> "The project's architecture and goals aren't documented clearly enough for me to give you a confident big-picture answer. Before proceeding, we should capture this — the right place is AGENTS.md. Want me to help draft a high-level goals and architecture section? That unlocks this skill for every future question."
+**If documentation is insufficient:** do not fabricate context. Name what is missing, say that the orientation file this project actually uses is where it belongs, and offer to draft a goals-and-architecture section — that is what unlocks this skill for every later question.
 
 **If stale:** flag it, name the stale element, and reason only from what you can verify. Do not silently treat outdated milestones or closed epics as current.
 
@@ -76,27 +61,6 @@ The fourth layer is not optional — it is often the most valuable part. Surface
 
 ## Step 3: Calibrate detail level
 
-```dot
-digraph detail {
-    "User specifies level?" [shape=diamond];
-    "Use requested level" [shape=box];
-    "Default: away-for-a-while colleague" [shape=box];
-    "Follow-up: less?" [shape=diamond];
-    "Compress to 1-2 paragraphs" [shape=box];
-    "Follow-up: more?" [shape=diamond];
-    "Expand with subsystem and dependency analysis" [shape=box];
-    "Hold current level" [shape=box];
-
-    "User specifies level?" -> "Use requested level" [label="yes"];
-    "User specifies level?" -> "Default: away-for-a-while colleague" [label="no"];
-    "Default: away-for-a-while colleague" -> "Follow-up: less?" [label="user responds"];
-    "Follow-up: less?" -> "Compress to 1-2 paragraphs" [label="yes"];
-    "Follow-up: less?" -> "Follow-up: more?" [label="no"];
-    "Follow-up: more?" -> "Expand with subsystem and dependency analysis" [label="yes"];
-    "Follow-up: more?" -> "Hold current level" [label="no"];
-}
-```
-
 | Level | Shape |
 |---|---|
 | **Brief** | 1-2 paragraphs — just "what fits where" |
@@ -118,8 +82,6 @@ Surface these separately, clearly labelled:
 > **Inconsistency:** [parent container says one thing; work item implies another]
 >
 > **Staleness:** [referenced milestone, goal, or epic appears closed or superseded]
-
-If there is nothing to flag, close with one sentence: "No conflicts or ambiguities found in the current documentation."
 
 ## Common mistakes
 

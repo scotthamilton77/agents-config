@@ -133,8 +133,8 @@ which is a second implementation you now have to debug.
 - You have not read the code under test — loose matchers like
   `/completed|success|ok/i` are the tell
 
-**Say so, in these terms:** "This code is not testable in its current form.
-Let us decompose it into smaller units first, then test each one simply."
+**Say so plainly:** name the criterion that tripped and what it would take to
+make the code testable, and propose decomposing it before any test is written.
 
 Five is the line in both directions: five doubles is where a test stops being
 worth writing, and it is also the point at which the *production* code, not the
