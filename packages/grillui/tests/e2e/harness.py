@@ -370,17 +370,23 @@ class Session:
             self._configured = None
 
 
-def _turn_workers() -> list[str]:
-    """Turn workers still on their feet anywhere in this process.
+# What a thread this harness has to wait for is called: the lane names a turn
+# for its channel and a driver names a copy for its chain, and neither hands
+# anybody a handle to hold.
+WORKERS = ("turn-", "transcript-")
 
-    The lane names each thread for the channel it is taking a turn on, which is
-    what makes them findable at all -- they are daemon threads nobody holds a
-    handle to. Scoped to the process rather than to one session on purpose: the
-    environment they would spawn a seat into is the process's, so another
-    session's straggler is exactly as able to reach a real binary as this one's.
+
+def _turn_workers() -> list[str]:
+    """Turn workers and the copies they started, still on their feet anywhere in
+    this process.
+
+    Scoped to the process rather than to one session on purpose: what they read
+    and what they would spawn a seat into is the process's environment, so
+    another session's straggler reaches the machine's real store and a real
+    binary exactly as readily as this one's.
     """
     return sorted(
-        one.name for one in threading.enumerate() if one.name.startswith("turn-") and one.is_alive()
+        one.name for one in threading.enumerate() if one.name.startswith(WORKERS) and one.is_alive()
     )
 
 

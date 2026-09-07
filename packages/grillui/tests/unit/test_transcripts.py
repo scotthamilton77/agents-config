@@ -19,9 +19,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from conftest import TIMEOUT, ScriptedFast, document, replies
+from conftest import RACE_WINDOW, TIMEOUT, ScriptedFast, document, replies
 from test_drivers import briefed, human_turn
 
+from grillui import drivers
 from grillui.dispatch import record_dispatch
 from grillui.drivers import (
     CLAUDE_CONFIG_ENV,
@@ -33,6 +34,7 @@ from grillui.drivers import (
     HeavyDriver,
     claude_transcript,
     codex_transcript,
+    copy_in_background,
     copy_transcript,
     read_resume,
 )
@@ -51,6 +53,10 @@ KEPT = '{"type":"user","text":"what the turn read"}\n'
 LATER = '{"type":"user","text":"and what the next one read"}\n'
 # What a store that will not answer says, quoted back on the line the copy writes.
 UNREADABLE = "the store is not readable"
+# What an interpreter with no thread to give, and a fault written across two
+# lines, say for themselves.
+NO_THREAD = "no thread is available"
+TORN = "first\nsecond"
 
 
 # --- the seats, scripted to name the chains this file is about ----------------
@@ -174,6 +180,17 @@ def reopening(log: SessionLog, directory: Path) -> Path:
     return path
 
 
+def held(monkeypatch: pytest.MonkeyPatch, gate: threading.Event) -> None:
+    """Hold every copy until the gate opens, and copy for real after it."""
+    real = drivers.copy_transcript
+
+    def waiting(directory: Path, chain: str, source: Path, out: Any = None) -> None:
+        assert gate.wait(TIMEOUT)
+        real(directory, chain, source, out)
+
+    monkeypatch.setattr(drivers, "copy_transcript", waiting)
+
+
 def copied(session_dir: Path, chain: str) -> Path:
     return session_dir / TRANSCRIPT_DIR / f"{chain}.jsonl"
 
@@ -202,20 +219,25 @@ def test_a_resumed_heavy_turn_records_the_chain_it_resumed(
 ) -> None:
     """
     Given an expert seat that has already opened a chain
-    When it takes a second turn on it
-    Then the second reply names the same chain, and it is the one the turn
-         resumed rather than one the driver remembered.
+    When it takes a second turn, which resumes that chain and comes back naming
+         another
+    Then the second reply names what the CLI answered with, not what the chain
+         file held going in.
+
+    The two are scripted apart deliberately. A turn resuming and reporting one
+    id cannot tell attribution from the CLI apart from attribution from the
+    file, and the file is the thing that forgets.
     """
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
-    cli = ChainingCli(chains=("chain-a",))
+    cli = ChainingCli(chains=("chain-a", "chain-b"))
     driver = taken(log, heavy(cli, tmp_path / "store"))
 
     human_turn(log, "And what about compaction?")
     taken(log, driver)
 
     assert cli.resumed == [None, "chain-a"]
-    assert [reply[CHAIN_KEY] for reply in replies(log)] == ["chain-a", "chain-a"]
+    assert [reply[CHAIN_KEY] for reply in replies(log)] == ["chain-a", "chain-b"]
 
 
 @pytest.mark.parametrize(("seat", "scripted", "chains", "named"), SEATS)
@@ -267,19 +289,25 @@ def test_a_resumed_codex_turn_records_the_thread_it_resumed(
 ) -> None:
     """
     Given a Codex seat that has already started a thread
-    When it takes a second turn on it
-    Then the second reply names the thread the turn resumed.
+    When it takes a second turn, which resumes that thread and comes back naming
+         another
+    Then the second reply names what the CLI answered with, not what the thread
+         file held going in.
+
+    The two are scripted apart deliberately, for the reason the expert seat's
+    twin is: a turn resuming and reporting one id cannot tell attribution from
+    the CLI apart from attribution from the file.
     """
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
-    cli = ThreadingCli(chains=("thread-a",))
+    cli = ThreadingCli(chains=("thread-a", "thread-b"))
     driver = taken(log, codex(cli, tmp_path / "store"))
 
     human_turn(log, "And what about compaction?")
     taken(log, driver)
 
     assert cli.resumed == [None, "thread-a"]
-    assert [reply[CHAIN_KEY] for reply in replies(log)] == ["thread-a", "thread-a"]
+    assert [reply[CHAIN_KEY] for reply in replies(log)] == ["thread-a", "thread-b"]
 
 
 @pytest.mark.parametrize("seat", SILENT_SEATS)
@@ -473,10 +501,10 @@ def test_a_later_turn_on_one_chain_replaces_the_copy_whole(
 
 
 def test_the_reply_is_on_the_log_before_the_copy_finishes(
-    session_dir: Path, tmp_path: Path
+    session_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """
-    Given a store that will not answer until it is let go
+    Given a copy that will not finish until it is let go
     When the turn is taken
     Then the reply is already on the log and the turn has returned, with the
          copy still to come -- the human waits on the answer and not on the
@@ -487,12 +515,9 @@ def test_the_reply_is_on_the_log_before_the_copy_finishes(
     root = tmp_path / "store"
     kept(root, "chain-a")
     gate = threading.Event()
+    driver = heavy(ChainingCli(chains=("chain-a",)), root)
+    held(monkeypatch, gate)
 
-    def slow(_directory: Path, chain: str, /) -> Path:
-        assert gate.wait(TIMEOUT)
-        return root / f"{chain}.jsonl"
-
-    driver = HeavyDriver(TierConfig(), ChainingCli(chains=("chain-a",)), transcript=slow)
     driver.run(log, record_dispatch(log))
 
     assert replies(log)[-1][CHAIN_KEY] == "chain-a"
@@ -503,6 +528,155 @@ def test_the_reply_is_on_the_log_before_the_copy_finishes(
     gate.set()
     driver.copying.join(TIMEOUT)
     assert copied(session_dir, "chain-a").read_text(encoding="utf-8") == KEPT
+
+
+def test_a_later_copy_of_one_chain_never_publishes_behind_an_earlier_one(
+    session_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given two turns on one chain, whose copies read a growing transcript, and
+          the earlier copy stalling
+    When both have finished
+    Then what the session keeps is the later turn's snapshot: copies of one
+         conversation publish in the order they were started, so a stalled one
+         cannot land on top of a newer one.
+    """
+    log = briefed(session_dir)
+    older = tmp_path / "older.jsonl"
+    older.write_text(KEPT, encoding="utf-8")
+    newer = tmp_path / "newer.jsonl"
+    newer.write_text(KEPT + LATER, encoding="utf-8")
+    growing = iter([older, newer])
+    published = threading.Event()
+    real = drivers.copy_transcript
+
+    def stalling(directory: Path, chain: str, source: Path, out: Any = None) -> None:
+        if source == older:
+            # The earlier copy is held until the later one has published, which
+            # is what happens where nothing orders the two. Where something
+            # does, the later copy is behind this one and the wait times out.
+            published.wait(RACE_WINDOW)
+        real(directory, chain, source, out)
+        if source == newer:
+            published.set()
+
+    monkeypatch.setattr(drivers, "copy_transcript", stalling)
+    driver = HeavyDriver(
+        TierConfig(),
+        ChainingCli(chains=("chain-a",)),
+        transcript=lambda _directory, _chain: next(growing),
+    )
+
+    human_turn(log, "The log is the recovery source.")
+    driver.run(log, record_dispatch(log))
+    first = driver.copying
+    human_turn(log, "And what about compaction?")
+    driver.run(log, record_dispatch(log))
+    second = driver.copying
+
+    assert first is not None
+    assert second is not None
+    first.join(TIMEOUT)
+    second.join(TIMEOUT)
+
+    assert copied(session_dir, "chain-a").read_text(encoding="utf-8") == KEPT + LATER
+
+
+def test_a_copy_thread_that_cannot_be_started_costs_the_turn_nothing(
+    session_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    """
+    Given an interpreter that will not give out another thread
+    When the turn tries to start its copy
+    Then the reply is on the log, nothing was raised, and the failure is the one
+         stderr line every other unmade copy writes.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log is the recovery source.")
+    root = tmp_path / "store"
+    kept(root, "chain-a")
+
+    def refuses(_self: threading.Thread) -> None:
+        raise RuntimeError(NO_THREAD)
+
+    monkeypatch.setattr(threading.Thread, "start", refuses)
+    driver = heavy(ChainingCli(chains=("chain-a",)), root)
+    driver.run(log, record_dispatch(log))
+
+    assert replies(log)[-1][CHAIN_KEY] == "chain-a"
+    assert driver.copying is None
+    said = capsys.readouterr().err.strip().splitlines()
+    assert len(said) == 1
+    assert "chain-a" in said[0]
+    assert NO_THREAD in said[0]
+
+
+def test_the_store_is_asked_on_the_thread_that_took_the_turn(
+    session_dir: Path, tmp_path: Path
+) -> None:
+    """
+    Given a turn whose store records where it was asked from
+    When the turn is taken
+    Then it was asked on the turn's own thread, so the environment naming the
+         store is the one the turn ran under rather than whatever it has become
+         by the time a copy gets to it.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log is the recovery source.")
+    root = tmp_path / "store"
+    kept(root, "chain-a")
+    asked: list[str] = []
+
+    def watching(_directory: Path, chain: str, /) -> Path:
+        asked.append(threading.current_thread().name)
+        return root / f"{chain}.jsonl"
+
+    driver = HeavyDriver(TierConfig(), ChainingCli(chains=("chain-a",)), transcript=watching)
+    driver.run(log, record_dispatch(log))
+
+    assert asked == [threading.current_thread().name]
+    assert driver.copying is not None
+    driver.copying.join(TIMEOUT)
+
+
+@pytest.mark.parametrize("chain", ["../escaped", "nested/chain", "..", ""])
+def test_a_chain_that_is_not_one_name_is_refused_the_copy(
+    session_dir: Path, tmp_path: Path, capsys: Any, chain: str
+) -> None:
+    """
+    Given a CLI that reported a chain carrying a path rather than a name
+    When the copy is asked for
+    Then no copy is started and the failure is one stderr line, because a
+         destination built from that id reaches outside the transcripts
+         directory and lands on whatever is there.
+    """
+    root = tmp_path / "store"
+    root.mkdir()
+
+    assert copy_in_background(session_dir, chain, store(root)) is None
+
+    assert not (session_dir / TRANSCRIPT_DIR).exists()
+    assert not (tmp_path / "escaped.jsonl").exists()
+    assert len(capsys.readouterr().err.strip().splitlines()) == 1
+
+
+def test_a_fault_that_spans_lines_is_still_one_line_on_stderr(
+    session_dir: Path, capsys: Any
+) -> None:
+    """
+    Given a store whose failure carries a line break
+    When the copy gives up
+    Then it is one line, because a reader counting lines is counting failures.
+    """
+
+    def refuses(_directory: Path, _chain: str, /) -> Path:
+        raise OSError(TORN)
+
+    copy_in_background(session_dir, "chain-a", refuses)
+
+    said = capsys.readouterr().err.strip().splitlines()
+    assert len(said) == 1
+    assert "chain-a" in said[0]
 
 
 def test_the_copy_runs_on_a_thread_a_shutdown_waits_for(session_dir: Path, tmp_path: Path) -> None:
@@ -550,6 +724,10 @@ def test_a_transcript_that_is_not_there_costs_a_line_and_not_the_turn(
     taken(log, heavy(ChainingCli(chains=("chain-a",)), root))
 
     assert replies(log)[-1][CHAIN_KEY] == "chain-a"
+    # Nothing was made for a copy that was never going to happen: the source is
+    # read before the destination exists, so the ordinary pruned chain leaves no
+    # empty directory in a session someone is about to archive.
+    assert not (session_dir / TRANSCRIPT_DIR).exists()
     said = capsys.readouterr().err.strip().splitlines()
     assert len(said) == 1
     assert "chain-a" in said[0]
@@ -573,9 +751,8 @@ def test_a_store_that_raises_costs_a_line_and_not_the_turn(
 
     driver = HeavyDriver(TierConfig(), ChainingCli(chains=("chain-a",)), transcript=refuses)
     driver.run(log, record_dispatch(log))
-    assert driver.copying is not None
-    driver.copying.join(TIMEOUT)
 
+    assert driver.copying is None
     assert replies(log)[-1][CHAIN_KEY] == "chain-a"
     said = capsys.readouterr().err.strip().splitlines()
     assert len(said) == 1
@@ -636,7 +813,7 @@ def test_a_copy_that_failed_leaves_no_half_file_for_a_reader_to_find(
         raise OSError(UNREADABLE)
 
     monkeypatch.setattr(Path, "replace", refuses)
-    copy_transcript(session_dir, "chain-a", store(root))
+    copy_transcript(session_dir, "chain-a", root / "chain-a.jsonl")
 
     assert not copied(session_dir, "chain-a").exists()
     assert list((session_dir / TRANSCRIPT_DIR).iterdir()) == []
