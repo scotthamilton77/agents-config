@@ -62,13 +62,12 @@ _RIGHT = "RIGHT"
 # range. Nothing else is recognized — a bare path names no line, and
 # `path:symbol` names a symbol whose line only the repository knows.
 #
-# The path is any run of characters that is not whitespace and not the colon
-# separating it from the line. Enumerating the characters a path may contain is
-# the wrong shape for this: a filename may hold anything a filesystem allows, so
-# a set narrow enough to exclude prose also excludes legal names. What decides
-# that a token is a path is that it resolves against the diff. The trailing
-# boundary refuses a number with anything glued to it, so `app.py:3junk` names no
-# line rather than line 3.
+# The diff decides what a path is; this only finds candidates, and must not
+# alter them. So the path is any run of characters that is neither whitespace
+# nor the colon before the line, and no narrower: a filename may hold anything a
+# filesystem allows, and a set narrow enough to exclude prose also excludes
+# legal names. The trailing boundary refuses a number with anything glued to it,
+# so `app.py:3junk` names no line rather than line 3.
 #
 # A path containing a space is not findable this way, because nothing
 # distinguishes the path's own space from the space that ends it; such a finding
