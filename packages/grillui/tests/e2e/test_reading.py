@@ -40,6 +40,10 @@ ASKING_AGAIN = json.dumps({"text": SAID_AGAIN, "needs_to_read": WANTED})
 EXPERT_SAID = "Thirty days. The window is in the retention note, and it drops on age."
 
 CONDITION = "the seat asked to read something it was not given"
+# How the request reaches the seat above: its own line in the channel's
+# conversation, spelled out here rather than imported, so the scenario asserts
+# against the bytes an expert really receives.
+REQUEST_LINE = "thread-agent: I asked to read, having no way to read it from this seat: "
 
 
 def transferred(session: Session, channel: str) -> list[str]:
@@ -51,6 +55,19 @@ def transferred(session: Session, channel: str) -> list[str]:
         and one.channel == channel
         and one.payload.get("phase") == "transferred"
     ]
+
+
+def conversation(prompt: str, channel: str) -> str:
+    """One channel's own turns out of a composed prompt.
+
+    Sliced out rather than searched for whole. The board travels in the same
+    prompt and carries the thread's turns inside it, so a line found anywhere
+    would be found in bytes the seat above reads as the board rather than as the
+    conversation it is answering.
+    """
+    marker = f"## This channel ({channel})"
+    assert marker in prompt, "the composer's prompt lost its conversation section"
+    return prompt.partition(marker)[2].partition("\n## ")[0]
 
 
 def composings(session: Session, channel: str) -> list[str | None]:
@@ -192,12 +209,9 @@ def test_the_autonomous_policy_hands_the_request_to_the_expert_once(
     session.settled()
     calls = session.claude_calls()
     assert len(calls) == 1, calls
-    asked = calls[0]["prompt"]
-    assert SAID in asked, "the seat's prose did not cross"
-    assert (
-        f"thread-agent: I asked to read, having no way to read it from this seat: "
-        f"{', '.join(WANTED)}" in asked
-    ), asked
+    said_to_the_expert = conversation(calls[0]["prompt"], channel)
+    assert f"thread-agent: {SAID}" in said_to_the_expert, said_to_the_expert
+    assert REQUEST_LINE + ", ".join(WANTED) in said_to_the_expert, said_to_the_expert
 
     # The human takes the thread back down, and the same request buys nothing.
     showing(page, channel, "expert")

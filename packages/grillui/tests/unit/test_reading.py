@@ -110,9 +110,23 @@ MALFORMED: list[tuple[str, Any]] = [
     ("an object rather than a list", {"path": "src/grillui/log.py"}),
 ]
 
-# The prompt a thread turn composes when it asked for nothing, stated whole. A
-# literal rather than a second call, so a change anywhere in the composition --
-# a heading, a blank line, the order of the sections -- is a failure here.
+# The prompt a thread turn composes when it asked to read, stated whole. A
+# literal rather than a second call, so where the request sits is pinned along
+# with everything around it: the section it is inside, the line it is on, and
+# the turn it follows.
+ASKING_PROMPT = (
+    "## Briefing\n\n"
+    "No briefing was recorded for this session.\n\n"
+    "## The board, whole\n\n"
+    "{}\n\n"
+    f"## This channel ({THREAD})\n\n"
+    f"thread-agent: {SAID}\n"
+    f"thread-agent: {ASKED_TO_READ}{', '.join(READS)}\n\n"
+    "## Your turn\n\n"
+    "Answer the last thing the human said, under the rules you were given."
+)
+
+# The same prompt where the turn asked for nothing.
 NO_FIELD_PROMPT = (
     "## Briefing\n\n"
     "No briefing was recorded for this session.\n\n"
@@ -363,16 +377,16 @@ def test_the_expert_prompt_carries_the_request_beside_the_prose() -> None:
     """
     Given a thread whose last reply asked to read something
     When the prompt for the seat above is composed
-    Then the request is a line inside that channel's conversation section,
-         worded as the first rung asking, and the prose it rode in on is still
-         there.
+    Then the prompt is the one stated here whole: the request is a line of the
+         channel's conversation section, directly under the prose it rode in on.
+
+    Against a literal, because where the line sits is the claim. A request
+    somewhere in the prompt is a request the seat above may read as part of the
+    briefing or the board, and neither is the conversation it is answering.
     """
     entries = [entry(SAID, **{NEEDS_TO_READ_KEY: READS})]
 
-    prompt = compose("{}", dispatch_context(THREAD), entries)
-
-    assert f"thread-agent: {ASKED_TO_READ}{', '.join(READS)}" in prompt
-    assert f"thread-agent: {SAID}" in prompt
+    assert compose("{}", dispatch_context(THREAD), entries) == ASKING_PROMPT
 
 
 def test_a_reply_without_the_field_composes_the_prompt_it_always_composed() -> None:

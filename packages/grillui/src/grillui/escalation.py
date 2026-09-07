@@ -49,10 +49,11 @@ Two of them are read here, off the board and before any model is called:
   the next clerical gesture is first-rung again with no entry to undo.
 - **whether the human has said twice that the first rung was not enough.** A
   dismissal of a first-rung seat's proposal is the one wordless way they say a
-  turn was wrong; the counter it feeds is the lane's, and what is read here is
-  which dismissals are that gesture and whether the policy has already moved
-  this channel. That second reading is what makes the move once-per-session:
-  the entry is sticky by GUI-D35's own rule, so a channel the human took back
+  turn was wrong. Two readings here serve it and neither decides anything:
+  which dismissals are that gesture, and whether the policy has already moved a
+  channel. The counter is the lane's, and so is the move -- it asks both and
+  writes the entry under one hold of the append lock, which is what makes the
+  move once per session. The entry is sticky, so a channel the human took back
   down stays down rather than being bought again by the next signal.
 
 One hand-up is not a recommendation at all. Where the human's gesture leaves
@@ -187,10 +188,11 @@ def turns_of(entries: Sequence[LogEntry], channel: str = MAP_CHANNEL) -> list[Tu
 
     A turn that asked to read something says so on a line of its own, beside the
     prose it rode in on. Here rather than in the turn reader the page shares,
-    because the page renders the request as its own affordance and a second copy
-    inside the prose would read as the seat saying it twice; what the seat above
-    gets is a conversation, and a request stated nowhere in it is one that seat
-    never hears.
+    because the human already has the request from two directions: the seat says
+    it in its own prose, and the transfer control carries the evidence naming
+    what was asked for. What the seat above gets is this conversation and
+    nothing else, so a request stated nowhere in it is one that seat never
+    hears.
     """
     turns: list[Turn] = []
     for entry in entries:
