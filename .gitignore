@@ -60,3 +60,6 @@ htmlcov/
 
 # graphify knowledge graph — a local, on-demand artifact, never versioned
 graphify-out/
+
+# mutmut's generated mutant tree — rebuilt by the mutation gate, never versioned
+mutants/
