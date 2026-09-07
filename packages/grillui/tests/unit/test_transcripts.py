@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -25,6 +26,7 @@ from grillui.dispatch import record_dispatch
 from grillui.drivers import (
     CLAUDE_CONFIG_ENV,
     CODEX_HOME_ENV,
+    CODEX_RESUME_FILE,
     RESUME_FILE,
     CodexDriver,
     FastDriver,
@@ -40,7 +42,6 @@ from grillui.tiers import TierConfig
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from grillui.drivers import TranscriptStore
     from grillui.log import SessionLog
@@ -84,7 +85,7 @@ class ChainingCli:
 class ThreadingCli:
     """A `codex exec` that names a thread of its own choosing on each turn."""
 
-    threads: Sequence[str | None] = ("thread-1",)
+    chains: Sequence[str | None] = ("thread-1",)
     reply: str = field(default_factory=document)
     resumed: list[str | None] = field(default_factory=list)
 
@@ -95,7 +96,7 @@ class ThreadingCli:
         # `exec resume <thread>` starts one past the front of it.
         self.resumed.append(argv[3] if argv[1:3] == ["exec", "resume"] else None)
         lines: list[dict[str, Any]] = []
-        thread = self.threads[min(turn, len(self.threads) - 1)]
+        thread = self.chains[min(turn, len(self.chains) - 1)]
         if thread is not None:
             lines.append({"type": "thread.started", "thread_id": thread})
         lines.append(
@@ -129,6 +130,20 @@ def heavy(cli: Any, root: Path) -> HeavyDriver:
 def codex(cli: Any, root: Path) -> CodexDriver:
     """A Codex seat, answering from `cli` and copying out of `root`."""
     return CodexDriver(TierConfig(), cli, transcript=store(root))
+
+
+# The two CLI seats. Every claim about a chain is a claim about both: they
+# differ in how the CLI reports the chain and in which file keeps it, and in
+# nothing else, so a claim pinned on one of them is untested on the other.
+SEATS = [
+    pytest.param(heavy, ChainingCli, RESUME_FILE, ("chain-a", "chain-b"), id="claude"),
+    pytest.param(codex, ThreadingCli, CODEX_RESUME_FILE, ("thread-a", "thread-b"), id="codex"),
+]
+
+SILENT_SEATS = [
+    pytest.param(lambda root: heavy(ChainingCli(chains=(None,)), root), id="claude"),
+    pytest.param(lambda root: codex(ThreadingCli(chains=(None,)), root), id="codex"),
+]
 
 
 def taken(log: SessionLog, driver: Any, dispatch: Path | None = None) -> Any:
@@ -203,26 +218,32 @@ def test_a_resumed_heavy_turn_records_the_chain_it_resumed(
     assert [reply[CHAIN_KEY] for reply in replies(log)] == ["chain-a", "chain-a"]
 
 
-def test_a_heavy_turn_reopened_cold_records_the_new_chain_not_the_dropped_one(
-    session_dir: Path, tmp_path: Path
+@pytest.mark.parametrize(("seat", "scripted", "chains", "named"), SEATS)
+def test_a_turn_reopened_cold_records_the_new_chain_not_the_dropped_one(
+    session_dir: Path,
+    tmp_path: Path,
+    seat: Any,
+    scripted: Any,
+    chains: str,
+    named: tuple[str, str],
 ) -> None:
     """
-    Given an expert seat holding a chain, and a dispatch whose board has moved
+    Given a CLI seat holding a chain, and a dispatch whose board has moved
     When it takes that turn, dropping the chain and opening another
-    Then the reply names the chain it opened, so the record survives the resume
+    Then the reply names the chain it opened, so the record survives the chain
          file forgetting the old one.
     """
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
-    cli = ChainingCli(chains=("chain-a", "chain-b"))
-    driver = taken(log, heavy(cli, tmp_path / "store"))
+    cli = scripted(chains=named)
+    driver = taken(log, seat(cli, tmp_path / "store"))
 
     human_turn(log, "The board moved under this one.")
     taken(log, driver, reopening(log, tmp_path))
 
     assert cli.resumed == [None, None]
-    assert [reply[CHAIN_KEY] for reply in replies(log)] == ["chain-a", "chain-b"]
-    assert read_resume(session_dir, "map", RESUME_FILE) == "chain-b"
+    assert [reply[CHAIN_KEY] for reply in replies(log)] == list(named)
+    assert read_resume(session_dir, "map", chains) == named[1]
 
 
 def test_a_cold_codex_turn_records_the_thread_the_cli_opened(
@@ -236,7 +257,7 @@ def test_a_cold_codex_turn_records_the_thread_the_cli_opened(
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
 
-    taken(log, codex(ThreadingCli(threads=("thread-a",)), tmp_path / "store"))
+    taken(log, codex(ThreadingCli(chains=("thread-a",)), tmp_path / "store"))
 
     assert replies(log)[-1][CHAIN_KEY] == "thread-a"
 
@@ -251,7 +272,7 @@ def test_a_resumed_codex_turn_records_the_thread_it_resumed(
     """
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
-    cli = ThreadingCli(threads=("thread-a",))
+    cli = ThreadingCli(chains=("thread-a",))
     driver = taken(log, codex(cli, tmp_path / "store"))
 
     human_turn(log, "And what about compaction?")
@@ -261,19 +282,21 @@ def test_a_resumed_codex_turn_records_the_thread_it_resumed(
     assert [reply[CHAIN_KEY] for reply in replies(log)] == ["thread-a", "thread-a"]
 
 
+@pytest.mark.parametrize("seat", SILENT_SEATS)
 def test_a_cli_that_named_no_chain_records_no_chain_at_all(
-    session_dir: Path, tmp_path: Path
+    session_dir: Path, tmp_path: Path, seat: Any
 ) -> None:
     """
     Given a CLI that printed no chain identity
     When the turn is recorded
     Then the reply carries no chain key, rather than a null one -- the absence
-         is the record that there is no conversation to point at.
+         is the record that there is no conversation to point at -- and nothing
+         is copied, because there is no chain to copy.
     """
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
 
-    driver = taken(log, heavy(ChainingCli(chains=(None,)), tmp_path / "store"))
+    driver = taken(log, seat(tmp_path / "store"))
 
     assert CHAIN_KEY not in replies(log)[-1]
     assert driver.copying is None
@@ -418,7 +441,7 @@ def test_a_codex_turns_rollout_lands_in_the_session_directory(
     root = tmp_path / "store"
     kept(root, "thread-a")
 
-    taken(log, codex(ThreadingCli(threads=("thread-a",)), root))
+    taken(log, codex(ThreadingCli(chains=("thread-a",)), root))
 
     assert copied(session_dir, "thread-a").read_text(encoding="utf-8") == KEPT
 
@@ -484,20 +507,31 @@ def test_the_reply_is_on_the_log_before_the_copy_finishes(
 
 def test_the_copy_runs_on_a_thread_a_shutdown_waits_for(session_dir: Path, tmp_path: Path) -> None:
     """
-    Given a turn that started a copy
-    When the thread taking it is inspected
+    Given a turn taken on a daemon thread, which is the only kind a turn is ever
+          taken on: the lane schedules every one of them that way
+    When the thread taking the copy is inspected
     Then it is not a daemon, so a backend stopped in the seconds after a turn
          finishes the copy rather than being killed holding it.
+
+    Taken on a daemon thread deliberately. A new thread inherits its creator's
+    flag, so a copy started from the main thread is not a daemon whatever the
+    driver does, and the guarantee would read as kept on the one path it is
+    never exercised on.
     """
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
     root = tmp_path / "store"
     kept(root, "chain-a")
+    driver = heavy(ChainingCli(chains=("chain-a",)), root)
+    dispatch = record_dispatch(log)
 
-    driver = taken(log, heavy(ChainingCli(chains=("chain-a",)), root))
+    taking = threading.Thread(target=lambda: driver.run(log, dispatch), daemon=True)
+    taking.start()
+    taking.join(TIMEOUT)
 
     assert driver.copying is not None
     assert driver.copying.daemon is False
+    driver.copying.join(TIMEOUT)
 
 
 def test_a_transcript_that_is_not_there_costs_a_line_and_not_the_turn(
@@ -546,7 +580,10 @@ def test_a_store_that_raises_costs_a_line_and_not_the_turn(
     said = capsys.readouterr().err.strip().splitlines()
     assert len(said) == 1
     assert "chain-a" in said[0]
-    assert "the store is not readable" in said[0]
+    assert UNREADABLE in said[0]
+    # There is no path to name when the store never answered with one, so the
+    # line says as much rather than naming something this did not look at.
+    assert "nowhere" in said[0]
 
 
 def test_a_destination_that_will_not_take_a_write_costs_the_turn_nothing(
@@ -567,26 +604,40 @@ def test_a_destination_that_will_not_take_a_write_costs_the_turn_nothing(
     taken(log, heavy(ChainingCli(chains=("chain-a",)), root))
 
     assert replies(log)[-1][CHAIN_KEY] == "chain-a"
-    assert len(capsys.readouterr().err.strip().splitlines()) == 1
+    said = capsys.readouterr().err.strip().splitlines()
+    assert len(said) == 1
+    assert "chain-a" in said[0]
+    assert str(root / "chain-a.jsonl") in said[0]
 
 
 def test_a_copy_that_failed_leaves_no_half_file_for_a_reader_to_find(
-    session_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    session_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
-    Given a transcript that will not yield bytes
-    When the copy gives up
+    Given a transcript that reads, and a rename that will not go through
+    When the copy gives up at the moment of publication
     Then the session directory holds neither a partial copy under the chain's
-         name nor the scratch file one would have been written to: the copy is
-         renamed into place, and a reader sees a whole transcript or none.
+         name nor the scratch file the bytes went to: they are written under a
+         name nothing can predict and renamed into place, so a reader sees a
+         whole transcript or none.
+
+    The failure is put at the rename because that is the only place the claim
+    can be observed. A copy that fell over before it had bytes proves nothing
+    about the discipline: one writing straight to the final path fails there
+    too, just as cleanly, and leaves the same nothing behind.
     """
     root = tmp_path / "store"
-    root.mkdir()
-    unreadable = root / "chain-a.jsonl"
-    unreadable.mkdir()
+    kept(root, "chain-a")
 
+    def refuses(_self: Path, _target: Any) -> Path:
+        raise OSError(UNREADABLE)
+
+    monkeypatch.setattr(Path, "replace", refuses)
     copy_transcript(session_dir, "chain-a", store(root))
 
     assert not copied(session_dir, "chain-a").exists()
-    assert not (session_dir / TRANSCRIPT_DIR).exists()
+    assert list((session_dir / TRANSCRIPT_DIR).iterdir()) == []
     assert "chain-a" in capsys.readouterr().err

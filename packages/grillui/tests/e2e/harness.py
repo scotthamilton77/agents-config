@@ -434,8 +434,8 @@ def start(
     That PATH is the guard rather than a convenience. Prepending the shims would
     leave a real `codex` or `claude` reachable the moment a setting was wrong or
     a lookup missed, and a scenario that reached one would spend a real account
-    and read as a passing scripted seat -- which is exactly what happened while
-    this was being built. A PATH with nowhere else to look cannot do that: the
+    and read as a passing scripted seat. A PATH with nowhere else to look
+    cannot do that: the
     only thing either driver spawns is the seat, and an unreachable one fails
     the turn in milliseconds instead.
     """

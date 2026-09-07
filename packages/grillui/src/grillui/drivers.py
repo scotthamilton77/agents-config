@@ -690,9 +690,9 @@ CODEX_HOME_ENV = "CODEX_HOME"
 class TranscriptStore(Protocol):
     """Where one transport keeps the transcript of one chain.
 
-    A seam rather than a constant path, because the two stores are the CLIs'
-    own and neither is ours to promise: a driver built with another one reads
-    a temporary store instead of the machine's.
+    A seam rather than a constant path: the layout is the CLI's own and moves
+    when it moves, so a driver is built with the store its transport keeps
+    rather than deriving one it cannot promise.
     """
 
     def __call__(self, directory: Path, chain: str, /) -> Path: ...
@@ -786,12 +786,17 @@ def copy_in_background(directory: Path, chain: str, store: TranscriptStore) -> t
     process's store is time nobody asked to spend on an answer they already
     have.
 
-    Not a daemon, though. A backend stopped in the seconds after a turn is the
-    ordinary end of a session, and a daemon thread would be killed there -- which
-    would drop exactly the copy the session was kept for.
+    Not a daemon, and said so rather than left to the default. A thread inherits
+    its creator's flag, and every turn runs on the lane's, which is a daemon --
+    so an unstated flag makes this one too, and a backend stopped in the seconds
+    after a turn kills it holding the copy the session was kept for. That is the
+    ordinary end of a session, not a corner.
     """
     copying = threading.Thread(
-        target=copy_transcript, args=(directory, chain, store), name=f"transcript-{chain}"
+        target=copy_transcript,
+        args=(directory, chain, store),
+        name=f"transcript-{chain}",
+        daemon=False,
     )
     copying.start()
     return copying
@@ -1012,9 +1017,9 @@ class HeavyDriver:
     seat: Seat | None = None
     transcript: TranscriptStore = claude_transcript
     _turn: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
-    # The copy this driver's last turn started, held so a caller that has to
-    # wait for it -- a test, and nothing in the running backend -- has something
-    # to wait on. The turn itself never joins it.
+    # The copy this driver's last turn started. The turn never joins it, and
+    # nothing else holds a handle to it, so without this the thread is
+    # unreachable the moment the turn walks away from it.
     copying: threading.Thread | None = field(default=None, repr=False, init=False)
 
     def run(self, log: SessionLog, dispatch: Path, /) -> None:
@@ -1082,10 +1087,6 @@ class HeavyDriver:
             # claim it was asked for.
             FOLLOWED_TRANSFER_KEY: in_expert_mode(entries, channel),
         }
-        # The chain this turn actually ran on, as the CLI reported it -- so a
-        # cold reopen records the conversation it opened rather than the one it
-        # dropped. A turn the CLI named no chain for carries no key: the absence
-        # is the honest record that there is no conversation to point at.
         if chain is not None:
             attribution[CHAIN_KEY] = chain
         # Only where the policy moved the channel. A human gesture writes no
@@ -1102,9 +1103,6 @@ class HeavyDriver:
         with log.appending():
             record_reply(log, self.tier, channel, reply, attribution, context.mootness)
             measured.warn(log, model)
-        # After the reply is on the log and outside every lock this turn held:
-        # the human has their answer, and keeping a copy of what produced it is
-        # bookkeeping they are not waiting on.
         if chain is not None:
             self.copying = copy_in_background(log.directory, chain, self.transcript)
 
@@ -1132,9 +1130,9 @@ class CodexDriver:
     seat: Seat | None = None
     transcript: TranscriptStore = codex_transcript
     _turn: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
-    # The copy this driver's last turn started, held so a caller that has to
-    # wait for it -- a test, and nothing in the running backend -- has something
-    # to wait on. The turn itself never joins it.
+    # The copy this driver's last turn started. The turn never joins it, and
+    # nothing else holds a handle to it, so without this the thread is
+    # unreachable the moment the turn walks away from it.
     copying: threading.Thread | None = field(default=None, repr=False, init=False)
     _counted: dict[str, tuple[str | None, int]] = field(
         default_factory=dict, repr=False, init=False
@@ -1195,10 +1193,6 @@ class CodexDriver:
             self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, seat.model
         )
         attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
-        # The thread this turn actually ran on, as the CLI reported it -- so a
-        # cold reopen records the conversation it opened rather than the one it
-        # dropped. A turn the CLI named no thread for carries no key: the
-        # absence is the honest record that there is no conversation to point at.
         if chain is not None:
             attribution[CHAIN_KEY] = chain
         advice = advise(log, entries, channel, attribution)
@@ -1210,9 +1204,6 @@ class CodexDriver:
             if advice is not None and self.config.autonomous:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, seat.model)
-        # After the reply is on the log and outside every lock this turn held:
-        # the human has their answer, and keeping a copy of what produced it is
-        # bookkeeping they are not waiting on.
         if chain is not None:
             self.copying = copy_in_background(log.directory, chain, self.transcript)
 
