@@ -48,7 +48,7 @@ This is the high-level design reference for the prgroom CLI. It is **lean by int
 | **Autonomous** | Cron / `/loop` / GHA | `prgroom run <pr> --autonomous`, or `prgroom sweep <repo>` (design-of-record only; not a registered command) |
 | **Executable-bead** (v2) | bd-side dispatcher | bead payload `prgroom run <n> --autonomous` |
 
-The `monitor-pr` skill that used to drive the interactive pattern was retired, and nothing replaced it. The one verb anything invokes is `post-verdict`, which the `review-panel` skill's round procedure calls to post a review round's verdict to a pull request and which none of these three patterns threads; all three rows therefore describe a designed surface rather than a running one. `packages/prgroom/AGENTS.md` states the package's current standing.
+Nothing drives the interactive pattern. The one verb anything invokes is `post-verdict`, which the `review-panel` skill's round procedure calls to post a review round's verdict to a pull request and which none of these three patterns threads; all three rows therefore describe a designed surface rather than a running one. `packages/prgroom/AGENTS.md` states the package's current standing.
 
 **Locked decisions:**
 

@@ -142,10 +142,8 @@ closed — never write a `clean` entry for a lens that never reported.
 
 ## Say a failover out loud
 
-A substitution written into the verdict has been recorded, not reported. The verdict goes to the
-pull request as the reviewing GitHub App's submitted, comment-only review — the verdict JSON as its
-body, an inline comment for each finding that names a line, pinned to the reviewed head, with the
-App's approval a separate review; the operator reads your summary. So every failover appears in what you tell them, and it
+A substitution written into the verdict has been recorded, not reported. The verdict is where a
+reader must go looking; the operator reads your summary. So every failover appears in what you tell them, and it
 appears even when the round comes out clean — a clean round that quietly lost a transport is the
 case most likely to go unmentioned.
 
