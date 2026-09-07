@@ -29,9 +29,8 @@ sweep exists to compensate. A zero-seat decision with justification is the termi
 
 **The checkpoint record** — due after every second consecutive non-clean round; the emitter
 refuses the next round without it. Dispatch a Fable-high trend analysis over the retained records
-— per-lens finding trends, fix history, severity direction. The review-panel iteration-strategy
-design record (2026-08-20), adopted by the owner, is the standing authorization this dispatch
-cites; if that authorization is ever withdrawn, the checkpoint resolves as escalate-to-human.
+— per-lens finding trends, fix history, severity direction. That dispatch is standing-authorized;
+if the authorization is ever withdrawn, the checkpoint resolves as escalate-to-human.
 Record the returned verdict with the evidence it cites; record a dispatch failure as origin
 `dispatch-failure` carrying the escalation verdict — the machine fails toward the human, never
 toward silent continuation.

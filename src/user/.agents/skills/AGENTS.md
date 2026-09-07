@@ -102,15 +102,15 @@ Claude-only front matter is not a reason to leave the shared tree. The installer
 
 Placement still turns on capability-dependency, but of the skill's *procedure* rather than its front matter. A skill whose steps require a Claude-only mechanism belongs in the Claude tree. So does one whose admission record depends on behaviour the other tools cannot reproduce — dropping a key removes the bytes, not the gap, so a skill that must not fire unprompted is still model-invocable on OpenCode.
 
-## Common pitfall — extracted helpers must be wired in
+## Extracted helpers must be wired in
 
-When you extract a helper script out of in-model skill code, the live path keeps
-using the in-model code until `SKILL.md` is rewired to invoke the helper. So
-smoke tests, Copilot, and first-pass review can all pass while the helper chain
-carries a latent, unexercised contract bug. Treat "helper added but not yet
-invoked by `SKILL.md`" as a review smell, and drive the documented helper chain
-end-to-end on a fixture before merging — an architecture-challenge review pass
-catches these cross-file contract gaps that per-line review misses.
+Extracting a helper script out of in-model skill code does not change the live
+path: `SKILL.md` keeps running the in-model code until it is rewired to invoke
+the helper, so the helper chain can carry a latent, unexercised contract bug
+while every gate reports green. Treat "helper added but not yet invoked by
+`SKILL.md`" as a review smell, and drive the documented helper chain end-to-end
+on a fixture before merging — a review that reads one file at a time cannot see
+the gap.
 
 ## Companion folders
 

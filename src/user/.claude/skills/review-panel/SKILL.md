@@ -101,9 +101,9 @@ assembles the round `halted` with the upstream-defect reason; emission refuses t
 the indicted artifact changes.
 
 A trend checkpoint is due after every second consecutive non-clean round, the first after round 2,
-never after a clean round. A Fable-high trend-analysis dispatch reads the campaign's retained records;
-the review-panel iteration-strategy design record (2026-08-20), owner-adopted, is the
-standing authorization that dispatch cites. Its verdict — continue two rounds with staffing
+never after a clean round. A Fable-high trend-analysis dispatch over the campaign's retained
+records is standing-authorized; if that authorization is withdrawn, the checkpoint resolves as
+escalate-to-human. Its verdict — continue two rounds with staffing
 advice, terminate-bounce-upstream, or terminate-escalate-human — must cite the campaign
 evidence, and terminate verdicts carry a churn diagnosis (`harvest.md`); an uncited or
 undiagnosed verdict or a failed dispatch resolves as escalation, severity rising
