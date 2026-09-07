@@ -777,19 +777,41 @@ def frontier_seats(roster: list[dict]) -> list[str]:
     return [lens["lens"] for lens in roster if lens.get("tier") == "frontier"]
 
 
-def check_sweep_due(round_no: int, verdicts: list[dict], roster: list[dict]) -> list[str]:
-    """Check the campaign is at its exit door, and return the seats the sweep subtracts from."""
+def check_sweep_due(
+    round_no: int, verdicts: list[dict], roster: list[dict], dispositions: list[dict]
+) -> list[str]:
+    """Check the campaign is at its exit door, and return the seats the sweep subtracts from.
+
+    A round blocks nothing once the ledger answers every mechanical finding it raised, as
+    `rebutted` or `fixed`; a deferral files a finding away without answering it, and an
+    undispositioned one is unanswered outright, so neither opens the door. The evidence behind
+    a disposition is the ledger's audit, not this gate's.
+    """
     if round_no < 2 or not verdicts:
         raise Refusal(
             "sweep-not-due",
             "the terminal sweep closes a campaign that reached zero blocking findings through "
             "delta rounds; there is no such round yet",
         )
-    if not is_clean_round(verdicts[-1]):
+    last = verdicts[-1]
+    answered = {
+        (entry.get("round"), entry.get("id"))
+        for entry in dispositions
+        if entry.get("disposition") in ("rebutted", "fixed")
+    }
+    unanswered = [
+        finding
+        for finding in last.get("findings", [])
+        if isinstance(finding, dict)
+        and finding.get("type") == "mechanical"
+        and (last.get("round"), finding.get("id")) not in answered
+    ]
+    if last.get("verdict") == "halted" or unanswered:
         raise Refusal(
             "sweep-not-due",
-            f"round {verdicts[-1].get('round')} still carries blocking findings; the sweep runs "
-            "after a zero-blocking round, not instead of fixing one",
+            f"round {last.get('round')} still carries blocking findings the ledger has not "
+            "settled as rebutted or fixed; the sweep runs after a zero-blocking round, not "
+            "instead of fixing one",
         )
     seats = frontier_seats(roster)
     if not seats:
@@ -811,6 +833,47 @@ def load_dispositions(path: str | None) -> list[dict]:
         raise Refusal("ledger-gap", f"cannot read the --disposition file {path}: {exc}") from exc
     if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
         raise Refusal("ledger-gap", "--disposition must be a JSON array of disposition objects")
+    for entry in value:
+        # Everything an entry can be judged on by itself is judged here, ahead of every reader:
+        # a malformed entry settles nothing, so no gate downstream reads one and rules on the
+        # campaign instead. What needs the finding it cites is the ledger's to check.
+        round_no, finding_id = entry.get("round"), entry.get("id")
+        if not isinstance(finding_id, str) or not _TOKEN.fullmatch(finding_id):
+            raise Refusal(
+                "ledger-gap",
+                f"the disposition from round {round_no} carries the id {finding_id!r}, which is "
+                "not one whitespace-free token; a ledger id cites a finding id and has its shape",
+            )
+        raw_evidence = entry.get("evidence")
+        if raw_evidence is not None and not isinstance(raw_evidence, str):
+            raise Refusal(
+                "ledger-gap",
+                f"finding {finding_id} from round {round_no} carries "
+                f"{type(raw_evidence).__name__}-typed evidence; evidence is prose or absent",
+            )
+        evidence = raw_evidence or ""
+        work_item = str(entry.get("work_item") or "")
+        disposition = entry.get("disposition")
+        if disposition not in DISPOSITIONS:
+            raise Refusal(
+                "ledger-gap",
+                f"finding {finding_id} from round {round_no} carries the unknown "
+                f"disposition {disposition!r}; a finding settles only as one of: "
+                + ", ".join(DISPOSITIONS),
+            )
+        if disposition == "rebutted" and not evidence.strip():
+            raise Refusal(
+                "unsupported-rebuttal",
+                f"finding {finding_id} from round {round_no} is marked rebutted with no "
+                "evidence; an unsupported rebuttal never settles a finding",
+            )
+        if disposition == "transferred" and (not evidence.strip() or not work_item.strip()):
+            raise Refusal(
+                "unsupported-transfer",
+                f"finding {finding_id} from round {round_no} is transferred out of the campaign "
+                "without both halves of the claim: evidence showing the defect predates the "
+                "change, and the work item now accountable for it",
+            )
     return value
 
 
@@ -819,8 +882,10 @@ def build_ledger(
 ) -> list[dict]:
     """Pair every prior mechanical finding with its supplied disposition, or refuse.
 
-    Dispositions supplied for non-mechanical findings (a deferred advisory) also join the
-    ledger: the round is protected from re-raising them too.
+    Every entry arrives already checked against everything it can be judged on alone; what is
+    left here needs the finding cited, its type or its class. Dispositions supplied for
+    non-mechanical findings (a deferred advisory) also join the ledger: the round is protected
+    from re-raising them too.
     """
     lens_of = {(f.get("round"), f.get("id")): f.get("lens") for f in prior_findings}
     type_of = {(f.get("round"), f.get("id")): f.get("type") for f in prior_findings}
@@ -830,50 +895,17 @@ def build_ledger(
     ledger = []
     for entry in dispositions:
         key = (entry.get("round"), entry.get("id"))
-        if not isinstance(key[1], str) or not _TOKEN.fullmatch(key[1]):
-            raise Refusal(
-                "ledger-gap",
-                f"the disposition from round {key[0]} carries the id {key[1]!r}, which is not "
-                "one whitespace-free token; a ledger id cites a finding id and has its shape",
-            )
-        raw_evidence = entry.get("evidence")
-        if raw_evidence is not None and not isinstance(raw_evidence, str):
-            raise Refusal(
-                "ledger-gap",
-                f"finding {key[1]} from round {key[0]} carries "
-                f"{type(raw_evidence).__name__}-typed evidence; evidence is prose or absent",
-            )
-        evidence = raw_evidence or ""
+        evidence = entry.get("evidence") or ""
         work_item = str(entry.get("work_item") or "")
         disposition = entry.get("disposition")
         mechanical = type_of.get(key) == "mechanical"
-        if disposition not in DISPOSITIONS:
+        if disposition == "transferred" and mechanical:
             raise Refusal(
-                "ledger-gap",
-                f"finding {key[1]} from round {key[0]} carries the unknown disposition "
-                f"{disposition!r}; a finding settles only as one of: " + ", ".join(DISPOSITIONS),
+                "untransferable-blocking",
+                f"finding {key[1]} from round {key[0]} blocks this change, and a blocking "
+                "finding is not transferable however old the defect is; fix it or rebut it "
+                "inside this campaign",
             )
-        if disposition == "rebutted" and not evidence.strip():
-            raise Refusal(
-                "unsupported-rebuttal",
-                f"finding {key[1]} from round {key[0]} is marked rebutted with no evidence; an "
-                "unsupported rebuttal never settles a finding",
-            )
-        if disposition == "transferred":
-            if mechanical:
-                raise Refusal(
-                    "untransferable-blocking",
-                    f"finding {key[1]} from round {key[0]} blocks this change, and a blocking "
-                    "finding is not transferable however old the defect is; fix it or rebut it "
-                    "inside this campaign",
-                )
-            if not evidence.strip() or not work_item.strip():
-                raise Refusal(
-                    "unsupported-transfer",
-                    f"finding {key[1]} from round {key[0]} is transferred out of the campaign "
-                    "without both halves of the claim: evidence showing the defect predates the "
-                    "change, and the work item now accountable for it",
-                )
         if disposition == "fixed" and mechanical and artifact_class == "typed-code":
             if "test" not in evidence.lower():
                 raise Refusal(
@@ -1133,7 +1165,8 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
 
     roster = classes[args.artifact_class]["lenses"]
     staffing, staffing_digest = load_staffing(args.staffing)
-    seats = check_sweep_due(args.round, verdicts, roster) if args.sweep else []
+    dispositions = load_dispositions(args.disposition)
+    seats = check_sweep_due(args.round, verdicts, roster, dispositions) if args.sweep else []
     staffed = validate_staffing(staffing, roster, profile, args.sweep, due)
     staffing_ref = {"path": args.staffing, "digest": staffing_digest}
     if args.sweep and (
@@ -1148,6 +1181,10 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
             + f" under {staffing.get('decision')!r}. A seat outside that roster cannot fly a "
             "whole-artifact pass the campaign is about to terminate on",
         )
+    prior_findings = prior_findings_of(verdicts)
+    # Before the terminal record, not just before the prompts: a zero-seat decision is the
+    # campaign's last word, and it rests on a ledger nothing downstream will audit.
+    ledger = build_ledger(prior_findings, dispositions, args.artifact_class)
     if not staffed:
         return {
             "emitted": False, "terminal": "zero-sweep" if args.sweep else "zero-force",
@@ -1156,10 +1193,6 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
             "staffing_record": staffing_ref,
         }
 
-    prior_findings = prior_findings_of(verdicts)
-    ledger = build_ledger(
-        prior_findings, load_dispositions(args.disposition), args.artifact_class
-    )
     scopes, skipped, rescope = resolve_scopes(
         staffed, args.round, verdicts, args.sweep, bool(staffing.get("force_full")),
         args.repo_root, args.head_sha, args.last_full_head,
