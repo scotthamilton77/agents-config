@@ -25,6 +25,7 @@ from tests.fakes import RecordedRunner, RouteTableHttp
 
 runner = CliRunner()
 
+APP_ID = 4275336
 HEAD = "a" * 40
 MOVED = "b" * 40
 PULL = "/repos/octo/demo/pulls/5"
@@ -72,6 +73,15 @@ ENVELOPE: dict[str, Any] = {
         }
     ],
 }
+
+
+def transport(routes: dict[tuple[str, str], tuple[int, Any]]) -> RouteTableHttp:
+    """The App-HTTP fake with its credential rule armed for this App.
+
+    Every construction in this module goes through here, so a call site that
+    drops or swaps a credential is refused wherever one is added.
+    """
+    return RouteTableHttp(routes, app_id=APP_ID)
 
 
 @pytest.fixture
@@ -135,7 +145,7 @@ def test_the_happy_path_posts_and_reports_the_review_on_stdout(
     workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config, verdict = workspace
-    http = RouteTableHttp(BASE_ROUTES)
+    http = transport(BASE_ROUTES)
     wire(monkeypatch, http)
     result = invoke(config, verdict)
     assert result.exit_code == 0
@@ -154,7 +164,7 @@ def test_a_finding_with_no_placeable_anchor_is_named_on_stdout(
     envelope = json.loads(verdict.read_text())
     envelope["findings"][0]["evidence"] = "nothing locatable"
     verdict.write_text(json.dumps(envelope))
-    http = RouteTableHttp(BASE_ROUTES)
+    http = transport(BASE_ROUTES)
     wire(monkeypatch, http)
     result = invoke(config, verdict)
     assert result.exit_code == 0
@@ -165,7 +175,7 @@ def test_the_verdict_is_required(
     workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config, _ = workspace
-    http = RouteTableHttp({})
+    http = transport({})
     wire(monkeypatch, http)
     result = runner.invoke(cli.app, ["post-verdict", PR_ARG, "--project-config", str(config)])
     assert result.exit_code == 2
@@ -183,7 +193,7 @@ class TestARejectedVerdictCostsNoApiCall:
         verdict = tmp_path / "verdict.json"
         verdict.write_text(body)
         monkeypatch.setenv("APPROVER_KEY_PATH", str(key))
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         return invoke(config, verdict), http
 
@@ -191,7 +201,7 @@ class TestARejectedVerdictCostsNoApiCall:
         self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         config, _ = workspace
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         result = invoke(config, tmp_path / "nowhere" / "verdict.json")
         assert result.exit_code == 2
@@ -253,7 +263,7 @@ class TestARejectedVerdictCostsNoApiCall:
     ) -> None:
         config, verdict = workspace
         verdict.write_bytes(b'{"head_sha": "\xff\xfe"}')
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         result = invoke(config, verdict)
         assert result.exit_code == 2
@@ -282,7 +292,7 @@ class TestARejectedVerdictCostsNoApiCall:
         padded = json.dumps(envelope)
         assert len(padded) == MAX_BODY_CHARS
         verdict.write_text(padded)
-        http = RouteTableHttp(BASE_ROUTES)
+        http = transport(BASE_ROUTES)
         wire(monkeypatch, http)
         assert invoke(config, verdict).exit_code == 0
 
@@ -294,7 +304,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, verdict = workspace
         routes = dict(BASE_ROUTES)
         routes[("GET", PULL)] = (200, {"head": {"sha": MOVED}})
-        http = RouteTableHttp(routes)
+        http = transport(routes)
         wire(monkeypatch, http)
         result = invoke(config, verdict)
         assert result.exit_code == 2
@@ -308,7 +318,7 @@ class TestFailuresAreCodedNotTracebacks:
         config.write_text('[merge-policy]\nmerge-authorization = "explicit"\n')
         verdict = tmp_path / "verdict.json"
         verdict.write_text(json.dumps(ENVELOPE))
-        http = RouteTableHttp({})
+        http = transport({})
         wire(monkeypatch, http)
         result = invoke(config, verdict)
         assert result.exit_code == 2
@@ -321,7 +331,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, verdict = workspace
         routes = dict(BASE_ROUTES)
         routes[("POST", f"{PULL}/reviews")] = (422, {"message": "unprocessable"})
-        wire(monkeypatch, RouteTableHttp(routes))
+        wire(monkeypatch, transport(routes))
         result = invoke(config, verdict)
         assert result.exit_code == 77
         assert ErrorCode.RUNTIME_APPROVER_API_FAILED.value in result.output
@@ -332,7 +342,7 @@ class TestFailuresAreCodedNotTracebacks:
         config, verdict = workspace
         routes = dict(BASE_ROUTES)
         routes[("GET", f"{PULL}/files?per_page={FILES_PER_PAGE}&page=1")] = (403, {"m": "denied"})
-        http = RouteTableHttp(routes)
+        http = transport(routes)
         wire(monkeypatch, http)
         result = invoke(config, verdict)
         assert result.exit_code == 77
@@ -350,7 +360,7 @@ class TestOutsideTheGroomingLoop:
             raise PreconditionError(ErrorCode.PRECONDITION_STORE_UNAVAILABLE)
 
         monkeypatch.setattr(cli, "_build_store", unusable_store)
-        http = RouteTableHttp(BASE_ROUTES)
+        http = transport(BASE_ROUTES)
         wire(monkeypatch, http)
         result = invoke(config, verdict)
         assert result.exit_code == 0
@@ -371,7 +381,7 @@ class TestNoRetryAndNoApproval:
         config, verdict = workspace
         routes = dict(BASE_ROUTES)
         routes[("POST", f"{PULL}/reviews")] = (500, {"message": "boom"})
-        http = RouteTableHttp(routes)
+        http = transport(routes)
         wire(monkeypatch, http)
         assert invoke(config, verdict).exit_code == 77
         submissions = [url for method, url, _, _ in http.calls if method == "POST"]
@@ -392,7 +402,7 @@ class TestDefaultProjectConfigPath:
         verdict.write_text(json.dumps(ENVELOPE))
         monkeypatch.setenv("APPROVER_KEY_PATH", str(key))
         monkeypatch.chdir(tmp_path)
-        http = RouteTableHttp(BASE_ROUTES)
+        http = transport(BASE_ROUTES)
         wire(monkeypatch, http)
         result = runner.invoke(cli.app, ["post-verdict", PR_ARG, "--verdict", str(verdict)])
         assert result.exit_code == 0

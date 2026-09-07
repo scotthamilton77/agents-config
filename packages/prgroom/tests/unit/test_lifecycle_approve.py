@@ -48,13 +48,22 @@ BASE_ROUTES: Routes = {
 }
 
 
+def transport(routes: dict[tuple[str, str], tuple[int, Any]]) -> RouteTableHttp:
+    """The App-HTTP fake with its credential rule armed for this App.
+
+    Every construction in this module goes through here, so a call site that
+    drops or swaps a credential is refused wherever one is added.
+    """
+    return RouteTableHttp(routes, app_id=APP_ID)
+
+
 def signing_runner() -> RecordedRunner:
     """A runner answering the one ``openssl`` call the flow makes."""
     return RecordedRunner([CommandResult(0, "SHA2-256(stdin)= 0a0b\n", "")])
 
 
 def run_approve(routes: Routes) -> tuple[str, RouteTableHttp]:
-    http = RouteTableHttp(routes)
+    http = transport(routes)
     message = approve_pr(
         http=http,
         runner=signing_runner(),
@@ -88,7 +97,7 @@ class TestHappyPath:
     def test_the_flow_signs_once_through_the_runner_seam(self) -> None:
         runner = signing_runner()
         approve_pr(
-            http=RouteTableHttp(dict(BASE_ROUTES)),
+            http=transport(dict(BASE_ROUTES)),
             runner=runner,
             ref=REF,
             head_sha=HEAD,
@@ -98,6 +107,10 @@ class TestHappyPath:
             now=NOW,
         )
         assert [argv[0] for argv in runner.calls] == ["openssl"]
+        # The key the caller named is the key the signature is made with. Nothing
+        # downstream can tell one key from another — a JWT signed with the wrong
+        # one is well-formed, and only GitHub rejects it.
+        assert str(KEY_PATH) in runner.calls[0]
 
     def test_the_jwt_it_mints_with_issues_from_the_configured_app_id(self) -> None:
         _, http = run_approve(dict(BASE_ROUTES))
@@ -172,7 +185,7 @@ class TestHeadMoved:
     def test_a_moved_live_head_refuses_without_posting_or_even_listing_reviews(self) -> None:
         routes = dict(BASE_ROUTES)
         routes[("GET", PULL)] = (200, {"head": {"sha": MOVED}})
-        http = RouteTableHttp(routes)
+        http = transport(routes)
         with pytest.raises(PreconditionError) as caught:
             approve_pr(
                 http=http,
@@ -254,7 +267,7 @@ def test_the_facts_string_reaches_the_body_byte_for_byte() -> None:
     # Non-canonical on purpose: spacing and key order json.dumps would not
     # reproduce, so a body built by re-serializing the input fails here.
     facts = '{ "rule":"instructed",   "b":1,\t"a":[2,3] }'
-    http = RouteTableHttp(dict(BASE_ROUTES))
+    http = transport(dict(BASE_ROUTES))
     approve_pr(
         http=http,
         runner=signing_runner(),

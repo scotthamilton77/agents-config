@@ -103,7 +103,11 @@ exists.
   `RecordingGh`, the reply-surface `GhClient` recorder shared by the reply
   test modules — it records every call and those tests assert exact call
   lists; and `RouteTableHttp`, the App-HTTP seam recorder, which raises on any
-  route it was not given. In all three the permissive-default masking risk
+  route it was not given and on any request not carrying the credential that
+  request should be authorized by. That credential rule is shared rather than
+  per-file precisely because it has to cover call sites nobody has written yet:
+  a flow that drops or swaps a token is a defect no per-call assertion catches
+  until someone remembers to write one. In all three the permissive-default masking risk
   per-file fakes guard against does not apply, which is the only reason they
   are shared. Don't grow any of them into a general-purpose fake — a
   `RouteTableHttp` route table stays in the test module that asserts it.

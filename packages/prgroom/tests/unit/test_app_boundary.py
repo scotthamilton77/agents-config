@@ -70,6 +70,15 @@ BASE_ROUTES: dict[tuple[str, str], tuple[int, Any]] = {
 SHAPES: list[Any] = [None, True, False, 0, 1, -1, 3.5, "", "text", [], [1], {}, {"x": 1}]
 
 
+def transport(routes: dict[tuple[str, str], tuple[int, Any]]) -> RouteTableHttp:
+    """The App-HTTP fake with its credential rule armed for this App.
+
+    Every construction in this module goes through here, so a call site that
+    drops or swaps a credential is refused wherever one is added.
+    """
+    return RouteTableHttp(routes, app_id=APP_ID)
+
+
 def signing_runner() -> RecordedRunner:
     return RecordedRunner([CommandResult(0, "SHA2-256(stdin)= 0a0b\n", "")])
 
@@ -149,7 +158,7 @@ def assert_only_prgroom_error_escapes(
     completion is allowed. What is not allowed is another exception type, or a
     review posted after a read the client could not trust.
     """
-    http = RouteTableHttp(routes)
+    http = transport(routes)
     try:
         flow.call(http)
     except PrgroomError:
@@ -217,7 +226,7 @@ def test_a_review_entry_the_scan_cannot_trust_is_a_coded_failure(
     flow: Flow, overrides: dict[str, Any]
 ) -> None:
     entry = {**flow.own_review, **overrides}
-    http = RouteTableHttp(routes_with(REVIEWS_PAGE_1, (200, [entry])))
+    http = transport(routes_with(REVIEWS_PAGE_1, (200, [entry])))
     with pytest.raises(PrgroomError):
         flow.call(http)
     assert http.posted_reviews() == []
@@ -228,14 +237,17 @@ def test_a_review_entry_the_scan_cannot_trust_is_a_coded_failure(
 def test_a_well_formed_entry_that_is_not_this_review_lets_the_flow_post(
     flow: Flow, entry: Entry
 ) -> None:
-    http = RouteTableHttp(routes_with(REVIEWS_PAGE_1, (200, [entry(flow.own_review)])))
+    http = transport(routes_with(REVIEWS_PAGE_1, (200, [entry(flow.own_review)])))
     flow.call(http)
     assert len(http.posted_reviews()) == 1
 
 
 @pytest.mark.parametrize("flow", FLOWS)
 def test_this_flows_own_review_short_circuits_the_submission(flow: Flow) -> None:
-    http = RouteTableHttp(routes_with(REVIEWS_PAGE_1, (200, [{**flow.own_review, "id": 7}])))
+    # The deleted reviewer leads. A scan that stopped at the first entry it had
+    # to skip would miss the App's own review behind it and post a duplicate.
+    deleted = {**flow.own_review, "id": 6, "user": None}
+    http = transport(routes_with(REVIEWS_PAGE_1, (200, [deleted, {**flow.own_review, "id": 7}])))
     message = flow.call(http)
     assert http.posted_reviews() == []
     assert "review 7" in message
@@ -277,7 +289,7 @@ FILE_ENTRIES_WITHOUT_LINES = [
 
 @pytest.mark.parametrize("entry", FILE_ENTRIES_REJECTED)
 def test_a_files_entry_the_client_cannot_read_is_a_coded_failure(entry: Any) -> None:
-    http = RouteTableHttp(routes_with(FILES_PAGE_1, (200, [entry])))
+    http = transport(routes_with(FILES_PAGE_1, (200, [entry])))
     with pytest.raises(PrgroomError):
         call_post_verdict(http)
     assert http.posted_reviews() == []
@@ -285,7 +297,7 @@ def test_a_files_entry_the_client_cannot_read_is_a_coded_failure(entry: Any) -> 
 
 @pytest.mark.parametrize("entry", FILE_ENTRIES_WITHOUT_LINES)
 def test_a_files_entry_with_no_commentable_line_still_posts_the_envelope(entry: Any) -> None:
-    http = RouteTableHttp(routes_with(FILES_PAGE_1, (200, [entry])))
+    http = transport(routes_with(FILES_PAGE_1, (200, [entry])))
     message = call_post_verdict(http)
     (posted,) = http.posted_reviews()
     assert "comments" not in posted
@@ -325,7 +337,7 @@ def test_a_read_field_of_the_wrong_type_is_rejected(
     if type(shape) is want:
         pytest.skip("the type this field requires")
     with pytest.raises(PrgroomError):
-        flow.call(RouteTableHttp(routes_with(route, (status, {field: shape}))))
+        flow.call(transport(routes_with(route, (status, {field: shape}))))
 
 
 @pytest.mark.parametrize("flow", FLOWS)
@@ -334,7 +346,7 @@ def test_a_head_sha_of_the_wrong_type_is_rejected(flow: Flow, shape: Any) -> Non
     if type(shape) is str:
         pytest.skip("the type this field requires")
     with pytest.raises(PrgroomError):
-        flow.call(RouteTableHttp(routes_with(PULL_READ, (200, {"head": {"sha": shape}}))))
+        flow.call(transport(routes_with(PULL_READ, (200, {"head": {"sha": shape}}))))
 
 
 class FakeResponse:
@@ -422,7 +434,7 @@ def test_an_unexpected_status_at_any_endpoint_stops_the_flow(
     # Unique per endpoint, so an excerpt assertion cannot pass on a substring
     # some other call happened to put in the message.
     marker = f"body-of-{endpoint[0]}-{endpoint[1]}"
-    http = RouteTableHttp(routes_with(endpoint, (status, {"marker": marker})))
+    http = transport(routes_with(endpoint, (status, {"marker": marker})))
     with pytest.raises(PrgroomError) as caught:
         flow.call(http)
 
@@ -451,7 +463,7 @@ def test_a_flow_calls_no_endpoint_outside_its_declared_set(flow: Flow) -> None:
     # Guards the sweeps themselves: a flow that grew an endpoint the corpus does
     # not list would be swept for statuses and shapes at every position but that
     # one, and the gap would not show as a failure anywhere.
-    http = RouteTableHttp(BASE_ROUTES)
+    http = transport(BASE_ROUTES)
     flow.call(http)
     declared = {GITHUB_API + suffix for _, suffix in [*flow.read_routes, SUBMIT]}
     assert {url for _, url, _, _ in http.calls} == declared

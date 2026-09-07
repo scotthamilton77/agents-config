@@ -51,6 +51,10 @@ BINARY = "assets/logo.png"
 # (so a range straddling them is unplaceable), a file named the short way in
 # prose, the same basename under two directories, and a file with no patch.
 FILES: list[dict[str, Any]] = [
+    # The patch-less file leads, as GitHub's own ordering would put it: a walk
+    # that stopped at the first entry it could take no spans from would leave
+    # every later file unanchorable.
+    {"filename": BINARY, "status": "added"},
     {
         "filename": APP_PY,
         "patch": (
@@ -67,7 +71,6 @@ FILES: list[dict[str, Any]] = [
     {"filename": TEST_APPROVE, "patch": "@@ -70,2 +72,5 @@ def test_x():\n+    pass\n"},
     {"filename": NOTES_A, "patch": "@@ -1 +1 @@\n-a\n+b\n"},
     {"filename": NOTES_B, "patch": "@@ -1 +1 @@\n-a\n+b\n"},
-    {"filename": BINARY, "status": "added"},
 ]
 
 SPANS = {
@@ -89,6 +92,15 @@ BASE_ROUTES: dict[tuple[str, str], tuple[int, Any]] = {
 }
 
 
+def transport(routes: dict[tuple[str, str], tuple[int, Any]]) -> RouteTableHttp:
+    """The App-HTTP fake with its credential rule armed for this App.
+
+    Every construction in this module goes through here, so a call site that
+    drops or swaps a credential is refused wherever one is added.
+    """
+    return RouteTableHttp(routes, app_id=APP_ID)
+
+
 def finding(finding_id: str, **extra: Any) -> dict[str, Any]:
     return {"id": finding_id, "lens": "correctness", "type": "mechanical", **extra}
 
@@ -105,7 +117,7 @@ def signing_runner() -> RecordedRunner:
 def post(
     verdict: Verdict, routes: dict[tuple[str, str], tuple[int, Any]] | None = None
 ) -> tuple[str, RouteTableHttp]:
-    http = RouteTableHttp(BASE_ROUTES if routes is None else routes)
+    http = transport(BASE_ROUTES if routes is None else routes)
     message = post_verdict_pr(
         http=http,
         runner=signing_runner(),
@@ -116,6 +128,24 @@ def post(
         now=1_000_000,
     )
     return message, http
+
+
+def test_the_flow_signs_once_with_the_key_the_caller_named() -> None:
+    # The key the caller named is the key the signature is made with. Nothing
+    # downstream can tell one key from another — a JWT signed with the wrong one
+    # is well-formed, and only GitHub rejects it.
+    runner = signing_runner()
+    post_verdict_pr(
+        http=transport(BASE_ROUTES),
+        runner=runner,
+        ref=REF,
+        verdict=verdict_of(),
+        app_id=APP_ID,
+        key_path=KEY_PATH,
+        now=1_000_000,
+    )
+    assert [argv[0] for argv in runner.calls] == ["openssl"]
+    assert str(KEY_PATH) in runner.calls[0]
 
 
 class TestTheSubmittedReview:
@@ -201,6 +231,23 @@ class TestInlineComments:
         assert "comments" not in posted
         assert "no line in the diff for finding f1" in message
 
+    def test_the_reported_lines_are_assembled_one_per_line(self) -> None:
+        # The whole rendering, not a substring of it: the unplaced findings each
+        # get a line and the outcome is the last one, so a caller reading the
+        # result reads the final line and nothing is run together.
+        message, _ = post(
+            verdict_of(
+                finding("f1"),
+                finding("f2", evidence=f"{APP_PY}:3"),
+                finding("f3"),
+            )
+        )
+        assert message == (
+            "no line in the diff for finding f1\n"
+            "no line in the diff for finding f3\n"
+            f"posted: review 99 by {LOGIN} pinned to {HEAD} with 1 inline comment(s)"
+        )
+
     def test_a_file_the_diff_reports_without_a_patch_anchors_nothing(self) -> None:
         message, http = post(verdict_of(finding("f1", evidence=f"{BINARY}:3 changed")))
         assert "comments" not in http.posted_reviews()[0]
@@ -236,6 +283,11 @@ ANCHOR_FORMS = [
         f"{BINARY}:3 and {APP_PY}:3",
         Anchor(APP_PY, 3, 3),
         id="the-first-placeable-of-two-anchors",
+    ),
+    pytest.param(
+        f"nowhere/missing.py:3 and {APP_PY}:3",
+        Anchor(APP_PY, 3, 3),
+        id="an-unresolvable-path-before-a-resolvable-one",
     ),
     pytest.param("gh/app.py:_decode_hex_signature uses it", None, id="a-path-and-symbol"),
     pytest.param("docs/architecture/prgroom/design.md says so", None, id="a-path-with-no-line"),
@@ -303,7 +355,7 @@ class TestTheHeadItReviewed:
     def test_a_live_head_past_the_reviewed_one_refuses_before_any_submission(self) -> None:
         routes = dict(BASE_ROUTES)
         routes[("GET", PULL)] = (200, {"head": {"sha": MOVED}})
-        http = RouteTableHttp(routes)
+        http = transport(routes)
         with pytest.raises(PreconditionError) as caught:
             post_verdict_pr(
                 http=http,
@@ -321,7 +373,7 @@ class TestTheHeadItReviewed:
         # Nothing is spent listing a diff for a verdict that cannot be posted.
         routes = dict(BASE_ROUTES)
         routes[("GET", PULL)] = (200, {"head": {"sha": MOVED}})
-        http = RouteTableHttp(routes)
+        http = transport(routes)
         with pytest.raises(PreconditionError):
             post_verdict_pr(
                 http=http,
