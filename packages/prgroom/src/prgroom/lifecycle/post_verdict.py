@@ -41,9 +41,11 @@ from prgroom.prsession.pr_ref import PRRef, is_commit_sha
 
 COMMENT_EVENT = "COMMENT"
 
-# GitHub's ceiling on the body of a review. A verdict past it is refused rather
+# The ceiling GitHub puts on a comment body. A verdict past it is refused rather
 # than truncated: a truncated verdict is a different document that still reads as
 # the round's result, and the JSON would no longer parse for anyone consuming it.
+# Refusal is on exceeding the ceiling, not on reaching it — a body the API would
+# take must not be turned away here.
 MAX_BODY_CHARS = 65536
 
 # The side of the diff every anchor is placed against. A finding names a line of
@@ -144,8 +146,10 @@ def load_verdict(path: Path) -> Verdict:
 def commentable_spans(patch: str) -> list[tuple[int, int]]:
     """The inclusive right-side line ranges a patch's hunks make commentable.
 
-    Every new-side line inside a hunk is either added or context, and the hunk
-    header's right-hand count is exactly how many of them there are — so a hunk
+    The right side takes a comment on an added line and on an unchanged line shown
+    for context alike, and every new-side line inside a hunk is one or the other —
+    a deleted line consumes no new-side number. The hunk header's right-hand count
+    is therefore exactly how many commentable lines the hunk holds, so a hunk
     contributes one contiguous range and needs no walk of its body. A hunk that
     adds nothing on the right (a pure deletion) contributes none.
     """
