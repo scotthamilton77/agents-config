@@ -1100,9 +1100,9 @@ THREAD_AGENT_MANDATE = (
 # as a thing the turn does rather than a thing it asks, so the human is never
 # handed the work of declining one.
 # What the driver reads back from a thread seat, stated as the driver reads it.
-# Prose is the whole of the ordinary turn: an object is what the one offer needs
-# a place to ride on, and a half-shaped object is recorded as prose exactly as
-# written -- so a seat that guesses at a document shape has its guess published
+# Prose is the whole of the ordinary turn: an object is what the offer and the
+# read request need a place to ride on, and a half-shaped object is recorded as
+# prose exactly as written -- so a seat that guesses at a document shape has its guess published
 # to the human verbatim.
 THREAD_REPLY_RULE = (
     "Your reply is what you are saying to the human, as plain prose. Send that and nothing "

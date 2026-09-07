@@ -50,6 +50,7 @@ from grillui.schemas import (
     MAP_CHANNEL,
     NEEDS_TO_READ_KEY,
     PROPOSED_ANSWER_KEY,
+    RECOMMENDATION_KEY,
     STATUS_KIND,
     STATUS_PHASE_TRANSFERRED,
     Actor,
@@ -79,6 +80,25 @@ READS = ["src/grillui/log.py", "the vendor's retention note"]
 # What a seat writes when it asks well, as the driver reads it back.
 ASKING = json.dumps({"text": SAID, NEEDS_TO_READ_KEY: READS})
 OFFER = {"decision": NODE, "option": None, "text": "Thirty days", "because": "the thread said so"}
+
+# A seat saying in prose what the key is for. Every wording a lexical reader
+# would reach for is in it, and none of it is a request.
+SAID_IN_PROSE = (
+    "I would need to read src/grillui/log.py to answer that, and I cannot read it from here."
+)
+
+# What the thread seat is told about the request, stated whole. The brief is the
+# seat's whole contract for a field read in code, so a reword is a change to
+# what the backend will be sent.
+READ_REQUEST = (
+    "You cannot read this project: no files, no repository, no search, no web. When you cannot "
+    "answer without reading something you were not given, say so in your prose and send "
+    "`needs_to_read` beside `text`: a list of strings naming what you would have to read, each "
+    "a path or a pattern in the project, or a document outside it. Name what you would read, "
+    "not what you think it says -- do not guess at the content, and do not answer as though "
+    "you had read it. The backend takes the list as a request to hand this conversation to a "
+    "seat that can read, and the human is shown what you asked for."
+)
 
 # Every shape the field does not take. Each is malformed for one reason, so a
 # reader that took any of them would be taking that reason.
@@ -383,21 +403,19 @@ def test_the_thread_seat_is_told_it_cannot_read_and_how_to_ask(tier: str) -> Non
     Given the thread agent's brief on each tier
     When it is read for what to do when the answer is behind something it cannot
          open
-    Then it says the seat cannot read the project, names the key, says to name
-         what it would read rather than guess at what it says, and says the
-         backend routes the request to a seat that can read.
+    Then the brief carries the rule stated here whole, exactly once.
 
-    A seat told only that the key exists still answers from what it imagines the
-    file says, which is the invention this whole path exists to stop.
+    Pinned as bytes rather than as fragments. A seat told only that the key
+    exists still answers from what it imagines the file says, so every clause is
+    load-bearing and a reword is a change to what the backend will be sent; and
+    a rule the brief carried twice is the seat reading the same instruction as
+    two, which is how one of them gets treated as the exception to the other.
     """
     brief = system_prompt(tier, "thread-agent")
 
-    assert READ_REQUEST_RULE in brief
-    assert "You cannot read this project" in brief
-    assert "`needs_to_read` beside `text`" in brief
-    assert "do not guess at the content" in brief
-    assert "hand this conversation to a seat that can read" in brief
-    assert READ_REQUEST_RULE not in system_prompt(tier, "grill-master")
+    assert READ_REQUEST_RULE == READ_REQUEST
+    assert brief.count(READ_REQUEST) == 1
+    assert READ_REQUEST not in system_prompt(tier, "grill-master")
 
 
 def transfers(log: SessionLog, channel: str) -> list[str]:
@@ -409,6 +427,35 @@ def transfers(log: SessionLog, channel: str) -> list[str]:
         and one.channel == channel
         and one.payload.get("phase") == STATUS_PHASE_TRANSFERRED
     ]
+
+
+def test_a_seat_that_says_in_prose_it_would_have_to_read_asks_for_nothing(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an autonomous session whose thread seat says in prose that it would
+         have to read a named path, sending no key
+    When the turn is recorded
+    Then no recommendation rides its attribution and the lane moves nothing.
+
+    The condition is the seat's request, and a request is a key it either sent
+    or did not. A reader that went looking for the words would fire on a seat
+    thinking aloud, which is the model's opinion of its own reach -- the one
+    thing this module refuses as evidence -- and it would spend the expert seat
+    on it.
+    """
+    seed_node(client, log.epoch, NODE)
+    open_thread(client, log.epoch)
+    driver = FastDriver(
+        TierConfig(escalation_policy=POLICY_AUTONOMOUS), lambda **_asked: (SAID_IN_PROSE, None)
+    )
+
+    driver.run(log, record_dispatch(log, channel=THREAD))
+
+    written = json.loads((log.directory / LOG_FILE).read_text(encoding="utf-8").splitlines()[-1])
+    assert written["payload"]["text"] == SAID_IN_PROSE
+    assert RECOMMENDATION_KEY not in written["payload"]
+    assert transfers(log, THREAD) == []
 
 
 def test_two_turns_overlapping_on_one_channel_buy_one_transfer(

@@ -31,8 +31,8 @@ all.** The two roles answer in different shapes. A grill-master turn is the
 map document and nothing else -- notice, updates, withdrawals, rulings and
 the stop judgement in one object, validated here, retried once on this seat
 when it does not, and handed up rather than shown to the human as the bytes it
-arrived in. A thread agent's turn is prose, optionally carrying the one offer
-it may make. Either way the turn is submitted as a single gesture, so what the
+arrived in. A thread agent's turn is prose, optionally carrying the offer or the
+request to read that it may make. Either way the turn is submitted as a single gesture, so what the
 human is told and what the turn declared arrive together or not at all, on the
 channel the turn ran on, through the same appender the page writes through --
 which is what makes the sole-author rule structural: a thread agent's updates
@@ -1465,7 +1465,7 @@ def declared_updates(
     answer it offered, and what it asked to read.
 
     A reply is prose unless it is an object carrying `text` and at least one of
-    the three -- anything else, including JSON that is not this shape, is what
+    the four -- anything else, including JSON that is not this shape, is what
     the agent said and is recorded as such. Guessing at a half-shaped object
     would author board changes out of a reply that never asked for any.
 
@@ -1478,9 +1478,9 @@ def declared_updates(
     Withdrawing is separate from updating because the common case carries no
     board change at all: a turn that supersedes what it said last time and
     nothing else is a turn whose whole effect is on the queue. An offered answer
-    is separate from both for the same reason and one more: it is the only one
-    of the three a thread agent may make, so a reply carrying it and nothing
-    else is the ordinary declaring shape on a thread channel.
+    is separate from both for the same reason and one more: with the request to
+    read, it is one of the two a thread agent may make, so a reply carrying it
+    and nothing else is an ordinary declaring shape on a thread channel.
 
     A request to read is a fourth, and it stands alone on the same terms: a
     thread seat that cannot answer without reading something it was not given
@@ -1819,7 +1819,7 @@ def record_reply(
 
     A map turn is a document and nothing else, and it is recorded by the
     function above. What is left here is a thread agent's turn, which is prose
-    and may carry the one offer it is allowed to make.
+    and may carry the offer or the request to read it is allowed to make.
 
     A reply declaring map updates is submitted as one gesture carrying them and
     the prose together, and it is submitted on the channel the turn ran on --
