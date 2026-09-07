@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from conftest import decision, document, handoff, turn
+from conftest import BOARD_TIMEOUT, decision, document, handoff, turn
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -53,6 +53,17 @@ def transferred(session: Session, channel: str) -> list[str]:
     ]
 
 
+def composings(session: Session, channel: str) -> list[str | None]:
+    """Which tier the lane named for each turn on this channel, in order."""
+    return [
+        one.payload.get("tier")
+        for one in session.entries()
+        if one.kind == "status"
+        and one.channel == channel
+        and one.payload.get("phase") == "composing"
+    ]
+
+
 def start_thread(page: Page, node: str, said: str) -> None:
     """Open a thread on a decision and say the first thing in it."""
     page.click(f'[data-act="threads"][data-id="{node}"]')
@@ -69,6 +80,23 @@ def say(page: Page, said: str) -> None:
     """
     page.fill("#ft-say", said)
     page.click('[data-act="say"]')
+
+
+def showing(page: Page, channel: str, mode: str) -> None:
+    """Wait until the page's own transfer control says this channel is on `mode`.
+
+    Not a convenience, and not a substitute for a sleep. Every human turn is
+    stamped with the tier the page believes its channel is on, and the backend
+    reads that stamp as the human's own gesture -- which outranks a transfer the
+    policy wrote, because the way back down is theirs. So a turn typed before the
+    page has seen the policy move carries `transfer: false` and takes the channel
+    straight back to the first rung. Waiting on the control is waiting on the
+    exact state the next turn will carry.
+    """
+    page.wait_for_selector(
+        f'[data-act="transfer"][data-channel="{channel}"][data-mode="{mode}"]',
+        timeout=BOARD_TIMEOUT,
+    )
 
 
 def thread_id(session: Session) -> str:
@@ -108,12 +136,15 @@ def test_the_default_policy_offers_the_hand_up_and_says_what_was_asked_for(
 
     start_thread(page, "d2", ASKED)
     session.settled()
-    page.wait_for_timeout(800)
     channel = thread_id(session)
+    page.wait_for_selector(
+        f'[data-act="transfer"][data-channel="{channel}"][data-recommended="1"]',
+        timeout=BOARD_TIMEOUT,
+    )
 
     control = page.locator(f'[data-act="transfer"][data-channel="{channel}"]')
     assert control.count() == 1, f"{control.count()} transfer controls on {channel}"
-    assert control.get_attribute("data-recommended") == "1", control.get_attribute("title")
+    assert control.get_attribute("data-mode") == "fast", control.get_attribute("data-mode")
     offered = control.get_attribute("title") or ""
     for one in WANTED:
         assert one in offered, offered
@@ -153,7 +184,10 @@ def test_the_autonomous_policy_hands_the_request_to_the_expert_once(
         f"the escalation policy moved this channel to the expert tier: {CONDITION}"
     ]
 
-    # The turn the transfer bought, on the seat that can read.
+    # The turn the transfer bought, on the seat that can read. The human types
+    # it once their page knows where the channel is, which is what their turn
+    # will say.
+    showing(page, channel, "expert")
     say(page, "Then find it.")
     session.settled()
     calls = session.claude_calls()
@@ -166,14 +200,15 @@ def test_the_autonomous_policy_hands_the_request_to_the_expert_once(
     ), asked
 
     # The human takes the thread back down, and the same request buys nothing.
-    page.wait_for_timeout(800)
+    showing(page, channel, "expert")
     control = page.locator(f'[data-act="transfer"][data-channel="{channel}"]')
     assert control.inner_text().strip().endswith("Return to fast agent"), control.inner_text()
     control.click()
-    page.wait_for_timeout(300)
+    showing(page, channel, "fast")
     say(page, "Never mind, tell me what you can.")
     session.settled()
 
     assert len(transferred(session, channel)) == 1, transferred(session, channel)
     assert len(session.claude_calls()) == 1, session.claude_calls()
+    assert composings(session, channel) == ["fast", "heavy", "fast"]
     assert [one["text"] for one in turns_on(session, channel)][-1] == SAID_AGAIN
