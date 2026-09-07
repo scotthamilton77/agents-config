@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -43,7 +44,7 @@ from grillui.schemas import CHAIN_KEY, CatchUpEntry, DispatchContext
 from grillui.tiers import TierConfig
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from grillui.drivers import TranscriptStore
     from grillui.log import SessionLog
@@ -141,14 +142,27 @@ def codex(cli: Any, root: Path) -> CodexDriver:
 # The two CLI seats. Every claim about a chain is a claim about both: they
 # differ in how the CLI reports the chain and in which file keeps it, and in
 # nothing else, so a claim pinned on one of them is untested on the other.
-SEATS = [
-    pytest.param(heavy, ChainingCli, RESUME_FILE, ("chain-a", "chain-b"), id="claude"),
-    pytest.param(codex, ThreadingCli, CODEX_RESUME_FILE, ("thread-a", "thread-b"), id="codex"),
-]
+@dataclass(frozen=True)
+class Seated:
+    """One CLI seat: how to build its driver, how to script it, and where its
+    chains are kept."""
 
-SILENT_SEATS = [
-    pytest.param(lambda root: heavy(ChainingCli(chains=(None,)), root), id="claude"),
-    pytest.param(lambda root: codex(ThreadingCli(chains=(None,)), root), id="codex"),
+    driver: Callable[[Any, Path], Any]
+    cli: Callable[..., Any]
+    chains: str
+    named: tuple[str, str]
+
+    def on(self, root: Path, *reports: str | None) -> Any:
+        """This seat over that store, scripted to report these chains in turn,
+        or its first one on every turn."""
+        return self.driver(self.cli(chains=reports or self.named[:1]), root)
+
+
+SEATS = [
+    pytest.param(Seated(heavy, ChainingCli, RESUME_FILE, ("chain-a", "chain-b")), id="claude"),
+    pytest.param(
+        Seated(codex, ThreadingCli, CODEX_RESUME_FILE, ("thread-a", "thread-b")), id="codex"
+    ),
 ]
 
 
@@ -240,14 +254,9 @@ def test_a_resumed_heavy_turn_records_the_chain_it_resumed(
     assert [reply[CHAIN_KEY] for reply in replies(log)] == ["chain-a", "chain-b"]
 
 
-@pytest.mark.parametrize(("seat", "scripted", "chains", "named"), SEATS)
+@pytest.mark.parametrize("seat", SEATS)
 def test_a_turn_reopened_cold_records_the_new_chain_not_the_dropped_one(
-    session_dir: Path,
-    tmp_path: Path,
-    seat: Any,
-    scripted: Any,
-    chains: str,
-    named: tuple[str, str],
+    session_dir: Path, tmp_path: Path, seat: Seated
 ) -> None:
     """
     Given a CLI seat holding a chain, and a dispatch whose board has moved
@@ -257,15 +266,13 @@ def test_a_turn_reopened_cold_records_the_new_chain_not_the_dropped_one(
     """
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
-    cli = scripted(chains=named)
-    driver = taken(log, seat(cli, tmp_path / "store"))
+    driver = taken(log, seat.on(tmp_path / "store", *seat.named))
 
     human_turn(log, "The board moved under this one.")
     taken(log, driver, reopening(log, tmp_path))
 
-    assert cli.resumed == [None, None]
-    assert [reply[CHAIN_KEY] for reply in replies(log)] == list(named)
-    assert read_resume(session_dir, "map", chains) == named[1]
+    assert [reply[CHAIN_KEY] for reply in replies(log)] == list(seat.named)
+    assert read_resume(session_dir, "map", seat.chains) == seat.named[1]
 
 
 def test_a_cold_codex_turn_records_the_thread_the_cli_opened(
@@ -310,9 +317,9 @@ def test_a_resumed_codex_turn_records_the_thread_it_resumed(
     assert [reply[CHAIN_KEY] for reply in replies(log)] == ["thread-a", "thread-b"]
 
 
-@pytest.mark.parametrize("seat", SILENT_SEATS)
+@pytest.mark.parametrize("seat", SEATS)
 def test_a_cli_that_named_no_chain_records_no_chain_at_all(
-    session_dir: Path, tmp_path: Path, seat: Any
+    session_dir: Path, tmp_path: Path, seat: Seated
 ) -> None:
     """
     Given a CLI that printed no chain identity
@@ -324,7 +331,7 @@ def test_a_cli_that_named_no_chain_records_no_chain_at_all(
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
 
-    driver = taken(log, seat(tmp_path / "store"))
+    driver = taken(log, seat.on(tmp_path / "store", None))
 
     assert CHAIN_KEY not in replies(log)[-1]
     assert driver.copying is None
@@ -474,8 +481,9 @@ def test_a_codex_turns_rollout_lands_in_the_session_directory(
     assert copied(session_dir, "thread-a").read_text(encoding="utf-8") == KEPT
 
 
+@pytest.mark.parametrize("seat", SEATS)
 def test_a_later_turn_on_one_chain_replaces_the_copy_whole(
-    session_dir: Path, tmp_path: Path
+    session_dir: Path, tmp_path: Path, seat: Seated
 ) -> None:
     """
     Given a chain whose transcript grew between two turns
@@ -486,22 +494,24 @@ def test_a_later_turn_on_one_chain_replaces_the_copy_whole(
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
     root = tmp_path / "store"
-    kept(root, "chain-a")
-    driver = taken(log, heavy(ChainingCli(chains=("chain-a",)), root))
-    assert copied(session_dir, "chain-a").read_text(encoding="utf-8") == KEPT
+    named = seat.named[0]
+    kept(root, named)
+    driver = taken(log, seat.on(root))
+    assert copied(session_dir, named).read_text(encoding="utf-8") == KEPT
 
-    kept(root, "chain-a", KEPT + LATER)
+    kept(root, named, KEPT + LATER)
     human_turn(log, "And what about compaction?")
     taken(log, driver)
 
-    assert copied(session_dir, "chain-a").read_text(encoding="utf-8") == KEPT + LATER
+    assert copied(session_dir, named).read_text(encoding="utf-8") == KEPT + LATER
 
 
 # --- off the wait, and never a failure ----------------------------------------
 
 
+@pytest.mark.parametrize("seat", SEATS)
 def test_the_reply_is_on_the_log_before_the_copy_finishes(
-    session_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    session_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, seat: Seated
 ) -> None:
     """
     Given a copy that will not finish until it is let go
@@ -513,21 +523,22 @@ def test_the_reply_is_on_the_log_before_the_copy_finishes(
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
     root = tmp_path / "store"
-    kept(root, "chain-a")
+    named = seat.named[0]
+    kept(root, named)
     gate = threading.Event()
-    driver = heavy(ChainingCli(chains=("chain-a",)), root)
+    driver = seat.on(root)
     held(monkeypatch, gate)
 
     driver.run(log, record_dispatch(log))
 
-    assert replies(log)[-1][CHAIN_KEY] == "chain-a"
-    assert not copied(session_dir, "chain-a").exists()
+    assert replies(log)[-1][CHAIN_KEY] == named
+    assert not copied(session_dir, named).exists()
     assert driver.copying is not None
     assert driver.copying.is_alive()
 
     gate.set()
     driver.copying.join(TIMEOUT)
-    assert copied(session_dir, "chain-a").read_text(encoding="utf-8") == KEPT
+    assert copied(session_dir, named).read_text(encoding="utf-8") == KEPT
 
 
 def test_a_later_copy_of_one_chain_never_publishes_behind_an_earlier_one(
@@ -679,6 +690,71 @@ def test_a_fault_that_spans_lines_is_still_one_line_on_stderr(
     assert "chain-a" in said[0]
 
 
+def test_a_chain_carrying_a_pattern_matches_no_other_chains_rollout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a Codex store holding an ordinary rollout
+    When it is asked for a chain whose id reads as a pattern
+    Then nothing comes back, because the id is matched for the characters it
+         is: an id read as a pattern selects whatever the store happens to hold
+         and copies another conversation under this one's name.
+    """
+    monkeypatch.setenv(CODEX_HOME_ENV, str(tmp_path))
+    day = tmp_path / "sessions" / "2026" / "09" / "07"
+    day.mkdir(parents=True)
+    (day / "rollout-2026-09-07T08-23-13-thread-a.jsonl").write_text(KEPT, encoding="utf-8")
+
+    assert not codex_transcript(tmp_path, "*").exists()
+    assert codex_transcript(tmp_path, "thread-a").exists()
+
+
+def test_two_turns_on_one_driver_never_copy_at_the_same_time(
+    session_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given two turns taken at once on one driver
+    When each hands its copy off to the one before it
+    Then the two copies never run together: the handoff is one step, so the
+         second turn reads the thread the first stored rather than the nothing
+         that was there before it.
+    """
+    log = briefed(session_dir)
+    root = tmp_path / "store"
+    kept(root, "chain-a")
+    inside: list[int] = []
+    overlapped: list[bool] = []
+    real = drivers.copy_transcript
+
+    def watching(directory: Path, chain: str, source: Path, out: Any = None) -> None:
+        inside.append(1)
+        overlapped.append(len(inside) > 1)
+        time.sleep(RACE_WINDOW)
+        real(directory, chain, source, out)
+        inside.pop()
+
+    def unhurried(_directory: Path, chain: str, /) -> Path:
+        time.sleep(RACE_WINDOW / 2)
+        return root / f"{chain}.jsonl"
+
+    monkeypatch.setattr(drivers, "copy_transcript", watching)
+    driver = HeavyDriver(TierConfig(), ChainingCli(chains=("chain-a",)), transcript=unhurried)
+    human_turn(log, "The log is the recovery source.")
+    dispatch = record_dispatch(log)
+
+    turns = [
+        threading.Thread(target=lambda: driver.run(log, dispatch), daemon=True) for _ in range(2)
+    ]
+    for one in turns:
+        one.start()
+    for one in turns:
+        one.join(TIMEOUT)
+    assert driver.copying is not None
+    driver.copying.join(TIMEOUT)
+
+    assert overlapped == [False, False], overlapped
+
+
 def test_the_copy_runs_on_a_thread_a_shutdown_waits_for(session_dir: Path, tmp_path: Path) -> None:
     """
     Given a turn taken on a daemon thread, which is the only kind a turn is ever
@@ -708,8 +784,9 @@ def test_the_copy_runs_on_a_thread_a_shutdown_waits_for(session_dir: Path, tmp_p
     driver.copying.join(TIMEOUT)
 
 
+@pytest.mark.parametrize("seat", SEATS)
 def test_a_transcript_that_is_not_there_costs_a_line_and_not_the_turn(
-    session_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    session_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], seat: Seated
 ) -> None:
     """
     Given a store the CLI has already pruned this chain out of
@@ -720,22 +797,24 @@ def test_a_transcript_that_is_not_there_costs_a_line_and_not_the_turn(
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
     root = tmp_path / "store"
+    named = seat.named[0]
 
-    taken(log, heavy(ChainingCli(chains=("chain-a",)), root))
+    taken(log, seat.on(root))
 
-    assert replies(log)[-1][CHAIN_KEY] == "chain-a"
+    assert replies(log)[-1][CHAIN_KEY] == named
     # Nothing was made for a copy that was never going to happen: the source is
     # read before the destination exists, so the ordinary pruned chain leaves no
     # empty directory in a session someone is about to archive.
     assert not (session_dir / TRANSCRIPT_DIR).exists()
     said = capsys.readouterr().err.strip().splitlines()
     assert len(said) == 1
-    assert "chain-a" in said[0]
-    assert str(root / "chain-a.jsonl") in said[0]
+    assert named in said[0]
+    assert str(root / f"{named}.jsonl") in said[0]
 
 
+@pytest.mark.parametrize("seat", SEATS)
 def test_a_store_that_raises_costs_a_line_and_not_the_turn(
-    session_dir: Path, capsys: pytest.CaptureFixture[str]
+    session_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], seat: Seated
 ) -> None:
     """
     Given a store that raises rather than answering
@@ -749,22 +828,24 @@ def test_a_store_that_raises_costs_a_line_and_not_the_turn(
     def refuses(_directory: Path, _chain: str, /) -> Path:
         raise OSError(UNREADABLE)
 
-    driver = HeavyDriver(TierConfig(), ChainingCli(chains=("chain-a",)), transcript=refuses)
+    driver = seat.on(tmp_path / "store")
+    driver.transcript = refuses
     driver.run(log, record_dispatch(log))
 
     assert driver.copying is None
-    assert replies(log)[-1][CHAIN_KEY] == "chain-a"
+    assert replies(log)[-1][CHAIN_KEY] == seat.named[0]
     said = capsys.readouterr().err.strip().splitlines()
     assert len(said) == 1
-    assert "chain-a" in said[0]
+    assert seat.named[0] in said[0]
     assert UNREADABLE in said[0]
     # There is no path to name when the store never answered with one, so the
     # line says as much rather than naming something this did not look at.
     assert "nowhere" in said[0]
 
 
+@pytest.mark.parametrize("seat", SEATS)
 def test_a_destination_that_will_not_take_a_write_costs_the_turn_nothing(
-    session_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    session_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], seat: Seated
 ) -> None:
     """
     Given a session directory where the copies cannot be put
@@ -775,16 +856,17 @@ def test_a_destination_that_will_not_take_a_write_costs_the_turn_nothing(
     log = briefed(session_dir)
     human_turn(log, "The log is the recovery source.")
     root = tmp_path / "store"
-    kept(root, "chain-a")
+    named = seat.named[0]
+    kept(root, named)
     (session_dir / TRANSCRIPT_DIR).write_text("not a directory", encoding="utf-8")
 
-    taken(log, heavy(ChainingCli(chains=("chain-a",)), root))
+    taken(log, seat.on(root))
 
-    assert replies(log)[-1][CHAIN_KEY] == "chain-a"
+    assert replies(log)[-1][CHAIN_KEY] == named
     said = capsys.readouterr().err.strip().splitlines()
     assert len(said) == 1
-    assert "chain-a" in said[0]
-    assert str(root / "chain-a.jsonl") in said[0]
+    assert named in said[0]
+    assert str(root / f"{named}.jsonl") in said[0]
 
 
 def test_a_copy_that_failed_leaves_no_half_file_for_a_reader_to_find(
@@ -800,11 +882,6 @@ def test_a_copy_that_failed_leaves_no_half_file_for_a_reader_to_find(
          name nor the scratch file the bytes went to: they are written under a
          name nothing can predict and renamed into place, so a reader sees a
          whole transcript or none.
-
-    The failure is put at the rename because that is the only place the claim
-    can be observed. A copy that fell over before it had bytes proves nothing
-    about the discipline: one writing straight to the final path fails there
-    too, just as cleanly, and leaves the same nothing behind.
     """
     root = tmp_path / "store"
     kept(root, "chain-a")

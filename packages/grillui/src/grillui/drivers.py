@@ -63,6 +63,7 @@ human watches a timer against.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
@@ -726,7 +727,10 @@ def codex_transcript(_directory: Path, chain: str, /) -> Path:
     only so both stores answer to one shape.
     """
     home = Path(os.environ.get(CODEX_HOME_ENV) or Path.home() / ".codex")
-    pattern = f"sessions/*/*/*/rollout-*-{chain}.jsonl"
+    # Escaped, because the id is the CLI's: a `*` in one would otherwise match
+    # every rollout in the store and copy another conversation under this
+    # chain's name.
+    pattern = f"sessions/*/*/*/rollout-*-{glob.escape(chain)}.jsonl"
     found = sorted(home.glob(pattern))
     return found[-1] if found else home / pattern
 
@@ -810,9 +814,8 @@ def copy_in_background(
 
     The store is asked here, on the thread that took the turn, so the
     environment naming it is the one the turn ran under. Asked from the copy, it
-    would be read whenever that thread got to it, against an environment the
-    caller may have put back by then -- which for a test is the real store on
-    the developer's own machine.
+    would be read whenever that thread got to it, by which time the environment
+    is whatever the process has since made it.
 
     `after` is the copy the previous turn on this chain started, and this one
     goes behind it. Two copies of one conversation are two snapshots of a file
@@ -1070,6 +1073,11 @@ class HeavyDriver:
     seat: Seat | None = None
     transcript: TranscriptStore = claude_transcript
     _turn: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
+    # Held across reading the copy this driver last started, starting the next
+    # one behind it, and storing that. The three steps are one turn's, and two
+    # turns are two threads here: split between them, they leave two copies of
+    # one chain with no order.
+    _handoff: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
     # The copy this driver's last turn started. The turn never joins it, and
     # nothing else holds a handle to it, so without this the thread is
     # unreachable the moment the turn walks away from it.
@@ -1157,7 +1165,10 @@ class HeavyDriver:
             record_reply(log, self.tier, channel, reply, attribution, context.mootness)
             measured.warn(log, model)
         if chain is not None:
-            self.copying = copy_in_background(log.directory, chain, self.transcript, self.copying)
+            with self._handoff:
+                self.copying = copy_in_background(
+                    log.directory, chain, self.transcript, self.copying
+                )
 
 
 @dataclass
@@ -1183,6 +1194,11 @@ class CodexDriver:
     seat: Seat | None = None
     transcript: TranscriptStore = codex_transcript
     _turn: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
+    # Held across reading the copy this driver last started, starting the next
+    # one behind it, and storing that. The three steps are one turn's, and two
+    # turns are two threads here: split between them, they leave two copies of
+    # one chain with no order.
+    _handoff: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
     # The copy this driver's last turn started. The turn never joins it, and
     # nothing else holds a handle to it, so without this the thread is
     # unreachable the moment the turn walks away from it.
@@ -1258,7 +1274,10 @@ class CodexDriver:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, seat.model)
         if chain is not None:
-            self.copying = copy_in_background(log.directory, chain, self.transcript, self.copying)
+            with self._handoff:
+                self.copying = copy_in_background(
+                    log.directory, chain, self.transcript, self.copying
+                )
 
     def _read_since(self, channel: str, thread: str | None, total: int | None) -> int | None:
         """What this turn was given, out of the running total the thread reports.
