@@ -545,19 +545,30 @@ def test_the_verb_builds_no_store_so_it_can_read_or_write_no_grooming_state(
     assert built == []
 
 
+@pytest.mark.parametrize(
+    ("findings", "comments"),
+    [
+        pytest.param([{"id": "f1", "evidence": f"{APP_PY}:3"}], 1, id="a-finding-with-evidence"),
+        pytest.param([{"id": "f1", "claim": f"{APP_PY}:3"}], 1, id="a-finding-with-only-a-claim"),
+        pytest.param([{"id": "f1", "claim": "nowhere"}], 0, id="a-finding-that-anchors-nothing"),
+        pytest.param([], 0, id="a-clean-verdict-with-no-findings"),
+    ],
+)
 def test_a_verdict_holding_only_the_fields_this_verb_reads_is_accepted(
-    workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    findings: list[dict[str, str]],
+    comments: int,
+    workspace: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The reader takes the head SHA, the findings list and the fields it anchors
-    # on. Requiring any other envelope or finding field would make this verb a
-    # second validator of a document already validated where it was assembled.
+    # Every shape this verb accepts arrives through the loader, because that is
+    # the door a real invocation comes in by. A verdict constructed in a test
+    # proves nothing about what the file reader takes.
     config, verdict = workspace
-    verdict.write_text(
-        json.dumps({"head_sha": HEAD, "findings": [{"id": "f1", "evidence": f"{APP_PY}:3"}]})
-    )
+    verdict.write_text(json.dumps({"head_sha": HEAD, "findings": findings}))
     http = transport(BASE_ROUTES)
     wire(monkeypatch, http)
     result = invoke(config, verdict)
     assert result.exit_code == 0
     (posted,) = http.posted_reviews()
-    assert posted["comments"][0]["path"] == APP_PY
+    assert posted["body"] == verdict.read_text()
+    assert len(posted.get("comments", [])) == comments
