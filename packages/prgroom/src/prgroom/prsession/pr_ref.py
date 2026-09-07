@@ -13,20 +13,17 @@ from typing import Any
 
 # The two fully-qualified PR-ref forms the CLI accepts. ``owner``/``repo`` allow
 # the GitHub-legal character set; ``number`` is a positive integer (``#0`` and a
-# bare ``#`` are rejected so a malformed ref never resolves to PR 0). Its digit
-# run is bounded: a number longer than any repository issues is not a PR number,
-# and an unbounded one reaches a conversion Python refuses.
+# bare ``#`` are rejected so a malformed ref never resolves to PR 0).
 _SLUG = r"[A-Za-z0-9._-]+"
-_OWNER_REPO_HASH = re.compile(rf"^(?P<owner>{_SLUG})/(?P<repo>{_SLUG})#(?P<number>[1-9]\d{{0,8}})$")
+_OWNER_REPO_HASH = re.compile(rf"^(?P<owner>{_SLUG})/(?P<repo>{_SLUG})#(?P<number>[1-9]\d*)$")
 # After the PR number, real GitHub URLs commonly carry a trailing ``/path``
 # (``/files``), a ``#fragment`` (``#discussion_r123``), and/or a ``?query``
 # (``?tab=files``) — any combination. The number is the captured group; anything
 # after it is ignored, so the tail accepts ``/``, ``#``, or ``?`` then the rest.
 _URL = re.compile(
-    rf"^https?://github\.com/(?P<owner>{_SLUG})/(?P<repo>{_SLUG})"
-    rf"/pull/(?P<number>[1-9]\d{{0,8}})(?:[/#?].*)?$"
+    rf"^https?://github\.com/(?P<owner>{_SLUG})/(?P<repo>{_SLUG})/pull/(?P<number>[1-9]\d*)(?:[/#?].*)?$"
 )
-_BARE_NUMBER = re.compile(r"^(?P<number>[1-9]\d{0,8})$")
+_BARE_NUMBER = re.compile(r"^(?P<number>[1-9]\d*)$")
 
 # A full git object id. Abbreviations are refused everywhere a commit is named:
 # a review is pinned by comparing against what GitHub reports, which is always

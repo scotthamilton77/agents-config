@@ -626,20 +626,33 @@ def test_a_hunk_header_number_longer_than_any_file_yields_no_span(
     assert "comments" not in http.posted_reviews()[0]
 
 
-def test_a_pr_number_longer_than_any_repo_is_a_coded_refusal(
+def test_a_ten_digit_pull_request_reaches_the_api(
     workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # The PR number comes from the operator's own argument. Whatever GitHub will
+    # issue, this verb addresses; the parser does not cap what a repository can
+    # number a pull request.
+    big = 1_000_000_000
     config, verdict = workspace
-    http = transport({})
+    pull = f"/repos/octo/demo/pulls/{big}"
+    routes = {
+        ("GET", "/app"): (200, {"slug": "pr-hater"}),
+        ("GET", "/repos/octo/demo/installation"): (200, {"id": 42}),
+        ("POST", "/app/installations/42/access_tokens"): (201, {"token": "tok"}),
+        ("GET", pull): (200, {"head": {"sha": HEAD}}),
+        ("GET", f"{pull}/reviews?per_page={REVIEWS_PER_PAGE}&page=1"): (200, []),
+        ("GET", f"{pull}/files?per_page={FILES_PER_PAGE}&page=1"): (200, FILES),
+        ("POST", f"{pull}/reviews"): (200, {"id": 99}),
+    }
+    http = transport(routes)
     wire(monkeypatch, http)
     result = run_cli(
         "post-verdict",
-        "octo/demo#" + "9" * 5000,
+        f"octo/demo#{big}",
         "--verdict",
         str(verdict),
         "--project-config",
         str(config),
     )
-    assert result.exit_code == 2
-    assert ErrorCode.PRECONDITION_BAD_PR_REF.value in result.output
-    assert http.calls == []
+    assert result.exit_code == 0
+    assert len(http.posted_reviews()) == 1
