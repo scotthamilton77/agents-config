@@ -39,6 +39,7 @@ from grillui.projector import Proposed, fold, node_from_payload, queue
 from grillui.schemas import (
     ANSWER_KINDS,
     APPLY_KIND,
+    DISMISS_KIND,
     FOLD_SHAPED,
     MAP_CHANNEL,
     PROPOSABLE_KINDS,
@@ -302,8 +303,9 @@ class SessionLog:
         offered = self._offered() if _judged_on_options(event) else {}
         problem = rejection_reason(event, self._index.nodes, self._index.threads, offered)
         queued = self._queue() if event.kind in QUEUE_GESTURE_KINDS else {}
+        waiting = self._waiting() if event.kind == DISMISS_KIND else frozenset()
         if problem is None and event.kind in QUEUE_GESTURE_KINDS:
-            problem = _queue_gesture_problem(event, queued)
+            problem = _queue_gesture_problem(event, queued, waiting)
         if problem is not None:
             reason, detail = problem
             return RejectedReceipt(
@@ -364,6 +366,19 @@ class SessionLog:
         one, which is a human-paced act over a log bounded by one grilling.
         """
         return queue(self._entries)
+
+    def _waiting(self) -> frozenset[str]:
+        """Every id the queue is holding, as of right now.
+
+        Wider than the queue beside it, and the difference is exactly what a
+        dismiss may name and an apply may not. A notice is in the queue and is
+        not a change: there is nothing to apply, and the human being done with
+        it is the gesture that lifts the lock a blocking alert took.
+
+        ponytail: one fold per dismiss, which is a human-paced act over a log
+        bounded by one grilling.
+        """
+        return frozenset(item.id for item in fold(self.epoch, self._entries).pending)
 
     def _offered(self) -> dict[str, frozenset[str]]:
         """What each decision offers, as the board has it right now.
@@ -517,7 +532,7 @@ def _amendment(
 
 
 def _queue_gesture_problem(
-    event: EventSubmission, queued: Mapping[str, Proposed]
+    event: EventSubmission, queued: Mapping[str, Proposed], waiting: Set[str]
 ) -> tuple[str, str] | None:
     """Judge an apply or a dismiss against the queue it is acting on.
 
@@ -525,6 +540,13 @@ def _queue_gesture_problem(
     their apply landed when the proposal had already been applied, dismissed or
     never sent is exactly the acknowledgement over a silent no-op this protocol
     exists to make impossible.
+
+    The two gestures are judged against different halves of that queue. An apply
+    reaches only the proposals, because a notice carries no update bytes to put
+    on the board. A dismiss reaches everything queued: a notice is something the
+    human can be done with, and a blocking alert holds its decision shut until
+    they are -- so refusing it here would leave that lock with no gesture of
+    theirs that touches it.
 
     A proposal whose target the human changed while it waited is refused too,
     and only on an apply -- dismissing one changes nothing, so there is nothing
@@ -534,13 +556,13 @@ def _queue_gesture_problem(
     """
     for pending_id in pending_ids(event.payload):
         found = queued.get(pending_id)
-        if found is None:
+        if found is None and not (event.kind == DISMISS_KIND and pending_id in waiting):
             return (
                 REASON_UNKNOWN_PENDING,
                 f"no proposal {pending_id!r} is waiting in this session's queue; it was "
                 f"already applied or dismissed, or it was never sent",
             )
-        if found.conflicted and event.kind == APPLY_KIND:
+        if found is not None and found.conflicted and event.kind == APPLY_KIND:
             return (
                 REASON_PENDING_CONFLICT,
                 f"proposal {pending_id!r} was authored at sequence {found.pending.authored_at} "

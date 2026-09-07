@@ -1044,26 +1044,34 @@ def test_the_grill_master_brief_gives_a_gap_a_kind_and_a_way_out_of_it(tier: str
     Given the grill-master brief on each tier
     When it is read for what to do about something nobody supplied
     Then it names `elicit-alert` as the update that says so, states its three
-         fields, says that a blocking alert locks the decision, and states the
-         one path that unlocks it -- including that withdrawing the alert is not
-         that path.
+         fields, says that a blocking alert locks the decision, and states every
+         path that lifts the lock -- the human's dismissal, the seat's own
+         withdrawal, and its second alert -- naming the field a withdrawal is
+         made with, since the reply contract that defines it is read later.
 
     "Say what you lack instead of supplying it" named no kind for the whole of
     the seat's life, so the gap was said in prose and the board never heard it.
-    The unlock half matters more than it looks: the lock is set by the fold on
-    each replay of the alert, so no gesture of the human's clears it and
-    superseding the alert does not either. A seat that assumes a withdrawal
-    frees the decision leaves the human holding a question they cannot answer.
+    The unlock half matters more than it looks. A seat told that only it can
+    lift the lock rations `blocking` true against a cost the human does not
+    actually pay -- and a seat told the human has an exit spends it where the
+    decision really cannot be answered, which is the only place it belongs.
     """
     brief = system_prompt(tier, GRILL_MASTER)
 
     assert GAP_RULE in brief
     assert "`elicit-alert`" in brief
     assert "`blocking` true locks the decision" in brief
-    assert "withdrawing the alert does not either" in brief
+    assert "dismissing the alert" in brief
+    assert "by withdrawing it -- naming its id in `supersedes`" in brief
+    assert "the reply's list of your own pending items you take back" in brief
+    # `supersedes` is defined in the reply contract, which is read after this
+    # rule -- so the definition travels with the first use or the seat meets the
+    # field as a bare word.
+    assert brief.index(GAP_RULE) > brief.index(OPTION_REFERENCE_RULE)
+    assert brief.index(GAP_RULE) < brief.index(DOCUMENT_FORMAT_RULE)
     assert "whose `text` says what they supplied" in brief
-    assert "That second alert is what releases the lock" in brief
     assert "`blocking` false leaves the decision answerable" in brief
+    assert "no control of theirs unlocks it" not in brief
     assert GAP_RULE not in system_prompt(tier, THREAD_AGENT)
 
 

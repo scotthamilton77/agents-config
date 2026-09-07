@@ -366,6 +366,55 @@ def test_a_withdrawn_proposal_stops_locking_without_leaving_the_queue(
     assert frontier(client) == [SEED_NODE]
 
 
+@pytest.mark.parametrize("blocking", [True, False])
+def test_a_decision_two_things_hold_is_answerable_only_when_both_let_go(
+    blocking: bool, client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a decision carrying both a queued proposal and an alert
+    When the alert is dismissed, and then the proposal is
+    Then the decision is locked throughout and answerable only at the end.
+
+    Neither source speaks for the other. Both are read off the same queue on
+    every fold, so a fold that let the alert's verdict stand for the decision
+    would hand back a decision with a change still waiting on it -- and the
+    human would answer around exactly the change the queue exists to hold.
+    Parametrised over the flag because that failure is one-sided: a
+    non-blocking alert is what silently unlocks, and the blocking case alone
+    would pass either way.
+    """
+    seed_node(client, log.epoch)
+    proposal(client, log.epoch, "invalidate", "kill-1", target=SEED_NODE, why="moot")
+    post(
+        client,
+        log.epoch,
+        event(
+            "elicit-alert",
+            key="alert-1",
+            target=SEED_NODE,
+            text="nobody has read the licence",
+            blocking=blocking,
+        ),
+    )
+    assert board(client)[SEED_NODE]["locked"] is True
+    assert frontier(client) == []
+
+    alert = [
+        one["id"]
+        for one in client.get("/image1").json()["pending"]
+        if one["kind"] == "elicit-alert"
+    ]
+    assert queue_gesture(client, log.epoch, DISMISS_KIND, *alert)["status"] == "accepted"
+
+    assert board(client)[SEED_NODE]["locked"] is True, "the waiting change stopped holding it"
+    assert frontier(client) == []
+
+    queue_gesture(client, log.epoch, DISMISS_KIND, *proposed(client, SEED_NODE))
+
+    assert board(client)[SEED_NODE]["locked"] is False
+    assert frontier(client) == [SEED_NODE]
+
+
 # ── the human's apply ──
 
 
@@ -474,6 +523,8 @@ def test_an_apply_naming_a_proposal_that_is_already_gone_is_refused(
 
     assert again["status"] == "rejected"
     assert again["reason"] == REASON_UNKNOWN_PENDING
+    assert waiting[0] in again["detail"]
+    assert "already applied or dismissed, or it was never sent" in again["detail"]
 
 
 def test_an_apply_of_a_proposal_the_human_moved_under_is_a_conflict(
@@ -609,25 +660,69 @@ def test_a_dismiss_naming_nothing_in_the_queue_is_refused(
 
     assert receipt["status"] == "rejected"
     assert receipt["reason"] == REASON_UNKNOWN_PENDING
+    assert "no-such-proposal#0" in receipt["detail"]
+    assert "already applied or dismissed, or it was never sent" in receipt["detail"]
 
 
-def test_a_notice_is_not_something_to_apply(client: TestClient, log: SessionLog) -> None:
+# Both notice kinds, each with the payload its own schema asks for: an alert
+# must say whether it blocks, and an informational has no such field to say it
+# with.
+NOTICES = [("informational", {}), ("elicit-alert", {"blocking": False})]
+
+
+@pytest.mark.parametrize(("kind", "extra"), NOTICES)
+def test_a_notice_is_not_something_to_apply(
+    kind: str, extra: dict[str, Any], client: TestClient, log: SessionLog
+) -> None:
     """
-    Given an informational waiting in the queue
+    Given a notice of either kind waiting in the queue
     When the human tries to apply it
     Then the write is refused.
 
     Both live in the queue and only one is a change. Applying a notice would be
-    a gesture with nothing behind it, answered `accepted` all the same.
+    a gesture with nothing behind it, answered `accepted` all the same -- and an
+    alert the human may now dismiss is exactly where that mistake is reachable.
     """
     seed_node(client, log.epoch)
-    post(client, log.epoch, event("informational", key="note-1", text="worth knowing"))
+    post(
+        client,
+        log.epoch,
+        event(kind, key="note-1", target=SEED_NODE, text="worth knowing", **extra),
+    )
     notice_id = client.get("/image1").json()["pending"][0]["id"]
 
     receipt = queue_gesture(client, log.epoch, APPLY_KIND, notice_id)
 
     assert receipt["status"] == "rejected"
     assert receipt["reason"] == REASON_UNKNOWN_PENDING
+
+
+@pytest.mark.parametrize(("kind", "extra"), NOTICES)
+def test_a_notice_is_something_to_dismiss(
+    kind: str, extra: dict[str, Any], client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a notice of either kind waiting in the queue
+    When the human dismisses it
+    Then the write is accepted and the notice leaves the queue.
+
+    A dismiss is the human ending an item, and a notice is an item: refusing it
+    would leave a blocking alert holding its decision shut with no gesture of
+    theirs that reaches it. Applying is the half that stays proposals-only,
+    because a notice carries no update to materialise.
+    """
+    seed_node(client, log.epoch)
+    post(
+        client,
+        log.epoch,
+        event(kind, key="note-1", target=SEED_NODE, text="worth knowing", **extra),
+    )
+    notice_id = client.get("/image1").json()["pending"][0]["id"]
+
+    receipt = queue_gesture(client, log.epoch, DISMISS_KIND, notice_id)
+
+    assert receipt["status"] == "accepted"
+    assert client.get("/image1").json()["pending"] == []
 
 
 # ── what the agent is told it is looking at ──
