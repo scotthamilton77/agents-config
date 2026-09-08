@@ -108,16 +108,15 @@ is still bent and the request is refused. It carries no `failures`; nothing fail
 `abandoned_lenses` is required on both shapes, naming the staffed lenses the round never dispatched;
 present even when empty.
 
-A halted round is never clean and never complete, and `verdict` says so outright. Its findings are
-real and still not a verdict on the change.
+A halted round's findings are real and still not a verdict on the change.
 
 ## Where a verdict is posted
 
 Outside the reviewed branch: a submitted, comment-only pull request review by the reviewing
-GitHub App — the JSON as its body, inline comments only for the findings that name a line —
-pinned to the reviewed head; the App approves in a separate review. A payload any other identity
-posts is not a verdict, and one whose `head_sha` is not the current head is stale and treated as
-absent.
+GitHub App, pinned to the reviewed head, inline comments only for the findings that name a line;
+the App approves separately. Its body summarises the round above a collapsed `json` block: the
+envelope is that block, verbatim, not the whole body. Any other identity's payload is not a
+verdict, and one whose `head_sha` is not the current head is stale and treated as absent.
 
 ## When a round is complete
 
