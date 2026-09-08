@@ -844,21 +844,26 @@ def test_the_thread_agent_is_told_the_shape_its_driver_reads(tier: str) -> None:
     Given the thread agent's brief on each tier
     When it is read for what to send back
     Then it says the ordinary reply is prose, that the object form exists for
-         the offer and carries `text` beside it, and that anything else is
-         recorded as the turn's prose exactly as written.
+         the two exceptions and carries `text` beside them, that it names both
+         keys, and that anything else is recorded as the turn's prose exactly as
+         written.
 
     The driver reads a thread reply as prose unless it is an object carrying
-    `text` and the offer. The grill-master's brief spends a page on a document
-    shape; this seat's said only when to write one key of an object it was never
-    told the rest of. A seat that fills that in with the shape it read about
-    elsewhere has its JSON published to the human verbatim.
+    `text` and one of the two keys. The grill-master's brief spends a page on a
+    document shape; this seat's said only when to write one key of an object it
+    was never told the rest of. A seat that fills that in with the shape it read
+    about elsewhere has its JSON published to the human verbatim -- and a seat
+    told the object exists for one exception guesses at the envelope for the
+    other.
     """
     brief = system_prompt(tier, THREAD_AGENT)
 
     assert THREAD_REPLY_RULE in brief
     assert "Your reply is what you are saying to the human, as plain prose" in brief
     assert "no JSON, no markdown wrapper, no keys" in brief
-    assert "send a JSON object carrying `text`, your prose, and `proposed_answer`" in brief
+    assert "send a JSON object carrying `text`, your prose, and the key that exception" in brief
+    assert "`needs_to_read` for the read request, `proposed_answer` for the offer" in brief
+    assert "One object may carry both" in brief
     assert "recorded as the turn's prose exactly as you wrote it" in brief
     assert THREAD_REPLY_RULE not in system_prompt(tier, GRILL_MASTER)
 

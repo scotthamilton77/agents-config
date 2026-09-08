@@ -1360,7 +1360,7 @@ def test_a_declaring_reply_is_read_through_whatever_fence_it_arrived_in(
     Then all three read as the same document, because where the model put its
          newlines is presentation and not what the turn said.
     """
-    prose, _, _, proposal = declared_updates(reply)
+    prose, _, _, proposal, _reads = declared_updates(reply)
 
     assert prose == DECLARING["text"], layout
     assert proposal == DECLARING["proposed_answer"], layout

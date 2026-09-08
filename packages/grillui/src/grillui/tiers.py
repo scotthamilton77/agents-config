@@ -1100,18 +1100,33 @@ THREAD_AGENT_MANDATE = (
 # as a thing the turn does rather than a thing it asks, so the human is never
 # handed the work of declining one.
 # What the driver reads back from a thread seat, stated as the driver reads it.
-# Prose is the whole of the ordinary turn: an object is what the one offer needs
-# a place to ride on, and a half-shaped object is recorded as prose exactly as
-# written -- so a seat that guesses at a document shape has its guess published
+# Prose is the whole of the ordinary turn: an object is what the offer and the
+# read request need a place to ride on, and a half-shaped object is recorded as
+# prose exactly as written -- so a seat that guesses at a document shape has its guess published
 # to the human verbatim.
 THREAD_REPLY_RULE = (
     "Your reply is what you are saying to the human, as plain prose. Send that and nothing "
     "else on an ordinary turn: no JSON, no markdown wrapper, no keys.\n"
-    "The one exception is the offer below. To make it, send a JSON object carrying `text`, "
-    "your prose, and `proposed_answer`, the offer. The backend records your prose as the turn "
-    "either way, and reads the offer only out of that object.\n"
+    "The two exceptions are the read request and the offer below. To make either, send a JSON "
+    "object carrying `text`, your prose, and the key that exception names: `needs_to_read` for "
+    "the read request, `proposed_answer` for the offer. One object may carry both. The backend "
+    "records your prose as the turn either way, and reads each of the two only out of that "
+    "object.\n"
     "Anything else you send is recorded as the turn's prose exactly as you wrote it, fences "
     "and keys included, and the human reads it that way."
+)
+
+# What the seat does when the answer is behind something it cannot open. Stated
+# as the request it is: the seat has no tool and will not be given one, so what
+# it names here is an input, and the backend routes it to a seat that has one.
+READ_REQUEST_RULE = (
+    "You cannot read this project: no files, no repository, no search, no web. When you cannot "
+    "answer without reading something you were not given, say so in your prose and send "
+    "`needs_to_read` beside `text`: a list of strings naming what you would have to read, each "
+    "a path or a pattern in the project, or a document outside it. Name what you would read, "
+    "not what you think it says -- do not guess at the content, and do not answer as though "
+    "you had read it. The backend takes the list as a request to hand this conversation to a "
+    "seat that can read, and the human is shown what you asked for."
 )
 
 CONVERGENCE_RULE = (
@@ -1179,7 +1194,7 @@ ROLE_RULES: dict[str, list[str]] = {
         BASIS_RULE,
         SUPERSEDE_RULE,
     ],
-    THREAD_AGENT: [THREAD_REPLY_RULE, CONVERGENCE_RULE],
+    THREAD_AGENT: [THREAD_REPLY_RULE, READ_REQUEST_RULE, CONVERGENCE_RULE],
 }
 
 

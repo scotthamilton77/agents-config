@@ -382,6 +382,12 @@ PROPOSED_ANSWER_KEY = "proposed_answer"
 PROPOSAL_KEY = "proposal"
 FROM_THREAD_KEY = "from_thread"
 
+# What a thread seat asks to read when it cannot answer without reading
+# something it was not given: a list of non-empty strings, each a path or
+# pattern in the project or a document outside it. A payload key on the turn
+# that made the request, riding the same object the offer does.
+NEEDS_TO_READ_KEY = "needs_to_read"
+
 # The grill-master's judgement on the decisions a gesture put in question, and
 # whether it takes the grilling to be over. Both ride payload keys on the turn's
 # own entry, the way `proposed_answer` rides a thread turn's: a ruling is
@@ -1671,6 +1677,23 @@ def read_turns(payload: Mapping[str, Any], actor: Actor, timestamp: str) -> list
     if isinstance(text, str) and text:
         return [_turn(actor, text, timestamp, tier)]
     return []
+
+
+def reads_asked(payload: Mapping[str, Any]) -> list[str]:
+    """What this turn asked to read, or nothing where it asked for nothing.
+
+    One reader for the one shape, asked by everything that has an opinion about
+    the field: the driver deciding whether the reply is a declaring shape, the
+    driver writing the payload, and the conversation the seat above is handed.
+    A list of non-empty strings is the whole of what counts -- anything else is
+    a seat guessing at a shape, and a guess is the turn's prose.
+    """
+    asked = payload.get(NEEDS_TO_READ_KEY)
+    if not isinstance(asked, list) or not asked:
+        return []
+    if not all(isinstance(one, str) and one.strip() for one in asked):
+        return []
+    return list(asked)
 
 
 def _who(raw: object, fallback: Actor) -> Actor:

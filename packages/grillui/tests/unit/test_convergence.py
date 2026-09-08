@@ -749,7 +749,7 @@ def test_a_reply_document_carrying_a_proposal_is_read_as_prose_and_an_offer(
     Then the prose is the document's text rather than its raw bytes, and the
          proposal is carried out beside the updates.
     """
-    prose, _, _, proposal = declared_updates(json.dumps(document))
+    prose, _, _, proposal, _reads = declared_updates(json.dumps(document))
 
     if expected is None and "proposed_answer" not in document:
         assert prose == json.dumps(document), case

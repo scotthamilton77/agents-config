@@ -35,6 +35,7 @@ is read back out of the log file's bytes.
 
 from __future__ import annotations
 
+import json
 import threading
 from typing import TYPE_CHECKING, Any
 
@@ -55,8 +56,8 @@ from conftest import (
 )
 from fastapi.testclient import TestClient
 
-from grillui.drivers import FastDriver, HeavyDriver
-from grillui.escalation import CONDITION_IRREDUCIBLE
+from grillui.drivers import POLICY_MOVED, FastDriver, HeavyDriver
+from grillui.escalation import CONDITION_IRREDUCIBLE, CONDITION_TOOL_NEED
 from grillui.lane import Lane
 from grillui.log import LOG_FILE, SessionLog
 from grillui.schemas import (
@@ -67,6 +68,7 @@ from grillui.schemas import (
     HEAVY_TIER,
     MAP_CHANNEL,
     MODEL_KEY,
+    NEEDS_TO_READ_KEY,
     NOTICE_KINDS,
     RECOMMENDATION_KEY,
     STATUS_KIND,
@@ -111,6 +113,11 @@ THREAD_OPENED = "How long is a session kept?"
 IRREDUCIBLE_ASKED = "You keep rewording it -- that is not the question."
 IRREDUCIBLE_AGAIN = "The trade-off is what I cannot resolve."
 LATER_ASKED = "And what does that cost to store?"
+# What the first rung sends when the answer is behind something it cannot open.
+# The reads are two, so "the evidence named what was asked for" cannot pass on a
+# recommendation that carried the condition and dropped the list.
+WANTED = ["src/grillui/log.py", "the vendor's retention note"]
+ASKED_TO_READ_REPLY = json.dumps({"text": FAST_SAID, NEEDS_TO_READ_KEY: WANTED})
 
 
 def human(kind: str, channel: str, key: str, /, **payload: Any) -> EventSubmission:
@@ -146,7 +153,9 @@ def opened(thread: str, key: str, text: str, **payload: Any) -> EventSubmission:
     )
 
 
-def both_tiers(policy: str = POLICY_GATED) -> tuple[FastDriver, HeavyDriver, ScriptedCli]:
+def both_tiers(
+    policy: str = POLICY_GATED, said: str | None = None
+) -> tuple[FastDriver, HeavyDriver, ScriptedCli]:
     """Both real drivers over scripted transports, plus the CLI to read the
     heavy turns back off.
 
@@ -158,12 +167,16 @@ def both_tiers(policy: str = POLICY_GATED) -> tuple[FastDriver, HeavyDriver, Scr
     condition that the policy has an opinion about. It defaults to what an
     unconfigured session gets, so every check written before the policy existed
     still states the case it always stated.
+
+    `said` is what the first rung answers with, for the one condition that is
+    read off the reply rather than off the human's turn. It defaults to the
+    reply every other check here was written against.
     """
     cli = ScriptedCli(reply=document(text=HEAVY_SAID))
     return (
         FastDriver(
             TierConfig(fast_model=FAST_MODEL, escalation_policy=policy),
-            ScriptedFast(reply=document(text=FAST_SAID)),
+            ScriptedFast(reply=document(text=FAST_SAID) if said is None else said),
         ),
         HeavyDriver(TierConfig(heavy_model=HEAVY_MODEL), cli),
         cli,
@@ -687,3 +700,123 @@ def test_a_human_turn_arriving_the_instant_the_reply_lands_still_goes_to_the_exp
 
     assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, HEAVY_TIER]
     assert len(transfers(log, MAP_CHANNEL)) == 1
+
+
+# ── the capability request: the one condition read off the reply ──
+
+
+def conditions(log: SessionLog) -> list[str | None]:
+    """The condition each agent reply recommended, in order, or None where it
+    recommended nothing."""
+    return [payload.get(RECOMMENDATION_KEY, {}).get("condition") for payload in replies(log)]
+
+
+def test_a_thread_seat_asking_to_read_recommends_and_moves_nothing_under_the_default(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a session on the default policy whose thread seat asks to read two
+         things it was not given
+    When the turn lands
+    Then the reply carries the capability condition on its attribution with both
+         reads in its evidence, the lane records no transfer, and the next turn
+         on that thread is still the first rung's.
+
+    The default's promise is the same for the fourth condition as for the three:
+    the recommendation is data the human acts on, and a channel that moved
+    itself would be the seat buying an expert turn by asking for one.
+    """
+    seed_node(client, log.epoch, NODE)
+    fast, heavy, _cli = both_tiers(said=ASKED_TO_READ_REPLY)
+    lane = Lane(log, fast, heavy)
+
+    run_turns(lane, opened(MINE, "open-mine", THREAD_OPENED))
+    run_turns(lane, said(MINE, "mine-after", LATER_ASKED))
+
+    assert conditions(log) == [CONDITION_TOOL_NEED, CONDITION_TOOL_NEED]
+    evidence = replies(log)[0][RECOMMENDATION_KEY]["evidence"]
+    for one in WANTED:
+        assert one in evidence, evidence
+    assert transfers(log, MINE) == []
+    assert waited_on(log, MINE) == [FAST_TIER, FAST_TIER]
+
+
+def test_under_the_autonomous_policy_the_request_moves_that_thread_once_and_only_once(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an autonomous session whose thread seat asks to read something
+    When the policy moves the thread, the expert takes the next turn, and the
+         human then sends the thread back down onto a seat that asks again
+    Then the lane carries exactly one transfer, naming the capability condition;
+         the turn after the first ask is the expert's; the human's return takes
+         the one after that back to the first rung; and the second ask carries
+         its recommendation on the attribution while buying nothing.
+
+    Capped where the three conditions on the human's own turns are standing. The
+    cheap seat would otherwise hold a lever it can pull every turn: one ask per
+    channel is all a seat that cannot read needs, because the seat it hands to
+    can.
+    """
+    seed_node(client, log.epoch, NODE)
+    fast, heavy, _cli = both_tiers(POLICY_AUTONOMOUS, ASKED_TO_READ_REPLY)
+    lane = Lane(log, fast, heavy)
+
+    run_turns(lane, opened(MINE, "open-mine", THREAD_OPENED))
+    run_turns(lane, said(MINE, "on-the-expert", LATER_ASKED))
+    run_turns(lane, said(MINE, "returned", "And the retention window?", **{TRANSFER_FLAG: False}))
+
+    assert transfers(log, MINE) == [POLICY_MOVED + CONDITION_TOOL_NEED]
+    assert waited_on(log, MINE) == [FAST_TIER, HEAVY_TIER, FAST_TIER]
+    assert conditions(log) == [CONDITION_TOOL_NEED, None, CONDITION_TOOL_NEED]
+
+
+def test_the_cap_is_this_conditions_alone_and_the_human_conditions_stay_standing(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an autonomous session whose thread seat asks to read on every turn
+    When the policy has already moved that thread on the request, the human
+         sends it back down, and their next turn meets one of the three
+         conditions read off their own words
+    Then the lane writes a second transfer, naming that condition.
+
+    The cap is on the condition rather than on the channel. A cap that read the
+    channel would silence the standing policy for the rest of the session on the
+    strength of one request the seat made.
+    """
+    seed_node(client, log.epoch, NODE)
+    fast, heavy, _cli = both_tiers(POLICY_AUTONOMOUS, ASKED_TO_READ_REPLY)
+    lane = Lane(log, fast, heavy)
+
+    run_turns(lane, opened(MINE, "open-mine", THREAD_OPENED))
+    run_turns(lane, said(MINE, "returned", IRREDUCIBLE_ASKED, **{TRANSFER_FLAG: False}))
+
+    assert transfers(log, MINE) == [
+        POLICY_MOVED + CONDITION_TOOL_NEED,
+        POLICY_MOVED + CONDITION_IRREDUCIBLE,
+    ]
+
+
+def test_a_thread_that_spent_the_cap_leaves_another_threads_first_move_to_buy(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an autonomous session whose seat asks to read on every thread
+    When one thread has already spent its move on the request and a second
+         thread's seat asks
+    Then each thread carries its own transfer.
+
+    The cap is one channel's. Escalating one thread says nothing about any
+    other, and a cap kept for the session would answer the second thread's seat
+    by leaving it stuck on a rung that cannot read.
+    """
+    seed_node(client, log.epoch, NODE)
+    fast, heavy, _cli = both_tiers(POLICY_AUTONOMOUS, ASKED_TO_READ_REPLY)
+    lane = Lane(log, fast, heavy)
+
+    run_turns(lane, opened(MINE, "open-mine", THREAD_OPENED))
+    run_turns(lane, opened(OTHER, "open-other", THREAD_OPENED))
+
+    assert transfers(log, MINE) == [POLICY_MOVED + CONDITION_TOOL_NEED]
+    assert transfers(log, OTHER) == [POLICY_MOVED + CONDITION_TOOL_NEED]

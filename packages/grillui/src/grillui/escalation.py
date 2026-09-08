@@ -19,6 +19,14 @@ Three conditions, all decidable from the transcript and the board:
 Asking a sharpening question back is the ordinary move and is not one of them, so
 a transcript satisfying none of the three yields no recommendation at all.
 
+A fourth is different in kind and is read off the reply rather than off the
+human's turn: the seat asking to read something it was not given. A thread seat
+holds no tool and never will, so this is a request for a capability rather than
+an opinion about its own reach -- the thing the rule above refuses. It is read
+out of a closed key the seat either sent or did not, never out of its prose, and
+it is judged last, so the three above keep the precedence and the behaviour they
+have.
+
 Recommending is the whole of what happens here. Who acts on it is the session's
 escalation policy, and nothing in this module moves a turn to another tier
 either way. Which tier a channel is on afterwards is the other question this
@@ -41,10 +49,11 @@ Two of them are read here, off the board and before any model is called:
   the next clerical gesture is first-rung again with no entry to undo.
 - **whether the human has said twice that the first rung was not enough.** A
   dismissal of a first-rung seat's proposal is the one wordless way they say a
-  turn was wrong; the counter it feeds is the lane's, and what is read here is
-  which dismissals are that gesture and whether the policy has already moved
-  this channel. That second reading is what makes the move once-per-session:
-  the entry is sticky by GUI-D35's own rule, so a channel the human took back
+  turn was wrong. Two readings here serve it and neither decides anything:
+  which dismissals are that gesture, and whether the policy has already moved a
+  channel. The counter is the lane's, and so is the move -- it asks both and
+  writes the entry under one hold of the append lock, which is what makes the
+  move once per session. The entry is sticky, so a channel the human took back
   down stays down rather than being bought again by the next signal.
 
 One hand-up is not a recommendation at all. Where the human's gesture leaves
@@ -80,6 +89,7 @@ from grillui.schemas import (
     TRANSFER_SOURCE_POLICY,
     MootnessObligation,
     read_turns,
+    reads_asked,
 )
 
 if TYPE_CHECKING:
@@ -94,6 +104,12 @@ GRILL_MASTER_ACTOR = "grill-master"
 CONDITION_COMMITMENT = "commitment asked on a decision two or more decisions depend on"
 CONDITION_IRREDUCIBLE = "reframing rejected, or the trade-off named as what cannot be resolved"
 CONDITION_MULTIPLE = "three or more decisions weighed at once"
+CONDITION_TOOL_NEED = "the seat asked to read something it was not given"
+
+# How the request reaches the seat above, as its own line in the channel's
+# conversation. Worded as the first-rung seat speaking, because that is what it
+# is and that is where the line sits.
+ASKED_TO_READ = "I asked to read, having no way to read it from this seat: "
 
 DEPENDENTS_THRESHOLD = 2
 DECISIONS_THRESHOLD = 3
@@ -169,6 +185,14 @@ def turns_of(entries: Sequence[LogEntry], channel: str = MAP_CHANNEL) -> list[Tu
     Read from the log rather than from the images, because a turn's target is
     what the dependent count needs and the images keep answers on the decision
     rather than on the turn that gave them.
+
+    A turn that asked to read something says so on a line of its own, beside the
+    prose it rode in on. Here rather than in the turn reader the page shares,
+    because the human already has the request from two directions: the seat says
+    it in its own prose, and the transfer control carries the evidence naming
+    what was asked for. What the seat above gets is this conversation and
+    nothing else, so a request stated nowhere in it is one that seat never
+    hears.
     """
     turns: list[Turn] = []
     for entry in entries:
@@ -179,6 +203,9 @@ def turns_of(entries: Sequence[LogEntry], channel: str = MAP_CHANNEL) -> list[Tu
                 Turn(who=turn.who, text=turn.text)
                 for turn in read_turns(entry.payload, entry.actor, entry.timestamp)
             )
+            asked = reads_asked(entry.payload)
+            if asked:
+                turns.append(Turn(who=entry.actor, text=ASKED_TO_READ + ", ".join(asked)))
         elif entry.kind == "answer":
             turns.append(_answer_turn(entry))
         elif entry.kind == "informational":
@@ -231,7 +258,9 @@ def _policy_transfer(entry: LogEntry, channel: str) -> bool:
     )
 
 
-def policy_transferred(entries: Sequence[LogEntry], channel: str) -> bool:
+def policy_transferred(
+    entries: Sequence[LogEntry], channel: str, condition: str | None = None
+) -> bool:
     """Whether the policy has ever moved this channel up.
 
     Asked before writing another such entry, and answered over the whole log
@@ -242,8 +271,21 @@ def policy_transferred(entries: Sequence[LogEntry], channel: str) -> bool:
     successor process asks it of the same record and reaches the same answer --
     the counter feeding it is one tenure's, and this is what keeps a restart
     from spending the transfer twice.
+
+    `condition` narrows the question to one condition's own moves, which is what
+    a condition capped at one move per channel asks. The conditions read off the
+    human's turns are standing and ask the unnarrowed question: the human said
+    the thing again, and a policy that answered only the first time would be a
+    policy that stopped working. The capability request is the seat's own, so
+    the cheap seat would otherwise hold a lever it can pull every turn to buy
+    another expert turn -- once per channel is the whole of what a seat that
+    cannot read needs, since the seat it hands to can.
     """
-    return any(_policy_transfer(entry, channel) for entry in entries)
+    return any(
+        _policy_transfer(entry, channel)
+        and (condition is None or condition in str(entry.payload.get("detail", "")))
+        for entry in entries
+    )
 
 
 def dismisses_first_rung(
@@ -362,18 +404,60 @@ def transfer_source(entries: Sequence[LogEntry], channel: str) -> str | None:
     return TRANSFER_SOURCE_POLICY if moved is not None and moved.kind == STATUS_KIND else None
 
 
+def asked_to_read(reads: Sequence[str], channel: str) -> Recommendation | None:
+    """The fourth condition: the seat asked to read something it was not given.
+
+    The one condition read off the reply rather than off the human's turn, and
+    the only one that may be. The founding rule here is that a model's opinion
+    of its own reach is not evidence -- a model asked whether a question exceeds
+    it judges generously and answers anyway. A capability request is not that
+    judgement. The thread seat holds no tool, as a fact about how it is seated
+    and not as an assessment: what it names here is an input it does not have,
+    and whether it has one is decidable without asking it.
+
+    That admissibility is why the field is closed. It is read out of a key the
+    seat either sent or did not, and never out of prose -- a reader matching on
+    wording would fire on a seat musing that the code would help, which is the
+    self-assessment wearing this condition's clothes. A malformed field is no
+    field: the shape reader has already dropped it by the time this is asked.
+
+    Thread channels only. The map's author writes the board rather than reading
+    the project, and the map has its own hand-ups for the judgements it owes.
+
+    Because the recommendation rides the reply's own attribution, this is asked
+    of the reply being recorded rather than of the log -- the entry does not
+    exist yet when the answer has to be on it.
+    """
+    if channel == MAP_CHANNEL or not reads:
+        return None
+    return Recommendation(
+        condition=CONDITION_TOOL_NEED,
+        evidence=f"the seat asked to read {', '.join(reads)}, which it has no way to read",
+    )
+
+
 def recommend(
-    image: Image2, turns: Sequence[Turn], channel: str = MAP_CHANNEL
+    image: Image2,
+    turns: Sequence[Turn],
+    channel: str = MAP_CHANNEL,
+    reads: Sequence[str] = (),
 ) -> Recommendation | None:
     """The condition this turn meets, or None when it meets none.
 
-    Only the human's own last turn is judged. What the agent said back is not
-    evidence about the question's weight -- it is the thing that would turn this
-    into the self-assessment the conditions exist to replace.
+    Of the human's own last turn, three conditions are judged. What the agent
+    said back is not evidence about the question's weight -- it is the thing
+    that would turn this into the self-assessment the conditions exist to
+    replace.
+
+    `reads` is what the reply asked to read, and it is judged after those three
+    rather than before them. A turn meeting one of the human's conditions as
+    well is escalated on that one, which costs the request nothing: the channel
+    moves either way, and the condition capped at one move per channel is left
+    unspent for a turn that has nothing else to escalate on.
     """
     latest = next((turn for turn in reversed(turns) if turn.who == "human"), None)
     if latest is None:
-        return None
+        return asked_to_read(reads, channel)
     # The typed apostrophe and the curly one a page produces are the same word.
     text = latest.text.lower().replace("\u2019", "'")
     target = latest.target or _anchor(image, channel)
@@ -401,7 +485,7 @@ def recommend(
             condition=CONDITION_MULTIPLE,
             evidence=f"the turn puts {', '.join(weighed)} in play at once",
         )
-    return None
+    return asked_to_read(reads, channel)
 
 
 ANSWER_KIND = "answer"

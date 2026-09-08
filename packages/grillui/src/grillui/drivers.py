@@ -31,8 +31,8 @@ all.** The two roles answer in different shapes. A grill-master turn is the
 map document and nothing else -- notice, updates, withdrawals, rulings and
 the stop judgement in one object, validated here, retried once on this seat
 when it does not, and handed up rather than shown to the human as the bytes it
-arrived in. A thread agent's turn is prose, optionally carrying the one offer
-it may make. Either way the turn is submitted as a single gesture, so what the
+arrived in. A thread agent's turn is prose, optionally carrying the offer or the
+request to read that it may make. Either way the turn is submitted as a single gesture, so what the
 human is told and what the turn declared arrive together or not at all, on the
 channel the turn ran on, through the same appender the page writes through --
 which is what makes the sole-author rule structural: a thread agent's updates
@@ -81,7 +81,14 @@ import httpx
 from pydantic import ValidationError
 
 from grillui.dispatch import GRILL_MASTER
-from grillui.escalation import in_expert_mode, recommend, transfer_source, turns_of
+from grillui.escalation import (
+    CONDITION_TOOL_NEED,
+    in_expert_mode,
+    policy_transferred,
+    recommend,
+    transfer_source,
+    turns_of,
+)
 from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import TRANSCRIPT_DIR, PayloadRefusedError
 from grillui.projector import fold
@@ -97,6 +104,7 @@ from grillui.schemas import (
     HEAVY_TIER,
     MAP_CHANNEL,
     MODEL_KEY,
+    NEEDS_TO_READ_KEY,
     PROMPT_TOKENS_KEY,
     PROPOSED_ANSWER_KEY,
     RECOMMENDATION_KEY,
@@ -117,6 +125,7 @@ from grillui.schemas import (
     Ruling,
     Stop,
     fault_summary,
+    reads_asked,
     update_problem,
 )
 from grillui.tiers import (
@@ -984,7 +993,11 @@ POLICY_MOVED = "the escalation policy moved this channel to the expert tier: "
 
 
 def advise(
-    log: SessionLog, entries: Sequence[LogEntry], channel: str, attribution: dict[str, Any]
+    log: SessionLog,
+    entries: Sequence[LogEntry],
+    channel: str,
+    attribution: dict[str, Any],
+    reads: Sequence[str] = (),
 ) -> Recommendation | None:
     """The escalation condition this turn met, put on its attribution.
 
@@ -992,11 +1005,43 @@ def advise(
     here: both seats on the first rung owe the same recommendation, and one that
     only the OpenRouter seat made would go silent the moment a channel was
     seated elsewhere.
+
+    `reads` is what this reply asked to read, and it is the one condition read
+    off the reply rather than off the log. It is passed in rather than looked
+    up, because the recommendation rides the reply's own attribution and the
+    reply is not on the log yet -- an entry cannot carry a reading of itself.
     """
-    advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel)
+    advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel, reads)
     if advice is not None:
         attribution[RECOMMENDATION_KEY] = advice.as_payload()
     return advice
+
+
+def capped(entries: Sequence[LogEntry], channel: str, advice: Recommendation | None) -> bool:
+    """Whether the policy has already spent this condition on this channel.
+
+    Only the capability request is capped, and it is capped at one move per
+    channel for the whole session. The three conditions read off the human's own
+    turns are standing: the human said the thing again, and a policy that
+    answered only the first time would have stopped working. This one is the
+    seat's own request, so an uncapped version hands the cheap seat a lever it
+    can pull every turn to buy another expert turn -- and one hand-up is all the
+    request needs, because the seat it hands to can read.
+
+    Read over the whole log rather than off the channel's current mode, so a
+    channel the human sent back down after such a move is not bought again by
+    the next reply asking for the same thing. The way back down is theirs.
+
+    Asked of the log as it stands under the hold that writes the entry, never of
+    the reading the turn opened with. Turns on a channel run on threads of their
+    own, so two of them read the log before either writes, and a cap decided
+    against those readings is a cap they pass together.
+    """
+    return (
+        advice is not None
+        and advice.condition == CONDITION_TOOL_NEED
+        and policy_transferred(entries, channel, CONDITION_TOOL_NEED)
+    )
 
 
 @dataclass
@@ -1036,7 +1081,7 @@ class FastDriver:
             self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, model
         )
         attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
-        advice = advise(log, entries, channel, attribution)
+        advice = advise(log, entries, channel, attribution, declared_updates(reply)[4])
         # The reply and everything it produces land under one hold of the
         # append lock -- the same discipline the lane uses to keep a turn and
         # the word about it adjacent. Two separate appends leave a window: a
@@ -1053,7 +1098,8 @@ class FastDriver:
         # is written, and nothing else could have read the log in between.
         with log.appending():
             record_reply(log, self.tier, channel, reply, attribution, context.mootness)
-            if advice is not None and self.config.autonomous:
+            spend = self.config.autonomous and not capped(log.entries(), channel, advice)
+            if advice is not None and spend:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, model)
 
@@ -1264,13 +1310,14 @@ class CodexDriver:
         attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
         if chain is not None:
             attribution[CHAIN_KEY] = chain
-        advice = advise(log, entries, channel, attribution)
+        advice = advise(log, entries, channel, attribution, declared_updates(reply)[4])
         # One hold of the append lock, for the reason every other seat takes
         # one: the transfer a policy buys and the warning this turn measured are
         # about the reply immediately above them.
         with log.appending():
             record_reply(log, self.tier, channel, reply, attribution, context.mootness)
-            if advice is not None and self.config.autonomous:
+            spend = self.config.autonomous and not capped(log.entries(), channel, advice)
+            if advice is not None and spend:
                 log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
             measured.warn(log, seat.model)
         if chain is not None:
@@ -1413,12 +1460,12 @@ def _write_json(path: Path, payload: Any) -> None:
 
 def declared_updates(
     reply: str,
-) -> tuple[str, list[dict[str, Any]], list[str], dict[str, Any] | None]:
-    """What the turn said, the map updates it declared, what it withdrew, and
-    the answer it offered.
+) -> tuple[str, list[dict[str, Any]], list[str], dict[str, Any] | None, list[str]]:
+    """What the turn said, the map updates it declared, what it withdrew, the
+    answer it offered, and what it asked to read.
 
     A reply is prose unless it is an object carrying `text` and at least one of
-    the three -- anything else, including JSON that is not this shape, is what
+    the four -- anything else, including JSON that is not this shape, is what
     the agent said and is recorded as such. Guessing at a half-shaped object
     would author board changes out of a reply that never asked for any.
 
@@ -1431,17 +1478,24 @@ def declared_updates(
     Withdrawing is separate from updating because the common case carries no
     board change at all: a turn that supersedes what it said last time and
     nothing else is a turn whose whole effect is on the queue. An offered answer
-    is separate from both for the same reason and one more: it is the only one
-    of the three a thread agent may make, so a reply carrying it and nothing
-    else is the ordinary declaring shape on a thread channel.
+    is separate from both for the same reason and one more: with the request to
+    read, it is one of the two a thread agent may make, so a reply carrying it
+    and nothing else is an ordinary declaring shape on a thread channel.
+
+    A request to read is a fourth, and it stands alone on the same terms: a
+    thread seat that cannot answer without reading something it was not given
+    has nothing to declare, nothing to withdraw and nothing to offer, so a reply
+    carrying the request and its prose is a whole turn. Its shape is judged by
+    the same reader the payload and the conversation use, so a request the seat
+    half-shaped is prose here and prose everywhere else.
 
     Whether the offer is usable is not judged here. This reads what the turn
     said; the fold decides what the board can do with it, so an offer and the
     prose it rode in on cannot be judged by two readers that disagree.
     """
-    document = _document(reply)
+    document = _declaring(reply)
     if document is None:
-        return reply, [], [], None
+        return reply, [], [], None, []
     prose = document.get("text")
     updates = document.get("updates")
     superseded = document.get(SUPERSEDES_KEY)
@@ -1449,14 +1503,31 @@ def declared_updates(
     declared = updates if isinstance(updates, list) else None
     withdrew = superseded if isinstance(superseded, list) else None
     proposal = offered if isinstance(offered, dict) else None
-    if not isinstance(prose, str) or (declared is None and withdrew is None and proposal is None):
-        return reply, [], [], None
+    asked = reads_asked(document)
+    nothing = declared is None and withdrew is None and proposal is None and not asked
+    if not isinstance(prose, str) or nothing:
+        return reply, [], [], None, []
     return (
         prose,
         [one for one in declared or [] if isinstance(one, dict)],
         [one for one in withdrew or [] if isinstance(one, str)],
         proposal,
+        asked,
     )
+
+
+def _declaring(reply: str) -> dict[str, Any] | None:
+    """The object a thread reply declares through, or None where it is prose.
+
+    A reply naming the read key in a shape the field does not take declares
+    nothing, whatever else the object carries: the field is closed, so an object
+    that half-shapes it is a guess, and a guess is published to the human
+    verbatim rather than mined for the parts that happened to parse.
+    """
+    document = _document(reply)
+    if document is None or (NEEDS_TO_READ_KEY in document and not reads_asked(document)):
+        return None
+    return document
 
 
 def _document(reply: str) -> dict[str, Any] | None:
@@ -1551,7 +1622,7 @@ def _proposal_refusal(
     -- and the map channel and the session-scoped thread anchor nothing, so an
     offer arriving on either is answered by the same question.
     """
-    document = _document(reply)
+    document = _declaring(reply)
     if document is None or PROPOSED_ANSWER_KEY not in document:
         return None
     offered = document[PROPOSED_ANSWER_KEY]
@@ -1748,7 +1819,7 @@ def record_reply(
 
     A map turn is a document and nothing else, and it is recorded by the
     function above. What is left here is a thread agent's turn, which is prose
-    and may carry the one offer it is allowed to make.
+    and may carry the offer or the request to read it is allowed to make.
 
     A reply declaring map updates is submitted as one gesture carrying them and
     the prose together, and it is submitted on the channel the turn ran on --
@@ -1762,9 +1833,10 @@ def record_reply(
     at the moment the gesture arrives, answered once by the fold.
 
     What the reply withdrew rides on the turn's own spoken entry, and so does
-    the answer it offered, because that is what each is: this turn replacing
-    what a previous one told the human, or putting to them what it takes the
-    thread to have settled, in the same breath as it says the new thing.
+    the answer it offered and what it asked to read, because that is what each
+    is: this turn replacing what a previous one told the human, putting to them
+    what it takes the thread to have settled, or saying what it would have had
+    to read to answer -- in the same breath as it says the new thing.
 
     `owed` is the dispatch's mootness obligation, and it reaches only the map
     turn: a thread agent rules on nothing, so there is nothing there to cut to
@@ -1773,7 +1845,7 @@ def record_reply(
     if channel == MAP_CHANNEL:
         record_document(log, tier, read_document(text), attribution, owed)
         return
-    prose, updates, superseded, proposal = declared_updates(text)
+    prose, updates, superseded, proposal, asked = declared_updates(text)
     refusal = _proposal_refusal(log, channel, text, proposal)
     if refusal is not None:
         # The agent's own words survive where the reply had any; where the
@@ -1788,6 +1860,8 @@ def record_reply(
         spoken[SUPERSEDES_KEY] = superseded
     if proposal is not None:
         spoken[PROPOSED_ANSWER_KEY] = proposal
+    if asked:
+        spoken[NEEDS_TO_READ_KEY] = asked
     # The kind is the envelope's when the turn stands alone and the sub-update's
     # when it rides inside a gesture, so it is stripped from the one and kept on
     # the other -- everything else the turn said travels either way.
