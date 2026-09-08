@@ -10,12 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -45,7 +43,6 @@ from grillui.tiers import (
     CODEX_TRANSPORT,
     EFFORT_LEVELS,
     OPENROUTER_TRANSPORT,
-    REQUEST_TIMEOUT_ENV,
     TRANSPORTS,
     Seat,
     TierConfig,
@@ -56,12 +53,6 @@ from grillui.tiers import (
 REPORTS = Path.home() / ".grillui-evals"
 TOLERANCE = 0.1
 
-# How long a seat here is given to answer where the operator states nothing.
-# Well above the session's own default, because these are the longest turns
-# the suite has: a seat killed on the clock produces no reply, and a row that
-# is red because the runner hung up on it says nothing about the prompt this
-# suite exists to judge. A stated timeout is honoured exactly, floor and all.
-REQUEST_TIMEOUT = 300.0
 BASELINE = "prompt_tokens_near_baseline"
 
 # The checks a reply can only be held to once it is a document. A reply that is
@@ -385,8 +376,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     config = TierConfig.from_env()
-    if not os.environ.get(REQUEST_TIMEOUT_ENV):
-        config = replace(config, request_timeout=REQUEST_TIMEOUT)
     every = load_cases()
     unknown = sorted(set(args.case) - {one.name for one in every})
     if unknown:

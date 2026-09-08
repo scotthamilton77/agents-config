@@ -41,6 +41,7 @@ from grillui.schemas import (
 from grillui.tiers import (
     CLAUDE_TRANSPORT,
     CODEX_TRANSPORT,
+    DEFAULT_REQUEST_TIMEOUT,
     OPENROUTER_TRANSPORT,
     REQUEST_TIMEOUT_ENV,
     TierConfig,
@@ -440,7 +441,7 @@ def test_a_seat_the_transport_gave_up_on_is_a_red_row_naming_why(
     assert run["wall_seconds"] > 0
 
 
-def test_a_run_stating_no_timeout_seats_its_turns_behind_the_suites_own(
+def test_a_run_stating_no_timeout_seats_its_turns_behind_the_sessions_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """
@@ -448,13 +449,12 @@ def test_a_run_stating_no_timeout_seats_its_turns_behind_the_suites_own(
           stating seven seconds, each seating a case on its own seat and on one
           of every transport a seat can sit on
     When each builds the drivers those seats take their turns on
-    Then every driver of the first carries the floor and every driver of the
-         second exactly the seven it asked for: the turns here are the longest
-         a seat takes, and one killed on the clock leaves no reply to judge --
-         a row about the runner rather than about the prompt, on whichever
-         transport the shorter default reached. Each transport carries the
-         limit its own way, so a run held to one of them is a run whose other
-         two can go back to the default unnoticed.
+    Then every driver of the first carries the session's own default and every
+         driver of the second exactly the seven it asked for: the suite holds
+         its seats to the ceiling a real session would, so a row red on the
+         clock here is one a session would have hung up on too. Each transport
+         carries the limit its own way, so a run held to one of them is a run
+         whose other two can go back to the default unnoticed.
     """
     import evals.__main__ as suite
 
@@ -486,7 +486,7 @@ def test_a_run_stating_no_timeout_seats_its_turns_behind_the_suites_own(
     monkeypatch.setenv(REQUEST_TIMEOUT_ENV, "7")
     suite.main(["--case", CASE, *added, "--report", str(tmp_path / "stated")])
 
-    assert built == [300.0] * 4 + [7.0] * 4
+    assert built == [DEFAULT_REQUEST_TIMEOUT] * 4 + [7.0] * 4
 
 
 def test_a_reply_the_appender_refuses_is_a_red_row_carrying_what_it_sent(
