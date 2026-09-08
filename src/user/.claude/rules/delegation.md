@@ -1,6 +1,6 @@
 ---
 admission:
-  provides: Standing authorization to delegate to subagents without being asked each time, a conditional authorization for workflows gated on the session announcing an elevated orchestration state, the boundary between orchestrator work and delegated work, the pointer to the delegate-selection skill, a consult gate before spawning a Fable subagent, and the no-reply rule for post-report idle notifications.
+  provides: Standing authorization to delegate to subagents without being asked each time, a conditional authorization for workflows gated on the session announcing an elevated orchestration state, the boundary between orchestrator work and delegated work, the pointer to the delegate-selection skill, a consult gate before spawning a Fable subagent with the review panel's trend checkpoint consented in advance, and the no-reply rule for post-report idle notifications.
   cost: Biases toward spawning subagents, spending dispatch overhead on work the main loop could have done inline.
   remove_when: The harness stops shipping a built-in prohibition on unrequested delegation, and unaided sessions hold the orchestrator/delegated boundary without being told.
 ---
@@ -58,6 +58,10 @@ it warrants no reply — do not explain the notification or restate the report.
   inherit the session model by default, so that inherited default IS a Fable spawn),
   and a fork from a Fable session (forks always run the parent model and cannot be
   pinned to anything else).
+  One class is consented in advance: the review panel's trend-analysis checkpoint.
+  Its cadence bounds the spend to one Fable dispatch per two non-clean rounds, so
+  that dispatch runs without asking. Every other Fable spawn a review campaign
+  wants still consults.
 </routing>
 
 <instructions-to-subagents>
