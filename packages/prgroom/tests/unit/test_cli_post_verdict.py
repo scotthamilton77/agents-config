@@ -18,7 +18,12 @@ from typer.testing import CliRunner
 from prgroom import cli
 from prgroom.errors import ErrorCode, PreconditionError
 from prgroom.gh.app import FILES_PER_PAGE, REVIEWS_PER_PAGE
-from prgroom.lifecycle.post_verdict import MAX_BODY_CHARS
+from prgroom.lifecycle.post_verdict import (
+    MAX_BODY_CHARS,
+    Verdict,
+    envelope_of,
+    render_body,
+)
 from prgroom.lifecycle.run import Verbs
 from prgroom.proc import CommandResult
 from tests.fakes import RecordedRunner, RouteTableHttp
@@ -157,7 +162,7 @@ def test_the_happy_path_posts_and_reports_the_review_on_stdout(
     (posted,) = http.posted_reviews()
     assert posted["event"] == "COMMENT"
     assert posted["commit_id"] == HEAD
-    assert posted["body"] == verdict.read_text()
+    assert envelope_of(posted["body"]) == verdict.read_text()
     assert posted["comments"][0]["path"] == APP_PY
     assert "posted: review 99" in result.output
 
@@ -326,17 +331,39 @@ class TestARejectedVerdictCostsNoApiCall:
         assert ErrorCode.PRECONDITION_VERDICT_TOO_LARGE.value in result.output
         assert http.calls == []
 
-    def test_a_verdict_exactly_at_the_body_limit_is_accepted(
-        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    def test_a_file_that_fits_is_refused_when_the_summary_takes_it_past_the_limit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # The refusal is on exceeding the limit, not on reaching it: a verdict the
-        # API would accept must not be refused locally.
-        config, verdict = workspace
-        envelope = json.loads(verdict.read_text())
+        # The body is what GitHub measures, and the body is larger than the file it
+        # renders from. A file exactly at the ceiling therefore posts nothing, and
+        # the refusal names the length that failed rather than the file's.
+        envelope = json.loads(json.dumps(ENVELOPE))
         envelope["findings"][0]["claim"] = ""
         envelope["findings"][0]["claim"] = "x" * (MAX_BODY_CHARS - len(json.dumps(envelope)))
+        at_the_limit = json.dumps(envelope)
+        assert len(at_the_limit) == MAX_BODY_CHARS
+        rendered = len(render_body(Verdict(text=at_the_limit, head_sha=HEAD, findings=())))
+        assert rendered > MAX_BODY_CHARS
+        result, http = self.run_with(tmp_path, monkeypatch, at_the_limit)
+        assert result.exit_code == 2
+        assert ErrorCode.PRECONDITION_VERDICT_TOO_LARGE.value in result.output
+        assert f"renders to {rendered} characters" in " ".join(result.output.split())
+        assert http.calls == []
+
+    def test_a_body_exactly_at_the_limit_is_accepted(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The refusal is on exceeding the limit, not on reaching it: a body the API
+        # would accept must not be refused locally. The padding sits in a field the
+        # summary does not report, so the body grows exactly as the file does.
+        config, verdict = workspace
+        envelope = json.loads(verdict.read_text())
+        envelope["retained_categories"] = [""]
+        text = json.dumps(envelope)
+        overhead = len(render_body(Verdict(text=text, head_sha=HEAD, findings=()))) - len(text)
+        envelope["retained_categories"] = ["x" * (MAX_BODY_CHARS - overhead - len(text))]
         padded = json.dumps(envelope)
-        assert len(padded) == MAX_BODY_CHARS
+        assert len(render_body(Verdict(text=padded, head_sha=HEAD, findings=()))) == MAX_BODY_CHARS
         verdict.write_text(padded)
         http = transport(BASE_ROUTES)
         wire(monkeypatch, http)
@@ -575,7 +602,7 @@ def test_a_verdict_holding_only_the_fields_this_verb_reads_is_accepted(
     result = invoke(config, verdict)
     assert result.exit_code == 0
     (posted,) = http.posted_reviews()
-    assert posted["body"] == verdict.read_text()
+    assert envelope_of(posted["body"]) == verdict.read_text()
     assert len(posted.get("comments", [])) == comments
 
 

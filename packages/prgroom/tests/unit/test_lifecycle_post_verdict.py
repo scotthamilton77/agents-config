@@ -22,8 +22,11 @@ from prgroom.lifecycle.post_verdict import (
     Verdict,
     build_comments,
     commentable_spans,
+    envelope_of,
+    load_verdict,
     place_anchor,
     post_verdict_pr,
+    render_body,
 )
 from prgroom.proc import CommandResult
 from prgroom.prsession.pr_ref import PRRef
@@ -170,13 +173,21 @@ class TestTheSubmittedReview:
         (posted,) = http.posted_reviews()
         assert posted["event"] != APPROVE_EVENT
 
-    def test_the_body_is_the_verdict_text_byte_for_byte(self) -> None:
-        # Deliberately non-canonical spacing: a body rebuilt by re-serializing the
-        # parsed envelope would come back normalized and fail here.
+    def test_the_body_carries_the_verdict_text_byte_for_byte(self) -> None:
+        # Deliberately non-canonical spacing: an envelope rebuilt by re-serializing
+        # the parsed verdict would come back normalized and fail here.
         text = '{ "head_sha":"' + HEAD + '",\t"findings":[] }'
         _, http = post(Verdict(text=text, head_sha=HEAD, findings=()))
         (posted,) = http.posted_reviews()
-        assert posted["body"] == text
+        assert envelope_of(posted["body"]) == text
+
+    def test_the_body_leads_with_the_summary_and_not_with_the_envelope(self) -> None:
+        # The summary is what a reader sees without opening anything, so it comes
+        # first; the envelope is below it, collapsed.
+        _, http = post(verdict_of())
+        (posted,) = http.posted_reviews()
+        assert posted["body"].startswith("## Review verdict")
+        assert "<details>" in posted["body"]
 
     def test_a_clean_verdict_posts_the_envelope_with_no_inline_comments(self) -> None:
         message, http = post(verdict_of())
@@ -441,11 +452,12 @@ class TestTheHeadItReviewed:
 
 class TestPostingTwiceIsANoOp:
     def existing(self, **overrides: Any) -> dict[str, Any]:
-        text = verdict_of().text
+        # The body a first posting left behind, which is the rendered one: the
+        # check is equality on what was posted, not on the file behind it.
         return {
             "id": 7,
             "commit_id": HEAD,
-            "body": text,
+            "body": render_body(verdict_of()),
             "user": {"login": LOGIN},
             "state": "COMMENTED",
             **overrides,
@@ -481,7 +493,7 @@ class TestPostingTwiceIsANoOp:
         "body",
         [
             pytest.param("Automated attestation", id="carrying-an-attestation-body"),
-            pytest.param(None, id="carrying-the-verdict-text-itself"),
+            pytest.param(None, id="carrying-the-verdict-body-itself"),
         ],
     )
     def test_the_apps_own_approval_at_the_head_does_not_suppress_the_verdict(
@@ -489,8 +501,8 @@ class TestPostingTwiceIsANoOp:
     ) -> None:
         # The approval and the verdict are two separate reviews; finding one must
         # never be read as having posted the other — least of all an approval that
-        # happens to carry the verdict's text, where suppressing would leave the
-        # round's result unposted and an approval standing in its place.
+        # happens to carry the verdict's own body, where suppressing would leave
+        # the round's result unposted and an approval standing in its place.
         approval = self.existing(state="APPROVED", **({} if body is None else {"body": body}))
         _, http = post(verdict_of(), self.routes_with_review(approval))
         assert len(http.posted_reviews()) == 1
@@ -514,3 +526,257 @@ def test_build_comments_reports_the_unplaced_in_the_order_they_arrived() -> None
     )
     assert unplaced == ["f1", "f3"]
     assert len(comments) == 1
+
+
+BASE_SHA = "c" * 40
+
+# One envelope carrying every part the summary reports, shaped as the corpus of
+# real verdicts writes them: a substituted lens beside one that ran where it was
+# declared, dispositions carried in under two words, and a finding with all four
+# of the fields an entry names.
+FULL_ENVELOPE: dict[str, Any] = {
+    "schema_version": "3",
+    "artifact_class": "typed-code",
+    "round": 4,
+    "base_sha": BASE_SHA,
+    "head_sha": HEAD,
+    "claim_id": "pr-731-claim-1",
+    "retained_categories": ["every module the diff does not touch"],
+    "staffing_record": {"digest": "sha256:" + "0" * 64},
+    "lenses": [
+        {
+            "lens": "correctness",
+            "verdict": "findings",
+            "vendor": "openai",
+            "transport": "codex",
+            "model": "gpt-5.6-sol",
+        },
+        {
+            "lens": "security",
+            "verdict": "clean",
+            "vendor": "openai",
+            "transport": "codex",
+            "model": "gpt-5.6-terra",
+            "substitution": {
+                "declared_transport": "openrouter",
+                "declared_model": "google/gemini-3.7-flash",
+                "reason": "Two consecutive zero-tool-use cleans on the declared route.",
+            },
+        },
+    ],
+    "prior_dispositions": [
+        {"round": 3, "id": "correctness.r3.f1", "disposition": "fixed"},
+        {"round": 3, "id": "correctness.r3.f2", "disposition": "fixed"},
+        {"round": 3, "id": "security.r3.f1", "disposition": "rebutted"},
+    ],
+    "verdict": "findings",
+    "findings": [
+        {
+            "id": "correctness.r4.f1",
+            "lens": "correctness",
+            "type": "mechanical",
+            "ac": "PV-A6",
+            "claim": "The anchor grammar accepts a token with characters glued to the line.",
+            "evidence": f"{APP_PY}:3 has no trailing boundary",
+        }
+    ],
+}
+
+HALT = {
+    "reason": "transport-failure",
+    "failures": [
+        {"lens": "correctness", "transport": "codex", "error": "usage limit"},
+        {"lens": "correctness", "transport": "openrouter", "error": "502"},
+    ],
+    "abandoned_lenses": ["security", "test-adequacy"],
+}
+
+
+def written(tmp_path: Path, **overrides: Any) -> Path:
+    """The full envelope, amended as the case needs, where the loader can read it."""
+    path = tmp_path / "verdict.json"
+    path.write_text(json.dumps({**FULL_ENVELOPE, **overrides}, indent=2))
+    return path
+
+
+def summary_of(tmp_path: Path, **overrides: Any) -> str:
+    """What a reader sees above the collapsed envelope, having opened nothing."""
+    body = render_body(load_verdict(written(tmp_path, **overrides)))
+    return body[: body.index("<details>")]
+
+
+class TestTheSummaryAboveTheEnvelope:
+    """What the body says before a reader expands anything.
+
+    Every case here goes through the loader, because that is the door a real
+    invocation comes in by and the summary must survive whatever it accepts.
+    """
+
+    def test_the_heading_names_the_verdict_word_the_round_and_the_artifact_class(
+        self, tmp_path: Path
+    ) -> None:
+        assert summary_of(tmp_path).startswith("## Review verdict: findings (round 4, typed-code)")
+
+    def test_the_line_below_it_names_the_head_the_base_and_the_claim(self, tmp_path: Path) -> None:
+        assert f"Head {HEAD[:8]}, base {BASE_SHA[:8]}, claim pr-731-claim-1." in summary_of(
+            tmp_path
+        )
+
+    def test_every_lens_gets_a_line_with_its_verdict_model_and_transport(
+        self, tmp_path: Path
+    ) -> None:
+        summary = summary_of(tmp_path)
+        assert "- correctness: findings, gpt-5.6-sol via codex" in summary
+        assert "- security: clean, gpt-5.6-terra via codex" in summary
+
+    def test_a_lens_that_ran_elsewhere_says_what_it_was_declared_on(self, tmp_path: Path) -> None:
+        assert "(substituted for google/gemini-3.7-flash via openrouter)" in summary_of(tmp_path)
+
+    def test_a_lens_that_ran_where_it_was_declared_says_nothing_of_substitution(
+        self, tmp_path: Path
+    ) -> None:
+        # Otherwise the note means nothing: a marker on every line marks none.
+        (line,) = [
+            row
+            for row in summary_of(tmp_path).splitlines()
+            if row.startswith("- correctness: findings")
+        ]
+        assert "substituted" not in line
+
+    def test_every_finding_gets_an_entry_with_its_id_type_lens_criterion_and_claim(
+        self, tmp_path: Path
+    ) -> None:
+        assert (
+            "- correctness.r4.f1 (mechanical, correctness, PV-A6): "
+            "The anchor grammar accepts a token with characters glued to the line."
+        ) in summary_of(tmp_path)
+
+    def test_a_halted_round_says_why_it_stopped_and_what_it_never_ran(self, tmp_path: Path) -> None:
+        summary = summary_of(tmp_path, verdict="halted", halt=HALT)
+        assert "**Halted:** transport-failure." in summary
+        assert "Lenses never dispatched: security, test-adequacy." in summary
+
+    def test_the_dispositions_carried_in_are_tallied_on_one_line(self, tmp_path: Path) -> None:
+        assert "Prior dispositions carried forward: 3 (2 fixed, 1 rebutted)." in summary_of(
+            tmp_path
+        )
+
+    def test_a_round_carrying_nothing_in_says_nothing_about_priors(self, tmp_path: Path) -> None:
+        assert "Prior dispositions" not in summary_of(tmp_path, prior_dispositions=[])
+
+    def test_the_same_verdict_renders_the_same_body_every_time(self, tmp_path: Path) -> None:
+        # Idempotence is equality on the body, so a rendering that varied between
+        # two runs would repost a verdict already posted.
+        verdict = load_verdict(written(tmp_path))
+        assert render_body(verdict) == render_body(verdict)
+        assert render_body(load_verdict(written(tmp_path))) == render_body(verdict)
+
+
+# Every text whose punctuation could be read as the end of the envelope, plus the
+# ordinary shapes around them. A verdict file is arbitrary bytes as far as this
+# rendering is concerned, and the envelope must come back out of the body whatever
+# it holds.
+ENVELOPE_TEXTS = [
+    pytest.param('{"head_sha": "' + HEAD + '", "findings": []}', id="a-one-line-envelope"),
+    pytest.param(json.dumps(FULL_ENVELOPE, indent=2), id="an-indented-envelope"),
+    pytest.param(json.dumps(FULL_ENVELOPE, indent=2) + "\n", id="a-file-ending-in-a-newline"),
+    pytest.param('{"note": "a ``` run"}', id="a-run-of-three-backticks"),
+    pytest.param('{"note": "```` then ` then ``"}', id="runs-of-several-lengths"),
+    pytest.param("```\ntext\n```", id="lines-that-are-fences-themselves"),
+    pytest.param("````json\n{}\n````", id="a-fenced-json-block-of-its-own"),
+    pytest.param("<details>\n<summary>x</summary>\n</details>", id="a-details-element-of-its-own"),
+    pytest.param("</details>", id="a-closing-details-tag-alone"),
+    pytest.param("", id="an-empty-text"),
+    pytest.param("\n", id="a-text-that-is-one-newline"),
+    pytest.param("not json at all", id="a-text-that-is-not-json"),
+]
+
+
+@pytest.mark.parametrize("text", ENVELOPE_TEXTS)
+def test_the_envelope_comes_back_out_of_the_body_unchanged(text: str) -> None:
+    body = render_body(Verdict(text=text, head_sha=HEAD, findings=()))
+    assert envelope_of(body) == text
+
+
+def test_a_summary_carrying_backticks_does_not_end_the_envelope_early() -> None:
+    # The summary quotes the findings, so a finding that writes a fence into its
+    # claim writes one into the body. Collapsing each entry onto one line is what
+    # keeps that from being a line of backticks alone.
+    claim = "before\n````\nafter, and ` too"
+    text = json.dumps(
+        {**FULL_ENVELOPE, "findings": [{"id": "f1", "claim": claim, "evidence": "x"}]}, indent=2
+    )
+    body = render_body(Verdict(text=text, head_sha=HEAD, findings=()))
+    assert envelope_of(body) == text
+    assert "- f1: before ```` after, and ` too" in body
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param("Automated attestation.", id="a-body-with-no-fence-at-all"),
+        pytest.param("```\n{}\n```", id="a-fenced-block-that-is-not-the-envelope"),
+    ],
+)
+def test_a_body_carrying_no_envelope_is_refused_rather_than_guessed_at(body: str) -> None:
+    with pytest.raises(ValueError, match="fenced"):
+        envelope_of(body)
+
+
+# Fields absent, or holding what no envelope should. Each is reachable through the
+# loader, which type-checks only the head and the findings' own fields, so each is
+# a body this verb could be asked to post.
+TOLERATED_SHAPES = [
+    pytest.param({"verdict": None}, id="a-null-verdict-word"),
+    pytest.param({"round": "four"}, id="a-round-that-is-a-string"),
+    pytest.param({"round": True}, id="a-round-that-is-a-boolean"),
+    pytest.param({"artifact_class": 7}, id="a-numeric-artifact-class"),
+    pytest.param({"base_sha": []}, id="a-base-sha-that-is-a-list"),
+    pytest.param({"base_sha": "abc"}, id="a-base-sha-that-is-not-a-commit-id"),
+    pytest.param({"claim_id": {}}, id="a-claim-id-that-is-an-object"),
+    pytest.param({"lenses": "correctness"}, id="lenses-as-a-string"),
+    pytest.param({"lenses": [7, None]}, id="lens-entries-that-are-not-objects"),
+    pytest.param({"lenses": [{}]}, id="a-lens-entry-naming-no-lens"),
+    pytest.param({"lenses": [{"lens": "correctness"}]}, id="a-lens-with-nothing-but-a-name"),
+    pytest.param({"lenses": [{"lens": "c", "model": "m"}]}, id="a-lens-with-no-transport"),
+    pytest.param({"lenses": [{"lens": "c", "transport": "codex"}]}, id="a-lens-with-no-model"),
+    pytest.param(
+        {"lenses": [{"lens": "c", "substitution": "yes"}]}, id="a-substitution-that-is-a-string"
+    ),
+    pytest.param({"lenses": [{"lens": "c", "substitution": {}}]}, id="an-empty-substitution"),
+    pytest.param({"halt": "transport-failure"}, id="a-halt-that-is-a-string"),
+    pytest.param({"halt": {}}, id="a-halt-stating-no-reason"),
+    pytest.param({"halt": {"reason": "x", "abandoned_lenses": "s"}}, id="abandoned-as-a-string"),
+    pytest.param({"halt": {"reason": "x", "abandoned_lenses": [7]}}, id="a-numeric-abandoned-lens"),
+    pytest.param({"prior_dispositions": {}}, id="prior-dispositions-as-an-object"),
+    pytest.param({"prior_dispositions": [7]}, id="a-prior-disposition-that-is-a-number"),
+    pytest.param({"prior_dispositions": [{"id": "f1"}]}, id="a-prior-disposition-with-no-word"),
+    pytest.param({"staffing_record": 7}, id="a-numeric-staffing-record"),
+    pytest.param({"retained_categories": 7}, id="numeric-retained-categories"),
+    pytest.param(
+        {"findings": [{"id": "f1", "evidence": "x", "type": 7, "lens": None, "ac": []}]},
+        id="a-finding-whose-tags-are-all-mistyped",
+    ),
+    pytest.param({"findings": [{"id": "f1", "evidence": "x"}]}, id="a-finding-stating-no-claim"),
+]
+
+
+@pytest.mark.parametrize("overrides", TOLERATED_SHAPES)
+def test_a_field_the_summary_cannot_read_is_left_out_rather_than_raised(
+    overrides: dict[str, Any], tmp_path: Path
+) -> None:
+    # The summary is a convenience. A verdict the loader accepted must still post,
+    # so an unreadable field costs its line in the summary and nothing more.
+    path = written(tmp_path, **overrides)
+    body = render_body(load_verdict(path))
+    assert body.startswith("## Review verdict")
+    assert envelope_of(body) == path.read_text()
+
+
+def test_a_finding_the_envelope_does_not_name_gets_no_entry() -> None:
+    # Past the loader, which requires an id on every finding: the renderer is
+    # public and takes a verdict from anywhere. An entry naming no finding is a
+    # line a reader cannot act on, so it is left out.
+    text = json.dumps({"head_sha": HEAD, "findings": [{"id": 7, "claim": "unattributable"}]})
+    body = render_body(Verdict(text=text, head_sha=HEAD, findings=()))
+    assert "unattributable" not in body[: body.index("<details>")]

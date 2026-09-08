@@ -25,7 +25,7 @@ from prgroom.errors import ErrorCode, PrgroomError
 from prgroom.gh import app
 from prgroom.gh.app import FILES_PER_PAGE, GITHUB_API, REVIEWS_PER_PAGE, UrllibTransport
 from prgroom.lifecycle.approve import approve_pr
-from prgroom.lifecycle.post_verdict import Verdict, post_verdict_pr
+from prgroom.lifecycle.post_verdict import Verdict, post_verdict_pr, render_body
 from prgroom.proc import CommandResult
 from prgroom.prsession.pr_ref import PRRef
 from tests.fakes import RecordedRunner, RouteTableHttp
@@ -134,7 +134,9 @@ POST_VERDICT_FLOW = Flow(
     read_routes=[APP, INSTALLATION, TOKEN, PULL_READ, REVIEWS_PAGE_1, FILES_PAGE_1],
     own_review={
         "state": "COMMENTED",
-        "body": VERDICT_TEXT,
+        # The body a first posting left, which is the rendered one rather than the
+        # file: an entry carrying the file's bytes is not this flow's own review.
+        "body": render_body(VERDICT),
         "commit_id": HEAD,
         "user": {"login": LOGIN},
     },

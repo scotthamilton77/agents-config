@@ -82,7 +82,9 @@ the App identity, take no PR lock and touch no grooming state. `approve` submits
 an approving review pinned to a head SHA the caller names; `post-verdict` submits
 a comment-only review carrying a review round's verdict, pinned to the head that
 verdict declares, with an inline comment at each finding that names a line the
-diff touches. The two reviews are deliberately separate: a verdict says what a
+diff touches. Its body is a rendered summary of the round above a collapsed block
+holding the verdict file's own bytes; anything reading the envelope back off the
+review takes that block rather than the whole body. The two reviews are deliberately separate: a verdict says what a
 round found and never that a change may merge.
 `sweep` (cross-PR autonomous mode) is
 design-of-record only (charter D13, "prgroom is carved, not finished",
@@ -118,11 +120,12 @@ exists.
   before asserting anything, and treat a test that suddenly slows down as one
   that found the network.
 - The verdict schema lives with the skill that assembles verdicts, and this
-  package carries no copy. `post-verdict` reads the head SHA, the findings list
-  and the fields it anchors on, refuses those when they are absent or mistyped,
-  and passes over every other field without inspecting it. Validating against a
-  schema here would be a second opinion on a document already validated where it
-  was built, and two copies drift. In all three the permissive-default masking risk
+  package carries no copy. `post-verdict` refuses a verdict only on the head SHA,
+  the findings list and the fields it anchors on, when those are absent or
+  mistyped. Its summary reads further into the envelope and enforces nothing
+  there: a field it cannot read is a line the summary leaves out, never a posting
+  it prevents. Validating against a schema here would be a second opinion on a
+  document already validated where it was built, and two copies drift. In all three the permissive-default masking risk
   per-file fakes guard against does not apply, which is the only reason they
   are shared. Don't grow any of them into a general-purpose fake — a
   `RouteTableHttp` route table stays in the test module that asserts it.

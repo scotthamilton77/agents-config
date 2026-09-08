@@ -224,9 +224,12 @@ head it judged — post late and the round's record is stranded off the commit i
 prgroom post-verdict <pr> --verdict <path>
 ```
 
-That submits the reviewing App's comment-only review pinned to the reviewed head: the verdict's own
-bytes as the body, and an inline comment carrying the finding's JSON at each finding that names a
-file and line the diff touches — in its evidence, or failing that in its claim. A finding whose
+That submits the reviewing App's comment-only review pinned to the reviewed head. The body is a
+rendered summary of the round — the verdict word, the round, the lenses and what ran them, one entry
+per finding — above a collapsed block holding the verdict's own bytes in a fenced `json` block.
+Anything reading the envelope back off the review takes that block, not the whole body. Each finding
+that names a file and line the diff touches also gets an inline comment carrying its JSON — in its
+evidence, or failing that in its claim. A finding whose
 location is a path with no line, a symbol, or a file the diff leaves alone lands in the body alone and is
 named on stdout — read that list, because a finding nobody sees at the line is a finding the fixer
 is likelier to skim past. It refuses when the live head has already moved, reposting the same

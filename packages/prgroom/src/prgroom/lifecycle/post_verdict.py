@@ -3,12 +3,13 @@
 The verdict is attached to the commit it judged and never committed into the
 branch it judges: a branch-resident verdict advances the head it must match, and
 is writable by the reviewed party. The medium is one submitted, comment-only
-review authored by the App — the verdict's text as the body, an inline comment at
-each finding that names a line the diff touches, pinned to the head the verdict
+review authored by the App — a rendered summary of the round as the body, with
+the verdict file's own text reproduced inside it, an inline comment at each
+finding that names a line the diff touches, pinned to the head the verdict
 declares.
 
 It refuses when the PR's live head has moved off that declared head, is a no-op
-when the App has already posted this exact text there, and never approves:
+when the App has already posted this exact body there, and never approves:
 approval is a separate review the caller decides on separately.
 
 Like ``approve`` it stands outside the grooming loop — no grooming state is read
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,12 +48,20 @@ COMMENT_EVENT = "COMMENT"
 # own posting comes back as, and the only state its idempotence check accepts.
 COMMENT_STATE = "COMMENTED"
 
-# The ceiling GitHub puts on a comment body. A verdict past it is refused rather
-# than truncated: a truncated verdict is a different document that still reads as
-# the round's result, and the JSON would no longer parse for anyone consuming it.
-# Refusal is on exceeding the ceiling, not on reaching it — a body the API would
-# take must not be turned away here.
+# The ceiling GitHub puts on a comment body, measured against the body this verb
+# renders rather than the file it renders from: the summary is part of what gets
+# posted, so a file that fits and a body that fits are different questions. A
+# verdict past it is refused rather than truncated: a truncated verdict is a
+# different document that still reads as the round's result, and the JSON would no
+# longer parse for anyone consuming it. Refusal is on exceeding the ceiling, not
+# on reaching it — a body the API would take must not be turned away here.
 MAX_BODY_CHARS = 65536
+
+# What the collapsed block holding the envelope is labelled, and the language its
+# fenced block declares. A reader after the envelope takes that block's contents,
+# not the whole body.
+ENVELOPE_SUMMARY = "Verdict envelope"
+FENCE_LANGUAGE = "json"
 
 # The side of the diff every anchor is placed against. A finding names a line of
 # the code as it now stands, which is the right-hand side; the left side holds
@@ -92,10 +102,11 @@ T = TypeVar("T")
 class Verdict:
     """A verdict file as this verb reads it: its bytes, and the two fields it uses.
 
-    ``text`` is the whole file, and it is what gets posted — the verb re-serializes
-    nothing, so a body that differs from the file cannot be a rounding of it.
-    Schema validation belongs to whatever assembled the file; this reads only what
-    it must, and says which field failed when one is not there.
+    ``text`` is the whole file, and the posted body reproduces it verbatim — the
+    verb re-serializes nothing, so the envelope a reader takes back out of the
+    review cannot be a rounding of the file. Schema validation belongs to whatever
+    assembled the file; this reads only what it must, and says which field failed
+    when one is not there.
     """
 
     text: str
@@ -115,10 +126,14 @@ class Anchor:
 def load_verdict(path: Path) -> Verdict:
     """Read and shape-check a verdict file, or refuse with the reason it failed.
 
-    Read as bytes and decoded here rather than through text mode, so the body
-    posted is the file's own bytes: text mode rewrites line endings, and a body
-    that quietly differs from the file defeats both the equality check that makes
-    a repost a no-op and any later comparison against what was reviewed.
+    Read as bytes and decoded here rather than through text mode, so the envelope
+    the body carries is the file's own bytes: text mode rewrites line endings, and
+    an envelope that quietly differs from the file defeats both the equality check
+    that makes a repost a no-op and any later comparison against what was
+    reviewed.
+
+    The size refusal is taken here, against the body the file renders to, so a
+    verdict too large to post costs no API call.
     """
     try:
         raw = path.read_bytes()
@@ -131,11 +146,6 @@ def load_verdict(path: Path) -> Verdict:
     except UnicodeDecodeError as exc:
         detail = f"{path} is not UTF-8: {exc}"
         raise _malformed(detail) from exc
-    if len(text) > MAX_BODY_CHARS:
-        raise PreconditionError(
-            ErrorCode.PRECONDITION_VERDICT_TOO_LARGE,
-            detail=f"{path} is {len(text)} characters; the limit is {MAX_BODY_CHARS}",
-        )
     try:
         payload = json.loads(text, parse_constant=_not_json)
     except ValueError as exc:
@@ -167,7 +177,61 @@ def load_verdict(path: Path) -> Verdict:
         if not any(finding.get(field, "").strip() for field in ("evidence", "claim")):
             detail = f"{path}: findings[{index}] carries neither evidence nor claim"
             raise _malformed(detail)
-    return Verdict(text=text, head_sha=head_sha.lower(), findings=tuple(findings))
+    verdict = Verdict(text=text, head_sha=head_sha.lower(), findings=tuple(findings))
+    rendered = len(render_body(verdict))
+    if rendered > MAX_BODY_CHARS:
+        raise PreconditionError(
+            ErrorCode.PRECONDITION_VERDICT_TOO_LARGE,
+            detail=f"{path} renders to {rendered} characters; the limit is {MAX_BODY_CHARS}",
+        )
+    return verdict
+
+
+def render_body(verdict: Verdict) -> str:
+    """The review body: a summary of the round, then the verdict file itself.
+
+    The envelope is reproduced rather than summarized away, because a later reader
+    parses it back out of the review to judge the round. A summary standing in its
+    place would leave nothing to parse, and one re-serialized from the parse could
+    disagree with the file.
+
+    Nothing here refuses a verdict. The summary is a convenience for whoever opens
+    the pull request, so a field it cannot read is a field it leaves out — never a
+    posting it prevents.
+    """
+    payload = _payload(verdict.text)
+    sections = [
+        _headline(payload),
+        _identity(verdict, payload),
+        *_halt(payload),
+        *_lens_roster(payload),
+        *_finding_roster(payload),
+        *_priors(payload),
+        _envelope_block(verdict.text),
+    ]
+    return "\n\n".join(sections)
+
+
+def envelope_of(body: str) -> str:
+    """The verdict text a rendered body carries, exactly as the file held it.
+
+    The fence is longer than any run of backticks in the envelope, so no line of
+    the envelope can close it, and every summary line starts with prose, so none
+    of them can either. The last run of backticks alone on a line is therefore the
+    fence that closes the envelope, and the last opener above it is the one that
+    starts it.
+    """
+    lines = body.split("\n")
+    close = next((index for index in reversed(range(len(lines))) if _is_fence(lines[index])), None)
+    if close is None:
+        msg = "the body carries no fenced block"
+        raise ValueError(msg)
+    opener = lines[close] + FENCE_LANGUAGE
+    start = next((index for index in reversed(range(close)) if lines[index] == opener), None)
+    if start is None:
+        msg = f"the body's last fenced block is not opened as {FENCE_LANGUAGE}"
+        raise ValueError(msg)
+    return "\n".join(lines[start + 1 : close])
 
 
 def commentable_spans(patch: str) -> list[tuple[int, int]]:
@@ -304,18 +368,22 @@ def post_verdict_pr(
             ),
         )
 
+    # Rendered once and compared whole. The rendering is a pure function of the
+    # verdict, so the body a repost builds is the body the first posting left, and
+    # equality on it is still equality on the verdict behind it.
+    body = render_body(verdict)
     existing = find_own_review(
         http,
         minted.token,
         ref,
         minted.login,
-        # Comment-only, because an approval carrying this text would still be an
+        # Comment-only, because an approval carrying this body would still be an
         # approval: recognizing one as the verdict already posted would leave the
         # round's result unposted and an approval standing in its place.
         match=lambda review: (
             review_field(review, "state") == COMMENT_STATE
             and review_field(review, "commit_id") == verdict.head_sha
-            and review_field(review, "body") == verdict.text
+            and review_field(review, "body") == body
         ),
     )
     if existing is not None:
@@ -330,7 +398,7 @@ def post_verdict_pr(
         minted.token,
         ref,
         event=COMMENT_EVENT,
-        body=verdict.text,
+        body=body,
         commit_id=verdict.head_sha,
         comments=comments,
     )
@@ -340,6 +408,192 @@ def post_verdict_pr(
         f"with {len(comments)} inline comment(s)"
     )
     return "\n".join(lines)
+
+
+def _payload(text: str) -> Mapping[str, Any]:
+    """The envelope's fields, or nothing at all when the text holds no object.
+
+    The loader has already proven that a file it accepted parses. Reading it a
+    second time here, rather than carrying the parse on the verdict, keeps the
+    renderer usable on any text at all — including one no loader produced.
+    """
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _headline(payload: Mapping[str, Any]) -> str:
+    """The heading: what the round concluded, which round it was, and about what."""
+    word = _line(payload.get("verdict"))
+    qualifiers = []
+    number = payload.get("round")
+    # A bool is an int to Python and a round number to nobody, so it is excluded
+    # rather than printed as the 0 or 1 it would become.
+    if isinstance(number, int) and not isinstance(number, bool):
+        qualifiers.append(f"round {number}")
+    artifact_class = _line(payload.get("artifact_class"))
+    if artifact_class:
+        qualifiers.append(artifact_class)
+    heading = f"## Review verdict: {word}" if word else "## Review verdict"
+    return f"{heading} ({', '.join(qualifiers)})" if qualifiers else heading
+
+
+def _identity(verdict: Verdict, payload: Mapping[str, Any]) -> str:
+    """What was reviewed: the head the verdict pins to, its base, and the claim."""
+    parts = [f"Head {_short(verdict.head_sha)}"]
+    base = _line(payload.get("base_sha"))
+    if base:
+        parts.append(f"base {_short(base)}")
+    claim = _line(payload.get("claim_id"))
+    if claim:
+        parts.append(f"claim {claim}")
+    return ", ".join(parts) + "."
+
+
+def _halt(payload: Mapping[str, Any]) -> list[str]:
+    """Why a halted round stopped, and which staffed lenses it never dispatched."""
+    halt = payload.get("halt")
+    if not isinstance(halt, Mapping):
+        return []
+    reason = _line(halt.get("reason"))
+    sentences = [f"**Halted:** {reason}." if reason else "**Halted.**"]
+    abandoned = _lines(halt.get("abandoned_lenses"))
+    if abandoned:
+        sentences.append(f"Lenses never dispatched: {', '.join(abandoned)}.")
+    return [" ".join(sentences)]
+
+
+def _lens_roster(payload: Mapping[str, Any]) -> list[str]:
+    """One line per lens: what it found, and what actually ran it."""
+    rows = []
+    for entry in _objects(payload.get("lenses")):
+        name = _line(entry.get("lens"))
+        if not name:
+            continue
+        detail = ", ".join(part for part in (_line(entry.get("verdict")), _ran_on(entry)) if part)
+        row = f"{name}: {detail}" if detail else name
+        note = _substitution(entry.get("substitution"))
+        rows.append(f"- {row} {note}" if note else f"- {row}")
+    return [_section("Lenses", rows)] if rows else []
+
+
+def _finding_roster(payload: Mapping[str, Any]) -> list[str]:
+    """One entry per finding: what it is, which lens raised it, and what it says."""
+    rows = []
+    for entry in _objects(payload.get("findings")):
+        identifier = _line(entry.get("id"))
+        if not identifier:
+            continue
+        tags = [
+            tag
+            for tag in (_line(entry.get("type")), _line(entry.get("lens")), _line(entry.get("ac")))
+            if tag
+        ]
+        head = f"{identifier} ({', '.join(tags)})" if tags else identifier
+        claim = _line(entry.get("claim"))
+        rows.append(f"- {head}: {claim}" if claim else f"- {head}")
+    return [_section("Findings", rows)] if rows else []
+
+
+def _priors(payload: Mapping[str, Any]) -> list[str]:
+    """How much earlier rounds carried in, and how those findings were dispositioned."""
+    carried = payload.get("prior_dispositions")
+    if not isinstance(carried, list) or not carried:
+        return []
+    counts = Counter(
+        word for entry in _objects(carried) if (word := _line(entry.get("disposition")))
+    )
+    tally = f"Prior dispositions carried forward: {len(carried)}"
+    if not counts:
+        return [f"{tally}."]
+    detail = ", ".join(f"{count} {word}" for word, count in sorted(counts.items()))
+    return [f"{tally} ({detail})."]
+
+
+def _envelope_block(text: str) -> str:
+    """The verdict's own text, verbatim, inside a collapsed block a reader can open.
+
+    The fence is one backtick longer than the longest run the text holds, so the
+    text cannot close the block early however many backticks it carries. A
+    ``</details>`` inside the text is inert for the same reason: it sits in a
+    fenced block, where it is content rather than markup.
+    """
+    fence = "`" * max(3, _longest_backtick_run(text) + 1)
+    return (
+        f"<details>\n<summary>{ENVELOPE_SUMMARY}</summary>\n\n"
+        f"{fence}{FENCE_LANGUAGE}\n{text}\n{fence}\n\n</details>"
+    )
+
+
+def _section(label: str, rows: list[str]) -> str:
+    body = "\n".join(rows)
+    return f"**{label}**\n\n{body}"
+
+
+def _ran_on(entry: Mapping[str, Any]) -> str:
+    """How a lens ran, as far as its record says: the model, and the route to it."""
+    model = _line(entry.get("model"))
+    transport = _line(entry.get("transport"))
+    if model and transport:
+        return f"{model} via {transport}"
+    if transport:
+        return f"via {transport}"
+    return model
+
+
+def _substitution(value: Any) -> str:
+    """That a lens ran on something other than what its registry declared, if it did.
+
+    The record's reason is left in the envelope. It runs to a paragraph, and a
+    paragraph per lens is the summary nobody reads.
+    """
+    if not isinstance(value, Mapping):
+        return ""
+    declared = _ran_on(
+        {"model": value.get("declared_model"), "transport": value.get("declared_transport")}
+    )
+    return f"(substituted for {declared})" if declared else "(substituted)"
+
+
+def _line(value: Any) -> str:
+    """One line of text from a field meant to hold one, or nothing usable.
+
+    Whitespace is collapsed because every string the summary shows sits inside a
+    heading or a bullet, where a newline through the middle of it would break the
+    markdown around it. Collapsing also keeps every summary line from being a run
+    of backticks alone, which is what would otherwise close the envelope's fence
+    before the envelope started.
+    """
+    return " ".join(value.split()) if isinstance(value, str) else ""
+
+
+def _lines(value: Any) -> list[str]:
+    """Every usable string in a field meant to hold a list of them."""
+    if not isinstance(value, list):
+        return []
+    return [text for text in (_line(item) for item in value) if text]
+
+
+def _objects(value: Any) -> list[Mapping[str, Any]]:
+    """Every object in a field meant to hold a list of them, in the order given."""
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, Mapping)]
+
+
+def _short(sha: str) -> str:
+    """A commit id in the short form a reader recognizes, or the value untouched."""
+    return sha[:8] if is_commit_sha(sha) else sha
+
+
+def _longest_backtick_run(text: str) -> int:
+    return max((len(run) for run in re.findall(r"`+", text)), default=0)
+
+
+def _is_fence(line: str) -> bool:
+    return len(line) >= 3 and set(line) == {"`"}
 
 
 # What prose wraps a path in, and never part of the path itself.
