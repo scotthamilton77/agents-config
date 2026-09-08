@@ -1183,7 +1183,7 @@ def test_the_request_timeout_is_configuration_with_the_constant_as_its_default()
 
 def test_the_default_request_timeout_outlasts_the_longest_recorded_expert_turn() -> None:
     """
-    Given the expert seat's recorded turns, the longest just under two minutes
+    Given the expert seat's recorded turns, the longest just over a minute
     When a session states no request timeout
     Then the default gives that turn at least twice its recorded length: a
          ceiling the seat's normal turn crosses discards an answer the human
