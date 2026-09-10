@@ -1170,7 +1170,7 @@ def test_the_request_timeout_is_configuration_with_the_constant_as_its_default()
     from grillui import drivers
     from grillui.tiers import DEFAULT_REQUEST_TIMEOUT, REQUEST_TIMEOUT_ENV, TierConfig
 
-    assert TierConfig.from_env({}).request_timeout == DEFAULT_REQUEST_TIMEOUT == 60.0
+    assert TierConfig.from_env({}).request_timeout == DEFAULT_REQUEST_TIMEOUT
     config = TierConfig.from_env({REQUEST_TIMEOUT_ENV: "300"})
     assert config.request_timeout == 300.0
     codex = drivers.seat_driver(config, config.map_seat)
@@ -1179,6 +1179,19 @@ def test_the_request_timeout_is_configuration_with_the_constant_as_its_default()
     assert isinstance(codex.cli, partial) and codex.cli.keywords == {"timeout": 300.0}  # type: ignore[attr-defined]
     assert isinstance(heavy.cli, partial) and heavy.cli.keywords == {"timeout": 300.0}  # type: ignore[attr-defined]
     assert fast.transport.timeout == 300.0  # type: ignore[attr-defined]
+
+
+def test_the_default_request_timeout_outlasts_the_longest_recorded_expert_turn() -> None:
+    """
+    Given the expert seat's recorded turns, the longest just over a minute
+    When a session states no request timeout
+    Then the default gives that turn at least twice its recorded length: a
+         ceiling the seat's normal turn crosses discards an answer the human
+         has already waited a minute for and reports the seat as timed out.
+    """
+    from grillui.tiers import DEFAULT_REQUEST_TIMEOUT, LONGEST_RECORDED_EXPERT_TURN
+
+    assert DEFAULT_REQUEST_TIMEOUT >= 2 * LONGEST_RECORDED_EXPERT_TURN
 
 
 def test_an_unreadable_request_timeout_is_refused_at_configuration() -> None:

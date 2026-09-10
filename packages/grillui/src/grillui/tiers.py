@@ -178,10 +178,15 @@ API_KEY_ENV = "OPENROUTER_API_KEY"
 API_BASE_ENV = "GRILLUI_API_BASE"
 # How long one turn may take a seat to answer, whatever its transport. A
 # constant is what a session cannot state, and a turn that outlives it is an
-# unreachable seat rather than a slow one; the default stays where it is because
-# a longer wait is not the remedy for a board that hides what is waiting.
+# unreachable seat rather than a slow one. The default is sized from the expert
+# seat, whose recorded turns on the eval cases run from under a minute to just
+# over one: a ceiling below that discards an answer the human has already paid
+# the wait for and reports the seat as timed out. Roughly four times the longest
+# recorded turn leaves that seat room to think without turning a seat that is
+# truly gone into an indefinite wait.
 REQUEST_TIMEOUT_ENV = "GRILLUI_REQUEST_TIMEOUT"
-DEFAULT_REQUEST_TIMEOUT = 60.0
+LONGEST_RECORDED_EXPERT_TURN = 71.7
+DEFAULT_REQUEST_TIMEOUT = 300.0
 
 DEFAULT_API_BASE = "https://openrouter.ai/api/v1"
 CLAUDE_CLI = "claude"
