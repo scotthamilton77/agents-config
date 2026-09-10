@@ -1,1 +1,5 @@
 <!-- DYNAMIC-INCLUDE: src/user/.agents/USER-CORE.md.template -->
+
+Your personal always-on instructions live in `AGENTS.local.md` beside this file. You create that file; no deploy writes it.
+
+@./AGENTS.local.md

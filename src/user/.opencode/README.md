@@ -4,7 +4,9 @@ This directory contains source templates for OpenCode (`opencode`) support.
 
 ## Contents
 
-- `AGENTS.md.template` — Skeleton with dynamic-include markers for the flat instruction file
+- `AGENTS.md.template` — Skeleton with dynamic-include markers for the flat instruction file,
+  plus one prose instruction to read `~/.config/opencode/AGENTS.local.md` in full if it
+  exists. That file is the user's own always-on content; the installer never stages it.
 - `opencode.jsonc.template` — Settings (model, permissions)
 
 ## How it works
