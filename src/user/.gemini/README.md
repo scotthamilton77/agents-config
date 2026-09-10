@@ -9,8 +9,9 @@ exists or when the user passes `--tools=gemini`.
 - `GEMINI.md.template` — Top-level instruction file. It is a single
   `DYNAMIC-INCLUDE` of the shared zero-based core in
   `src/user/.agents/USER-CORE.md.template`, which the installer flattens in at
-  deploy time; it carries no text of its own. There is no Gemini-specific
-  instruction content.
+  deploy time, plus an `@./AGENTS.local.md` import of the user's own
+  always-on content beside it. The installer never stages that file, so a
+  deploy never touches it.
 
 ## Where it installs
 

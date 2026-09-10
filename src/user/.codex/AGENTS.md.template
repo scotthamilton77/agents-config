@@ -1,1 +1,3 @@
 <!-- DYNAMIC-INCLUDE: src/user/.agents/USER-CORE.md.template -->
+
+If `~/.codex/AGENTS.local.md` exists, read it in full first: it holds the user's own always-on instructions, which apply on top of everything above.

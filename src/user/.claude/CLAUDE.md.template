@@ -1,3 +1,5 @@
 # CLAUDE.md
 
 Refer to the @AGENTS.md file in the same directory.
+
+Your personal always-on instructions live in the @AGENTS.local.md file in the same directory. You create that file; no deploy writes it.
