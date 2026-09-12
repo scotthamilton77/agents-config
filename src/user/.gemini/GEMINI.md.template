@@ -1,1 +1,5 @@
 <!-- DYNAMIC-INCLUDE: src/user/.agents/USER-CORE.md.template -->
+
+Look for and load `AGENTS.local.md` beside this file - read it now in full if it exists.
+
+@./AGENTS.local.md

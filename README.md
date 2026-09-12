@@ -147,7 +147,7 @@ authoritative set.
 
 **Per-tool:**
 - `src/user/.claude/AGENTS.md.template` — Claude instruction file
-- `src/user/.claude/CLAUDE.md.template` — minimal file pointing at `AGENTS.md`
+- `src/user/.claude/CLAUDE.md.template` — minimal file pointing at `AGENTS.md` and at `AGENTS.local.md`, the user's own always-on file that no deploy writes
 - `src/user/.claude/settings.json.template` — permissions, hooks, experimental features
 - `src/user/.codex/AGENTS.md.template`, `src/user/.gemini/GEMINI.md.template`, `src/user/.opencode/AGENTS.md.template` — the equivalent instruction files
 - `src/user/.opencode/opencode.jsonc.template` — OpenCode settings

@@ -21,7 +21,9 @@ by default.
   `src/user/.agents/USER-CORE.md.template`, which the installer flattens in at
   deploy time; it carries no text of its own. Claude-specific workflow lives in
   `rules/`.
-- `CLAUDE.md.template` — Thin wrapper pointing at `AGENTS.md`.
+- `CLAUDE.md.template` — Thin wrapper pointing at `AGENTS.md`, and at
+  `AGENTS.local.md` beside it: the user's own always-on instructions, a
+  file the installer never stages, so a deploy never touches it.
 - `settings.json.template` — Permission allowlists, hooks, and experimental
   features. The installer union-merges this into any existing
   `~/.claude/settings.json`.
