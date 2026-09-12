@@ -33,8 +33,8 @@ _LOCAL_NAME = "AGENTS.local.md"
 _REFERRER: dict[type[ToolAdapter], tuple[Path, str]] = {
     ClaudeAdapter: (Path("CLAUDE.md"), "@AGENTS.local.md"),
     GeminiAdapter: (Path("GEMINI.md"), "@./AGENTS.local.md"),
-    CodexAdapter: (Path("AGENTS.md"), "~/.codex/AGENTS.local.md"),
-    OpenCodeAdapter: (Path("AGENTS.md"), "~/.config/opencode/AGENTS.local.md"),
+    CodexAdapter: (Path("AGENTS.md"), "`AGENTS.local.md` beside this file"),
+    OpenCodeAdapter: (Path("AGENTS.md"), "`AGENTS.local.md` beside this file"),
 }
 
 
