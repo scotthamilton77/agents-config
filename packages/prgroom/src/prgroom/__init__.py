@@ -8,4 +8,9 @@ contract Protocols, and the wired CLI.
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+# Read from the installed distribution's metadata rather than written twice: a
+# literal here and a version in the project file drift, and the version is what a
+# caller compares an installed prgroom against to see that it went stale.
+__version__ = version("prgroom")

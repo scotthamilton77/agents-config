@@ -24,6 +24,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, TypeVar
 
 from prgroom.errors import ErrorCode, PreconditionError
@@ -62,6 +63,28 @@ MAX_BODY_CHARS = 65536
 # not the whole body.
 ENVELOPE_SUMMARY = "Verdict envelope"
 FENCE_LANGUAGE = "json"
+
+# What the collapsed block holding one finding's own record is labelled. The prose
+# above it is what a reader at the line reads; the record is there for whoever
+# wants the fields the prose renders from.
+FINDING_SUMMARY = "Finding record"
+
+# One acceptance criterion as a criteria file writes it: a bullet whose id is in
+# bold, then the criterion's sentence on the same line. A sentence continued on a
+# following line is read as far as its first line and no further, which is how
+# every criteria file a round is handed writes one.
+_CRITERION = re.compile(
+    r"^[ \t]*[-*][ \t]+\*\*(?P<id>[^*\s]+)\*\*:?[ \t]+(?P<sentence>\S.*)$", re.M
+)
+
+# How much of a criterion the body's findings list shows. Every finding competes
+# for one line there, so the sentence is cut to a gloss that says which criterion
+# is meant; the line comment has room for the whole of it.
+GLOSS_WORDS = 12
+
+# What a rendering falls back to when no criteria file was named: every criterion
+# lookup misses, and both surfaces show the id the finding itself wrote.
+NO_CRITERIA: Mapping[str, str] = MappingProxyType({})
 
 # The side of the diff every anchor is placed against. A finding names a line of
 # the code as it now stands, which is the right-hand side; the left side holds
@@ -107,11 +130,18 @@ class Verdict:
     review cannot be a rounding of the file. Schema validation belongs to whatever
     assembled the file; this reads only what it must, and says which field failed
     when one is not there.
+
+    ``criteria`` maps a criterion id to its sentence, from the criteria file the
+    round judged against. It rides here rather than being passed alongside because
+    every rendering is then a function of this object alone: the body measured
+    against the size ceiling is the body posted, and the body compared for
+    idempotence is the body a repost would build.
     """
 
     text: str
     head_sha: str
     findings: tuple[dict[str, Any], ...]
+    criteria: Mapping[str, str] = NO_CRITERIA
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,7 +153,25 @@ class Anchor:
     end: int
 
 
-def load_verdict(path: Path) -> Verdict:
+def load_criteria(path: Path) -> Mapping[str, str]:
+    """Read a criteria file's bullets as criterion id to criterion sentence.
+
+    A file whose bullets this recognizes none of yields no criteria rather than
+    failing: the criteria document a round judged against may state them in prose
+    this does not read, and a review that says the id alone is still a review. A
+    file that cannot be opened is the caller's mistake about the path and is
+    refused, because a silently empty mapping reads as a file naming no criteria.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise PreconditionError(
+            ErrorCode.PRECONDITION_CRITERIA_UNREADABLE, detail=f"{path}: {exc}"
+        ) from exc
+    return {match["id"]: _line(match["sentence"]) for match in _CRITERION.finditer(text)}
+
+
+def load_verdict(path: Path, criteria: Mapping[str, str] = NO_CRITERIA) -> Verdict:
     """Read and shape-check a verdict file, or refuse with the reason it failed.
 
     Read as bytes and decoded here rather than through text mode, so the envelope
@@ -177,7 +225,9 @@ def load_verdict(path: Path) -> Verdict:
         if not any(finding.get(field, "").strip() for field in ("evidence", "claim")):
             detail = f"{path}: findings[{index}] carries neither evidence nor claim"
             raise _malformed(detail)
-    verdict = Verdict(text=text, head_sha=head_sha.lower(), findings=tuple(findings))
+    verdict = Verdict(
+        text=text, head_sha=head_sha.lower(), findings=tuple(findings), criteria=criteria
+    )
     rendered = len(render_body(verdict))
     if rendered > MAX_BODY_CHARS:
         raise PreconditionError(
@@ -205,9 +255,9 @@ def render_body(verdict: Verdict) -> str:
         _identity(verdict, payload),
         *_halt(payload),
         *_lens_roster(payload),
-        *_finding_roster(payload),
+        *_finding_roster(payload, verdict.criteria),
         *_priors(payload),
-        _envelope_block(verdict.text),
+        _collapsed(ENVELOPE_SUMMARY, verdict.text),
     ]
     return "\n\n".join(sections)
 
@@ -308,15 +358,57 @@ def place_anchor(
     return None
 
 
+def render_comment(finding: Mapping[str, Any], criteria: Mapping[str, str] = NO_CRITERIA) -> str:
+    """One inline comment: what the finding says, then the record it says it from.
+
+    A person arrives at this line from a notification and reads the comment where
+    it sits, so it leads with prose — which lens raised it, what it claims, what it
+    saw, and the criterion it says the change fails, spelled out when the criteria
+    file names one. The record itself stays, collapsed underneath, for whoever
+    wants the fields rather than the sentences.
+
+    Nothing here refuses a finding. A field that is absent or holds what no lens
+    should is a line the comment leaves out, because the record below carries it
+    regardless.
+    """
+    lens = _line(finding.get("lens"))
+    criterion = _line(finding.get("ac"))
+    qualifiers = [
+        qualifier
+        for qualifier in (_line(finding.get("type")), f"fails {criterion}" if criterion else "")
+        if qualifier
+    ]
+    heading = f"**{lens}**" if lens else ""
+    if qualifiers:
+        heading = f"{heading} ({', '.join(qualifiers)})".lstrip()
+    sentence = criteria.get(criterion, "") if criterion else ""
+    evidence = _line(finding.get("evidence"))
+    sections = [
+        section
+        for section in (
+            heading,
+            _line(finding.get("claim")),
+            f"Evidence: {evidence}" if evidence else "",
+            f"Criterion {criterion}: {sentence}" if sentence else "",
+        )
+        if section
+    ]
+    sections.append(_collapsed(FINDING_SUMMARY, json.dumps(dict(finding), indent=2)))
+    return "\n\n".join(sections)
+
+
 def build_comments(
-    findings: Sequence[Mapping[str, Any]], spans: Mapping[str, list[tuple[int, int]]]
+    findings: Sequence[Mapping[str, Any]],
+    spans: Mapping[str, list[tuple[int, int]]],
+    criteria: Mapping[str, str] = NO_CRITERIA,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Split findings into placed inline comments and the ids of the unplaced ones.
 
-    A comment's body is the finding's own JSON, so a reader at the line sees the
-    same record the envelope carries rather than a rendering of it that could
-    disagree. Findings are neither merged nor de-duplicated: two findings about one
-    line are two findings, and the panel's count is not this verb's to revise.
+    A comment's body is what :func:`render_comment` makes of the finding — prose
+    above the finding's own record — so a reader at the line can follow the review
+    without parsing anything. Findings are neither merged nor de-duplicated: two
+    findings about one line are two findings, and the panel's count is not this
+    verb's to revise.
     """
     comments: list[dict[str, Any]] = []
     unplaced: list[str] = []
@@ -329,7 +421,7 @@ def build_comments(
             "path": anchor.path,
             "line": anchor.end,
             "side": _RIGHT,
-            "body": json.dumps(dict(finding), indent=2),
+            "body": render_comment(finding, criteria),
         }
         if anchor.start < anchor.end:
             comment["start_line"] = anchor.start
@@ -392,7 +484,9 @@ def post_verdict_pr(
             f"(review {existing}) — nothing posted"
         )
 
-    comments, unplaced = build_comments(verdict.findings, diff_spans(http, minted.token, ref))
+    comments, unplaced = build_comments(
+        verdict.findings, diff_spans(http, minted.token, ref), verdict.criteria
+    )
     review_id = submit_review(
         http,
         minted.token,
@@ -479,7 +573,7 @@ def _lens_roster(payload: Mapping[str, Any]) -> list[str]:
     return [_section("Lenses", rows)] if rows else []
 
 
-def _finding_roster(payload: Mapping[str, Any]) -> list[str]:
+def _finding_roster(payload: Mapping[str, Any], criteria: Mapping[str, str]) -> list[str]:
     """One entry per finding: what it is, which lens raised it, and what it says."""
     rows = []
     for entry in _objects(payload.get("findings")):
@@ -488,7 +582,11 @@ def _finding_roster(payload: Mapping[str, Any]) -> list[str]:
             continue
         tags = [
             tag
-            for tag in (_line(entry.get("type")), _line(entry.get("lens")), _line(entry.get("ac")))
+            for tag in (
+                _line(entry.get("type")),
+                _line(entry.get("lens")),
+                _criterion_tag(_line(entry.get("ac")), criteria),
+            )
             if tag
         ]
         head = f"{identifier} ({', '.join(tags)})" if tags else identifier
@@ -512,8 +610,8 @@ def _priors(payload: Mapping[str, Any]) -> list[str]:
     return [f"{tally} ({detail})."]
 
 
-def _envelope_block(text: str) -> str:
-    """The verdict's own text, verbatim, inside a collapsed block a reader can open.
+def _collapsed(summary: str, text: str) -> str:
+    """A text, verbatim, inside a collapsed block a reader can open.
 
     The fence is one backtick longer than the longest run the text holds, so the
     text cannot close the block early however many backticks it carries. A
@@ -522,9 +620,29 @@ def _envelope_block(text: str) -> str:
     """
     fence = "`" * max(3, _longest_backtick_run(text) + 1)
     return (
-        f"<details>\n<summary>{ENVELOPE_SUMMARY}</summary>\n\n"
+        f"<details>\n<summary>{summary}</summary>\n\n"
         f"{fence}{FENCE_LANGUAGE}\n{text}\n{fence}\n\n</details>"
     )
+
+
+def _criterion_tag(named: str, criteria: Mapping[str, str]) -> str:
+    """A finding's criterion as the body's one-line entry names it.
+
+    The ``ac`` field is whatever the lens wrote there — usually an id, sometimes a
+    sentence of its own, sometimes a word meaning it names none. It is shown as
+    written, and a sentence the criteria file has for it is added as a gloss, so a
+    reader recognizes the criterion without the id having to mean anything to them.
+    """
+    sentence = criteria.get(named, "")
+    return f"{named}: {_gloss(sentence)}" if sentence else named
+
+
+def _gloss(sentence: str) -> str:
+    """A criterion's sentence cut to the words that fit one line of a roster."""
+    words = sentence.split()
+    if len(words) <= GLOSS_WORDS:
+        return sentence
+    return " ".join(words[:GLOSS_WORDS]) + "..."
 
 
 def _section(label: str, rows: list[str]) -> str:

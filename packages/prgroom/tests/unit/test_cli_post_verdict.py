@@ -22,6 +22,7 @@ from prgroom.lifecycle.post_verdict import (
     MAX_BODY_CHARS,
     Verdict,
     envelope_of,
+    load_criteria,
     render_body,
 )
 from prgroom.lifecycle.run import Verbs
@@ -145,9 +146,9 @@ def test_post_verdict_is_a_registered_verb() -> None:
     assert "post-verdict" in runner.invoke(cli.app, ["--help"]).output
 
 
-def test_help_lists_the_three_inputs() -> None:
+def test_help_lists_every_input() -> None:
     output = help_output("post-verdict")
-    for token in ("PR", "--verdict", "--project-config"):
+    for token in ("PR", "--verdict", "--project-config", "--criteria"):
         assert token in output
 
 
@@ -683,3 +684,109 @@ def test_a_ten_digit_pull_request_reaches_the_api(
     )
     assert result.exit_code == 0
     assert len(http.posted_reviews()) == 1
+
+
+CRITERIA_FILE = """\
+# Acceptance criteria for the change under review
+
+- **AC-2** The field is read behind a guard, so a malformed payload is refused rather than indexed.
+"""
+
+AC_2_SENTENCE = (
+    "The field is read behind a guard, so a malformed payload is refused rather than indexed."
+)
+AC_2_GLOSS = "The field is read behind a guard, so a malformed payload is..."
+
+
+class TestTheCriteriaTheRoundJudgedAgainst:
+    """The criterion a finding names, reaching both surfaces through the verb."""
+
+    def criteria(self, tmp_path: Path, text: str = CRITERIA_FILE) -> Path:
+        path = tmp_path / "criteria.md"
+        path.write_text(text)
+        return path
+
+    def test_the_option_is_offered_on_the_verb(self) -> None:
+        assert "--criteria" in help_output("post-verdict")
+
+    def test_the_criterion_reaches_the_line_comment_in_full_and_the_body_glossed(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        config, verdict = workspace
+        http = transport(BASE_ROUTES)
+        wire(monkeypatch, http)
+        result = invoke(config, verdict, "--criteria", str(self.criteria(tmp_path)))
+        assert result.exit_code == 0
+        (posted,) = http.posted_reviews()
+        assert f"Criterion AC-2: {AC_2_SENTENCE}" in posted["comments"][0]["body"]
+        assert f"AC-2: {AC_2_GLOSS}" in posted["body"]
+        assert envelope_of(posted["body"]) == verdict.read_text()
+
+    def test_without_the_option_both_surfaces_name_the_criterion_alone(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config, verdict = workspace
+        http = transport(BASE_ROUTES)
+        wire(monkeypatch, http)
+        assert invoke(config, verdict).exit_code == 0
+        (posted,) = http.posted_reviews()
+        assert "fails AC-2" in posted["comments"][0]["body"]
+        assert AC_2_SENTENCE not in posted["body"]
+        assert "AC-2" in posted["body"]
+
+    def test_a_criteria_file_naming_something_else_leaves_the_finding_as_written(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        config, verdict = workspace
+        other = self.criteria(tmp_path, "- **AC-9** Something the finding does not name.\n")
+        http = transport(BASE_ROUTES)
+        wire(monkeypatch, http)
+        assert invoke(config, verdict, "--criteria", str(other)).exit_code == 0
+        (posted,) = http.posted_reviews()
+        assert "fails AC-2" in posted["comments"][0]["body"]
+        assert "Something the finding does not name" not in posted["body"]
+
+    def test_a_criteria_path_that_cannot_be_read_is_refused_before_any_api_call(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        config, verdict = workspace
+        missing = tmp_path / "nowhere" / "criteria.md"
+        http = transport({})
+        wire(monkeypatch, http)
+        result = invoke(config, verdict, "--criteria", str(missing))
+        assert result.exit_code == 2
+        output = " ".join(result.output.split())
+        assert ErrorCode.PRECONDITION_CRITERIA_UNREADABLE.value in output
+        assert str(missing) in output
+        assert http.calls == []
+
+    def test_the_gloss_is_measured_against_the_ceiling_like_the_rest_of_the_body(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The ceiling is measured against the body that gets posted, and the gloss
+        # is part of that body. The same verdict is posted without the option and
+        # refused with it, so the measurement can only be reading the gloss. The
+        # padding sits in a field the summary does not report, so the body grows
+        # exactly as the file does.
+        config, verdict = workspace
+        criteria = load_criteria(self.criteria(tmp_path))
+        envelope = json.loads(verdict.read_text())
+        envelope["retained_categories"] = [""]
+        text = json.dumps(envelope)
+        glossed = Verdict(text=text, head_sha=HEAD, findings=(), criteria=criteria)
+        overhead = len(render_body(glossed)) - len(text)
+        envelope["retained_categories"] = ["x" * (MAX_BODY_CHARS + 1 - overhead - len(text))]
+        padded = json.dumps(envelope)
+        verdict.write_text(padded)
+        assert len(render_body(Verdict(text=padded, head_sha=HEAD, findings=()))) <= MAX_BODY_CHARS
+
+        http = transport(BASE_ROUTES)
+        wire(monkeypatch, http)
+        assert invoke(config, verdict).exit_code == 0
+
+        refused = transport({})
+        wire(monkeypatch, refused)
+        result = invoke(config, verdict, "--criteria", str(self.criteria(tmp_path)))
+        assert result.exit_code == 2
+        assert ErrorCode.PRECONDITION_VERDICT_TOO_LARGE.value in result.output
+        assert refused.calls == []

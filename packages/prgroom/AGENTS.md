@@ -144,6 +144,22 @@ in place rather than upgrading silently. Manual `uv tool install
 ./packages/prgroom` (or `uv run prgroom …` from `packages/prgroom/`) remains
 possible for a no-installer or specific-checkout workflow.
 
+## The version says whether the installed copy is stale
+
+The version in `pyproject.toml` is either a release `x.y.z` or that release
+carrying the PEP 440 local label `+partial`. A change to `src/` or to
+`pyproject.toml` either bumps the release or carries the label, and
+`make version-guard` fails the build when it does neither. The label means
+tweaks accumulating on top of the installed release that are not yet worth a
+reinstall, so the installer refuses to deploy a version carrying it; every
+comparison elsewhere reads the release part alone.
+
+A bump is therefore a message to the human: reinstall before the next review
+round. The round posts its verdict through the `prgroom` on PATH, and only a
+human runs the installer, so a merged fix does not reach the tool by itself. The
+`review-panel` skill checks the installed release against this package's before
+it posts and refuses when the installed one is older.
+
 ## Do not run grooming against a live PR automatically
 
 Never invoke `prgroom run`/`push`/`reply`/`resolve` against a real PR to "try it

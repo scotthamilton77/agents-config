@@ -712,3 +712,110 @@ def test_reachability_no_tty_without_yes_raises(tmp_path: Path) -> None:
             dry_run=False,
             auto_yes=False,
         )
+
+
+def _partial_version(tmp_path: Path) -> Path:
+    """Give the package a version carrying the label that refuses installation."""
+    pkg = _pkg(tmp_path)
+    (pkg / "pyproject.toml").write_text('[project]\nversion = "0.2.0+partial"\n', encoding="utf-8")
+    return pkg
+
+
+def test_partial_version_refuses_the_fresh_install(tmp_path: Path) -> None:
+    """
+    Given no receipt entry and a package whose version carries the partial label
+    When deploy_clis runs
+    Then no install fires, the run fails, and the message names the label and
+    the bump that lifts it.
+
+    Pins the refusal on the fresh row. Shim budget: 1 (decision read only).
+    """
+    _partial_version(tmp_path)
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4),
+        bin_dir=tmp_path / "bin",
+        tool_list={},
+        shims=[None],
+    )
+    io = ScriptedIO()
+    outcome = deploy_clis(
+        (_SPEC,),
+        repo_root=tmp_path,
+        prior=Receipt(),
+        deploy=deploy,
+        io=io,
+        dry_run=False,
+        auto_yes=True,
+    )
+    assert outcome.any_failed
+    assert not any(t[0] == "tool_install" for t in deploy.transcript)
+    errors = [e.message for e in io.transcript if e.channel == "err"]
+    assert any("partial" in m and "release version" in m for m in errors)
+
+
+def test_partial_version_refuses_the_forcing_install(tmp_path: Path) -> None:
+    """
+    Given a receipt entry with a stale digest, a shim, provenance proven, and a
+    partial version
+    When deploy_clis runs with consent granted
+    Then the consented upgrade still installs nothing and the run fails.
+
+    Pins the refusal on the forcing path, which every consented and healing
+    install routes through. Shim budget: 1.
+    """
+    _partial_version(tmp_path)
+    shim = tmp_path / "bin" / "grind"
+    prior = Receipt(clis=(CliReceiptEntry(name="grind", binary="grind", digest="sha256:stale"),))
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4),
+        bin_dir=tmp_path / "bin",
+        tool_list={"grind": frozenset({"grind"})},
+        which_map={"grind": shim},
+        shims=[shim],
+    )
+    io = ScriptedIO()
+    outcome = deploy_clis(
+        (_SPEC,),
+        repo_root=tmp_path,
+        prior=prior,
+        deploy=deploy,
+        io=io,
+        dry_run=False,
+        auto_yes=True,
+    )
+    assert outcome.any_failed
+    assert not any(t[0] == "tool_install" for t in deploy.transcript)
+    assert "grind" not in outcome.deployed
+
+
+def test_release_version_installs_as_before(tmp_path: Path) -> None:
+    """
+    Given a package declaring a plain release version
+    When the fresh row runs
+    Then the install fires, so the refusal reads only the label.
+
+    Shim budget: 2.
+    """
+    pkg = _pkg(tmp_path)
+    (pkg / "pyproject.toml").write_text('[project]\nversion = "0.2.0"\n', encoding="utf-8")
+    shim = tmp_path / "bin" / "grind"
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4),
+        bin_dir=tmp_path / "bin",
+        tool_list={},
+        which_map={"grind": shim},
+        shims=[None, shim],
+        installs=[_OK],
+        smokes=[_OK],
+    )
+    outcome = deploy_clis(
+        (_SPEC,),
+        repo_root=tmp_path,
+        prior=Receipt(),
+        deploy=deploy,
+        io=ScriptedIO(),
+        dry_run=False,
+        auto_yes=True,
+    )
+    assert not outcome.any_failed
+    assert "grind" in outcome.deployed
