@@ -63,8 +63,10 @@ answer a turn is replying to named the decisions it puts in question, the reply
 is measured against that list in code -- off the turn's own rulings. One that
 left a decision unruled is handed up a tier once and asked again, narrowed to
 what is left; a second reply that rules on nothing is said to the human as a
-notice naming those decisions. A grill-master turn whose reply is not the reply
-document at all walks the same ladder, its own seat's one retry already spent.
+notice naming those decisions. A grill-master turn the board would not take
+walks the same ladder, its own seat's one retry already spent -- whether what
+arrived was not the document at all, or was the document naming something no
+board of this session has.
 Nothing here writes to the map: the insistence buys another agent turn, and the
 human is told when it buys nothing.
 
@@ -171,7 +173,12 @@ class AgentUnreachableError(RuntimeError):
 
 
 class DocumentRefusedError(RuntimeError):
-    """A grill-master turn that never arrived in the shape the board reads.
+    """A grill-master turn the board would not take, twice.
+
+    Two faults arrive here and the ladder treats them alike: a reply that never
+    came in the shape the board reads, and a document that read but named
+    something no board of this session has. Both are a seat that was told what
+    was wrong in the words it was refused with and answered no better.
 
     Distinct from a tier that could not be reached: a seat answered, twice, and
     what it said is unusable. It carries the tier it ended on because the ladder
@@ -180,7 +187,7 @@ class DocumentRefusedError(RuntimeError):
     """
 
     def __init__(self, tier: str, detail: str) -> None:
-        super().__init__(f"the {tier!r} tier's reply is not the map document: {detail}")
+        super().__init__(f"the {tier!r} tier's turn did not reach the board: {detail}")
         self.tier = tier
         self.detail = detail
 

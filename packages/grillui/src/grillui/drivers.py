@@ -74,7 +74,7 @@ import threading
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypeVar
 from uuid import uuid4
 
 import httpx
@@ -130,6 +130,7 @@ from grillui.schemas import (
 )
 from grillui.tiers import (
     API_KEY_ENV,
+    APPENDER_RETRY_RULE,
     BYTES_PER_TOKEN,
     CLAUDE_CLI,
     CLAUDE_TRANSPORT,
@@ -247,10 +248,17 @@ class ReplyRefusedError(RuntimeError):
     An empty completion and a refused append are the same thing from the
     human's side -- they asked something and no answer exists -- so both surface
     rather than being written off as a turn that happened.
+
+    `detail` is the refusal in the words it was refused with, kept apart from
+    the sentence built around it because the ladder quotes it back to the seat:
+    a map turn the appender refused earns one more ask carrying this text, and a
+    seat handed the whole sentence is being told about itself in the third
+    person.
     """
 
     def __init__(self, tier: str, detail: str) -> None:
         super().__init__(f"the {tier!r} tier produced no reply: {detail}")
+        self.detail = detail
 
 
 class MalformedCompletionError(TypeError):
@@ -1074,34 +1082,49 @@ class FastDriver:
         def ask(text: str) -> tuple[str, int | None]:
             return self.transport(model=model, system=system, prompt=text, shaped=ruling_turn)
 
-        reply, prompt_tokens = (
-            take_document(self.tier, prompt, ask, _first) if ruling_turn else ask(prompt)
-        )
-        measured = Measurement.of(
-            self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, model
-        )
-        attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
-        advice = advise(log, entries, channel, attribution, declared_updates(reply)[4])
-        # The reply and everything it produces land under one hold of the
-        # append lock -- the same discipline the lane uses to keep a turn and
-        # the word about it adjacent. Two separate appends leave a window: a
-        # human turn accepted inside it is scheduled against a log where this
-        # channel is still on the first rung, so the turn the policy just
-        # bought is composed by the tier it moved off -- and a warning that measured this reply
-        # would be filed against whatever landed in between.
-        #
-        # The transfer it triggers and the warning it measured are emitted
-        # after it, and only if the reply landed: a turn nobody could record is
-        # not a turn whose recommendation is worth spending the expert seat on,
-        # nor one whose size is worth telling the human about. Under the lock
-        # that costs nothing -- a refusal raises out of the block before either
-        # is written, and nothing else could have read the log in between.
-        with log.appending():
-            record_reply(log, self.tier, channel, reply, attribution, context.mootness)
-            spend = self.config.autonomous and not capped(log.entries(), channel, advice)
-            if advice is not None and spend:
-                log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
-            measured.warn(log, model)
+        def land(outcome: tuple[str, int | None]) -> None:
+            # Everything measured off the reply is measured off the attempt
+            # being landed, never off the first one: a retried turn is a second
+            # completion with its own count and its own recommendation, and
+            # attribution built once before the retry would file the turn that
+            # landed under the numbers of the turn that did not.
+            reply, prompt_tokens = outcome
+            measured = Measurement.of(
+                self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, model
+            )
+            attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
+            advice = advise(log, entries, channel, attribution, declared_updates(reply)[4])
+            # The reply and everything it produces land under one hold of the
+            # append lock -- the same discipline the lane uses to keep a turn and
+            # the word about it adjacent. Two separate appends leave a window: a
+            # human turn accepted inside it is scheduled against a log where this
+            # channel is still on the first rung, so the turn the policy just
+            # bought is composed by the tier it moved off -- and a warning that measured this reply
+            # would be filed against whatever landed in between.
+            #
+            # The transfer it triggers and the warning it measured are emitted
+            # after it, and only if the reply landed: a turn nobody could record is
+            # not a turn whose recommendation is worth spending the expert seat on,
+            # nor one whose size is worth telling the human about. Under the lock
+            # that costs nothing -- a refusal raises out of the block before either
+            # is written, and nothing else could have read the log in between.
+            with log.appending():
+                record_reply(log, self.tier, channel, reply, attribution, context.mootness)
+                spend = self.config.autonomous and not capped(log.entries(), channel, advice)
+                if advice is not None and spend:
+                    log.emit_status(
+                        STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel
+                    )
+                measured.warn(log, model)
+
+        # A map turn is landed by the ladder, which is what buys it the retry an
+        # appender refusal earns. A thread turn is landed here: it is not the
+        # document, nothing above it reads its shape, and a refusal on it is the
+        # turn's failure the way it has always been.
+        if ruling_turn:
+            take_document(self.tier, prompt, ask, _first, land)
+        else:
+            land(ask(prompt))
 
 
 @dataclass
@@ -1168,48 +1191,59 @@ class HeavyDriver:
                 write_resume(log.directory, channel, outcome[1], chains)
             return outcome
 
+        def land(outcome: tuple[str, str | None, int | None]) -> None:
+            # Built from the attempt being landed rather than once for the turn:
+            # a retried turn resumed the chain again, so its chain id and its
+            # count are its own.
+            reply, chain, prompt_tokens = outcome
+            # The bytes are this turn's alone and the count is the whole resumed
+            # chain's, which is why the count is the one that matters here: what
+            # fills a heavy tier's window is the conversation it is resuming, and
+            # this turn's prompt is the smallest part of it.
+            measured = Measurement.of(
+                self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, model
+            )
+            attribution: dict[str, Any] = {
+                TIER_KEY: self.tier,
+                MODEL_KEY: model,
+                EFFORT_KEY: effort,
+                **measured.recorded,
+                # Whether this heavy turn followed a transfer, read off the same
+                # channel mode the lane routed it by: no agent escalates itself, and
+                # a heavy turn nobody moved the channel for must not be able to
+                # claim it was asked for.
+                FOLLOWED_TRANSFER_KEY: in_expert_mode(entries, channel),
+            }
+            if chain is not None:
+                attribution[CHAIN_KEY] = chain
+            # Only where the policy moved the channel. A human gesture writes no
+            # source, so the log a `gated` session keeps is unchanged.
+            source = transfer_source(entries, channel)
+            if source is not None:
+                attribution[TRANSFER_SOURCE_KEY] = source
+            # One hold of the append lock, for the same reason the fast tier takes
+            # one: a warning is about the reply immediately above it, and a turn on
+            # another channel landing between the two would leave the human reading
+            # this measurement against somebody else's turn. The warning is second
+            # and conditional on the reply -- a refusal raises out of the block
+            # before anything is said about a turn that never happened.
+            with log.appending():
+                record_reply(log, self.tier, channel, reply, attribution, context.mootness)
+                measured.warn(log, model)
+
+        # The turn is landed inside the chain lock, because landing it is what
+        # can buy another ask on the same chain: a map document the appender
+        # refuses is retried here, and a lock released before the append would
+        # let another turn resume this chain between the two asks.
         with self._turn:
             if cold:
                 forget_resume(log.directory, channel, chains)
-            reply, chain, prompt_tokens = (
-                take_document(self.tier, prompt, ask, _first)
-                if context.agent == GRILL_MASTER
-                else ask(prompt)
-            )
-        # The bytes are this turn's alone and the count is the whole resumed
-        # chain's, which is why the count is the one that matters here: what
-        # fills a heavy tier's window is the conversation it is resuming, and
-        # this turn's prompt is the smallest part of it.
-        measured = Measurement.of(
-            self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, model
-        )
-        attribution: dict[str, Any] = {
-            TIER_KEY: self.tier,
-            MODEL_KEY: model,
-            EFFORT_KEY: effort,
-            **measured.recorded,
-            # Whether this heavy turn followed a transfer, read off the same
-            # channel mode the lane routed it by: no agent escalates itself, and
-            # a heavy turn nobody moved the channel for must not be able to
-            # claim it was asked for.
-            FOLLOWED_TRANSFER_KEY: in_expert_mode(entries, channel),
-        }
-        if chain is not None:
-            attribution[CHAIN_KEY] = chain
-        # Only where the policy moved the channel. A human gesture writes no
-        # source, so the log a `gated` session keeps is unchanged.
-        source = transfer_source(entries, channel)
-        if source is not None:
-            attribution[TRANSFER_SOURCE_KEY] = source
-        # One hold of the append lock, for the same reason the fast tier takes
-        # one: a warning is about the reply immediately above it, and a turn on
-        # another channel landing between the two would leave the human reading
-        # this measurement against somebody else's turn. The warning is second
-        # and conditional on the reply -- a refusal raises out of the block
-        # before anything is said about a turn that never happened.
-        with log.appending():
-            record_reply(log, self.tier, channel, reply, attribution, context.mootness)
-            measured.warn(log, model)
+            if context.agent == GRILL_MASTER:
+                _, chain, _ = take_document(self.tier, prompt, ask, _first, land)
+            else:
+                outcome = ask(prompt)
+                land(outcome)
+                chain = outcome[1]
         if chain is not None:
             with self._handoff:
                 self.copying = copy_in_background(
@@ -1293,33 +1327,48 @@ class CodexDriver:
                 raise AgentUnreachableError(self.tier, NO_TURN)
             return said, thread, read
 
+        def land(outcome: tuple[str, str | None, int | None]) -> None:
+            # Built from the attempt being landed rather than once for the turn:
+            # a retried turn is its own ask on the thread, with its own id and
+            # its own share of the count.
+            reply, chain, prompt_tokens = outcome
+            # The count is what this turn was given, out of a total the thread keeps,
+            # and the bytes are this turn's alone -- which is why the count is the
+            # one that matters: what fills the window is the conversation being
+            # resumed, and this turn's own prompt is the smallest part of it.
+            measured = Measurement.of(
+                self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, seat.model
+            )
+            attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
+            if chain is not None:
+                attribution[CHAIN_KEY] = chain
+            advice = advise(log, entries, channel, attribution, declared_updates(reply)[4])
+            # One hold of the append lock, for the reason every other seat takes
+            # one: the transfer a policy buys and the warning this turn measured are
+            # about the reply immediately above them.
+            with log.appending():
+                record_reply(log, self.tier, channel, reply, attribution, context.mootness)
+                spend = self.config.autonomous and not capped(log.entries(), channel, advice)
+                if advice is not None and spend:
+                    log.emit_status(
+                        STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel
+                    )
+                measured.warn(log, seat.model)
+
+        # The turn is landed inside the thread lock, because landing it is what
+        # can buy another ask on the same thread: a map document the appender
+        # refuses is retried here, and a lock released before the append would
+        # let another turn resume this thread between the two asks.
         with self._turn:
             if cold:
                 forget_resume(log.directory, channel, CODEX_RESUME_FILE)
                 self._counted.pop(channel, None)
-            reply, chain, prompt_tokens = (
-                take_document(self.tier, prompt, ask, _first) if ruling_turn else ask(prompt)
-            )
-        # The count is what this turn was given, out of a total the thread keeps,
-        # and the bytes are this turn's alone -- which is why the count is the
-        # one that matters: what fills the window is the conversation being
-        # resumed, and this turn's own prompt is the smallest part of it.
-        measured = Measurement.of(
-            self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, seat.model
-        )
-        attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
-        if chain is not None:
-            attribution[CHAIN_KEY] = chain
-        advice = advise(log, entries, channel, attribution, declared_updates(reply)[4])
-        # One hold of the append lock, for the reason every other seat takes
-        # one: the transfer a policy buys and the warning this turn measured are
-        # about the reply immediately above them.
-        with log.appending():
-            record_reply(log, self.tier, channel, reply, attribution, context.mootness)
-            spend = self.config.autonomous and not capped(log.entries(), channel, advice)
-            if advice is not None and spend:
-                log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
-            measured.warn(log, seat.model)
+            if ruling_turn:
+                _, chain, _ = take_document(self.tier, prompt, ask, _first, land)
+            else:
+                outcome = ask(prompt)
+                land(outcome)
+                chain = outcome[1]
         if chain is not None:
             with self._handoff:
                 self.copying = copy_in_background(
@@ -1582,25 +1631,79 @@ def take_document(
     prompt: str,
     attempt: Callable[[str], _Outcome],
     said: Callable[[_Outcome], str],
+    land: Callable[[_Outcome], None] | None = None,
 ) -> _Outcome:
-    """One grill-master turn, retried once on the same seat when what came back
-    is not the document.
+    """One grill-master turn, put on the board, retried once on the same seat
+    when the board would not take it.
+
+    Two faults end a turn here, and one rung answers both. A reply that is not
+    the document is the first, and the gate catches it before the log is
+    touched. A document the appender refuses is the second: it reads as the map
+    document and still names a node this session has not got, or an answer
+    carrying neither an option nor text. Only the appender knows the board, so
+    that fault exists only once the turn is offered to it -- which is why
+    landing the turn belongs to the ladder rather than to the caller after it.
+    A seat told either fault in the words it was refused with can send a turn
+    that lands; a seat whose refusal went straight to the human's error line
+    never got the ask.
 
     One retry and no more. A model that lost the shape usually finds it again
     when told which key was wrong, and paying an expert turn for a formatting
     slip spends the human's waiting clock on nothing; a seat that missed twice
     with the fault quoted is not going to find it on a third ask, and the rung
     above is where the turn goes instead.
+
+    Nothing of a refused turn is on the board when the retry runs. The gate
+    refuses before anything is offered, and the appender refuses a batch whole
+    and before any append, so the second ask repeats no part of a turn that
+    half-arrived.
+
+    `land` is left out only by a caller judging the shape and recording nothing.
+    A driver taking a real turn passes it, or the appender's word never reaches
+    the seat that can act on it.
     """
     outcome = attempt(prompt)
-    problem = document_problem(said(outcome))
-    if problem is None:
+    refused = _unusable(outcome, said, land)
+    if refused is None:
         return outcome
-    outcome = attempt(f"{prompt}\n\n## Your last reply was refused\n{RETRY_RULE} {problem}")
+    outcome = attempt(f"{prompt}\n\n## Your last reply was refused\n{refused.rule} {refused.fault}")
+    refused = _unusable(outcome, said, land)
+    if refused is not None:
+        raise DocumentRefusedError(tier, refused.fault)
+    return outcome
+
+
+class _Refused(NamedTuple):
+    """Why a turn is not on the board, and how to tell the seat about it.
+
+    The fault travels with the rule that introduces it because the two faults
+    the ladder takes need different sentences: one asks for a shape again, and
+    the other asks for the same shape carrying something else.
+    """
+
+    rule: str
+    fault: str
+
+
+def _unusable(
+    outcome: _Outcome,
+    said: Callable[[_Outcome], str],
+    land: Callable[[_Outcome], None] | None,
+) -> _Refused | None:
+    """Why this turn did not reach the board, or None where it did.
+
+    The gate is asked first. It is the cheaper of the two, and the appender has
+    no opinion to give about a reply that is not the document at all.
+    """
     problem = document_problem(said(outcome))
     if problem is not None:
-        raise DocumentRefusedError(tier, problem)
-    return outcome
+        return _Refused(RETRY_RULE, problem)
+    if land is not None:
+        try:
+            land(outcome)
+        except ReplyRefusedError as refused:
+            return _Refused(APPENDER_RETRY_RULE, refused.detail)
+    return None
 
 
 def _first(outcome: tuple[str, Any] | tuple[str, Any, Any]) -> str:
@@ -1901,6 +2004,13 @@ def _submit(log: SessionLog, tier: str, channel: str, kind: str, payload: dict[s
 
 
 def _refusal(receipt: Receipt) -> str:
+    """The refusal in the appender's own words, reason and detail both.
+
+    The detail is what makes the retry worth taking: a reason from the closed
+    vocabulary says a node was unknown, and only the detail says which one, so a
+    seat handed the reason alone is left guessing which of its updates to fix.
+    """
     if isinstance(receipt, RejectedReceipt):
-        return f"the appender refused it: {receipt.reason}"
+        said = f"the appender refused it: {receipt.reason}"
+        return f"{said}: {receipt.detail}" if receipt.detail else said
     return f"the appender answered {receipt.status!r}"

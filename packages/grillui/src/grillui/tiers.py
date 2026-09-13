@@ -958,6 +958,17 @@ RETRY_RULE = (
     "`stop`, and nothing else. The fault was:"
 )
 
+# What a seat is told when its turn read as the document and the board still
+# would not take it. The shape is not the fault here, so repeating the shape
+# rule would send the seat to fix what was already right. The appender's own
+# words name what it refused, and the same turn with that one thing corrected
+# is what lands.
+APPENDER_RETRY_RULE = (
+    "Your last reply was refused. It is the map document, and the board would not take what it "
+    "carries. Send the same turn again, as the same JSON object, with that one thing corrected "
+    "and nothing else changed. The fault was:"
+)
+
 # The obligation, on the one turn that owes it, naming the decisions rather than
 # describing the case. There is no standing paragraph saying the same thing:
 # one is something an agent has to recognise its own turn in, and the turn that
