@@ -40,7 +40,12 @@ from installer.core.receipt_build import (
 )
 from installer.core.receipt_diff import diff_orphans, scope_owners
 from installer.core.receipt_store import write_receipt
-from installer.core.sync import sync_plan, sync_routes
+from installer.core.sync import (
+    custom_content_conflicts,
+    refuse_custom_content_conflicts,
+    sync_plan,
+    sync_routes,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -296,7 +301,25 @@ def install_pipeline(
     ``ignore`` (defaults to an empty manifest — exclude nothing) is forwarded
     verbatim into every ``sync_plan`` call, so a DIR item's nested exclusions
     apply uniformly across tools.
+
+    An instruction file whose managed part was hand-edited raises
+    `CustomContentConflictError` here, before the first tool is installed and
+    under ``dry_run`` too. The scan spans every tool in the run rather than
+    stopping at the one that tripped, so the user is told about all of them at
+    once and no tool is left half-installed while another is refused.
     """
+    # Materialize: the custom-content scan below walks ``adapters`` before the
+    # install loop does, and a one-shot iterator would be exhausted by the first
+    # pass — leaving nothing to install.
+    adapters = tuple(adapters)
+    refuse_custom_content_conflicts(
+        [
+            conflict
+            for adapter in adapters
+            for conflict in custom_content_conflicts(adapter, plans[Tool(adapter.name)], home=home)
+        ],
+        io=io,
+    )
     collect = outcomes_by_tool is not None and not dry_run
     result: dict[str, Counters] = {}
     for adapter in adapters:

@@ -9,10 +9,11 @@ because `~/.codex/` already exists.
 - `AGENTS.md.template` — Top-level instruction file. It is a single
   `DYNAMIC-INCLUDE` of the shared zero-based core in
   `src/user/.agents/USER-CORE.md.template`, which the installer flattens in at
-  deploy time, plus one prose instruction to read `AGENTS.local.md` beside
-  it in full if it exists. That file is the user's own always-on content; the
-  installer never stages it, so a deploy never touches it. Codex has no
-  import mechanism, so prose is the only route to it.
+  deploy time. It ends with a bare `## Custom content` heading, and whatever
+  the user writes below that heading in the deployed file is theirs: each
+  install rewrites the part above it and reproduces the part below it
+  untouched. Codex has no import mechanism, so a section of the file itself is
+  the only route to the user's own always-on content.
 
 ## Where it installs
 
