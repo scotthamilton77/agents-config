@@ -1583,25 +1583,29 @@ def test_a_change_that_landed_raises_no_notification() -> None:
 def test_a_message_the_board_can_render_is_not_also_announced() -> None:
     """One message, one surface, and the board gets first refusal.
 
-    A message naming a decision is read on that decision's block. Prose that
-    arrived carrying board changes is framing for those changes and is read on
-    them. Only a message with no decision to land on reaches the lane -- which
-    is what leaves the lane worth opening.
+    A message naming a decision is read on that decision's block. A message
+    naming none is the turn's own story: it is read once, where the turn is
+    shown, and against no decision at all.
+
+    Homing an unnamed message on whatever its entry changed in the same breath
+    is the alternative, and it fails twice over: one paragraph about a turn
+    repeats against every decision that turn moved, and none of those decisions
+    says what moved locally. What a moved decision says about itself is the
+    change that moved it, which it carries already.
     """
     observer = function_body("observe")
     assert "noticeHomes(" in observer
     assert "if (!homes.length) {" in observer, "the lane is written without asking the board"
     homes = function_body("noticeHomes")
-    # Derived from the log, so the reload that empties the lane renders the
-    # message in the same place it was before.
-    assert "entryAt(item.authored_at)" in homes
-    assert "MAP_MUTATION_KINDS.indexOf(u.kind)" in homes
-    # And a home is a decision the board is carrying, so "the board shows this
+    # A home is a decision the board is carrying, so "the board shows this
     # already" is measured rather than assumed.
-    assert "node(id)" in homes
+    assert "item.target && node(item.target)" in homes
+    # The entry's own changes are not homes for a message that named none.
+    assert "MAP_MUTATION_KINDS" not in homes
+    assert "updatesIn(" not in homes
 
 
-def test_agent_framing_renders_on_the_decision_its_entry_changed() -> None:
+def test_a_message_renders_on_the_decision_it_names_on_every_surface() -> None:
     """Every surface that shows a message asks the same question of it.
 
     The collapsed block, the expanded block and the ✉ markers alike: a message
@@ -1612,6 +1616,49 @@ def test_agent_framing_renders_on_the_decision_its_entry_changed() -> None:
     assert source.count("noticesOn(id).forEach(function (n) { h += infoNote(n); });") == 2
     assert "noticesOn(id)" in function_body("unreadNotices")
     assert "noticeHomes(n)" in function_body("noticesOn")
+
+
+def test_a_decision_says_what_last_moved_it_wherever_it_is_shown() -> None:
+    """The local half of one turn, on the decision rather than in the message.
+
+    A turn that moves four decisions writes one message about the turn, and the
+    board shows that message once. What each moved decision says about itself is
+    the change that moved it and the reason that change carried -- read off the
+    same history the 🕘 panel reads, so the two cannot disagree, and shown
+    collapsed as well as expanded because a settled decision shuts itself.
+
+    Three things are excluded, and each would be a claim the board has not
+    earned. A change still waiting on the human has moved nothing yet; its own
+    block on that decision says it is waiting. A change the human dismissed never
+    moved anything, and it leaves the queue exactly as an applied one does, so
+    the gesture is what tells them apart rather than the queue. A message on the
+    decision renders as the message it is, and counting it as a change as well
+    reads as two events.
+
+    Those two exclusions are the whole of it, because a queued change ends
+    waiting, applied or dismissed. A change that never reached the queue landed
+    when it arrived, which is what a revise on an unanswered decision does, so a
+    reader restricted to the human's `apply` entries would report nothing on the
+    decisions a turn most often moves.
+    """
+    source = page_source()
+    assert source.count("h += changeLine(id);") == 2, "one of the two blocks says nothing"
+    line = function_body("changeLine")
+    assert "lastChange(id)" in line
+    # The board's own rationale stands behind a change that gave no reason, and
+    # a move nobody gave a reason for says nothing at all.
+    assert "(node(id) || {}).rationale" in line
+    assert 'if (!why) return "";' in line
+    moved = function_body("lastChange")
+    assert "historyOf(id)" in moved
+    assert "PROPOSABLE_KINDS.indexOf(h.kind) >= 0" in moved
+    assert "BOARD.pending.some(function (p) { return p.id === h.uid; })" in moved
+    assert "!dismissed(h.uid)" in moved
+    # The dismissal is read off the human's own gesture, which is the only thing
+    # that says a change left the queue without landing.
+    gesture = function_body("dismissed")
+    assert 'e.actor === "human" && e.kind === DISMISS_KIND' in gesture
+    assert "(e.payload.pending || []).indexOf(uid) >= 0" in gesture
 
 
 def test_a_message_reaches_every_surface_as_words_rather_than_as_markup() -> None:
