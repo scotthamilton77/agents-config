@@ -15,7 +15,7 @@
         e2e-grillui eval-grillui \
         ci-agentprobe test-agentprobe lint-agentprobe format-check-agentprobe \
         typecheck-agentprobe cov-agentprobe audit-agentprobe verify-entry-agentprobe \
-        spec-lint content-lint content-tests doc-lint
+        spec-lint content-lint content-tests doc-lint ponytail-lint
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
@@ -32,7 +32,7 @@ AGENTPROBE := packages/agentprobe
 # the check exists.
 ci: ci-installer ci-prgroom ci-grind ci-gitclean ci-executor ci-grillui \
     ci-agentprobe \
-    lint-actions spec-lint content-lint content-tests doc-lint
+    lint-actions spec-lint content-lint content-tests doc-lint ponytail-lint
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -91,6 +91,23 @@ content-tests:
 # nothing and never invokes the installer. In `ci` — see the note there.
 doc-lint:
 	uv --project $(INSTALLER) run python -m installer.doc_lint_cli .
+
+# ponytail-lint keeps the `ponytail:` label out of packages/ and src/. An
+# implementer agent can be prompted to tag a deliberate simplification with that
+# label, and the label is scaffolding for the agent that wrote it: the reader who
+# meets the code later needs the ceiling and the upgrade path in plain prose, in
+# the same comment or docstring, with no tag in front of it. This is a grep and
+# not a Python module because the whole rule is one literal string -- there is no
+# tree to parse, no roster to assemble, and nothing to decide once the string is
+# found. `--untracked` reaches a file that is written but not yet staged while
+# still honouring .gitignore, so a package's .venv is out of scope for free. The
+# pathspec bounds the scan to the two trees, which is also what keeps this recipe
+# from matching itself.
+ponytail-lint:
+	@if git grep -n --untracked 'ponytail:' -- packages src; then \
+	    echo "A deliberate simplification states its ceiling in prose, never as a label."; \
+	    exit 1; \
+	fi
 
 # lint-actions and verify-entry-installer run from the repo root (no `cd`) so
 # they can resolve .github/workflows/ and scripts/ respectively. The

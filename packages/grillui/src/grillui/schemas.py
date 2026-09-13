@@ -2,7 +2,7 @@
 
 Four contracts live here: the event-log entry, the per-kind payload shapes, the
 typed receipt every write is answered with, and the two context images the
-projector folds. A *submitted* event is deliberately laxer than a log entry --
+projector replays. A *submitted* event is deliberately laxer than a log entry --
 `idempotency_key` is optional on the wire so that its absence comes back as a
 typed rejection rather than as a transport-level error, which is the whole point
 of a uniform receipt.
@@ -155,8 +155,9 @@ PROPOSABLE_KINDS = frozenset(
 # things about the same thread. Parking sets it aside as a loose end the human
 # may come back to; closing declares them done with it, so it is never carried
 # to the end of the session as unfinished and no agent raises it again. Neither
-# removes anything: the turns stay readable, and a human turn on a closed
-# thread opens it again, which is why closing needs no undo gesture of its own.
+# removes anything: the turns stay readable, and a human turn on a thread set
+# aside by either gesture opens it again, which is why neither needs an undo
+# gesture of its own.
 THREAD_FOLD_KIND = "thread-fold"
 THREAD_PARK_KIND = "thread-park"
 THREAD_CLOSE_KIND = "thread-close"
@@ -211,7 +212,7 @@ def pending_ids(payload: Mapping[str, Any]) -> list[str]:
 
     One reader, because two would be a gesture whose updates and whose origins
     are counted differently: the appender materialises an apply's updates from
-    this sequence, and the fold pairs each of those updates back to the entry it
+    this sequence, and the replay pairs each of those updates back to the entry it
     came from by position in it. A second derivation that kept the duplicates
     would leave the second update wearing the first one's author.
     """
@@ -269,8 +270,8 @@ def minted_id(seq: int, index: int | None = None) -> str:
 
 # The status lane. A status entry is backend-authored and carries a `phase` and
 # a human-readable `detail`; the `composing` phase additionally names the tier
-# that is composing, and `error` is the phase a projection, persistence or
-# agent-transport failure surfaces as. The kind is deliberately absent from the
+# that is composing, and `error` is how a turn that could not answer closes the
+# lane. The kind is deliberately absent from the
 # submission registry above: no status entry is ever produced by a model, so a
 # client offering one is refused as an unknown kind rather than believed.
 #
@@ -299,6 +300,16 @@ STATUS_PHASE_TRANSFERRED = "transferred"
 # was cut back to it. The page does not draw it: nothing the human has to act
 # on happened.
 STATUS_PHASE_RULINGS_DROPPED = "rulings-dropped"
+# A step downstream of an accepted append that could not finish: the projection,
+# the persistence of the images, the capture of the terminal result. It is a
+# phase of its own rather than an `error` because it closes nothing. `error` is
+# half of the lane's pairing rule -- it is one of the two ways a turn that was
+# announced ends -- and this failure is owed to no turn and can land while any
+# turn is running. Said as an `error`, it would pair with whatever announcement
+# was open on its channel, and every reader of that rule would take the running
+# turn for finished: the backend's own, and the page's, which would then read
+# the channel as quiet and stop saying the human is waiting on anything.
+STATUS_PHASE_DOWNSTREAM_FAILED = "downstream-failed"
 STATUS_PHASES = frozenset(
     {
         STATUS_PHASE_ACCEPTED,
@@ -307,8 +318,18 @@ STATUS_PHASES = frozenset(
         STATUS_PHASE_ERROR,
         STATUS_PHASE_TRANSFERRED,
         STATUS_PHASE_RULINGS_DROPPED,
+        STATUS_PHASE_DOWNSTREAM_FAILED,
     }
 )
+
+# What marks a `composing` entry as the backend handing a refused turn up to the
+# expert rather than seating a turn there for any of the other reasons. It rides
+# the announcement the hand-up writes anyway, so the hand-up leaves a record on
+# the log without a second entry for a reader to pair up. The mark is what makes
+# that record countable: an announcement naming the expert is also what a
+# transferred channel and a classed gesture produce, and a count reading the
+# tier alone would take those for refusals of the rung below.
+PRESSED_KEY = "pressed"
 
 # How an agent's reply says who composed it. These are payload keys rather than
 # envelope fields: the envelope is this protocol's own closed vocabulary, and
@@ -519,9 +540,12 @@ class Decision(Strict):
     """The same node shape in the handoff and in both images; the status, answer,
     rationale and lock fields exist only in the images.
 
-    `rationale` is the `why` of the last event that changed this decision's
-    status, which is what keeps an invalidation and its justification one item
-    rather than two: the block and the reasoning for it reach the page together.
+    `rationale` is the `why` of the last event on this decision that gave one:
+    a status move clears or sets it with its own `why`, and a revise sets it
+    only where it says why, a silent revise leaving the standing reason as it
+    leaves every field it omits. Carrying it here is what keeps an
+    invalidation and its justification one item rather than two: the block and
+    the reasoning for it reach the page together.
     `locked` is the queue's hold on this decision, and a locked decision is not
     answerable now. Two things in the queue take it: a change waiting to land on
     it, and the most recent elicit-alert still queued against it declaring
@@ -877,7 +901,7 @@ class HistoryEntry(Strict):
 
 
 class Image1(Strict):
-    """The current map snapshot: a pure fold, byte-identical for a given log."""
+    """The current map snapshot: a pure replay, byte-identical for a given log."""
 
     epoch: str
     seq: int
@@ -930,7 +954,9 @@ class ThreadProjection(Strict):
     history, frontier, settled set and pending queue, because a thread agent
     reasons about the same board the grill-master does. The dispatched thread
     appears in full; every other live thread is a stub; a parked thread is
-    absent entirely, since resuming one is a gesture nobody has made.
+    absent entirely, since the human set it aside and nothing on it is live for
+    another thread's agent to work from. Picking one back up is the human's own
+    turn on it, and that thread's own dispatch carries it in full.
 
     Its own shape rather than a subclass of image 2, because it is not one: a
     reader promised image 2 and handed this would find thread bodies missing.
@@ -1023,7 +1049,7 @@ class TerminalResult(Strict):
 class CatchUpEntry(Strict):
     """One decision the board moved while a thread was set aside.
 
-    Projected, never composed: an entry is here because folding the log through
+    Projected, never composed: an entry is here because replaying the log through
     it changed image 1's decisions, and what it says -- the sequence, the kind
     and the rationale -- is what the log carries at that point. A catch-up
     naming an event the log does not carry is the same corruption a short image
@@ -1516,7 +1542,7 @@ def option_ids(payload: Mapping[str, Any]) -> frozenset[str]:
 def mint_targets(payload: Mapping[str, Any], kind: str, seq: int) -> dict[str, Any]:
     """A copy of the payload with every add-node's node id materialised.
 
-    Minting at append time rather than at fold time is what makes the id one
+    Minting at append time rather than at replay time is what makes the id one
     fact instead of two: the receipt echoes what the projector will build,
     because both read the same durable bytes.
     """
@@ -1650,13 +1676,13 @@ def read_turns(payload: Mapping[str, Any], actor: Actor, timestamp: str) -> list
 
     The page speaks in a `turns[]` array of who/text pairs; a backend-authored
     reply may carry bare text. One reader handles both, and it is this one --
-    the accept path judges a thread event by what this returns and the fold
+    the accept path judges a thread event by what this returns and the replay
     builds the thread's turn list from it, so an event cannot be accepted for
     saying something and then project as having said nothing.
 
     `who` falls back to the entry's own actor. The appender judges a thread
     event on whether it says anything, never on who it claims said it, so an
-    unknown attribution is already durable by the time the fold sees it, and
+    unknown attribution is already durable by the time the replay sees it, and
     raising over something that already has a receipt would take the session
     down.
     """

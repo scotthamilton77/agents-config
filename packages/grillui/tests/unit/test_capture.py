@@ -22,7 +22,7 @@ from grillui.log import LOG_FILE, RESULT_FILE, SessionLog
 from grillui.schemas import (
     SESSION_END_KIND,
     STATUS_KIND,
-    STATUS_PHASE_ERROR,
+    STATUS_PHASE_DOWNSTREAM_FAILED,
     THREAD_FOLD_KIND,
     TerminalResult,
 )
@@ -152,7 +152,7 @@ def test_a_capture_that_fails_still_leaves_the_terminal_log_entry(session_dir: P
 
     assert receipt["status"] == "accepted"
     assert log.entries()[-1].kind == STATUS_KIND
-    assert log.entries()[-1].payload["phase"] == STATUS_PHASE_ERROR
+    assert log.entries()[-1].payload["phase"] == STATUS_PHASE_DOWNSTREAM_FAILED
     assert "capture failed" in log.entries()[-1].payload["detail"]
     assert any(entry.kind == SESSION_END_KIND for entry in log.entries())
     assert not (session_dir / RESULT_FILE).exists()
@@ -221,7 +221,7 @@ def test_capture_over_a_fixed_log_is_byte_identical_twice(session_dir: Path) -> 
     When capture runs twice over it
     Then the two results are byte-identical.
 
-    Everything but the summary is a fold, and the v1 summarizer counts rather
+    Everything but the summary is a replay, and the v1 summarizer counts rather
     than composes, so the whole result is a function of the log.
     """
     log = started(session_dir)
@@ -700,7 +700,7 @@ def read_live(session_dir: Path) -> TerminalResult:
 
 
 def read_captured(session_dir: Path) -> TerminalResult:
-    """The same directory, folded again by a run nothing is serving."""
+    """The same directory, replayed again by a run nothing is serving."""
     return capture(session_dir)
 
 

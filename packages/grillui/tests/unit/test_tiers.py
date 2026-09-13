@@ -991,6 +991,41 @@ def test_the_grill_master_brief_gives_the_turn_one_lane_to_the_human(tier: str) 
     assert '"option b of d3", never "option b"' in brief
     assert "it holds when the decision is the one the human has just answered" in brief
     assert OPTION_REFERENCE_RULE not in system_prompt(tier, THREAD_AGENT)
+    # And it holds wherever the sentence rides, because the board shows a `why`
+    # to the same human that reads the turn's message.
+    assert "in your `text`, in a `why`, in a notice, anywhere the human reads it" in brief
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_grill_master_brief_splits_the_turns_story_from_each_decisions_own(
+    tier: str,
+) -> None:
+    """
+    Given the grill-master brief on each tier
+    When it is read for where a consequence of the answer belongs
+    Then the turn's message is the turn-level story and is shown once, a
+         consequence for one decision rides the ruling or update against that
+         decision, and everything the human reads is named and kept short.
+
+    The board shows an untargeted message where the turn is shown and against no
+    decision. A turn that narrates four decisions in that one paragraph is
+    therefore writing the per-decision record a second time, out of reach of
+    every decision it is about -- and the human unpicks it four times.
+    """
+    brief = system_prompt(tier, GRILL_MASTER)
+
+    assert "Your `text` is the turn-level story, and the board shows it once" in brief
+    assert "rides the `why` of the ruling or the update against that decision" in brief
+    assert "the board shows that line on the decision itself" in brief
+    assert "A paragraph covering four decisions is one the human has to unpick four times" in brief
+    # Naming and length are stated of everything the human reads, not of the
+    # turn's message alone: a `why` reaches the same reader.
+    assert "Everything the human reads carries the same two rules" in brief
+    assert "name the decision beside any option you mention" in brief
+    assert (
+        "keep it short -- the turn's message to the length set above, a `why` to one line" in brief
+    )
+    assert SPEECH_RULE not in system_prompt(tier, THREAD_AGENT)
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])

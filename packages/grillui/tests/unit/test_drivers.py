@@ -62,7 +62,7 @@ from grillui.drivers import (
 from grillui.escalation import CONDITION_COMMITMENT, CONDITION_IRREDUCIBLE, CONDITION_MULTIPLE
 from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import LOG_FILE, SessionLog
-from grillui.projector import fold
+from grillui.projector import replay
 from grillui.schemas import (
     CHAIN_KEY,
     CONTEXT_BYTES_KEY,
@@ -922,12 +922,88 @@ def test_a_document_that_carries_nothing_records_nothing_and_fails_nothing(
     assert replies(log) == []
 
 
+# A turn the gate takes and the appender will not: every key the document needs
+# is there, and the update names a node this board has not got. The fault only
+# the appender can see, which is what makes it the one the seat has to be told
+# about rather than left to guess at.
+UNKNOWN_TARGET = document(
+    text="Proposing this.",
+    updates=[{"kind": "invalidate", "target": "d99", "why": "nothing on the board is d99"}],
+)
+
+# The same turn with the fault taken out: a notice and nothing else, which the
+# appender takes from any seat.
+SECOND_TRY = document(text="Nothing to propose after all.")
+
+
+def test_a_document_the_appender_refuses_is_retried_once_on_the_same_seat(
+    session_dir: Path,
+) -> None:
+    """
+    Given a seat whose first document names a node the board has not got, and
+          whose second names none
+    When the turn is taken
+    Then the seat is asked again with the appender's own refusal quoted, the
+         second document lands as the turn, and nothing of the first is on the
+         board.
+
+    The seat is asked a second time for the same reason a refused shape is: it
+    can fix what it was told about. Quoting the appender's words is the whole of
+    what makes the ask worth its cost -- the reason names what was wrong and the
+    detail names which of the turn's updates was wrong about it.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+    transport = ScriptedFast(replies=[UNKNOWN_TARGET, SECOND_TRY])
+
+    take_fast_turn(log, transport)
+
+    assert len(transport.calls) == 2, transport.calls
+    asked = transport.calls[1]["prompt"]
+    assert "Your last reply was refused" in asked, asked[-400:]
+    assert "unknown node id" in asked, asked[-400:]
+    assert "d99" in asked, asked[-400:]
+    landed = replies(log)
+    assert [one["text"] for one in landed] == ["Nothing to propose after all."], landed
+
+
+def test_a_document_refused_twice_by_the_appender_leaves_the_ladder_the_refusal(
+    session_dir: Path,
+) -> None:
+    """
+    Given a seat that sends the same refused document again
+    When the turn is taken
+    Then the turn is refused up the ladder carrying the appender's words, and
+         nothing was appended.
+
+    Refused as a document rather than as a reply nobody can use: the rungs above
+    -- the hand-up, and then the word to the human -- are the ladder's, and a
+    turn that ended in a different exception would skip both.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+    transport = ScriptedFast(reply=UNKNOWN_TARGET)
+
+    with pytest.raises(DocumentRefusedError) as refused:
+        take_fast_turn(log, transport)
+
+    assert len(transport.calls) == 2, transport.calls
+    assert "unknown node id" in refused.value.detail, refused.value.detail
+    assert refused.value.tier == FAST_TIER
+    assert replies(log) == []
+
+
 def test_a_reply_the_appender_refuses_is_not_swallowed(session_dir: Path) -> None:
     """
-    Given an appender that refuses the reply
+    Given an appender that refuses every reply
     When a turn tries to record one
-    Then the refusal surfaces, so the human gets the lane's error rather than a
-         turn that appears to have happened.
+    Then the seat is asked a second time and the refusal then surfaces, so the
+         human gets the lane's error rather than a turn that appears to have
+         happened.
+
+    The refusal reaches the ladder rather than the human directly: the seat that
+    was refused is asked again before anything is given up on, and what the lane
+    is finally handed is a turn no seat could land.
     """
 
     class Refusing(SessionLog):
@@ -940,9 +1016,12 @@ def test_a_reply_the_appender_refuses_is_not_swallowed(session_dir: Path) -> Non
 
     log = Refusing(session_dir / "refusing")
     dispatch = record_dispatch(log)
+    transport = ScriptedFast()
 
-    with pytest.raises(ReplyRefusedError, match="unknown node id"):
-        FastDriver(TierConfig(), ScriptedFast()).run(log, dispatch)
+    with pytest.raises(DocumentRefusedError, match="unknown node id"):
+        FastDriver(TierConfig(), transport).run(log, dispatch)
+
+    assert len(transport.calls) == 2
 
 
 # --- through the lane ------------------------------------------------------------
@@ -975,6 +1054,60 @@ def test_the_lane_names_the_tier_and_the_turn_answers_the_human(session_dir: Pat
         if entry.kind == "status" and entry.payload.get("phase") == "composing"
     ]
     assert composing[0][TIER_KEY] == FAST_TIER
+
+
+def test_a_turn_the_appender_refuses_twice_is_handed_up_and_then_said_to_the_human(
+    session_dir: Path,
+) -> None:
+    """
+    Given a first rung and an expert that both send a document naming a node the
+          board has not got
+    When the human answers a decision
+    Then each seat was asked twice, the turn was handed up once, the human is
+         told that nothing was taken from it, and the lane's error names the
+         seat the ladder ended on and quotes what the appender refused.
+
+    The rungs an appender refusal walks are the ones a refused shape walks. The
+    ladder is the map document's, not one fault's: a turn that ends as a failure
+    on the expert without the hand-up having happened is a rung skipped, and the
+    human is owed the same words either way.
+    """
+    log = briefed(session_dir)
+    first = ScriptedFast(reply=UNKNOWN_TARGET)
+    expert = ScriptedFast(reply=UNKNOWN_TARGET)
+    client = driven(
+        log,
+        FastDriver(TierConfig(), first),
+        FastDriver(TierConfig(), expert, tier=HEAVY_TIER),
+    )
+
+    post(
+        client,
+        log.epoch,
+        event("answer", actor="human", key="a1", target=TARGET, answer={"option": "a"}),
+    )
+
+    deadline = time.monotonic() + TIMEOUT
+    while not _errors(log) and time.monotonic() < deadline:
+        time.sleep(0.005)
+
+    assert len(first.calls) == 2, first.calls
+    assert len(expert.calls) == 2, expert.calls
+    assert "unknown node id" in expert.calls[1]["prompt"], expert.calls[1]["prompt"][-400:]
+    assert replies(log) == []
+    assert any("nothing was taken from its turn" in one for one in warnings_in(log)), log.entries()
+    detail = _errors(log)[-1]
+    assert f"{HEAVY_TIER!r} tier failed" in detail, detail
+    assert "unknown node id" in detail, detail
+
+
+def _errors(log: SessionLog) -> list[str]:
+    """What the lane said about a turn that failed."""
+    return [
+        str(entry.payload.get("detail"))
+        for entry in log.entries()
+        if entry.kind == "status" and entry.payload.get("phase") == "error"
+    ]
 
 
 def test_a_tier_that_cannot_be_reached_raises_out_of_the_turn(session_dir: Path) -> None:
@@ -1028,7 +1161,7 @@ def queued_warnings(log: SessionLog) -> list[Any]:
     backend = {
         entry.seq for entry in entries if entry.kind == "informational" and entry.actor == "backend"
     }
-    return [one for one in fold(log.epoch, entries).pending if one.authored_at in backend]
+    return [one for one in replay(log.epoch, entries).pending if one.authored_at in backend]
 
 
 def test_a_fast_turn_records_its_size_and_the_count_the_provider_returned(
@@ -1280,19 +1413,15 @@ def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
 
     The fault is one only the appender can see, so the reply is measured and
     reaches the append before it is refused -- which is the ordering this is
-    about. A fault in the shape is refused a rung earlier, at the document gate,
-    where the seat still has its retry.
+    about. The seat sends the same document on its retry, so both attempts are
+    measured and neither is a turn to warn about.
     """
     log = briefed(session_dir)
     human_turn(log, "The log.")
     config = TierConfig.from_env({FAST_MODEL_ENV: "vendor/unknown", FAST_CONTEXT_LIMIT_ENV: "1000"})
 
-    refused = document(
-        text="Proposing this.",
-        updates=[{"kind": "invalidate", "target": "d99", "why": "nothing on the board is d99"}],
-    )
-    with pytest.raises(ReplyRefusedError):
-        FastDriver(config, ScriptedFast(reply=refused, prompt_tokens=750)).run(
+    with pytest.raises(DocumentRefusedError):
+        FastDriver(config, ScriptedFast(reply=UNKNOWN_TARGET, prompt_tokens=750)).run(
             log, record_dispatch(log)
         )
 
@@ -1301,7 +1430,7 @@ def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
 
 # --- an offer the board cannot take, arriving as an offer and not as bytes -----
 
-# The reply a fast agent actually sent on the session-scoped thread: one line,
+# The reply a first-rung agent actually sent on the session-scoped thread: one line,
 # fence and object together, and no prose beside the offer. Kept verbatim
 # because every part of it is what went wrong -- the layout the fence reader
 # missed, and the decision a thread anchoring nothing has no business naming.

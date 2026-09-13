@@ -26,6 +26,11 @@ Enter sends whatever is in a box, on a decision and in a thread alike. Shift+Ent
 in a newline instead, and so does a backslash typed right before Enter — the backslash
 is eaten, the way it works in the terminal. Cmd+Enter (Ctrl+Enter) still sends too.
 
+An answer is not final. A settled decision's block carries **Reopen**, which withdraws the
+answer and puts the question back on the frontier; whatever was settled on top of it then
+needs re-confirming. It is the human's own gesture, and the only one that undoes an answer:
+an agent can propose withdrawing it, and that proposal waits in the inbox like any other.
+
 Settling a decision opens whatever was waiting on it. A decision greyed as **fog** is one
 whose prerequisite has not come through yet — settle that prerequisite, or have it taken
 out of the plan, and this one opens.
@@ -94,9 +99,9 @@ and its change history.
 
 🔔 carries what an agent said that the board has nowhere else to show. It is not the
 inbox: nothing in here is waiting on an action. Notifications bubble as they arrive, and
-the list starts empty on a reload — a session someone comes back to should not announce
-the morning's work as news. What was read stays read, across a reload too: the markers
-they have already cleared do not light up again.
+the list comes back on a reload without bubbling again — a session someone comes back to
+should not announce the morning's work as news. What was read stays read, across a reload
+too: the markers they have already cleared do not light up again.
 
 ## The two tiers
 
@@ -110,7 +115,7 @@ everything already said there. It lights up when what has been said on that chan
 the backend's own test for a question the expert should take — the test is code, and never
 a model's opinion of its own reach. Acting on it is normally yours to do; a session can be
 set up to let the backend act on the test itself, and either way the move is announced on
-that channel. Pressing the control again, now reading **Return to fast agent**, puts the
+that channel. Pressing the control again, now reading **Return to assistant**, puts the
 channel back on the first rung. It is per channel — moving one thread leaves the map and
 every other thread where they were.
 
@@ -152,6 +157,13 @@ be closed.
 thinks the stopping condition is met says so. Ending writes the result beside the session
 log, stops the backend, and hands the summary back to the agent that launched the board.
 After that the board is readable and nothing further is recorded.
+
+The board asks a second time before it writes any of that, in two cases. An agent still
+composing a reply is one: what it comes back with could put a new decision on the board,
+so the completion overlay says responses are pending and its ending control reads **End
+Session Anyway**. A board with questions still open on it is the other, and the question
+says how many. Either way nothing is written until the human answers it, and a finished
+board with nothing pending ends on the one press.
 
 ## What to say when asked something this does not cover
 

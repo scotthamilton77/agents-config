@@ -15,7 +15,7 @@ from conftest import SEED_NODE, apply_all, event, post, queue_gesture, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.log import SessionLog
-from grillui.projector import fold
+from grillui.projector import replay
 from grillui.schemas import (
     DISMISS_KIND,
     REASON_UNKNOWN_KIND,
@@ -327,6 +327,45 @@ def test_revise_replaces_the_fields_it_names_and_leaves_the_others_standing(
     assert node["body"] == "Pick the storage layer."
 
 
+def test_a_revise_carries_its_why_and_a_silent_one_leaves_the_reason_standing(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a decision revised with a reason
+    When a second revise names a field and gives no reason
+    Then the decision reports the second field and the first reason still stands.
+
+    A revise is the most common thing that happens to a decision, so the board
+    would carry a reason for every other mutation and none for this one. The
+    silent half is the same partial rule: a `why` the revise did not supply is
+    one more field it is not speaking about, and clearing it there would leave
+    the board reporting a change with nothing behind it.
+    """
+    seed_node(client, log.epoch)
+
+    post(
+        client,
+        log.epoch,
+        event(
+            "revise",
+            key="revise-1",
+            target=SEED_NODE,
+            body="Pick the storage layer, given the audit rule.",
+            why="the audit rule lands before the storage choice",
+        ),
+    )
+    assert (
+        decisions(client)[SEED_NODE]["rationale"]
+        == "the audit rule lands before the storage choice"
+    )
+
+    post(client, log.epoch, event("revise", key="revise-2", target=SEED_NODE, short="Storage"))
+
+    node = decisions(client)[SEED_NODE]
+    assert node["short"] == "Storage"
+    assert node["rationale"] == "the audit rule lands before the storage choice"
+
+
 def test_settle_records_an_answer_the_agent_asserts(client: TestClient, log: SessionLog) -> None:
     """
     Given a decision the human answered in conversation rather than on the board
@@ -387,6 +426,43 @@ def test_unsettle_reopens_a_decision_and_makes_everything_resting_on_it_stale(
     assert board[SEED_NODE]["status"] == "open"
     assert board[SEED_NODE]["answer"] is None
     assert board[SEED_NODE]["rationale"] == "the vendor changed the terms"
+    assert [board["n2"]["status"], board["n3"]["status"]] == ["stale", "stale"]
+    assert image1(client)["frontier"] == [SEED_NODE]
+
+
+def test_the_human_reopening_a_decision_folds_as_an_applied_unsettle_does(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a settled chain of three decisions, each a prereq of the next
+    When the human authors the unsettle on the first themselves
+    Then it lands rather than waiting in the queue, the decision is a question
+         again with its answer gone, and both decisions downstream of it are
+         stale -- the board the applied proposal leaves.
+
+    The queue is what the agent's unsettle waits in, and it waits there for the
+    human. There is nobody to apply the human's own, so it lands like every
+    other gesture they make, through the one fold. Without this route a settle
+    the human regrets stands for the rest of the session unless an agent
+    happens to propose withdrawing it.
+    """
+    seed_node(client, log.epoch)
+    post(client, log.epoch, add_node("mint-2", target="n2", prereqs=[SEED_NODE]))
+    post(client, log.epoch, add_node("mint-3", target="n3", prereqs=["n2"]))
+    for index, node_id in enumerate((SEED_NODE, "n2", "n3")):
+        settled(client, log.epoch, node_id, f"answer-{index}")
+
+    receipt = post(
+        client,
+        log.epoch,
+        event("unsettle", actor="human", key="reopen-1", target=SEED_NODE),
+    )[0]
+
+    board = decisions(client)
+    assert receipt["status"] == "accepted"
+    assert image1(client)["pending"] == [], "the human's own gesture waited for the human"
+    assert board[SEED_NODE]["status"] == "open"
+    assert board[SEED_NODE]["answer"] is None
     assert [board["n2"]["status"], board["n3"]["status"]] == ["stale", "stale"]
     assert image1(client)["frontier"] == [SEED_NODE]
 
@@ -820,7 +896,7 @@ def test_a_log_carrying_every_update_kind_still_folds_byte_identically(
 ) -> None:
     """
     Given a log exercising every update kind this protocol carries
-    When it is folded twice, and again by a second process from the file alone
+    When it is replayed twice, and again by a second process from the file alone
     Then all three images are byte-identical.
 
     Determinism is what makes an image a projection rather than a state: a kind
@@ -855,10 +931,10 @@ def test_a_log_carrying_every_update_kind_still_folds_byte_identically(
         ),
     )
 
-    first = fold(log.epoch, log.entries()).model_dump_json()
-    again = fold(log.epoch, log.entries()).model_dump_json()
+    first = replay(log.epoch, log.entries()).model_dump_json()
+    again = replay(log.epoch, log.entries()).model_dump_json()
     reloaded = SessionLog(session_dir)
-    from_disk = fold(log.epoch, reloaded.entries()).model_dump_json()
+    from_disk = replay(log.epoch, reloaded.entries()).model_dump_json()
 
     assert first == again == from_disk
 

@@ -260,6 +260,16 @@ class Session:
         found: dict[str, Any] = self.state()["image1"]
         return found
 
+    def call_doctor(self) -> None:
+        """Send the map doctor over the board from outside the page.
+
+        The one gesture a scenario can make that lands entries in the log
+        without touching the page at all, which is what a scenario about what a
+        poll does to the window needs: a click would re-render the board itself
+        and prove nothing about the poll.
+        """
+        httpx.post(self.url + "doctor").raise_for_status()
+
     def image2(self) -> dict[str, Any]:
         read: dict[str, Any] = httpx.get(self.url + "image2").json()
         return read

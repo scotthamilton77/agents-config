@@ -228,6 +228,7 @@ def log_lines(session_dir: Path) -> list[dict[str, Any]]:
 # only that the backend has a word for the kind at all.
 SHAPES: dict[str, tuple[str, dict[str, Any]]] = {
     "answer": (MAP_CHANNEL, {"target": "n1", "answer": {"option": "a", "text": None}}),
+    "unsettle": (MAP_CHANNEL, {"target": "n1"}),
     "thread-created": (
         THREAD,
         {
@@ -634,8 +635,8 @@ def test_a_stale_epoch_is_turned_away_on_the_update_read_and_the_state_read_stil
 def test_the_state_read_alone_carries_the_whole_board(client: TestClient, log: Any) -> None:
     """No delta is needed to know what the board says.
 
-    A page that had to replay the log to know the board would be folding it --
-    and a page that folds is a page that can fold differently.
+    A page that had to replay the log to know the board would be replaying it --
+    and a page that replays is a page that can replay differently.
     """
     node = seed_node(client, log.epoch)
     post(
@@ -1151,17 +1152,22 @@ def test_a_popped_window_follows_the_thread_its_own_first_turn_opened() -> None:
     assert "made=window.opener.popAct(" in boot and "if(made)tid=made;" in boot
 
 
-def test_a_closed_thread_keeps_the_box_that_opens_it_again() -> None:
+def test_a_set_aside_thread_keeps_the_box_that_opens_it_again() -> None:
     """Re-opening rides the turn, so the box is the whole affordance.
 
-    A parked or folded thread keeps no box: neither re-opens, and a box whose
+    Both set-aside states keep it, and the sentence that says so, because a
+    parked thread and a closed one are both picked back up by saying something
+    in them. A folded thread keeps no box: it does not re-open, and a box whose
     turn changed nothing would be the page offering a way back the fold does
-    not have. Both boxes are built by one reader, since an open thread and a
-    closed one take the same turn on the same channel.
+    not have. Every box is built by one reader, since an open thread and a
+    set-aside one take the same turn on the same channel.
     """
     pane = balanced_body("threadBody")
-    assert 'var closed = t.state === "closed";' in pane
-    assert 'closed ? sayBox(sayId, tid) : ""' in pane, "a closed thread has no way back"
+    assert 'var aside = t.state === "parked" || t.state === "closed";' in pane
+    assert 'aside ? sayBox(sayId, tid) : ""' in pane, "a set-aside thread has no way back"
+    assert 'aside ? " Say something here and it opens again." : ""' in pane, (
+        "a set-aside thread is not told what the box does"
+    )
     assert pane.count("sayBox(sayId, tid)") == 2, "the two boxes are not one reader"
     box = function_body("sayBox")
     assert 'data-act="say"' in box and 'data-send="say"' in box
@@ -1192,6 +1198,35 @@ def test_a_decisions_options_are_labelled_by_position() -> None:
     assert controls.count("optionButton(") == 2, "the recommended option is labelled differently"
     assert "optionButton(d, d.options[0], 0," in controls
     assert "optionButton(d, o, i + 1," in controls
+
+
+def test_a_settled_decision_marks_the_option_the_human_chose() -> None:
+    """The mark goes on the option the answer names, and the recommendation's
+    fill belongs to a decision still being asked.
+
+    A row that went on filling `options[0]` after the human answered would show
+    option a as the standing answer while the answer line above it says option
+    b. That is the one reading of the board the human has nothing else on the
+    page to check against, so it is the one the row must not offer.
+    """
+    dress = balanced_body("optionDress")
+    assert 'if (d.status === "settled") {' in dress, "settled is read off the status alone"
+    assert "var taken = d.answer && d.answer.option === o.id;" in dress
+    assert 'taken ? { cls: " chosen", lead: "\u2713 " }' in dress
+    assert 'recommended ? { cls: " primary", lead: "\u27a1\ufe0f " }' in dress
+    # Twice: a settled decision answered in free text names no option, so it
+    # marks nothing -- and it offers no recommendation either, because the
+    # question it recommended an answer to has been answered.
+    assert dress.count('{ cls: "", lead: "" }') == 2, dress
+    controls = function_body("answerControls")
+    assert "optionDress(d, d.options[0], true)" in controls
+    assert "optionDress(d, o, false)" in controls
+    assert '"btn wide" + rec.cls' in controls, "the recommendation dresses itself"
+    assert '"btn wide sm" + dress.cls' in controls
+    assert ".btn.chosen {" in page_source(), "the mark has no styling"
+    assert '(d.status === "settled" ? "Options" : "Recommended answer")' in controls, (
+        "a settled row is still captioned as the recommendation"
+    )
 
 
 def test_an_option_and_a_note_are_one_answer_carrying_both(client: TestClient, log: Any) -> None:
@@ -1471,13 +1506,14 @@ def test_mark_all_read_writes_nothing_to_the_backend() -> None:
         assert "srvPost" not in body and "srvGet" not in body, f"{reader} touches the backend"
 
 
-def test_read_state_survives_a_reload_and_the_notification_list_deliberately_does_not() -> None:
-    """Two different things, and separating them is the whole design.
+def test_read_state_and_the_notification_list_both_survive_a_reload() -> None:
+    """Two different things, and both have to come back.
 
-    The list starts empty on purpose: a page arriving mid-session must not
-    announce a morning's work as news. Read-state cannot start empty, because
-    the markers it clears are not the list's -- the ✉ on a decision comes off
-    the queue in image 1, which comes back on every reload. Without persistence,
+    The list is the only surface carrying an agent's message that names no
+    decision, so a reload that left it empty would lose that message while the
+    log went on holding it. Read-state cannot start empty either, because the
+    markers it clears are not the list's -- the ✉ on a decision comes off the
+    queue in image 1, which comes back on every reload. Without persistence,
     marking everything read and reloading would restore every marker the human
     had just dealt with.
 
@@ -1498,11 +1534,37 @@ def test_read_state_survives_a_reload_and_the_notification_list_deliberately_doe
     # board is read at all -- and this is the one moment a reload has to look
     # like the session the human left rather than a new one.
     assert "loadRead();" in function_body("hydrate")
-    # The list is still built only from what arrives after this page did: the
-    # reload path reads the whole log as a lookup table and touches the
-    # notifications not at all.
-    assert "NOTES" not in function_body("hydrate"), "a reload rebuilds the list from the log"
+    # The list is rebuilt from the log, and read-state decides what of it is
+    # still unread -- which is why the rebuild runs after the read-state load.
+    hydrate = function_body("hydrate")
+    assert hydrate.index("loadRead();") < hydrate.index("NOTES = [];")
     assert source.count("NOTES.push") == 1, "notifications are written outside the observer"
+
+
+def test_a_reload_rebuilds_the_notification_list_through_the_live_observer() -> None:
+    """One observer over both paths, and arrival's transience left behind.
+
+    A reload-only rebuilder is how the two drift: one of them gets a fix, and
+    the same log entry reads as two different messages depending on when the
+    human looked. So the reload runs the observer arrival runs, over the log it
+    just read.
+
+    What the reload must not replay is what arrival does around the note. The
+    fresh and touched marks say a decision moved just now, so the rebuild runs
+    against its own arrays and puts the standing ones back. A bubble says
+    something just happened, so every rebuilt note is counted as bubbled
+    already. Read-state needs no suppression: it is persisted, and a rebuilt
+    note carries the id it was read under.
+    """
+    hydrate = function_body("hydrate")
+    assert "NOTES = [];" in hydrate, "the reload does not rebuild the notification list"
+    assert "observe(e, u.entries, i)" in hydrate, "the reload rebuilds through a second reader"
+    assert "UI.bubbleSeen[n.id] = true" in hydrate, "a reload replays the bubbles"
+    assert "var fresh = UI.fresh, touched = UI.touched;" in hydrate
+    assert "UI.fresh = fresh;" in hydrate and "UI.touched = touched;" in hydrate
+    # The note itself is built one way, so a rebuilt note is the note that
+    # arrived: same id, text, target, kind, clock and entry.
+    assert page_source().count("return { id: id, kind: kind,") == 1
 
 
 def test_every_unread_marker_is_asked_of_the_one_read_set() -> None:
@@ -1549,25 +1611,29 @@ def test_a_change_that_landed_raises_no_notification() -> None:
 def test_a_message_the_board_can_render_is_not_also_announced() -> None:
     """One message, one surface, and the board gets first refusal.
 
-    A message naming a decision is read on that decision's block. Prose that
-    arrived carrying board changes is framing for those changes and is read on
-    them. Only a message with no decision to land on reaches the lane -- which
-    is what leaves the lane worth opening.
+    A message naming a decision is read on that decision's block. A message
+    naming none is the turn's own story: it is read once, where the turn is
+    shown, and against no decision at all.
+
+    Homing an unnamed message on whatever its entry changed in the same breath
+    is the alternative, and it fails twice over: one paragraph about a turn
+    repeats against every decision that turn moved, and none of those decisions
+    says what moved locally. What a moved decision says about itself is the
+    change that moved it, which it carries already.
     """
     observer = function_body("observe")
     assert "noticeHomes(" in observer
     assert "if (!homes.length) {" in observer, "the lane is written without asking the board"
     homes = function_body("noticeHomes")
-    # Derived from the log, so the reload that empties the lane renders the
-    # message in the same place it was before.
-    assert "entryAt(item.authored_at)" in homes
-    assert "MAP_MUTATION_KINDS.indexOf(u.kind)" in homes
-    # And a home is a decision the board is carrying, so "the board shows this
+    # A home is a decision the board is carrying, so "the board shows this
     # already" is measured rather than assumed.
-    assert "node(id)" in homes
+    assert "item.target && node(item.target)" in homes
+    # The entry's own changes are not homes for a message that named none.
+    assert "MAP_MUTATION_KINDS" not in homes
+    assert "updatesIn(" not in homes
 
 
-def test_agent_framing_renders_on_the_decision_its_entry_changed() -> None:
+def test_a_message_renders_on_the_decision_it_names_on_every_surface() -> None:
     """Every surface that shows a message asks the same question of it.
 
     The collapsed block, the expanded block and the ✉ markers alike: a message
@@ -1578,6 +1644,51 @@ def test_agent_framing_renders_on_the_decision_its_entry_changed() -> None:
     assert source.count("noticesOn(id).forEach(function (n) { h += infoNote(n); });") == 2
     assert "noticesOn(id)" in function_body("unreadNotices")
     assert "noticeHomes(n)" in function_body("noticesOn")
+
+
+def test_a_decision_says_what_last_moved_it_wherever_it_is_shown() -> None:
+    """The local half of one turn, on the decision rather than in the message.
+
+    A turn that moves four decisions writes one message about the turn, and the
+    board shows that message once. What each moved decision says about itself is
+    the change that moved it and the reason that change carried -- read off the
+    same history the 🕘 panel reads, so the two cannot disagree, and shown
+    collapsed as well as expanded because a settled decision shuts itself.
+
+    Three things are excluded, and each would be a claim the board has not
+    earned. A change still waiting on the human has moved nothing yet; its own
+    block on that decision says it is waiting. A change the human dismissed never
+    moved anything, and it leaves the queue exactly as an applied one does, so
+    the gesture is what tells them apart rather than the queue. A message on the
+    decision renders as the message it is, and counting it as a change as well
+    reads as two events.
+
+    Those two exclusions are the whole of it, because a queued change ends
+    waiting, applied or dismissed. A change that never reached the queue landed
+    when it arrived, which is what a revise on an unanswered decision does, so a
+    reader restricted to the human's `apply` entries would report nothing on the
+    decisions a turn most often moves.
+    """
+    source = page_source()
+    assert source.count("h += changeLine(id);") == 2, "one of the two blocks says nothing"
+    line = function_body("changeLine")
+    assert "lastChange(id)" in line
+    # A change that gave no reason says nothing; the board's own rationale shows
+    # only where no landed change exists, which is a seeded decision. Reading
+    # the rationale behind a silent change would label an earlier event's
+    # reason with this change's name.
+    assert "why = last ? last.why : (node(id) || {}).rationale" in line
+    assert 'if (!why) return "";' in line
+    moved = function_body("lastChange")
+    assert "historyOf(id)" in moved
+    assert "PROPOSABLE_KINDS.indexOf(h.kind) >= 0" in moved
+    assert "BOARD.pending.some(function (p) { return p.id === h.uid; })" in moved
+    assert "!dismissed(h.uid)" in moved
+    # The dismissal is read off the human's own gesture, which is the only thing
+    # that says a change left the queue without landing.
+    gesture = function_body("dismissed")
+    assert 'e.actor === "human" && e.kind === DISMISS_KIND' in gesture
+    assert "(e.payload.pending || []).indexOf(uid) >= 0" in gesture
 
 
 def test_a_message_reaches_every_surface_as_words_rather_than_as_markup() -> None:
@@ -1772,7 +1883,79 @@ def test_the_flag_is_stamped_by_the_one_checked_constructor_off_the_declaration(
     assert len(written) == 1, "a second place stamps the flag"
     builder = function_body("ev")
     assert "rule.payload.indexOf(TRANSFER_FLAG)" in builder
-    assert "payload[TRANSFER_FLAG] = onExpert(channel)" in builder
+    assert "payload[TRANSFER_FLAG] = meant.on" in builder
+
+
+def test_a_turn_carries_the_flag_only_where_the_human_pressed_for_it() -> None:
+    """The stamp is the human's own press, never the tier this page last read.
+
+    A page is behind the log by as much as one poll. Stamping every turn with
+    the mode it last read sends `transfer: false` on a channel the policy has
+    just moved, and the backend reads that as the human's own way back down --
+    so the expert turn the transfer bought is taken by the tier the channel was
+    moved off, and nothing on the lane says so. A turn with no press behind it
+    carries no transfer key at all, and the log's own last word stands.
+
+    One reading decides both what the control offers and what the next turn
+    says. A second reading is a control offering the expert while the turn it
+    describes asks for the first rung.
+    """
+    builder = function_body("ev")
+    assert "unspent(channel)" in builder, "the stamp is not read off the human's press"
+    assert "onExpert" not in builder, "the turn is stamped with what this page believes"
+    assert "pressed(channel)" in function_body("unspent"), "the press outlives the log that spoke"
+    assert "pressed(channel)" in function_body("onExpert"), "the control reads the press twice"
+
+
+def test_a_press_rides_one_turn_and_the_control_alone_goes_on_showing_it() -> None:
+    """Spent by the turn that carries it, and still on the control after that.
+
+    A press that stayed live would ride every turn sent before the poll that
+    brings the first one back -- so a human who pressed for the first rung, was
+    answered, and typed again would send the policy's transfer back down a
+    second time, on a press they made before it happened. One turn is what the
+    control promises: it forces the next turn, not the conversation.
+
+    The control keeps reading the press anyway, and the two readings are why:
+    a label that reverted the moment the turn went out would say the press did
+    not take, one poll before the record shows that it did.
+
+    A refusal is the one thing that gives a press back, and it is read off the
+    receipt that names the turn. A `duplicate` receipt is not a refusal -- that
+    key is in the log, and the press went with it.
+    """
+    assert "meant.spent = e.idempotency_key" in function_body("spend"), (
+        "the turn that carries a press does not spend it"
+    )
+    assert "!meant.spent" in function_body("unspent"), "a spent press is stamped again"
+    assert "spent" not in function_body("onExpert"), "the control drops the press it is showing"
+    sender = function_body("send")
+    assert 'r.status !== "rejected"' in sender
+    assert "unspend(r.idempotency_key)" in sender, "a refused turn keeps the press it spent"
+
+
+def test_a_press_is_spent_by_the_turn_that_reaches_the_wire_and_not_by_the_one_built() -> None:
+    """Building a turn is not sending one, and this page builds turns it drops.
+
+    `send` posts nothing at all while the doctor holds the board, before the
+    epoch is known, and once the session has ended. A press spent where the turn
+    was built would be spent by every one of those, and nothing would ever give
+    it back: the control would go on offering a press that no turn could carry
+    again, which is the label and the wire disagreeing with no poll able to
+    settle it.
+
+    So one rule says when a press is used up, and it is about the wire rather
+    than about the page. The turn that reaches the wire spends it, a batch this
+    page declined to post spends nothing, and a turn the backend refused gives
+    it back.
+    """
+    assert ".spent =" not in function_body("ev"), "a turn nobody posted spends the press"
+    sender = function_body("send")
+    assert "spend(out)" in sender, "the wire does not spend the press"
+    declined = sender.split("spend(out)")[0]
+    assert "return;" in declined, "the press is spent before the page decides to post"
+    for refusing in ("WIRE.epoch", "WIRE.doctor", "sessionOver()"):
+        assert refusing in declined, f"a send declined on {refusing} still spends the press"
 
 
 def test_a_page_turn_carrying_the_flag_moves_that_channel_and_only_that_one(
@@ -1826,7 +2009,7 @@ def test_the_control_is_on_every_channel_and_is_never_disabled() -> None:
     """
     control = function_body("transferControl")
     assert "disabled" not in control
-    assert "Return to fast agent" in control, "the escalated channel does not offer the way back"
+    assert "Return to assistant" in control, "the escalated channel does not offer the way back"
     assert "Transfer to expert" in control
     assert 'data-mode="' in control
     assert "transferControl(MAP)" in function_body("renderShell")
@@ -1883,7 +2066,7 @@ def test_the_control_names_the_action_and_never_the_state() -> None:
     that did happen gets read as one that did not.
     """
     control = function_body("transferControl")
-    assert '(on ? "⚡ Return to fast agent" : "⚡ Transfer to expert")' in control
+    assert '(on ? "⚡ Return to assistant" : "⚡ Transfer to expert")' in control
     for state in ("Fast agent mode", "Expert mode", "Expert agent mode"):
         assert state not in page_source(), f"the control wears {state!r} as a state"
 
@@ -1925,8 +2108,8 @@ def test_a_turn_is_labelled_by_its_own_tier_and_never_by_the_channels_mode() -> 
     that the transfer changed anything.
     """
     label = function_body("tierLabel")
-    assert "expert agent" in label
-    assert "fast agent" in label
+    assert "expert" in label
+    assert "assistant" in label
     assert "onExpert" not in label, "the label is read off the channel's current mode"
     assert "TRANSFER" not in label
     # Read off the projected turn on a thread, and off the authoring entry on the
@@ -1947,12 +2130,34 @@ def test_an_unattributed_turn_is_labelled_as_nothing_rather_than_as_a_guess() ->
     label = function_body("tierLabel")
     assert label.count("return") == 1
     assert (
-        'return tier === HEAVY_TIER ? "expert agent" : tier === FAST_TIER ? "fast agent" : "";'
+        'return tier === HEAVY_TIER ? "expert" : tier === FAST_TIER ? "assistant" : "";'
     ) in label
     # Every caller falls back to something that is not a tier, so an
     # unattributed turn still says who spoke without naming a tier for them.
     for caller in ("renderTurns", "infoNote"):
         assert '|| "Agent"' in function_body(caller), f"{caller} guesses a tier"
+
+
+def test_no_file_in_the_package_still_names_the_first_rung_by_its_speed() -> None:
+    """The rung labels are role names, and the retired wording is gone everywhere.
+
+    The pair names relative weight rather than speed, so the old label is a
+    claim the board no longer makes. The transfer control's retired label
+    contains the turn label's, which is why one search covers both. A stale
+    copy left in a probe or an end-to-end check is how the old string comes
+    back, so the search reads the whole package and not just the page.
+    """
+    root = Path(__file__).resolve().parents[2]
+    retired = "fast " + "agent"
+    trees = list((root / "src").rglob("*")) + list((root / "tests").rglob("*"))
+    offenders = [
+        str(path.relative_to(root))
+        for path in trees
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and retired in path.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert offenders == [], offenders
 
 
 def test_the_mode_and_the_highlight_are_read_from_the_log_the_page_already_holds() -> None:
@@ -1989,12 +2194,14 @@ def test_the_control_follows_the_log_rather_than_the_click_the_policy_overtook()
     The click is an intent held until the log speaks after it, which is why it
     carries where the log stood when it was made. Without that, a human who had
     just sent a channel back to the first rung would see *Transfer to expert* on a
-    channel the policy had since escalated -- and their next turn, which stamps
-    the flag off exactly this reading, would silently undo the transfer.
+    channel the policy had since escalated -- and their next turn, which asks for
+    a tier off exactly this reading, would silently undo the transfer.
     """
     assert "since: LOG.length" in function_body("toggleTransfer"), "the click is not placed"
-    assert "meant.since > said.at" in function_body("onExpert"), "a stale click outranks the log"
-    assert '(on ? "⚡ Return to fast agent"' in function_body("transferControl")
+    assert "meant.since > loggedMode(channel).at" in function_body("pressed"), (
+        "a stale click outranks the log"
+    )
+    assert '(on ? "⚡ Return to assistant"' in function_body("transferControl")
 
 
 # ---------------------------------------------------------------- GUI-A50
@@ -2243,6 +2450,29 @@ def test_abandoning_a_held_answer_leaves_the_mandated_thread_where_it_is() -> No
     assert "mandateHolding(id)" in function_body("holdOn"), "the hold is a hold of its own"
 
 
+def test_only_a_settled_decision_offers_the_way_back_to_open() -> None:
+    """The control that withdraws an answer, and the gesture behind it.
+
+    Each half is silent on its own. A control drawn outside the settled gate
+    offers to withdraw an answer that was never given, on a decision still
+    being asked or on one that has left the flow -- neither of which the replay
+    moves, so the press would do nothing and say nothing. A control that
+    reached the wire as anything but the human's own `unsettle` would be a
+    second way to undermine a decision, beside the one the projector already
+    replays for an unsettle the human applied.
+    """
+    block = balanced_body("renderColumn")
+    control = 'data-act="reopen"'
+    assert control in block, "a settled decision offers no way back to open"
+    gated = block.split('if (st === "settled") {', 1)
+    assert len(gated) == 2 and control in gated[1].split("}", 1)[0], (
+        "the reopen control is drawn outside the settled gate"
+    )
+    assert "reopenDecision(id)" in click_cases()["reopen"]
+    assert 'ev("unsettle", MAP, { target: id })' in balanced_body("reopenDecision")
+    assert "reopen" in write_acts(), "an ended board goes on offering the control"
+
+
 def test_a_pick_made_after_an_abandon_tells_the_thread_what_it_is_holding() -> None:
     """The thread is what concludes, and it concludes on what it discussed.
 
@@ -2414,10 +2644,95 @@ def test_taking_the_caret_never_moves_the_page() -> None:
     # position rides with it -- restoring the selection is what made one of the
     # sites a second call rather than a call to the same helper. The count is a
     # census: a site appearing without this number moving is a caret nobody
-    # declared. The fifth is the option control, which the render replaces under
+    # declared. The fourth is the option control, which the render replaces under
     # a human standing on it exactly as it replaces a text box.
-    assert function_body("render").count("takeCaret(") == 5
+    assert function_body("render").count("takeCaret(") == 4
     assert "el.setSelectionRange(caret, caret)" in function_body("takeCaret")
+
+
+def test_a_re_render_lays_the_selection_back_over_the_nodes_that_replace_it() -> None:
+    """The selection is the human's, and a re-render is not a reason to drop it.
+
+    The board is drawn again on every poll that brings entries, and drawing it
+    replaces every node the selection runs over -- so a selection held as the
+    nodes it was made on is restored onto nothing. It is held as where it sits
+    in the text of the nearest element the board gives an id, and as the words
+    themselves, so that a restore which would land on different text drops the
+    selection rather than highlighting something nobody chose.
+
+    Read before the rebuild and written after it, which is the whole of the
+    ordering: a capture taken after `renderShell` would be reading the fresh
+    document, where the selection is already gone.
+
+    Restored where it was or not at all. The element's text is the same text or
+    it is different text, and there is no third reading: hunting the words down
+    elsewhere in the element finds the first of however many copies of them it
+    holds, which is a highlight over something nobody chose.
+
+    The direction rides along. A selection made right to left has its anchor at
+    the right-hand end, and a human extending it with the keyboard grows it from
+    the left; restored as a range it comes back forwards and then grows from the
+    wrong end.
+    """
+    body = balanced_body("render")
+    assert "var held = focusId ? null : heldSelection();" in body, (
+        "the render does not hold the selection, or holds it over a caret in a box"
+    )
+    assert body.index("heldSelection()") < body.index("renderShell()"), (
+        "the selection is read after the rebuild, which is after it is gone"
+    )
+    assert body.index("renderShell()") < body.index("relaySelection(held)"), (
+        "the selection is laid back over nodes the rebuild then replaces"
+    )
+    held = balanced_body("heldSelection")
+    assert "sel.isCollapsed" in held, "a caret with nothing selected is held as a selection"
+    assert 'closest("[id]")' in held, (
+        "the selection is anchored to a node rather than to something named"
+    )
+    assert "probe.collapsed" in held, "the selection is held without its direction"
+    relay = balanced_body("relaySelection")
+    assert "indexOf" not in relay, (
+        "the words are hunted for elsewhere in the element, which finds the wrong copy"
+    )
+    assert "host.textContent.substr(held.at, held.text.length) !== held.text" in relay, (
+        "a selection whose words have moved is restored onto whatever is there instead"
+    )
+    assert "createTreeWalker" in relay, "the offset is not mapped back onto the fresh text"
+    assert relay.count("sel.setBaseAndExtent(") == 2 and "held.back" in relay, (
+        "the selection comes back without the direction it was made in"
+    )
+
+
+def test_the_page_takes_an_answer_box_on_the_advance_and_on_nothing_else() -> None:
+    """One caret this page takes on its own, and it is a transition rather than
+    a standing state.
+
+    A settled decision advances to the next one, which scrolls into view with
+    its box ready to answer. Every other caret it took was a standing condition
+    -- a box is on screen and nothing else holds the caret -- which made every
+    re-render a reach into whatever the human was doing: a poll tick took the
+    caret out of a notice they were reading and put it in an answer box, and
+    took the selection they were holding with it.
+    """
+    source = page_source()
+    body = balanced_body("render")
+    assert "document.activeElement === document.body" not in source, (
+        "a render still takes a box because nothing else holds the caret"
+    )
+    assert "UI.lastFocus" not in source, "the focus having moved still hands over a caret"
+    assert "UI.takeBox = true" in balanced_body("advance"), "the advance hands over no caret"
+    assert source.count("UI.takeBox = true") == 1, "something besides the advance takes a box"
+    assert "var take = UI.takeBox;\n  UI.takeBox = false;" in body, (
+        "the mark is not spent by the render that reads it"
+    )
+    # The advance's own caret, unchanged: still the focused decision's box, still
+    # declined when a panel is over it or the decision cannot take an answer.
+    assert 'var box = document.getElementById("ft-" + UI.focus);' in body
+    assert "if (box && !UI.panel && !box.disabled) takeCaret(box);" in body
+    # And a thread's say box on the one transition that claims it, the opening.
+    assert body.count('takeCaret(document.getElementById("ft-say"))') == 1, (
+        "a re-render takes the say box while a thread merely stands open"
+    )
 
 
 def test_a_re_render_puts_the_decision_log_back_where_the_human_had_it() -> None:
@@ -2875,6 +3190,72 @@ def test_the_overlay_ends_the_session_through_the_control_it_is_offering() -> No
     assert '(UI.pulse ? " pulsing" : "")' in function_body("renderShell")
 
 
+def test_the_ending_asks_again_off_the_channel_model_rather_than_a_count_of_its_own() -> None:
+    """What the guard reads, and that it guards the one wire path.
+
+    Whether a turn is out is already answered twice over by records this page
+    keeps, and the page reads both rather than keeping a third. The status lane
+    is the durable one: a `composing` entry stands until its `replied` or
+    `error` closes it, so it survives anything the human does meanwhile. The
+    channel model is the early one: it has a turn as owed from the moment the
+    write is dispatched, before the lane has announced it.
+
+    Reading the model alone is the failure this pins. A second human write on a
+    channel that is already composing takes the model back to idle on its own
+    receipt while the backend goes on running the earlier turn, and the board
+    would then end the session over a turn that is still out.
+
+    The rest is the shape the guard has to keep: it stands in front of the
+    ending rather than inside it, so there is still exactly one site building
+    the event; the ending is reached from the question by the same function the
+    control calls; and one confirmation serves both reasons, which is why the
+    wording is what is passed to it.
+
+    Read off the source because what is pinned here is the wiring. That the
+    first press writes nothing is a fact about a running board, and it is
+    measured in the end-to-end scenarios instead.
+    """
+    source = page_source()
+    pending = function_body("pendingTurns")
+    assert "WIRE.status" in pending, "the guard does not read the lane"
+    assert "CHANNELS.protocol" in pending and "owedOn" in pending, pending
+    assert source.count("function pendingTurns(") == 1
+    # The lane's record is emptied on both phases that close a turn, so a turn
+    # that ended by failure stops counting exactly as one that ended by replying.
+    closing = function_body("track")
+    assert "delete WIRE.status[entry.channel];" in closing
+    assert "phase === PHASE_REPLIED || phase === PHASE_ERROR" in closing
+
+    guard = function_body("endSession")
+    assert "endWarning()" in guard, "the ending is not guarded"
+    assert guard.index("UI.confirm = warning") < guard.index('ev("session-end"'), (
+        "the event is built before the question is asked"
+    )
+    assert source.count(f'ev("{SESSION_END_KIND}"') == 1, "a second path builds the ending"
+    assert 'case "confirm-end": endSession(true); break;' in source
+    # Confirming writes, so an ended board disables it with every other write.
+    writes = source.split("var WRITE_ACTS = ", 1)[1].split("]", 1)[0]
+    assert '"confirm-end"' in writes, "confirming the ending is not sealed on an ended board"
+
+    # The lane's record is only as good as the reading that builds it. The
+    # cursor has moved past an arriving entry and marked it seen before the
+    # board is read, so an entry tracked after that read is an entry a failed
+    # read drops for good -- and a dropped `composing` leaves the channel
+    # reading as quiet for the rest of a turn that is still running.
+    cycle = function_body("poll")
+    assert cycle.index("arrived.forEach(track);") < cycle.index('srvGet("/state")'), (
+        "the board is read before the arriving entries are tracked"
+    )
+    # A reload rebuilds the record by replaying the whole log, so nothing about
+    # the guard depends on the page having been open when a turn was announced.
+    assert "u.entries.forEach(track);" in function_body("hydrate")
+
+    warning = function_body("endWarning")
+    assert "pendingTurns()" in warning and "boardFinished()" in warning, warning
+    assert source.count("confirmEnd(") == 2, "the confirmation is built somewhere else as well"
+    assert "confirmEnd(UI.confirm)" in function_body("renderShell")
+
+
 def test_the_ending_tries_the_tab_and_says_so_when_the_tab_stays() -> None:
     """The fallback is the path most humans take.
 
@@ -3194,9 +3575,9 @@ def test_the_boards_next_open_control_walks_the_frontier_and_says_why_it_cannot(
     it wraps, and that the disabled reason is `boardFinished`'s reading -- a
     second hand-written condition is how a control comes to call a stalled board
     finished, which is the one distinction it exists to draw. That the header
-    control is the walk's only caller is measured too: every focus move hands the
-    caret to the focused decision's note box, so a bare-key shortcut into this
-    would type into what the human is writing rather than move the board.
+    control is the walk's only caller is measured too: a bare-key shortcut into
+    this would fire while the human is typing into a box, moving the board under
+    the words they are writing.
     """
     source = page_source()
     walk = function_body("nextOpen")

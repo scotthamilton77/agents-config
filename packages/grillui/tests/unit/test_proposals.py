@@ -347,7 +347,7 @@ def test_a_withdrawn_proposal_stops_locking_without_leaving_the_queue(
 ) -> None:
     """
     Given a queued proposal its author has superseded
-    When the board is folded
+    When the board is replayed
     Then the entry is still in the queue, marked, and no longer locks anything.
 
     The queue is what the next dispatch tells the agent the human is looking at,
@@ -736,7 +736,7 @@ def test_the_dispatched_queue_carries_the_proposals_the_human_has_not_applied(
     When a grill-master dispatch is recorded
     Then only the waiting one is in the queue those bytes carry.
 
-    Asserted against the recorded dispatch rather than an image the test folded
+    Asserted against the recorded dispatch rather than an image the test replayed
     for itself: what the agent was told the human is looking at is exactly those
     bytes, and a queue still naming an applied change would have it reason about
     a decision twice.

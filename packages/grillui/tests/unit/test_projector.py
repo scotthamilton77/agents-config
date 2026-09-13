@@ -1,4 +1,4 @@
-"""The fold: pure, tolerant, and the same twice."""
+"""The replay: pure, tolerant, and the same twice."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from grillui.drivers import stands_notice
-from grillui.projector import fold, to_image1
+from grillui.projector import replay, to_image1
 from grillui.schemas import VERDICT_KEY, Image1, Image2, LogEntry, Ruling, ThreadTurn
 
 EPOCH = "tenure-1"
@@ -47,16 +47,16 @@ NODE = entry(
 def test_folding_the_same_log_twice_yields_byte_identical_images() -> None:
     """
     Given a fixed log
-    When it is folded twice
+    When it is replayed twice
     Then the two images serialise to identical bytes.
 
-    The fold takes no clock, no randomness and no I/O, which is what makes an
-    image rebuilt from disk match one held in memory. A fold that reached for
+    The replay takes no clock, no randomness and no I/O, which is what makes an
+    image rebuilt from disk match one held in memory. A replay that reached for
     `now()` would pass every field-by-field assertion and fail this one.
     """
     entries = [NODE, entry(2, "answer", actor="human", target="n1", answer={"option": "a"})]
 
-    assert fold(EPOCH, entries).model_dump_json() == fold(EPOCH, entries).model_dump_json()
+    assert replay(EPOCH, entries).model_dump_json() == replay(EPOCH, entries).model_dump_json()
 
 
 def test_an_answered_node_leaves_the_frontier_and_joins_the_settled_set() -> None:
@@ -74,7 +74,7 @@ def test_an_answered_node_leaves_the_frontier_and_joins_the_settled_set() -> Non
         entry(3, "answer", actor="human", target="n1", answer={"option": "a", "text": "log it"}),
     ]
 
-    image = fold(EPOCH, entries)
+    image = replay(EPOCH, entries)
 
     assert [item.id for item in image.settled] == ["n1"]
     assert image.settled[0].answer == "log it"
@@ -84,7 +84,7 @@ def test_an_answered_node_leaves_the_frontier_and_joins_the_settled_set() -> Non
 def test_a_thread_reads_both_the_turns_array_and_a_bare_text_reply() -> None:
     """
     Given a thread created with a turns[] array and answered with bare text
-    When the log is folded
+    When the log is replayed
     Then both land in the same turn list, in order.
 
     One reader handles both shapes on purpose: a backend written against only
@@ -105,7 +105,7 @@ def test_a_thread_reads_both_the_turns_array_and_a_bare_text_reply() -> None:
         entry(2, "thread-turn", channel="t1", text="It is bounded by one grilling."),
     ]
 
-    thread = fold(EPOCH, entries).threads[0]
+    thread = replay(EPOCH, entries).threads[0]
 
     assert thread.title == "Compaction"
     assert thread.requires_action is True
@@ -119,8 +119,8 @@ def test_a_thread_reads_both_the_turns_array_and_a_bare_text_reply() -> None:
 def test_a_payload_the_fold_cannot_read_costs_only_what_it_could_not_read() -> None:
     """
     Given entries whose payloads are missing or of the wrong type
-    When the log is folded
-    Then the fold completes and yields a schema-valid image.
+    When the log is replayed
+    Then the replay completes and yields a schema-valid image.
 
     The projector must tolerate any log the appender accepted. Raising here
     would take the session down over an entry that is already durably written
@@ -134,7 +134,7 @@ def test_a_payload_the_fold_cannot_read_costs_only_what_it_could_not_read() -> N
         entry(5, "thread-turn", channel="t1", turns=[{"who": "human"}, "not-an-object"]),
     ]
 
-    image = fold(EPOCH, entries)
+    image = replay(EPOCH, entries)
 
     Image2.model_validate(image.model_dump())
     assert [node.id for node in image.decisions] == ["n1"]
@@ -145,14 +145,14 @@ def test_a_payload_the_fold_cannot_read_costs_only_what_it_could_not_read() -> N
 def test_option_metadata_survives_only_when_it_is_the_shape_it_claims() -> None:
     """
     Given one option with three pcr strings and one with two
-    When the log is folded
+    When the log is replayed
     Then the well-formed one keeps its metadata and the other carries none.
 
     The trio is the contract -- what the option buys, costs and forces
     downstream. A two-element list rendered as if it were three would put the
     cost under the heading for the consequence.
     """
-    options = fold(EPOCH, [NODE]).decisions[0].options
+    options = replay(EPOCH, [NODE]).decisions[0].options
 
     assert [option.id for option in options] == ["a", "b"]
     assert options[0].pcr == ["audit", "size", "compaction"]
@@ -169,7 +169,7 @@ def test_image_one_is_image_two_without_its_history() -> None:
     page reads: shipping the evolution record to a renderer that never asks
     for it is bytes over the wire for nothing.
     """
-    image2 = fold(EPOCH, [NODE])
+    image2 = replay(EPOCH, [NODE])
 
     image1 = to_image1(image2)
 
@@ -182,7 +182,7 @@ def test_image_one_is_image_two_without_its_history() -> None:
 def test_image_two_carries_per_decision_history_and_image_one_does_not() -> None:
     """
     Given a log in which one decision is added, revised and then answered
-    When both images are folded from it
+    When both images are replayed from it
     Then image 2 carries that decision's ordered history with the rationale
          each event gave, image 1 carries no history at all, and each image
          validates against its own schema.
@@ -205,7 +205,7 @@ def test_image_two_carries_per_decision_history_and_image_one_does_not() -> None
         ),
     ]
 
-    image2 = fold(EPOCH, entries)
+    image2 = replay(EPOCH, entries)
     image1 = to_image1(image2)
 
     Image2.model_validate(image2.model_dump())
@@ -225,11 +225,11 @@ def test_image_two_carries_per_decision_history_and_image_one_does_not() -> None
 def test_a_turn_naming_an_actor_the_protocol_has_no_name_for_is_attributed_to_the_entry() -> None:
     """
     Given a thread turn whose `who` is not one of the protocol's actors
-    When the log is folded
+    When the log is replayed
     Then the turn survives, attributed to the entry's own actor.
 
     The appender judges a thread event on whether it says anything, not on who
-    it claims said it, so this entry is accepted and durable. A fold that
+    it claims said it, so this entry is accepted and durable. A replay that
     raised on it would take the session down over an entry that already has a
     receipt -- the projector must tolerate any log the appender accepted.
     """
@@ -239,7 +239,7 @@ def test_a_turn_naming_an_actor_the_protocol_has_no_name_for_is_attributed_to_th
         )
     ]
 
-    thread = fold(EPOCH, entries).threads[0]
+    thread = replay(EPOCH, entries).threads[0]
 
     assert [turn.who for turn in thread.turns] == ["human"]
     assert [turn.text for turn in thread.turns] == ["?"]
@@ -248,7 +248,7 @@ def test_a_turn_naming_an_actor_the_protocol_has_no_name_for_is_attributed_to_th
 def test_history_is_keyed_only_by_decisions_the_board_actually_has() -> None:
     """
     Given an entry targeting a node id no add-node ever minted
-    When the log is folded
+    When the log is replayed
     Then history carries the real decision and no key for the phantom one.
 
     History is keyed by decision id, and image 2 crosses to the grill-master
@@ -257,13 +257,13 @@ def test_history_is_keyed_only_by_decisions_the_board_actually_has() -> None:
     """
     entries = [NODE, entry(2, "answer", actor="human", target="ghost", answer={"text": "x"})]
 
-    assert set(fold(EPOCH, entries).history) == {"n1"}
+    assert set(replay(EPOCH, entries).history) == {"n1"}
 
 
 def test_requires_action_is_true_only_for_a_real_boolean() -> None:
     """
     Given a thread-created payload carrying the string "false"
-    When the fold reads requires_action
+    When the replay reads requires_action
     Then the thread does not require action.
 
     The appender does not validate payload interiors, so a truthy non-boolean
@@ -273,13 +273,13 @@ def test_requires_action_is_true_only_for_a_real_boolean() -> None:
         entry(1, "thread-created", channel="t1", requires_action="false", turns=[]),
     ]
 
-    assert fold(EPOCH, entries).threads[0].requires_action is False
+    assert replay(EPOCH, entries).threads[0].requires_action is False
 
 
 def test_an_unhashable_who_falls_back_to_the_entrys_actor() -> None:
     """
     Given an accepted thread turn whose who is a dict rather than a string
-    When the fold reads it
+    When the replay reads it
     Then the turn is attributed to the entry's actor instead of crashing.
     """
     entries = [
@@ -292,7 +292,7 @@ def test_an_unhashable_who_falls_back_to_the_entrys_actor() -> None:
         ),
     ]
 
-    assert fold(EPOCH, entries).threads[0].turns[0].who == "human"
+    assert replay(EPOCH, entries).threads[0].turns[0].who == "human"
 
 
 # ------------------------------------------------------------ GUI-U21/GUI-A62
@@ -300,8 +300,8 @@ def test_an_unhashable_who_falls_back_to_the_entrys_actor() -> None:
 
 def test_a_thread_turn_carries_the_tier_that_took_it_into_image_one() -> None:
     """
-    Given a thread carrying a fast agent turn, a heavy one, and the human's
-    When the fold projects it
+    Given a thread carrying a fast-tier agent turn, a heavy one, and the human's
+    When the replay projects it
     Then each agent turn carries the tier its own entry was attributed to,
     And the human's carries none.
 
@@ -317,7 +317,7 @@ def test_a_thread_turn_carries_the_tier_that_took_it_into_image_one() -> None:
         entry(4, "thread-turn", actor="thread-agent", channel="t1", text="More.", tier="heavy"),
     ]
 
-    turns = to_image1(fold(EPOCH, entries)).threads[0].turns
+    turns = to_image1(replay(EPOCH, entries)).threads[0].turns
 
     assert [(turn.who, turn.tier) for turn in turns] == [
         ("human", None),
@@ -341,7 +341,7 @@ def test_an_unattributed_turn_has_no_tier_key_at_all() -> None:
         entry(2, "thread-turn", actor="thread-agent", channel="t1", text="Because.", tier="fast"),
     ]
 
-    dumped = to_image1(fold(EPOCH, entries)).model_dump()["threads"][0]["turns"]
+    dumped = to_image1(replay(EPOCH, entries)).model_dump()["threads"][0]["turns"]
 
     assert "tier" not in dumped[0]
     assert dumped[1]["tier"] == "fast"
@@ -350,7 +350,7 @@ def test_an_unattributed_turn_has_no_tier_key_at_all() -> None:
 def test_a_tier_the_log_names_but_this_side_does_not_know_is_dropped() -> None:
     """
     Given an agent turn attributed to a tier that is not one of the two
-    When the fold projects it
+    When the replay projects it
     Then the turn carries no tier rather than the unrecognised spelling.
     """
     entries = [
@@ -358,13 +358,13 @@ def test_a_tier_the_log_names_but_this_side_does_not_know_is_dropped() -> None:
         entry(2, "thread-turn", actor="thread-agent", channel="t1", text="Hm.", tier="medium"),
     ]
 
-    assert to_image1(fold(EPOCH, entries)).threads[0].turns[1].tier is None
+    assert to_image1(replay(EPOCH, entries)).threads[0].turns[1].tier is None
 
 
 def test_a_human_turn_inside_an_attributed_entry_takes_no_tier_from_it() -> None:
     """
     Given an entry attributed to a tier that carries a turn the human said
-    When the fold projects it
+    When the replay projects it
     Then that turn carries no tier.
 
     The page\'s turn shape lets a client name a `who`, so the attribution is
@@ -381,7 +381,7 @@ def test_a_human_turn_inside_an_attributed_entry_takes_no_tier_from_it() -> None
         ),
     ]
 
-    turns = fold(EPOCH, entries).threads[0].turns
+    turns = replay(EPOCH, entries).threads[0].turns
 
     assert [(turn.who, turn.tier) for turn in turns] == [
         ("human", None),
@@ -419,7 +419,7 @@ def applied(seq: int, *updates: dict[str, Any]) -> LogEntry:
 def test_a_prereq_that_has_been_invalidated_holds_nothing() -> None:
     """
     Given a decision resting on two prereqs, one settled and one invalidated
-    When the log is folded
+    When the log is replayed
     Then it is on the frontier.
 
     An invalidated decision never settles, so a frontier reading "settled" as
@@ -434,7 +434,7 @@ def test_a_prereq_that_has_been_invalidated_holds_nothing() -> None:
         applied(5, {"kind": "invalidate", "target": "n2", "why": "the export was dropped"}),
     ]
 
-    image = fold(EPOCH, entries)
+    image = replay(EPOCH, entries)
 
     assert image.frontier == ["n3"]
     assert [one.status for one in image.decisions if one.id == "n2"] == ["invalidated"]
@@ -443,7 +443,7 @@ def test_a_prereq_that_has_been_invalidated_holds_nothing() -> None:
 def test_a_fog_rule_pointing_at_an_invalidated_decision_lifts() -> None:
     """
     Given a decision fogged until another settles, and that other one invalidated
-    When the log is folded
+    When the log is replayed
     Then the fog is gone and the decision is answerable.
 
     The same deadlock as the prereq one and the same reason: a decision waiting
@@ -456,7 +456,7 @@ def test_a_fog_rule_pointing_at_an_invalidated_decision_lifts() -> None:
         applied(3, {"kind": "invalidate", "target": "n1", "why": "no store is needed"}),
     ]
 
-    image = fold(EPOCH, entries)
+    image = replay(EPOCH, entries)
 
     assert [one.status for one in image.decisions if one.id == "n2"] == ["open"]
     assert image.frontier == ["n2"]
@@ -466,7 +466,7 @@ def test_staleness_does_not_travel_through_an_invalidated_dependent() -> None:
     """
     Given a settled decision resting on an invalidated one, which rests in turn
           on a decision the agent then unsettles
-    When the log is folded
+    When the log is replayed
     Then the settled decision at the far end is untouched.
 
     Staleness is an answer resting on a withdrawn one. An invalidated decision
@@ -485,7 +485,7 @@ def test_staleness_does_not_travel_through_an_invalidated_dependent() -> None:
         applied(7, {"kind": "unsettle", "target": "n1", "why": "the store question is back"}),
     ]
 
-    statuses = {one.id: one.status for one in fold(EPOCH, entries).decisions}
+    statuses = {one.id: one.status for one in replay(EPOCH, entries).decisions}
 
     assert statuses == {"n1": "open", "n2": "invalidated", "n3": "settled"}
 
@@ -499,7 +499,7 @@ def queued(
 ) -> LogEntry:
     """A grill-master turn, whole: what it proposes and what it ruled.
 
-    The rulings ride the turn's own entry, which is where the fold has to read
+    The rulings ride the turn's own entry, which is where the replay has to read
     them from -- by the time the human applies one of these, the gesture on the
     log is the human's and carries nothing but the ids they named.
     """
@@ -539,7 +539,7 @@ def test_an_applied_proposal_records_the_agent_that_proposed_it_and_the_verdict_
         landing(3, "k2#0", updates=[KILL]),
     ]
 
-    recorded = fold(EPOCH, entries).history["n1"][-1]
+    recorded = replay(EPOCH, entries).history["n1"][-1]
 
     assert (recorded.seq, recorded.kind, recorded.actor) == (3, "invalidate", "human")
     assert recorded.proposed_by == "grill-master"
@@ -550,7 +550,7 @@ def test_an_applied_proposal_records_the_agent_that_proposed_it_and_the_verdict_
 def test_a_queued_proposal_is_no_history_until_the_human_lands_it() -> None:
     """
     Given the same turn, with nothing applied after it
-    When the log is folded
+    When the log is replayed
     Then the decision's history ends at the add-node.
 
     A proposal has not happened to a decision yet, so recording a proposer for
@@ -561,14 +561,14 @@ def test_a_queued_proposal_is_no_history_until_the_human_lands_it() -> None:
         queued(2, KILL, rulings=[{"decision": "n1", "ruling": "invalidate", "why": "moot"}]),
     ]
 
-    assert [one.kind for one in fold(EPOCH, entries).history["n1"]] == ["add-node"]
+    assert [one.kind for one in replay(EPOCH, entries).history["n1"]] == ["add-node"]
 
 
 def test_a_stands_ruling_records_its_verdict_and_the_why_it_was_credited_on() -> None:
     """
     Given a turn that ruled a decision standing, which mints the notice that
          says so and moves nothing
-    When the log is folded
+    When the log is replayed
     Then that decision's history entry carries `stands` and the ruling's own
          reasoning.
 
@@ -579,13 +579,13 @@ def test_a_stands_ruling_records_its_verdict_and_the_why_it_was_credited_on() ->
 
     The notice is minted by the driver rather than written out here, so this
     reads the shape the backend actually produces: a stands notice built by hand
-    could carry the association the fold looks for while the real one had lost
+    could carry the association the replay looks for while the real one had lost
     it, and the check would pass over a board that says nothing.
     """
     ruling = Ruling(decision="n1", ruling="stands", why="the audit need is unchanged")
     entries = [NODE, queued(2, stands_notice(ruling), rulings=[ruling.model_dump()])]
 
-    recorded = fold(EPOCH, entries).history["n1"][-1]
+    recorded = replay(EPOCH, entries).history["n1"][-1]
 
     assert recorded.kind == "informational"
     assert recorded.verdict == "stands"
@@ -596,7 +596,7 @@ def test_a_stands_ruling_records_its_verdict_and_the_why_it_was_credited_on() ->
 def test_a_move_the_human_made_themselves_carries_neither_field() -> None:
     """
     Given the human answering a decision directly
-    When the log is folded
+    When the log is replayed
     Then its history entry carries no proposer and no verdict, and the keys are
          absent from the serialised record rather than null.
 
@@ -616,7 +616,7 @@ def test_a_move_the_human_made_themselves_carries_neither_field() -> None:
         ),
     ]
 
-    image = fold(EPOCH, entries)
+    image = replay(EPOCH, entries)
     recorded = image.history["n1"][-1]
 
     assert (recorded.proposed_by, recorded.verdict) == (None, None)
@@ -645,7 +645,7 @@ def test_a_ruling_with_no_update_behind_it_credits_no_other_update_on_that_decis
         landing(4, "k3#0", updates=[revise]),
     ]
 
-    recorded = fold(EPOCH, entries).history["n1"][-1]
+    recorded = replay(EPOCH, entries).history["n1"][-1]
 
     assert recorded.kind == "revise"
     assert recorded.verdict is None
@@ -682,7 +682,7 @@ def test_one_apply_landing_two_proposals_gives_each_decision_its_own_verdict() -
         landing(5, "k4#0", "k4#1", updates=[KILL, second]),
     ]
 
-    history = fold(EPOCH, entries).history
+    history = replay(EPOCH, entries).history
 
     assert history["n1"][-1].verdict == "invalidate"
     assert history["n2"][-1].verdict == "revise"
@@ -692,11 +692,11 @@ def test_one_apply_landing_two_proposals_gives_each_decision_its_own_verdict() -
 def test_a_history_entry_written_before_these_fields_existed_still_folds() -> None:
     """
     Given a log whose entries carry no rulings and no queue gesture at all
-    When it is folded
+    When it is replayed
     Then every history entry validates and carries neither field.
 
     The fields are optional because the logs that predate them are still logs:
-    a fold that required a proposer would refuse to read a session recorded
+    a replay that required a proposer would refuse to read a session recorded
     yesterday, and the reverse handoff is the one artifact that must survive
     the format moving under it.
     """
@@ -706,7 +706,7 @@ def test_a_history_entry_written_before_these_fields_existed_still_folds() -> No
         entry(3, "answer", actor="human", target="n1", answer={"option": "a"}, why="audit"),
     ]
 
-    image = fold(EPOCH, entries)
+    image = replay(EPOCH, entries)
 
     Image2.model_validate(image.model_dump())
     assert [(one.proposed_by, one.verdict) for one in image.history["n1"]] == [(None, None)] * 3
@@ -716,10 +716,10 @@ def test_a_ruling_word_outside_the_closed_three_names_no_verdict() -> None:
     """
     Given a log whose turn ruled a decision with a word that is not one of the
          three verdicts, against an update of that same name
-    When it is folded
+    When it is replayed
     Then the image builds and that decision's history carries no verdict.
 
-    The fold is a pure read of whatever the log holds, and the verdict
+    The replay is a pure read of whatever the log holds, and the verdict
     vocabulary is closed. Matching a ruling to an update by name alone would
     put a word into the record that image 2 cannot be built from -- so the
     reverse handoff would fail to serialise on a log the board otherwise reads
@@ -734,7 +734,7 @@ def test_a_ruling_word_outside_the_closed_three_names_no_verdict() -> None:
         ),
     ]
 
-    image = fold(EPOCH, entries)
+    image = replay(EPOCH, entries)
     recorded = image.history["n1"][-1]
 
     Image2.model_validate(image.model_dump())
@@ -750,7 +750,7 @@ def test_an_apply_naming_one_id_twice_still_pairs_each_update_with_its_own_autho
     """
     Given two proposals by different agents, ruled different ways, and a human
          apply that names the first id twice and the second once
-    When the log is folded
+    When the log is replayed
     Then each decision's history carries the agent that proposed it and the
          verdict ruled on it.
 
@@ -781,7 +781,7 @@ def test_an_apply_naming_one_id_twice_still_pairs_each_update_with_its_own_autho
         entry(6, "apply", actor="human", pending=["k4#0", "k4#0", "k5#0"], updates=[kill, widen]),
     ]
 
-    history = fold(EPOCH, entries).history
+    history = replay(EPOCH, entries).history
 
     assert (history["n1"][-1].proposed_by, history["n1"][-1].verdict) == (
         "grill-master",
@@ -794,7 +794,7 @@ def test_a_stands_verdict_lands_only_on_the_notice_that_ruling_minted() -> None:
     """
     Given a turn that ruled a decision standing and also wrote its own targeted
          informational about that same decision
-    When the log is folded
+    When the log is replayed
     Then the minted notice carries `stands` and the turn's own informational
          carries no verdict.
 
@@ -807,7 +807,7 @@ def test_a_stands_verdict_lands_only_on_the_notice_that_ruling_minted() -> None:
     aside = {"kind": "informational", "target": "n1", "text": "the vendor replied about n1"}
     entries = [NODE, queued(2, aside, stands_notice(ruling), rulings=[ruling.model_dump()])]
 
-    recorded = fold(EPOCH, entries).history["n1"]
+    recorded = replay(EPOCH, entries).history["n1"]
 
     assert [one.kind for one in recorded] == ["add-node", "informational", "informational"]
     assert recorded[1].verdict is None, "the turn's own message took the ruling's credit"
@@ -821,11 +821,11 @@ def test_the_fold_credits_a_stamp_only_on_the_one_form_the_backend_mints() -> No
     Given a log whose entry carries stamped updates the driver would never write
           -- a `revise` wearing a verdict, an informational wearing one that is
           not `stands`, and a `revise` wearing `stands` -- and no rulings at all
-    When it is folded
+    When it is replayed
     Then none of them records a verdict.
 
     The driver strips the stamp off what a model wrote, so these shapes do not
-    come from it. The log is still the fold's trust boundary: it is bytes on
+    come from it. The log is still the replay's trust boundary: it is bytes on
     disk, read by a future backend, and one stripping bug upstream would
     otherwise be a verdict on the record that nobody ruled. So the reader
     credits exactly what is minted -- a `stands` on an informational -- and
@@ -848,7 +848,7 @@ def test_the_fold_credits_a_stamp_only_on_the_one_form_the_backend_mints() -> No
         ),
     ]
 
-    history = fold(EPOCH, entries).history
+    history = replay(EPOCH, entries).history
 
     assert [one.kind for one in history["n1"]] == ["add-node", "revise", "informational"]
     assert [one.verdict for one in history["n1"]] == [None, None, None]

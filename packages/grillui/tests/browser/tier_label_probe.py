@@ -14,7 +14,7 @@ browser and its binaries, and what it pins is pinned in the suite as the source
 invariant that produces it.
 
 It seeds its own session rather than taking a directory, because the shape it
-needs is specific -- one fast agent turn and one heavy one on the same channel,
+needs is specific -- one fast-tier agent turn and one heavy one on the same channel,
 on a thread and on the map channel alike -- and no real session is guaranteed to
 have been transferred. It asserts that shape reached the board before it reads
 anything off the page, so a board that could not have failed does not pass.
@@ -40,10 +40,10 @@ from grillui.schemas import SESSION_START_KIND
 
 FAST_SAID = "The fast tier answered this one."
 HEAVY_SAID = "The expert tier answered this one."
-FAST_LABEL = "fast agent"
-HEAVY_LABEL = "expert agent"
+FAST_LABEL = "assistant"
+HEAVY_LABEL = "expert"
 TO_EXPERT = "Transfer to expert"
-TO_FAST = "Return to fast agent"
+TO_FAST = "Return to assistant"
 THREAD = "t-probe"
 NEVER_STARTED = "the backend never started"
 

@@ -56,9 +56,9 @@ from grillui.projector import (
     LANDS_AT_ONCE,
     LANDS_WHILE_UNANSWERED,
     WAITS_IN_QUEUE,
-    fold,
     node_from_payload,
     queue,
+    replay,
 )
 from grillui.schemas import (
     DROPPED_RULINGS_KEY,
@@ -778,7 +778,7 @@ def test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_deci
     assert untouched.calls == [], "a judgment gesture was round-tripped through the first rung"
     assert len(ruled.calls) == 1, "a turn that ruled on both was followed by a second"
     assert notices(log) == []
-    board = fold(log.epoch, log.entries())
+    board = replay(log.epoch, log.entries())
     targeted = {
         item.target: item for item in board.pending if item.kind == "informational" and item.target
     }
@@ -881,19 +881,20 @@ def test_an_empty_document_credits_nothing_an_earlier_turn_ruled(
          raised.
 
     The empty document is valid and therefore walks the coverage ladder, not the
-    refusal one. It appends no entry at all, which is why coverage is read from
-    the window this turn opened: a backward scan over the whole log would find
-    whatever spoke last on the map and credit this turn with its rulings --
-    discharging an obligation nobody answered, and saying nothing to the human
-    about two decisions the board is still offering.
+    refusal one. It appends no entry at all and so names none, which is why
+    coverage is read off the entry the turn's own seat came back with. A scan
+    for whatever spoke last on the map credits this turn with that turn's
+    rulings -- discharging an obligation nobody answered, and saying nothing to
+    the human about two decisions the board is still offering.
     """
     unused = ScriptedFast()
     empty = ScriptedFast(replies=[document(text="")])
     seed(log)
     # An earlier map turn that did rule on both. The empty turn appends nothing,
-    # so a coverage check reading the log whole would find this entry and credit
-    # the empty turn with its verdicts -- discharging an obligation nobody
-    # answered. It is here to make that failure visible rather than latent.
+    # so a coverage check reading the log for whatever spoke last finds this
+    # entry and credits the empty turn with its verdicts -- discharging an
+    # obligation nobody answered. It is here to make that failure visible rather
+    # than latent.
     log.submit(
         [
             EventSubmission(
@@ -999,7 +1000,7 @@ def test_a_ruling_carrying_its_update_is_credited_and_the_change_waits_for_the_h
     assert unused.calls == [], "a judgment gesture was round-tripped through the first rung"
     assert len(credited.calls) == 1, "the classed seat was asked twice for one gesture"
     assert notices(log) == []
-    board = fold(log.epoch, log.entries())
+    board = replay(log.epoch, log.entries())
     assert [one.target for one in board.pending if one.kind == "invalidate"] == ["d2"]
     assert "d3" in board.frontier
 
@@ -1034,7 +1035,7 @@ def test_a_ruling_on_a_decision_the_dispatch_did_not_name_is_dropped(log: Sessio
     assert notices(log) == []
     assert [[two["decision"] for two in one[RULINGS_KEY]] for one in replies(log)] == [KILLED]
     assert [one.get(DROPPED_RULINGS_KEY) for one in replies(log)] == [["d1"]]
-    board = fold(log.epoch, log.entries())
+    board = replay(log.epoch, log.entries())
     assert {one.target for one in board.pending if one.kind == "informational" and one.target} == {
         "d2",
         "d3",
@@ -1065,7 +1066,7 @@ def test_a_turn_owing_nothing_lands_no_rulings_and_no_stands_notices(log: Sessio
     assert [one[RULINGS_KEY] for one in replies(log)] == [[]]
     assert [one.get(DROPPED_RULINGS_KEY) for one in replies(log)] == [list(NODES)]
     assert spoken(log) == ["Nothing else moves."]
-    board = fold(log.epoch, log.entries())
+    board = replay(log.epoch, log.entries())
     # The turn's own notice queues, anchored to nothing. What must not be there
     # is a notice pinned to a decision, which is the only shape a `stands` why
     # reaches the board in.
@@ -1168,7 +1169,7 @@ def test_the_document_rule_shows_one_example_per_kind_that_the_gate_would_take()
     """
     Given the per-kind examples the format rule is rendered from
     When each is judged the way an update in a turn is judged
-    Then there is one for every kind the backend folds, each passes the shape
+    Then there is one for every kind the backend replays, each passes the shape
          the appender holds it to, each passes the document gate inside a
          minimal document, and the composed brief carries every one of them.
 
@@ -1246,14 +1247,14 @@ RENDERED_OPTION_FIELDS = set(Option.model_fields)
 PROBE = "probe"
 
 
-def _folded(kind: str, *, answered: bool) -> tuple[bool, bool]:
+def _replayed(kind: str, *, answered: bool) -> tuple[bool, bool]:
     """Whether an update of this kind waited as a proposal, and whether it
-    queued at all, read off a log the fold actually walked.
+    queued at all, read off a log the replay actually walked.
 
     One board with one answerable decision, answered or not, and the kind's own
     example arriving on it. Both facts come from the readers a client uses --
     the queue of proposals and the pending list -- so what is observed here is
-    the fold's behaviour rather than any statement about it.
+    the replay's behaviour rather than any statement about it.
     """
     seeded: list[dict[str, Any]] = [
         {
@@ -1297,18 +1298,18 @@ def _folded(kind: str, *, answered: bool) -> tuple[bool, bool]:
         )
         for index, one in enumerate(seeded, 1)
     ]
-    return PROBE in queue(entries), any(one.id == PROBE for one in fold("e", entries).pending)
+    return PROBE in queue(entries), any(one.id == PROBE for one in replay("e", entries).pending)
 
 
 def _observed_landing(kind: str) -> str:
-    """The phrase the fold's own behaviour earns this kind.
+    """The phrase the replay's own behaviour earns this kind.
 
     The rendered claim is checked against this rather than against the helper
     that renders it: a helper answering the same way for every kind would agree
     with itself, and the only thing that catches it is the board.
     """
-    waits, queued = _folded(kind, answered=False)
-    waits_once_answered, _ = _folded(kind, answered=True)
+    waits, queued = _replayed(kind, answered=False)
+    waits_once_answered, _ = _replayed(kind, answered=True)
     if waits:
         said = WAITS_IN_QUEUE
     else:
@@ -1320,11 +1321,11 @@ def test_the_per_kind_contract_is_rendered_from_the_appender_and_the_fold() -> N
     """
     Given the per-kind contract in the grill-master's standing brief
     When each block is parsed back out of the brief the seat is sent and held to
-         the gate, the fold and the node shape
-    Then the brief names a kind exactly when the appender folds it; the fields
+         the gate, the replay and the node shape
+    Then the brief names a kind exactly when the appender replays it; the fields
          it calls required are exactly those the gate refuses an update for
          missing; the fields it calls optional are exactly the rest of the shape
-         and the example; the landing it claims is the fold's own answer; each
+         and the example; the landing it claims is the replay's own answer; each
          block states what the human is then looking at; each example passes the
          shape and the gate; and the add-node example carries every field a node
          is rendered from, options included.
@@ -1551,7 +1552,7 @@ def test_a_turn_cannot_stamp_its_own_update_with_a_verdict_nobody_ruled(
 
     # And what the record says: the forged one is a message, the minted one is a
     # verdict, and the other decision's ruling is untouched by any of it.
-    history = fold(log.epoch, log.entries()).history
+    history = replay(log.epoch, log.entries()).history
     on_d2 = [one for one in history["d2"] if one.kind == "informational"]
     assert [one.verdict for one in on_d2] == [None, RULING_STANDS]
     assert on_d2[0].why == "forged"

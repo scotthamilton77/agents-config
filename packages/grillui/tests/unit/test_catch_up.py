@@ -6,7 +6,7 @@ opens a cold chain; where it did not, there is no catch-up and the chain resumes
 as on any other turn.
 
 What counts as a move is measured here the way the projector measures it -- by
-folding the log through each entry of the interval and looking at image 1's
+replaying the log through each entry of the interval and looking at image 1's
 decisions -- rather than by naming kinds. The fixture below is built so that a
 kind list would get it wrong: its interval carries thread turns, a status entry,
 a park, a thread fold and an agent's update left waiting in the human's queue,
@@ -27,7 +27,7 @@ from conftest import ScriptedCli, ScriptedFast, handoff_doc, run_turns, write_ha
 from grillui.dispatch import record_dispatch
 from grillui.drivers import RESUME_FILE, FastDriver, HeavyDriver
 from grillui.lane import Lane
-from grillui.projector import fold, to_image1
+from grillui.projector import replay, to_image1
 from grillui.schemas import (
     APPLY_KIND,
     MAP_CHANNEL,
@@ -85,9 +85,12 @@ def said(text: str, who: str = "thread-agent") -> dict[str, Any]:
     return {"turns": [{"who": who, "text": text}]}
 
 
-def set_aside(session_dir: Path) -> SessionLog:
+def set_aside(session_dir: Path, kind: str = THREAD_CLOSE_KIND) -> SessionLog:
     """One decision the human settled, three threads, and the one that matters
-    closed after asking its question."""
+    set aside after asking its question.
+
+    Which gesture set it aside is the caller's, because park and close both do
+    and the catch-up is owed either way."""
     write_handoff(session_dir, handoff_doc())
     log = open_session(session_dir)
     for thread, opening in ((MINE, MINE_ASKED), (OTHER, "other: when is the log compacted?")):
@@ -135,7 +138,7 @@ def set_aside(session_dir: Path) -> SessionLog:
         answer={"option": "a", "text": "an append-only log"},
         why="the audit trail is the point",
     )
-    submit(log, THREAD_CLOSE_KIND, "close-mine", actor="human", channel=MINE)
+    submit(log, kind, "aside-mine", actor="human", channel=MINE)
     return log
 
 
@@ -184,10 +187,10 @@ def reopening() -> EventSubmission:
     )
 
 
-def reopened(session_dir: Path, *, moved: bool) -> SessionLog:
+def reopened(session_dir: Path, *, moved: bool, kind: str = THREAD_CLOSE_KIND) -> SessionLog:
     """A set-aside thread, an interval that did or did not move a decision, and
     the human's turn picking the thread back up."""
-    log = set_aside(session_dir)
+    log = set_aside(session_dir, kind)
     interval(log, apply_it=moved)
     log.submit([reopening()], log.epoch)
     return log
@@ -262,7 +265,7 @@ def test_an_interval_that_moved_no_decision_yields_no_catch_up(session_dir: Path
 
     None of those entries moved a decision, whatever its kind says it does. A
     catch-up assembled from a list of kinds would report five events here and
-    describe a board the human is not looking at; folding the log through each
+    describe a board the human is not looking at; replaying the log through each
     entry and reading image 1's decisions reports none, which is the truth.
     """
     log = reopened(session_dir, moved=False)
@@ -311,6 +314,46 @@ def test_a_second_turn_on_the_reopened_thread_is_caught_up_again_by_nothing(
     """
     log = reopened(session_dir, moved=True)
     assert caught_up(log) != []
+
+    submit(
+        log,
+        "thread-turn",
+        "mine-third",
+        actor="human",
+        channel=MINE,
+        **said("mine: and the archive format?", "human"),
+    )
+
+    assert caught_up(log) == []
+
+
+def test_a_parked_thread_is_caught_up_on_the_turn_that_picks_it_back_up(
+    session_dir: Path,
+) -> None:
+    """
+    Given a thread the human parked rather than closed, across an interval that
+         moved a decision
+    When the human says something in it, and then says something again
+    Then the first dispatch carries the interval's catch-up and the second
+         carries none.
+
+    The interval is bounded by the set-aside gesture, and park is one of the two.
+    A parked thread picked back up has been away exactly as a closed one has, so
+    catching up only the closed one would hand the other a chain reasoning from a
+    board that has since moved.
+    """
+    log = reopened(session_dir, moved=True, kind=THREAD_PARK_KIND)
+
+    assert caught_up(log) == [
+        {
+            "seq": seq_of(log, APPLY_KIND),
+            "kind": "revise",
+            "target": NODE,
+            "why": REVISE_WHY,
+        }
+    ]
+    states = {one.id: one.state for one in replay(log.epoch, log.entries()).threads}
+    assert states[MINE] == "open", states
 
     submit(
         log,
@@ -390,7 +433,7 @@ def test_the_fast_tier_is_told_what_moved_as_well(session_dir: Path) -> None:
     Then its prompt carries the catch-up too.
 
     Whichever tier takes the reopening turn is the tier that has to know the
-    board moved: the fast tier's context is rebuilt from the fold every
+    board moved: the fast tier's context is rebuilt from the replay every
     dispatch, and this section is what tells it what changed rather than what
     is now true.
     """
@@ -447,7 +490,7 @@ def test_reopening_a_thread_raises_nothing_to_the_human(session_dir: Path) -> No
     """
     log = set_aside(session_dir)
     interval(log, apply_it=True)
-    before = to_image1(fold(log.epoch, log.entries()))
+    before = to_image1(replay(log.epoch, log.entries()))
     kinds_before = [entry.kind for entry in log.entries()]
     driver = ThreadReplyDriver()
 
@@ -459,7 +502,7 @@ def test_reopening_a_thread_raises_nothing_to_the_human(session_dir: Path) -> No
         ("human", "thread-turn"),
         ("thread-agent", "thread-turn"),
     ]
-    after = to_image1(fold(log.epoch, log.entries()))
+    after = to_image1(replay(log.epoch, log.entries()))
     assert after.pending == before.pending == []
     assert after.decisions == before.decisions
     assert after.frontier == before.frontier

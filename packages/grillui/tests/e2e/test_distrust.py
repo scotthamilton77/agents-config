@@ -7,9 +7,10 @@ the same evidence about the same rung -- and the two are counted alike.
 
 One writes nothing, because one is noise: a proposal the human simply did not
 want is not a seat that cannot do the work. The second is the pattern, and it
-writes the same status entry the escalation policy writes. The count is this
-process's and the entry is the log's, which is the division that matters: a
-successor process starts counting again, and finds the move already made.
+writes the same status entry the escalation policy writes. The count and the
+entry are both the log's, which is what makes them the session's: a successor
+process counts the signals its predecessor counted, and finds the move already
+made.
 
 The entry is sticky by design. A channel the human took back down stays down --
 the way back is theirs -- so a third signal buys nothing, and neither does a
@@ -109,7 +110,7 @@ def test_the_second_wordless_refusal_moves_the_channel_and_the_third_buys_nothin
     # again after they have reversed it.
     page.wait_for_timeout(800)
     control = page.locator('[data-act="transfer"][data-channel="map"]')
-    assert control.inner_text().strip().endswith("Return to fast agent"), control.inner_text()
+    assert control.inner_text().strip().endswith("Return to assistant"), control.inner_text()
     control.click()
     page.wait_for_timeout(300)
     answer(page, "d2")
@@ -165,8 +166,8 @@ def test_two_presses_move_the_channel_and_the_move_survives_a_fresh_backend(
          fresh one over the same session directory
     Then the two presses write exactly one `transferred` entry, and the new
          process finds the map already moved: the next gesture is composed on
-         the expert without any signal being counted, because the entry is in
-         the log rather than in the memory of the process that wrote it.
+         the expert with no further signal needed, because the entry is in the
+         log rather than in the memory of the process that wrote it.
     """
     session = launcher(handoff=handoff(PLAN))
     session.script_codex(turn(PROSE), turn(PROSE), turn(PROSE), turn(PROSE))
@@ -182,8 +183,9 @@ def test_two_presses_move_the_channel_and_the_move_survives_a_fresh_backend(
     assert len(transferred(session)) == 1, transferred(session)
     assert len(session.codex_calls()) == 4, session.codex_calls()
 
-    # A fresh tenure over the same directory. Its counter starts at nothing --
-    # what survives is the entry, which is what it reads before writing another.
+    # A fresh tenure over the same directory. It counts the signals its
+    # predecessor counted, and finds the entry those signals already bought --
+    # which is what it reads before writing another.
     session.close()
     resumed = launcher(name="session")
     # The script is stated whole rather than appended to: the shims record every

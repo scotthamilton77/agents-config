@@ -218,7 +218,7 @@ def test_capture_over_a_fixed_directory_prints_the_same_bytes_twice(
     When the capture verb runs twice
     Then both runs print the same bytes.
 
-    The projection is a fold with no clock and no randomness in it, so a second
+    The projection is a replay with no clock and no randomness in it, so a second
     capture is a re-read rather than a new opinion.
     """
     directory = finished(session_dir)
@@ -238,7 +238,7 @@ def test_capture_against_a_directory_holding_no_session_is_refused(
     When the capture verb runs
     Then it exits non-zero naming what it looked for, and prints no result.
 
-    A fold over an empty log is a well-formed result saying a session decided
+    A replay over an empty log is a well-formed result saying a session decided
     nothing; handing that to someone who mistyped a path answers their question
     falsely.
     """

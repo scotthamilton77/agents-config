@@ -605,12 +605,19 @@ RESHAPE_STEP = (
     "decision nobody asked you about -- the backend discards it, and the human never sees it."
 )
 
-# The turn's one lane to the human, and the two things that keep trying to
+# The turn's one lane to the human, and the three things that keep trying to
 # become a second one. Top-level `text` and an `informational` update are the
-# same act described twice, which is where the shelf of notices comes from; and
-# a `stands` already carries a `why` the board renders on the decision, so a
+# same act described twice, which is where the shelf of notices comes from; a
+# `stands` already carries a `why` the board renders on the decision, so a
 # second copy of it as a notice is the same sentence in two places, one of which
-# the human has to dismiss.
+# the human has to dismiss; and a `text` that narrates every decision the turn
+# moved is the per-decision record written a second time, in one paragraph, out
+# of reach of every decision it is about.
+#
+# The board shows that paragraph once, where the turn is shown, and never
+# against the decisions the turn moved. Homing it on each of them instead reads
+# as the same message arriving four times and leaves none of those decisions
+# saying what happened to it.
 SPEECH_RULE = (
     "You speak to the human in one place per turn: the `text` of your reply. That is the "
     "turn's message, and there is no second one.\n"
@@ -620,7 +627,14 @@ SPEECH_RULE = (
     "decision; you do not send one. A turn almost never needs both a `text` and an "
     "`informational`.\n"
     "Never put the reason for a `stands` ruling in an `informational`. The ruling carries its "
-    "own `why`, and the board shows that line on the decision itself."
+    "own `why`, and the board shows that line on the decision itself.\n"
+    "Everything the human reads carries the same two rules, whichever field it rides in: name "
+    "the decision beside any option you mention, and keep it short -- the turn's message to "
+    "the length set above, a `why` to one line.\n"
+    "Your `text` is the turn-level story, and the board shows it once, where the turn is "
+    "shown. What the answer did to one decision rides the `why` of the ruling or the update "
+    "against that decision, and the board shows that line on the decision itself. A paragraph "
+    "covering four decisions is one the human has to unpick four times."
 )
 
 # A paragraph of its own rather than a closing clause of the rule above. The
@@ -630,7 +644,8 @@ SPEECH_RULE = (
 # human is reading the sentence off a board of rows that each offer an option
 # `b`, and cannot.
 OPTION_REFERENCE_RULE = (
-    "Every time you name an option, name its decision in the same breath. Write "
+    "Every time you name an option -- in your `text`, in a `why`, in a notice, anywhere the "
+    "human reads it -- name its decision in the same breath. Write "
     '"option b of d3", never "option b". This holds for the first mention as much as the '
     "rest, and it holds when the decision is the one the human has just answered -- that is "
     "the sentence it is most often dropped from. Most decisions on the board offer an option "
@@ -699,7 +714,7 @@ BOARD_LEGEND = (
 # some wait for the human, the split is drawn by the backend against the board at
 # the moment the reply arrives, and a turn that believed its updates had landed
 # would tell the human a decision was settled that is sitting in their queue.
-# One example per kind the backend folds, and the source the rule below states
+# One example per kind the backend replays, and the source the rule below states
 # them from. A kind's required fields are the appender's, not this text's, so
 # they are held as objects and put through the appender's own shape check in the
 # suite rather than typed into prose nothing reads back: an example a seat
@@ -776,8 +791,8 @@ UPDATE_EXAMPLES: dict[str, dict[str, Any]] = {
 # What each kind is for, in one line. This is the whole of the hand-written
 # prose in the per-kind contract below: which fields a kind requires, which it
 # may also carry and what the backend does with it are read off the appender's
-# shape and the fold's own rule, so the contract cannot tell a seat a field is
-# required that the appender never asks for, nor promise a landing the fold
+# shape and the replay's own rule, so the contract cannot tell a seat a field is
+# required that the appender never asks for, nor promise a landing the replay
 # does not perform.
 KIND_DEFINITIONS: dict[str, str] = {
     "add-node": "put a new question on the board, with the options it can be answered from",
@@ -889,7 +904,7 @@ def kind_contract(kind: str) -> str:
     and exactly the ones a seat copying the example would otherwise drop.
 
     The landing and what the human then sees are two answers, not one. Whether a
-    change lands or waits is the fold's, and it is asked of the fold; what the
+    change lands or waits is the replay's, and it is asked of the replay; what the
     board looks like afterwards is a table here, because it is a statement about
     the page and the page is not a thing this module can interrogate.
     """
@@ -959,6 +974,17 @@ RETRY_RULE = (
     "Your last reply was refused because it is not the map document. Send the same turn "
     "again as one JSON object carrying exactly `text`, `updates`, `supersedes`, `rulings` and "
     "`stop`, and nothing else. The fault was:"
+)
+
+# What a seat is told when its turn read as the document and the board still
+# would not take it. The shape is not the fault here, so repeating the shape
+# rule would send the seat to fix what was already right. The appender's own
+# words name what it refused, and the same turn with that one thing corrected
+# is what lands.
+APPENDER_RETRY_RULE = (
+    "Your last reply was refused. It is the map document, and the board would not take what it "
+    "carries. Send the same turn again, as the same JSON object, with that one thing corrected "
+    "and nothing else changed. The fault was:"
 )
 
 # The obligation, on the one turn that owes it, naming the decisions rather than

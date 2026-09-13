@@ -1,12 +1,12 @@
-"""The context images, folded from the log and nothing else.
+"""The context images, replayed from the log and nothing else.
 
-`fold` is a pure function of an epoch and a sequence of entries: no clock, no
+`replay` is a pure function of an epoch and a sequence of entries: no clock, no
 randomness, no I/O. The same log therefore always yields the same images, and an
 image rebuilt from disk matches one held in memory. Writing an image to a file is
 a separate step downstream of this module -- the image files are derived caches,
 never a recovery source.
 
-The fold tolerates any entry the appender accepted. An entry whose payload it
+The replay tolerates any entry the appender accepted. An entry whose payload it
 cannot read contributes what it can and no more, because a projector that raises
 on an accepted entry takes the session down with it.
 
@@ -16,7 +16,7 @@ on an accepted entry takes the session down with it.
 |-----------------|---------------------------------------------------------------|
 | `session-start` | the briefing's plan seeds the board, decision by decision      |
 | `add-node`      | the node enters the board `open`                               |
-| `revise`        | supplied fields replace; omitted ones and the status stand     |
+| `revise`        | supplied fields and its `why` replace; the rest stands         |
 | `invalidate`    | status `invalidated`, carrying the rationale it arrived with   |
 | `answer`/`settle` | the answer is recorded and the status is `settled`           |
 | `unsettle`      | back to `open`, its answer dropped, its dependents `stale`     |
@@ -35,13 +35,15 @@ same entry that settles the decision, and the thread's conclusion is the answer
 text. One entry rather than two: an answer and a close that half-land leave the
 human looking at a settled decision whose thread still asks to be closed.
 
-A human turn on a closed thread opens it again. Re-opening rides the turn path
-rather than a gesture of its own because saying something in a thread the human
-had finished with *is* picking it back up: a separate gesture would be a second
-way to say the same thing, and a closed thread that took a turn and stayed
-closed would drop that turn out of the end-of-session reckoning. An agent's
-turn does not re-open one -- what the human is done with is not the agent's to
-re-open.
+A human turn on a parked or closed thread opens it again. Re-opening rides the
+turn path rather than a gesture of its own because saying something in a thread
+the human had set aside *is* picking it back up: a separate gesture would be a
+second way to say the same thing, and a set-aside thread that took a turn and
+stayed set aside would drop that turn out of the end-of-session reckoning. An
+agent's turn does not re-open one -- what the human set aside is not the agent's
+to re-open. Re-opening changes nothing about what the two gestures mean at the
+end of the session: a parked thread is still a loose end and a closed one still
+a line item.
 
 Two of those rules are this projector's to state rather than the protocol's.
 *Dependent staleness*: unsettling a decision makes every settled decision that
@@ -55,7 +57,7 @@ that has left the flow will never settle, and a dependent held for it is held
 for good.
 
 The board is seeded through the log and never by re-reading the handoff file.
-`session-start` carries the validated briefing, so a fresh process folding
+`session-start` carries the validated briefing, so a fresh process replaying
 `log.jsonl` alone reproduces the seeded board -- which is what makes the log the
 only recovery source and leaves the handoff file with no authority the moment
 that entry lands.
@@ -69,7 +71,7 @@ gesture is what puts a conversational turn's declared impact on the board, so an
 agent's update lands by itself only where landing cannot overwrite what the
 human decided. That test is drawn against the board *at arrival* rather than
 when the update was written, because the board may have moved under it while it
-was in flight -- and this fold, walking the log in order, is the only place
+was in flight -- and this replay, walking the log in order, is the only place
 where "at arrival" is a fact rather than a guess.
 
 | an agent's update    | on arrival                                       |
@@ -164,9 +166,9 @@ _REVISABLE_TEXT = ("short", "title", "body")
 
 @dataclass
 class _Board:
-    """The fold's running state, keyed the way the images are read.
+    """The replay's running state, keyed the way the images are read.
 
-    The last seven fields are the fold's own bookkeeping: who authored each
+    The last seven fields are the replay's own bookkeeping: who authored each
     queue entry, the verdict the authoring turn ruled on it, the update bytes a
     queued proposal is holding, whether a queued alert declared itself blocking,
     which entries the human has since dealt with and when, when the human last
@@ -204,7 +206,7 @@ def _run(entries: Sequence[LogEntry]) -> _Board:
     """The walk both readers of the log share.
 
     One walk, because the queue's state and the conflicts it produced are the
-    same fold seen twice: a second walk written to answer only the conflict
+    same replay seen twice: a second walk written to answer only the conflict
     question is a second answer to when a notice was dealt with.
     """
     board = _Board()
@@ -273,8 +275,8 @@ def queue(entries: Sequence[LogEntry]) -> dict[str, Proposed]:
     }
 
 
-def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
-    """Fold the log into image 2. Image 1 is this, minus history."""
+def replay(epoch: str, entries: Sequence[LogEntry]) -> Image2:
+    """Replay the log into image 2. Image 1 is this, minus history."""
     board = _run(entries)
     seq = board.seq
 
@@ -422,12 +424,12 @@ def to_image1(image: Image2) -> Image1:
 
 
 def catch_up(epoch: str, entries: Sequence[LogEntry], channel: str) -> list[CatchUpEntry]:
-    """What the board moved while this thread was set aside, folded out of the log.
+    """What the board moved while this thread was set aside, replayed out of the log.
 
     A map event is an entry that moves a decision, and that is the whole of the
-    definition: an entry is one exactly when folding the log through it changes
-    image 1's decisions. So that is what is measured here -- one fold per entry
-    of the interval, each compared against the fold before it -- rather than a
+    definition: an entry is one exactly when replaying the log through it changes
+    image 1's decisions. So that is what is measured here -- one replay per entry
+    of the interval, each compared against the replay before it -- rather than a
     list of kinds. A list would be a second definition of what changed the map,
     and it disagrees with the projector the first time a kind lands one way here
     and waits the other way there; the human would then be reading a board the
@@ -442,8 +444,8 @@ def catch_up(epoch: str, entries: Sequence[LogEntry], channel: str) -> list[Catc
     decision, and each names the sequence, kind and rationale the log carries
     at that point. Nothing here is composed.
 
-    ponytail: one fold per interval entry, which is O(interval) folds over a log
-    bounded by one grilling and an interval bounded by two human gestures.
+    The ceiling is one replay per interval entry, which is O(interval) replays over
+    a log bounded by one grilling and an interval bounded by two human gestures.
     """
     interval = _set_aside_interval(entries, channel)
     if interval is None:
@@ -491,7 +493,8 @@ def _set_aside_interval(entries: Sequence[LogEntry], channel: str) -> tuple[int,
 
 def _decision_state(epoch: str, entries: Sequence[LogEntry]) -> dict[str, str]:
     return {
-        node.id: node.model_dump_json(exclude={"locked"}) for node in fold(epoch, entries).decisions
+        node.id: node.model_dump_json(exclude={"locked"})
+        for node in replay(epoch, entries).decisions
     }
 
 
@@ -553,7 +556,7 @@ def answers_from_threads(entries: Sequence[LogEntry]) -> dict[str, str]:
 def project_thread(image: Image2, channel: str) -> ThreadProjection:
     """Image 2 as one thread's agent is given it.
 
-    A pure fold over an image that was itself a pure fold, so a dispatch is
+    A pure projection over an image that was itself a pure replay, so a dispatch is
     reproducible from the log alone. The board crosses unchanged: only the
     bodies of other threads are reduced, and only to what it takes to know a
     thread exists and whether to go and read it.
@@ -659,7 +662,14 @@ def _add_node(board: _Board, payload: Mapping[str, object]) -> None:
 
 def _revise(board: _Board, payload: Mapping[str, object]) -> None:
     """Supplied fields replace; omitted ones stand. A revise says what changed,
-    so reading an absent field as an empty one would erase the question."""
+    so reading an absent field as an empty one would erase the question.
+
+    A supplied `why` becomes the decision's rationale, and an absent one leaves
+    the standing rationale alone. The kinds that move a status clear it when
+    they arrive without a reason, because their event is the whole story; a
+    revise is partial by rule, so a silent `why` is one more field it is not
+    speaking about.
+    """
     node = board.node(payload)
     if node is None:
         return
@@ -671,6 +681,9 @@ def _revise(board: _Board, payload: Mapping[str, object]) -> None:
         node.prereqs = _strings(payload.get("prereqs"))
     if isinstance(payload.get("options"), list):
         node.options = _options(payload.get("options"))
+    why = _text(payload, "why")
+    if why:
+        node.rationale = why
 
 
 def _invalidate(board: _Board, payload: Mapping[str, object]) -> None:
@@ -732,7 +745,7 @@ def _notice(
 
     The flag is recorded against the queue entry rather than written onto the
     decision, because a lock written during the walk is one the walk alone can
-    lift: the fold reads the queue instead, so the human ending the entry ends
+    lift: the replay reads the queue instead, so the human ending the entry ends
     the lock.
     """
     if kind == "elicit-alert":
@@ -787,7 +800,7 @@ ALSO_QUEUES_AS_NOTICE = ", and joins the human's queue as a notice"
 
 
 def landing(kind: str) -> str:
-    """What the fold does with an agent's update of this kind, said in a phrase.
+    """What the replay does with an agent's update of this kind, said in a phrase.
 
     Asked of the rule rather than restated beside it, and asked twice -- against
     a decision nobody has answered and against that same decision answered --
@@ -811,7 +824,7 @@ def _queue(
 
     The bytes are kept off the image because the queue the protocol declares
     says what is waiting rather than what it would do -- and because the human
-    applies by naming the id, so nothing but this fold ever has to hold them.
+    applies by naming the id, so nothing but this replay ever has to hold them.
     """
     board.pending.append(
         PendingUpdate(
@@ -921,6 +934,13 @@ def _create_thread(board: _Board, entry: LogEntry) -> None:
     )
 
 
+# The two states a human turn picks a thread back up out of, which are the states
+# the two set-aside gestures leave a thread in. A folded thread is not one of
+# them: its conclusion has already crossed to the board, and a turn taken after
+# the fold would silently restate what the board is already holding.
+_SET_ASIDE_STATES = frozenset({"parked", "closed"})
+
+
 def _append_turns(board: _Board, entry: LogEntry) -> None:
     thread_id = _thread_id(entry)
     thread = board.threads.get(thread_id)
@@ -935,7 +955,7 @@ def _append_turns(board: _Board, entry: LogEntry) -> None:
         # would be retired by its own turn the moment it landed.
         said[-1] = said[-1].model_copy(update={"proposal": offer})
     thread.turns = [*thread.turns, *said]
-    if thread.state == "closed" and entry.actor == "human":
+    if thread.state in _SET_ASIDE_STATES and entry.actor == "human":
         thread.state = "open"
 
 
@@ -995,7 +1015,7 @@ def _set_thread_state(board: _Board, entry: LogEntry, kind: str) -> None:
 
     A thread nobody opened is nothing to fold, park or close -- the gesture
     names its thread by the channel it arrived on, and a channel holding no
-    thread is an entry the fold contributes nothing from rather than one it
+    thread is an entry the replay contributes nothing from rather than one it
     raises over.
     """
     thread = board.threads.get(_thread_id(entry))

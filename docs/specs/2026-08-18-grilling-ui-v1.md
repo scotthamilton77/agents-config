@@ -143,12 +143,19 @@ alongside the log and the images. An agent that judges `stop_when` satisfied say
 the human — the grill-master as the `stop` field of its document (§8.10), which the page
 raises as a notice — and it does not end the session itself.
 
+The gesture is guarded where it would be regretted. The page asks a second time when an
+agent still owes a turn on any channel, because that turn's answer can put a new decision
+on the board, and when the board still has open decisions on it; the question names which
+of the two it is, and the terminal entry is appended only once it is answered. A finished
+board with no turn outstanding ends on the one press.
+
 **GUI-D29 — Park and close are the two thread-lifecycle gestures, and both are
 non-destructive.** Parking a thread sets it aside as a loose end: it is carried to the end
 of the session as still open, and the grill-master may raise it again. Closing one declares
 the human done with it: a closed thread is never woven into the terminal result's open
-items, never listed as a loose end and never raised by an agent, while staying readable on
-the board and reopening into an ordinary open thread that takes turns again. Neither
+items, never listed as a loose end and never raised by an agent. Both stay readable on the
+board, and a thread set aside by either gesture reopens on a human turn into an ordinary
+open thread that takes turns again. Neither
 gesture removes anything — the log is append-only, and both cross as page-emitted gesture
 kinds in the closed set of §8.3. The terminal result distinguishes the two (§8.7), on a
 live end-session and a capture run alike, because a thread the human finished with and a
@@ -331,11 +338,9 @@ is a projection like every other: nothing in it is composed, summarised or infer
 and a catch-up naming an event the log does not carry is the same corruption a short image 2 is.
 
 **The interval is bounded by gestures, not by wall time**: it runs from the set-aside gesture to
-the next human turn on that thread — the turn that reopens it (GUI-D29). Today that turn exists
-for a closed thread alone: a parked thread is raised again only as a loose end the agent names,
-never by a turn, so it has no interval and no dispatch this rule can fire on. The rule is stated
-over the gesture rather than over `close` so that it holds unchanged should park ever take a
-reopening turn of its own.
+the next human turn on that thread — the turn that reopens it (GUI-D29). The rule is stated over
+the gesture rather than over either of the two, so park and close are caught up by the same
+machinery and a third set-aside gesture would be too.
 
 **A map event is an entry that moves a decision, and that is the whole of the definition**: an
 entry is one exactly when folding the log through it changes image 1's `decisions` (GUI-D3). A
@@ -857,6 +862,14 @@ follows, and changes nothing else.
   thread turns can reference them by label. Three is a ceiling, not a target. Alongside
   choosing an option and writing free text, the human can select an option *and* attach a
   note.
+- **GUI-U32 — A settled decision's block offers the control that reopens it.** The control
+  appends the human's own `unsettle` on that decision, and the board then treats it exactly
+  as it treats an `unsettle` the human applied: the answer is withdrawn, the decision is a
+  question again, and everything settled on top of it needs re-confirming. Only a settled
+  decision offers it. A decision still being asked has no answer to withdraw, and one that
+  has left the flow is not brought back by putting its question again. An agent may only
+  propose an unsettle, so without this control an answer the human regrets stands for the
+  rest of the session unless some agent happens to propose withdrawing it.
 - **GUI-U19 — Each option's trade-off rides behind that option's own icon.** Where an
   option carries `pcr` (§8.2), a small icon sits beside that option and is the whole of the
   hover target; hovering it raises an overlay carrying that option's three statements —
@@ -941,13 +954,13 @@ follows, and changes nothing else.
   offered there: a thread gesture naming no thread is refused, and the pane's own dismissal
   is what closing a draft means.
 - **GUI-U21 — Every agent turn is labelled by the tier that produced it.** On a thread and
-  on the map channel alike, an agent turn renders as *fast agent* or *expert agent*, read
+  on the map channel alike, an agent turn renders as *assistant* or *expert*, read
   from the tier attribution that turn itself carries (§8.3, §8.5). The channel's current
   mode is never the source: reading the mode would relabel every turn taken before a
   transfer as the tier that came after it, and the transcript is the human's only evidence
   that the transfer changed anything.
 - **GUI-U22 — The transfer control names the action it performs, not a state.** Its label
-  is *Transfer to expert* while the channel is on the fast tier and *Return to fast agent*
+  is *Transfer to expert* while the channel is on the fast tier and *Return to assistant*
   while the heavy tier drives it, styled identically in both positions and carrying no state
   colouring in either — the channel's tier is already legible from the per-turn labels of
   GUI-U21. Rendering it as a state indicator instead — the label naming the tier the channel
@@ -956,7 +969,7 @@ follows, and changes nothing else.
   it does.
 - **GUI-U24 — A channel the policy moved says so where it moved, and nowhere else.** Under
   `autonomous` (GUI-D35) the policy move appears on that channel's status lane, naming the
-  condition that fired, and the transfer control flips to *Return to fast agent* (GUI-U22)
+  condition that fired, and the transfer control flips to *Return to assistant* (GUI-U22)
   with the human having pressed nothing — the control's position follows the channel's mode
   as the lane states it, never the human's own last click, which after a policy move
   names the tier the channel has left. No notification is raised: the move is board state
@@ -969,8 +982,8 @@ follows, and changes nothing else.
   would arm. It appears on the thread's most recent turn only (GUI-D31); an earlier turn's
   retired converged answer stays readable as part of what was said and carries no control. The
   control renders on an open thread only: parking or closing the thread (GUI-D29) hides it
-  while the converged answer stays live in the log — though a closed thread reopens only on a
-  human turn, which retires the offer it follows (GUI-D31), so a fresh one is needed — and
+  while the converged answer stays live in the log — though a set-aside thread reopens only on
+  a human turn, which retires the offer it follows (GUI-D31), so a fresh one is needed — and
   a session ended with a converged answer nobody took carries it nowhere — the terminal result
   (§8.7) lists decisions and threads, never offers. Activating it brings the anchor
   decision into view with its own-words box filled and the named option's control marked
@@ -1452,6 +1465,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U29 | GUI-A96, GUI-A97, GUI-A98 |
 | GUI-U30 | GUI-A105 |
 | GUI-U31 | GUI-A110 |
+| GUI-U32 | GUI-A111 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1639,8 +1653,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   verified by a scripted turn whose context omits the fact and an assertion check on the
   reply.
 - **GUI-A55** Parking a thread and closing one both leave its turns readable on the board
-  and append rather than remove, and a closed thread reopens into an open thread that takes
-  a further turn. Over one session carrying one of each, the terminal result names the
+  and append rather than remove, and a thread set aside by either gesture reopens on a human
+  turn into an open thread that takes a further turn. Over one session carrying one of each, the terminal result names the
   parked thread as an open loose end and the closed thread as a line item that no open item
   and no agent-raised item names — asserted identically on the live end-session result and
   on a capture run over the same session directory.
@@ -1672,13 +1686,13 @@ Each criterion is mechanically checkable and convertible to a red test.
   title; scrolling the decision fully out of view releases it, and so does settling and
   collapsing it. Verified in a browser.
 - **GUI-A62** Over a fixture log carrying one `fast` and one `heavy` agent turn on the same
-  channel, the page labels the first *fast agent* and the second *expert agent*, on a thread
+  channel, the page labels the first *assistant* and the second *expert*, on a thread
   and on the map channel alike, and the labels are identical when the same log is rendered
   with the channel in each mode. A page joining that session after both turns renders the
   same labels, which is what the projected turn's `tier` (§8.5) is for. Verified in a
   browser.
 - **GUI-A63** The transfer control reads *Transfer to expert* on a channel driven by the
-  fast tier and *Return to fast agent* on one driven by the heavy tier, with the same
+  fast tier and *Return to assistant* on one driven by the heavy tier, with the same
   styling in both positions and no state colouring in either — verified in a browser and
   against the shipped stylesheet.
 - **GUI-A64** Every shipped thread-agent prompt states the no-fishing rule and the two cases
@@ -1976,6 +1990,13 @@ Each criterion is mechanically checkable and convertible to a red test.
   rather than shown to the human; and the growth in the `turn.completed` input count, not
   the byte estimate, is what the context measurement records — the deliberate exception
   being the one turn a restarted backend over-reports, having no earlier total to subtract.
+- **GUI-A111** The reopen control is drawn on a settled decision's block and under that
+  gate alone, and it reaches the wire as the human's own `unsettle` naming that decision.
+  Over a settled chain of three, that entry lands rather than joining the queue, leaves its
+  decision open with no answer, and leaves both decisions resting on it stale — the board an
+  applied proposal leaves. The end-to-end suite drives the whole path against a running
+  backend: a decision answered, its block opened again and the control pressed leaves that
+  decision reading as a question again.
 
 ## 10. Open questions for the implementing work
 
@@ -2090,6 +2111,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   help kind alone, and the history entry's `proposed_by` and verdict — AC: GUI-D47, GMR-A7.
 - feat: `puts_in_question` stated as a prediction the grill-master rules on, in the schema,
   the spec and the handoff-assembling skill alike — AC: GUI-D37, GMR-A8.
+- feat: The control that reopens a settled decision, as the human's own unsettle taking the
+  fold an applied one takes — AC: GUI-U32, GUI-A111.
 
 ## Evidence
 
@@ -2246,3 +2269,6 @@ opens one proves something else.
 - GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_a_restart_over_the_same_session_writes_no_second_transfer
 - GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_humans_transfer_control_returns_the_channel_to_the_first_rung
 - GMR-A11 | test: packages/grillui/tests/unit/test_seats.py::test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter
+- GUI-A111 | test: packages/grillui/tests/unit/test_page.py::test_only_a_settled_decision_offers_the_way_back_to_open
+- GUI-A111 | test: packages/grillui/tests/unit/test_update_kinds.py::test_the_human_reopening_a_decision_folds_as_an_applied_unsettle_does
+- GUI-A111 | test: packages/grillui/tests/e2e/test_board.py::test_the_human_reopens_a_decision_they_settled

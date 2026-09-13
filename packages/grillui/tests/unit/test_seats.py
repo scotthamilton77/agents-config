@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from conftest import (
+    InterleavingLog,
     ScriptedCli,
     ScriptedFast,
     attributions,
@@ -39,6 +40,7 @@ from grillui.drivers import (
     CODEX_RESUME_FILE,
     FIRST_RUNG_RESUME_FILE,
     NOT_STARTED,
+    POLICY_MOVED,
     RESUME_FILE,
     TIMED_OUT,
     CodexDriver,
@@ -55,7 +57,7 @@ from grillui.drivers import (
     seat_driver,
     write_brief,
 )
-from grillui.escalation import in_expert_mode
+from grillui.escalation import CONDITION_IRREDUCIBLE, in_expert_mode
 from grillui.lane import AgentUnreachableError, DocumentRefusedError, Lane
 from grillui.schemas import (
     CHAIN_KEY,
@@ -63,14 +65,18 @@ from grillui.schemas import (
     EFFORT_KEY,
     FAST_TIER,
     FOLDABLE_KINDS,
+    FOLLOWED_TRANSFER_KEY,
     HEAVY_TIER,
     MAP_CHANNEL,
     MODEL_KEY,
     PROMPT_TOKENS_KEY,
+    RECOMMENDATION_KEY,
     RULINGS_KEY,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_TRANSFERRED,
     TIER_KEY,
+    TRANSFER_SOURCE_KEY,
+    TRANSFER_SOURCE_POLICY,
     CatchUpEntry,
     DispatchContext,
     EventSubmission,
@@ -79,6 +85,8 @@ from grillui.schemas import (
 from grillui.session import open_session
 from grillui.tiers import (
     API_BASE_ENV,
+    CLAUDE_TRANSPORT,
+    CODEX_TRANSPORT,
     DEFAULT_API_BASE,
     DEFAULT_FAST_MODEL,
     DEFAULT_MAP_EFFORT,
@@ -88,6 +96,8 @@ from grillui.tiers import (
     MAP_MODEL_ENV,
     MAP_TRANSPORT_ENV,
     OPENROUTER_TRANSPORT,
+    POLICY_AUTONOMOUS,
+    TRANSPORTS,
     Seat,
     TierConfig,
     UnknownEffortError,
@@ -227,6 +237,45 @@ def opened(thread: str, key: str) -> EventSubmission:
 def a_turn(log: SessionLog, driver: Any, channel: str = MAP_CHANNEL) -> None:
     """One turn on one channel, without the lane scheduling it."""
     driver.run(log, record_dispatch(log, channel=channel))
+
+
+# One seat per transport, so a claim about a rung is made on every transport
+# that can hold one rather than on the transport the shipped seating happens to
+# put there.
+RUNG_SEATS = {
+    OPENROUTER_TRANSPORT: Seat(OPENROUTER_TRANSPORT, "vendor/seated"),
+    CODEX_TRANSPORT: Seat(CODEX_TRANSPORT, "codex-seated", DEFAULT_MAP_EFFORT),
+    CLAUDE_TRANSPORT: Seat(CLAUDE_TRANSPORT, "claude-seated", DEFAULT_MAP_EFFORT),
+}
+
+# A human turn naming the trade-off as what cannot be resolved, which is one of
+# the conditions a first-rung turn is asked to recommend the expert for.
+IRREDUCIBLE = "I cannot resolve this one; it is the trade-off itself."
+
+
+def seated(config: TierConfig, transport: str, tier: str = FAST_TIER) -> Any:
+    """One transport's seat on one rung, over a scripted transport.
+
+    Built through `seat_driver` rather than by naming a class, because which
+    class ends up on which rung is the whole subject here: the map's first rung
+    is one setting away from being any of the three, and the expert's seat is
+    one away from being any of them too.
+    """
+    driver = seat_driver(config, RUNG_SEATS[transport], tier=tier)
+    if isinstance(driver, FastDriver):
+        driver.transport = ScriptedFast()
+    else:
+        driver.cli = ScriptedCodex() if isinstance(driver, CodexDriver) else ScriptedCli()
+    return driver
+
+
+def moves(log: SessionLog) -> list[str]:
+    """What the lane said each time the policy moved a channel to the expert."""
+    return [
+        str(entry.payload.get("detail"))
+        for entry in log.entries()
+        if entry.payload.get("phase") == STATUS_PHASE_TRANSFERRED
+    ]
 
 
 def moved_board(log: SessionLog, directory: Path, channel: str = THREAD) -> Path:
@@ -1032,38 +1081,82 @@ def test_a_thread_reopened_over_a_board_that_moved_starts_a_new_conversation(
     assert read_resume(session_dir, THREAD, CODEX_RESUME_FILE) == "thread-1"
 
 
-def test_the_seat_recommends_a_transfer_the_way_the_other_first_rung_seat_does(
-    session_dir: Path,
+@pytest.mark.parametrize("transport", TRANSPORTS)
+def test_a_first_rung_turn_recommends_the_expert_on_whichever_transport_seats_it(
+    session_dir: Path, transport: str
 ) -> None:
     """
     Given an autonomous session whose human turn meets an escalation condition on
           the map
-    When the Codex seat answers it
-    Then the channel is moved to the expert, because the recommendation is a
-         property of the rung and not of the transport: one only the OpenRouter
-         seat made would go silent the moment a channel was seated elsewhere.
+    When the channel's first-rung seat answers it
+    Then the reply names the condition it met, and the policy moves the channel
+         to the expert once. The recommendation is a property of the rung: one
+         owed by a driver class would go silent the moment a channel was seated
+         on another transport, and the seating is configuration.
     """
     log = briefed(session_dir)
-    log.submit(
-        [answered("h1", "I cannot resolve this one; it is the trade-off itself.")], log.epoch
-    )
-    CodexDriver(TierConfig(escalation_policy="autonomous"), ScriptedCodex()).run(
-        log, record_dispatch(log)
-    )
+    log.submit([answered("h1", IRREDUCIBLE)], log.epoch)
 
-    moved = [
-        entry.payload.get("detail")
-        for entry in log.entries()
-        if entry.payload.get("phase") == STATUS_PHASE_TRANSFERRED
-    ]
-    assert len(moved) == 1
+    a_turn(log, seated(TierConfig(escalation_policy=POLICY_AUTONOMOUS), transport))
+
+    assert replies(log)[0][RECOMMENDATION_KEY]["condition"] == CONDITION_IRREDUCIBLE
+    assert moves(log) == [POLICY_MOVED + CONDITION_IRREDUCIBLE]
+
+
+@pytest.mark.parametrize("transport", TRANSPORTS)
+def test_an_expert_rung_turn_recommends_nothing_and_moves_no_channel(
+    session_dir: Path, transport: str
+) -> None:
+    """
+    Given the same autonomous session and the same met condition
+    When the turn is taken on the expert rung instead
+    Then the reply carries no recommendation and nothing moved the channel,
+         whichever transport holds that seat: there is no rung above the expert
+         to hand a turn up to, and a channel already there cannot be moved there
+         again.
+    """
+    log = briefed(session_dir)
+    log.submit([answered("h1", IRREDUCIBLE)], log.epoch)
+
+    a_turn(log, seated(TierConfig(escalation_policy=POLICY_AUTONOMOUS), transport, tier=HEAVY_TIER))
+
+    assert RECOMMENDATION_KEY not in replies(log)[0]
+    assert moves(log) == []
+
+
+@pytest.mark.parametrize("transport", TRANSPORTS)
+def test_only_an_expert_turn_says_whether_it_followed_a_transfer(
+    session_dir: Path, transport: str
+) -> None:
+    """
+    Given an autonomous session where a first-rung turn's met condition moved the
+          map to the expert
+    When the expert takes the next turn on that channel
+    Then only the expert's reply says that it followed a transfer and that the
+         policy is where the transfer came from. A first-rung reply says neither,
+         on every transport that can seat it: the flag is about the rung a
+         transfer moves a channel on to, so a first-rung turn carrying it would
+         be answering for the rung it was moved off.
+    """
+    log = briefed(session_dir)
+    log.submit([answered("h1", IRREDUCIBLE)], log.epoch)
+    config = TierConfig(escalation_policy=POLICY_AUTONOMOUS)
+
+    a_turn(log, seated(config, transport))
+    a_turn(log, seated(config, CLAUDE_TRANSPORT, tier=HEAVY_TIER))
+
+    first, expert = replies(log)
+    assert FOLLOWED_TRANSFER_KEY not in first
+    assert TRANSFER_SOURCE_KEY not in first
+    assert expert[FOLLOWED_TRANSFER_KEY] is True
+    assert expert[TRANSFER_SOURCE_KEY] == TRANSFER_SOURCE_POLICY
 
 
 def test_the_format_rule_names_every_update_kind_the_backend_folds() -> None:
     """
     Given the standing brief's format rule
     When the kinds it offers are read back
-    Then they are exactly the kinds the appender folds -- read off the same
+    Then they are exactly the kinds the appender replays -- read off the same
          vocabulary rather than retyped, because a seat told nothing about the
          list invents a kind that is refused, and the refusal takes the whole
          turn with it.
@@ -1238,3 +1331,88 @@ def test_a_cli_seat_hands_its_obligation_to_the_recorder(session_dir: Path, buil
     landed = replies(log)
     assert [[two["decision"] for two in one[RULINGS_KEY]] for one in landed] == [["d2"]]
     assert [one.get(DROPPED_RULINGS_KEY) for one in landed] == [["d9"]]
+
+
+# Every seat that takes a map turn, each built around one scripted reply. What
+# a driver comes back with is returned from its own `run`, so a check on the
+# receipt has to reach all three rather than stand on whichever one is handy.
+MAP_SEATS = [
+    pytest.param(
+        lambda said: FastDriver(TierConfig(), ScriptedFast(replies=[said])), id="openrouter"
+    ),
+    pytest.param(lambda said: HeavyDriver(TierConfig(), ScriptedCli(reply=said)), id="claude"),
+    pytest.param(lambda said: CodexDriver(TierConfig(), ScriptedCodex(reply=said)), id="codex"),
+]
+
+# What a second turn puts on the map in the instant the first one's reply lands.
+INTRUDED = "Another turn got there first."
+
+
+@pytest.mark.parametrize("build", MAP_SEATS)
+def test_a_seat_comes_back_with_the_sequence_its_own_reply_landed_at(
+    session_dir: Path, build: Any
+) -> None:
+    """
+    Given a seat taking a map turn that says something, and the same seat taking
+          one whose document carries nothing
+    When each turn is run
+    Then the first comes back naming the entry the log gained by it, and the
+         second comes back naming nothing.
+
+    The lane credits a turn by the entry that turn names, so a seat that appends
+    a ruling and names nothing is a turn credited with nothing: the ladder fires
+    on decisions that were ruled on, and the human is told they were not. Every
+    seat is asked because the receipt comes back from each driver's own turn,
+    and one that dropped it would answer correctly through every other check
+    here.
+    """
+    log = briefed(session_dir)
+    before = log.seq
+
+    spoke = build(document(text=MAP_SAID)).run(log, record_dispatch(log))
+
+    assert spoke is not None and spoke > before
+    assert [one.actor for one in log.entries() if one.seq == spoke] == ["grill-master"]
+    assert build(document(text="")).run(log, record_dispatch(log)) is None
+
+
+@pytest.mark.parametrize("build", MAP_SEATS)
+def test_a_seat_names_its_own_entry_when_a_second_reply_lands_on_top_of_it(
+    session_dir: Path, build: Any
+) -> None:
+    """
+    Given a seat taking a map turn, and a second grill-master reply landing in
+          the instant its own reply is appended
+    When the turn is run
+    Then the sequence it comes back with names its own entry, and the log's
+         latest sequence names the other one.
+
+    The receipt is what the append returned, never where the log has got to by
+    the time the turn is over. A seat reading the log's position after its own
+    append names whatever landed last, which on a board taking two map turns at
+    once is the other turn's reply -- and the coverage check then credits this
+    turn with rulings nobody made for it. The second reply rides the turn's own
+    thread, because what is pinned here is which entry the receipt names rather
+    than the lock the appends contend for.
+    """
+    # Seeded through the ordinary path, then reopened as a log that can let a
+    # second reply in at the one moment that tells the two entries apart.
+    briefed(session_dir)
+    log = InterleavingLog(session_dir)
+    log.hook = lambda: log.submit(
+        [
+            EventSubmission(
+                kind="informational",
+                actor="grill-master",
+                idempotency_key="a-second-reply",
+                payload={"text": INTRUDED},
+            )
+        ],
+        log.epoch,
+    )
+
+    spoke = build(document(text=MAP_SAID)).run(log, record_dispatch(log))
+
+    said = {one.seq: one.payload.get("text") for one in log.entries()}
+    assert said[log.seq] == INTRUDED, "the second reply never landed on top of the seat's own"
+    assert said[spoke] == MAP_SAID

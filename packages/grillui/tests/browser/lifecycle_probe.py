@@ -48,6 +48,8 @@ NEVER_OPENED = "no thread was opened"
 PARK = '[data-act="park"]'
 CLOSE = '[data-act="closethread"]'
 END = '[data-act="endsession"]'
+CONFIRM = "#confirm"
+CONFIRM_END = '[data-act="confirm-end"]'
 SAY = '[data-act="say"]'
 DRAFTSAY = '[data-act="draftsay"]'
 PARKED_ASKED = "What backs the session directory up?"
@@ -375,8 +377,12 @@ def main() -> None:
         }
 
         # 6. Ending the session takes both gestures away -- neither is a click
-        #    the ended board swallows.
+        #    the ended board swallows. The board still has open decisions on it,
+        #    so the ending is asked about once before it is written.
         page.click(f".topbar {END}")
+        page.wait_for_timeout(400)
+        assert page.locator(CONFIRM).count() == 1, "the ending was not asked about"
+        page.click(f"{CONFIRM} {CONFIRM_END}")
         page.wait_for_timeout(1500)
         assert not page.is_closed(), "the tab closed -- the ended surface was never seen"
         for control in (PARK, CLOSE):

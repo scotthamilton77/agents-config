@@ -11,6 +11,7 @@
 //---PAGE-EMISSIONS-START---
 var EMISSIONS = {
   "answer":         { "channel": "map",    "payload": ["target", "answer", "transfer", "from_thread"] },
+  "unsettle":       { "channel": "map",    "payload": ["target"] },
   "thread-created": { "channel": "thread", "payload": ["turns", "decision", "kind", "title", "requires_action", "transfer"] },
   "thread-turn":    { "channel": "thread", "payload": ["turns", "transfer"] },
   "thread-fold":    { "channel": "thread", "payload": [] },
@@ -33,7 +34,7 @@ var EMISSIONS = {
 var PROPOSABLE_KINDS = ["add-node", "revise", "invalidate", "settle", "unsettle", "resolve-stale"];
 var NOTICE_KINDS = ["informational", "elicit-alert"];
 var MAP_MUTATION_KINDS = ["add-node", "invalidate", "revise", "settle", "unsettle", "resolve-stale", "elicit-alert", "fold"];
-var STATUS_PHASES = ["accepted", "composing", "replied", "error", "transferred", "rulings-dropped"];
+var STATUS_PHASES = ["accepted", "composing", "replied", "error", "transferred", "rulings-dropped", "downstream-failed"];
 var AGENT_ACTORS = ["grill-master", "thread-agent"];
 var CLAIM_STATES = ["granted", "refused", "superseded"];
 // The three payload keys this page reads a tier off, spelled the backend's way.
@@ -188,8 +189,13 @@ function refuse(text) { HELDBACK = text; render(); }
 var CHANNELS = { transport: TRANSPORT_STATES[0], protocol: { map: PROTOCOL_STATES[0] } };
 // Notifications are the record of what has LANDED, observed as it lands. A
 // change still waiting is not in here — it is in the inbox alone. The list is
-// deliberately empty on a reload: a page arriving mid-session must not announce
-// a morning's worth of history as news.
+// rebuilt from the log on a reload, because it is the only surface an agent's
+// message with nothing on the board to attach it to has: a list left empty
+// there loses that message for good while the log goes on carrying it.
+//
+// Leaving it empty and calling that "not announcing a morning's work as news"
+// confuses the list with the alarms the list sets off. The alarms are what must
+// not replay, and they are suppressed where the rebuild runs.
 var NOTES = [];
 // This window's standing with the backend: which session it is talking to, and
 // whether this is the window that session answers. One main window per session,
@@ -302,7 +308,7 @@ var UI = {
   // holding.
   focus: null, open: {}, drafts: {}, panel: null, held: {}, armed: {},
   overOpt: null, keyedOpt: null,
-  lastFocus: null, lastPanelKey: null, centerNext: true, justSettled: null,
+  takeBox: false, lastPanelKey: null, centerNext: true, justSettled: null,
   fresh: [], touched: [], autoshut: {}, advanceFrom: null,
   bubbles: [], bubbleSeen: {}, bubbleSig: null, bubbleTick: 0, ptr: null,
   popped: {}, draftBase: {}, popFail: false, diag: false, discussing: {},
@@ -310,7 +316,12 @@ var UI = {
   // the overlay is up, whether it was dismissed onto the pulsing control, and
   // what the board's finished-ness last read as. A reload starts all three back
   // here, which is right -- a board that is not finished has nothing to carry.
-  done: false, pulse: false, wasDone: false
+  done: false, pulse: false, wasDone: false,
+  // What the page is asking the human to confirm before it ends the session, as
+  // the words it is asking in, and nothing where it is asking nothing. Page-local
+  // like the rest of this: a question nobody answered is not a state a reload
+  // should come back holding.
+  confirm: null
 };
 // One page instance: an idempotency key is stable for a retry and distinct
 // across reloads, because a reload's events are genuinely new and a resend is
@@ -475,11 +486,23 @@ function ev(kind, channel, payload) {
     if (rule.payload.indexOf(k) < 0) throw new Error(kind + " carries no " + k);
   });
   // A kind that declares the transfer key is a kind the human speaks a turn in,
-  // and every one of those turns says which tier the human has put its channel
-  // on. Stamped here rather than at the emission sites so the declaration is
-  // again what decides: the table says which kinds carry the flag, and no
-  // gesture that is not a turn — a fold, a park, a queue verb — can acquire one.
-  if (rule.payload.indexOf(TRANSFER_FLAG) >= 0) payload[TRANSFER_FLAG] = onExpert(channel);
+  // and the key is the human's own press riding the turn that carries it out.
+  // Only a press the log has not overtaken is stamped. Every other turn says
+  // nothing about the tier, and the log's own last word about this channel
+  // stands — which is what the backend reads when the key is absent. A turn
+  // that instead restated the tier this page last saw would undo a transfer the
+  // policy wrote while the page was between polls: the expert turn the policy
+  // bought would run on the first rung, and nothing on the lane would say so.
+  // Stamped here rather than at the emission sites so the declaration is again
+  // what decides: the table says which kinds carry the flag, and no gesture that
+  // is not a turn — a fold, a park, a queue verb — can acquire one.
+  // The press is written onto the turn here and spent in `send`, when the turn
+  // reaches the wire. Building a turn is not sending one: this page declines to
+  // post at all while the doctor holds the board, before it knows the epoch and
+  // after the session has ended, and a press spent by a turn nobody sent is one
+  // the control goes on offering that no turn will ever carry.
+  var meant = rule.payload.indexOf(TRANSFER_FLAG) >= 0 ? unspent(channel) : null;
+  if (meant) payload[TRANSFER_FLAG] = meant.on;
   KEYS += 1;
   return { kind: kind, actor: "human", channel: channel,
            idempotency_key: PAGE_ID + ":" + KEYS, payload: payload };
@@ -494,6 +517,7 @@ function send() {
   var ending = out.filter(function (e) { return e.kind === SESSION_END_KIND; })[0];
   WIRE.sent += out.length;
   out.forEach(function (e) { OUTBOX[e.idempotency_key] = true; });
+  spend(out);
   var touched = batchChannels(out);
   // Every channel in the batch is sending, then away, then answered. Who owes a
   // turn afterwards is not decided here: the lane says so, on the channel the
@@ -525,6 +549,7 @@ function send() {
         window.close();
       }
       if (r.status !== "rejected") return;
+      unspend(r.idempotency_key);
       WIRE.rejected += 1;
       // A refusal the human cannot see is a message they believe they sent.
       WIRE.lastRejection = r;
@@ -540,7 +565,9 @@ function send() {
     // A refused POST wrote nothing; an unreachable one may have. The first
     // leaves the outbox, the second stays in it until the log settles the
     // question, because a page that cleared it would be claiming to know.
-    if (e && e.answered) out.forEach(function (o) { delete OUTBOX[o.idempotency_key]; });
+    if (e && e.answered) {
+      out.forEach(function (o) { delete OUTBOX[o.idempotency_key]; unspend(o.idempotency_key); });
+    }
     wireFailed(e);
   });
 }
@@ -560,9 +587,9 @@ function hydrate() {
     UI.held = loadWindow("held", {});
     UI.discussing = loadWindow("discussing", {});
     noteThreads();
-    // The log up to here is read as a lookup table, not as news: a page
-    // arriving mid-session must not announce a morning's worth of changes as
-    // if they had just happened.
+    // The log up to here is read as a lookup table and for the notification
+    // list, and not as news: a page arriving mid-session shows what the agent
+    // said, and raises nothing that says it just happened.
     return srvGet("/updates", "epoch=" + encodeURIComponent(st.epoch) + "&cursor=0").then(function (u) {
       LOG = u.entries;
       SEEN = {};
@@ -572,6 +599,27 @@ function hydrate() {
       // it. Every finished turn's own closing entry is in here too, so replaying
       // the record lands each channel exactly where the record left it.
       u.entries.forEach(track);
+      // The notification list is rebuilt by the observer live arrival runs, so
+      // a note the human saw before the reload comes back the same note rather
+      // than a second rendering of the same entry. Writing a reload-only
+      // rebuilder instead is how the two drift: one of them gets a fix and the
+      // human sees a different message depending on when they looked.
+      //
+      // What arrival does that a reload must not is suppressed here. The fresh
+      // and touched marks belong to the batch that just landed, so the rebuild
+      // runs against its own arrays and hands back the ones already standing. A
+      // bubble is a claim that something just happened, so every rebuilt note
+      // counts as bubbled already. Read-state is not suppressed and needs no
+      // handling: it is persisted, and a rebuilt note carries the id it was
+      // read under.
+      var fresh = UI.fresh, touched = UI.touched;
+      UI.fresh = [];
+      UI.touched = [];
+      NOTES = [];
+      u.entries.forEach(function (e, i) { observe(e, u.entries, i); });
+      NOTES.forEach(function (n) { UI.bubbleSeen[n.id] = true; });
+      UI.fresh = fresh;
+      UI.touched = touched;
       WIRE.cursor = u.seq;
       WIRE.hydrated = true;
       if (!UI.focus) UI.focus = (BOARD.frontier[0] || (BOARD.decisions[0] || {}).id || null);
@@ -615,6 +663,15 @@ function poll() {
       var arrived = u.entries.filter(function (e) { return !SEEN[e.seq]; });
       arrived.forEach(function (e) { SEEN[e.seq] = true; });
       LOG = LOG.concat(arrived);
+      // Read for channel state here rather than after the board arrives, because
+      // the cursor has already moved past these entries and they are already
+      // marked seen: a state read that fails below takes the whole callback with
+      // it, and an entry tracked nowhere is never offered again. A `composing`
+      // dropped that way leaves the channel reading as quiet for the rest of a
+      // turn that is still running. None of what this reads is on the board --
+      // it is the outbox, the status lane and the channel model, all of which
+      // are facts about the log alone.
+      arrived.forEach(track);
       // The board is re-read rather than folded from what just arrived: the
       // state read is the only thing that decides what the board says.
       return srvGet("/state").then(function (st) {
@@ -623,7 +680,9 @@ function poll() {
         advance();
         UI.fresh = [];
         UI.touched = [];
-        arrived.forEach(track);
+        // Judged after the board it names has arrived, which is why this one
+        // stays here: a notification points at a decision, and pointing at one
+        // the page has not read yet is a notification about nothing.
         arrived.forEach(function (e, i) { observe(e, arrived, i); });
         WIRE.doctorKnown = false;
         done();
@@ -647,7 +706,12 @@ function poll() {
 function advance() {
   if (!UI.advanceFrom) return;
   var next = nextFocus(UI.advanceFrom);
-  if (next && next !== UI.advanceFrom) focusOn(next);
+  // The one move that hands the caret over: the decision scrolling into view is
+  // the one the human is now being asked, so its box is where they are typing
+  // next. Marked here rather than read off the focus having moved, because the
+  // focus moves for navigation too -- a human clicking a decision to read it is
+  // not asking for the caret.
+  if (next && next !== UI.advanceFrom) { focusOn(next); UI.takeBox = true; }
   UI.advanceFrom = null;
 }
 function refreshDoctor() {
@@ -765,7 +829,16 @@ function foldReady(threadId) {
    speaks after it — which is why the click is stamped with where the log stood
    when it was made. A click whose turn was refused keeps its intent, because
    nothing landed after it; a click the policy then overtook loses it, because
-   the control must name where the channel is now and not the tier it has left. */
+   the control must name where the channel is now and not the tier it has left.
+
+   A live click is also the only thing a turn says the tier out of, and it says
+   it once. A turn with no click behind it carries no transfer key at all, and
+   neither does any turn after the one that carried the click out — so this page
+   tells the backend what the human pressed, never what it last managed to read,
+   and never the same press twice. One rule says when a click is used up: the
+   turn that carries it onto the wire spends it. A batch this page declined to
+   post spends nothing, and a turn the backend refused gives the click back —
+   both for the same reason, that nothing was said with it. */
 var TRANSFER = {};
 function loggedMode(channel) {
   for (var i = LOG.length - 1; i >= 0; i--) {
@@ -778,9 +851,44 @@ function loggedMode(channel) {
   }
   return { on: false, at: -1 };
 }
+// The click the log has not spoken after, or nothing at all. This is what the
+// control names the channel by, and it goes on naming it until the log carries
+// the press back: a label that reverted the moment the turn went out would tell
+// the human their press did not take, one poll before the record proves it did.
+function pressed(channel) {
+  var meant = TRANSFER[channel];
+  return meant && meant.since > loggedMode(channel).at ? meant : null;
+}
+// The press that has not yet ridden a turn, which is the only thing a turn says
+// a tier out of. The two readings differ for exactly one poll, and they have to:
+// a press is spent by the turn that carries it, while the control it was made on
+// still has nothing else to show.
+function unspent(channel) {
+  var meant = pressed(channel);
+  return meant && !meant.spent ? meant : null;
+}
+// The press is spent by the turn that carries it onto the wire, and the turn is
+// what it is spent against: a batch this page built and then declined to post
+// spends nothing, because nothing was said with it.
+function spend(events) {
+  events.forEach(function (e) {
+    var meant = TRANSFER[e.channel];
+    if (meant && TRANSFER_FLAG in e.payload) meant.spent = e.idempotency_key;
+  });
+}
+// A turn the backend refused wrote nothing, so the press it carried was never
+// said and is the human's again. Keyed by the turn that took it, because the
+// receipts name the turn: a press given back on any refusal would be given back
+// on somebody else's, and a `duplicate` receipt is not a refusal at all -- that
+// key is in the log, and the press with it.
+function unspend(key) {
+  Object.keys(TRANSFER).forEach(function (name) {
+    if (TRANSFER[name].spent === key) TRANSFER[name].spent = null;
+  });
+}
 function onExpert(channel) {
-  var said = loggedMode(channel), meant = TRANSFER[channel];
-  return meant && meant.since > said.at ? meant.on : said.on;
+  var meant = pressed(channel);
+  return meant ? meant.on : loggedMode(channel).on;
 }
 // What an agent turn is called, read off that turn's own attribution and never
 // off the channel it sits on. The channel's mode says where the channel is now;
@@ -792,7 +900,7 @@ function onExpert(channel) {
 // turns, the backend's, and anything an older session recorded before tiers were
 // written down.
 function tierLabel(tier) {
-  return tier === HEAVY_TIER ? "expert agent" : tier === FAST_TIER ? "fast agent" : "";
+  return tier === HEAVY_TIER ? "expert" : tier === FAST_TIER ? "assistant" : "";
 }
 // The tier an entry attributed itself to, for the map channel's turns: those
 // reach the page as queue items and notifications rather than as projected
@@ -833,15 +941,16 @@ function proposals() {
 function notices() {
   return BOARD.pending.filter(function (p) { return live(p) && NOTICE_KINDS.indexOf(p.kind) >= 0; });
 }
-// Which decisions a message from the agent is read on: the one it names, and
-// when it names none, the ones its own entry changed in the same breath. A
-// reply that speaks and changes the board arrives as one entry, and the prose
-// half of it is framing for the other half — so it belongs on what it framed
-// rather than in a lane of its own.
+// Which decision a message from the agent is read on: the one it names, and no
+// other. A message that names none is the turn's own story, and the turn is
+// shown in one place — so it is read there once, and nowhere on the board.
 //
-// Derived from the log rather than remembered from the arrival, because the
-// board has to read the same after a reload as before one: the queue survives a
-// reload and anything this page noticed at arrival does not.
+// It is tempting to home an unnamed message on whatever its entry changed in
+// the same breath, on the grounds that the prose half of a reply frames the
+// other half. That repeats one paragraph against every decision the turn moved
+// and leaves none of them saying what moved locally. What each moved decision
+// says about itself is the change that moved it, which the decision already
+// carries and this page shows on it.
 //
 // A home is a decision the board is carrying now, which is what makes "the
 // board already shows this" measured rather than assumed: a message about
@@ -849,12 +958,7 @@ function notices() {
 // lane.
 function noticeHomes(item) {
   var out = [];
-  var add = function (id) { if (id && node(id) && out.indexOf(id) < 0) out.push(id); };
-  if (item.target) { add(item.target); return out; }
-  var e = entryAt(item.authored_at);
-  (e ? updatesIn(e) : []).forEach(function (u) {
-    if (MAP_MUTATION_KINDS.indexOf(u.kind) >= 0) add(u.target);
-  });
+  if (item.target && node(item.target)) out.push(item.target);
   return out;
 }
 function noticesOn(id) {
@@ -1023,10 +1127,55 @@ function historyOf(id) {
   var out = [];
   LOG.forEach(function (e) {
     updatesIn(e).forEach(function (u) {
-      if (u.target === id) out.push({ seq: e.seq, actor: e.actor, kind: u.kind, why: u.why || u.text || "" });
+      if (u.target === id) out.push({ seq: e.seq, uid: u.uid, actor: e.actor, kind: u.kind, why: u.why || u.text || "" });
     });
   });
   return out;
+}
+// What last moved this decision, off the same history the 🕘 panel reads. A
+// turn that moves several decisions says what it did to each of them on the
+// decision itself; the turn's own message is one message about the whole turn,
+// and a human should not have to open it to learn what happened here.
+//
+// Only a change to the board counts, which is the set the queue would propose:
+// a message on this decision renders as the message it is, immediately below,
+// and reporting it a second time as a change reads as two events.
+//
+// A change that has not landed is not reported, and the queue alone cannot say
+// which those are: an applied entry and a dismissed one both leave it. So both
+// gestures are asked. A change the human is still looking at is on the queue and
+// has moved nothing yet — the block saying one is waiting is already on this
+// decision — and a change they dismissed never moved anything at all.
+//
+// Those two are the whole of what has to be excluded, because a queued change
+// ends in exactly one of three states: still waiting, applied, or dismissed.
+// Everything else never went to the queue and landed the moment it arrived,
+// which is what most revises do. Reading only the human's `apply` entries would
+// therefore drop them, and the decision a turn revised would say nothing about
+// itself.
+function dismissed(uid) {
+  return LOG.some(function (e) {
+    return e.actor === "human" && e.kind === DISMISS_KIND &&
+      (e.payload.pending || []).indexOf(uid) >= 0;
+  });
+}
+function lastChange(id) {
+  var moved = historyOf(id).filter(function (h) {
+    return PROPOSABLE_KINDS.indexOf(h.kind) >= 0 && !dismissed(h.uid) &&
+      !BOARD.pending.some(function (p) { return p.id === h.uid; });
+  });
+  return moved[moved.length - 1] || null;
+}
+// That change in one line. The change names itself and carries its own reason,
+// and a change that gave none says nothing: the decision's standing rationale
+// is an earlier event's word, and printing it under this change's name would
+// hand the human a reason for a move nobody gave one for. The rationale shows
+// only where no landed change exists at all, so a reason the board carries
+// with no change behind it still reaches the human once.
+function changeLine(id) {
+  var last = lastChange(id), why = last ? last.why : (node(id) || {}).rationale;
+  if (!why) return "";
+  return '<div class="rationale"><strong>' + esc(last ? last.kind : "why") + ':</strong> ' + esc(why) + "</div>";
 }
 // Prefer a child just unblocked by what was settled, else the oldest thing on
 // the frontier.
@@ -1055,9 +1204,11 @@ function nextOpen() {
 function nextOpenWhy() {
   return boardFinished() ? "nothing is left open" : "everything still open is waiting";
 }
-// The walk itself. There is no bare-key shortcut beside it: every focus move
-// hands the caret to the focused decision's note box, so a second press of a
-// bare letter would land in what the human is writing rather than on the board.
+// The walk itself. It moves the focus and centres what it lands on; the caret
+// stays wherever the human left it. There is no bare-key shortcut beside it: a
+// settled decision hands the caret to the next decision's note box, so a bare
+// letter pressed after an answer would land in what the human is writing rather
+// than on the board.
 function goNextOpen() {
   var id = nextOpen();
   if (id) { focusOn(id); render(); }
@@ -1345,9 +1496,9 @@ function parkThread(tid) {
 }
 // Closing is the human saying they are done with the thread, and parking is
 // the human saying they may come back to it. Only the second is carried to the
-// end of the session as a loose end. Neither takes anything away: a closed
-// thread stays readable, and saying something in one opens it again, which is
-// why there is no re-open gesture to send.
+// end of the session as a loose end. Neither takes anything away: the thread
+// stays readable, and saying something in one opens it again, which is why
+// there is no re-open gesture to send.
 function closeThread(tid) {
   send(ev("thread-close", tid, {}));
   UI.panel = null;
@@ -1357,16 +1508,27 @@ function closeThread(tid) {
 // the frontier having never carried an answer.
 //
 // The thread is left where it is rather than parked. It is the mandate's thread
-// and not the answer's -- a mandate names one thread id, nothing creates that id
-// twice, and a parked thread can be neither spoken in nor concluded. Parking it
-// here left the next pick held against a conversation with no way forward and no
-// way back except abandoning that pick too.
+// and not the answer's -- a mandate names one thread id and nothing creates that
+// id twice, so the next pick is held against this same thread. A parked thread
+// concludes nothing until a turn opens it again, and the human who has just
+// abandoned one answer is owed a thread that can still be concluded for the next.
 function abandonAnswer(id) {
   delete UI.held[id];
   saveHeld();
   UI.panel = null;
   focusOn(id);
   render();
+}
+// Reopening a settled decision is the human withdrawing an answer they gave.
+// It is the same `unsettle` an agent may only propose, authored by the human
+// instead, so it lands when it arrives and takes the fold an applied proposal
+// takes: the answer goes, the decision is a question again, and everything
+// settled on top of it needs re-confirming. Nothing local is cleared and
+// nothing is announced -- the board that comes back from the backend is what
+// says the answer has gone, and a block the page shut when it settled opens
+// itself again once it is no longer settled.
+function reopenDecision(id) {
+  send(ev("unsettle", MAP, { target: id }));
 }
 // The gesture is sent and nothing is announced. What the apply landed becomes
 // news when the apply itself comes back down the update read -- which is the
@@ -1503,14 +1665,81 @@ function noteCompletion() {
 // the top row's own control by act, so there is one gesture into ending a
 // session and this is a second place to reach it rather than a second way.
 function completionOffer() {
+  // A board with every question answered can still have a turn running on it,
+  // and that turn is the one thing that can put a new question back. So the
+  // offer says so where the human is reading, and the act it offers stops
+  // claiming the board is quiet.
+  var pending = pendingTurns().length;
   return '<div class="scrim" id="completion"><div class="box"><h3>🏁 Every question is answered</h3>' +
     "<p>" + completionTally() + ". Nothing on this board is waiting on you. Ending the session " +
     "writes the result beside the log and hands it back. Nothing forces that now — the board is " +
     "yours to go back over.</p>" +
-    '<div class="acts"><button class="btn primary" data-act="endsession">End the session</button>' +
+    (pending ? "<p>Agent responses are still pending, and what they come back with could put a " +
+      "new decision on this board.</p>" : "") +
+    '<div class="acts"><button class="btn primary" data-act="endsession">' +
+    (pending ? "End Session Anyway" : "End the session") + "</button>" +
     '<button class="btn" data-act="dismiss-completion">Back to the board</button></div></div></div>';
 }
-function endSession() {
+// The channels an agent still owes a turn on, read off both of the records this
+// page already keeps and counted nowhere new. Neither record alone is the
+// answer.
+//
+// The lane's is the durable one: a turn is announced with a `composing` entry
+// and closed by the `replied` or `error` that pairs with it, so a channel in
+// `WIRE.status` is one the log says is mid-turn, whatever else the human does
+// meanwhile. The channel model is the one that moves ahead of the log -- it has
+// a turn as owed from the moment the write is dispatched, before the lane has
+// announced anything.
+//
+// The channel model is not durable, and that is why the lane is read first. A
+// second human write on a channel that is already composing takes the model
+// through `sending` back to `idle` on its own receipt, while the backend goes
+// on running the earlier turn in its own thread. Read off the model alone, the
+// board would call that channel quiet and end the session over a turn that is
+// still out.
+function pendingTurns() {
+  var announced = Object.keys(WIRE.status);
+  return announced.concat(Object.keys(CHANNELS.protocol).filter(function (name) {
+    return owedOn(name) && announced.indexOf(name) < 0;
+  }));
+}
+// Why the ending is worth asking about twice, in the words it is asked in, or
+// nothing at all where the gesture is unambiguous. A pending turn is asked
+// about first because it outranks the board's own state: an answer still being
+// composed is what can put a new decision on a board that already looks done.
+var PENDING_END_WARNING = "There are pending agent responses that could result in new decisions " +
+  "to be made. Are you sure you want to end the session now?";
+function endWarning() {
+  if (pendingTurns().length) return PENDING_END_WARNING;
+  if (boardFinished()) return "";
+  var open = BOARD.decisions.filter(function (d) {
+    return d.status !== "settled" && d.status !== "invalidated";
+  }).length;
+  return (open
+    ? open + (open === 1 ? " decision on this board is" : " decisions on this board are") +
+      " still open"
+    : "Nothing has been put on this board yet") +
+    ". Ending the session writes the result with the board unfinished. Are you sure you want to " +
+    "end the session now?";
+}
+// One confirmation for both reasons, worded by whichever raised it. It is the
+// completion offer's own scrim and box, because a second shape would be a
+// second thing to keep in step with it, and the answers are the same either
+// way: the ending act, or back to the board with nothing written.
+function confirmEnd(text) {
+  return '<div class="scrim" id="confirm"><div class="box"><h3>⚠ End the session?</h3><p>' +
+    esc(text) + "</p>" +
+    '<div class="acts"><button class="btn primary" data-act="confirm-end">Yes, end the session</button>' +
+    '<button class="btn" data-act="dismiss-confirm">Back to the board</button></div></div></div>';
+}
+// The guard stands in front of the one wire path rather than inside it: the
+// page asks again, and the ending event is still built in exactly one place
+// however the human reached it. `confirmed` is the human having answered the
+// question this raised, and it is the only thing that skips it.
+function endSession(confirmed) {
+  var warning = confirmed ? "" : endWarning();
+  if (warning) { UI.confirm = warning; render(); return; }
+  UI.confirm = null;
   send(ev("session-end", MAP, {}));
   render();
 }
@@ -1569,14 +1798,20 @@ function answerControls(d, locked) {
       (held.note ? " — " + esc(held.note) : "") + "</div>";
   }
   if (!d.options.length) return h + '<div class="muted">This decision offers no options yet.</div>';
-  h += '<div class="rec-line">Recommended answer' + (locked ? " · locked" : "") + "</div>";
+  // The caption answers to the same rule as the fill: a settled decision offers
+  // no recommendation, whatever its answer names, so a caption that kept calling
+  // the row the recommended answer would contradict the mark below it.
+  h += '<div class="rec-line">' + (d.status === "settled" ? "Options" : "Recommended answer") +
+    (locked ? " · locked" : "") + "</div>";
   // Every option wears its label, the recommended one included, because the
   // label is what the human writes down and says in a thread — and a
   // recommendation that had no label would be the one option nobody could name.
-  h += optionButton(d, d.options[0], 0, "btn primary wide", "➡️ ", dis);
+  var rec = optionDress(d, d.options[0], true);
+  h += optionButton(d, d.options[0], 0, "btn wide" + rec.cls, rec.lead, dis);
   h += '<div class="alts">';
   d.options.slice(1).forEach(function (o, i) {
-    h += optionButton(d, o, i + 1, "btn wide sm", "", dis);
+    var dress = optionDress(d, o, false);
+    h += optionButton(d, o, i + 1, "btn wide sm" + dress.cls, dress.lead, dis);
   });
   h += "</div>";
   // One box, two jobs: what you type is a free-text answer if you send it on its
@@ -1588,6 +1823,21 @@ function answerControls(d, locked) {
     '<span class="hint">↵ send<br>⇧↵ newline</span>' +
     '<button class="btn sm" data-act="free" data-id="' + esc(d.id) + '"' + dis + ">Use this</button></div>";
   return h;
+}
+// How an option is dressed on a settled decision and on one still being asked.
+// The option the human took wears the mark; the first option is dressed as the
+// recommendation only while the decision is still asking. A settled decision
+// that went on filling its first option would show option a as the standing
+// answer on a board whose answer line says the human took option b. Settled is
+// read off the status alone: a settled decision recommends nothing whether or
+// not its answer names an option, and an answer naming an option the row no
+// longer carries marks nothing rather than something else.
+function optionDress(d, o, recommended) {
+  if (d.status === "settled") {
+    var taken = d.answer && d.answer.option === o.id;
+    return taken ? { cls: " chosen", lead: "✓ " } : { cls: "", lead: "" };
+  }
+  return recommended ? { cls: " primary", lead: "➡️ " } : { cls: "", lead: "" };
 }
 function optionButton(d, o, index, cls, lead, dis) {
   var armed = UI.armed[d.id];
@@ -1679,7 +1929,7 @@ function transferControl(channel) {
     '" data-act="transfer" data-channel="' + esc(channel) + '"' +
     ' data-mode="' + esc(on ? "expert" : "fast") + '"' +
     ' data-recommended="' + esc(rec ? "1" : "0") + '" title="' + esc(why) + '">' +
-    (on ? "⚡ Return to fast agent" : "⚡ Transfer to expert") + "</button>";
+    (on ? "⚡ Return to assistant" : "⚡ Transfer to expert") + "</button>";
 }
 function isExpanded(id) {
   var st = statusOf(id);
@@ -1849,6 +2099,7 @@ function renderColumn() {
         (st === "fogged" ? "not a real question yet — sharpens once " + d.fogUntil + " settles"
           : st === "invalidated" ? "left the flow; still here to relitigate"
           : wait.list.length ? "waiting on " + wait.list.join(", ") : d.body)) + "</div>";
+      h += changeLine(id);
       if (waiting.length) h += '<div class="pend-notice">📥 <strong>A change is waiting on this decision.</strong> ' +
         esc(summarise(waiting[0])) + ' <button class="btn sm" data-act="inbox">Open the inbox</button></div>';
       if (blockingThreads(id).length) h += '<div class="blocking"><span class="tag">blocking</span>' +
@@ -1894,7 +2145,18 @@ function renderColumn() {
       } else {
         h += answerControls(d, !takesAnswer(id) || !!lock);
       }
-      if (d.rationale) h += '<div class="rationale"><strong>Why:</strong> ' + esc(d.rationale) + "</div>";
+      // Only a settled decision offers the way back: there is no answer to
+      // withdraw on one still being asked, and one that has left the flow is
+      // not brought back by putting its question again. While something holds
+      // the decision the control is dead beside the answer controls the same
+      // hold disables, because withdrawing the answer under a change waiting on
+      // it is the overwrite that hold exists to stop.
+      if (st === "settled") {
+        h += '<div style="margin-top:9px"><button class="btn sm" data-act="reopen" data-id="' +
+          esc(id) + '"' + (lock ? " disabled" : "") +
+          ">Reopen — the answer is withdrawn and whatever rests on it needs re-confirming</button></div>";
+      }
+      h += changeLine(id);
       noticesOn(id).forEach(function (n) { h += infoNote(n); });
       threadsOf(id).forEach(function (tid) {
         if (blockingThreads(id).indexOf(tid) >= 0) return;
@@ -2024,8 +2286,8 @@ function closeControl(tid) {
     '">Close it — done with it, nothing left open</button>';
 }
 // The box a turn is typed into, and the one control that sends it. One reader,
-// because an open thread and a closed one the human is picking back up take the
-// same turn on the same channel — two copies is how they come to differ.
+// because an open thread and a set-aside one the human is picking back up take
+// the same turn on the same channel — two copies is how they come to differ.
 function sayBox(sayId, tid) {
   return '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
     '" placeholder="…say something"></textarea><span class="hint">↵ send<br>⇧↵ newline</span>' +
@@ -2092,13 +2354,15 @@ function threadBody(tid, forPop, chrome) {
     ". Nothing here touches the decision until you conclude it.</div>";
   var body = renderTurns(t) + waitMark(tid);
   if (t.state !== "open") {
-    // A closed thread keeps its box: saying something in one is how the human
-    // picks it back up, and the turn itself is what opens it again.
-    var closed = t.state === "closed";
+    // A parked or closed thread keeps its box: saying something in one is how
+    // the human picks it back up, and the turn itself is what opens it again. A
+    // folded thread keeps none, because its conclusion has already crossed to
+    // the board and a turn here would say nothing the board would hear.
+    var aside = t.state === "parked" || t.state === "closed";
     return threadPane(head,
       body + '<div class="parked-note">This thread is ' + esc(t.state) + ". It stays readable." +
-        (closed ? " Say something here and it opens again." : "") + "</div>",
-      closed ? sayBox(sayId, tid) : "");
+        (aside ? " Say something here and it opens again." : "") + "</div>",
+      aside ? sayBox(sayId, tid) : "");
   }
   var h = sayBox(sayId, tid);
   h += seedControls(t.decision, tid);
@@ -2148,8 +2412,7 @@ function renderNotifications() {
   var h = '<div class="slide"><button class="close" data-act="closepanel">✕</button>' +
     '<h3 style="font-size:16px">Notifications</h3>' +
     '<div class="muted" style="margin-bottom:10px">What the agent said that the board has nowhere to show. Changes are not in here: the ones that landed are on the board, ' +
-    "and the ones waiting on you are in the inbox. This list starts empty on a reload: a session you come back to should not announce the morning's work as news. " +
-    "What you have read is remembered.</div>" +
+    "and the ones waiting on you are in the inbox. This list comes back when you reload, and so does what you have read.</div>" +
     '<div style="margin-bottom:12px"><button class="btn sm" data-act="markall"' + (unread ? "" : " disabled") +
     ">✓ Mark all read" + (unread ? " (" + unread + ")" : "") + "</button></div>";
   if (!NOTES.length) h += '<div class="muted">Nothing here.</div>';
@@ -2460,6 +2723,7 @@ function renderShell() {
     (WIRE.doctor
       ? '<div class="scrim"><div class="box"><h3>🩺 The map doctor is working</h3>' +
         "<p>The agent is going over the whole board and everything in the queue. The board is read-only until it answers.</p></div></div>"
+      : UI.confirm ? confirmEnd(UI.confirm)
       : UI.done ? completionOffer() : "") +
     (!UI.panel ? "" :
       UI.panel.kind === "thread" ? renderThread(UI.panel.id) :
@@ -2478,6 +2742,58 @@ function takeCaret(el, caret) {
   if (!el) return;
   el.focus({ preventScroll: true });
   if (caret !== undefined) { try { el.setSelectionRange(caret, caret); } catch (e) {} }
+}
+// A selection the human is holding is theirs until they drop it, and a render
+// replaces every node it runs over -- so it is held as where it sits in the text
+// of the nearest element the board gives an id, and laid back over the fresh
+// nodes. Held by the nodes themselves it would be restored onto nothing: the
+// nodes that come back are not the ones it was made on. A selection that runs
+// out of that element is not held at all, which is the rebuild dropping it.
+function heldSelection() {
+  var sel = window.getSelection();
+  if (!sel || sel.rangeCount !== 1 || sel.isCollapsed) return null;
+  var r = sel.getRangeAt(0);
+  var host = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+  host = host && host.closest("[id]");
+  if (!host || !host.contains(r.endContainer)) return null;
+  var before = document.createRange();
+  before.selectNodeContents(host);
+  before.setEnd(r.startContainer, r.startOffset);
+  // A selection has a direction: the anchor is where the drag began, and
+  // extending one with the keyboard grows it from the other end. Asked by
+  // building a range from the anchor to the focus, which collapses when the
+  // focus is the earlier of the two.
+  var probe = document.createRange();
+  probe.setStart(sel.anchorNode, sel.anchorOffset);
+  probe.setEnd(sel.focusNode, sel.focusOffset);
+  return { id: host.id, at: before.toString().length, text: r.toString(), back: probe.collapsed };
+}
+function relaySelection(held) {
+  if (!held) return;
+  var host = document.getElementById(held.id);
+  if (!host) return;
+  // The words have to still be where they were. Looking for them anywhere else
+  // in the element picks the first copy of however many it holds, which is a
+  // highlight over text the human never chose; an element whose text moved
+  // under the selection drops it instead.
+  if (host.textContent.substr(held.at, held.text.length) !== held.text) return;
+  var end = held.at + held.text.length;
+  var walk = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  var seen = 0, node, from = null, fromAt = 0;
+  while ((node = walk.nextNode())) {
+    var next = seen + node.nodeValue.length;
+    if (!from && held.at <= next) { from = node; fromAt = held.at - seen; }
+    if (from && end <= next) {
+      // An anchor and a focus rather than a range, because a range has no
+      // direction: a backwards selection restored from one comes back forwards
+      // and then grows from the end the human was not extending.
+      var sel = window.getSelection();
+      if (held.back) sel.setBaseAndExtent(node, end - seen, from, fromAt);
+      else sel.setBaseAndExtent(from, fromAt, node, end - seen);
+      return;
+    }
+    seen = next;
+  }
 }
 // A thread's turns scroll inside the panel rather than with the page, and that
 // element is replaced on every re-render — so a thread follows the rule a chat
@@ -2506,11 +2822,19 @@ function render() {
   var caret = focusId ? act.selectionStart : 0;
   // The caret is on a control rather than in a box. The render replaces every
   // control on the board, so an option the human tabbed to is destroyed under
-  // them and the caret falls to the body -- which the default below reads as
-  // nobody holding anything, and hands to the free-text box of whatever
-  // decision is focused. Held by what names the control rather than by the
-  // element, since the element this finds is not the one that comes back.
+  // them and the caret falls to the body, which is the page losing their place.
+  // Held by what names the control rather than by the element, since the
+  // element this finds is not the one that comes back.
   var focusOpt = focusId ? null : optionOf(act);
+  // A caret in a box outranks a selection outside it: the two cannot both be
+  // where the human is, and the box is the one they are typing into.
+  var held = focusId ? null : heldSelection();
+  // Read once and cleared here rather than in the branch that spends it: an
+  // advance that arrives while the human is typing is an advance they did not
+  // follow, and a flag left standing would hand the caret over on some later
+  // render that has nothing to do with it.
+  var take = UI.takeBox;
+  UI.takeBox = false;
 
   noteCompletion();
   harvestBubbles();
@@ -2549,15 +2873,18 @@ function render() {
     takeCaret(document.getElementById(focusId), caret);
   } else if (focusOpt) {
     takeCaret(optionControl(focusOpt));
-  } else if (UI.panel && UI.panel.kind === "thread") {
-    takeCaret(document.getElementById("ft-say"));
-  } else if (UI.focus !== UI.lastFocus || document.activeElement === document.body) {
-    // The focused decision's free-text box holds focus by default. Only ever
-    // taken when nothing else holds it, so typing is never interrupted.
+  } else if (take) {
+    // The advance's own caret, and the only one this page takes that no gesture
+    // of the human's asked for. A box that merely happens to be on screen is
+    // never taken: a caret handed over on the standing state of the board is a
+    // re-render reaching into whatever the human was reading, which is how a
+    // selection they were holding came to vanish under them on a poll tick.
     var box = document.getElementById("ft-" + UI.focus);
     if (box && !UI.panel && !box.disabled) takeCaret(box);
   }
-  UI.lastFocus = UI.focus;
+  // After the caret, because taking one into a box is the human's place moving
+  // rather than this render disturbing it.
+  relaySelection(held);
   // Last, because a render replaces the elements the mark is painted on -- and
   // after the caret has been placed, since placing it is one of the things that
   // decides which option is in hand.
@@ -2693,8 +3020,8 @@ function popOut(tid) {
 // `send`, which refuses once the session is over; this is the surface saying the
 // same thing, so an ended board offers no control whose click would be swallowed.
 var WRITE_ACTS = ["pick", "free", "say", "seed", "draftsay", "newthread", "discuss", "discussnotice",
-  "fold", "park", "closethread", "abandon", "applyone", "applyall", "dismissone", "transfer",
-  "doctor", "endsession"];
+  "fold", "park", "closethread", "abandon", "reopen", "applyone", "applyall", "dismissone", "transfer",
+  "doctor", "endsession", "confirm-end"];
 // Reading stays: the board, the map, the history, the inbox, the notifications
 // and the read markers are all this window's own and go nowhere. What goes is
 // the ability to say anything more into a log that has been closed.
@@ -2841,6 +3168,7 @@ document.addEventListener("click", function (e) {
     case "closethread": closeThread(tid); break;
     case "fold": foldThread(tid); break;
     case "abandon": abandonAnswer(id); break;
+    case "reopen": reopenDecision(id); break;
     case "popout": popOut(tid); break;
     case "applyone": applyPending([uid]); break;
     case "applyall": applyPending(proposals().map(function (p) { return p.id; })); break;
@@ -2875,6 +3203,11 @@ document.addEventListener("click", function (e) {
     // row's control carries it from here. Not in the write acts for that reason
     // -- an ended board never shows this overlay to dismiss.
     case "dismiss-completion": UI.done = false; UI.pulse = true; render(); break;
+    // The human has answered the question the guard raised, so the ending goes
+    // through on this pass. Backing out writes nothing and leaves the board
+    // exactly as it was, offer and all.
+    case "confirm-end": endSession(true); break;
+    case "dismiss-confirm": UI.confirm = null; render(); break;
   }
 });
 // An agent's message is discussed as an ordinary thread, seeded from it —

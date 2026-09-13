@@ -244,7 +244,7 @@ def main() -> None:
         page.click('.threadpane [data-act="transfer"]')
         page.wait_for_timeout(300)
         flipped = page.evaluate(MEASURE)
-        assert flipped["label"] == "⚡ Return to fast agent", (
+        assert flipped["label"] == "⚡ Return to assistant", (
             f"the press did not move the draft's channel: {flipped}"
         )
         page.fill("#ft-say", FIRST_TURN)
