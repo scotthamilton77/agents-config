@@ -1118,13 +1118,14 @@ function lastChange(id) {
   });
   return moved[moved.length - 1] || null;
 }
-// That change in one line. The change names itself and carries its own reason;
-// where it gave none, the decision's rationale is the board's word on why it
-// last moved, and that is what shows. A move nobody gave a reason for says
-// nothing rather than saying "no reason given" on every decision the human
-// answered themselves.
+// That change in one line. The change names itself and carries its own reason,
+// and a change that gave none says nothing: the decision's standing rationale
+// is an earlier event's word, and printing it under this change's name would
+// hand the human a reason for a move nobody gave one for. The rationale shows
+// only where no landed change exists at all, so a reason the board carries
+// with no change behind it still reaches the human once.
 function changeLine(id) {
-  var last = lastChange(id), why = (last && last.why) || (node(id) || {}).rationale || "";
+  var last = lastChange(id), why = last ? last.why : (node(id) || {}).rationale;
   if (!why) return "";
   return '<div class="rationale"><strong>' + esc(last ? last.kind : "why") + ':</strong> ' + esc(why) + "</div>";
 }

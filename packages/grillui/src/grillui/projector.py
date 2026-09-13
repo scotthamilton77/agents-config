@@ -16,7 +16,7 @@ on an accepted entry takes the session down with it.
 |-----------------|---------------------------------------------------------------|
 | `session-start` | the briefing's plan seeds the board, decision by decision      |
 | `add-node`      | the node enters the board `open`                               |
-| `revise`        | supplied fields replace; omitted ones and the status stand     |
+| `revise`        | supplied fields and its `why` replace; the rest stands         |
 | `invalidate`    | status `invalidated`, carrying the rationale it arrived with   |
 | `answer`/`settle` | the answer is recorded and the status is `settled`           |
 | `unsettle`      | back to `open`, its answer dropped, its dependents `stale`     |
@@ -661,7 +661,14 @@ def _add_node(board: _Board, payload: Mapping[str, object]) -> None:
 
 def _revise(board: _Board, payload: Mapping[str, object]) -> None:
     """Supplied fields replace; omitted ones stand. A revise says what changed,
-    so reading an absent field as an empty one would erase the question."""
+    so reading an absent field as an empty one would erase the question.
+
+    A supplied `why` becomes the decision's rationale, and an absent one leaves
+    the standing rationale alone. The kinds that move a status clear it when
+    they arrive without a reason, because their event is the whole story; a
+    revise is partial by rule, so a silent `why` is one more field it is not
+    speaking about.
+    """
     node = board.node(payload)
     if node is None:
         return
@@ -673,6 +680,9 @@ def _revise(board: _Board, payload: Mapping[str, object]) -> None:
         node.prereqs = _strings(payload.get("prereqs"))
     if isinstance(payload.get("options"), list):
         node.options = _options(payload.get("options"))
+    why = _text(payload, "why")
+    if why:
+        node.rationale = why
 
 
 def _invalidate(board: _Board, payload: Mapping[str, object]) -> None:
