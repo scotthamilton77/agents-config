@@ -3,7 +3,7 @@
 An alert that declares itself blocking shuts its decision, and the gesture that
 reopens it is the queue's own dismiss, on the alert itself. What is checked here
 is the whole chain rather than any link of it -- the control is on the alert,
-the click puts a `dismiss` in the log, and the fold that reads that log hands
+the click puts a `dismiss` in the log, and the replay that reads that log hands
 back a decision on the frontier. A unit test can pin any one of those and still
 leave a button that renders nowhere the human can press it.
 

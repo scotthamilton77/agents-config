@@ -6,7 +6,7 @@ opens a cold chain; where it did not, there is no catch-up and the chain resumes
 as on any other turn.
 
 What counts as a move is measured here the way the projector measures it -- by
-folding the log through each entry of the interval and looking at image 1's
+replaying the log through each entry of the interval and looking at image 1's
 decisions -- rather than by naming kinds. The fixture below is built so that a
 kind list would get it wrong: its interval carries thread turns, a status entry,
 a park, a thread fold and an agent's update left waiting in the human's queue,
@@ -27,7 +27,7 @@ from conftest import ScriptedCli, ScriptedFast, handoff_doc, run_turns, write_ha
 from grillui.dispatch import record_dispatch
 from grillui.drivers import RESUME_FILE, FastDriver, HeavyDriver
 from grillui.lane import Lane
-from grillui.projector import fold, to_image1
+from grillui.projector import replay, to_image1
 from grillui.schemas import (
     APPLY_KIND,
     MAP_CHANNEL,
@@ -265,7 +265,7 @@ def test_an_interval_that_moved_no_decision_yields_no_catch_up(session_dir: Path
 
     None of those entries moved a decision, whatever its kind says it does. A
     catch-up assembled from a list of kinds would report five events here and
-    describe a board the human is not looking at; folding the log through each
+    describe a board the human is not looking at; replaying the log through each
     entry and reading image 1's decisions reports none, which is the truth.
     """
     log = reopened(session_dir, moved=False)
@@ -352,7 +352,7 @@ def test_a_parked_thread_is_caught_up_on_the_turn_that_picks_it_back_up(
             "why": REVISE_WHY,
         }
     ]
-    states = {one.id: one.state for one in fold(log.epoch, log.entries()).threads}
+    states = {one.id: one.state for one in replay(log.epoch, log.entries()).threads}
     assert states[MINE] == "open", states
 
     submit(
@@ -433,7 +433,7 @@ def test_the_fast_tier_is_told_what_moved_as_well(session_dir: Path) -> None:
     Then its prompt carries the catch-up too.
 
     Whichever tier takes the reopening turn is the tier that has to know the
-    board moved: the fast tier's context is rebuilt from the fold every
+    board moved: the fast tier's context is rebuilt from the replay every
     dispatch, and this section is what tells it what changed rather than what
     is now true.
     """
@@ -490,7 +490,7 @@ def test_reopening_a_thread_raises_nothing_to_the_human(session_dir: Path) -> No
     """
     log = set_aside(session_dir)
     interval(log, apply_it=True)
-    before = to_image1(fold(log.epoch, log.entries()))
+    before = to_image1(replay(log.epoch, log.entries()))
     kinds_before = [entry.kind for entry in log.entries()]
     driver = ThreadReplyDriver()
 
@@ -502,7 +502,7 @@ def test_reopening_a_thread_raises_nothing_to_the_human(session_dir: Path) -> No
         ("human", "thread-turn"),
         ("thread-agent", "thread-turn"),
     ]
-    after = to_image1(fold(log.epoch, log.entries()))
+    after = to_image1(replay(log.epoch, log.entries()))
     assert after.pending == before.pending == []
     assert after.decisions == before.decisions
     assert after.frontier == before.frontier

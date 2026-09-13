@@ -699,7 +699,7 @@ BOARD_LEGEND = (
 # some wait for the human, the split is drawn by the backend against the board at
 # the moment the reply arrives, and a turn that believed its updates had landed
 # would tell the human a decision was settled that is sitting in their queue.
-# One example per kind the backend folds, and the source the rule below states
+# One example per kind the backend replays, and the source the rule below states
 # them from. A kind's required fields are the appender's, not this text's, so
 # they are held as objects and put through the appender's own shape check in the
 # suite rather than typed into prose nothing reads back: an example a seat
@@ -776,8 +776,8 @@ UPDATE_EXAMPLES: dict[str, dict[str, Any]] = {
 # What each kind is for, in one line. This is the whole of the hand-written
 # prose in the per-kind contract below: which fields a kind requires, which it
 # may also carry and what the backend does with it are read off the appender's
-# shape and the fold's own rule, so the contract cannot tell a seat a field is
-# required that the appender never asks for, nor promise a landing the fold
+# shape and the replay's own rule, so the contract cannot tell a seat a field is
+# required that the appender never asks for, nor promise a landing the replay
 # does not perform.
 KIND_DEFINITIONS: dict[str, str] = {
     "add-node": "put a new question on the board, with the options it can be answered from",
@@ -886,7 +886,7 @@ def kind_contract(kind: str) -> str:
     and exactly the ones a seat copying the example would otherwise drop.
 
     The landing and what the human then sees are two answers, not one. Whether a
-    change lands or waits is the fold's, and it is asked of the fold; what the
+    change lands or waits is the replay's, and it is asked of the replay; what the
     board looks like afterwards is a table here, because it is a statement about
     the page and the page is not a thing this module can interrogate.
     """

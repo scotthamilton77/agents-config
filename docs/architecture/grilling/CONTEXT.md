@@ -221,7 +221,7 @@ Contract: `packages/grillui/src/grillui/projector.py`.
 
 ## Image 1
 
-The current map snapshot, folded from the log: the whole board as it stands. It
+The current map snapshot, replayed from the log: the whole board as it stands. It
 is what the page renders and what every agent reasons from, and it is a pure
 projection — the same log always yields the same bytes. The image files on disk
 are derived caches and never a recovery source.
@@ -249,17 +249,17 @@ Contract: `packages/grillui/src/grillui/projector.py`.
 
 What a thread set aside is handed when it is picked up again: the map events that
 landed on the board while it was away. It is projected and never composed — an
-entry is there because folding the log through it changed the decisions — so a
+entry is there because replaying the log through it changed the decisions — so a
 catch-up naming something the log does not carry is corruption of the same kind
 a short image 2 is.
 
-Contract: `packages/grillui/src/grillui/projector.py` folds it;
+Contract: `packages/grillui/src/grillui/projector.py` replays it;
 `packages/grillui/src/grillui/schemas.py` holds the shape.
 
 ## Map event
 
 An entry that moves a decision, and that is the whole of the definition: one
-exactly when folding the log through it changes image 1's decisions. It is
+exactly when replaying the log through it changes image 1's decisions. It is
 measured rather than listed, because a list of kinds would be a second
 definition of what changed the map and would disagree with the projector the
 first time a kind lands one way and waits the other.
@@ -535,8 +535,8 @@ was wrong, and the backend pressing it to the expert seat because it left a name
 decision unruled. It exists because the human's other gestures on the map channel
 carry no text for a transcript condition to read. Once the count is high enough
 the policy moves the map channel up and leaves it there; the way back down is the
-human's own transfer control. The count is a fold over the session log rather
-than a tally any one process keeps: a dismissal is counted off the human's own
+human's own transfer control. The count is read off the session log rather than
+a tally any one process keeps: a dismissal is counted off the human's own
 entry, a press off the marked `composing` entry the hand-up writes, so the count
 is per session and a backend replaced mid-session reaches the same number.
 
@@ -775,7 +775,7 @@ the same queue render in the notification lane and on the decisions they are
 about. The split is by what the item needs: the inbox holds what needs an action,
 and the lane holds what has already happened.
 
-Contract: `packages/grillui/src/grillui/projector.py` folds the queue;
+Contract: `packages/grillui/src/grillui/projector.py` replays the queue;
 `packages/grillui/src/grillui/page/script.js` renders both surfaces;
 `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-U15) for a notice rendering on its
 decision.
@@ -899,9 +899,7 @@ decision themselves, which folds nothing and dispatches nobody.
 
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D25, GUI-D41).
 
-Conflict: one word, three live mechanisms — see *Fold (the log event)* and
-*Fold (the projection)*. Nothing but context disambiguates them, and whether any
-of the three is renamed is `agents-config-9k9.331`.
+Related: *Fold (the log event)* — the same gesture seen from the log.
 
 ## Park
 
@@ -1000,7 +998,7 @@ Contract: `packages/grillui/src/grillui/claim.py`.
 ## Log
 
 The append-only record that is the session's single source of truth. Every
-projection is folded from it, every recovery re-reads it, and nothing is ever
+projection is replayed from it, every recovery re-reads it, and nothing is ever
 rewritten.
 
 Contract: `packages/grillui/src/grillui/log.py`.
@@ -1009,7 +1007,7 @@ Contract: `packages/grillui/src/grillui/log.py`.
 
 The one way anything reaches the log. It assigns the position, writes durably
 before anything else can observe the entry, and answers every write with a typed
-receipt. It never folds a projection, and it is where an agent's map mutation on
+receipt. It never replays a projection, and it is where an agent's map mutation on
 the wrong channel is refused — which is what makes the sole-author rule
 structural.
 
@@ -1058,8 +1056,7 @@ receipt says what became of each part.
 
 Contract: `docs/specs/2026-08-18-grilling-ui-v1.md` (GUI-D21).
 
-Conflict: one word, three live mechanisms — see *Fold (the thread gesture)* and
-*Fold (the projection)*.
+Related: *Fold (the thread gesture)* — the same gesture seen from the page.
 
 ## Projector
 
@@ -1071,16 +1068,13 @@ with it.
 
 Contract: `packages/grillui/src/grillui/projector.py`.
 
-## Fold (the projection)
+## Replay (the projection)
 
 The pure function from the log to the images: no clock, no randomness, no I/O.
 The same log always yields the same bytes, which is what makes an image rebuilt
 from disk trustworthy and the image files a cache rather than a record.
 
 Contract: `packages/grillui/src/grillui/projector.py`.
-
-Conflict: one word, three live mechanisms — see *Fold (the thread gesture)* and
-*Fold (the log event)*.
 
 ## Status lane
 
@@ -1094,7 +1088,7 @@ Contract: `packages/grillui/src/grillui/lane.py`.
 
 ## Capture
 
-Folding a session directory into its terminal result, with nothing serving it. It
+Replaying a session directory into its terminal result, with nothing serving it. It
 is invocable by the backend at end-session, by the agent that launched the
 session, or by a fresh reader pointed at last week's grilling. Everything
 structural is pure code over the log and reproduces byte for byte; the prose

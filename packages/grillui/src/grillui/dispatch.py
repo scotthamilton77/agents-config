@@ -37,7 +37,7 @@ import os
 from typing import TYPE_CHECKING
 
 from grillui.escalation import mootness_obligation
-from grillui.projector import catch_up, conclusion_of, fold, project_thread, whole_board
+from grillui.projector import catch_up, conclusion_of, project_thread, replay, whole_board
 from grillui.schemas import (
     HELP_THREAD_KIND,
     MAP_CHANNEL,
@@ -102,7 +102,7 @@ def assemble(
     `concluding` names a thread whose conclusion this dispatch is being sent to
     route. Its text is read out of the same image the context carries, so what
     the grill-master is told the thread concluded and what the board says it
-    concluded are one fact folded once.
+    concluded are one fact replayed once.
 
     `conflict` and `reassess` are the two turns nobody spoke to start: a
     withdrawal the human got in front of, and the map doctor. Each says so in
@@ -110,7 +110,7 @@ def assemble(
     was called would be inferring it from a board that looks unchanged.
 
     `catch_up` is what the board moved while a reopened thread was set aside.
-    It is folded by the caller and handed in for the same reason the board is:
+    It is replayed by the caller and handed in for the same reason the board is:
     a context is assembled from what it was given, and it rides here rather
     than in the board because a snapshot states what is true and never what
     changed.
@@ -128,7 +128,7 @@ def assemble(
     turn that may not.
 
     The pending queue rides inside the image either way, which is what makes
-    every one of these dispatches carry the queue as of the moment it was folded.
+    every one of these dispatches carry the queue as of the moment it was replayed.
     """
     board = whole_board(image) if channel == MAP_CHANNEL else project_thread(image, channel)
     context = DispatchContext(
@@ -183,11 +183,11 @@ def record_dispatch(
     reassess: bool = False,
     mootness: MootnessObligation | None = None,
 ) -> Path:
-    """Fold at dispatch time, assemble, and record what the agent was given.
+    """Replay at dispatch time, assemble, and record what the agent was given.
 
     The recorded file is the completeness check's evidence: it is what the
     agent got, not a reconstruction of what it should have got -- including the
-    pending queue, which is folded here and not read from anything cached.
+    pending queue, which is replayed here and not read from anything cached.
 
     `mootness` is derived from the board unless the caller states one. The
     caller that does is the lane re-dispatching a turn whose reply left the
@@ -196,7 +196,7 @@ def record_dispatch(
     the whole point of that dispatch is to carry it.
     """
     entries = log.entries()
-    image = fold(log.epoch, entries)
+    image = replay(log.epoch, entries)
     recorded = assemble(
         image,
         channel=channel,

@@ -427,7 +427,7 @@ def post(client: TestClient, epoch: str, *events: dict[str, Any]) -> list[dict[s
 
 
 def pending_queue(client: TestClient) -> list[dict[str, Any]]:
-    """The queue as the page reads it, off the state read rather than a fold of
+    """The queue as the page reads it, off the state read rather than a replay of
     the test's own -- what the human is looking at is what the server says."""
     response = client.get("/state")
     assert response.status_code == 200

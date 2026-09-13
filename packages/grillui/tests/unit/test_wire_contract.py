@@ -58,7 +58,7 @@ UNCHECKED = frozenset(
     {
         # The accepted receipt answers whichever client authored the write, and
         # these four are addressed to an agent reasoning about its own next turn
-        # rather than to the page: `node` echoes the decision a fold will
+        # rather than to the page: `node` echoes the decision a replay will
         # materialise, and `applied`/`as`/`amendments` say what the backend landed
         # instead of what was sent. A page that renders none of them is not a page
         # missing anything.

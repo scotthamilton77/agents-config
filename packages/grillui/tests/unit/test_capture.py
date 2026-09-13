@@ -221,7 +221,7 @@ def test_capture_over_a_fixed_log_is_byte_identical_twice(session_dir: Path) -> 
     When capture runs twice over it
     Then the two results are byte-identical.
 
-    Everything but the summary is a fold, and the v1 summarizer counts rather
+    Everything but the summary is a replay, and the v1 summarizer counts rather
     than composes, so the whole result is a function of the log.
     """
     log = started(session_dir)
@@ -700,7 +700,7 @@ def read_live(session_dir: Path) -> TerminalResult:
 
 
 def read_captured(session_dir: Path) -> TerminalResult:
-    """The same directory, folded again by a run nothing is serving."""
+    """The same directory, replayed again by a run nothing is serving."""
     return capture(session_dir)
 
 

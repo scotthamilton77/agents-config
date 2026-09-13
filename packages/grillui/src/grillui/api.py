@@ -2,7 +2,7 @@
 
 One authority, however many routes reach it. The status check is answered from memory and opens no
 file, so a page may ask it as often as it likes whatever the log has grown to;
-every other read folds the log the process already holds. The single write route
+every other read replays the log the process already holds. The single write route
 takes a batch under one epoch and answers with one typed receipt per event, in
 submission order -- there is no acknowledgement here that does not say what
 happened.
@@ -40,7 +40,7 @@ from grillui.capture import default_summary
 from grillui.claim import Claim
 from grillui.lane import Lane
 from grillui.persistence import project_and_persist
-from grillui.projector import fold, to_image1
+from grillui.projector import replay, to_image1
 from grillui.schemas import (
     SESSION_END_KIND,
     BatchWrite,
@@ -277,4 +277,4 @@ def _ended(events: Sequence[EventSubmission], receipts: Sequence[Receipt]) -> bo
 
 
 def _image(log: SessionLog) -> Image2:
-    return fold(log.epoch, log.entries())
+    return replay(log.epoch, log.entries())

@@ -2,7 +2,7 @@
 
 Four contracts live here: the event-log entry, the per-kind payload shapes, the
 typed receipt every write is answered with, and the two context images the
-projector folds. A *submitted* event is deliberately laxer than a log entry --
+projector replays. A *submitted* event is deliberately laxer than a log entry --
 `idempotency_key` is optional on the wire so that its absence comes back as a
 typed rejection rather than as a transport-level error, which is the whole point
 of a uniform receipt.
@@ -212,7 +212,7 @@ def pending_ids(payload: Mapping[str, Any]) -> list[str]:
 
     One reader, because two would be a gesture whose updates and whose origins
     are counted differently: the appender materialises an apply's updates from
-    this sequence, and the fold pairs each of those updates back to the entry it
+    this sequence, and the replay pairs each of those updates back to the entry it
     came from by position in it. A second derivation that kept the duplicates
     would leave the second update wearing the first one's author.
     """
@@ -901,7 +901,7 @@ class HistoryEntry(Strict):
 
 
 class Image1(Strict):
-    """The current map snapshot: a pure fold, byte-identical for a given log."""
+    """The current map snapshot: a pure replay, byte-identical for a given log."""
 
     epoch: str
     seq: int
@@ -1049,7 +1049,7 @@ class TerminalResult(Strict):
 class CatchUpEntry(Strict):
     """One decision the board moved while a thread was set aside.
 
-    Projected, never composed: an entry is here because folding the log through
+    Projected, never composed: an entry is here because replaying the log through
     it changed image 1's decisions, and what it says -- the sequence, the kind
     and the rationale -- is what the log carries at that point. A catch-up
     naming an event the log does not carry is the same corruption a short image
@@ -1542,7 +1542,7 @@ def option_ids(payload: Mapping[str, Any]) -> frozenset[str]:
 def mint_targets(payload: Mapping[str, Any], kind: str, seq: int) -> dict[str, Any]:
     """A copy of the payload with every add-node's node id materialised.
 
-    Minting at append time rather than at fold time is what makes the id one
+    Minting at append time rather than at replay time is what makes the id one
     fact instead of two: the receipt echoes what the projector will build,
     because both read the same durable bytes.
     """
@@ -1676,13 +1676,13 @@ def read_turns(payload: Mapping[str, Any], actor: Actor, timestamp: str) -> list
 
     The page speaks in a `turns[]` array of who/text pairs; a backend-authored
     reply may carry bare text. One reader handles both, and it is this one --
-    the accept path judges a thread event by what this returns and the fold
+    the accept path judges a thread event by what this returns and the replay
     builds the thread's turn list from it, so an event cannot be accepted for
     saying something and then project as having said nothing.
 
     `who` falls back to the entry's own actor. The appender judges a thread
     event on whether it says anything, never on who it claims said it, so an
-    unknown attribution is already durable by the time the fold sees it, and
+    unknown attribution is already durable by the time the replay sees it, and
     raising over something that already has a receipt would take the session
     down.
     """

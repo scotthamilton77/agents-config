@@ -1,12 +1,12 @@
 """Writing the images to disk: the only step in the projection path that does I/O.
 
-The fold is pure, so it has nothing to fail on. Everything that can fail lives
+The replay is pure, so it has nothing to fail on. Everything that can fail lives
 here, downstream of it, and the whole point of the split is that a failure here
 reaches neither the log nor the next event: the entry is already durable and
 already has a receipt by the time anything is projected.
 
 The files this writes are derived caches. Nothing reads them back -- a rebuild
-re-folds the log -- so a stale or missing image costs a rewrite, never a lost
+replays the log again -- so a stale or missing image costs a rewrite, never a lost
 decision.
 """
 
@@ -16,7 +16,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE
-from grillui.projector import fold, to_image1
+from grillui.projector import replay, to_image1
 from grillui.schemas import STATUS_PHASE_DOWNSTREAM_FAILED
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,13 +29,13 @@ if TYPE_CHECKING:
 
 
 def write_images(directory: Path, image: Image2) -> None:
-    """Persist both images for one folded position."""
+    """Persist both images for one replayed position."""
     (directory / IMAGE2_FILE).write_text(image.model_dump_json(), encoding="utf-8")
     (directory / IMAGE1_FILE).write_text(to_image1(image).model_dump_json(), encoding="utf-8")
 
 
 def project_and_persist(log: SessionLog) -> None:
-    """Fold the log and write the images, at batch granularity after an append.
+    """Replay the log and write the images, at batch granularity after an append.
 
     Every failure is caught, whatever it is. A projection error surfaces on the
     status lane as a downstream failure and leaves the log intact; it never takes the
@@ -44,7 +44,7 @@ def project_and_persist(log: SessionLog) -> None:
     a grilling the human is in the middle of.
     """
     try:
-        write_images(log.directory, fold(log.epoch, log.entries()))
+        write_images(log.directory, replay(log.epoch, log.entries()))
     except Exception as error:
         report_failure(log, "projection failed", error)
 

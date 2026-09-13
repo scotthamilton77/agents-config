@@ -78,7 +78,7 @@ def test_the_human_reopens_a_decision_they_settled(
     board where no agent has proposed one this control is the only way back
     from an answer the human regrets. The whole path is exercised because that
     is where it breaks: a gesture the page builds, a kind the backend accepts
-    from the human, and the fold that returns the decision to the frontier.
+    from the human, and the replay that returns the decision to the frontier.
     """
     session = launcher(handoff=handoff(PLAN))
     session.script_codex(turn(document("Noted.")))
