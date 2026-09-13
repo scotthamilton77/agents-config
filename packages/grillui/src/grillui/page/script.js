@@ -188,8 +188,13 @@ function refuse(text) { HELDBACK = text; render(); }
 var CHANNELS = { transport: TRANSPORT_STATES[0], protocol: { map: PROTOCOL_STATES[0] } };
 // Notifications are the record of what has LANDED, observed as it lands. A
 // change still waiting is not in here — it is in the inbox alone. The list is
-// deliberately empty on a reload: a page arriving mid-session must not announce
-// a morning's worth of history as news.
+// rebuilt from the log on a reload, because it is the only surface an agent's
+// message with nothing on the board to attach it to has: a list left empty
+// there loses that message for good while the log goes on carrying it.
+//
+// Leaving it empty and calling that "not announcing a morning's work as news"
+// confuses the list with the alarms the list sets off. The alarms are what must
+// not replay, and they are suppressed where the rebuild runs.
 var NOTES = [];
 // This window's standing with the backend: which session it is talking to, and
 // whether this is the window that session answers. One main window per session,
@@ -576,9 +581,9 @@ function hydrate() {
     UI.held = loadWindow("held", {});
     UI.discussing = loadWindow("discussing", {});
     noteThreads();
-    // The log up to here is read as a lookup table, not as news: a page
-    // arriving mid-session must not announce a morning's worth of changes as
-    // if they had just happened.
+    // The log up to here is read as a lookup table and for the notification
+    // list, and not as news: a page arriving mid-session shows what the agent
+    // said, and raises nothing that says it just happened.
     return srvGet("/updates", "epoch=" + encodeURIComponent(st.epoch) + "&cursor=0").then(function (u) {
       LOG = u.entries;
       SEEN = {};
@@ -588,6 +593,27 @@ function hydrate() {
       // it. Every finished turn's own closing entry is in here too, so replaying
       // the record lands each channel exactly where the record left it.
       u.entries.forEach(track);
+      // The notification list is rebuilt by the observer live arrival runs, so
+      // a note the human saw before the reload comes back the same note rather
+      // than a second rendering of the same entry. Writing a reload-only
+      // rebuilder instead is how the two drift: one of them gets a fix and the
+      // human sees a different message depending on when they looked.
+      //
+      // What arrival does that a reload must not is suppressed here. The fresh
+      // and touched marks belong to the batch that just landed, so the rebuild
+      // runs against its own arrays and hands back the ones already standing. A
+      // bubble is a claim that something just happened, so every rebuilt note
+      // counts as bubbled already. Read-state is not suppressed and needs no
+      // handling: it is persisted, and a rebuilt note carries the id it was
+      // read under.
+      var fresh = UI.fresh, touched = UI.touched;
+      UI.fresh = [];
+      UI.touched = [];
+      NOTES = [];
+      u.entries.forEach(function (e, i) { observe(e, u.entries, i); });
+      NOTES.forEach(function (n) { UI.bubbleSeen[n.id] = true; });
+      UI.fresh = fresh;
+      UI.touched = touched;
       WIRE.cursor = u.seq;
       WIRE.hydrated = true;
       if (!UI.focus) UI.focus = (BOARD.frontier[0] || (BOARD.decisions[0] || {}).id || null);
@@ -2280,8 +2306,7 @@ function renderNotifications() {
   var h = '<div class="slide"><button class="close" data-act="closepanel">✕</button>' +
     '<h3 style="font-size:16px">Notifications</h3>' +
     '<div class="muted" style="margin-bottom:10px">What the agent said that the board has nowhere to show. Changes are not in here: the ones that landed are on the board, ' +
-    "and the ones waiting on you are in the inbox. This list starts empty on a reload: a session you come back to should not announce the morning's work as news. " +
-    "What you have read is remembered.</div>" +
+    "and the ones waiting on you are in the inbox. This list comes back when you reload, and so does what you have read.</div>" +
     '<div style="margin-bottom:12px"><button class="btn sm" data-act="markall"' + (unread ? "" : " disabled") +
     ">✓ Mark all read" + (unread ? " (" + unread + ")" : "") + "</button></div>";
   if (!NOTES.length) h += '<div class="muted">Nothing here.</div>';

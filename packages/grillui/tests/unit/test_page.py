@@ -1505,13 +1505,14 @@ def test_mark_all_read_writes_nothing_to_the_backend() -> None:
         assert "srvPost" not in body and "srvGet" not in body, f"{reader} touches the backend"
 
 
-def test_read_state_survives_a_reload_and_the_notification_list_deliberately_does_not() -> None:
-    """Two different things, and separating them is the whole design.
+def test_read_state_and_the_notification_list_both_survive_a_reload() -> None:
+    """Two different things, and both have to come back.
 
-    The list starts empty on purpose: a page arriving mid-session must not
-    announce a morning's work as news. Read-state cannot start empty, because
-    the markers it clears are not the list's -- the ✉ on a decision comes off
-    the queue in image 1, which comes back on every reload. Without persistence,
+    The list is the only surface carrying an agent's message that names no
+    decision, so a reload that left it empty would lose that message while the
+    log went on holding it. Read-state cannot start empty either, because the
+    markers it clears are not the list's -- the ✉ on a decision comes off the
+    queue in image 1, which comes back on every reload. Without persistence,
     marking everything read and reloading would restore every marker the human
     had just dealt with.
 
@@ -1532,11 +1533,37 @@ def test_read_state_survives_a_reload_and_the_notification_list_deliberately_doe
     # board is read at all -- and this is the one moment a reload has to look
     # like the session the human left rather than a new one.
     assert "loadRead();" in function_body("hydrate")
-    # The list is still built only from what arrives after this page did: the
-    # reload path reads the whole log as a lookup table and touches the
-    # notifications not at all.
-    assert "NOTES" not in function_body("hydrate"), "a reload rebuilds the list from the log"
+    # The list is rebuilt from the log, and read-state decides what of it is
+    # still unread -- which is why the rebuild runs after the read-state load.
+    hydrate = function_body("hydrate")
+    assert hydrate.index("loadRead();") < hydrate.index("NOTES = [];")
     assert source.count("NOTES.push") == 1, "notifications are written outside the observer"
+
+
+def test_a_reload_rebuilds_the_notification_list_through_the_live_observer() -> None:
+    """One observer over both paths, and arrival's transience left behind.
+
+    A reload-only rebuilder is how the two drift: one of them gets a fix, and
+    the same log entry reads as two different messages depending on when the
+    human looked. So the reload runs the observer arrival runs, over the log it
+    just read.
+
+    What the reload must not replay is what arrival does around the note. The
+    fresh and touched marks say a decision moved just now, so the rebuild runs
+    against its own arrays and puts the standing ones back. A bubble says
+    something just happened, so every rebuilt note is counted as bubbled
+    already. Read-state needs no suppression: it is persisted, and a rebuilt
+    note carries the id it was read under.
+    """
+    hydrate = function_body("hydrate")
+    assert "NOTES = [];" in hydrate, "the reload does not rebuild the notification list"
+    assert "observe(e, u.entries, i)" in hydrate, "the reload rebuilds through a second reader"
+    assert "UI.bubbleSeen[n.id] = true" in hydrate, "a reload replays the bubbles"
+    assert "var fresh = UI.fresh, touched = UI.touched;" in hydrate
+    assert "UI.fresh = fresh;" in hydrate and "UI.touched = touched;" in hydrate
+    # The note itself is built one way, so a rebuilt note is the note that
+    # arrived: same id, text, target, kind, clock and entry.
+    assert page_source().count("return { id: id, kind: kind,") == 1
 
 
 def test_every_unread_marker_is_asked_of_the_one_read_set() -> None:

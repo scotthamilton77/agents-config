@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from conftest import RENDER, decision, document, handoff, option, ruling, turn
+from conftest import BOARD_TIMEOUT, RENDER, decision, document, handoff, option, ruling, turn
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -182,3 +182,88 @@ def test_a_dismissed_change_is_not_reported_as_one_and_an_applied_change_is(
     assert page.locator("#col-d3 .rationale").count() == 0
     refused = page.locator("#col-d3").inner_text()
     assert SURVIVES_A_DISMISSAL not in refused, refused
+
+
+def open_panel(page: Page) -> list[str]:
+    """Open the notification panel and read every note it lists, in order."""
+    page.click('[data-act="notifications"]')
+    page.wait_for_selector("#overlay .inbox-item", timeout=BOARD_TIMEOUT)
+    return page.locator("#overlay .inbox-item").all_inner_texts()
+
+
+def unread_pill(page: Page) -> str:
+    """What the bell says is unread, as the shell renders it."""
+    said = page.locator('[data-act="notifications"]').get_attribute("data-unread")
+    assert said is not None
+    return said
+
+
+def test_an_untargeted_message_is_still_in_the_panel_after_a_reload(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a turn whose message names no decision, so the panel is the only
+         surface it has
+    When the human reloads the page
+    Then the panel lists exactly what it listed before -- same notes, same text,
+         same timestamps, same unread marks -- and the bell says the same number
+         as it did; and once they mark everything read, a second reload has the
+         panel listing the message as read with nothing unread.
+
+    A list built only from what arrived after this page did loses that message
+    on the first reload, while the log goes on carrying it and the bell goes on
+    counting it off the queue.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_claude(
+        turn(
+            document(
+                STORY,
+                updates=[
+                    {
+                        "kind": "revise",
+                        "target": "d2",
+                        "body": "How is the log compacted?",
+                        "why": COMPACTION,
+                    },
+                ],
+                rulings=[ruling("d2", "revise", COMPACTION)],
+            )
+        )
+    )
+    page = board(session)
+
+    page.click('#col-d1 [data-act="pick"][data-opt="a"]')
+    session.settled()
+    # The bell is the page's own word on having read the turn, so the scenario
+    # waits on it rather than on a clock.
+    page.wait_for_selector(
+        '[data-act="notifications"]:not([data-unread="0"])', timeout=BOARD_TIMEOUT
+    )
+    before = open_panel(page)
+    counted = unread_pill(page)
+    assert [one for one in before if STORY in one], before
+    assert sum(STORY in one for one in before) == 1, before
+    # The bell and the panel are counting the same things: every note here is
+    # one the board has nowhere to show, so the unread ones are the whole count.
+    assert page.locator("#overlay .inbox-item.unread").count() == int(counted), before
+
+    page.reload()
+    page.wait_for_selector(
+        f'[data-act="notifications"][data-unread="{counted}"]', timeout=BOARD_TIMEOUT
+    )
+    # Same notes, in the same order, saying the same thing at the same clock and
+    # wearing the same unread marks. A note rebuilt some other way would differ
+    # here before it differed anywhere the human could name.
+    assert open_panel(page) == before
+
+    page.click('#overlay [data-act="markall"]')
+    page.wait_for_selector('[data-act="notifications"][data-unread="0"]', timeout=BOARD_TIMEOUT)
+
+    page.reload()
+    page.wait_for_selector('[data-act="notifications"][data-unread="0"]', timeout=BOARD_TIMEOUT)
+    # Still listed, and listed as something already dealt with: the message does
+    # not leave the panel on being read, and does not come back as news.
+    after = open_panel(page)
+    assert sum(STORY in one for one in after) == 1, after
+    assert page.locator("#overlay .inbox-item.unread").count() == 0, after
