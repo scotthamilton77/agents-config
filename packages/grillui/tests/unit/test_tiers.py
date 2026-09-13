@@ -1107,8 +1107,9 @@ def test_the_grill_master_brief_reserves_an_alert_for_a_note_that_asks_for_somet
     )
     assert "what someone has to read before implementing the answer" in brief
     assert (
-        "An alert whose `text` asks for nothing is the wrong kind, whatever `blocking` says"
-        in brief
+        "An alert whose `text` asks for nothing is the wrong kind, whatever `blocking` says -- "
+        "with one exception, the second alert below that lifts a lock by saying what they "
+        "supplied" in brief
     )
     assert "where you are still asking them for something" in brief
     # The per-kind list is where the kind is picked, so the two lines there have
