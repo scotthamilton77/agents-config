@@ -1004,25 +1004,55 @@ def advise(
     log: SessionLog,
     entries: Sequence[LogEntry],
     channel: str,
+    tier: str,
     attribution: dict[str, Any],
     reads: Sequence[str] = (),
 ) -> Recommendation | None:
-    """The escalation condition this turn met, put on its attribution.
+    """What the rung this turn ran on puts on its attribution: the escalation
+    condition a first-rung turn met, or the transfer an expert turn followed.
 
-    A property of the rung rather than of the transport, which is why it is
-    here: both seats on the first rung owe the same recommendation, and one that
-    only the OpenRouter seat made would go silent the moment a channel was
-    seated elsewhere.
+    Keyed to the rung and not to the driver class, because the transports do not
+    partition the rungs. The `claude` transport seats a channel's first rung as
+    readily as it seats the expert, so a recommendation owed by a class rather
+    than by a rung would go silent the moment a channel was seated elsewhere.
+    Every first-rung seat owes the same recommendation, and no expert turn owes
+    one at all: there is no rung above it to be handed up to.
 
     `reads` is what this reply asked to read, and it is the one condition read
     off the reply rather than off the log. It is passed in rather than looked
     up, because the recommendation rides the reply's own attribution and the
     reply is not on the log yet -- an entry cannot carry a reading of itself.
     """
+    if tier == HEAVY_TIER:
+        # Whether this expert turn followed a transfer, read off the same channel
+        # mode the lane routed it by: no agent escalates itself, and an expert turn
+        # nobody moved the channel for must not be able to claim it was asked for.
+        # The source rides only where the policy moved the channel -- a human
+        # gesture writes none, so the log a `gated` session keeps is unchanged.
+        attribution[FOLLOWED_TRANSFER_KEY] = in_expert_mode(entries, channel)
+        source = transfer_source(entries, channel)
+        if source is not None:
+            attribution[TRANSFER_SOURCE_KEY] = source
+        return None
     advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel, reads)
     if advice is not None:
         attribution[RECOMMENDATION_KEY] = advice.as_payload()
     return advice
+
+
+def spend_transfer(
+    log: SessionLog, config: TierConfig, channel: str, advice: Recommendation | None
+) -> None:
+    """The move an autonomous policy buys for the condition this turn met.
+
+    Written under the hold that recorded the reply, so a human turn accepted in
+    between cannot be scheduled against a log where this channel is still on the
+    first rung. A turn that recommended nothing moves nothing, which is what
+    leaves the expert rung out of this: it is handed no recommendation to spend.
+    """
+    if advice is None or not config.autonomous or capped(log.entries(), channel, advice):
+        return
+    log.emit_status(STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel)
 
 
 def capped(entries: Sequence[LogEntry], channel: str, advice: Recommendation | None) -> bool:
@@ -1099,7 +1129,9 @@ class FastDriver:
                 self.config, self.tier, sent_bytes(system, prompt), prompt_tokens, model
             )
             attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
-            advice = advise(log, entries, channel, attribution, declared_updates(reply)[4])
+            advice = advise(
+                log, entries, channel, self.tier, attribution, declared_updates(reply)[4]
+            )
             # The reply and everything it produces land under one hold of the
             # append lock -- the same discipline the lane uses to keep a turn and
             # the word about it adjacent. Two separate appends leave a window: a
@@ -1116,11 +1148,7 @@ class FastDriver:
             # is written, and nothing else could have read the log in between.
             with log.appending():
                 spoke = record_reply(log, self.tier, channel, reply, attribution, context.mootness)
-                spend = self.config.autonomous and not capped(log.entries(), channel, advice)
-                if advice is not None and spend:
-                    log.emit_status(
-                        STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel
-                    )
+                spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, model)
 
         # A map turn is landed by the ladder, which is what buys it the retry an
@@ -1221,27 +1249,22 @@ class HeavyDriver:
                 MODEL_KEY: model,
                 EFFORT_KEY: effort,
                 **measured.recorded,
-                # Whether this heavy turn followed a transfer, read off the same
-                # channel mode the lane routed it by: no agent escalates itself, and
-                # a heavy turn nobody moved the channel for must not be able to
-                # claim it was asked for.
-                FOLLOWED_TRANSFER_KEY: in_expert_mode(entries, channel),
             }
             if chain is not None:
                 attribution[CHAIN_KEY] = chain
-            # Only where the policy moved the channel. A human gesture writes no
-            # source, so the log a `gated` session keeps is unchanged.
-            source = transfer_source(entries, channel)
-            if source is not None:
-                attribution[TRANSFER_SOURCE_KEY] = source
+            advice = advise(
+                log, entries, channel, self.tier, attribution, declared_updates(reply)[4]
+            )
             # One hold of the append lock, for the same reason the fast tier takes
             # one: a warning is about the reply immediately above it, and a turn on
             # another channel landing between the two would leave the human reading
-            # this measurement against somebody else's turn. The warning is second
-            # and conditional on the reply -- a refusal raises out of the block
-            # before anything is said about a turn that never happened.
+            # this measurement against somebody else's turn. The transfer and the
+            # warning are second and conditional on the reply -- a refusal raises
+            # out of the block before anything is said about a turn that never
+            # happened.
             with log.appending():
                 spoke = record_reply(log, self.tier, channel, reply, attribution, context.mootness)
+                spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, model)
 
         # The turn is landed inside the chain lock, because landing it is what
@@ -1362,17 +1385,15 @@ class CodexDriver:
             attribution: dict[str, Any] = {**attribution_of(self.tier, seat), **measured.recorded}
             if chain is not None:
                 attribution[CHAIN_KEY] = chain
-            advice = advise(log, entries, channel, attribution, declared_updates(reply)[4])
+            advice = advise(
+                log, entries, channel, self.tier, attribution, declared_updates(reply)[4]
+            )
             # One hold of the append lock, for the reason every other seat takes
             # one: the transfer a policy buys and the warning this turn measured are
             # about the reply immediately above them.
             with log.appending():
                 spoke = record_reply(log, self.tier, channel, reply, attribution, context.mootness)
-                spend = self.config.autonomous and not capped(log.entries(), channel, advice)
-                if advice is not None and spend:
-                    log.emit_status(
-                        STATUS_PHASE_TRANSFERRED, POLICY_MOVED + advice.condition, channel
-                    )
+                spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, seat.model)
 
         # The turn is landed inside the thread lock, because landing it is what
