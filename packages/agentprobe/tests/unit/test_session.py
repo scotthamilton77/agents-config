@@ -12,7 +12,6 @@ SYNTHETIC = Path("/probe/run-001")
 
 FIXTURES = Path(__file__).parent / "fixtures"
 POST_TRUST_SCREEN = (FIXTURES / "post-trust-screen.txt").read_text()
-LEAD_DONE_SCREEN = (FIXTURES / "lead-done-screen.txt").read_text()
 
 TRUST_SCREEN = """
  Do you trust the files in this folder?
@@ -92,24 +91,28 @@ def test_prompt_echo_is_absent_when_the_keystrokes_were_dropped() -> None:
     assert not session.prompt_echoed(MAIN_SCREEN, Path("/probe/run-001/prompt.md"))
 
 
-def test_the_run_completes_on_a_quiet_log_and_the_leads_done_word() -> None:
-    assert session.finish_reason(30.0, "the lead says DONE", 200.0, 25.0) == session.COMPLETED
-    assert session.finish_reason(10.0, "the lead says DONE", 200.0, 25.0) is None
-    assert session.finish_reason(30.0, "still working", 200.0, 25.0) is None
+def test_the_run_completes_on_a_quiet_log_and_the_leads_sentinel(tmp_path: Path) -> None:
+    (tmp_path / session.SENTINEL).write_text("done")
+    assert session.finish_reason(30.0, tmp_path, 200.0, 25.0) == session.COMPLETED
+    # The lead may write the sentinel and then still be answering a message.
+    assert session.finish_reason(10.0, tmp_path, 200.0, 25.0) is None
 
 
-def test_a_lead_that_never_says_done_ends_the_run_without_completing_it() -> None:
-    assert session.finish_reason(80.0, "still working", 200.0, 25.0) == "no-terminal-state"
+def test_a_lead_that_never_wrote_the_sentinel_did_not_complete_the_run(tmp_path: Path) -> None:
+    assert session.finish_reason(30.0, tmp_path, 200.0, 25.0) is None
+    assert session.finish_reason(80.0, tmp_path, 200.0, 25.0) == "no-terminal-state"
     # Not before the prompt has had time to produce anything, though.
-    assert session.finish_reason(80.0, "still working", 30.0, 25.0) is None
+    assert session.finish_reason(80.0, tmp_path, 30.0, 25.0) is None
 
 
-def test_the_leads_done_word_is_found_under_the_terminal_chrome() -> None:
-    # Captured from a real session at the moment the driver decided. The lead printed DONE
-    # and then the input box and the status line redrew, which is several hundred
-    # characters of border. A window that counts those characters never sees the word.
-    assert "DONE" in LEAD_DONE_SCREEN
-    assert session.finish_reason(40.0, LEAD_DONE_SCREEN, 200.0, 25.0) == session.COMPLETED
+def test_the_recorded_failure_has_no_sentinel_and_stays_invalid() -> None:
+    assert not (FIXTURES / "invalid-run" / session.SENTINEL).exists()
+    assert session.finish_reason(80.0, FIXTURES / "invalid-run", 200.0, 25.0) == "no-terminal-state"
+
+
+def test_the_gate_directory_is_named_after_the_working_directory(tmp_path: Path) -> None:
+    path = session.gate_decisions_path(Path("/private/probe/run-001"), "c2225961-c239-4ddc", root=tmp_path)
+    assert path == tmp_path / "-private-probe-run-001" / "c2225961-c239-4ddc" / "decisions.jsonl"
 
 
 def test_chrome_is_stripped_but_the_prompt_glyph_survives() -> None:

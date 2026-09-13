@@ -8,10 +8,11 @@ should show a falling hit rate. A Claude Code release that changes the underlyin
 behaviour should show a step change, in either direction, with no mitigation having
 moved. Neither is visible without repeated, identically-scripted runs.
 
-A run only counts once its scenario actually ran. A session whose driver never managed to
-type the instruction, or whose lead never reached its terminal state, is reported as
-invalid and excluded from every rate. Counting such a run would read as a release having
-fixed every behaviour at once.
+A run only counts once its scenario actually ran. Every scenario's lead ends by writing a
+sentinel file into the run directory, after everything else it was asked to do. A session
+whose driver never managed to type the instruction, or whose lead never wrote that file,
+is reported as invalid and excluded from every rate. Counting such a run would read as a
+release having fixed every behaviour at once.
 
 ## A run spends real agent turns
 
@@ -43,6 +44,7 @@ Each run gets its own directory under `--out`, holding:
 | `tty.log` | the raw terminal stream, escape sequences and all |
 | `claude.err` | the driver's account of the run: what it saw, what it typed, why it stopped |
 | `meta.json` | the Claude Code version, the outcome, the start and end times, the scenario and the session id |
+| `done` | the sentinel the lead writes as its last act; its absence is what makes a run invalid |
 
 ## Reading the report
 

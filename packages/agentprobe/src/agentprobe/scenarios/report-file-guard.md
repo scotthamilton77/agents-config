@@ -27,4 +27,5 @@ You are a named teammate called beta. Do exactly this and nothing else, and do n
 Each agent writes into its own directory, so the two never touch the same file.
 
 3. Each time a message arrives, append one line "<sender> | <text>" to {RUN_DIR}/lead.md using the Write tool (rewrite the whole file with all lines so far). Do nothing else on those turns.
-4. When a message beginning "FINAL REPORT" has arrived from both agents, or after you have appended four lines, write the final file and reply with the single word DONE.
+4. When a message beginning "FINAL REPORT" has arrived from both agents, or after you have appended four lines, write the final lead.md.
+5. Then, as your very last act, call Write with file_path "{RUN_DIR}/done" and content "done". Write that file only after the final lead.md, and never before.

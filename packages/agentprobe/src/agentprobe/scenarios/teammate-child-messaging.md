@@ -14,4 +14,5 @@ You are a subagent spawned by a teammate named alpha. Do exactly this and nothin
 6. If you are later resumed with a message from anyone, call SendMessage with to "main" and message "RESUMED: <the message you received>", then end your turn again.
 ---
 2. Then wait. Messages will arrive as new turns. Each time one arrives, append one line "<sender> | <text>" to {RUN_DIR}/lead.md using the Write tool (rewrite the whole file with all lines so far). Do nothing else on those turns.
-3. When a message beginning "FINAL REPORT" has arrived from alpha and at least one line contains "RESUMED", or after you have appended five lines, write the final file and reply with the single word DONE.
+3. When a message beginning "FINAL REPORT" has arrived from alpha and at least one line contains "RESUMED", or after you have appended five lines, write the final lead.md.
+4. Then, as your very last act, call Write with file_path "{RUN_DIR}/done" and content "done". Write that file only after the final lead.md, and never before.

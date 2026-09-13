@@ -48,9 +48,13 @@ session.py — the only module that opens a terminal
   hook command, by path, once per event. It imports nothing from the rest of the package
   for that reason, and it must never raise into the session it is observing.
 - **`session.py` splits its decisions from its terminal.** Recognising the trust dialog,
-  knowing the input line is ready, confirming the typed instruction echoed back, and
-  deciding the run is over are all pure functions tested on captured strings. Only
-  `run_session` touches a pseudo-terminal, and it is excluded from coverage.
+  knowing the input line is ready, and confirming the typed instruction echoed back are
+  pure functions tested on captured strings. Only `run_session` touches a
+  pseudo-terminal, and it is excluded from coverage.
+- **Whether the scenario finished is not read off the screen.** The lead writes a sentinel
+  file as its last act, and the run completes when that file exists and the event log has
+  gone quiet. A screen-scraped word cannot tell a lead that finished from one that
+  paraphrased its instruction, and the screen is redrawn over it either way.
 - **A detector returns a hit and its evidence, never a verdict.** Adding one means adding
   a pure function of a `Run` and a test pinning it against a recording.
 - **Not every behaviour is visible in the event log.** A Write refused by the report-file

@@ -35,7 +35,13 @@ def test_unreadable_lines_are_skipped_rather_than_failing_the_read() -> None:
 
 
 def test_a_directory_of_runs_is_read_with_one_argument() -> None:
-    assert [run.name for run in load_runs([FIXTURES])] == ["guard-run", "invalid-run", "run2", "run3"]
+    assert [run.name for run in load_runs([FIXTURES])] == [
+        "guard-run",
+        "invalid-run",
+        "packaged-run",
+        "run2",
+        "run3",
+    ]
 
 
 def test_the_two_recordings_are_valid_and_the_failed_run_is_not() -> None:
@@ -46,6 +52,18 @@ def test_the_two_recordings_are_valid_and_the_failed_run_is_not() -> None:
     assert not invalid.valid
     assert invalid.outcome == "instruction-never-typed"
     assert "the instruction was never typed" in invalid.invalid_reason
+
+
+def test_the_package_recorded_a_complete_run_of_its_own(packaged_run: Run) -> None:
+    from agentprobe import detect, session
+
+    assert packaged_run.valid
+    assert (packaged_run.directory / session.SENTINEL).exists()
+    assert packaged_run.team_members == ["team-lead", "alpha"]
+    # The gate's own record was collected into the run directory, which is the only place
+    # the report looks for it.
+    assert packaged_run.gate_decisions
+    assert detect.gate_phantom_blocks(packaged_run).hit
 
 
 def test_a_run_directory_with_no_record_of_its_outcome_does_not_count(tmp_path: Path) -> None:
@@ -60,17 +78,18 @@ def test_the_table_reports_a_rate_per_behaviour_and_the_versions_observed() -> N
     runs = load_runs([FIXTURES])
     rows = report.aggregate(runs)
     by_name = {row.behaviour: row for row in rows}
-    # Four run directories were read and one of them measured nothing, so every
-    # denominator is three. A failed run counted as a run would read as a release fixing
+    # Five run directories were read and one of them measured nothing, so every
+    # denominator is four. A failed run counted as a run would read as a release fixing
     # every behaviour at once.
-    assert by_name["phantom-idle"].hits == 2
-    assert by_name["phantom-idle"].runs == 3
+    assert by_name["phantom-idle"].hits == 3
+    assert by_name["phantom-idle"].runs == 4
     assert by_name["phantom-idle"].versions == ["2.1.270 (Claude Code)"]
-    assert "idle[24]" in by_name["phantom-idle"].note
+    # The note quotes the first run that hit, which is the earliest one by name.
+    assert by_name["phantom-idle"].note.startswith("packaged-run: idle[13] alpha ")
     assert by_name["report-file-guard"].hits == 1
     rendered = report.render(rows)
     assert "phantom-idle" in rendered
-    assert "2/3" in rendered
+    assert "3/4" in rendered
     assert "2.1.270 (Claude Code)" in rendered
 
 
@@ -119,14 +138,14 @@ def test_report_measures_and_never_fails(capsys) -> None:  # type: ignore[no-unt
     assert printed[0].split() == ["behaviour", "hits/runs", "versions"]
     rates = {line.split()[0]: line.split()[1] for line in printed[2:10]}
     assert rates == {
-        "phantom-idle": "2/3",
-        "team-lead-reachable": "2/3",
-        "main-send-lacks-sender": "3/3",
-        "missing-posttooluse": "0/3",
-        "child-to-parent-by-name": "2/3",
-        "duplicate-arrival": "0/3",
-        "gate-phantom-blocks": "2/3",
-        "report-file-guard": "1/3",
+        "phantom-idle": "3/4",
+        "team-lead-reachable": "3/4",
+        "main-send-lacks-sender": "4/4",
+        "missing-posttooluse": "0/4",
+        "child-to-parent-by-name": "3/4",
+        "duplicate-arrival": "0/4",
+        "gate-phantom-blocks": "3/4",
+        "report-file-guard": "1/4",
     }
     assert "invalid, excluded from every rate above (1):" in printed
     assert any("invalid-run: instruction-never-typed" in line for line in printed)
@@ -146,6 +165,25 @@ def test_a_dry_run_prints_the_command_and_launches_nothing(tmp_path: Path, capsy
     run_dir = tmp_path / "teammate-child-messaging-001"
     assert (run_dir / "prompt.md").exists()
     assert not (run_dir / "events.jsonl").exists()
+
+
+def test_the_gates_record_is_collected_into_the_run_directory(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from agentprobe import session
+
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    gate_root = tmp_path / "gate"
+    monkeypatch.setattr(session, "GATE_ROOT", gate_root)
+    written = session.gate_decisions_path(run_dir.resolve(), "the-session", root=gate_root)
+    written.parent.mkdir(parents=True)
+    written.write_text('{"decision": "block"}\n')
+    cli._collect_gate_decisions(run_dir, "the-session")
+    assert (run_dir / "decisions.jsonl").read_text() == '{"decision": "block"}\n'
+
+
+def test_a_run_with_no_session_id_collects_nothing(tmp_path: Path) -> None:
+    cli._collect_gate_decisions(tmp_path, "")
+    assert not (tmp_path / "decisions.jsonl").exists()
 
 
 def test_each_run_gets_its_own_numbered_directory(tmp_path: Path) -> None:

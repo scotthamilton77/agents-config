@@ -24,6 +24,12 @@ def guard_run() -> Run:
 
 
 @pytest.fixture
+def packaged_run() -> Run:
+    """The first recording the package made of itself driving a session end to end."""
+    return load_run(FIXTURES / "packaged-run")
+
+
+@pytest.fixture
 def run3() -> Run:
     """A second recording of the same scenario, for the rate a report prints across runs."""
     return load_run(FIXTURES / "run3")

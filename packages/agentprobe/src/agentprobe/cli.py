@@ -43,9 +43,23 @@ def run_command(args: argparse.Namespace) -> int:
             "started_at": started,
             "ended_at": _timestamp(),
         }
+        _collect_gate_decisions(run_dir, str(meta["session_id"]))
         (run_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
         print(f"{run_dir}: {outcome}, session {meta['session_id'] or 'not recorded'}")
     return 0
+
+
+def _collect_gate_decisions(run_dir: Path, session_id: str) -> None:
+    """Copy the report gate's record of this session into the run directory.
+
+    The gate writes outside the run directory, and the report reads nothing else, so a run
+    that does not collect this loses the evidence one detector depends on.
+    """
+    if not session_id:
+        return
+    source = session.gate_decisions_path(run_dir.resolve(), session_id)
+    if source.exists():
+        (run_dir / "decisions.jsonl").write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
 
 def report_command(args: argparse.Namespace) -> int:

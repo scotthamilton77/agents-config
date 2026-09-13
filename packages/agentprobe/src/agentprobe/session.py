@@ -22,9 +22,9 @@ from typing import Any
 ANSI = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b[=>]")
 
 # Box borders, banner blocks and spinner glyphs. A single input box draws several hundred
-# of these characters, which is enough to push the lead's last words out of any window
-# short enough to be specific. The prompt glyph is deliberately absent: the readiness
-# check looks for it.
+# of these characters, and they would otherwise crowd out the text the driver is actually
+# matching against. The prompt glyph is deliberately absent: the readiness check looks for
+# it.
 CHROME = re.compile(r"[─│╭╮╰╯┌┐└┘━┃▌▐█▀▄▁░▒▓⏵⏺✳✽✻⎿·•]+")
 
 SCENARIOS_DIR = Path(__file__).parent / "scenarios"
@@ -47,6 +47,11 @@ DEFAULT_MAX_SECONDS = 600
 # happen, and counting it as a run where no behaviour appeared would read as a release
 # having fixed something.
 COMPLETED = "completed"
+
+# The file a scenario's lead writes as its last act. Reading the screen for a word the
+# lead was told to print cannot distinguish a lead that finished from one that paraphrased
+# the instruction, and the screen is redrawn over it in either case.
+SENTINEL = "done"
 
 HOOK_EVENTS = (
     "SessionStart",
@@ -155,26 +160,21 @@ def prompt_echoed(tail: str, prompt_path: Path) -> bool:
 
 
 def finish_reason(
-    event_log_age: float, tail: str, seconds_since_prompt: float, quiet_seconds: float
+    event_log_age: float, run_dir: Path, seconds_since_prompt: float, quiet_seconds: float
 ) -> str | None:
     """How the scenario ended, or None while it is still running.
 
-    The normal ending is a quiet event log plus the lead printing its done word. The
-    fallback covers a lead that stopped without saying so: a log quiet for three times as
-    long, well after the prompt was sent. Those two are not the same outcome. A lead that
-    never reached its terminal state did not finish the scenario.
+    A run completes when the lead has written its sentinel file and the event log has gone
+    quiet. The fallback covers a lead that stopped without writing it: a log quiet for
+    three times as long, well after the prompt was sent. Those two are not the same
+    outcome. A lead that never reached its terminal state did not finish the scenario.
     """
-    if event_log_age > quiet_seconds and "done" in _squashed(tail)[-DONE_WINDOW_CHARS:]:
+    if event_log_age > quiet_seconds and (run_dir / SENTINEL).exists():
         return COMPLETED
     if event_log_age > quiet_seconds * 3 and seconds_since_prompt > 120:
         return "no-terminal-state"
     return None
 
-
-# How much of the end of the screen the lead's done word has to appear in. Wide enough to
-# survive the status line that follows it, narrow enough not to match the chatter of a
-# subagent that finished minutes earlier.
-DONE_WINDOW_CHARS = 900
 
 # Two tries at typing, because the first can be swallowed by a screen still being drawn.
 ECHO_ATTEMPTS = 2
@@ -202,6 +202,22 @@ def type_instruction(
             write(b"\r")
             return True
     return False
+
+
+# Where the teammate report gate keeps its own record. A run has to collect this while it
+# is still there, because the report reads a run directory and nothing else.
+GATE_ROOT = Path("/tmp/claude/teammate-report-gate")  # noqa: S108
+
+
+def gate_decisions_path(cwd: Path, session_id: str, root: Path | None = None) -> Path:
+    """Return where the report gate wrote its decisions for a session in this directory.
+
+    The gate names its directory after the working directory, with every character that is
+    not a letter or a digit replaced by a dash. Pass a resolved path: on macOS the run
+    directory's parent is usually a symlink, and the gate saw the resolved side of it.
+    """
+    slug = re.sub(r"[^A-Za-z0-9]", "-", str(cwd))
+    return (root if root is not None else GATE_ROOT) / slug / session_id / "decisions.jsonl"
 
 
 def claude_version() -> str:
@@ -387,7 +403,7 @@ def run_session(  # pragma: no cover - drives a real terminal; the decisions it 
                 continue
             if launch.events_path.exists():
                 age = time.time() - launch.events_path.stat().st_mtime
-                reason = finish_reason(age, tail, time.time() - sent_at, quiet_seconds)
+                reason = finish_reason(age, launch.run_dir, time.time() - sent_at, quiet_seconds)
                 if reason is not None:
                     note(f"event log quiet for {age:.0f}s; ending the session as {reason}")
                     outcome = reason
