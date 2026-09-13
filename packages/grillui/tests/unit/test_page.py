@@ -1199,6 +1199,35 @@ def test_a_decisions_options_are_labelled_by_position() -> None:
     assert "optionButton(d, o, i + 1," in controls
 
 
+def test_a_settled_decision_marks_the_option_the_human_chose() -> None:
+    """The mark goes on the option the answer names, and the recommendation's
+    fill belongs to a decision still being asked.
+
+    A row that went on filling `options[0]` after the human answered would show
+    option a as the standing answer while the answer line above it says option
+    b. That is the one reading of the board the human has nothing else on the
+    page to check against, so it is the one the row must not offer.
+    """
+    dress = balanced_body("optionDress")
+    assert 'if (d.status === "settled") {' in dress, "settled is read off the status alone"
+    assert "var taken = d.answer && d.answer.option === o.id;" in dress
+    assert 'taken ? { cls: " chosen", lead: "\u2713 " }' in dress
+    assert 'recommended ? { cls: " primary", lead: "\u27a1\ufe0f " }' in dress
+    # Twice: a settled decision answered in free text names no option, so it
+    # marks nothing -- and it offers no recommendation either, because the
+    # question it recommended an answer to has been answered.
+    assert dress.count('{ cls: "", lead: "" }') == 2, dress
+    controls = function_body("answerControls")
+    assert "optionDress(d, d.options[0], true)" in controls
+    assert "optionDress(d, o, false)" in controls
+    assert '"btn wide" + rec.cls' in controls, "the recommendation dresses itself"
+    assert '"btn wide sm" + dress.cls' in controls
+    assert ".btn.chosen {" in page_source(), "the mark has no styling"
+    assert '(d.status === "settled" ? "Options" : "Recommended answer")' in controls, (
+        "a settled row is still captioned as the recommendation"
+    )
+
+
 def test_an_option_and_a_note_are_one_answer_carrying_both(client: TestClient, log: Any) -> None:
     """Picking b and saying why is one gesture, and both halves survive.
 

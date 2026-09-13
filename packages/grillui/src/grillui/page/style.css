@@ -97,6 +97,14 @@
      already filled in the same colour. */
   .btn.armed { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--accent); }
 
+  /* The option the human actually took, in the settled palette the rest of the
+     board says "settled" in. A tint rather than the recommendation's fill: the
+     fill is the page asking for an answer, and a taken option is the answer.
+     The ring an armed option wears sits outside this tint and stays legible on
+     it. */
+  .btn.chosen { background: var(--settled-bg); border-color: var(--settled-line);
+                color: var(--settled-ink); font-weight: 600; }
+
   /* The option's label is the handle the human, the free text and the threads
      all refer to it by, so it is on the button rather than in a tooltip. */
   .olab { display: inline-block; min-width: 15px; font: 700 11px ui-monospace, Menlo, monospace;
