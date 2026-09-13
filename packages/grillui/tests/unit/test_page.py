@@ -3048,7 +3048,9 @@ def test_taking_an_offer_appends_nothing_and_writes_after_the_humans_own_words()
     assert 'UI.drafts[id] = draft ? draft + "\\n\\n" + offer.text : offer.text;' in arming, (
         "the offer is not written after what the human already had"
     )
-    assert "UI.armed[id] = { thread: tid, option: offer.option || null, draft: was };" in arming
+    assert (
+        "UI.armed[id] = { thread: tid, option: offer.option || null, text: offer.text };" in arming
+    )
     # The live offer and no other, even from a window drawn before the last turn
     # arrived: a control the human can still see is not a proposal still on offer.
     assert "t.turns[t.turns.length - 1]" in arming
@@ -3091,7 +3093,7 @@ def test_a_decision_the_board_will_not_take_an_answer_on_names_what_holds_it() -
     assert 'if (d.status === "settled") return null;' in block
     control = balanced_body("armControl")
     assert "Cannot take this — " in control
-    assert "replacing your answer when you send it" in control
+    assert "it replaces your answer when you send it" in control
     assert '(block ? " disabled" : "")' in control, "a blocked control is still pressable"
     # Only the armed decision reopens, and only while the arming stands.
     assert 'answerable(id) || !!(UI.armed[id] && d && d.status === "settled")' in balanced_body(
@@ -3126,8 +3128,11 @@ def test_a_taken_offer_says_so_in_the_thread_instead_of_offering_itself_again() 
     assert "Armed on " in control
     assert "you send it from there" in control
     # The label says what the press does, which is fill a box rather than answer.
-    assert "answer box for you to send" in control
-    assert "replacing your answer when you send it" in control
+    # "Take this answer" is what it must not lead with: the press takes nothing.
+    assert "Put this answer in " in control
+    assert "box — you send it from there" in control
+    assert "it replaces your answer when you send it" in control
+    assert "Take this answer" not in control, "the label still promises to take the answer"
 
 
 def test_the_arm_is_dropped_by_every_way_its_thread_ends() -> None:
@@ -3135,19 +3140,35 @@ def test_the_arm_is_dropped_by_every_way_its_thread_ends() -> None:
 
     A thread that is folded, parked or closed is over, and an arm left behind by
     one rings an option and holds a filled box on the strength of it -- which
-    the human reads as an answer they have already given. What goes back in the
-    box is what they had written before the offer went in, so a decision they
-    were half-answering is not emptied by an agent's sentence arriving and
-    leaving.
+    the human reads as an answer they have already given.
+
+    What comes out of the box is the sentence the arm put in it, and nothing
+    else. A restore that put back a snapshot of the draft instead would delete
+    every word the human wrote after the arming, which is the case a snapshot
+    cannot tell apart from the one it was written for.
     """
     arming = balanced_body("armAnswer")
-    assert 'var was = UI.drafts[id] || "";' in arming, "the arm remembers no draft to give back"
+    assert "UI.armed[id] = { thread: tid, option: offer.option || null, text: offer.text };" in (
+        arming
+    ), "the arm remembers something other than the words it put in the box"
+    assert "var draft = stripArm(id, UI.armed[id]).trim();" in arming, (
+        "a second arming stacks a second agent sentence in the box"
+    )
     dropping = balanced_body("disarmFrom")
     assert "UI.armed[id].thread !== tid" in dropping, (
         "an arm from another thread is dropped with this one's"
     )
-    assert 'UI.drafts[id] = UI.armed[id].draft || "";' in dropping
+    assert "UI.drafts[id] = stripArm(id, UI.armed[id]);" in dropping
     assert "delete UI.armed[id];" in dropping
+    # Both paths take the words out through the one stripper, and it takes out
+    # the arm's own sentence rather than restoring a remembered draft over
+    # whatever the human wrote after it.
+    stripping = balanced_body("stripArm")
+    assert 'draft.replace("\\n\\n" + arm.text, "")' in stripping
+    assert 'draft.replace(arm.text + "\\n\\n", "")' in stripping
+    assert 'return draft.replace(arm.text, "");' in stripping, (
+        "a draft the human rewrote past the offer is not left alone"
+    )
     for gesture in ("foldThread", "parkThread", "closeThread"):
         assert "disarmFrom(tid);" in balanced_body(gesture), f"{gesture} leaves the arm standing"
 

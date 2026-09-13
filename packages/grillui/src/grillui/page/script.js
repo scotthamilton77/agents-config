@@ -1198,6 +1198,24 @@ function armBlock(id) {
   if (!answerable(id)) return "it is waiting on " + waitingOn(id).list.join(", ");
   return null;
 }
+// The draft with one arm's words taken back out of it: the sentence arming put
+// there and the blank line it put beside it, and nothing else. Everything the
+// human typed around it stays, because an arm is the agent's sentence and the
+// agent's sentence is all the page has any standing to remove.
+//
+// A draft the human has since rewritten past the point where those words appear
+// has nothing to strip and comes back untouched. That is the whole rule for the
+// case: the alternative is guessing at which of their edits was the offer, and
+// a guess here deletes an answer they wrote themselves.
+function stripArm(id, arm) {
+  var draft = UI.drafts[id] || "";
+  if (!arm || !arm.text) return draft;
+  // Either side of the joint, because which side the blank line sits on depends
+  // on whether the box had anything in it when the offer went in.
+  if (draft.indexOf("\n\n" + arm.text) >= 0) return draft.replace("\n\n" + arm.text, "");
+  if (draft.indexOf(arm.text + "\n\n") >= 0) return draft.replace(arm.text + "\n\n", "");
+  return draft.replace(arm.text, "");
+}
 // Taking a proposal fills the decision's own answer controls and does nothing
 // else. The text goes in after whatever the human has already written rather
 // than over it -- no draft of theirs is discarded by an agent's -- the option
@@ -1212,16 +1230,20 @@ function armAnswer(tid, id) {
   // window drawn before the last turn arrived may still be showing its control.
   var offer = (t.turns[t.turns.length - 1] || {}).proposal;
   if (!offer || offer.decision !== id || t.state !== "open") return;
-  var was = UI.drafts[id] || "";
-  var draft = was.trim();
+  // One armed offer in the box at a time: whatever is armed there now comes out
+  // before this one goes in. Two agents' sentences stacked in a box the human
+  // answers from is an answer nobody wrote, and taking the same offer twice
+  // leaves the box exactly as one taking left it.
+  var draft = stripArm(id, UI.armed[id]).trim();
   UI.drafts[id] = draft ? draft + "\n\n" + offer.text : offer.text;
   // Re-keyed rather than overwritten, so this map reads newest-last: which of
   // several armed options is the one in hand is a question about recency.
   delete UI.armed[id];
-  // What the box held before the offer went into it, so the thread that ends
-  // can hand it back. An arm that remembered nothing could only clear the box,
-  // which throws away the half-written answer the human had in there.
-  UI.armed[id] = { thread: tid, option: offer.option || null, draft: was };
+  // The words this arm put in the box, which is what taking them back out
+  // means. A snapshot of the draft as it stood would restore that snapshot over
+  // whatever the human wrote afterwards, so the arm remembers its own sentence
+  // and never theirs.
+  UI.armed[id] = { thread: tid, option: offer.option || null, text: offer.text };
   // The decision the human is about to answer, in view and open -- a settled one
   // is collapsed, and arming it out of sight would fill a box nobody is looking at.
   UI.panel = null;
@@ -1303,8 +1325,8 @@ function settledFocus(id) {
 }
 // An arm is one thread's offer sitting in a decision's answer box, and it lives
 // exactly as long as the thread it came from. Ending that thread -- folding,
-// parking or closing it -- takes the offer out again and hands the box back the
-// way the human left it. An arm that outlived its thread would leave an option
+// parking or closing it -- takes those words back out of the box and leaves
+// everything the human wrote around them. An arm that outlived its thread would leave an option
 // ringed and a box filled by a conversation that is over, which the human reads
 // as an answer they have already given.
 //
@@ -1314,7 +1336,7 @@ function settledFocus(id) {
 function disarmFrom(tid) {
   Object.keys(UI.armed).forEach(function (id) {
     if (UI.armed[id].thread !== tid) return;
-    UI.drafts[id] = UI.armed[id].draft || "";
+    UI.drafts[id] = stripArm(id, UI.armed[id]);
     delete UI.armed[id];
   });
 }
@@ -2026,9 +2048,9 @@ function armControl(t, offer) {
   }
   var label = block ? "Cannot take this — " + offer.decision + " " + block
     : d && d.status === "settled"
-      ? "Take this answer — puts it in " + offer.decision +
-        "'s answer box, replacing your answer when you send it"
-      : "Take this answer — puts it in " + offer.decision + "'s answer box for you to send";
+      ? "Put this answer in " + offer.decision +
+        "'s box — it replaces your answer when you send it"
+      : "Put this answer in " + offer.decision + "'s box — you send it from there";
   return '<div style="margin-top:7px"><button class="btn sm' + (block ? "" : " primary") +
     '" data-act="arm" data-tid="' + esc(t.id) + '" data-id="' + esc(offer.decision) + '"' +
     (block ? " disabled" : "") + ">" + esc(label) + "</button></div>";

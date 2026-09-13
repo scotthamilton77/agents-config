@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from conftest import RENDER, decision, document, handoff, turn
+from conftest import BOARD_TIMEOUT, RENDER, decision, document, handoff, turn
 
 from grillui.tiers import BOARD_LEGEND
 
@@ -257,17 +257,21 @@ def test_a_parked_thread_is_picked_back_up_and_its_seat_is_told_what_it_missed(
 
 # A thread turn that offers an answer to the decision the thread is about, which
 # is the only shape the board takes an offer in.
+OFFER_TEXT = "Keep a session for thirty days, then archive it."
 OFFERED = json.dumps(
     {
         "text": "Then thirty days is what it turns on.",
         "proposed_answer": {
             "decision": "d1",
             "option": "a",
-            "text": "Keep a session for thirty days, then archive it.",
+            "text": OFFER_TEXT,
             "because": "recovery never reaches further back than that",
         },
     }
 )
+
+# What the human writes into the decision's box after taking the offer.
+MINE = "Thirty is fine, but say what archiving costs."
 
 
 def test_taking_an_offer_shows_in_the_thread_and_the_fold_takes_it_back(
@@ -275,16 +279,17 @@ def test_taking_an_offer_shows_in_the_thread_and_the_fold_takes_it_back(
 ) -> None:
     """
     Given a thread on a decision whose seat has offered an answer
-    When the human takes that offer, and then folds the thread
+    When the human takes that offer, writes more of their own in the box, and
+         then folds the thread
     Then the offer reads as armed with no control left to press, and folding
-         takes the arm with it: the option carries no mark and the decision's
-         box is empty again.
+         takes the offer's words back out of the box while leaving the words
+         the human wrote around them, with the option no longer marked.
 
     Taking an offer sends nothing -- it fills the decision's box for the human
     to send from there -- so the thread saying so is the only evidence the press
-    landed. And the arm belongs to the conversation that made it: a folded
-    thread that left one behind would hold a ringed option and a filled box on
-    the strength of a conversation that is over.
+    landed. The arm belongs to the conversation that made it, and what a fold
+    removes is that conversation's sentence: a fold that restored the box as it
+    stood before the arming would throw away everything written since.
     """
     session = launcher(handoff=handoff(PLAN))
     session.stub.script(OFFERED)
@@ -297,6 +302,10 @@ def test_taking_an_offer_shows_in_the_thread_and_the_fold_takes_it_back(
     session.settled()
     channel = thread_id(session)
 
+    # The seat's turn reaches the page on its own poll, so the control is waited
+    # for rather than assumed: the board settling is the backend's word and not
+    # the browser's.
+    page.wait_for_selector('[data-act="arm"]', timeout=BOARD_TIMEOUT)
     # Nothing goes on the wire, so there is no log move to wait on here.
     page.click('[data-act="arm"]')
     page.wait_for_timeout(RENDER)
@@ -304,19 +313,26 @@ def test_taking_an_offer_shows_in_the_thread_and_the_fold_takes_it_back(
     # Arming closes the slide-out onto the decision it filled, so the thread is
     # opened again to read what the offer says now.
     page.click('[data-act="threads"][data-id="d1"]')
-    page.wait_for_timeout(400)
+    page.wait_for_selector('[data-armed="d1"]', timeout=BOARD_TIMEOUT)
     assert page.locator('[data-act="arm"]').count() == 0, "the control is still on offer"
     armed = page.locator('[data-armed="d1"]')
-    assert armed.count() == 1, page.locator(".offer").inner_text()
     assert "send it from there" in armed.inner_text(), armed.inner_text()
 
     marked = page.locator('#col-d1 [data-act="pick"][data-opt="a"]')
     assert "armed" in (marked.get_attribute("class") or ""), marked.get_attribute("class")
-    assert page.input_value("#ft-d1").strip(), "the offer never reached the decision's box"
+    filled = page.input_value("#ft-d1")
+    assert OFFER_TEXT in filled, filled
+
+    # What the human writes after taking the offer is theirs, and the fold has
+    # no business with it.
+    page.fill("#ft-d1", filled + "\n\n" + MINE)
+    page.wait_for_timeout(400)
 
     page.click(f'[data-act="fold"][data-tid="{channel}"]')
     session.settled()
     page.wait_for_timeout(RENDER)
 
     assert "armed" not in (marked.get_attribute("class") or ""), marked.get_attribute("class")
-    assert page.input_value("#ft-d1") == "", page.input_value("#ft-d1")
+    left = page.input_value("#ft-d1")
+    assert OFFER_TEXT not in left, left
+    assert left.strip() == MINE, left
