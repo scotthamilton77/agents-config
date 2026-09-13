@@ -1457,8 +1457,9 @@ def read_resume(directory: Path, channel: str, file: str = RESUME_FILE) -> str |
 # processes talking over one chain, and this file's consistency must not rest on
 # a guarantee made for something else.
 #
-# ponytail: one lock for the process, which serves one session directory;
-# per-directory locks if a process ever serves several.
+# The ceiling is one lock for the whole process, which is enough because a
+# process serves one session directory. Give each directory its own lock if a
+# process ever comes to serve several.
 _REWRITE = threading.Lock()
 
 

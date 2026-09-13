@@ -114,10 +114,10 @@ ASKED_TO_READ = "I asked to read, having no way to read it from this seat: "
 DEPENDENTS_THRESHOLD = 2
 DECISIONS_THRESHOLD = 3
 
-# ponytail: the conditions are read lexically off the turn text. The ceiling is
-# phrasing outside these markers, which reads as "no recommendation" -- the safe
-# direction, since the human still has the control. Upgrade path if real
-# sessions show misses: a structured field the page sets when the human presses
+# The conditions are read lexically off the turn text. The ceiling is phrasing
+# outside these markers, which reads as "no recommendation" -- the safe
+# direction, since the human still holds the control. If real sessions show
+# misses, the upgrade is a structured field the page sets when the human presses
 # the commitment affordance, evaluated here beside the text.
 COMMITMENT_MARKERS = (
     "just decide",

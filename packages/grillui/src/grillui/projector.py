@@ -444,8 +444,8 @@ def catch_up(epoch: str, entries: Sequence[LogEntry], channel: str) -> list[Catc
     decision, and each names the sequence, kind and rationale the log carries
     at that point. Nothing here is composed.
 
-    ponytail: one fold per interval entry, which is O(interval) folds over a log
-    bounded by one grilling and an interval bounded by two human gestures.
+    The ceiling is one fold per interval entry, which is O(interval) folds over
+    a log bounded by one grilling and an interval bounded by two human gestures.
     """
     interval = _set_aside_interval(entries, channel)
     if interval is None:
