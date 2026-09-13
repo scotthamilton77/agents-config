@@ -30,6 +30,16 @@ if TYPE_CHECKING:
 
 PLAN = [decision("d1", "Which storage?"), decision("d2", "How is it compacted?")]
 ONE = [decision("d1", "Which storage?")]
+# A third question, so the board is still unfinished when the second write goes
+# out: the guard then has two reasons available and has to pick the turn.
+THREE = [*PLAN, decision("d3", "What is retained?")]
+
+# One change for the human to refuse later. Refusing it is a write on the map
+# channel that no agent answers, which is the whole point of using it: it moves
+# the channel model without announcing a turn behind it.
+PROPOSES = document(
+    "That one is moot.", updates=[{"kind": "invalidate", "target": "d3", "why": "moot"}]
+)
 
 TOPBAR_END = '.topbar [data-act="endsession"]'
 OFFER = "#completion"
@@ -178,6 +188,63 @@ def test_ending_an_unfinished_board_asks_once_and_names_what_is_still_open(
     assert "2 decisions on this board are still open" in said, said
     assert PENDING_TEXT not in said, said
     assert not endings(session), "the click ended the unfinished board behind the question"
+
+    page.click(CONFIRM_END)
+    wait_for_the_ending(session)
+    assert len(endings(session)) == 1, endings(session)
+
+
+def test_a_second_write_on_a_composing_channel_does_not_make_the_turn_stop_counting(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a seat composing on the map, and the human then writing again on that
+         same channel -- a refusal of an earlier change, which no agent answers
+    When the human presses the ending control
+    Then the turn still counts: the board asks about the pending response rather
+         than about its own open question, and writes nothing until that is
+         answered.
+
+    The second write is what makes this a scenario rather than a repeat. A write
+    takes its channel through `sending` and back to idle on its own receipt,
+    while the backend goes on running the earlier turn in a thread of its own --
+    so the channel model alone has the channel quiet, and the log alone is what
+    still says a turn is out. Both are asserted before the click, because a
+    scenario where the model happened to agree would pass while proving nothing.
+
+    The refusal is used for the second write rather than another answer on
+    purpose: an answer opens a turn of its own, which would put the channel back
+    to owed within a poll and leave the window this closes open only by luck.
+    """
+    session = launcher(handoff=handoff(THREE))
+    session.script_codex(turn(PROPOSES), turn(document("Noted."), delay=SLOW))
+    page = board(session)
+
+    page.click('#col-d1 [data-act="pick"][data-opt="a"]')
+    session.settled()
+    waiting = [one for one in session.board()["pending"] if one["kind"] == "invalidate"]
+    assert len(waiting) == 1, session.board()["pending"]
+
+    page.click('#col-d2 [data-act="pick"][data-opt="a"]')
+    wait_for_a_turn(session)
+    page.wait_for_timeout(RENDER)
+
+    page.click('[data-act="inbox"]')
+    page.wait_for_timeout(400)
+    page.click(f'#overlay [data-act="dismissone"][data-uid="{waiting[0]["id"]}"]')
+    page.wait_for_timeout(RENDER)
+
+    # Read off the page because nothing renders it: while the lane's clock is up
+    # on that channel, the diagnostic shows the wait rather than the model's own
+    # word for where the channel stands.
+    assert page.evaluate("owedOn('map')") is False, "the write left the model owed after all"
+    assert mid_turn(session), "the seat replied before the click: this proved nothing"
+
+    page.click(TOPBAR_END)
+    page.wait_for_selector(CONFIRM, timeout=BOARD_TIMEOUT)
+    said = page.locator(f"{CONFIRM} .box").inner_text()
+    assert PENDING_TEXT in said, said
+    assert not endings(session), "the click ended the session over a turn that was still out"
 
     page.click(CONFIRM_END)
     wait_for_the_ending(session)

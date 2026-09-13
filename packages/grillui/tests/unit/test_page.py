@@ -3147,11 +3147,17 @@ def test_the_overlay_ends_the_session_through_the_control_it_is_offering() -> No
 def test_the_ending_asks_again_off_the_channel_model_rather_than_a_count_of_its_own() -> None:
     """What the guard reads, and that it guards the one wire path.
 
-    Whether a turn is out is already the channel model's answer, and the page
-    asks it there. A second count kept beside it would be a second answer to one
-    question, and the one the guard read would be the one nobody maintained --
-    so the board would go on asking about a turn that came back, or stop asking
-    about one that has not.
+    Whether a turn is out is already answered twice over by records this page
+    keeps, and the page reads both rather than keeping a third. The status lane
+    is the durable one: a `composing` entry stands until its `replied` or
+    `error` closes it, so it survives anything the human does meanwhile. The
+    channel model is the early one: it has a turn as owed from the moment the
+    write is dispatched, before the lane has announced it.
+
+    Reading the model alone is the failure this pins. A second human write on a
+    channel that is already composing takes the model back to idle on its own
+    receipt while the backend goes on running the earlier turn, and the board
+    would then end the session over a turn that is still out.
 
     The rest is the shape the guard has to keep: it stands in front of the
     ending rather than inside it, so there is still exactly one site building
@@ -3165,8 +3171,14 @@ def test_the_ending_asks_again_off_the_channel_model_rather_than_a_count_of_its_
     """
     source = page_source()
     pending = function_body("pendingTurns")
+    assert "WIRE.status" in pending, "the guard does not read the lane"
     assert "CHANNELS.protocol" in pending and "owedOn" in pending, pending
     assert source.count("function pendingTurns(") == 1
+    # The lane's record is emptied on both phases that close a turn, so a turn
+    # that ended by failure stops counting exactly as one that ended by replying.
+    closing = function_body("track")
+    assert "delete WIRE.status[entry.channel];" in closing
+    assert "phase === PHASE_REPLIED || phase === PHASE_ERROR" in closing
 
     guard = function_body("endSession")
     assert "endWarning()" in guard, "the ending is not guarded"

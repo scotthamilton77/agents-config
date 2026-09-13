@@ -1657,12 +1657,28 @@ function completionOffer() {
     (pending ? "End Session Anyway" : "End the session") + "</button>" +
     '<button class="btn" data-act="dismiss-completion">Back to the board</button></div></div></div>';
 }
-// The channels an agent still owes a turn on, read off the channel model this
-// page already keeps rather than counted a second time here. A second count is
-// a second answer to one question, and the one the guard reads would be the one
-// nobody maintains.
+// The channels an agent still owes a turn on, read off both of the records this
+// page already keeps and counted nowhere new. Neither record alone is the
+// answer.
+//
+// The lane's is the durable one: a turn is announced with a `composing` entry
+// and closed by the `replied` or `error` that pairs with it, so a channel in
+// `WIRE.status` is one the log says is mid-turn, whatever else the human does
+// meanwhile. The channel model is the one that moves ahead of the log -- it has
+// a turn as owed from the moment the write is dispatched, before the lane has
+// announced anything.
+//
+// The channel model is not durable, and that is why the lane is read first. A
+// second human write on a channel that is already composing takes the model
+// through `sending` back to `idle` on its own receipt, while the backend goes
+// on running the earlier turn in its own thread. Read off the model alone, the
+// board would call that channel quiet and end the session over a turn that is
+// still out.
 function pendingTurns() {
-  return Object.keys(CHANNELS.protocol).filter(owedOn);
+  var announced = Object.keys(WIRE.status);
+  return announced.concat(Object.keys(CHANNELS.protocol).filter(function (name) {
+    return owedOn(name) && announced.indexOf(name) < 0;
+  }));
 }
 // Why the ending is worth asking about twice, in the words it is asked in, or
 // nothing at all where the gesture is unambiguous. A pending turn is asked
