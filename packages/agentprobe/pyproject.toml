@@ -1,0 +1,79 @@
+[project]
+name = "agentprobe"
+version = "0.1.0"
+description = "agentprobe — drives scripted Claude Code sessions under a payload-capturing hook and reports per-behaviour hit rates against a Claude Code version."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+agentprobe = "agentprobe.cli:entry"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentprobe"]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "ruff",
+  "mypy",
+  "pip-audit",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F",
+  "I",
+  "B",
+  "UP",
+  "SIM",
+  "S",
+  "RET", "ARG", "PTH",
+  "TRY",
+  "RUF",
+  "N",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# S101: pytest's `assert` is the standard assertion mechanism. RUF001: the captured
+# screens contain Claude Code's own prompt glyph, which is the thing being matched.
+# S105: an environment variable name the redaction test has to spell out.
+"tests/**" = ["S101", "RUF001", "S105"]
+# The logging hook runs as a standalone script inside a probed session, so it uses
+# `open`/`os.path` rather than pathlib (PTH) and must never raise into the session it is
+# observing (TRY300/TRY400 style returns are deliberate).
+"src/agentprobe/hooklog.py" = ["PTH118", "PTH123", "PTH111"]
+# PTH123: the pseudo-terminal driver needs raw file objects it can flush mid-run.
+# RUF001: the prompt glyph the driver waits for is Claude Code's, not a greater-than sign.
+# TRY003: naming an unknown scenario has to list the ones that exist, in the failure
+# itself, because that list is the whole remedy.
+"src/agentprobe/session.py" = ["PTH123", "RUF001", "TRY003"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+enable_error_code = ["redundant-expr", "truthy-bool", "possibly-undefined"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/agentprobe"]
+
+[tool.coverage.report]
+fail_under = 90
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "@overload"]
+show_missing = true
+skip_covered = true

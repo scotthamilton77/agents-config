@@ -13,6 +13,8 @@
         ci-grillui test-grillui lint-grillui format-check-grillui \
         typecheck-grillui cov-grillui audit-grillui verify-entry-grillui \
         e2e-grillui eval-grillui \
+        ci-agentprobe test-agentprobe lint-agentprobe format-check-agentprobe \
+        typecheck-agentprobe cov-agentprobe audit-agentprobe verify-entry-agentprobe \
         spec-lint content-lint content-tests doc-lint
 
 INSTALLER := packages/installer
@@ -21,6 +23,7 @@ GRIND := packages/grind
 GITCLEAN := packages/gitclean
 EXECUTOR := packages/executor
 GRILLUI := packages/grillui
+AGENTPROBE := packages/agentprobe
 
 # `doc-lint` gates here because the tree is clean. It reports live staleness in
 # prose nobody is editing, so a finding can turn an unrelated build red — and the
@@ -28,6 +31,7 @@ GRILLUI := packages/grillui
 # silences the one class of drift that has no reviewer, which is the whole reason
 # the check exists.
 ci: ci-installer ci-prgroom ci-grind ci-gitclean ci-executor ci-grillui \
+    ci-agentprobe \
     lint-actions spec-lint content-lint content-tests doc-lint
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
@@ -249,3 +253,28 @@ e2e-grillui:
 # `--case`, `--seat` and `-n` by invoking the module directly.
 eval-grillui:
 	cd $(GRILLUI) && uv run python -m evals
+
+# ── agentprobe (mirrors the ci-grind block one-for-one; enforced via the
+# top-level `ci:` aggregate). The gate never drives a session: `agentprobe run`
+# spends real agent turns on the operator's account, so the suite works only
+# from recorded runs. ──
+ci-agentprobe: lint-agentprobe format-check-agentprobe typecheck-agentprobe \
+               cov-agentprobe audit-agentprobe verify-entry-agentprobe
+
+test-agentprobe:
+	cd $(AGENTPROBE) && uv run pytest -q
+lint-agentprobe:
+	cd $(AGENTPROBE) && uv run ruff check
+format-check-agentprobe:
+	cd $(AGENTPROBE) && uv run ruff format --check
+typecheck-agentprobe:
+	cd $(AGENTPROBE) && uv run mypy --strict src
+cov-agentprobe:
+	cd $(AGENTPROBE) && uv run pytest --cov --cov-report=term-missing
+audit-agentprobe:
+	cd $(AGENTPROBE) && uv sync --frozen && uv run pip-audit
+# verify-entry-agentprobe asserts the console-script entry point resolves and the
+# CLI root parses (`agentprobe --help` exits 0). Run via `uv --project` so the
+# agentprobe venv where the entry point is installed is selected.
+verify-entry-agentprobe:
+	uv --project $(AGENTPROBE) run agentprobe --help > /dev/null

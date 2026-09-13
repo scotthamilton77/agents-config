@@ -29,6 +29,14 @@ scoped workflow — read it before changing that package.
   the consequence. On PATH; the `/clean-up-git` command drives it
   interactively, and the `post-merge-cleanup` skill is what tells an agent it
   exists at all.
+- `agentprobe/` — drives scripted Claude Code sessions on a pseudo-terminal under a
+  hook that records every payload, then reports per-behaviour hit rates against the
+  Claude Code version each run recorded, so a house mitigation's effect and a release
+  that changes a behaviour can be told apart. **A run spends real agent turns on the
+  operator's account and is never part of any gate**; the suite works only from recorded
+  runs, and `--dry-run` prints the command and the scrubbed environment without launching
+  anything. Gated by `make ci`, and deliberately off the PATH-install list below. See
+  `packages/agentprobe/AGENTS.md`.
 - `grillui/` — the grilling-session backend: serves the session UI, folds the
   decision log into the context images, and drives the grilling tiers, per
   `docs/specs/2026-08-18-grilling-ui-v1.md`. See `packages/grillui/AGENTS.md`.
@@ -45,7 +53,9 @@ dropped from `CLI_PACKAGES` alone leaves its binary on PATH until its name is
 added to `RETIRED_CLIS` by hand. `work` is on PATH and absent from both lists
 on purpose — a binary this repo does not own is not this installer's to
 uninstall. Being gated by `make ci` is not what earns a place on the list —
-`installer` is gated and stays off.
+`installer` is gated and stays off, and so is `agentprobe` — a diagnostic run from this
+repository against this repository's own mitigations is not a tool other projects reach
+for.
 
 ## Packages that live elsewhere
 
