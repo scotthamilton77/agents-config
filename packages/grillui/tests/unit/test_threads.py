@@ -413,6 +413,42 @@ def test_a_human_turn_opens_a_closed_thread_and_it_takes_the_turn(
     assert threads[OTHER].state == "closed", "an agent re-opened what the human had finished"
 
 
+def test_a_human_turn_opens_a_parked_thread_and_it_takes_the_turn(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a thread the human parked
+    When the human says something in it
+    Then it is open again and carries that turn, and an agent's turn on a parked
+         thread leaves it parked.
+
+    Park reopens by the same path close does, because the human coming back to a
+    loose end is the gesture parking anticipated. A parked thread that took the
+    human's turn and stayed parked would be a thread the board offers no way
+    forward in, and the human who set it aside is the one person entitled to
+    pick it back up -- so the actor separates the two here exactly as it does for
+    a closed thread.
+    """
+    seed_node(client, log.epoch, NODE)
+    open_thread(client, log.epoch, MINE, "Retention", MINE_SAID)
+    open_thread(client, log.epoch, OTHER, "Compaction", OTHER_SAID)
+    assert gesture(client, log.epoch, THREAD_PARK_KIND, MINE)["status"] == "accepted"
+    assert gesture(client, log.epoch, THREAD_PARK_KIND, OTHER)["status"] == "accepted"
+    states = {one.id: one.state for one in fold(log.epoch, log.entries()).threads}
+    assert states == {MINE: "parked", OTHER: "parked"}, states
+
+    say(client, log.epoch, MINE, "and what about the archive?", actor="human")
+    say(client, log.epoch, OTHER, "the agent is still thinking about it", actor="thread-agent")
+
+    threads = {one.id: one for one in fold(log.epoch, log.entries()).threads}
+    assert threads[MINE].state == "open"
+    assert [turn.text for turn in threads[MINE].turns] == [
+        MINE_SAID,
+        "and what about the archive?",
+    ]
+    assert threads[OTHER].state == "parked", "an agent picked up what the human had set aside"
+
+
 @pytest.mark.parametrize("kind", [THREAD_FOLD_KIND, THREAD_PARK_KIND, THREAD_CLOSE_KIND])
 def test_a_thread_gesture_sent_on_the_map_channel_is_refused(
     kind: str, client: TestClient, log: SessionLog

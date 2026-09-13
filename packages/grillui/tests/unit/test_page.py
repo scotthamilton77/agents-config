@@ -1151,17 +1151,22 @@ def test_a_popped_window_follows_the_thread_its_own_first_turn_opened() -> None:
     assert "made=window.opener.popAct(" in boot and "if(made)tid=made;" in boot
 
 
-def test_a_closed_thread_keeps_the_box_that_opens_it_again() -> None:
+def test_a_set_aside_thread_keeps_the_box_that_opens_it_again() -> None:
     """Re-opening rides the turn, so the box is the whole affordance.
 
-    A parked or folded thread keeps no box: neither re-opens, and a box whose
+    Both set-aside states keep it, and the sentence that says so, because a
+    parked thread and a closed one are both picked back up by saying something
+    in them. A folded thread keeps no box: it does not re-open, and a box whose
     turn changed nothing would be the page offering a way back the fold does
-    not have. Both boxes are built by one reader, since an open thread and a
-    closed one take the same turn on the same channel.
+    not have. Every box is built by one reader, since an open thread and a
+    set-aside one take the same turn on the same channel.
     """
     pane = balanced_body("threadBody")
-    assert 'var closed = t.state === "closed";' in pane
-    assert 'closed ? sayBox(sayId, tid) : ""' in pane, "a closed thread has no way back"
+    assert 'var aside = t.state === "parked" || t.state === "closed";' in pane
+    assert 'aside ? sayBox(sayId, tid) : ""' in pane, "a set-aside thread has no way back"
+    assert 'aside ? " Say something here and it opens again." : ""' in pane, (
+        "a set-aside thread is not told what the box does"
+    )
     assert pane.count("sayBox(sayId, tid)") == 2, "the two boxes are not one reader"
     box = function_body("sayBox")
     assert 'data-act="say"' in box and 'data-send="say"' in box
