@@ -94,9 +94,9 @@ and its change history.
 
 🔔 carries what an agent said that the board has nowhere else to show. It is not the
 inbox: nothing in here is waiting on an action. Notifications bubble as they arrive, and
-the list starts empty on a reload — a session someone comes back to should not announce
-the morning's work as news. What was read stays read, across a reload too: the markers
-they have already cleared do not light up again.
+the list comes back on a reload without bubbling again — a session someone comes back to
+should not announce the morning's work as news. What was read stays read, across a reload
+too: the markers they have already cleared do not light up again.
 
 ## The two tiers
 
