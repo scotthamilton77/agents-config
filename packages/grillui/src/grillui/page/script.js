@@ -485,17 +485,16 @@ function ev(kind, channel, payload) {
   // Stamped here rather than at the emission sites so the declaration is again
   // what decides: the table says which kinds carry the flag, and no gesture that
   // is not a turn — a fold, a park, a queue verb — can acquire one.
+  // The press is written onto the turn here and spent in `send`, when the turn
+  // reaches the wire. Building a turn is not sending one: this page declines to
+  // post at all while the doctor holds the board, before it knows the epoch and
+  // after the session has ended, and a press spent by a turn nobody sent is one
+  // the control goes on offering that no turn will ever carry.
   var meant = rule.payload.indexOf(TRANSFER_FLAG) >= 0 ? unspent(channel) : null;
+  if (meant) payload[TRANSFER_FLAG] = meant.on;
   KEYS += 1;
-  var key = PAGE_ID + ":" + KEYS;
-  // Spending it here is what makes a press force one turn rather than every
-  // turn until the next poll. The turn it rode carries the press into the log,
-  // and the log is what the backend reads from then on; a second turn built
-  // before that one comes back would ask for the tier again on the human's
-  // behalf, which is the same thing as stamping a belief.
-  if (meant) { payload[TRANSFER_FLAG] = meant.on; meant.spent = key; }
   return { kind: kind, actor: "human", channel: channel,
-           idempotency_key: key, payload: payload };
+           idempotency_key: PAGE_ID + ":" + KEYS, payload: payload };
 }
 
 /* The only place an event leaves this page. Takes a batch because some human
@@ -507,6 +506,7 @@ function send() {
   var ending = out.filter(function (e) { return e.kind === SESSION_END_KIND; })[0];
   WIRE.sent += out.length;
   out.forEach(function (e) { OUTBOX[e.idempotency_key] = true; });
+  spend(out);
   var touched = batchChannels(out);
   // Every channel in the batch is sending, then away, then answered. Who owes a
   // turn afterwards is not decided here: the lane says so, on the channel the
@@ -787,8 +787,10 @@ function foldReady(threadId) {
    it once. A turn with no click behind it carries no transfer key at all, and
    neither does any turn after the one that carried the click out — so this page
    tells the backend what the human pressed, never what it last managed to read,
-   and never the same press twice. A refused turn gives the click back, because
-   nothing was said with it. */
+   and never the same press twice. One rule says when a click is used up: the
+   turn that carries it onto the wire spends it. A batch this page declined to
+   post spends nothing, and a turn the backend refused gives the click back —
+   both for the same reason, that nothing was said with it. */
 var TRANSFER = {};
 function loggedMode(channel) {
   for (var i = LOG.length - 1; i >= 0; i--) {
@@ -816,6 +818,15 @@ function pressed(channel) {
 function unspent(channel) {
   var meant = pressed(channel);
   return meant && !meant.spent ? meant : null;
+}
+// The press is spent by the turn that carries it onto the wire, and the turn is
+// what it is spent against: a batch this page built and then declined to post
+// spends nothing, because nothing was said with it.
+function spend(events) {
+  events.forEach(function (e) {
+    var meant = TRANSFER[e.channel];
+    if (meant && TRANSFER_FLAG in e.payload) meant.spent = e.idempotency_key;
+  });
 }
 // A turn the backend refused wrote nothing, so the press it carried was never
 // said and is the human's again. Keyed by the turn that took it, because the

@@ -1847,13 +1847,38 @@ def test_a_press_rides_one_turn_and_the_control_alone_goes_on_showing_it() -> No
     receipt that names the turn. A `duplicate` receipt is not a refusal -- that
     key is in the log, and the press went with it.
     """
-    builder = function_body("ev")
-    assert "meant.spent = key" in builder, "the turn that carries a press does not spend it"
+    assert "meant.spent = e.idempotency_key" in function_body("spend"), (
+        "the turn that carries a press does not spend it"
+    )
     assert "!meant.spent" in function_body("unspent"), "a spent press is stamped again"
     assert "spent" not in function_body("onExpert"), "the control drops the press it is showing"
     sender = function_body("send")
     assert 'r.status !== "rejected"' in sender
     assert "unspend(r.idempotency_key)" in sender, "a refused turn keeps the press it spent"
+
+
+def test_a_press_is_spent_by_the_turn_that_reaches_the_wire_and_not_by_the_one_built() -> None:
+    """Building a turn is not sending one, and this page builds turns it drops.
+
+    `send` posts nothing at all while the doctor holds the board, before the
+    epoch is known, and once the session has ended. A press spent where the turn
+    was built would be spent by every one of those, and nothing would ever give
+    it back: the control would go on offering a press that no turn could carry
+    again, which is the label and the wire disagreeing with no poll able to
+    settle it.
+
+    So one rule says when a press is used up, and it is about the wire rather
+    than about the page. The turn that reaches the wire spends it, a batch this
+    page declined to post spends nothing, and a turn the backend refused gives
+    it back.
+    """
+    assert ".spent =" not in function_body("ev"), "a turn nobody posted spends the press"
+    sender = function_body("send")
+    assert "spend(out)" in sender, "the wire does not spend the press"
+    declined = sender.split("spend(out)")[0]
+    assert "return;" in declined, "the press is spent before the page decides to post"
+    for refusing in ("WIRE.epoch", "WIRE.doctor", "sessionOver()"):
+        assert refusing in declined, f"a send declined on {refusing} still spends the press"
 
 
 def test_a_page_turn_carrying_the_flag_moves_that_channel_and_only_that_one(

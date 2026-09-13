@@ -12,12 +12,13 @@ on the lane and on the expert's own prompt -- and on the cap, because a seat tha
 could buy an expert turn by asking for one every turn would be spending the
 human's subscription on its own say-so.
 
-Two more are about the gap between the two. The backend moves the channel while
-the page is between polls, so for a moment the human is typing into a page that
-still shows the first rung, and the turn they send then is the very turn the
-transfer was bought for. The last of them puts the human's own press inside that
-window: a press forces the next turn and no turn after it, so what they pressed
-for once is not asked for twice.
+Three more are about the transfer key itself, which is the whole of what a turn
+says a tier out of. The backend moves the channel while the page is between
+polls, so for a moment the human is typing into a page that still shows the
+first rung, and the turn they send then is the very turn the transfer was bought
+for. The second puts the human's own press inside that window, because a press
+forces the next turn and no turn after it. The third is a turn this page built
+and then declined to post, which spends nothing at all.
 """
 
 from __future__ import annotations
@@ -50,6 +51,8 @@ EXPERT_SAID = "Thirty days. The window is in the retention note, and it drops on
 # page and the seat onto the first rung before anything moves it.
 ANSWERED = "It drops whatever nothing else refers to."
 PRESSED = "And how does it know what refers to what?"
+# What the human types into a board that is not going to take it.
+DECLINED = "Does the compaction job read the retention note itself?"
 
 # Two ways of saying the same standing condition -- the human rejecting the
 # reframing -- said differently, so a scenario about escalating twice cannot
@@ -385,3 +388,75 @@ def test_a_press_is_spent_by_its_own_turn_and_the_next_one_asks_for_nothing(
     typed = typed_on(session, channel)
     assert typed[-2]["transfer"] is False, typed[-2]
     assert "transfer" not in typed[-1], typed[-1]
+
+
+def hold_board(page: Page, outstanding: bool) -> None:
+    """Answer this page's doctor check with the state the scenario needs.
+
+    The page holds the board read-only while a reassessment is outstanding, and
+    it asks one endpoint whether one is, on every poll. Answering that endpoint
+    is how a scenario keeps the board held for as long as it takes to type into
+    it: a real doctor run on a scripted seat is over in milliseconds, so a
+    scenario racing one would be timing a shim rather than testing the page.
+    Answering it also reaches the held board without pressing the control that
+    calls the doctor, which the open thread panel sits on top of. What the
+    backend does when the doctor is really called is pinned elsewhere; what is
+    pinned here is what this page does with a turn it will not post.
+    """
+    page.route(
+        "**/doctor*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"outstanding": outstanding}),
+        ),
+    )
+
+
+def test_a_press_survives_a_turn_this_page_declined_to_post(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a thread whose transfer control the human has pressed
+    When the board goes read-only, they send into the thread anyway from the
+         keyboard, and the page builds that turn without posting it
+    Then their press is still on the next turn they really send, and the expert
+         composes it.
+
+    The keyboard is the way in. The scrim over a held board stops a control
+    being clicked and stops nothing that is typed: a caret already in the say
+    box sends on Enter, and the page builds the turn before it decides not to
+    post it. A press spent at that moment would be spent by a turn that never
+    existed, and nothing would give it back -- the control would go on offering
+    a press no turn could carry.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_codex(turn(document("Noted.")))
+    session.script_claude(turn(EXPERT_SAID))
+    session.stub.script(ANSWERED)
+    page = board(session)
+
+    start_thread(page, "d2", ASKED)
+    session.settled()
+    channel = thread_id(session)
+    page.locator(f'[data-act="transfer"][data-channel="{channel}"]').click()
+    showing(page, channel, "expert")
+
+    hold_board(page, True)
+    page.wait_for_selector(".scrim", timeout=BOARD_TIMEOUT)
+    page.fill("#ft-say", DECLINED)
+    page.press("#ft-say", "Enter")
+    assert DECLINED not in json.dumps([one.payload for one in session.entries()]), (
+        "the page posted a turn while the board was held"
+    )
+
+    hold_board(page, False)
+    page.wait_for_selector(".scrim", state="detached", timeout=BOARD_TIMEOUT)
+    showing(page, channel, "expert")
+    say(page, PRESSED)
+    session.settled()
+
+    assert composings(session, channel) == ["fast", "heavy"], composings(session, channel)
+    assert len(session.claude_calls()) == 1, session.claude_calls()
+    typed = typed_on(session, channel)
+    assert typed[-1]["transfer"] is True, typed[-1]
