@@ -759,7 +759,7 @@ def post_verdict(
     verdict: str = typer.Option(
         ...,
         "--verdict",
-        help="Path to the assembled round verdict; its text becomes the review body.",
+        help="Path to the assembled round verdict; the review body carries its text.",
     ),
     project_config: str = typer.Option(
         "project-config.toml",
@@ -772,7 +772,8 @@ def post_verdict(
     """Submit the configured GitHub App's comment-only review carrying a verdict.
 
     Not a grooming verb: it reads and writes no state and takes no PR lock. The
-    body is the verdict file's own text, one inline comment sits at each finding
+    body is a rendered summary of the round above a collapsed block holding the
+    verdict file's own text, one inline comment sits at each finding
     that names a line the diff touches, and the review is pinned to the head the
     verdict declares — refused outright if the PR has moved off it. It never
     approves, and a verdict already posted at that head is a success no-op.

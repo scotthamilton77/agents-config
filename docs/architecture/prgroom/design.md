@@ -606,7 +606,7 @@ Adapter selection is unbuilt: the CLI always constructs the stderr sink. Treat t
 | `wait` | none | sleep + re-poll; quiescence may transition phase |
 | `run` | Cluster + Fix chained | full lifecycle loop (§3.3) |
 | `approve` *(outside the grooming loop)* | none | mint a GitHub App installation token; refuse if the PR's live head is not the named one; POST an `APPROVE` review pinned to that head, or recognize the App's own existing approval there as a no-op |
-| `post-verdict` *(outside the grooming loop)* | none | read the verdict file; mint the same App token; refuse if the PR's live head is not the verdict's; list the PR's changed files and place each finding that names a line the diff touches; POST one `COMMENT` review pinned to that head, body the verdict's own text, or recognize the App's identical review there as a no-op |
+| `post-verdict` *(outside the grooming loop)* | none | read the verdict file; mint the same App token; refuse if the PR's live head is not the verdict's; list the PR's changed files and place each finding that names a line the diff touches; POST one `COMMENT` review pinned to that head, body a rendered summary of the round above a collapsed block holding the verdict's own text, or recognize the App's identical review there as a no-op |
 
 ### Contract is the API, runtime is swappable (per-contract TOML)
 

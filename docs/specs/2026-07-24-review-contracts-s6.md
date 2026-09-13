@@ -65,7 +65,9 @@ branch-resident verdict self-invalidates — committing it advances the head it
 must match — pollutes history, conflicts across concurrent PRs, and is
 writable by the reviewed party, which would demand a separate attestation
 layer to restore trust.) The medium is a **pull request review authored by
-the App**: its body carries the verdict JSON verbatim, an inline review
+the App**: its body carries a rendered summary of the round above a collapsed
+block holding the verdict JSON verbatim, and a reader after the envelope takes
+that block rather than the whole body. An inline review
 comment sits at the file and line of each finding that names one (a finding
 with no locatable anchor lives in the body only, so a clean verdict posts the
 envelope with no inline comments), and the review is pinned to the reviewed
@@ -231,7 +233,8 @@ evaluates.
 **Every finding lands in a durable, mineable medium.** With PR-comment
 looping gone, no part of the review trail may live only in conversation:
 mechanical findings and their disposition ledgers persist in the App-posted
-verdicts (SHA-keyed App-authored PR reviews — the envelope in the body, the
+verdicts (SHA-keyed App-authored PR reviews — the envelope in a fenced block
+inside the body, the
 findings as inline comments — queryable via the platform API, and
 distinguishable from every other comment on the PR by their author); advisory
 findings persist in the tracker backlog; AC-attack proposals
