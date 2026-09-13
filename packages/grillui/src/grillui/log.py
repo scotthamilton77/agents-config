@@ -369,8 +369,9 @@ class SessionLog:
         no board. One reader for the question means the queue a receipt is
         judged against and the queue the page is shown are the same answer.
 
-        ponytail: one fold per queue gesture and per gesture that could produce
-        one, which is a human-paced act over a log bounded by one grilling.
+        The ceiling is one fold per queue gesture and per gesture that could
+        produce one. Each of those is a human-paced act over a log bounded by
+        one grilling, so the repeated folding costs nothing that matters.
         """
         return queue(self._entries)
 
@@ -382,8 +383,8 @@ class SessionLog:
         not a change: there is nothing to apply, and the human being done with
         it is the gesture that lifts the lock a blocking alert took.
 
-        ponytail: one fold per dismiss, which is a human-paced act over a log
-        bounded by one grilling.
+        The ceiling is one fold per dismiss, which is a human-paced act over
+        a log bounded by one grilling.
         """
         return frozenset(item.id for item in fold(self.epoch, self._entries).pending)
 
@@ -400,8 +401,8 @@ class SessionLog:
         can read. One reader for the question means the options an answer is
         judged against and the options the page renders are the same answer.
 
-        ponytail: one fold per answer, which is a human-paced act over a log
-        bounded by one grilling.
+        The ceiling is one fold per answer, which is a human-paced act over a
+        log bounded by one grilling.
         """
         return {
             node.id: frozenset(option.id for option in node.options)
@@ -477,8 +478,8 @@ def read_entries(path: Path) -> list[LogEntry]:
     """
     if not path.exists():
         return []
-    # ponytail: one linear read; a session log is human-paced and bounded by one
-    # grilling, so nothing here needs an on-disk index.
+    # This is one linear read of the whole file. A session log is human-paced
+    # and bounded by one grilling, so nothing here needs an on-disk index.
     lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     entries: list[LogEntry] = []
     for position, line in enumerate(lines):
