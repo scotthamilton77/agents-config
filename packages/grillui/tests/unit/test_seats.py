@@ -1238,3 +1238,40 @@ def test_a_cli_seat_hands_its_obligation_to_the_recorder(session_dir: Path, buil
     landed = replies(log)
     assert [[two["decision"] for two in one[RULINGS_KEY]] for one in landed] == [["d2"]]
     assert [one.get(DROPPED_RULINGS_KEY) for one in landed] == [["d9"]]
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(
+            lambda said: FastDriver(TierConfig(), ScriptedFast(replies=[said])), id="openrouter"
+        ),
+        pytest.param(lambda said: HeavyDriver(TierConfig(), ScriptedCli(reply=said)), id="claude"),
+        pytest.param(lambda said: CodexDriver(TierConfig(), ScriptedCodex(reply=said)), id="codex"),
+    ],
+)
+def test_a_seat_comes_back_with_the_sequence_its_own_reply_landed_at(
+    session_dir: Path, build: Any
+) -> None:
+    """
+    Given a seat taking a map turn that says something, and the same seat taking
+          one whose document carries nothing
+    When each turn is run
+    Then the first comes back naming the entry the log gained by it, and the
+         second comes back naming nothing.
+
+    The lane credits a turn by the entry that turn names, so a seat that appends
+    a ruling and names nothing is a turn credited with nothing: the ladder fires
+    on decisions that were ruled on, and the human is told they were not. Every
+    seat is asked because the receipt comes back from each driver's own turn,
+    and one that dropped it would answer correctly through every other check
+    here.
+    """
+    log = briefed(session_dir)
+    before = log.seq
+
+    spoke = build(document(text=MAP_SAID)).run(log, record_dispatch(log))
+
+    assert spoke is not None and spoke > before
+    assert [one.actor for one in log.entries() if one.seq == spoke] == ["grill-master"]
+    assert build(document(text="")).run(log, record_dispatch(log)) is None

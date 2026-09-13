@@ -881,19 +881,20 @@ def test_an_empty_document_credits_nothing_an_earlier_turn_ruled(
          raised.
 
     The empty document is valid and therefore walks the coverage ladder, not the
-    refusal one. It appends no entry at all, which is why coverage is read from
-    the window this turn opened: a backward scan over the whole log would find
-    whatever spoke last on the map and credit this turn with its rulings --
-    discharging an obligation nobody answered, and saying nothing to the human
-    about two decisions the board is still offering.
+    refusal one. It appends no entry at all and so names none, which is why
+    coverage is read off the entry the turn's own seat came back with. A scan
+    for whatever spoke last on the map credits this turn with that turn's
+    rulings -- discharging an obligation nobody answered, and saying nothing to
+    the human about two decisions the board is still offering.
     """
     unused = ScriptedFast()
     empty = ScriptedFast(replies=[document(text="")])
     seed(log)
     # An earlier map turn that did rule on both. The empty turn appends nothing,
-    # so a coverage check reading the log whole would find this entry and credit
-    # the empty turn with its verdicts -- discharging an obligation nobody
-    # answered. It is here to make that failure visible rather than latent.
+    # so a coverage check reading the log for whatever spoke last finds this
+    # entry and credits the empty turn with its verdicts -- discharging an
+    # obligation nobody answered. It is here to make that failure visible rather
+    # than latent.
     log.submit(
         [
             EventSubmission(

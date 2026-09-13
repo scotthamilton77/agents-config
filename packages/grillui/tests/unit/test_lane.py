@@ -827,16 +827,21 @@ def _seed_second_asker(log: SessionLog) -> None:
     assert receipt.status == "accepted"
 
 
+def _closers(log: SessionLog) -> list[str]:
+    """Which seat each turn that ended was closed in the name of."""
+    return [str(one.payload["detail"]) for one in statuses(log, STATUS_PHASE_REPLIED)]
+
+
 @dataclass
 class InterleavingExpert:
     """One expert seat taking two map turns at once, one of which says nothing.
 
     The turn whose obligation names `silent` appends nothing -- the empty
     document a seat sends when it validates and carries no content -- and holds
-    until the other turn's reply is on the record, so its own coverage read runs
-    with an entry that is not its own sitting behind it. The other turn rules
-    `invalidate` on every id its dispatch named and comes back with the sequence
-    that reply landed at.
+    until the other turn's reply is on the record, so the entry standing last on
+    the map when its coverage is read is one it did not make. The other turn
+    rules `invalidate` on every id its dispatch named and comes back with the
+    sequence that reply landed at.
 
     Which of the two a call is taking is read off the dispatch's own obligation,
     because one seat takes both and nothing else tells them apart.
@@ -845,11 +850,9 @@ class InterleavingExpert:
     tier: str = HEAVY_TIER
     silent: str = "d1"
     landed: threading.Event = field(default_factory=threading.Event)
-    dispatches: list[Path] = field(default_factory=list)
 
     def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
         owed = DispatchContext.model_validate_json(dispatch.read_text(encoding="utf-8")).mootness
-        self.dispatches.append(dispatch)
         if owed is not None and owed.target == self.silent:
             assert self.landed.wait(TIMEOUT), "the other turn's reply never landed"
             return None
@@ -870,10 +873,8 @@ class RefusingFirstRung:
 
     tier: str = FAST_TIER
     seen: threading.Event = field(default_factory=threading.Event)
-    dispatches: list[Path] = field(default_factory=list)
 
-    def run(self, _log: SessionLog, dispatch: Path, /) -> int | None:
-        self.dispatches.append(dispatch)
+    def run(self, _log: SessionLog, _dispatch: Path, /) -> int | None:
         assert self.seen.wait(TIMEOUT), "the expert never took a turn of its own"
         raise DocumentRefusedError(self.tier, "it was not the document")
 
@@ -887,16 +888,17 @@ class PressedExpert:
     this one has a turn before it refuses, so nothing can arrive here a second
     time until the first call is in.
 
-    The handed-up call appends nothing, and the reply that would credit it is
-    made to land strictly after the press was dispatched -- which is the window
-    a coverage read taken off a cursor closes over.
+    The handed-up call appends nothing and so names no entry, and the reply
+    that would credit it is made to land strictly after the press went out. A
+    read over everything the log gained since the hand-up takes that reply for
+    the expert's own; the read is of the receipt the pressed seat returned,
+    which is nothing.
     """
 
     tier: str = HEAVY_TIER
     seen: threading.Event = field(default_factory=threading.Event)
     pressed: threading.Event = field(default_factory=threading.Event)
     landed: threading.Event = field(default_factory=threading.Event)
-    dispatches: list[Path] = field(default_factory=list)
     taking: threading.Lock = field(default_factory=threading.Lock)
     calls: int = 0
 
@@ -905,7 +907,6 @@ class PressedExpert:
         with self.taking:
             self.calls += 1
             mine = self.calls
-        self.dispatches.append(dispatch)
         if mine > 1:
             self.pressed.set()
             assert self.landed.wait(TIMEOUT), "the concurrent reply never landed"
@@ -924,13 +925,14 @@ def test_a_map_turn_is_credited_nothing_by_a_concurrent_turns_ruling_reply(
     """
     Given two answers in one batch, each owing rulings on the same two decisions
     When the turn for one of them appends nothing while the other's ruling reply
-         lands inside its coverage window
-    Then the silent turn is credited nothing: the human is told once which
-         decisions went unruled, and the notice names that turn's own answer.
+         lands before this turn's coverage is read
+    Then the silent turn is credited nothing: each gesture is announced on the
+         expert once and closed there, and the human is told once which
+         decisions went unruled, in a notice naming that turn's own answer.
 
-    Coverage read from a window on the log is coverage read off whatever spoke
-    last, and on a board taking two map turns at once that is as likely to be
-    the other turn. The turn that ruled on nothing would discharge its
+    Coverage read over everything the log gained is coverage read off whatever
+    spoke last, and on a board taking two map turns at once that is as likely to
+    be the other turn. The turn that ruled on nothing then discharges its
     obligation on a verdict nobody made for it, and the human is left answering
     a decision the board should have offered to withdraw. Which of the two
     stayed silent is parametrised because the interleaving must not decide the
@@ -957,10 +959,13 @@ def test_a_map_turn_is_credited_nothing_by_a_concurrent_turns_ruling_reply(
         ),
     )
 
+    assert _seats(log) == [HEAVY_TIER, HEAVY_TIER], (
+        "a gesture bought a turn beyond the one the expert was announced for"
+    )
+    assert _closers(log) == [f"the {HEAVY_TIER!r} tier's turn is over"] * 2
     said = _notices(log)
     assert len(said) == 1, said
     assert said[0].startswith(f"The answer to {silent} put {', '.join(KILLED)} in question")
-    assert len(expert.dispatches) == 2, "one gesture bought more than one turn"
 
 
 def test_a_turn_handed_up_is_credited_nothing_by_a_reply_landing_after_the_hand_up(
@@ -972,13 +977,14 @@ def test_a_turn_handed_up_is_credited_nothing_by_a_reply_landing_after_the_hand_
           refusing its document
     When the expert it is handed up to appends nothing, and the other map turn's
          ruling reply lands after the hand-up
-    Then the expert is asked exactly once and the human is told once which
-         decisions went unruled.
+    Then the lane shows the first rung announced once and the expert twice --
+         its own turn and the one press -- both turns close in the expert's
+         name, and the human is told once which decisions went unruled.
 
-    The read after a hand-up correlates the way the first one does. A cursor
-    taken at the moment the turn was handed up closes over a concurrent reply
-    exactly as a cursor taken before the turn does, and crediting the expert
-    with that reply ends the ladder a rung early on a ruling it never made.
+    The read after a hand-up correlates the way the first one does, off the
+    receipt the pressed seat returned. A read over everything the log gained
+    since the hand-up takes the concurrent reply for the expert's own and ends
+    the ladder a rung early on a ruling it never made.
     """
     expert = PressedExpert()
     first_rung = RefusingFirstRung(seen=expert.seen)
@@ -1002,8 +1008,10 @@ def test_a_turn_handed_up_is_credited_nothing_by_a_reply_landing_after_the_hand_
         ),
     )
 
-    assert len(first_rung.dispatches) == 1, "the first rung took a turn twice"
-    assert len(expert.dispatches) == 2, "the press bought more than one expert turn"
+    assert _seats(log) == [FAST_TIER, HEAVY_TIER, HEAVY_TIER], (
+        "the press bought a turn beyond the one expert rung above the first"
+    )
+    assert _closers(log) == [f"the {HEAVY_TIER!r} tier's turn is over"] * 2
     said = _notices(log)
     assert len(said) == 1, said
     assert said[0].startswith(f"The answer to d1 put {', '.join(KILLED)} in question")
