@@ -322,6 +322,15 @@ STATUS_PHASES = frozenset(
     }
 )
 
+# What marks a `composing` entry as the backend handing a refused turn up to the
+# expert rather than seating a turn there for any of the other reasons. It rides
+# the announcement the hand-up writes anyway, so the hand-up leaves a record on
+# the log without a second entry for a reader to pair up. The mark is what makes
+# that record countable: an announcement naming the expert is also what a
+# transferred channel and a classed gesture produce, and a count reading the
+# tier alone would take those for refusals of the rung below.
+PRESSED_KEY = "pressed"
+
 # How an agent's reply says who composed it. These are payload keys rather than
 # envelope fields: the envelope is this protocol's own closed vocabulary, and
 # which model answered is content the log carries for whoever reads it back --

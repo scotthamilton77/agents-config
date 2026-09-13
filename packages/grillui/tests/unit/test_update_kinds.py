@@ -430,6 +430,43 @@ def test_unsettle_reopens_a_decision_and_makes_everything_resting_on_it_stale(
     assert image1(client)["frontier"] == [SEED_NODE]
 
 
+def test_the_human_reopening_a_decision_folds_as_an_applied_unsettle_does(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a settled chain of three decisions, each a prereq of the next
+    When the human authors the unsettle on the first themselves
+    Then it lands rather than waiting in the queue, the decision is a question
+         again with its answer gone, and both decisions downstream of it are
+         stale -- the board the applied proposal leaves.
+
+    The queue is what the agent's unsettle waits in, and it waits there for the
+    human. There is nobody to apply the human's own, so it lands like every
+    other gesture they make, through the one fold. Without this route a settle
+    the human regrets stands for the rest of the session unless an agent
+    happens to propose withdrawing it.
+    """
+    seed_node(client, log.epoch)
+    post(client, log.epoch, add_node("mint-2", target="n2", prereqs=[SEED_NODE]))
+    post(client, log.epoch, add_node("mint-3", target="n3", prereqs=["n2"]))
+    for index, node_id in enumerate((SEED_NODE, "n2", "n3")):
+        settled(client, log.epoch, node_id, f"answer-{index}")
+
+    receipt = post(
+        client,
+        log.epoch,
+        event("unsettle", actor="human", key="reopen-1", target=SEED_NODE),
+    )[0]
+
+    board = decisions(client)
+    assert receipt["status"] == "accepted"
+    assert image1(client)["pending"] == [], "the human's own gesture waited for the human"
+    assert board[SEED_NODE]["status"] == "open"
+    assert board[SEED_NODE]["answer"] is None
+    assert [board["n2"]["status"], board["n3"]["status"]] == ["stale", "stale"]
+    assert image1(client)["frontier"] == [SEED_NODE]
+
+
 def test_resolve_stale_puts_a_stale_decision_back_where_it_was(
     client: TestClient, log: SessionLog
 ) -> None:

@@ -26,6 +26,11 @@ Enter sends whatever is in a box, on a decision and in a thread alike. Shift+Ent
 in a newline instead, and so does a backslash typed right before Enter — the backslash
 is eaten, the way it works in the terminal. Cmd+Enter (Ctrl+Enter) still sends too.
 
+An answer is not final. A settled decision's block carries **Reopen**, which withdraws the
+answer and puts the question back on the frontier; whatever was settled on top of it then
+needs re-confirming. It is the human's own gesture, and the only one that undoes an answer:
+an agent can propose withdrawing it, and that proposal waits in the inbox like any other.
+
 Settling a decision opens whatever was waiting on it. A decision greyed as **fog** is one
 whose prerequisite has not come through yet — settle that prerequisite, or have it taken
 out of the plan, and this one opens.
@@ -110,7 +115,7 @@ everything already said there. It lights up when what has been said on that chan
 the backend's own test for a question the expert should take — the test is code, and never
 a model's opinion of its own reach. Acting on it is normally yours to do; a session can be
 set up to let the backend act on the test itself, and either way the move is announced on
-that channel. Pressing the control again, now reading **Return to fast agent**, puts the
+that channel. Pressing the control again, now reading **Return to assistant**, puts the
 channel back on the first rung. It is per channel — moving one thread leaves the map and
 every other thread where they were.
 

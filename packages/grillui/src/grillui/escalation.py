@@ -49,12 +49,15 @@ Two of them are read here, off the board and before any model is called:
   the next clerical gesture is first-rung again with no entry to undo.
 - **whether the human has said twice that the first rung was not enough.** A
   dismissal of a first-rung seat's proposal is the one wordless way they say a
-  turn was wrong. Two readings here serve it and neither decides anything:
-  which dismissals are that gesture, and whether the policy has already moved a
-  channel. The counter is the lane's, and so is the move -- it asks both and
-  writes the entry under one hold of the append lock, which is what makes the
-  move once per session. The entry is sticky, so a channel the human took back
-  down stays down rather than being bought again by the next signal.
+  turn was wrong, and the backend's own hand-up of a refused turn is the other.
+  Three readings here serve it and none of them decides anything: which
+  dismissals are that gesture, how many such signals the log holds, and whether
+  the policy has already moved a channel. The count is a fold over the log, so
+  it is the session's and a successor process reaches the same number. The move
+  is the lane's -- it asks all three and writes the entry under one hold of the
+  append lock, which is what makes the move once per session. The entry is
+  sticky, so a channel the human took back down stays down rather than being
+  bought again by the next signal.
 
 One hand-up is not a recommendation at all. Where the human's gesture leaves
 decisions the board should stop offering, what the next turn owes is a ruling
@@ -74,14 +77,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
+from grillui.projector import fold
 from grillui.schemas import (
     AGENT_ACTORS,
     DISCHARGING_KINDS,
+    DISMISS_KIND,
     MAP_CHANNEL,
+    PENDING_KEY,
+    PRESSED_KEY,
     PROPOSABLE_KINDS,
     RULING_STANDS,
     RULINGS_KEY,
     STATUS_KIND,
+    STATUS_PHASE_COMPOSING,
     STATUS_PHASE_TRANSFERRED,
     THREAD_KINDS,
     TIER_KEY,
@@ -96,10 +104,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from grillui.schemas import Image2, LogEntry
-
-# Whose turn carries a ruling. The map's author is the only agent that makes
-# one, so a reader looking for the last ruling looks for its entry and no other.
-GRILL_MASTER_ACTOR = "grill-master"
 
 CONDITION_COMMITMENT = "commitment asked on a decision two or more decisions depend on"
 CONDITION_IRREDUCIBLE = "reframing rejected, or the trade-off named as what cannot be resolved"
@@ -324,6 +328,66 @@ def dismisses_first_rung(
         and seats.get(item.authored_at) != expert_tier
         for item in image.pending
     )
+
+
+def hands_up(entry: LogEntry) -> bool:
+    """Whether this entry is the backend announcing a refused turn's hand-up.
+
+    The hand-up's own record, and the only announcement that is one: a turn
+    seated on the expert because the channel was transferred, or because the
+    gesture's class named it, writes the same phase and the same tier. Telling
+    them apart is the mark the press path puts on this one.
+    """
+    return (
+        entry.actor == "backend"
+        and entry.kind == STATUS_KIND
+        and entry.payload.get("phase") == STATUS_PHASE_COMPOSING
+        and entry.payload.get(PRESSED_KEY) is True
+    )
+
+
+def distrust_count(entries: Sequence[LogEntry], epoch: str, channel: str, expert_tier: str) -> int:
+    """How many times the human has said this channel's first rung was not enough.
+
+    Folded out of the log rather than tallied as the signals arrive, which is
+    what makes the count the session's rather than one process's. The signals
+    below the threshold write nothing of their own, so a tally kept in memory
+    leaves a successor nothing to read back: a backend replaced after the first
+    signal would start again at nothing, and the second signal the human made
+    would buy them nothing.
+
+    Each counted signal is one named record. A dismissal is the human's own
+    entry, classed against the queue as it stood with the item still in it,
+    which is the log prefix before that entry. A hand-up is the marked
+    `composing` entry the press path writes as it announces the expert's turn.
+
+    The prefix is folded once per dismissal on this channel. The ceiling is a
+    session whose human dismissed a great many proposals, where the work is
+    quadratic in the log; the count is asked only when a signal arrives, and the
+    upgrade if a session ever feels it is a tally cached against the last
+    sequence this read.
+    """
+    count = 0
+    for index, entry in enumerate(entries):
+        if entry.channel != channel:
+            continue
+        if hands_up(entry):
+            count += 1
+            continue
+        if entry.actor != "human" or entry.kind != DISMISS_KIND:
+            continue
+        named = entry.payload.get(PENDING_KEY)
+        if not isinstance(named, list):
+            continue
+        before = entries[:index]
+        if dismisses_first_rung(
+            fold(epoch, before),
+            before,
+            [one for one in named if isinstance(one, str)],
+            expert_tier,
+        ):
+            count += 1
+    return count
 
 
 # What each closed judgment class is called on the lane. Named rather than
@@ -605,19 +669,25 @@ def _resting_obligation(image: Image2, gesture: LogEntry) -> MootnessObligation 
     )
 
 
-def rulings_of(entries: Sequence[LogEntry], channel: str = MAP_CHANNEL) -> tuple[list[Any], ...]:
-    """The rulings the last grill-master turn on this channel made, and the
-    updates it carried.
+def rulings_of(entries: Sequence[LogEntry], spoke: int | None) -> tuple[list[Any], ...]:
+    """The rulings the turn that appended entry `spoke` made, and the updates it
+    carried.
 
-    Read off the turn's own log entry, which is where a ruling lives: the check
-    is on what the document said, not on what the board happens to look like
-    afterwards. A turn that ruled and a turn whose proposal the human applied in
-    between are different facts, and only the first is coverage.
+    Read off the one entry that turn's own driver appended, named by the
+    sequence the driver came back with. The alternative is to read the last
+    grill-master entry in a window opened before the turn was dispatched, and
+    that credits the wrong turn: map turns run concurrently, so a second turn's
+    reply can land inside any window and discharge an obligation nobody ruled
+    on. A turn that appended nothing names no entry and is credited nothing,
+    which is exactly the turn the ladder owes a hand-up.
+
+    The check is on what the document said, not on what the board happens to
+    look like afterwards. A turn that ruled and a turn whose proposal the human
+    applied in between are different facts, and only the first is coverage.
     """
-    for entry in reversed(entries):
-        if entry.channel != channel or entry.actor != GRILL_MASTER_ACTOR:
-            continue
-        return _dicts(entry.payload.get(RULINGS_KEY)), _dicts(entry.payload.get("updates"))
+    for entry in entries:
+        if entry.seq == spoke:
+            return _dicts(entry.payload.get(RULINGS_KEY)), _dicts(entry.payload.get("updates"))
     return [], []
 
 

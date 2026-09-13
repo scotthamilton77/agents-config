@@ -65,9 +65,9 @@ def human(text: str, target: str | None = TARGET) -> list[Turn]:
     ]
 
 
-def entry(kind: str, actor: Actor, channel: str, **payload: object) -> LogEntry:
+def entry(kind: str, actor: Actor, channel: str, seq: int = 1, **payload: object) -> LogEntry:
     return LogEntry(
-        seq=1,
+        seq=seq,
         epoch="e1",
         kind=kind,
         idempotency_key=f"k-{kind}-{channel}",
@@ -393,31 +393,34 @@ def test_a_turn_that_ruled_on_nothing_leaves_every_named_decision_unruled() -> N
     assert unruled(obligation.ids, [], []) == ["d2", "d3"]
 
 
-def test_the_rulings_read_are_the_last_map_turns_and_no_older_ones() -> None:
+def test_the_rulings_read_are_the_named_turns_own_entry_and_no_other() -> None:
     """
     Given two grill-master turns on the map, an earlier one ruling on a decision
           and a later one ruling on nothing
-    When the turn's rulings are read
-    Then the later turn's are what comes back.
+    When each turn's rulings are read by the sequence that turn appended at
+    Then that turn's own rulings come back, whichever of them landed last.
 
-    The check is on the turn that was just taken. Reading the channel's rulings
-    in aggregate would credit a turn for a verdict a previous one made, which is
-    exactly the press this exists to fire.
+    The check is on the turn that was just taken, and the entry it appended is
+    what names it. Reading the channel's latest rulings instead would credit a
+    turn for a verdict another one made -- which is the press this exists to
+    fire, not firing, whenever a concurrent turn answered in between. A turn
+    that appended nothing names no entry, and is credited nothing.
     """
     older = entry(
         "informational",
         "grill-master",
         MAP_CHANNEL,
+        seq=4,
         text="d2 stands.",
         rulings=[{"decision": "d2", "ruling": "stands", "why": "it holds"}],
     )
-    newer = entry("informational", "grill-master", MAP_CHANNEL, text="Noted.", rulings=[])
-    human = entry("answer", "human", MAP_CHANNEL, target="d1", answer={"option": "b"})
+    human = entry("answer", "human", MAP_CHANNEL, seq=5, target="d1", answer={"option": "b"})
+    newer = entry("informational", "grill-master", MAP_CHANNEL, seq=6, text="Noted.", rulings=[])
+    log = [older, human, newer]
 
-    assert rulings_of([older, human, newer]) == ([], [])
-    assert rulings_of([newer, human, older])[0] == [
-        {"decision": "d2", "ruling": "stands", "why": "it holds"}
-    ]
+    assert rulings_of(log, 6) == ([], [])
+    assert rulings_of(log, 4)[0] == [{"decision": "d2", "ruling": "stands", "why": "it holds"}]
+    assert rulings_of(log, None) == ([], [])
 
 
 # ── What an invalidate the human applied owes what was resting on it ──
