@@ -1,0 +1,18 @@
+{"decision": "stashed", "event": "SubagentStop", "final_in_last_message": false, "name": "general-purpose", "ts": "2026-09-13T14:02:07Z"}
+{"decision": "block", "event": "TeammateIdle", "idle_blocks": 1, "name": "alpha", "ts": "2026-09-13T14:02:08Z"}
+{"decision": "final-report-observed", "event": "PostToolUse", "name": "ab427a4dd0a7048cf", "ts": "2026-09-13T14:02:11Z"}
+{"decision": "stashed", "event": "SubagentStop", "final_in_last_message": true, "name": "general-purpose", "ts": "2026-09-13T14:02:16Z"}
+{"decision": "block", "event": "TeammateIdle", "idle_blocks": 2, "name": "alpha", "ts": "2026-09-13T14:02:16Z"}
+{"decision": "final-report-observed", "event": "PostToolUse", "name": "ab427a4dd0a7048cf", "ts": "2026-09-13T14:02:20Z"}
+{"decision": "stashed", "event": "SubagentStop", "final_in_last_message": true, "name": "general-purpose", "ts": "2026-09-13T14:02:22Z"}
+{"decision": "block", "event": "TeammateIdle", "idle_blocks": 3, "name": "alpha", "ts": "2026-09-13T14:02:24Z"}
+{"decision": "final-report-observed", "event": "PostToolUse", "name": "ab427a4dd0a7048cf", "ts": "2026-09-13T14:02:28Z"}
+{"decision": "stashed", "event": "SubagentStop", "final_in_last_message": false, "name": "general-purpose", "ts": "2026-09-13T14:02:31Z"}
+{"decision": "release-noncompliant", "event": "TeammateIdle", "idle_blocks": 3, "name": "alpha", "ts": "2026-09-13T14:02:31Z"}
+{"decision": "update-observed", "event": "PostToolUse", "name": "alpha", "ts": "2026-09-13T14:02:41Z", "updates_seen": 1}
+{"decision": "update-observed", "event": "PostToolUse", "name": "alpha", "ts": "2026-09-13T14:02:41Z", "updates_seen": 2}
+{"decision": "final-report-observed", "event": "PostToolUse", "name": "alpha", "ts": "2026-09-13T14:02:42Z"}
+{"decision": "stashed", "event": "SubagentStop", "final_in_last_message": false, "name": "alpha", "ts": "2026-09-13T14:02:46Z"}
+{"decision": "allow", "event": "TeammateIdle", "name": "alpha", "ts": "2026-09-13T14:02:47Z"}
+{"decision": "stashed", "event": "SubagentStop", "final_in_last_message": false, "name": "alpha", "ts": "2026-09-13T14:02:52Z"}
+{"decision": "allow", "event": "TeammateIdle", "name": "alpha", "ts": "2026-09-13T14:02:52Z"}

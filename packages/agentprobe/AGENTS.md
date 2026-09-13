@@ -1,0 +1,87 @@
+# AGENTS.md — `packages/agentprobe/`
+
+Package-scoped guidance for the `agentprobe` CLI. The repo-root `AGENTS.md` still
+applies; this file adds what is specific to this package. Like the other packages here,
+**this is real code with a real quality gate**, unlike the config content under `src/`.
+
+## The quality gate is mandatory
+
+Before pushing any change under `packages/agentprobe/`, run the canonical gate from the
+repo root:
+
+```bash
+make ci-agentprobe
+```
+
+It runs, in order: `ruff check`, `ruff format --check`, `mypy --strict src`,
+`pytest --cov` (90% branch floor), `pip-audit`, and `agentprobe --help`. Do not hand-pick
+a subset. The linter and the formatter are orthogonal. Faster inner loop:
+`make test-agentprobe`.
+
+This package is **not** in the installer's PATH-install registry. It is a diagnostic the
+operator runs from this repository against this repository's own mitigations, rather than
+a tool other projects need. Membership of that registry is earned, and being gated does
+not earn it.
+
+## Never run a probe as verification
+
+`agentprobe run` launches a real Claude Code session and spends real agent turns on the
+operator's account. No gate may invoke it, no test may invoke it, and claiming a change
+works must not depend on having run one. Use `--dry-run`, which writes the run directory,
+prints the command and the scrubbed environment, and stops.
+
+Everything the suite checks is a pure function over recordings under
+`packages/agentprobe/tests/unit/fixtures/`.
+
+## Architecture
+
+```
+hooklog.py   →  events.py  →  detect.py  →  report.py  →  cli.py
+(runs inside     (reads a      (judges       (rates        (two verbs)
+ the probed      recording)    nothing,      across
+ session)                      observes)     runs)
+
+session.py — the only module that opens a terminal
+```
+
+- **`hooklog.py` runs inside the session being measured.** Claude Code invokes it as a
+  hook command, by path, once per event. It imports nothing from the rest of the package
+  for that reason, and it must never raise into the session it is observing.
+- **`session.py` splits its decisions from its terminal.** Recognising the trust dialog,
+  knowing the input line is ready, and confirming the typed instruction echoed back are
+  pure functions tested on captured strings. Only `run_session` touches a
+  pseudo-terminal, and it is excluded from coverage.
+- **Whether the scenario finished is not read off the screen.** The lead writes a sentinel
+  file as its last act, and the run completes when that file exists and the event log has
+  gone quiet. A screen-scraped word cannot tell a lead that finished from one that
+  paraphrased its instruction, and the screen is redrawn over it either way.
+- **A detector returns a hit and its evidence, never a verdict.** Adding one means adding
+  a pure function of a `Run` and a test pinning it against a recording.
+- **Not every behaviour is visible in the event log.** A Write refused by the report-file
+  guard produces no hook event at all, not even a PreToolUse, because the refusal sits
+  above the hook layer. The only record is the agent's own account, which is why a
+  scenario asks its agents to report what a tool returned and has the lead write it down.
+
+## Why the session is interactive
+
+Agent teams do not exist under `claude -p`. A named Agent runs there as an ordinary
+subagent and no teammate idle ever fires, so the behaviours this package exists to
+measure are invisible in that mode. Driving a real interactive session on a
+pseudo-terminal is the only way to reach them.
+
+Two details of that driving are load-bearing, and both were learned by losing runs to
+them. Accepting the workspace-trust dialog repaints the screen, and keystrokes sent
+during the repaint are dropped silently. The driver therefore waits, and then reads the
+instruction back off the screen before pressing return. An instruction that never echoes
+is never submitted, because a session driven by a fragment is not the scenario.
+
+Accepting the dialog also makes the terminal echo the chosen line back, so its text stays
+in the captured screen for the rest of the run. Nothing may exclude the main screen on
+that text once trust has been accepted.
+
+## Recordings
+
+A fixture is a scrubbed copy of a real run: the operator's home path is replaced and
+token-like values are redacted, while timestamps, agent ids and session ids are kept
+because the detectors read them. Adding a fixture means adding the same five files a live
+run produces, minus what the run did not generate.
