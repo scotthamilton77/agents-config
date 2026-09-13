@@ -948,13 +948,13 @@ follows, and changes nothing else.
   offered there: a thread gesture naming no thread is refused, and the pane's own dismissal
   is what closing a draft means.
 - **GUI-U21 — Every agent turn is labelled by the tier that produced it.** On a thread and
-  on the map channel alike, an agent turn renders as *fast agent* or *expert agent*, read
+  on the map channel alike, an agent turn renders as *assistant* or *expert*, read
   from the tier attribution that turn itself carries (§8.3, §8.5). The channel's current
   mode is never the source: reading the mode would relabel every turn taken before a
   transfer as the tier that came after it, and the transcript is the human's only evidence
   that the transfer changed anything.
 - **GUI-U22 — The transfer control names the action it performs, not a state.** Its label
-  is *Transfer to expert* while the channel is on the fast tier and *Return to fast agent*
+  is *Transfer to expert* while the channel is on the fast tier and *Return to assistant*
   while the heavy tier drives it, styled identically in both positions and carrying no state
   colouring in either — the channel's tier is already legible from the per-turn labels of
   GUI-U21. Rendering it as a state indicator instead — the label naming the tier the channel
@@ -963,7 +963,7 @@ follows, and changes nothing else.
   it does.
 - **GUI-U24 — A channel the policy moved says so where it moved, and nowhere else.** Under
   `autonomous` (GUI-D35) the policy move appears on that channel's status lane, naming the
-  condition that fired, and the transfer control flips to *Return to fast agent* (GUI-U22)
+  condition that fired, and the transfer control flips to *Return to assistant* (GUI-U22)
   with the human having pressed nothing — the control's position follows the channel's mode
   as the lane states it, never the human's own last click, which after a policy move
   names the tier the channel has left. No notification is raised: the move is board state
@@ -1680,13 +1680,13 @@ Each criterion is mechanically checkable and convertible to a red test.
   title; scrolling the decision fully out of view releases it, and so does settling and
   collapsing it. Verified in a browser.
 - **GUI-A62** Over a fixture log carrying one `fast` and one `heavy` agent turn on the same
-  channel, the page labels the first *fast agent* and the second *expert agent*, on a thread
+  channel, the page labels the first *assistant* and the second *expert*, on a thread
   and on the map channel alike, and the labels are identical when the same log is rendered
   with the channel in each mode. A page joining that session after both turns renders the
   same labels, which is what the projected turn's `tier` (§8.5) is for. Verified in a
   browser.
 - **GUI-A63** The transfer control reads *Transfer to expert* on a channel driven by the
-  fast tier and *Return to fast agent* on one driven by the heavy tier, with the same
+  fast tier and *Return to assistant* on one driven by the heavy tier, with the same
   styling in both positions and no state colouring in either — verified in a browser and
   against the shipped stylesheet.
 - **GUI-A64** Every shipped thread-agent prompt states the no-fishing rule and the two cases

@@ -452,9 +452,9 @@ Contract: `packages/grillui/src/grillui/tiers.py`.
 
 Conflict: the name reads as a claim about latency that
 `docs/specs/2026-08-23-grill-master-role.md` (GUI-D46) explicitly does not make —
-the map's first-rung seat is a reasoning model, not a fast one. The board still
-labels the seat "fast agent"; `agents-config-9k9.327` rules on which the label
-follows.
+the map's first-rung seat is a reasoning model, not a fast one. The board does not
+use the log name: it labels this rung *assistant* and the rung above it *expert*, a
+pair that names relative weight and claims nothing about speed.
 
 ## Seat
 

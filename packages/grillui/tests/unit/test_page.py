@@ -2009,7 +2009,7 @@ def test_the_control_is_on_every_channel_and_is_never_disabled() -> None:
     """
     control = function_body("transferControl")
     assert "disabled" not in control
-    assert "Return to fast agent" in control, "the escalated channel does not offer the way back"
+    assert "Return to assistant" in control, "the escalated channel does not offer the way back"
     assert "Transfer to expert" in control
     assert 'data-mode="' in control
     assert "transferControl(MAP)" in function_body("renderShell")
@@ -2066,7 +2066,7 @@ def test_the_control_names_the_action_and_never_the_state() -> None:
     that did happen gets read as one that did not.
     """
     control = function_body("transferControl")
-    assert '(on ? "⚡ Return to fast agent" : "⚡ Transfer to expert")' in control
+    assert '(on ? "⚡ Return to assistant" : "⚡ Transfer to expert")' in control
     for state in ("Fast agent mode", "Expert mode", "Expert agent mode"):
         assert state not in page_source(), f"the control wears {state!r} as a state"
 
@@ -2108,8 +2108,8 @@ def test_a_turn_is_labelled_by_its_own_tier_and_never_by_the_channels_mode() -> 
     that the transfer changed anything.
     """
     label = function_body("tierLabel")
-    assert "expert agent" in label
-    assert "fast agent" in label
+    assert "expert" in label
+    assert "assistant" in label
     assert "onExpert" not in label, "the label is read off the channel's current mode"
     assert "TRANSFER" not in label
     # Read off the projected turn on a thread, and off the authoring entry on the
@@ -2130,12 +2130,34 @@ def test_an_unattributed_turn_is_labelled_as_nothing_rather_than_as_a_guess() ->
     label = function_body("tierLabel")
     assert label.count("return") == 1
     assert (
-        'return tier === HEAVY_TIER ? "expert agent" : tier === FAST_TIER ? "fast agent" : "";'
+        'return tier === HEAVY_TIER ? "expert" : tier === FAST_TIER ? "assistant" : "";'
     ) in label
     # Every caller falls back to something that is not a tier, so an
     # unattributed turn still says who spoke without naming a tier for them.
     for caller in ("renderTurns", "infoNote"):
         assert '|| "Agent"' in function_body(caller), f"{caller} guesses a tier"
+
+
+def test_no_file_in_the_package_still_names_the_first_rung_by_its_speed() -> None:
+    """The rung labels are role names, and the retired wording is gone everywhere.
+
+    The pair names relative weight rather than speed, so the old label is a
+    claim the board no longer makes. The transfer control's retired label
+    contains the turn label's, which is why one search covers both. A stale
+    copy left in a probe or an end-to-end check is how the old string comes
+    back, so the search reads the whole package and not just the page.
+    """
+    root = Path(__file__).resolve().parents[2]
+    retired = "fast " + "agent"
+    trees = list((root / "src").rglob("*")) + list((root / "tests").rglob("*"))
+    offenders = [
+        str(path.relative_to(root))
+        for path in trees
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and retired in path.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert offenders == [], offenders
 
 
 def test_the_mode_and_the_highlight_are_read_from_the_log_the_page_already_holds() -> None:
@@ -2179,7 +2201,7 @@ def test_the_control_follows_the_log_rather_than_the_click_the_policy_overtook()
     assert "meant.since > loggedMode(channel).at" in function_body("pressed"), (
         "a stale click outranks the log"
     )
-    assert '(on ? "⚡ Return to fast agent"' in function_body("transferControl")
+    assert '(on ? "⚡ Return to assistant"' in function_body("transferControl")
 
 
 # ---------------------------------------------------------------- GUI-A50
