@@ -1,6 +1,6 @@
 ---
 name: instructing-subagents
-description: Use when writing the prompt for any delegated agent — a subagent, a workflow stage, a background worker, or a nested harness. Apply whenever you are about to hand work to an agent, split a task across agents, or draft a brief, spec, or dispatch for delegated work; and whenever a delegated agent built the wrong thing, returned noise, went idle without delivering its report, or argued with its brief. Dispatching to a restricted-tool subagent such as openrouter-claude-subagent's read-only default needs its mandated report file carved into the tool grant explicitly.
+description: Use when writing the prompt for any delegated agent — a subagent, a workflow stage, a background worker, or a nested harness. Apply whenever you are about to hand work to an agent, split a task across agents, or draft a brief, spec, or dispatch for delegated work; and whenever a delegated agent built the wrong thing, returned noise, went idle without delivering its report, or argued with its brief. Dispatching to a restricted-tool subagent such as openrouter-claude-subagent's read-only default needs the agent-messaging tool carved into the tool grant explicitly.
 admission:
   prevents: Delegated work that returns noise or loses its result — briefs missing an objective, constraints, acceptance criteria, or a commanded report delivery; briefs that prescribe the orchestrator's implementation instead of the outcome; and finished judgement lost to an agent that went idle holding a good report.
   cost: Context footprint only, bounded by the caps content-lint enforces.
@@ -47,15 +47,17 @@ verifies them.
 
 **5. Reporting contract.** Say what the report must contain — evidence per criterion,
 what was changed or produced, conclusions reached and how they were verified, anything
-left undone or uncertain. Then command delivery twice: name a file
-path the agent *writes* the report to, and separately command the send as an explicit
-act — where the harness has an agent-messaging tool, *deliver the report by calling
-it; text composed as a plain final message may never be transmitted.* Prefix progress
-messages `UPDATE <n>:` and the deliverable `FINAL REPORT:` — the markers make
-delivery mechanically checkable, and delivery gates key on them where they run. A
-"report back with…" list describes an artifact and commands no action; agents finish,
-go idle, and deliver nothing while holding a good report. Code survives that;
-judgement does not.
+left undone or uncertain. Then command delivery twice over: command the send as an
+explicit act — where the harness has an agent-messaging tool, *deliver the report by
+calling it; text composed as a plain final message may never be transmitted* — and
+command that the same content also be the agent's final message, so the judgement
+survives in the transcript when the send does not. A teammate dispatching a child of
+its own names itself in that child's brief as the report's recipient, and the child
+addresses its send to that name. Prefix progress messages `UPDATE <n>:` and the
+deliverable `FINAL REPORT:` — the markers make delivery mechanically checkable, and
+delivery gates key on them where they run. A "report back with…" list describes an
+artifact and commands no action; agents finish, go idle, and deliver nothing while
+holding a good report. Code survives that; judgement does not.
 
 **Fail-fast cases.** Beyond the report on completion, name the task-specific conditions
 under which the agent must stop *mid-execution* and come back for clarification or help —
@@ -106,12 +108,13 @@ Acceptance criteria:
 - <condition, mechanically checkable>
 - <condition>
 
-Report: write your report to <absolute path>, covering <contents: evidence per
-criterion, what changed or was produced, anything left undone>. Then deliver it by
-calling the agent-messaging tool, message beginning "FINAL REPORT:" — a plain
+Report: cover <contents: evidence per criterion, what changed or was produced,
+anything left undone>. Deliver it by calling the agent-messaging tool, message
+beginning "FINAL REPORT:", and make the same content your final message — a plain
 final message is not delivery. Do not end your turn before the send succeeds.
 
-Stop mid-task and come back for guidance — partial report, same path — if:
+Stop mid-task and come back for guidance — partial report, same "FINAL REPORT:"
+prefix marked PARTIAL — if:
 - <task-specific fail-fast case, e.g. the cause traces outside your boundary>
 - <task-specific fail-fast case, e.g. a needed resource or permission is missing>
 
@@ -127,4 +130,5 @@ error in my framing.
 - Criteria that read as numbered steps.
 - "Report back with…" and no command to send anything.
 - A relative path in a brief bound for another working tree.
-- An agent went idle and you are about to re-run its work instead of reading its file.
+- An agent went idle and you are about to re-run its work instead of reading its
+  transcript.

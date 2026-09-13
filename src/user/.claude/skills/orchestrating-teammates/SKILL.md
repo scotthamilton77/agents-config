@@ -23,12 +23,14 @@ Two mechanical facts govern everything here:
 
 Write the brief per `instructing-subagents`. The reporting contract MUST command
 delivery as a SendMessage call carrying the markers — progress messages beginning
-`UPDATE <n>:`, the deliverable beginning `FINAL REPORT:` — plus the written report
-file. The `teammate-report-gate` hook enforces exactly this protocol when wired in
-settings (`TaskCompleted`, `TeammateIdle`, `PostToolUse` on SendMessage): a task
-completion is refused until an UPDATE is sent, idle is refused until the FINAL
-REPORT is sent, and after three refused idles the teammate is released and a
-noncompliance marker is dropped for you to find.
+`UPDATE <n>:`, the deliverable beginning `FINAL REPORT:`. A teammate that spawns a
+child of its own names itself in that child's brief as the recipient, because a
+report addressed to `team-lead` or to main reaches the root session instead and
+leaves the teammate waiting. The `teammate-report-gate` hook enforces exactly this
+protocol when wired in settings (`TaskCompleted`, `TeammateIdle`, `PostToolUse` on
+SendMessage): a task completion is refused until an UPDATE is sent, idle is refused
+until the FINAL REPORT is sent, and after three refused idles the teammate is
+released and a noncompliance marker is dropped for you to find.
 
 ## When an idle notification arrives
 
@@ -40,13 +42,12 @@ reply. Otherwise investigate before touching the teammate, in this order:
    `<name>.json` — `final_delivered` settles whether a report was ever sent — and
    `<name>.stop-noncompliance.marker`, which means the gate gave up and points at
    the transcript.
-2. **The mandated report file** from the brief.
-3. **The teammate's own transcript**:
+2. **The teammate's own transcript**:
    `~/.claude/projects/<project-dir-slug>/<parent-session-id>/subagents/agent-*.jsonl`.
    A stranded report is usually composed there verbatim in the final assistant
    turns — lift it; never re-spawn an agent to regenerate a report that already
    exists on disk.
-4. **The tree itself**, for code work: `git status`, the diff, and the gate's own
+3. **The tree itself**, for code work: `git status`, the diff, and the gate's own
    exit status outrank any self-report.
 
 Ping at most once, and only for judgment the transcript cannot answer — choices it
@@ -58,6 +59,6 @@ proceed on what the traces gave you.
 ## Prose-only deliverables
 
 A review or critique teammate's only deliverable IS the report — there is no tree
-to fall back on. Never let a delivery decision wait on that report arriving:
-mandate the report file at dispatch, treat the SendMessage as confirmation, and
-when it goes quiet start at the transcript, where the judgment usually survives.
+to fall back on. Never let a delivery decision wait on that report arriving: treat
+the SendMessage as the confirmation that it landed, and when the teammate goes quiet
+start at the transcript, where the judgment usually survives.
