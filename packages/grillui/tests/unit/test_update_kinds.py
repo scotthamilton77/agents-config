@@ -327,6 +327,45 @@ def test_revise_replaces_the_fields_it_names_and_leaves_the_others_standing(
     assert node["body"] == "Pick the storage layer."
 
 
+def test_a_revise_carries_its_why_and_a_silent_one_leaves_the_reason_standing(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a decision revised with a reason
+    When a second revise names a field and gives no reason
+    Then the decision reports the second field and the first reason still stands.
+
+    A revise is the most common thing that happens to a decision, so the board
+    would carry a reason for every other mutation and none for this one. The
+    silent half is the same partial rule: a `why` the revise did not supply is
+    one more field it is not speaking about, and clearing it there would leave
+    the board reporting a change with nothing behind it.
+    """
+    seed_node(client, log.epoch)
+
+    post(
+        client,
+        log.epoch,
+        event(
+            "revise",
+            key="revise-1",
+            target=SEED_NODE,
+            body="Pick the storage layer, given the audit rule.",
+            why="the audit rule lands before the storage choice",
+        ),
+    )
+    assert (
+        decisions(client)[SEED_NODE]["rationale"]
+        == "the audit rule lands before the storage choice"
+    )
+
+    post(client, log.epoch, event("revise", key="revise-2", target=SEED_NODE, short="Storage"))
+
+    node = decisions(client)[SEED_NODE]
+    assert node["short"] == "Storage"
+    assert node["rationale"] == "the audit rule lands before the storage choice"
+
+
 def test_settle_records_an_answer_the_agent_asserts(client: TestClient, log: SessionLog) -> None:
     """
     Given a decision the human answered in conversation rather than on the board
