@@ -833,15 +833,16 @@ function proposals() {
 function notices() {
   return BOARD.pending.filter(function (p) { return live(p) && NOTICE_KINDS.indexOf(p.kind) >= 0; });
 }
-// Which decisions a message from the agent is read on: the one it names, and
-// when it names none, the ones its own entry changed in the same breath. A
-// reply that speaks and changes the board arrives as one entry, and the prose
-// half of it is framing for the other half — so it belongs on what it framed
-// rather than in a lane of its own.
+// Which decision a message from the agent is read on: the one it names, and no
+// other. A message that names none is the turn's own story, and the turn is
+// shown in one place — so it is read there once, and nowhere on the board.
 //
-// Derived from the log rather than remembered from the arrival, because the
-// board has to read the same after a reload as before one: the queue survives a
-// reload and anything this page noticed at arrival does not.
+// It is tempting to home an unnamed message on whatever its entry changed in
+// the same breath, on the grounds that the prose half of a reply frames the
+// other half. That repeats one paragraph against every decision the turn moved
+// and leaves none of them saying what moved locally. What each moved decision
+// says about itself is the change that moved it, which the decision already
+// carries and this page shows on it.
 //
 // A home is a decision the board is carrying now, which is what makes "the
 // board already shows this" measured rather than assumed: a message about
@@ -849,12 +850,7 @@ function notices() {
 // lane.
 function noticeHomes(item) {
   var out = [];
-  var add = function (id) { if (id && node(id) && out.indexOf(id) < 0) out.push(id); };
-  if (item.target) { add(item.target); return out; }
-  var e = entryAt(item.authored_at);
-  (e ? updatesIn(e) : []).forEach(function (u) {
-    if (MAP_MUTATION_KINDS.indexOf(u.kind) >= 0) add(u.target);
-  });
+  if (item.target && node(item.target)) out.push(item.target);
   return out;
 }
 function noticesOn(id) {
@@ -1023,10 +1019,38 @@ function historyOf(id) {
   var out = [];
   LOG.forEach(function (e) {
     updatesIn(e).forEach(function (u) {
-      if (u.target === id) out.push({ seq: e.seq, actor: e.actor, kind: u.kind, why: u.why || u.text || "" });
+      if (u.target === id) out.push({ seq: e.seq, uid: u.uid, actor: e.actor, kind: u.kind, why: u.why || u.text || "" });
     });
   });
   return out;
+}
+// What last moved this decision, off the same history the 🕘 panel reads. A
+// turn that moves several decisions says what it did to each of them on the
+// decision itself; the turn's own message is one message about the whole turn,
+// and a human should not have to open it to learn what happened here.
+//
+// Only a change to the board counts, which is the set the queue would propose:
+// a message on this decision renders as the message it is, immediately below,
+// and reporting it a second time as a change reads as two events.
+//
+// A change still waiting on the human has moved nothing yet, so it is not
+// reported — the block saying one is waiting is already on this decision.
+function lastChange(id) {
+  var moved = historyOf(id).filter(function (h) {
+    return PROPOSABLE_KINDS.indexOf(h.kind) >= 0 &&
+      !BOARD.pending.some(function (p) { return p.id === h.uid; });
+  });
+  return moved[moved.length - 1] || null;
+}
+// That change in one line. The change names itself and carries its own reason;
+// where it gave none, the decision's rationale is the board's word on why it
+// last moved, and that is what shows. A move nobody gave a reason for says
+// nothing rather than saying "no reason given" on every decision the human
+// answered themselves.
+function changeLine(id) {
+  var last = lastChange(id), why = (last && last.why) || (node(id) || {}).rationale || "";
+  if (!why) return "";
+  return '<div class="rationale"><strong>' + esc(last ? last.kind : "why") + ':</strong> ' + esc(why) + "</div>";
 }
 // Prefer a child just unblocked by what was settled, else the oldest thing on
 // the frontier.
@@ -1870,6 +1894,7 @@ function renderColumn() {
         (st === "fogged" ? "not a real question yet — sharpens once " + d.fogUntil + " settles"
           : st === "invalidated" ? "left the flow; still here to relitigate"
           : wait.list.length ? "waiting on " + wait.list.join(", ") : d.body)) + "</div>";
+      h += changeLine(id);
       if (waiting.length) h += '<div class="pend-notice">📥 <strong>A change is waiting on this decision.</strong> ' +
         esc(summarise(waiting[0])) + ' <button class="btn sm" data-act="inbox">Open the inbox</button></div>';
       if (blockingThreads(id).length) h += '<div class="blocking"><span class="tag">blocking</span>' +
@@ -1915,7 +1940,7 @@ function renderColumn() {
       } else {
         h += answerControls(d, !takesAnswer(id) || !!lock);
       }
-      if (d.rationale) h += '<div class="rationale"><strong>Why:</strong> ' + esc(d.rationale) + "</div>";
+      h += changeLine(id);
       noticesOn(id).forEach(function (n) { h += infoNote(n); });
       threadsOf(id).forEach(function (tid) {
         if (blockingThreads(id).indexOf(tid) >= 0) return;
