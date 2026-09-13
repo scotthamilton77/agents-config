@@ -635,8 +635,8 @@ def test_a_stale_epoch_is_turned_away_on_the_update_read_and_the_state_read_stil
 def test_the_state_read_alone_carries_the_whole_board(client: TestClient, log: Any) -> None:
     """No delta is needed to know what the board says.
 
-    A page that had to replay the log to know the board would be folding it --
-    and a page that folds is a page that can fold differently.
+    A page that had to replay the log to know the board would be replaying it --
+    and a page that replays is a page that can replay differently.
     """
     node = seed_node(client, log.epoch)
     post(
@@ -2455,11 +2455,11 @@ def test_only_a_settled_decision_offers_the_way_back_to_open() -> None:
 
     Each half is silent on its own. A control drawn outside the settled gate
     offers to withdraw an answer that was never given, on a decision still
-    being asked or on one that has left the flow -- neither of which the fold
+    being asked or on one that has left the flow -- neither of which the replay
     moves, so the press would do nothing and say nothing. A control that
     reached the wire as anything but the human's own `unsettle` would be a
     second way to undermine a decision, beside the one the projector already
-    folds for an unsettle the human applied.
+    replays for an unsettle the human applied.
     """
     block = balanced_body("renderColumn")
     control = 'data-act="reopen"'

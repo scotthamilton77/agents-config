@@ -99,7 +99,7 @@ def entry(argv: list[str] | None = None) -> int:
 def capture_session(session_dir: Path) -> int:
     """Capture a directory that holds a session, or say it does not.
 
-    A directory with no log is refused rather than captured: the fold over an
+    A directory with no log is refused rather than captured: the replay over an
     empty log is a well-formed result saying a session decided nothing, and
     handing that to someone who mistyped a path would answer their question
     falsely.

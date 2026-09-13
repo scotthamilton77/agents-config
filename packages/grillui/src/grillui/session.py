@@ -10,8 +10,8 @@ before the handoff is, so there is no path on which a resumed session reads a
 file that has been edited under it.
 
 **The board is seeded through the log, never by re-reading the handoff.** One
-`session-start` entry carries the briefing, and the projector folds the plan out
-of it, so a fresh process re-folding `log.jsonl` alone reproduces the seeded
+`session-start` entry carries the briefing, and the projector replays the plan out
+of it, so a fresh process replaying `log.jsonl` alone reproduces the seeded
 board. The briefing's five fields ride in that same entry, which is what keeps
 the load-bearing `stop_when` available to a process that never saw the file.
 
@@ -89,7 +89,7 @@ def open_session(directory: Path, handoff_path: Path | None = None) -> SessionLo
     """Mint a tenure over one session directory, seeding it if it is new.
 
     Resuming is not a handoff: a directory whose log already holds entries is
-    re-folded from that log and the handoff file is not read. A new directory is
+    re-replayed from that log and the handoff file is not read. A new directory is
     seeded from a validated briefing, and refusing one leaves nothing behind.
 
     Any turn the previous tenure announced and never answered is closed out

@@ -4,7 +4,7 @@ Three rules are pinned here.
 
 **Every grill-master dispatch carries the queue the human is looking at.** That
 is asserted against the bytes the backend wrote under `dispatches/`, never
-against an image the test folded for itself: what an agent was told about the
+against an image the test replayed for itself: what an agent was told about the
 queue is exactly what is in those bytes, and a check on an in-memory image would
 pass just as happily against a recorder that dropped the queue on the way out.
 
@@ -39,7 +39,7 @@ from grillui.dispatch import DISPATCH_DIR, GRILL_MASTER, record_dispatch
 from grillui.drivers import declared_updates, document_problem, record_reply
 from grillui.lane import Lane, UnreachableDriver
 from grillui.log import SessionLog
-from grillui.projector import fold, supersede_conflicts
+from grillui.projector import replay, supersede_conflicts
 from grillui.schemas import (
     FOLD_KIND,
     MAP_CHANNEL,
@@ -187,7 +187,7 @@ def queue_of(recorded_bytes: str) -> list[dict[str, Any]]:
 
 
 def image(log: SessionLog) -> Image2:
-    return fold(log.epoch, log.entries())
+    return replay(log.epoch, log.entries())
 
 
 def mutations(entries: list[LogEntry]) -> list[LogEntry]:
@@ -641,7 +641,7 @@ def test_the_map_doctor_dispatches_the_grill_master_over_the_whole_board(
     # snapshot from before the call is a board one entry behind. Pinning it to
     # the recorded seq keeps this a tripwire on what crossed rather than a
     # restatement of what the dispatch says about itself.
-    expected = fold(log.epoch, [one for one in log.entries() if one.seq <= context.seq])
+    expected = replay(log.epoch, [one for one in log.entries() if one.seq <= context.seq])
     assert expected.model_dump_json() in body
     assert [one.id for one in context.image2.pending] == [OTHER_NOTICE]
     assert REASSESS_RULE in compose(body, context, log.entries())

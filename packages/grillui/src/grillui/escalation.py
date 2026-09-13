@@ -52,8 +52,8 @@ Two of them are read here, off the board and before any model is called:
   turn was wrong, and the backend's own hand-up of a refused turn is the other.
   Three readings here serve it and none of them decides anything: which
   dismissals are that gesture, how many such signals the log holds, and whether
-  the policy has already moved a channel. The count is a fold over the log, so
-  it is the session's and a successor process reaches the same number. The move
+  the policy has already moved a channel. The count is read off the log, so it
+  is the session's and a successor process reaches the same number. The move
   is the lane's -- it asks all three and writes the entry under one hold of the
   append lock, which is what makes the move once per session. The entry is
   sticky, so a channel the human took back down stays down rather than being
@@ -77,7 +77,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
-from grillui.projector import fold
+from grillui.projector import replay
 from grillui.schemas import (
     AGENT_ACTORS,
     DISCHARGING_KINDS,
@@ -305,7 +305,7 @@ def dismisses_first_rung(
     """Whether this dismissal is the human saying a first-rung turn was wrong.
 
     Read off the queue as it stands with the item still in it, so the caller
-    asks before the gesture lands rather than after the fold has removed what
+    asks before the gesture lands rather than after the replay has removed what
     the question is about.
 
     Two things in that queue are not this gesture. The queue holds notices as
@@ -349,8 +349,8 @@ def hands_up(entry: LogEntry) -> bool:
 def distrust_count(entries: Sequence[LogEntry], epoch: str, channel: str, expert_tier: str) -> int:
     """How many times the human has said this channel's first rung was not enough.
 
-    Folded out of the log rather than tallied as the signals arrive, which is
-    what makes the count the session's rather than one process's. The signals
+    Read off the log rather than tallied as the signals arrive, which is what
+    makes the count the session's rather than one process's. The signals
     below the threshold write nothing of their own, so a tally kept in memory
     leaves a successor nothing to read back: a backend replaced after the first
     signal would start again at nothing, and the second signal the human made
@@ -361,7 +361,7 @@ def distrust_count(entries: Sequence[LogEntry], epoch: str, channel: str, expert
     which is the log prefix before that entry. A hand-up is the marked
     `composing` entry the press path writes as it announces the expert's turn.
 
-    The prefix is folded once per dismissal on this channel. The ceiling is a
+    The prefix is replayed once per dismissal on this channel. The ceiling is a
     session whose human dismissed a great many proposals, where the work is
     quadratic in the log; the count is asked only when a signal arrives, and the
     upgrade if a session ever feels it is a tally cached against the last
@@ -381,7 +381,7 @@ def distrust_count(entries: Sequence[LogEntry], epoch: str, channel: str, expert
             continue
         before = entries[:index]
         if dismisses_first_rung(
-            fold(epoch, before),
+            replay(epoch, before),
             before,
             [one for one in named if isinstance(one, str)],
             expert_tier,

@@ -1,6 +1,6 @@
 """Persisting the images, and what happens when persisting fails.
 
-The fold is pure and the persistence step is not, which is the whole reason
+The replay is pure and the persistence step is not, which is the whole reason
 these are separate: everything below is about the seam holding when the second
 half breaks.
 """
@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE, LOG_FILE, SessionLog
 from grillui.persistence import project_and_persist
-from grillui.projector import fold, to_image1
+from grillui.projector import replay, to_image1
 from grillui.schemas import STATUS_KIND, STATUS_PHASE_ERROR, Image1, Image2
 
 DEADLOCK_TIMEOUT = 5.0
@@ -64,11 +64,11 @@ def test_images_rebuilt_from_the_on_disk_log_alone_are_byte_identical_to_the_in_
 ) -> None:
     """
     Given a session whose entries are held in one process's memory
-    When a second process folds the same session from its log file alone
+    When a second process replays the same session from its log file alone
     Then the two images serialise to identical bytes.
 
     This is the guarantee that makes the log the recovery source and the image
-    files a cache. The two folds are given the same epoch deliberately: the
+    files a cache. The two replays are given the same epoch deliberately: the
     epoch is the process's tenure, not the log's content, and a restart mints a
     new one by design. Everything else in the image has to come out of the
     bytes on disk.
@@ -78,8 +78,8 @@ def test_images_rebuilt_from_the_on_disk_log_alone_are_byte_identical_to_the_in_
     rebuilt = SessionLog(session_dir)
 
     assert rebuilt.epoch != log.epoch
-    assert fold(log.epoch, rebuilt.entries()).model_dump_json() == (
-        fold(log.epoch, log.entries()).model_dump_json()
+    assert replay(log.epoch, rebuilt.entries()).model_dump_json() == (
+        replay(log.epoch, log.entries()).model_dump_json()
     )
 
 
@@ -89,9 +89,9 @@ def test_an_accepted_batch_leaves_both_images_on_disk_at_the_folded_position(
     """
     Given a batch of accepted writes
     When it has been submitted
-    Then both image files hold the fold of the log as of that batch.
+    Then both image files hold the replay of the log as of that batch.
 
-    Persistence is downstream of the fold and this is the only place image I/O
+    Persistence is downstream of the replay and this is the only place image I/O
     happens. Writing them after the append rather than before is what keeps the
     receipt honest: the entry is durable whatever the file system then does.
     """
@@ -100,7 +100,7 @@ def test_an_accepted_batch_leaves_both_images_on_disk_at_the_folded_position(
     written2 = Image2.model_validate_json((session_dir / IMAGE2_FILE).read_text(encoding="utf-8"))
     written1 = Image1.model_validate_json((session_dir / IMAGE1_FILE).read_text(encoding="utf-8"))
 
-    expected = fold(log.epoch, log.entries())
+    expected = replay(log.epoch, log.entries())
     assert written2.model_dump_json() == expected.model_dump_json()
     assert written1.model_dump_json() == to_image1(expected).model_dump_json()
     assert written2.seq == log.seq
@@ -125,7 +125,7 @@ def test_the_image_files_are_never_read_back_when_a_session_loads(
     (session_dir / IMAGE1_FILE).write_text(poison, encoding="utf-8")
     (session_dir / IMAGE2_FILE).write_text(poison, encoding="utf-8")
 
-    rebuilt = fold("tenure-2", SessionLog(session_dir).entries())
+    rebuilt = replay("tenure-2", SessionLog(session_dir).entries())
 
     assert [node.id for node in rebuilt.decisions] == [SEED_NODE, "n2"]
     assert rebuilt.seq == log.seq
@@ -173,17 +173,17 @@ def test_a_fold_that_cannot_complete_surfaces_on_the_status_lane_and_blocks_noth
     Then both are accepted, the log holds both, and the failure surfaces as an
          error on the status lane.
 
-    The fold is written to tolerate any log the appender accepted, so this
+    The replay is written to tolerate any log the appender accepted, so this
     forces the failure rather than finding one: the contract under test is that
     the session survives a projector that raises, whatever made it raise. A
-    tolerant fold is the first defence and this seam is the second — and only
+    tolerant replay is the first defence and this seam is the second — and only
     the second one still holds when the first is wrong.
     """
 
     def boom(_epoch: str, _entries: Any) -> Image2:
         raise ValueError("unfoldable")
 
-    monkeypatch.setattr("grillui.persistence.fold", boom)
+    monkeypatch.setattr("grillui.persistence.replay", boom)
 
     first = post(client, log.epoch, event("informational", key="k1", text="one"))
     second = post(client, log.epoch, event("informational", key="k2", text="two"))
