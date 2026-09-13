@@ -847,6 +847,30 @@ Criterion PV-A6: {PV_A6_SENTENCE}
 </details>"""
 
 
+# One finding the round recorded no lens for, naming a criterion no criteria file
+# was supplied for, written out by hand. Every line here is one the renderer
+# decides to include or leave out, so a rendering that emits a spare line or a
+# stray marker fails rather than passing on a substring.
+PINNED_COMMENT_WITHOUT_A_LENS = """\
+(mechanical, fails AC-1)
+
+the guard is missing
+
+<details>
+<summary>Finding record</summary>
+
+```json
+{
+  "id": "f1",
+  "type": "mechanical",
+  "ac": "AC-1",
+  "claim": "the guard is missing"
+}
+```
+
+</details>"""
+
+
 def criteria_written(tmp_path: Path, text: str = CRITERIA_FILE) -> Path:
     path = tmp_path / "criteria.md"
     path.write_text(text)
@@ -869,6 +893,12 @@ def only_comment(verdict: Verdict) -> str:
 class TestTheLineCommentAReaderSees:
     def test_the_comment_is_the_one_pinned_by_hand(self, tmp_path: Path) -> None:
         assert only_comment(with_criteria(tmp_path)) == PINNED_COMMENT
+
+    def test_a_finding_recorded_without_a_lens_is_the_one_pinned_by_hand(self) -> None:
+        # The heading is assembled from the parts the finding carries, so one part
+        # missing must not leave the spacing or the punctuation of the other behind.
+        item = {"id": "f1", "type": "mechanical", "ac": "AC-1", "claim": "the guard is missing"}
+        assert render_comment(item) == PINNED_COMMENT_WITHOUT_A_LENS
 
     def test_the_comment_opens_with_prose_rather_than_the_record(self, tmp_path: Path) -> None:
         # The tripwire for the line comment: a body that is the finding's JSON and
@@ -921,8 +951,12 @@ class TestTheLineCommentAReaderSees:
         self, item: dict[str, Any]
     ) -> None:
         # The comment renderer is public and the loader's shape check is narrower
-        # than what a lens can write, so an unreadable field costs its line.
-        assert json.loads(envelope_of(render_comment(item))) == item
+        # than what a lens can write, so an unreadable field costs its line. A
+        # finding with nothing readable is the record alone, with no line standing
+        # in for the prose that could not be written.
+        body = render_comment(item)
+        assert body.startswith("<details>")
+        assert json.loads(envelope_of(body)) == item
 
 
 class TestTheCriterionInTheBodysFindingRoster:

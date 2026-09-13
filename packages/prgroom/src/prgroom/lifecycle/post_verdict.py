@@ -22,7 +22,7 @@ import json
 import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, TypeVar
@@ -141,7 +141,9 @@ class Verdict:
     text: str
     head_sha: str
     findings: tuple[dict[str, Any], ...]
-    criteria: Mapping[str, str] = NO_CRITERIA
+    # Defaulted through a factory because a mapping is an unhashable default to
+    # the Python version this package still runs on, which refuses one outright.
+    criteria: Mapping[str, str] = field(default_factory=lambda: NO_CRITERIA)
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,7 +224,7 @@ def load_verdict(path: Path, criteria: Mapping[str, str] = NO_CRITERIA) -> Verdi
         # A finding that says neither what it found nor where cannot be placed and
         # cannot be read; it is a shape no round produces, and posting it would
         # put an id on a pull request with nothing attached to it.
-        if not any(finding.get(field, "").strip() for field in ("evidence", "claim")):
+        if not any(finding.get(stated, "").strip() for stated in ("evidence", "claim")):
             detail = f"{path}: findings[{index}] carries neither evidence nor claim"
             raise _malformed(detail)
     verdict = Verdict(
@@ -340,8 +342,8 @@ def place_anchor(
     lines the diff does not carry, which GitHub rejects — and rejecting one comment
     rejects the review it arrived in.
     """
-    for field in ("evidence", "claim"):
-        text = finding.get(field)
+    for stated in ("evidence", "claim"):
+        text = finding.get(stated)
         if not isinstance(text, str):
             continue
         for match in _ANCHOR.finditer(text):
@@ -378,10 +380,17 @@ def render_comment(finding: Mapping[str, Any], criteria: Mapping[str, str] = NO_
         for qualifier in (_line(finding.get("type")), f"fails {criterion}" if criterion else "")
         if qualifier
     ]
-    heading = f"**{lens}**" if lens else ""
-    if qualifiers:
-        heading = f"{heading} ({', '.join(qualifiers)})".lstrip()
-    sentence = criteria.get(criterion, "") if criterion else ""
+    heading = " ".join(
+        part
+        for part in (
+            f"**{lens}**" if lens else "",
+            f"({', '.join(qualifiers)})" if qualifiers else "",
+        )
+        if part
+    )
+    # A finding naming no criterion looks one up under the empty string, which no
+    # criteria file can carry: every bullet's id holds at least one character.
+    sentence = criteria.get(criterion, "")
     evidence = _line(finding.get("evidence"))
     sections = [
         section
