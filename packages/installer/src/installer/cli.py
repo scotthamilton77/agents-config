@@ -19,6 +19,7 @@ from installer.config import (
 )
 from installer.core.clis import CLI_PACKAGES, RETIRED_CLIS, CliDeployPort
 from installer.core.consent import ConsentRequiredError
+from installer.core.custom_content import CustomContentConflictError
 from installer.core.deploy_gate import run_admission_gate
 from installer.core.dump import dump_plan
 from installer.core.installignore import load_installignore
@@ -480,11 +481,13 @@ def _run(
                             auto_yes=config.auto_yes,
                         )
                         _merge_into(counters, cli_outcome.counters)
-                except ConsentRequiredError:
-                    # A non-interactive run lacking --yes/--dry-run cannot answer the
-                    # per-file overwrite prompt; sync_plan's up-front guard raises
-                    # before any write. Surface it as the CLI's exit 1 (the prune flow
-                    # uses the same convention) rather than an uncaught traceback.
+                except (ConsentRequiredError, CustomContentConflictError):
+                    # Two up-front guards raise before any write: a non-interactive
+                    # run lacking --yes/--dry-run cannot answer the per-file overwrite
+                    # prompt, and an instruction file whose managed part was hand-edited
+                    # must not be overwritten. Both already reported themselves, so
+                    # surface the CLI's exit 1 (the prune flow uses the same convention)
+                    # rather than an uncaught traceback.
                     return 1
 
             if (args.prune or args.prune_only) and not receipt_corrupt:
@@ -788,7 +791,7 @@ def _run_project(
                             outcomes_by_plugin=plugin_outcomes,
                         ),
                     )
-                except ConsentRequiredError:
+                except (ConsentRequiredError, CustomContentConflictError):
                     return 1
 
             if (args.prune or args.prune_only) and not receipt_corrupt:

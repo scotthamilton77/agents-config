@@ -11,6 +11,15 @@ it the merge-aware path `sync` redirects to. The third, `sync_routes`, takes no
 adapter: a plugin route's destinations sit outside every tool tree, so each
 `PluginRoute` carries its own absolute `dest_dir`.
 
+Two kinds of item are derived from the staged bytes *and* the destination's
+current bytes rather than written straight through: a `settings.json`, which is
+union-merged, and an instruction file carrying the custom-content heading, whose
+user-owned tail below that heading is preserved
+(`core/custom_content.py`). The second one can also refuse the run:
+`custom_content_conflicts` names every destination whose managed part was
+hand-edited, and `refuse_custom_content_conflicts` turns that into the error
+that stops the install before anything is written.
+
 Path-aware backup: before overwriting an existing destination, the original is
 copied to a timestamped backup so a failed write leaves it recoverable. The
 routing decision and timestamp contract live in `core/backup.py`, shared with
@@ -27,6 +36,13 @@ from typing import TYPE_CHECKING
 
 from installer.core.backup import back_up, new_timestamp, valid_timestamp
 from installer.core.consent import require_consent
+from installer.core.custom_content import (
+    HEADING,
+    CustomContentConflictError,
+    has_custom_content_heading,
+    heading_conflicts,
+    merge_custom_content,
+)
 from installer.core.hashing import sha256_file
 from installer.core.installignore import InstallIgnore
 from installer.core.merge.strategies.json_union import merge_settings_bytes
@@ -35,7 +51,7 @@ from installer.core.paths import is_safe_relpath
 from installer.core.staging import classify_file
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan
@@ -167,6 +183,47 @@ def sync(
     return counters
 
 
+def custom_content_conflicts(adapter: ToolAdapter, plan: StagingPlan, *, home: Path) -> list[Path]:
+    """The destinations in one plan whose managed part was hand-edited.
+
+    Only an item whose staged bytes carry the custom-content heading is a
+    candidate, and only against a destination that already exists. An item whose
+    ``dest_relpath`` escapes the dest tree is left to ``sync_plan``'s own guard,
+    which raises on it — this scan never reads outside the tree to report on it.
+    Reads the filesystem and writes nothing, so a caller can run it over every
+    tool before the first write of the run.
+    """
+    dest_dir = adapter.dest_dir(home)
+    conflicts: list[Path] = []
+    for item in plan.items.values():
+        if item.content is None or not is_safe_relpath(item.dest_relpath):
+            continue
+        if not has_custom_content_heading(item.content):
+            continue
+        dest = dest_dir / item.dest_relpath
+        if dest.is_file() and heading_conflicts(dest.read_bytes()):
+            conflicts.append(dest)
+    return conflicts
+
+
+def refuse_custom_content_conflicts(conflicts: Sequence[Path], *, io: IOPort) -> None:
+    """Report ``conflicts`` and abort the run; a no-op when there are none.
+
+    The install stops before any file is written rather than per file, because
+    the user's next move is to edit the offending files by hand and re-run, and a
+    half-installed home makes that harder to reason about.
+    """
+    if not conflicts:
+        return
+    listed = ", ".join(str(path) for path in conflicts)
+    io.err(
+        f"content above the '{HEADING}' heading was edited by hand in: {listed}. "
+        "Move it below the heading, delete the digest comment from the heading line, "
+        "and re-run; nothing was installed."
+    )
+    raise CustomContentConflictError(conflicts)
+
+
 def sync_plan(
     adapter: ToolAdapter,
     plan: StagingPlan,
@@ -209,6 +266,12 @@ def sync_plan(
     overwriting. ``auto_yes`` auto-accepts every changed-item prompt (still backing
     up first); ``dry_run`` previews without prompting.
 
+    The custom-content scan runs beside it, for the same reason: an instruction
+    file whose managed part was hand-edited raises `CustomContentConflictError`
+    before this plan's first write, under ``dry_run`` as well. A run spanning
+    several tools wants that verdict across all of them, which is
+    ``install_pipeline``'s scan rather than this one.
+
     ``ignore`` (defaults to an empty manifest — exclude nothing) is forwarded to
     every DIR item's materialisation: a DIR item's source tree is staged as one
     opaque unit (its interior is never walked against ``.installignore`` at the
@@ -217,6 +280,7 @@ def sync_plan(
     enforced.
     """
     require_consent(io, dry_run=dry_run, auto_yes=auto_yes)
+    refuse_custom_content_conflicts(custom_content_conflicts(adapter, plan, home=home), io=io)
     counters = Counters()
     dest_dir = adapter.dest_dir(home)
     for item in plan.items.values():
@@ -340,6 +404,12 @@ def _install_file(
     valid JSON is left untouched and reported as an error (it cannot be merged, and
     a blind overwrite would destroy a recoverable hand-edit), counted as a skip.
 
+    An item whose staged bytes carry the custom-content heading is merged with the
+    existing file instead (`merge_custom_content`), so the user's own tail below
+    that heading survives the install. The one-time migration of a pre-heading
+    file's content is announced, because the user has to review where their text
+    landed.
+
     A *changed* dest (present, content differs) passes through the consent gate
     (`_consent_to_overwrite`) before any backup or write: an interactive decline
     keeps the existing bytes and counts the item as skipped; ``auto_yes`` accepts
@@ -366,7 +436,13 @@ def _install_file(
         if outcomes is not None:
             outcomes.append(InstallOutcome(dest, Outcome.DECLINED, None))
         return
-    effective = _effective_content(content, old, kind=kind)
+    if has_custom_content_heading(content):
+        merged = merge_custom_content(content, old)
+        if merged.migrated:
+            io.info(f"{dest}: existing content was moved below the '{HEADING}' heading. Review it.")
+        effective = merged.content
+    else:
+        effective = _effective_content(content, old, kind=kind)
     if old is not None and _is_unchanged(old, effective, kind=kind):
         if restore_exec_on_skip and executable and not dry_run and _restore_exec_bit(dest):
             io.info(f"Restored +x on {dest}", verbose=True)

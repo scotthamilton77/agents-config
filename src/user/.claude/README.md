@@ -19,11 +19,14 @@ by default.
 - `AGENTS.md.template` — Top-level instruction file. It is a single
   `DYNAMIC-INCLUDE` of the shared zero-based core in
   `src/user/.agents/USER-CORE.md.template`, which the installer flattens in at
-  deploy time; it carries no text of its own. Claude-specific workflow lives in
-  `rules/`.
-- `CLAUDE.md.template` — Thin wrapper pointing at `AGENTS.md`, and at
-  `AGENTS.local.md` beside it: the user's own always-on instructions, a
-  file the installer never stages, so a deploy never touches it.
+  deploy time, and it ends with a bare `## Custom content` heading. It carries
+  no other text of its own. Claude-specific workflow lives in `rules/`.
+  Everything the user writes below that heading in the deployed file is theirs:
+  each install rewrites the part above it and reproduces the part below it
+  untouched. The heading the installer writes carries a digest of the managed
+  part, so an install that finds a hand-edit above the heading refuses to
+  overwrite it and says which file to fix.
+- `CLAUDE.md.template` — Thin wrapper pointing at `AGENTS.md`.
 - `settings.json.template` — Permission allowlists, hooks, and experimental
   features. The installer union-merges this into any existing
   `~/.claude/settings.json`.

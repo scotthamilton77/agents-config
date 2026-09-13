@@ -147,10 +147,16 @@ authoritative set.
 
 **Per-tool:**
 - `src/user/.claude/AGENTS.md.template` — Claude instruction file
-- `src/user/.claude/CLAUDE.md.template` — minimal file pointing at `AGENTS.md` and at `AGENTS.local.md`, the user's own always-on file that no deploy writes
+- `src/user/.claude/CLAUDE.md.template` — minimal file pointing at `AGENTS.md`
 - `src/user/.claude/settings.json.template` — permissions, hooks, experimental features
 - `src/user/.codex/AGENTS.md.template`, `src/user/.gemini/GEMINI.md.template`, `src/user/.opencode/AGENTS.md.template` — the equivalent instruction files
 - `src/user/.opencode/opencode.jsonc.template` — OpenCode settings
+
+Every deployed instruction file ends with a `## Custom content` heading. What
+you write below that heading is yours: each install rewrites everything above it
+and reproduces everything below it untouched. The heading the installer writes
+carries a digest of the part it manages, so an install that finds an edit above
+the heading stops and names the file rather than overwriting the edit.
 
 There are no persona templates — no `USER-PERSONA.md`, no `AGENT-PERSONA.md`:
 the always-on surface is zero-based and carries no identity content.
