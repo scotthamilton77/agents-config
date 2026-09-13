@@ -49,6 +49,7 @@ from grillui.schemas import (
     HEAVY_TIER,
     MAP_CHANNEL,
     PENDING_KEY,
+    PRESSED_KEY,
     RULINGS_KEY,
     STATUS_KIND,
     STATUS_PHASE_ACCEPTED,
@@ -1938,10 +1939,10 @@ def test_a_restart_over_the_same_session_writes_no_second_transfer(
     When two further dismissals land on the fresh lane
     Then no second entry joins the first, and the map is still the expert's.
 
-    The count is one tenure's and starts again; the move is the log's and does
-    not. A successor that asked its own counter alone would reach the threshold
-    a second time and buy a channel it is already on -- which is why the guard
-    reads the record rather than the tally.
+    The count outlives the tenure that took it, and so does the move. A
+    successor that asked the count alone would reach the threshold on every
+    later signal and buy a channel it is already on -- which is why the guard
+    reads the move's own record as well.
     """
     first, expert = _two_seats()
     lane = Lane(log, first, expert=expert)
@@ -1960,6 +1961,80 @@ def test_a_restart_over_the_same_session_writes_no_second_transfer(
     _answer_at(later, "d2")
     assert _seats(successor)[-1] == HEAVY_TIER, "the move did not survive the restart"
     assert later_first.dispatches == []
+
+
+def test_a_successor_counts_the_signal_its_predecessor_left_on_the_log(
+    log: SessionLog, session_dir: Path
+) -> None:
+    """
+    Given one dismissal counted by a backend that is then replaced
+    When a second dismissal lands on a fresh lane over the same session
+         directory
+    Then that signal reaches the threshold: one policy transfer is written, and
+         the next map turn is the expert's.
+
+    The count is the session's, so a human who says it twice is heard once
+    however many processes served the session in between. A count held in a
+    process's memory goes when that process does, and the human has to say it a
+    third time to be heard at all -- on a board where the log still holds every
+    word of what they already said.
+    """
+    first, expert = _two_seats()
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+    _dismiss(lane, _proposal(log, "prop-0"))
+    assert _transfers(log) == [], "one dismissal moved the channel"
+
+    successor = SessionLog(session_dir)
+    later_first, later_expert = _two_seats()
+    later = Lane(successor, later_first, expert=later_expert)
+    _dismiss(later, _proposal(successor, "prop-1"))
+
+    assert len(_transfers(successor)) == 1, (
+        "the successor did not count the dismissal on the log it opened"
+    )
+    _answer_at(later, "d2")
+    assert _seats(successor)[-1] == HEAVY_TIER, "the channel did not move on the second signal"
+    assert later_first.dispatches == []
+
+
+def test_the_hand_up_lands_on_the_log_before_the_count_that_reads_it(
+    log: SessionLog, session_dir: Path
+) -> None:
+    """
+    Given a first-rung seat whose reply is never the document, and one map
+          gesture whose turn is handed up to the expert
+    When a dismissal lands on a fresh lane over the same session directory
+    Then the press left one marked `composing` entry on the map, it moved
+         nothing on its own, and the dismissal after the restart reaches the
+         threshold.
+
+    The press is counted off its own record rather than off the fact that the
+    code has just decided to press. A count taken before that record is written
+    counts everything except the signal it is being taken for. The record is
+    also the whole of what a successor has: a press it cannot see is a refusal
+    the human never gets credit for.
+    """
+    first = RefusingDriver(tier=FAST_TIER)
+    expert = SpyDriver(tier=HEAVY_TIER, reply="Noted.")
+    lane = Lane(log, first, expert=expert)
+    _seed_resting(log)
+
+    _answer_at(lane, "d1")
+
+    handed = [
+        entry for entry in statuses(log, STATUS_PHASE_COMPOSING) if entry.payload.get(PRESSED_KEY)
+    ]
+    assert len(handed) == 1, [entry.payload for entry in statuses(log, STATUS_PHASE_COMPOSING)]
+    assert handed[0].channel == MAP_CHANNEL
+    assert handed[0].payload.get(TIER_KEY) == HEAVY_TIER
+    assert _transfers(log) == [], "one press moved the channel"
+
+    successor = SessionLog(session_dir)
+    later = Lane(successor, *_two_seats()[:1], expert=SpyDriver(tier=HEAVY_TIER, reply="Noted."))
+    _dismiss(later, _proposal(successor, "prop-after"))
+
+    assert len(_transfers(successor)) == 1, "the press left no record the count could read"
 
 
 def test_the_applys_dispatch_carries_the_obligation_it_was_scheduled_for(

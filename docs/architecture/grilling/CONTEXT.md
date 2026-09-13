@@ -535,21 +535,21 @@ was wrong, and the backend pressing it to the expert seat because it left a name
 decision unruled. It exists because the human's other gestures on the map channel
 carry no text for a transcript condition to read. Once the count is high enough
 the policy moves the map channel up and leaves it there; the way back down is the
-human's own transfer control. The count itself is the running process's and starts
-again after a restart — what survives is the move, which is in the log.
+human's own transfer control. The count is a fold over the session log rather
+than a tally any one process keeps: a dismissal is counted off the human's own
+entry, a press off the marked `composing` entry the hand-up writes, so the count
+is per session and a backend replaced mid-session reaches the same number.
 
 Contract: `packages/grillui/src/grillui/lane.py`;
 `docs/specs/2026-08-23-grill-master-role.md` (GUI-D48) for the design.
 
-Conflict: GUI-D48 calls the counter "per session and sticky", where the
-implementation makes only the resulting transfer durable —
-`agents-config-9k9.320`.
-
 Conflict: the lane writes the distrust move onto the status lane
 unconditionally, where the transcript-condition path in
 `packages/grillui/src/grillui/drivers.py` writes its move only under the
-autonomous policy — one mechanism named by *Escalation policy*, two gatings.
-`agents-config-9k9.324` rules on which gating is right.
+autonomous policy — one mechanism named by *Escalation policy*, two gatings. The
+settled behaviour is the gated one: under `gated` the count buys a recommendation
+on the map channel and moves nothing, and under `autonomous` it buys the
+transfer. The lane does not gate it yet.
 
 ## Grill-master
 

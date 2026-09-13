@@ -55,8 +55,10 @@ dismissing carry no text, so no transcript condition sees them: a dismissal of
 a first-rung proposal and a press onto the expert are counted alike, and the
 second of them moves the map channel up through the same status entry the
 escalation policy writes. One writes nothing, because one is noise. The count
-is this process's; the entry it writes is the log's and is sticky, so a channel
-already moved is never moved twice -- and the way back down stays the human's.
+and the entry it writes are both the log's: the count is folded out of the
+records the two signals leave, so it is the session's and survives the backend
+being replaced, and the entry is sticky, so a channel already moved is never
+moved twice -- and the way back down stays the human's.
 
 **An obligation the board can state is checked, not hoped for.** Where the
 answer a turn is replying to named the decisions it puts in question, the reply
@@ -85,12 +87,12 @@ a receipt by the time the driver starts.
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, NamedTuple, Protocol
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 from grillui.dispatch import record_dispatch
 from grillui.escalation import (
     INVALIDATE_KIND,
-    dismisses_first_rung,
+    distrust_count,
     in_expert_mode,
     judgment_class,
     mootness_obligation,
@@ -104,7 +106,7 @@ from grillui.schemas import (
     APPLY_KIND,
     DISMISS_KIND,
     MAP_CHANNEL,
-    PENDING_KEY,
+    PRESSED_KEY,
     STATUS_KIND,
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
@@ -326,6 +328,18 @@ def is_answerable(event: EventSubmission) -> bool:
     return event.actor == "human" and event.kind in ANSWERABLE_KINDS
 
 
+def _dismisses_on_the_map(event: EventSubmission) -> bool:
+    """Whether this gesture is the human ending a queue entry on the map.
+
+    The one gesture there that can be a wordless refusal of the first rung.
+    Applying is agreement, and every other gesture the human makes on the map
+    carries text a transcript condition already reads. Whether a given dismissal
+    is that refusal is not asked here: this says only that the count has
+    something new to read.
+    """
+    return event.actor == "human" and event.kind == DISMISS_KIND and event.channel == MAP_CHANNEL
+
+
 def unclosed_turns(entries: Sequence[LogEntry]) -> dict[str, LogEntry]:
     """The `composing` entry on each channel that no `replied` or `error` closed.
 
@@ -403,7 +417,6 @@ class Lane:
         self.expert = expert
         self.seats = dict(seats or {})
         self._doctor = False
-        self._distrust = 0
 
     def tier_for(self, channel: str, driver: TurnDriver, gesture: Turn | None = None) -> TurnDriver:
         """The tier this channel's next turn goes to: the expert one when the
@@ -470,14 +483,15 @@ class Lane:
             # entries land adjacent to the turn they report -- a second turn in
             # the same batch never wedges between a turn and its `accepted`.
             for event in batch:
-                # Asked before the gesture lands, because it is about the queue
-                # entry the gesture is on its way to remove.
-                refusing = self._distrusts(event)
                 receipt = self.log.submit([event], epoch)[0]
                 receipts.append(receipt)
                 if receipt.status != "accepted":
                     continue
-                if refusing:
+                # Asked once the gesture has landed, because the count is read
+                # off the entry it just left. Which dismissals are a refusal of
+                # the first rung is the count's own question, so what decides
+                # anything here is only whether a dismissal landed at all.
+                if _dismisses_on_the_map(event):
                     self._signal()
                 turn = turn_of(event)
                 # Read once, here, and carried with the turn: the obligation is
@@ -510,7 +524,7 @@ class Lane:
                 self._announce(driver, turn)
         return receipts, [self._schedule(driver, turn) for driver, turn in turns]
 
-    def _announce(self, driver: TurnDriver, turn: Turn) -> None:
+    def _announce(self, driver: TurnDriver, turn: Turn, *, pressed: bool = False) -> None:
         """Open the lane on a turn about to be taken, naming the seat taking it.
 
         Every turn is announced, including the two nobody spoke a gesture to
@@ -518,13 +532,21 @@ class Lane:
         `replied` as one turn, so a turn that closed without opening reads as a
         `replied` for a turn the page never saw begin -- and while it runs the
         human is waiting on a clock nobody wound.
+
+        `pressed` marks the announcement of a turn handed up because the rung
+        below it was refused, which is the record the distrust count reads that
+        signal off. It rides this entry rather than one of its own: the hand-up
+        announces anyway, and a second entry saying the same thing is one more
+        thing for a reader of the lane to pair up.
         """
-        self.log.emit_status(
-            STATUS_PHASE_COMPOSING,
-            f"the {driver.tier!r} tier is composing a reply",
-            turn.channel,
-            tier=driver.tier,
-        )
+        payload: dict[str, Any] = {
+            "phase": STATUS_PHASE_COMPOSING,
+            "detail": f"the {driver.tier!r} tier is composing a reply",
+            TIER_KEY: driver.tier,
+        }
+        if pressed:
+            payload[PRESSED_KEY] = True
+        self.log.record(STATUS_KIND, payload, turn.channel)
 
     def _owed(self, turn: Turn) -> MootnessObligation | None:
         """What the gesture this turn is being taken on owes the rest of the
@@ -558,41 +580,21 @@ class Lane:
             and event.channel == MAP_CHANNEL
         )
 
-    def _distrusts(self, event: EventSubmission) -> bool:
-        """Whether this gesture, once it lands, says the first rung got it wrong.
-
-        A dismissal on the map and nothing else: applying is agreement, and
-        every other gesture the human makes there carries text a transcript
-        condition already reads. With no expert configured there is nowhere to
-        move the channel to, so the queue is not folded to find out.
-        """
-        if (
-            self.expert is None
-            or event.actor != "human"
-            or event.kind != DISMISS_KIND
-            or event.channel != MAP_CHANNEL
-        ):
-            return False
-        named = event.payload.get(PENDING_KEY)
-        if not isinstance(named, list):
-            return False
-        entries = self.log.entries()
-        return dismisses_first_rung(
-            fold(self.log.epoch, entries),
-            entries,
-            [one for one in named if isinstance(one, str)],
-            self.expert.tier,
-        )
-
     def _signal(self) -> None:
-        """One wordless refusal of the first rung, counted, and the move it buys.
+        """Count the wordless refusals of the first rung, and write the move the
+        second of them buys.
 
-        The count is this process's, and a successor starts it again: nothing
-        was written for the signals below the threshold, so there is nothing for
-        it to read back, and under-counting leaves the channel where the human
-        can still move it themselves. What must survive the restart is the move
-        itself, and that does -- the entry is in the log, and it is the log this
-        asks before writing another.
+        The count is read off the log every time rather than carried between
+        signals, so it is the session's count and not one process's. Nothing is
+        written for a signal below the threshold, which is exactly why a tally
+        in memory cannot be trusted: a backend replaced after the first signal
+        would start again at nothing, and the human would have to say it twice
+        more to be heard once. Both signals leave a record for this to read --
+        the human's own dismissal, and the marked announcement the press path
+        writes as it hands the turn up.
+
+        Called with the signal's own record already on the log, so the count
+        includes the signal being answered here.
 
         Counting, asking and writing are one critical section, under the append
         lock the write takes anyway. Presses arrive from turn threads that run
@@ -602,11 +604,14 @@ class Lane:
         and not only against the sequential one. The lock is re-entrant, so the
         accepted path already holding it counts a dismissal at no extra cost.
         """
+        if self.expert is None:
+            return
         with self.log.appending():
-            self._distrust += 1
-            if self._distrust < DISTRUST_THRESHOLD:
+            entries = self.log.entries()
+            counted = distrust_count(entries, self.log.epoch, MAP_CHANNEL, self.expert.tier)
+            if counted < DISTRUST_THRESHOLD:
                 return
-            if policy_transferred(self.log.entries(), MAP_CHANNEL):
+            if policy_transferred(entries, MAP_CHANNEL):
                 return
             self.log.emit_status(STATUS_PHASE_TRANSFERRED, DISTRUST_MOVED, MAP_CHANNEL)
 
@@ -728,12 +733,7 @@ class Lane:
         if refusal is None and not standing:
             return driver
         if self.expert is not None and self.expert is not driver:
-            # The press is the second thing the distrust counter counts, and it
-            # is counted where the decision to press is made rather than on the
-            # way out: a seat that could not be reached still leaves the first
-            # rung's turn the one that was not enough.
-            if turn.channel == MAP_CHANNEL:
-                self._signal()
+            self._hand_up(self.expert, turn)
             pressed = self._insist(self.expert, turn, obligation, standing)
             if pressed is not None:
                 driver, refusal = self.expert, pressed.refusal
@@ -761,6 +761,27 @@ class Lane:
         """
         return unruled(owed, *rulings_of(self.log.entries(), spoke))
 
+    def _hand_up(self, expert: TurnDriver, turn: Turn) -> None:
+        """Announce the expert's turn on a gesture the rung below it could not
+        answer, and on the map count that hand-up as a refusal of that rung.
+
+        The record and the count it feeds are one hold of the append lock, which
+        is what puts the hand-up on the log no later than the moment it is
+        counted. Split apart, the count would be taken before the thing it is
+        counting existed, and a successor process reading the log back would
+        find one signal fewer than the human made.
+
+        It is counted where the decision to hand up is made rather than on the
+        way out: a seat that could not be reached still leaves the first rung's
+        turn the one that was not enough. The map's count only, because the map
+        is the channel the move is about -- a thread that cannot hold its own
+        shape says nothing about the seat composing the board.
+        """
+        with self.log.appending():
+            self._announce(expert, turn, pressed=True)
+            if turn.channel == MAP_CHANNEL:
+                self._signal()
+
     def _insist(
         self,
         expert: TurnDriver,
@@ -777,12 +798,14 @@ class Lane:
         because its document would not validate carries the obligation whole,
         there being no ruling to narrow it by.
 
+        The turn is already announced: the caller writes that announcement as
+        the hand-up's own record, before the count that reads it.
+
         A tier that cannot be reached costs the insistence and nothing else. The
         human's turn was already answered by the first tier, and turning a
         reachability failure into the turn's own failure would report an answer
         they can read as an error.
         """
-        self._announce(expert, turn)
         narrowed = (
             None
             if obligation is None
