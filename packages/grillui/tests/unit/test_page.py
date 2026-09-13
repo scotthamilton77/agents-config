@@ -1645,9 +1645,11 @@ def test_a_decision_says_what_last_moved_it_wherever_it_is_shown() -> None:
     assert source.count("h += changeLine(id);") == 2, "one of the two blocks says nothing"
     line = function_body("changeLine")
     assert "lastChange(id)" in line
-    # The board's own rationale stands behind a change that gave no reason, and
-    # a move nobody gave a reason for says nothing at all.
-    assert "(node(id) || {}).rationale" in line
+    # A change that gave no reason says nothing; the board's own rationale shows
+    # only where no landed change exists, which is a seeded decision. Reading
+    # the rationale behind a silent change would label an earlier event's
+    # reason with this change's name.
+    assert "why = last ? last.why : (node(id) || {}).rationale" in line
     assert 'if (!why) return "";' in line
     moved = function_body("lastChange")
     assert "historyOf(id)" in moved

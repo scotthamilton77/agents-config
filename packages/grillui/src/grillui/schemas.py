@@ -520,10 +520,12 @@ class Decision(Strict):
     """The same node shape in the handoff and in both images; the status, answer,
     rationale and lock fields exist only in the images.
 
-    `rationale` is the `why` of the last event that changed this decision's
-    shape or status, which is what keeps an invalidation and its justification
-    one item rather than two: the block and the reasoning for it reach the page
-    together.
+    `rationale` is the `why` of the last event on this decision that gave one:
+    a status move clears or sets it with its own `why`, and a revise sets it
+    only where it says why, a silent revise leaving the standing reason as it
+    leaves every field it omits. Carrying it here is what keeps an
+    invalidation and its justification one item rather than two: the block and
+    the reasoning for it reach the page together.
     `locked` is the queue's hold on this decision, and a locked decision is not
     answerable now. Two things in the queue take it: a change waiting to land on
     it, and the most recent elicit-alert still queued against it declaring
