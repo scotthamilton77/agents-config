@@ -1062,8 +1062,8 @@ function lastChange(id) {
 // and a change that gave none says nothing: the decision's standing rationale
 // is an earlier event's word, and printing it under this change's name would
 // hand the human a reason for a move nobody gave one for. The rationale shows
-// only where no landed change exists at all, which is a decision seeded with
-// its reason by the handoff.
+// only where no landed change exists at all, so a reason the board carries
+// with no change behind it still reaches the human once.
 function changeLine(id) {
   var last = lastChange(id), why = last ? last.why : (node(id) || {}).rationale;
   if (!why) return "";
