@@ -89,8 +89,10 @@ def test_a_turns_message_lands_once_and_each_moved_decision_says_what_moved(
 
     # Each moved decision says what moved on it, without the human opening
     # anything.
-    assert COMPACTION in page.locator("#col-d2").inner_text(), page.locator("#col-d2").inner_text()
-    assert RETENTION in page.locator("#col-d3").inner_text(), page.locator("#col-d3").inner_text()
+    compacted = page.locator("#col-d2 .rationale").inner_text()
+    retained = page.locator("#col-d3 .rationale").inner_text()
+    assert COMPACTION in compacted, compacted
+    assert RETENTION in retained, retained
     # And neither one is carrying the other's reason, which is what a message
     # homed on every moved decision would have done.
     assert RETENTION not in page.locator("#col-d2").inner_text()
@@ -101,3 +103,82 @@ def test_a_turns_message_lands_once_and_each_moved_decision_says_what_moved(
     page.wait_for_timeout(RENDER)
     panel = page.locator("#overlay").inner_text()
     assert panel.count(STORY) == 1, panel
+
+
+KILLED = "the log is the store, so there is nothing left to compact"
+SURVIVES_A_DISMISSAL = "retention is asked whatever the store is"
+
+
+def test_a_dismissed_change_is_not_reported_as_one_and_an_applied_change_is(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a turn proposing an invalidate on each of two decisions, which is a
+         kind that always waits for the human
+    When the human applies the one and dismisses the other
+    Then the applied decision says what moved it and why, and the dismissed one
+         says nothing at all.
+
+    Both proposals leave the queue on the human's gesture, so a decision read
+    off the queue's absence alone would report the dismissed change as landed --
+    the board would say a decision moved that the human had just refused to
+    move.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_claude(
+        turn(
+            document(
+                "Both of these are in question now.",
+                updates=[
+                    {"kind": "invalidate", "target": "d2", "why": KILLED},
+                    {"kind": "invalidate", "target": "d3", "why": SURVIVES_A_DISMISSAL},
+                ],
+                rulings=[
+                    ruling("d2", "invalidate", KILLED),
+                    ruling("d3", "invalidate", SURVIVES_A_DISMISSAL),
+                ],
+            )
+        )
+    )
+    page = board(session)
+
+    page.click('#col-d1 [data-act="pick"][data-opt="a"]')
+    session.settled()
+    page.wait_for_timeout(RENDER)
+
+    waiting = {
+        one["target"]: one["id"]
+        for one in session.board()["pending"]
+        if one["kind"] == "invalidate"
+    }
+    assert set(waiting) == {"d2", "d3"}, session.board()["pending"]
+
+    # Neither has moved yet, so neither reports a change. The waiting block on
+    # each of them quotes the proposal, which is what a waiting change says
+    # about itself -- so the claim is read off the line that reports a change
+    # that happened, and not off the block.
+    assert page.locator("#col-d2 .rationale").count() == 0
+    assert page.locator("#col-d3 .rationale").count() == 0
+
+    page.click('[data-act="inbox"]')
+    page.wait_for_timeout(RENDER)
+    page.click(f'#overlay [data-act="applyone"][data-uid="{waiting["d2"]}"]')
+    page.wait_for_timeout(RENDER)
+    # Acting on the queue closes the panel, so the second gesture re-opens it.
+    page.click('[data-act="inbox"]')
+    page.wait_for_timeout(RENDER)
+    page.click(f'#overlay [data-act="dismissone"][data-uid="{waiting["d3"]}"]')
+    page.wait_for_timeout(RENDER)
+    session.settled()
+
+    # The two proposals only: the turn's own message is on the queue as the
+    # notice it is, and an empty queue would be a claim about that instead.
+    assert not [one for one in session.board()["pending"] if one["kind"] == "invalidate"]
+    moved = page.locator("#col-d2 .rationale").inner_text()
+    assert KILLED in moved, moved
+    assert "invalidate" in moved, moved
+    # The dismissed one reports nothing, and carries the reason nowhere at all:
+    # the human refused the change, so the board has nothing to say about it.
+    assert page.locator("#col-d3 .rationale").count() == 0
+    refused = page.locator("#col-d3").inner_text()
+    assert SURVIVES_A_DISMISSAL not in refused, refused

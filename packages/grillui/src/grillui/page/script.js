@@ -1033,11 +1033,27 @@ function historyOf(id) {
 // a message on this decision renders as the message it is, immediately below,
 // and reporting it a second time as a change reads as two events.
 //
-// A change still waiting on the human has moved nothing yet, so it is not
-// reported — the block saying one is waiting is already on this decision.
+// A change that has not landed is not reported, and the queue alone cannot say
+// which those are: an applied entry and a dismissed one both leave it. So both
+// gestures are asked. A change the human is still looking at is on the queue and
+// has moved nothing yet — the block saying one is waiting is already on this
+// decision — and a change they dismissed never moved anything at all.
+//
+// Those two are the whole of what has to be excluded, because a queued change
+// ends in exactly one of three states: still waiting, applied, or dismissed.
+// Everything else never went to the queue and landed the moment it arrived,
+// which is what most revises do. Reading only the human's `apply` entries would
+// therefore drop them, and the decision a turn revised would say nothing about
+// itself.
+function dismissed(uid) {
+  return LOG.some(function (e) {
+    return e.actor === "human" && e.kind === DISMISS_KIND &&
+      (e.payload.pending || []).indexOf(uid) >= 0;
+  });
+}
 function lastChange(id) {
   var moved = historyOf(id).filter(function (h) {
-    return PROPOSABLE_KINDS.indexOf(h.kind) >= 0 &&
+    return PROPOSABLE_KINDS.indexOf(h.kind) >= 0 && !dismissed(h.uid) &&
       !BOARD.pending.some(function (p) { return p.id === h.uid; });
   });
   return moved[moved.length - 1] || null;

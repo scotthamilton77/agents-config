@@ -1627,10 +1627,19 @@ def test_a_decision_says_what_last_moved_it_wherever_it_is_shown() -> None:
     same history the 🕘 panel reads, so the two cannot disagree, and shown
     collapsed as well as expanded because a settled decision shuts itself.
 
-    Two things are excluded, and each would be a claim the board has not earned.
-    A change still waiting on the human has moved nothing yet; its own block on
-    that decision says it is waiting. A message on the decision renders as the
-    message it is, and counting it as a change as well reads as two events.
+    Three things are excluded, and each would be a claim the board has not
+    earned. A change still waiting on the human has moved nothing yet; its own
+    block on that decision says it is waiting. A change the human dismissed never
+    moved anything, and it leaves the queue exactly as an applied one does, so
+    the gesture is what tells them apart rather than the queue. A message on the
+    decision renders as the message it is, and counting it as a change as well
+    reads as two events.
+
+    Those two exclusions are the whole of it, because a queued change ends
+    waiting, applied or dismissed. A change that never reached the queue landed
+    when it arrived, which is what a revise on an unanswered decision does, so a
+    reader restricted to the human's `apply` entries would report nothing on the
+    decisions a turn most often moves.
     """
     source = page_source()
     assert source.count("h += changeLine(id);") == 2, "one of the two blocks says nothing"
@@ -1644,6 +1653,12 @@ def test_a_decision_says_what_last_moved_it_wherever_it_is_shown() -> None:
     assert "historyOf(id)" in moved
     assert "PROPOSABLE_KINDS.indexOf(h.kind) >= 0" in moved
     assert "BOARD.pending.some(function (p) { return p.id === h.uid; })" in moved
+    assert "!dismissed(h.uid)" in moved
+    # The dismissal is read off the human's own gesture, which is the only thing
+    # that says a change left the queue without landing.
+    gesture = function_body("dismissed")
+    assert 'e.actor === "human" && e.kind === DISMISS_KIND' in gesture
+    assert "(e.payload.pending || []).indexOf(uid) >= 0" in gesture
 
 
 def test_a_message_reaches_every_surface_as_words_rather_than_as_markup() -> None:
