@@ -3154,7 +3154,7 @@ def test_the_arm_is_dropped_by_every_way_its_thread_ends() -> None:
         "arming does not know whether the box is still the one it wrote"
     )
     # The same offer, from the same thread, into the box taking it produced.
-    assert "if (!(untouched && standing.thread === tid && standing.text === offer.text)) {" in (
+    assert "if (!(untouched && standing.thread === tid && standing.text === offer.text &&" in (
         arming
     ), "taking one offer twice writes it twice"
     assert "var before = (untouched ? standing.before : box).trim();" in arming, (
