@@ -11,6 +11,11 @@ wrong guesses at a second shape; a seat told `rulings` was missing supplies it,
 which is why the fault text is asserted inside the second prompt rather than the
 retry merely being counted.
 
+Two faults walk this ladder. The gate refuses a reply that is not the document
+at all. The appender refuses one that reads as the document and names a board
+this session has not got -- a fault no gate can see, because only the appender
+knows the board -- and the seat is asked again with those words too.
+
 Two valid documents walk the same ground for different reasons: one that carries
 nothing at all appends no entry, and one that withdraws with nothing to ride on
 is refused before it gets that far.
@@ -160,6 +165,55 @@ def test_a_settle_carrying_a_usable_answer_settles_the_decision_end_to_end(
     # And the human reads it where the decision is.
     page.wait_for_selector("#col-d2 .pill.settled", timeout=BOARD_TIMEOUT)
     assert SETTLED in page.locator("#col-d2").inner_text(), page.locator("#col-d2").inner_text()
+
+
+def test_a_document_the_appender_refuses_is_retried_on_the_same_seat_and_then_lands(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a seat whose first turn settles a decision this session has not got,
+         and whose second settles one it has
+    When the human answers a decision
+    Then the first turn is refused by the appender, the same seat is asked again
+         with that refusal quoted, the second turn lands, and the expert is
+         never asked.
+
+    The fault is one only the appender can see: the document is the right shape
+    and carries the right keys, and the board it names is the board's own
+    question. A seat told which node it invented can send the turn again without
+    it, which is the same bargain the shape retry makes -- and a refusal that
+    went straight to the human's error line would spend an expert turn, or lose
+    the turn altogether, over something the seat could fix.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    settles = {"kind": "settle", "target": "d2", "answer": {"option": "a", "text": SETTLED}}
+    session.script_codex(
+        turn(document("d9 follows from the log.", updates=[{**settles, "target": "d9"}])),
+        turn(document("d2 follows from the log.", updates=[settles])),
+    )
+    page = board(session)
+
+    answer(page, "d1")
+    session.settled()
+
+    # One retry on the seat that was refused, quoting the appender's own words:
+    # the reason it refused for, and the detail naming what it refused over.
+    codex = session.codex_calls()
+    assert len(codex) == 2, f"the first rung was asked {len(codex)} times"
+    assert "Your last reply was refused" in codex[1]["prompt"], codex[1]["prompt"][-400:]
+    assert "unknown node id" in codex[1]["prompt"], codex[1]["prompt"][-400:]
+    assert "d9" in codex[1]["prompt"], codex[1]["prompt"][-400:]
+
+    # The retry is the turn: it landed on the first rung, so nothing was handed
+    # up and the board carries what the second document said.
+    assert not session.claude_calls(), "the turn was handed up after the retry landed"
+    assert lane(session.entries(), "map")[-1][0] == "replied", lane(session.entries(), "map")
+    d2 = {one["id"]: one for one in session.board()["decisions"]}["d2"]
+    assert d2["status"] == "settled", d2
+    assert d2["answer"] == {"option": "a", "text": SETTLED}, d2
+
+    # And the refused turn left nothing behind it.
+    assert "d9" not in (session.directory / "log.jsonl").read_text(encoding="utf-8")
 
 
 def test_a_withdrawal_with_nothing_to_ride_on_is_a_document_problem_and_walks_the_ladder(
