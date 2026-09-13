@@ -14,6 +14,14 @@ through the SendMessage tool. TaskCompleted additionally passes once any
 update has been seen since the last completion, on the theory that a teammate
 mid-series of tasks is still reporting as it goes. Both blocks give up after a
 short bounded number of retries rather than wedging the teammate forever.
+
+The harness also fires a TeammateIdle for a teammate whose own child subagent
+stopped while the teammate itself is still blocked inside the Agent call that
+spawned it. Such an idle carries nothing the teammate could have answered, so
+the hook recognises it by the subagent stop that preceded it. That stop belongs
+to some agent other than this teammate, moments earlier. The hook lets such an
+idle through without spending any of the teammate's idle allowance.
+
 Every other event — including both events without a ``teammate_name``, which
 covers classic auto-returning subagents, workflow subagents, and main
 sessions by construction — passes through untouched.
@@ -25,6 +33,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,6 +49,11 @@ DEFAULT_STATE = {
 
 TASK_BLOCK_LIMIT = 2
 IDLE_BLOCK_LIMIT = 3
+# A teammate's genuine idle follows its own stop by under a second, and the
+# harness fires a child-stop idle within a second or two of the child stopping,
+# so a few seconds is wide enough to catch both and far short of the gap
+# between a teammate's separate turns.
+CHILD_STOP_WINDOW_SECONDS = 3.0
 
 NAME_RE = re.compile(r"[^A-Za-z0-9._-]")
 SLUG_RE = re.compile(r"[^A-Za-z0-9]")
@@ -47,6 +61,11 @@ UPDATE_RE = re.compile(r"^\s*UPDATE\b", re.IGNORECASE)
 # Anchored, but tolerant of leading markdown decoration ("**FINAL REPORT:**",
 # "# FINAL REPORT") — a mid-sentence mention must not count as delivery.
 FINAL_RE = re.compile(r"^[\s*_#>~`-]*FINAL REPORT\b", re.IGNORECASE)
+
+
+def clock() -> float:
+    """Return wall-clock seconds, the scale on which stop recency is judged."""
+    return time.time()
 
 
 def now() -> str:
@@ -108,6 +127,44 @@ def is_update(text: str) -> bool:
 
 def is_final_report(text: str) -> bool:
     return bool(FINAL_RE.match(text or ""))
+
+
+def latest_stop(directory: Path) -> dict | None:
+    """Return the most recent stashed subagent stop in this session, if any.
+
+    Each stop overwrites one stash per agent name, so the newest of them tells
+    us which agent stopped last and when.
+    """
+    newest = None
+    for path in directory.glob("*.stop.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict) or not isinstance(data.get("stopped_at"), (int, float)):
+            continue
+        if newest is None or data["stopped_at"] > newest["stopped_at"]:
+            newest = data
+    return newest
+
+
+def followed_another_agents_stop(directory: Path, name: str) -> bool:
+    """Report whether some agent other than this teammate stopped a moment ago.
+
+    The idle payload names no agent, so the stop that preceded it is the only
+    evidence available. When the teammate's own stop is the most recent one,
+    the teammate really did finish its turn.
+
+    Concurrent teammates can race here. One teammate's idle can arrive inside
+    the window while another teammate's stop is the most recent one, and that
+    idle is then excused although the teammate really did go idle. The race
+    runs one way only. It costs a block the gate would otherwise have placed,
+    and it never blocks a teammate that had nothing to answer.
+    """
+    stop = latest_stop(directory)
+    if stop is None or stop.get("name") == name:
+        return False
+    return clock() - stop["stopped_at"] <= CHILD_STOP_WINDOW_SECONDS
 
 
 def read_stash(directory: Path, name: str) -> dict | None:
@@ -184,7 +241,12 @@ def handle_subagent_stop(payload: dict) -> int:
     stash_path = directory / f"{safe_name(name)}.stop.json"
     directory.mkdir(parents=True, exist_ok=True)
     stash_path.write_text(
-        json.dumps({"transcript_path": transcript_path, "final_in_last_message": final_in_last}),
+        json.dumps({
+            "name": name,
+            "stopped_at": clock(),
+            "transcript_path": transcript_path,
+            "final_in_last_message": final_in_last,
+        }),
         encoding="utf-8",
     )
     log_decision(directory, "SubagentStop", name, "stashed", final_in_last_message=final_in_last)
@@ -220,6 +282,9 @@ def handle_task_completed(payload: dict, name: str) -> int:
 
 def handle_teammate_idle(payload: dict, name: str) -> int:
     directory = state_dir(payload)
+    if followed_another_agents_stop(directory, name):
+        log_decision(directory, "TeammateIdle", name, "allow-child-stop")
+        return 0
     state_path = directory / f"{safe_name(name)}.json"
     state = load_state(state_path)
     if state["final_delivered"]:

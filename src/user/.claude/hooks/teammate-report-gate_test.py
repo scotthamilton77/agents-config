@@ -173,6 +173,61 @@ class TestTeammateIdleGate:
         assert "does not reach the orchestrator" in err.lower()
 
 
+
+class TestChildStopIdle:
+    """A teammate blocked inside its own Agent call goes idle when the child stops."""
+
+    def test_the_recorded_child_stop_idles_pass_without_spending_the_allowance(
+        self, monkeypatch, capsys, isolated_state_root
+    ):
+        name = "alpha"
+        for _ in range(4):
+            run(subagent_stop_event(agent_type="general-purpose"), monkeypatch)
+            assert run(teammate_idle(name), monkeypatch) == 0
+        assert capsys.readouterr().err == ""
+        assert not (state_dir(isolated_state_root) / f"{name}.json").is_file()
+        # The allowance is untouched, so the teammate's own idles still get the
+        # full three blocks before the gate gives up.
+        run(subagent_stop_event(agent_type=name), monkeypatch)
+        assert run(teammate_idle(name), monkeypatch) == 2
+        assert run(teammate_idle(name), monkeypatch) == 2
+        assert run(teammate_idle(name), monkeypatch) == 2
+        assert run(teammate_idle(name), monkeypatch) == 0
+
+    def test_a_child_stop_idle_is_logged_under_its_own_decision_name(
+        self, monkeypatch, isolated_state_root
+    ):
+        run(subagent_stop_event(agent_type="general-purpose"), monkeypatch)
+        assert run(teammate_idle("alpha"), monkeypatch) == 0
+        decisions = [
+            json.loads(line) for line in
+            (state_dir(isolated_state_root) / "decisions.jsonl").read_text(
+                encoding="utf-8").splitlines()
+        ]
+        idle = [d for d in decisions if d["event"] == "TeammateIdle"]
+        assert [d["decision"] for d in idle] == ["allow-child-stop"]
+
+    def test_an_idle_after_the_teammates_own_stop_still_blocks(self, monkeypatch):
+        name = "alpha"
+        run(subagent_stop_event(agent_type=name), monkeypatch)
+        assert run(teammate_idle(name), monkeypatch) == 2
+
+    def test_an_idle_with_no_preceding_stop_still_blocks(self, monkeypatch):
+        assert run(teammate_idle("alpha"), monkeypatch) == 2
+
+    def test_a_child_stop_older_than_the_window_no_longer_excuses_an_idle(
+        self, monkeypatch
+    ):
+        run(subagent_stop_event(agent_type="general-purpose"), monkeypatch)
+        later = gate.clock() + gate.CHILD_STOP_WINDOW_SECONDS + 1
+        monkeypatch.setattr(gate, "clock", lambda: later)
+        assert run(teammate_idle("alpha"), monkeypatch) == 2
+
+    def test_an_anonymous_stop_does_not_excuse_an_idle(self, monkeypatch):
+        run(subagent_stop_event(agent_type=""), monkeypatch)
+        assert run(teammate_idle("alpha"), monkeypatch) == 2
+
+
 class TestObservers:
     def test_posttooluse_never_exits_nonzero(self, monkeypatch):
         assert run(send_message_event("just some chatter", sender="mu"), monkeypatch) == 0
