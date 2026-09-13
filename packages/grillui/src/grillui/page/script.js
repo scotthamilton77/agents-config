@@ -1573,10 +1573,12 @@ function answerControls(d, locked) {
   // Every option wears its label, the recommended one included, because the
   // label is what the human writes down and says in a thread — and a
   // recommendation that had no label would be the one option nobody could name.
-  h += optionButton(d, d.options[0], 0, "btn primary wide", "➡️ ", dis);
+  var rec = optionDress(d, d.options[0], true);
+  h += optionButton(d, d.options[0], 0, "btn wide" + rec.cls, rec.lead, dis);
   h += '<div class="alts">';
   d.options.slice(1).forEach(function (o, i) {
-    h += optionButton(d, o, i + 1, "btn wide sm", "", dis);
+    var dress = optionDress(d, o, false);
+    h += optionButton(d, o, i + 1, "btn wide sm" + dress.cls, dress.lead, dis);
   });
   h += "</div>";
   // One box, two jobs: what you type is a free-text answer if you send it on its
@@ -1588,6 +1590,16 @@ function answerControls(d, locked) {
     '<span class="hint">↵ send<br>⇧↵ newline</span>' +
     '<button class="btn sm" data-act="free" data-id="' + esc(d.id) + '"' + dis + ">Use this</button></div>";
   return h;
+}
+// How an option is dressed on a settled decision and on one still being asked.
+// The option the human took wears the mark; the first option is dressed as the
+// recommendation only while the decision is still asking. A settled decision
+// that went on filling its first option would show option a as the standing
+// answer on a board whose answer line says the human took option b.
+function optionDress(d, o, recommended) {
+  var answer = d.status === "settled" ? d.answer : null;
+  if (answer) return answer.option === o.id ? { cls: " chosen", lead: "✓ " } : { cls: "", lead: "" };
+  return recommended ? { cls: " primary", lead: "➡️ " } : { cls: "", lead: "" };
 }
 function optionButton(d, o, index, cls, lead, dis) {
   var armed = UI.armed[d.id];
