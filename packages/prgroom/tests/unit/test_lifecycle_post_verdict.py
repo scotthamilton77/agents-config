@@ -30,7 +30,7 @@ from prgroom.lifecycle.post_verdict import (
 )
 from prgroom.proc import CommandResult
 from prgroom.prsession.pr_ref import PRRef
-from tests.fakes import RecordedRunner, RouteTableHttp
+from tests.fakes import POSTED_VERDICT_BODY, RecordedRunner, RouteTableHttp
 
 HEAD = "a" * 40
 MOVED = "b" * 40
@@ -452,12 +452,13 @@ class TestTheHeadItReviewed:
 
 class TestPostingTwiceIsANoOp:
     def existing(self, **overrides: Any) -> dict[str, Any]:
-        # The body a first posting left behind, which is the rendered one: the
-        # check is equality on what was posted, not on the file behind it.
+        # The body a first posting left behind, pinned by hand: the check is
+        # equality on what was posted, and a fixture the renderer built would
+        # follow the renderer wherever it went.
         return {
             "id": 7,
             "commit_id": HEAD,
-            "body": render_body(verdict_of()),
+            "body": POSTED_VERDICT_BODY,
             "user": {"login": LOGIN},
             "state": "COMMENTED",
             **overrides,
@@ -663,6 +664,12 @@ class TestTheSummaryAboveTheEnvelope:
 
     def test_a_round_carrying_nothing_in_says_nothing_about_priors(self, tmp_path: Path) -> None:
         assert "Prior dispositions" not in summary_of(tmp_path, prior_dispositions=[])
+
+    def test_the_rendered_body_is_the_one_pinned_by_hand(self) -> None:
+        # The whole body, to the character. Every test that stands a posted body
+        # up against the flow uses that pinned copy, so this is the one place the
+        # renderer's output is judged against something it did not produce.
+        assert render_body(verdict_of()) == POSTED_VERDICT_BODY
 
     def test_the_same_verdict_renders_the_same_body_every_time(self, tmp_path: Path) -> None:
         # Idempotence is equality on the body, so a rendering that varied between

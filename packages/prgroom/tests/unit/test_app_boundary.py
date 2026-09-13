@@ -25,10 +25,15 @@ from prgroom.errors import ErrorCode, PrgroomError
 from prgroom.gh import app
 from prgroom.gh.app import FILES_PER_PAGE, GITHUB_API, REVIEWS_PER_PAGE, UrllibTransport
 from prgroom.lifecycle.approve import approve_pr
-from prgroom.lifecycle.post_verdict import Verdict, post_verdict_pr, render_body
+from prgroom.lifecycle.post_verdict import Verdict, post_verdict_pr
 from prgroom.proc import CommandResult
 from prgroom.prsession.pr_ref import PRRef
-from tests.fakes import RecordedRunner, RouteTableHttp
+from tests.fakes import (
+    POSTED_VERDICT_BODY,
+    POSTED_VERDICT_TEXT,
+    RecordedRunner,
+    RouteTableHttp,
+)
 
 HEAD = "a" * 40
 APP_ID = 4275336
@@ -48,9 +53,8 @@ SUBMIT = ("POST", f"{PULL}/reviews")
 CHANGED = "src/app.py"
 FILES: list[dict[str, Any]] = [{"filename": CHANGED, "patch": "@@ -1,2 +1,4 @@\n+added\n"}]
 
-VERDICT_TEXT = json.dumps({"head_sha": HEAD, "findings": [{"id": "f1"}]})
 VERDICT = Verdict(
-    text=VERDICT_TEXT,
+    text=POSTED_VERDICT_TEXT,
     head_sha=HEAD,
     findings=({"id": "f1", "evidence": f"{CHANGED}:2 is wrong"},),
 )
@@ -134,9 +138,10 @@ POST_VERDICT_FLOW = Flow(
     read_routes=[APP, INSTALLATION, TOKEN, PULL_READ, REVIEWS_PAGE_1, FILES_PAGE_1],
     own_review={
         "state": "COMMENTED",
-        # The body a first posting left, which is the rendered one rather than the
-        # file: an entry carrying the file's bytes is not this flow's own review.
-        "body": render_body(VERDICT),
+        # The body a first posting left, pinned by hand rather than rendered here:
+        # an entry carrying the file's bytes is not this flow's own review, and a
+        # fixture the renderer built would match it however the format moved.
+        "body": POSTED_VERDICT_BODY,
         "commit_id": HEAD,
         "user": {"login": LOGIN},
     },
