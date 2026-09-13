@@ -16,7 +16,16 @@ from typing import Any
 
 import pytest
 
-from evals.__main__ import BASELINE, DEPENDENT, Tap, check, matrix_of, read_seat, seat_of
+from evals.__main__ import (
+    BASELINE,
+    DEPENDENT,
+    Tap,
+    check,
+    matrix_of,
+    named,
+    read_seat,
+    seat_of,
+)
 from evals.cases import CASES, CaseRefusedError, load_case, load_cases
 from evals.checks import (
     a_revise_supplies_what_it_revises,
@@ -1038,6 +1047,34 @@ def test_each_case_is_replayed_on_the_seat_it_resolved(
     suite.main(["--report", str(tmp_path)])
 
     assert seats == [config.expert_seat, config.thread_seat]
+
+
+def test_a_default_run_takes_every_checked_in_case_on_the_seat_it_resolves_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a run that narrows neither the cases nor the seats
+    When the matrix is written
+    Then it holds each checked-in case's samples, every one of them on the seat
+         that case resolves to when nothing narrows it: a run that dropped a
+         case, or sent one to a seat the session would not have used, reports
+         green about a turn nobody took.
+    """
+    import evals.__main__ as suite
+
+    # The seats are resolved from the same environment the run reads, so the
+    # two sides cannot disagree over a variable this checkout happens to set.
+    config = TierConfig.from_env()
+    monkeypatch.setattr(
+        suite, "replay", lambda *_: (document().model_dump_json(), COUNTED, 40, 1, 1.0, None)
+    )
+
+    suite.main(["--report", str(tmp_path)])
+
+    written = json.loads((tmp_path / "matrix.json").read_text("utf-8"))
+    assert [(one["case"], one["seat"]) for one in written] == [
+        (one.name, named(seat_of(one, config))) for one in load_cases() for _ in range(one.samples)
+    ]
 
 
 def test_a_sample_records_how_many_turns_the_cli_took_to_answer(
