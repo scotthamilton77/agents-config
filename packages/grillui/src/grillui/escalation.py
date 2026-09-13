@@ -97,10 +97,6 @@ if TYPE_CHECKING:
 
     from grillui.schemas import Image2, LogEntry
 
-# Whose turn carries a ruling. The map's author is the only agent that makes
-# one, so a reader looking for the last ruling looks for its entry and no other.
-GRILL_MASTER_ACTOR = "grill-master"
-
 CONDITION_COMMITMENT = "commitment asked on a decision two or more decisions depend on"
 CONDITION_IRREDUCIBLE = "reframing rejected, or the trade-off named as what cannot be resolved"
 CONDITION_MULTIPLE = "three or more decisions weighed at once"
@@ -605,19 +601,25 @@ def _resting_obligation(image: Image2, gesture: LogEntry) -> MootnessObligation 
     )
 
 
-def rulings_of(entries: Sequence[LogEntry], channel: str = MAP_CHANNEL) -> tuple[list[Any], ...]:
-    """The rulings the last grill-master turn on this channel made, and the
-    updates it carried.
+def rulings_of(entries: Sequence[LogEntry], spoke: int | None) -> tuple[list[Any], ...]:
+    """The rulings the turn that appended entry `spoke` made, and the updates it
+    carried.
 
-    Read off the turn's own log entry, which is where a ruling lives: the check
-    is on what the document said, not on what the board happens to look like
-    afterwards. A turn that ruled and a turn whose proposal the human applied in
-    between are different facts, and only the first is coverage.
+    Read off the one entry that turn's own driver appended, named by the
+    sequence the driver came back with. The alternative is to read the last
+    grill-master entry in a window opened before the turn was dispatched, and
+    that credits the wrong turn: map turns run concurrently, so a second turn's
+    reply can land inside any window and discharge an obligation nobody ruled
+    on. A turn that appended nothing names no entry and is credited nothing,
+    which is exactly the turn the ladder owes a hand-up.
+
+    The check is on what the document said, not on what the board happens to
+    look like afterwards. A turn that ruled and a turn whose proposal the human
+    applied in between are different facts, and only the first is coverage.
     """
-    for entry in reversed(entries):
-        if entry.channel != channel or entry.actor != GRILL_MASTER_ACTOR:
-            continue
-        return _dicts(entry.payload.get(RULINGS_KEY)), _dicts(entry.payload.get("updates"))
+    for entry in entries:
+        if entry.seq == spoke:
+            return _dicts(entry.payload.get(RULINGS_KEY)), _dicts(entry.payload.get("updates"))
     return [], []
 
 

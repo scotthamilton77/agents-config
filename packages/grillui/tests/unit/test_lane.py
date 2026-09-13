@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -632,6 +632,41 @@ def _obligations(driver: Any) -> list[Any]:
     ]
 
 
+def _rule(log: SessionLog, named: Sequence[str]) -> int | None:
+    """One grill-master turn ruling `invalidate` on each named id, queueing the
+    update each ruling is credited by, appended the way a seat appends one.
+
+    It comes back with the sequence the reply landed at, which is the receipt a
+    driver owes the lane: the coverage check credits a turn by the entry that
+    turn named, so a stand-in seat that appended and named nothing stands in for
+    a seat that said nothing.
+    """
+    receipt = log.submit(
+        [
+            EventSubmission(
+                kind=FOLD_KIND,
+                actor="grill-master",
+                idempotency_key=f"reply-{uuid4().hex}",
+                payload={
+                    "updates": [
+                        {"kind": "informational", "text": "Those are dead."},
+                        *(
+                            {"kind": "invalidate", "target": one, "why": "the answer kills it"}
+                            for one in named
+                        ),
+                    ],
+                    RULINGS_KEY: [
+                        {"decision": one, "ruling": "invalidate", "why": "the answer kills it"}
+                        for one in named
+                    ],
+                },
+            )
+        ],
+        log.epoch,
+    )[0]
+    return receipt.seq if receipt.status == "accepted" else None
+
+
 @dataclass
 class ProposingDriver:
     """A tier that rules `invalidate` on every id its dispatch named, and queues
@@ -642,42 +677,18 @@ class ProposingDriver:
     dispatch carrying none rules on nothing. The ruling and the update travel
     together because that is what crediting one requires -- a driver that sent
     the verdict alone would be the failure the check exists to catch.
+
+    It comes back with the sequence its own reply landed at, the way every seat
+    does: that receipt is what the coverage check credits the turn by.
     """
 
     tier: str = FAST_TIER
     dispatches: list[Path] = field(default_factory=list)
 
-    def run(self, log: SessionLog, dispatch: Path, /) -> None:
+    def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
         context = DispatchContext.model_validate_json(dispatch.read_text(encoding="utf-8"))
         self.dispatches.append(dispatch)
-        named = [] if context.mootness is None else context.mootness.ids
-        log.submit(
-            [
-                EventSubmission(
-                    kind=FOLD_KIND,
-                    actor="grill-master",
-                    idempotency_key=f"reply-{uuid4().hex}",
-                    payload={
-                        "updates": [
-                            {"kind": "informational", "text": "Those are dead."},
-                            *(
-                                {"kind": "invalidate", "target": one, "why": "the answer kills it"}
-                                for one in named
-                            ),
-                        ],
-                        RULINGS_KEY: [
-                            {
-                                "decision": one,
-                                "ruling": "invalidate",
-                                "why": "the answer kills it",
-                            }
-                            for one in named
-                        ],
-                    },
-                )
-            ],
-            log.epoch,
-        )
+        return _rule(log, [] if context.mootness is None else context.mootness.ids)
 
 
 def test_a_gesture_owed_rulings_is_composed_by_the_expert_carrying_the_ids(
@@ -784,6 +795,218 @@ def test_an_obligation_met_or_never_created_presses_nobody(log: SessionLog, tmp_
     assert unused.dispatches == []
     assert _notices(plain) == []
     assert _obligations(prose) == [None]
+
+
+# ── Two map turns at once, and whose rulings each is credited with ──
+
+
+def _seed_second_asker(log: SessionLog) -> None:
+    """A fourth decision offering the same marked option.
+
+    One batch can then carry two answers that each owe rulings on `d2` and `d3`,
+    which is the pair of map turns in flight the credit has to be told apart by.
+    """
+    receipt = log.submit(
+        [
+            EventSubmission(
+                kind="add-node",
+                actor="grill-master",
+                idempotency_key="seed-d4",
+                payload={
+                    "target": "d4",
+                    "short": "d4",
+                    "title": "Which d4?",
+                    "body": "Decide.",
+                    "prereqs": [],
+                    "options": [{"id": "a", "text": "Build the import"}, KILLING_OPTION],
+                },
+            )
+        ],
+        log.epoch,
+    )[0]
+    assert receipt.status == "accepted"
+
+
+@dataclass
+class InterleavingExpert:
+    """One expert seat taking two map turns at once, one of which says nothing.
+
+    The turn whose obligation names `silent` appends nothing -- the empty
+    document a seat sends when it validates and carries no content -- and holds
+    until the other turn's reply is on the record, so its own coverage read runs
+    with an entry that is not its own sitting behind it. The other turn rules
+    `invalidate` on every id its dispatch named and comes back with the sequence
+    that reply landed at.
+
+    Which of the two a call is taking is read off the dispatch's own obligation,
+    because one seat takes both and nothing else tells them apart.
+    """
+
+    tier: str = HEAVY_TIER
+    silent: str = "d1"
+    landed: threading.Event = field(default_factory=threading.Event)
+    dispatches: list[Path] = field(default_factory=list)
+
+    def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
+        owed = DispatchContext.model_validate_json(dispatch.read_text(encoding="utf-8")).mootness
+        self.dispatches.append(dispatch)
+        if owed is not None and owed.target == self.silent:
+            assert self.landed.wait(TIMEOUT), "the other turn's reply never landed"
+            return None
+        spoke = _rule(log, [] if owed is None else owed.ids)
+        self.landed.set()
+        return spoke
+
+
+@dataclass
+class RefusingFirstRung:
+    """A first rung that refuses its document once the expert has a turn of its
+    own in flight.
+
+    The wait is what fixes the order. The press this refusal buys cannot reach
+    the expert before the turn already sitting there, so the seat below can tell
+    its own turn from the one handed up by which of them arrived first.
+    """
+
+    tier: str = FAST_TIER
+    seen: threading.Event = field(default_factory=threading.Event)
+    dispatches: list[Path] = field(default_factory=list)
+
+    def run(self, _log: SessionLog, dispatch: Path, /) -> int | None:
+        self.dispatches.append(dispatch)
+        assert self.seen.wait(TIMEOUT), "the expert never took a turn of its own"
+        raise DocumentRefusedError(self.tier, "it was not the document")
+
+
+@dataclass
+class PressedExpert:
+    """The expert seat taking its own map turn and a turn handed up from below.
+
+    Its first call is the one the human's answer bought; its second is the press.
+    The order is forced rather than hoped for: the seat below waits to be told
+    this one has a turn before it refuses, so nothing can arrive here a second
+    time until the first call is in.
+
+    The handed-up call appends nothing, and the reply that would credit it is
+    made to land strictly after the press was dispatched -- which is the window
+    a coverage read taken off a cursor closes over.
+    """
+
+    tier: str = HEAVY_TIER
+    seen: threading.Event = field(default_factory=threading.Event)
+    pressed: threading.Event = field(default_factory=threading.Event)
+    landed: threading.Event = field(default_factory=threading.Event)
+    dispatches: list[Path] = field(default_factory=list)
+    taking: threading.Lock = field(default_factory=threading.Lock)
+    calls: int = 0
+
+    def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
+        owed = DispatchContext.model_validate_json(dispatch.read_text(encoding="utf-8")).mootness
+        with self.taking:
+            self.calls += 1
+            mine = self.calls
+        self.dispatches.append(dispatch)
+        if mine > 1:
+            self.pressed.set()
+            assert self.landed.wait(TIMEOUT), "the concurrent reply never landed"
+            return None
+        self.seen.set()
+        assert self.pressed.wait(TIMEOUT), "the turn below was never handed up"
+        spoke = _rule(log, [] if owed is None else owed.ids)
+        self.landed.set()
+        return spoke
+
+
+@pytest.mark.parametrize("silent", ["d1", "d4"])
+def test_a_map_turn_is_credited_nothing_by_a_concurrent_turns_ruling_reply(
+    log: SessionLog, silent: str
+) -> None:
+    """
+    Given two answers in one batch, each owing rulings on the same two decisions
+    When the turn for one of them appends nothing while the other's ruling reply
+         lands inside its coverage window
+    Then the silent turn is credited nothing: the human is told once which
+         decisions went unruled, and the notice names that turn's own answer.
+
+    Coverage read from a window on the log is coverage read off whatever spoke
+    last, and on a board taking two map turns at once that is as likely to be
+    the other turn. The turn that ruled on nothing would discharge its
+    obligation on a verdict nobody made for it, and the human is left answering
+    a decision the board should have offered to withdraw. Which of the two
+    stayed silent is parametrised because the interleaving must not decide the
+    answer: each ordering credits the turn that spoke and nobody else.
+    """
+    expert = InterleavingExpert(silent=silent)
+    lane = Lane(log, SpyDriver(tier=FAST_TIER), expert=expert)
+    _seed(log)
+    _seed_second_asker(log)
+
+    run_turns(
+        lane,
+        EventSubmission(
+            kind="answer",
+            actor="human",
+            idempotency_key="answer-d1",
+            payload={"target": "d1", "answer": {"option": "b"}},
+        ),
+        EventSubmission(
+            kind="answer",
+            actor="human",
+            idempotency_key="answer-d4",
+            payload={"target": "d4", "answer": {"option": "b"}},
+        ),
+    )
+
+    said = _notices(log)
+    assert len(said) == 1, said
+    assert said[0].startswith(f"The answer to {silent} put {', '.join(KILLED)} in question")
+    assert len(expert.dispatches) == 2, "one gesture bought more than one turn"
+
+
+def test_a_turn_handed_up_is_credited_nothing_by_a_reply_landing_after_the_hand_up(
+    log: SessionLog,
+) -> None:
+    """
+    Given a clerical map gesture and an answer owing rulings in one batch, the
+          first rung picking the obligation up when its turn dispatches and
+          refusing its document
+    When the expert it is handed up to appends nothing, and the other map turn's
+         ruling reply lands after the hand-up
+    Then the expert is asked exactly once and the human is told once which
+         decisions went unruled.
+
+    The read after a hand-up correlates the way the first one does. A cursor
+    taken at the moment the turn was handed up closes over a concurrent reply
+    exactly as a cursor taken before the turn does, and crediting the expert
+    with that reply ends the ladder a rung early on a ruling it never made.
+    """
+    expert = PressedExpert()
+    first_rung = RefusingFirstRung(seen=expert.seen)
+    lane = Lane(log, first_rung, expert=expert)
+    _seed(log)
+
+    run_turns(
+        lane,
+        EventSubmission(
+            kind="thread-turn",
+            actor="human",
+            channel=MAP_CHANNEL,
+            idempotency_key="human-said",
+            payload={"turns": [{"text": "Where are we?"}]},
+        ),
+        EventSubmission(
+            kind="answer",
+            actor="human",
+            idempotency_key="human-answer",
+            payload={"target": "d1", "answer": {"option": "b"}},
+        ),
+    )
+
+    assert len(first_rung.dispatches) == 1, "the first rung took a turn twice"
+    assert len(expert.dispatches) == 2, "the press bought more than one expert turn"
+    said = _notices(log)
+    assert len(said) == 1, said
+    assert said[0].startswith(f"The answer to d1 put {', '.join(KILLED)} in question")
 
 
 def _seed_resting(log: SessionLog) -> None:
