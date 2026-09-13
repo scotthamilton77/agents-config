@@ -1111,7 +1111,7 @@ def test_the_grill_master_brief_reserves_an_alert_for_a_note_that_asks_for_somet
         "with one exception, the second alert below that lifts a lock by saying what they "
         "supplied" in brief
     )
-    assert "where you are still asking them for something" in brief
+    assert "where you are still asking them for something, or lifting a lock you set" in brief
     # The per-kind list is where the kind is picked, so the two lines there have
     # to draw the same line the rule above does.
     assert "ask the human for something this decision rests on that nobody has supplied" in brief

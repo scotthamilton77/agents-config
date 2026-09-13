@@ -669,7 +669,8 @@ GAP_RULE = (
     "they supplied, once they have supplied it in that decision's thread. So set `blocking` "
     "true only where the decision truly cannot be answered.\n"
     "`blocking` false leaves the decision answerable, and states the gap on the record. Use it "
-    "where you are still asking them for something and the human could decide without it."
+    "where you are still asking them for something, or lifting a lock you set, and the human "
+    "could decide without it."
 )
 
 # How to read a board that moved. A thread agent is handed the record of every
