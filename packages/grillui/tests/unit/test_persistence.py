@@ -15,10 +15,19 @@ import pytest
 from conftest import SEED_NODE, event, post, seed_node
 from fastapi.testclient import TestClient
 
+from grillui.lane import unclosed_turns
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE, LOG_FILE, SessionLog
 from grillui.persistence import project_and_persist
 from grillui.projector import fold, to_image1
-from grillui.schemas import STATUS_KIND, STATUS_PHASE_ERROR, Image1, Image2
+from grillui.schemas import (
+    MAP_CHANNEL,
+    STATUS_KIND,
+    STATUS_PHASE_COMPOSING,
+    STATUS_PHASE_DOWNSTREAM_FAILED,
+    STATUS_PHASE_ERROR,
+    Image1,
+    Image2,
+)
 
 DEADLOCK_TIMEOUT = 5.0
 
@@ -154,7 +163,7 @@ def test_an_unwritable_image_leaves_the_log_intact_and_still_takes_the_next_even
 
     assert [receipt["status"] for receipt in first + second] == ["accepted", "accepted"]
     statuses = [entry for entry in log.entries() if entry.kind == STATUS_KIND]
-    assert [entry.payload["phase"] for entry in statuses] == [STATUS_PHASE_ERROR] * 2
+    assert [entry.payload["phase"] for entry in statuses] == [STATUS_PHASE_DOWNSTREAM_FAILED] * 2
     assert "IsADirectoryError" in statuses[0].payload["detail"]
     lines = (session_dir / LOG_FILE).read_text(encoding="utf-8").splitlines()
     assert len(lines) == len(log.entries()) == 4
@@ -191,9 +200,40 @@ def test_a_fold_that_cannot_complete_surfaces_on_the_status_lane_and_blocks_noth
     assert [receipt["status"] for receipt in first + second] == ["accepted", "accepted"]
     statuses = [entry for entry in log.entries() if entry.kind == STATUS_KIND]
     assert len(statuses) == 2
-    assert statuses[0].payload["phase"] == STATUS_PHASE_ERROR
+    assert statuses[0].payload["phase"] == STATUS_PHASE_DOWNSTREAM_FAILED
     assert "unfoldable" in statuses[0].payload["detail"]
     assert statuses[0].actor == "backend"
+
+
+def test_a_persistence_failure_while_a_turn_is_running_does_not_close_that_turn(
+    client: TestClient, log: SessionLog, session_dir: Path
+) -> None:
+    """
+    Given a turn announced on the map channel and an image path that cannot be
+         written
+    When a write is accepted and the persistence step fails while that turn is
+         still running
+    Then the lane still says the turn is open.
+
+    The pairing rule is what makes this matter. A turn is announced with
+    `composing` and closed by the next `replied` or `error` on its channel, so a
+    failure that spoke in the closing phase would be read as that turn's ending
+    by every reader of the rule -- this one, and the page, which would then show
+    the channel as quiet and stop telling the human they are waiting on a reply
+    that is still coming.
+    """
+    log.emit_status(
+        STATUS_PHASE_COMPOSING, "the 'fast' tier is composing", MAP_CHANNEL, tier="fast"
+    )
+    assert set(unclosed_turns(log.entries())) == {MAP_CHANNEL}, "the turn was never announced"
+
+    (session_dir / IMAGE1_FILE).mkdir()
+    receipts = post(client, log.epoch, event("informational", key="k1", text="one"))
+
+    assert [receipt["status"] for receipt in receipts] == ["accepted"]
+    assert set(unclosed_turns(log.entries())) == {MAP_CHANNEL}, "the failure closed a live turn"
+    reported = [entry for entry in log.entries() if entry.kind == STATUS_KIND][-1]
+    assert reported.payload["phase"] == STATUS_PHASE_DOWNSTREAM_FAILED, reported.payload
 
 
 def test_a_status_emitted_while_the_append_lock_is_held_does_not_deadlock(
