@@ -186,7 +186,12 @@ def ruling(decision: str, verdict: str, why: str = "because the answer moved it"
 
 
 def turn(reply: str, **extra: Any) -> dict[str, Any]:
-    """One scripted turn for a shim: what it says, and how it says it."""
+    """One scripted turn for a shim: what it says, and how it says it.
+
+    `delay` is how many seconds the seat sits on the turn before saying any of
+    it, which is how a scenario gets to act while a channel is genuinely
+    mid-turn rather than between turns.
+    """
     return {"reply": reply, **extra}
 
 

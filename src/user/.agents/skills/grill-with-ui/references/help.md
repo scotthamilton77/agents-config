@@ -153,6 +153,13 @@ thinks the stopping condition is met says so. Ending writes the result beside th
 log, stops the backend, and hands the summary back to the agent that launched the board.
 After that the board is readable and nothing further is recorded.
 
+The board asks a second time before it writes any of that, in two cases. An agent still
+composing a reply is one: what it comes back with could put a new decision on the board,
+so the completion overlay says responses are pending and its ending control reads **End
+Session Anyway**. A board with questions still open on it is the other, and the question
+says how many. Either way nothing is written until the human answers it, and a finished
+board with nothing pending ends on the one press.
+
 ## What to say when asked something this does not cover
 
 Say what the board does, and say plainly when a behaviour is not something you know

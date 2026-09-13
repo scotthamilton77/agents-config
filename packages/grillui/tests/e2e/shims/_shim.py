@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -95,7 +96,15 @@ def settings(argv: list[str]) -> list[str]:
 
 
 def emit(turn: dict[str, Any], lines: list[str]) -> None:
-    """Print what this turn prints and exit as it was scripted to exit."""
+    """Print what this turn prints and exit as it was scripted to exit.
+
+    A turn carrying `delay` sleeps that many seconds before it says anything,
+    which is how a scenario gets a seat that is genuinely mid-turn: the lane has
+    announced the turn and no reply has closed it, for as long as the scenario
+    needs to click something while that is true. Slept here rather than faked in
+    the backend, because a turn that takes time is what the page is reading.
+    """
+    time.sleep(float(turn.get("delay", 0)))
     sys.stdout.write("".join(line + "\n" for line in lines))
     sys.stdout.flush()
     said = turn.get("stderr")

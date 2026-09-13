@@ -315,7 +315,12 @@ var UI = {
   // the overlay is up, whether it was dismissed onto the pulsing control, and
   // what the board's finished-ness last read as. A reload starts all three back
   // here, which is right -- a board that is not finished has nothing to carry.
-  done: false, pulse: false, wasDone: false
+  done: false, pulse: false, wasDone: false,
+  // What the page is asking the human to confirm before it ends the session, as
+  // the words it is asking in, and nothing where it is asking nothing. Page-local
+  // like the rest of this: a question nobody answered is not a state a reload
+  // should come back holding.
+  confirm: null
 };
 // One page instance: an idempotency key is stable for a retry and distinct
 // across reloads, because a reload's events are genuinely new and a resend is
@@ -1637,14 +1642,65 @@ function noteCompletion() {
 // the top row's own control by act, so there is one gesture into ending a
 // session and this is a second place to reach it rather than a second way.
 function completionOffer() {
+  // A board with every question answered can still have a turn running on it,
+  // and that turn is the one thing that can put a new question back. So the
+  // offer says so where the human is reading, and the act it offers stops
+  // claiming the board is quiet.
+  var pending = pendingTurns().length;
   return '<div class="scrim" id="completion"><div class="box"><h3>🏁 Every question is answered</h3>' +
     "<p>" + completionTally() + ". Nothing on this board is waiting on you. Ending the session " +
     "writes the result beside the log and hands it back. Nothing forces that now — the board is " +
     "yours to go back over.</p>" +
-    '<div class="acts"><button class="btn primary" data-act="endsession">End the session</button>' +
+    (pending ? "<p>Agent responses are still pending, and what they come back with could put a " +
+      "new decision on this board.</p>" : "") +
+    '<div class="acts"><button class="btn primary" data-act="endsession">' +
+    (pending ? "End Session Anyway" : "End the session") + "</button>" +
     '<button class="btn" data-act="dismiss-completion">Back to the board</button></div></div></div>';
 }
-function endSession() {
+// The channels an agent still owes a turn on, read off the channel model this
+// page already keeps rather than counted a second time here. A second count is
+// a second answer to one question, and the one the guard reads would be the one
+// nobody maintains.
+function pendingTurns() {
+  return Object.keys(CHANNELS.protocol).filter(owedOn);
+}
+// Why the ending is worth asking about twice, in the words it is asked in, or
+// nothing at all where the gesture is unambiguous. A pending turn is asked
+// about first because it outranks the board's own state: an answer still being
+// composed is what can put a new decision on a board that already looks done.
+var PENDING_END_WARNING = "There are pending agent responses that could result in new decisions " +
+  "to be made. Are you sure you want to end the session now?";
+function endWarning() {
+  if (pendingTurns().length) return PENDING_END_WARNING;
+  if (boardFinished()) return "";
+  var open = BOARD.decisions.filter(function (d) {
+    return d.status !== "settled" && d.status !== "invalidated";
+  }).length;
+  return (open
+    ? open + (open === 1 ? " decision on this board is" : " decisions on this board are") +
+      " still open"
+    : "Nothing has been put on this board yet") +
+    ". Ending the session writes the result with the board unfinished. Are you sure you want to " +
+    "end the session now?";
+}
+// One confirmation for both reasons, worded by whichever raised it. It is the
+// completion offer's own scrim and box, because a second shape would be a
+// second thing to keep in step with it, and the answers are the same either
+// way: the ending act, or back to the board with nothing written.
+function confirmEnd(text) {
+  return '<div class="scrim" id="confirm"><div class="box"><h3>⚠ End the session?</h3><p>' +
+    esc(text) + "</p>" +
+    '<div class="acts"><button class="btn primary" data-act="confirm-end">Yes, end the session</button>' +
+    '<button class="btn" data-act="dismiss-confirm">Back to the board</button></div></div></div>';
+}
+// The guard stands in front of the one wire path rather than inside it: the
+// page asks again, and the ending event is still built in exactly one place
+// however the human reached it. `confirmed` is the human having answered the
+// question this raised, and it is the only thing that skips it.
+function endSession(confirmed) {
+  var warning = confirmed ? "" : endWarning();
+  if (warning) { UI.confirm = warning; render(); return; }
+  UI.confirm = null;
   send(ev("session-end", MAP, {}));
   render();
 }
@@ -2617,6 +2673,7 @@ function renderShell() {
     (WIRE.doctor
       ? '<div class="scrim"><div class="box"><h3>🩺 The map doctor is working</h3>' +
         "<p>The agent is going over the whole board and everything in the queue. The board is read-only until it answers.</p></div></div>"
+      : UI.confirm ? confirmEnd(UI.confirm)
       : UI.done ? completionOffer() : "") +
     (!UI.panel ? "" :
       UI.panel.kind === "thread" ? renderThread(UI.panel.id) :
@@ -2914,7 +2971,7 @@ function popOut(tid) {
 // same thing, so an ended board offers no control whose click would be swallowed.
 var WRITE_ACTS = ["pick", "free", "say", "seed", "draftsay", "newthread", "discuss", "discussnotice",
   "fold", "park", "closethread", "abandon", "applyone", "applyall", "dismissone", "transfer",
-  "doctor", "endsession"];
+  "doctor", "endsession", "confirm-end"];
 // Reading stays: the board, the map, the history, the inbox, the notifications
 // and the read markers are all this window's own and go nowhere. What goes is
 // the ability to say anything more into a log that has been closed.
@@ -3095,6 +3152,11 @@ document.addEventListener("click", function (e) {
     // row's control carries it from here. Not in the write acts for that reason
     // -- an ended board never shows this overlay to dismiss.
     case "dismiss-completion": UI.done = false; UI.pulse = true; render(); break;
+    // The human has answered the question the guard raised, so the ending goes
+    // through on this pass. Backing out writes nothing and leaves the board
+    // exactly as it was, offer and all.
+    case "confirm-end": endSession(true); break;
+    case "dismiss-confirm": UI.confirm = null; render(); break;
   }
 });
 // An agent's message is discussed as an ordinary thread, seeded from it —

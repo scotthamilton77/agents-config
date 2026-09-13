@@ -3144,6 +3144,47 @@ def test_the_overlay_ends_the_session_through_the_control_it_is_offering() -> No
     assert '(UI.pulse ? " pulsing" : "")' in function_body("renderShell")
 
 
+def test_the_ending_asks_again_off_the_channel_model_rather_than_a_count_of_its_own() -> None:
+    """What the guard reads, and that it guards the one wire path.
+
+    Whether a turn is out is already the channel model's answer, and the page
+    asks it there. A second count kept beside it would be a second answer to one
+    question, and the one the guard read would be the one nobody maintained --
+    so the board would go on asking about a turn that came back, or stop asking
+    about one that has not.
+
+    The rest is the shape the guard has to keep: it stands in front of the
+    ending rather than inside it, so there is still exactly one site building
+    the event; the ending is reached from the question by the same function the
+    control calls; and one confirmation serves both reasons, which is why the
+    wording is what is passed to it.
+
+    Read off the source because what is pinned here is the wiring. That the
+    first press writes nothing is a fact about a running board, and it is
+    measured in the end-to-end scenarios instead.
+    """
+    source = page_source()
+    pending = function_body("pendingTurns")
+    assert "CHANNELS.protocol" in pending and "owedOn" in pending, pending
+    assert source.count("function pendingTurns(") == 1
+
+    guard = function_body("endSession")
+    assert "endWarning()" in guard, "the ending is not guarded"
+    assert guard.index("UI.confirm = warning") < guard.index('ev("session-end"'), (
+        "the event is built before the question is asked"
+    )
+    assert source.count(f'ev("{SESSION_END_KIND}"') == 1, "a second path builds the ending"
+    assert 'case "confirm-end": endSession(true); break;' in source
+    # Confirming writes, so an ended board disables it with every other write.
+    writes = source.split("var WRITE_ACTS = ", 1)[1].split("]", 1)[0]
+    assert '"confirm-end"' in writes, "confirming the ending is not sealed on an ended board"
+
+    warning = function_body("endWarning")
+    assert "pendingTurns()" in warning and "boardFinished()" in warning, warning
+    assert source.count("confirmEnd(") == 2, "the confirmation is built somewhere else as well"
+    assert "confirmEnd(UI.confirm)" in function_body("renderShell")
+
+
 def test_the_ending_tries_the_tab_and_says_so_when_the_tab_stays() -> None:
     """The fallback is the path most humans take.
 

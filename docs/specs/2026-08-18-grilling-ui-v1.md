@@ -143,6 +143,12 @@ alongside the log and the images. An agent that judges `stop_when` satisfied say
 the human — the grill-master as the `stop` field of its document (§8.10), which the page
 raises as a notice — and it does not end the session itself.
 
+The gesture is guarded where it would be regretted. The page asks a second time when an
+agent still owes a turn on any channel, because that turn's answer can put a new decision
+on the board, and when the board still has open decisions on it; the question names which
+of the two it is, and the terminal entry is appended only once it is answered. A finished
+board with no turn outstanding ends on the one press.
+
 **GUI-D29 — Park and close are the two thread-lifecycle gestures, and both are
 non-destructive.** Parking a thread sets it aside as a loose end: it is carried to the end
 of the session as still open, and the grill-master may raise it again. Closing one declares
