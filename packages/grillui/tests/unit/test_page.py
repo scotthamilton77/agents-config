@@ -3190,6 +3190,72 @@ def test_the_overlay_ends_the_session_through_the_control_it_is_offering() -> No
     assert '(UI.pulse ? " pulsing" : "")' in function_body("renderShell")
 
 
+def test_the_ending_asks_again_off_the_channel_model_rather_than_a_count_of_its_own() -> None:
+    """What the guard reads, and that it guards the one wire path.
+
+    Whether a turn is out is already answered twice over by records this page
+    keeps, and the page reads both rather than keeping a third. The status lane
+    is the durable one: a `composing` entry stands until its `replied` or
+    `error` closes it, so it survives anything the human does meanwhile. The
+    channel model is the early one: it has a turn as owed from the moment the
+    write is dispatched, before the lane has announced it.
+
+    Reading the model alone is the failure this pins. A second human write on a
+    channel that is already composing takes the model back to idle on its own
+    receipt while the backend goes on running the earlier turn, and the board
+    would then end the session over a turn that is still out.
+
+    The rest is the shape the guard has to keep: it stands in front of the
+    ending rather than inside it, so there is still exactly one site building
+    the event; the ending is reached from the question by the same function the
+    control calls; and one confirmation serves both reasons, which is why the
+    wording is what is passed to it.
+
+    Read off the source because what is pinned here is the wiring. That the
+    first press writes nothing is a fact about a running board, and it is
+    measured in the end-to-end scenarios instead.
+    """
+    source = page_source()
+    pending = function_body("pendingTurns")
+    assert "WIRE.status" in pending, "the guard does not read the lane"
+    assert "CHANNELS.protocol" in pending and "owedOn" in pending, pending
+    assert source.count("function pendingTurns(") == 1
+    # The lane's record is emptied on both phases that close a turn, so a turn
+    # that ended by failure stops counting exactly as one that ended by replying.
+    closing = function_body("track")
+    assert "delete WIRE.status[entry.channel];" in closing
+    assert "phase === PHASE_REPLIED || phase === PHASE_ERROR" in closing
+
+    guard = function_body("endSession")
+    assert "endWarning()" in guard, "the ending is not guarded"
+    assert guard.index("UI.confirm = warning") < guard.index('ev("session-end"'), (
+        "the event is built before the question is asked"
+    )
+    assert source.count(f'ev("{SESSION_END_KIND}"') == 1, "a second path builds the ending"
+    assert 'case "confirm-end": endSession(true); break;' in source
+    # Confirming writes, so an ended board disables it with every other write.
+    writes = source.split("var WRITE_ACTS = ", 1)[1].split("]", 1)[0]
+    assert '"confirm-end"' in writes, "confirming the ending is not sealed on an ended board"
+
+    # The lane's record is only as good as the reading that builds it. The
+    # cursor has moved past an arriving entry and marked it seen before the
+    # board is read, so an entry tracked after that read is an entry a failed
+    # read drops for good -- and a dropped `composing` leaves the channel
+    # reading as quiet for the rest of a turn that is still running.
+    cycle = function_body("poll")
+    assert cycle.index("arrived.forEach(track);") < cycle.index('srvGet("/state")'), (
+        "the board is read before the arriving entries are tracked"
+    )
+    # A reload rebuilds the record by replaying the whole log, so nothing about
+    # the guard depends on the page having been open when a turn was announced.
+    assert "u.entries.forEach(track);" in function_body("hydrate")
+
+    warning = function_body("endWarning")
+    assert "pendingTurns()" in warning and "boardFinished()" in warning, warning
+    assert source.count("confirmEnd(") == 2, "the confirmation is built somewhere else as well"
+    assert "confirmEnd(UI.confirm)" in function_body("renderShell")
+
+
 def test_the_ending_tries_the_tab_and_says_so_when_the_tab_stays() -> None:
     """The fallback is the path most humans take.
 

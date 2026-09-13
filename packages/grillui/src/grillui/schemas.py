@@ -270,8 +270,8 @@ def minted_id(seq: int, index: int | None = None) -> str:
 
 # The status lane. A status entry is backend-authored and carries a `phase` and
 # a human-readable `detail`; the `composing` phase additionally names the tier
-# that is composing, and `error` is the phase a projection, persistence or
-# agent-transport failure surfaces as. The kind is deliberately absent from the
+# that is composing, and `error` is how a turn that could not answer closes the
+# lane. The kind is deliberately absent from the
 # submission registry above: no status entry is ever produced by a model, so a
 # client offering one is refused as an unknown kind rather than believed.
 #
@@ -300,6 +300,16 @@ STATUS_PHASE_TRANSFERRED = "transferred"
 # was cut back to it. The page does not draw it: nothing the human has to act
 # on happened.
 STATUS_PHASE_RULINGS_DROPPED = "rulings-dropped"
+# A step downstream of an accepted append that could not finish: the projection,
+# the persistence of the images, the capture of the terminal result. It is a
+# phase of its own rather than an `error` because it closes nothing. `error` is
+# half of the lane's pairing rule -- it is one of the two ways a turn that was
+# announced ends -- and this failure is owed to no turn and can land while any
+# turn is running. Said as an `error`, it would pair with whatever announcement
+# was open on its channel, and every reader of that rule would take the running
+# turn for finished: the backend's own, and the page's, which would then read
+# the channel as quiet and stop saying the human is waiting on anything.
+STATUS_PHASE_DOWNSTREAM_FAILED = "downstream-failed"
 STATUS_PHASES = frozenset(
     {
         STATUS_PHASE_ACCEPTED,
@@ -308,6 +318,7 @@ STATUS_PHASES = frozenset(
         STATUS_PHASE_ERROR,
         STATUS_PHASE_TRANSFERRED,
         STATUS_PHASE_RULINGS_DROPPED,
+        STATUS_PHASE_DOWNSTREAM_FAILED,
     }
 )
 

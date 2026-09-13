@@ -22,7 +22,7 @@ from grillui.log import LOG_FILE, RESULT_FILE, SessionLog
 from grillui.schemas import (
     SESSION_END_KIND,
     STATUS_KIND,
-    STATUS_PHASE_ERROR,
+    STATUS_PHASE_DOWNSTREAM_FAILED,
     THREAD_FOLD_KIND,
     TerminalResult,
 )
@@ -152,7 +152,7 @@ def test_a_capture_that_fails_still_leaves_the_terminal_log_entry(session_dir: P
 
     assert receipt["status"] == "accepted"
     assert log.entries()[-1].kind == STATUS_KIND
-    assert log.entries()[-1].payload["phase"] == STATUS_PHASE_ERROR
+    assert log.entries()[-1].payload["phase"] == STATUS_PHASE_DOWNSTREAM_FAILED
     assert "capture failed" in log.entries()[-1].payload["detail"]
     assert any(entry.kind == SESSION_END_KIND for entry in log.entries())
     assert not (session_dir / RESULT_FILE).exists()
