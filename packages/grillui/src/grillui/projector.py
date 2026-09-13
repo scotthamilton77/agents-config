@@ -35,13 +35,15 @@ same entry that settles the decision, and the thread's conclusion is the answer
 text. One entry rather than two: an answer and a close that half-land leave the
 human looking at a settled decision whose thread still asks to be closed.
 
-A human turn on a closed thread opens it again. Re-opening rides the turn path
-rather than a gesture of its own because saying something in a thread the human
-had finished with *is* picking it back up: a separate gesture would be a second
-way to say the same thing, and a closed thread that took a turn and stayed
-closed would drop that turn out of the end-of-session reckoning. An agent's
-turn does not re-open one -- what the human is done with is not the agent's to
-re-open.
+A human turn on a parked or closed thread opens it again. Re-opening rides the
+turn path rather than a gesture of its own because saying something in a thread
+the human had set aside *is* picking it back up: a separate gesture would be a
+second way to say the same thing, and a set-aside thread that took a turn and
+stayed set aside would drop that turn out of the end-of-session reckoning. An
+agent's turn does not re-open one -- what the human set aside is not the agent's
+to re-open. Re-opening changes nothing about what the two gestures mean at the
+end of the session: a parked thread is still a loose end and a closed one still
+a line item.
 
 Two of those rules are this projector's to state rather than the protocol's.
 *Dependent staleness*: unsettling a decision makes every settled decision that
@@ -921,6 +923,13 @@ def _create_thread(board: _Board, entry: LogEntry) -> None:
     )
 
 
+# The two states a human turn picks a thread back up out of, which are the states
+# the two set-aside gestures leave a thread in. A folded thread is not one of
+# them: its conclusion has already crossed to the board, and a turn taken after
+# the fold would silently restate what the board is already holding.
+_SET_ASIDE_STATES = frozenset({"parked", "closed"})
+
+
 def _append_turns(board: _Board, entry: LogEntry) -> None:
     thread_id = _thread_id(entry)
     thread = board.threads.get(thread_id)
@@ -935,7 +944,7 @@ def _append_turns(board: _Board, entry: LogEntry) -> None:
         # would be retired by its own turn the moment it landed.
         said[-1] = said[-1].model_copy(update={"proposal": offer})
     thread.turns = [*thread.turns, *said]
-    if thread.state == "closed" and entry.actor == "human":
+    if thread.state in _SET_ASIDE_STATES and entry.actor == "human":
         thread.state = "open"
 
 

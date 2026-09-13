@@ -147,8 +147,9 @@ raises as a notice — and it does not end the session itself.
 non-destructive.** Parking a thread sets it aside as a loose end: it is carried to the end
 of the session as still open, and the grill-master may raise it again. Closing one declares
 the human done with it: a closed thread is never woven into the terminal result's open
-items, never listed as a loose end and never raised by an agent, while staying readable on
-the board and reopening into an ordinary open thread that takes turns again. Neither
+items, never listed as a loose end and never raised by an agent. Both stay readable on the
+board, and a thread set aside by either gesture reopens on a human turn into an ordinary
+open thread that takes turns again. Neither
 gesture removes anything — the log is append-only, and both cross as page-emitted gesture
 kinds in the closed set of §8.3. The terminal result distinguishes the two (§8.7), on a
 live end-session and a capture run alike, because a thread the human finished with and a
@@ -331,11 +332,9 @@ is a projection like every other: nothing in it is composed, summarised or infer
 and a catch-up naming an event the log does not carry is the same corruption a short image 2 is.
 
 **The interval is bounded by gestures, not by wall time**: it runs from the set-aside gesture to
-the next human turn on that thread — the turn that reopens it (GUI-D29). Today that turn exists
-for a closed thread alone: a parked thread is raised again only as a loose end the agent names,
-never by a turn, so it has no interval and no dispatch this rule can fire on. The rule is stated
-over the gesture rather than over `close` so that it holds unchanged should park ever take a
-reopening turn of its own.
+the next human turn on that thread — the turn that reopens it (GUI-D29). The rule is stated over
+the gesture rather than over either of the two, so park and close are caught up by the same
+machinery and a third set-aside gesture would be too.
 
 **A map event is an entry that moves a decision, and that is the whole of the definition**: an
 entry is one exactly when folding the log through it changes image 1's `decisions` (GUI-D3). A
@@ -969,8 +968,8 @@ follows, and changes nothing else.
   would arm. It appears on the thread's most recent turn only (GUI-D31); an earlier turn's
   retired converged answer stays readable as part of what was said and carries no control. The
   control renders on an open thread only: parking or closing the thread (GUI-D29) hides it
-  while the converged answer stays live in the log — though a closed thread reopens only on a
-  human turn, which retires the offer it follows (GUI-D31), so a fresh one is needed — and
+  while the converged answer stays live in the log — though a set-aside thread reopens only on
+  a human turn, which retires the offer it follows (GUI-D31), so a fresh one is needed — and
   a session ended with a converged answer nobody took carries it nowhere — the terminal result
   (§8.7) lists decisions and threads, never offers. Activating it brings the anchor
   decision into view with its own-words box filled and the named option's control marked
@@ -1639,8 +1638,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   verified by a scripted turn whose context omits the fact and an assertion check on the
   reply.
 - **GUI-A55** Parking a thread and closing one both leave its turns readable on the board
-  and append rather than remove, and a closed thread reopens into an open thread that takes
-  a further turn. Over one session carrying one of each, the terminal result names the
+  and append rather than remove, and a thread set aside by either gesture reopens on a human
+  turn into an open thread that takes a further turn. Over one session carrying one of each, the terminal result names the
   parked thread as an open loose end and the closed thread as a line item that no open item
   and no agent-raised item names — asserted identically on the live end-session result and
   on a capture run over the same session directory.

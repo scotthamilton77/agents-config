@@ -155,8 +155,9 @@ PROPOSABLE_KINDS = frozenset(
 # things about the same thread. Parking sets it aside as a loose end the human
 # may come back to; closing declares them done with it, so it is never carried
 # to the end of the session as unfinished and no agent raises it again. Neither
-# removes anything: the turns stay readable, and a human turn on a closed
-# thread opens it again, which is why closing needs no undo gesture of its own.
+# removes anything: the turns stay readable, and a human turn on a thread set
+# aside by either gesture opens it again, which is why neither needs an undo
+# gesture of its own.
 THREAD_FOLD_KIND = "thread-fold"
 THREAD_PARK_KIND = "thread-park"
 THREAD_CLOSE_KIND = "thread-close"
@@ -930,7 +931,9 @@ class ThreadProjection(Strict):
     history, frontier, settled set and pending queue, because a thread agent
     reasons about the same board the grill-master does. The dispatched thread
     appears in full; every other live thread is a stub; a parked thread is
-    absent entirely, since resuming one is a gesture nobody has made.
+    absent entirely, since the human set it aside and nothing on it is live for
+    another thread's agent to work from. Picking one back up is the human's own
+    turn on it, and that thread's own dispatch carries it in full.
 
     Its own shape rather than a subclass of image 2, because it is not one: a
     reader promised image 2 and handed this would find thread bodies missing.

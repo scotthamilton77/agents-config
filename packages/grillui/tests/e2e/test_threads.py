@@ -13,6 +13,10 @@ of the role rather than of the channel, so it rides the standing brief every
 thread turn carries -- including the sentence about `proposed_by` and `verdict`,
 without which an agent asked why the board moved composes a cause out of
 `prereqs` while the actual rationale sits unquoted in the same bytes.
+
+The third scenario is what a thread agent is handed when the human comes back to
+a thread they had parked: the thread itself, opened again by their turn, and the
+catch-up telling its seat what the board did while it was away.
 """
 
 from __future__ import annotations
@@ -44,6 +48,13 @@ SAID = document(
     ],
 )
 
+# The parked thread's conversation: what the human asked before parking it, what
+# the seat said, and what they asked on coming back to it.
+PARKED_ASKED = "How long does a session have to be kept?"
+PARKED_REPLY = "Thirty days, then it is archived."
+PICKED_UP = "And what archives it?"
+PICKED_UP_REPLY = "Whatever the compaction job is, which d2 now names."
+
 
 def waiting(session: Session, kind: str) -> str:
     """The id of the one queue item of this kind."""
@@ -56,6 +67,24 @@ def say(page: Page, text: str) -> None:
     page.fill("#ft-say", text)
     page.click('[data-act="draftsay"]')
     page.wait_for_timeout(600)
+
+
+def say_again(page: Page, text: str) -> None:
+    """Say the next thing in the thread the panel is already showing.
+
+    A different control from the one that opened it: `draftsay` starts a thread
+    that does not exist yet, and once it does the same box sends into it.
+    """
+    page.fill("#ft-say", text)
+    page.click('[data-act="say"]')
+    page.wait_for_timeout(600)
+
+
+def thread_id(session: Session) -> str:
+    """The channel the human's thread was opened on, off the log."""
+    opened = [one for one in session.entries() if one.kind == "thread-created"]
+    assert opened, "no thread was created"
+    return str(opened[0].channel)
 
 
 def threads_of(session: Session) -> dict[str, dict[str, Any]]:
@@ -167,3 +196,59 @@ def test_every_thread_turn_is_briefed_with_the_legend_that_says_who_proposed_a_m
     assert "`proposed_by` where an agent's queued change was applied" in brief
     assert "`verdict` where one was judged" in brief
     assert "no `proposed_by` and no `verdict` is a move nobody proposed and nobody judged" in brief
+
+
+def test_a_parked_thread_is_picked_back_up_and_its_seat_is_told_what_it_missed(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a thread the human parked, and a decision they settled afterwards
+    When they open that thread from the board and say something in it
+    Then the thread is open again and the seat's reply lands on it, and the
+         dispatch that produced that reply carries a catch-up naming the
+         decision that moved while the thread was away.
+
+    Parking is the human saying they may come back to this, so the board owes
+    them a way back that is one gesture: saying something in the thread. What its
+    seat is owed is the other half -- it reasoned from a board that has since
+    moved, and a reply composed against the older one would answer a question
+    about a plan nobody is looking at any more.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_codex(turn(document("Noted.")))
+    session.stub.script(PARKED_REPLY, PICKED_UP_REPLY)
+    page = board(session)
+
+    page.click('[data-act="threads"][data-id="d1"]')
+    page.wait_for_timeout(400)
+    say(page, PARKED_ASKED)
+    session.settled()
+    channel = thread_id(session)
+
+    page.click(f'[data-act="park"][data-tid="{channel}"]')
+    session.settled()
+    assert threads_of(session)[channel]["state"] == "parked", threads_of(session)[channel]
+
+    # The board moves while the thread is away, which is what there is to catch
+    # up on.
+    page.click('#col-d2 [data-act="pick"][data-opt="a"]')
+    session.settled()
+
+    page.click('[data-act="threads"][data-id="d1"]')
+    page.wait_for_timeout(400)
+    say_again(page, PICKED_UP)
+    session.settled()
+
+    picked_up = threads_of(session)[channel]
+    assert picked_up["state"] == "open", picked_up
+    assert [one["text"] for one in picked_up["turns"]] == [
+        PARKED_ASKED,
+        PARKED_REPLY,
+        PICKED_UP,
+        PICKED_UP_REPLY,
+    ], picked_up["turns"]
+
+    given = [one for one in session.dispatches() if one["channel"] == channel]
+    assert len(given) == 2, [one["catch_up"] for one in given]
+    assert given[0]["catch_up"] == [], given[0]["catch_up"]
+    assert [one["target"] for one in given[1]["catch_up"]] == ["d2"], given[1]["catch_up"]

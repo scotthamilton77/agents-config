@@ -85,9 +85,12 @@ def said(text: str, who: str = "thread-agent") -> dict[str, Any]:
     return {"turns": [{"who": who, "text": text}]}
 
 
-def set_aside(session_dir: Path) -> SessionLog:
+def set_aside(session_dir: Path, kind: str = THREAD_CLOSE_KIND) -> SessionLog:
     """One decision the human settled, three threads, and the one that matters
-    closed after asking its question."""
+    set aside after asking its question.
+
+    Which gesture set it aside is the caller's, because park and close both do
+    and the catch-up is owed either way."""
     write_handoff(session_dir, handoff_doc())
     log = open_session(session_dir)
     for thread, opening in ((MINE, MINE_ASKED), (OTHER, "other: when is the log compacted?")):
@@ -135,7 +138,7 @@ def set_aside(session_dir: Path) -> SessionLog:
         answer={"option": "a", "text": "an append-only log"},
         why="the audit trail is the point",
     )
-    submit(log, THREAD_CLOSE_KIND, "close-mine", actor="human", channel=MINE)
+    submit(log, kind, "aside-mine", actor="human", channel=MINE)
     return log
 
 
@@ -184,10 +187,10 @@ def reopening() -> EventSubmission:
     )
 
 
-def reopened(session_dir: Path, *, moved: bool) -> SessionLog:
+def reopened(session_dir: Path, *, moved: bool, kind: str = THREAD_CLOSE_KIND) -> SessionLog:
     """A set-aside thread, an interval that did or did not move a decision, and
     the human's turn picking the thread back up."""
-    log = set_aside(session_dir)
+    log = set_aside(session_dir, kind)
     interval(log, apply_it=moved)
     log.submit([reopening()], log.epoch)
     return log
@@ -311,6 +314,46 @@ def test_a_second_turn_on_the_reopened_thread_is_caught_up_again_by_nothing(
     """
     log = reopened(session_dir, moved=True)
     assert caught_up(log) != []
+
+    submit(
+        log,
+        "thread-turn",
+        "mine-third",
+        actor="human",
+        channel=MINE,
+        **said("mine: and the archive format?", "human"),
+    )
+
+    assert caught_up(log) == []
+
+
+def test_a_parked_thread_is_caught_up_on_the_turn_that_picks_it_back_up(
+    session_dir: Path,
+) -> None:
+    """
+    Given a thread the human parked rather than closed, across an interval that
+         moved a decision
+    When the human says something in it, and then says something again
+    Then the first dispatch carries the interval's catch-up and the second
+         carries none.
+
+    The interval is bounded by the set-aside gesture, and park is one of the two.
+    A parked thread picked back up has been away exactly as a closed one has, so
+    catching up only the closed one would hand the other a chain reasoning from a
+    board that has since moved.
+    """
+    log = reopened(session_dir, moved=True, kind=THREAD_PARK_KIND)
+
+    assert caught_up(log) == [
+        {
+            "seq": seq_of(log, APPLY_KIND),
+            "kind": "revise",
+            "target": NODE,
+            "why": REVISE_WHY,
+        }
+    ]
+    states = {one.id: one.state for one in fold(log.epoch, log.entries()).threads}
+    assert states[MINE] == "open", states
 
     submit(
         log,

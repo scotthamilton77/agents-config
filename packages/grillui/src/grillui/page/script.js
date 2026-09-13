@@ -1345,9 +1345,9 @@ function parkThread(tid) {
 }
 // Closing is the human saying they are done with the thread, and parking is
 // the human saying they may come back to it. Only the second is carried to the
-// end of the session as a loose end. Neither takes anything away: a closed
-// thread stays readable, and saying something in one opens it again, which is
-// why there is no re-open gesture to send.
+// end of the session as a loose end. Neither takes anything away: the thread
+// stays readable, and saying something in one opens it again, which is why
+// there is no re-open gesture to send.
 function closeThread(tid) {
   send(ev("thread-close", tid, {}));
   UI.panel = null;
@@ -1357,10 +1357,10 @@ function closeThread(tid) {
 // the frontier having never carried an answer.
 //
 // The thread is left where it is rather than parked. It is the mandate's thread
-// and not the answer's -- a mandate names one thread id, nothing creates that id
-// twice, and a parked thread can be neither spoken in nor concluded. Parking it
-// here left the next pick held against a conversation with no way forward and no
-// way back except abandoning that pick too.
+// and not the answer's -- a mandate names one thread id and nothing creates that
+// id twice, so the next pick is held against this same thread. A parked thread
+// concludes nothing until a turn opens it again, and the human who has just
+// abandoned one answer is owed a thread that can still be concluded for the next.
 function abandonAnswer(id) {
   delete UI.held[id];
   saveHeld();
@@ -2024,8 +2024,8 @@ function closeControl(tid) {
     '">Close it — done with it, nothing left open</button>';
 }
 // The box a turn is typed into, and the one control that sends it. One reader,
-// because an open thread and a closed one the human is picking back up take the
-// same turn on the same channel — two copies is how they come to differ.
+// because an open thread and a set-aside one the human is picking back up take
+// the same turn on the same channel — two copies is how they come to differ.
 function sayBox(sayId, tid) {
   return '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
     '" placeholder="…say something"></textarea><span class="hint">↵ send<br>⇧↵ newline</span>' +
@@ -2092,13 +2092,15 @@ function threadBody(tid, forPop, chrome) {
     ". Nothing here touches the decision until you conclude it.</div>";
   var body = renderTurns(t) + waitMark(tid);
   if (t.state !== "open") {
-    // A closed thread keeps its box: saying something in one is how the human
-    // picks it back up, and the turn itself is what opens it again.
-    var closed = t.state === "closed";
+    // A parked or closed thread keeps its box: saying something in one is how
+    // the human picks it back up, and the turn itself is what opens it again. A
+    // folded thread keeps none, because its conclusion has already crossed to
+    // the board and a turn here would say nothing the board would hear.
+    var aside = t.state === "parked" || t.state === "closed";
     return threadPane(head,
       body + '<div class="parked-note">This thread is ' + esc(t.state) + ". It stays readable." +
-        (closed ? " Say something here and it opens again." : "") + "</div>",
-      closed ? sayBox(sayId, tid) : "");
+        (aside ? " Say something here and it opens again." : "") + "</div>",
+      aside ? sayBox(sayId, tid) : "");
   }
   var h = sayBox(sayId, tid);
   h += seedControls(t.decision, tid);
