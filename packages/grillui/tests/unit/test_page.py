@@ -3171,7 +3171,10 @@ def test_the_arm_is_dropped_by_every_way_its_thread_ends() -> None:
     # decision whose answer an agent has just proposed, that is the likely case.
     assert "replace(" not in arming, "arming edits the draft by text search"
     assert "replace(" not in dropping, "disarming edits the draft by text search"
-    assert "indexOf(" not in dropping
+    assert "indexOf(" not in arming and "indexOf(" not in dropping
+    # The same offer text on a later turn can name a different option, and a
+    # stale control clicked then is a new arm, not a repeat of the old one.
+    assert "standing.option === (offer.option || null)" in arming
     for gesture in ("foldThread", "parkThread", "closeThread"):
         assert "disarmFrom(tid);" in balanced_body(gesture), f"{gesture} leaves the arm standing"
 

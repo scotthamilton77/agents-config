@@ -1221,7 +1221,8 @@ function armAnswer(tid, id) {
   // The same offer, from the same thread, into the box that taking it produced:
   // the human has pressed a control that is already pressed, and a second copy
   // of one sentence is not what they asked for.
-  if (!(untouched && standing.thread === tid && standing.text === offer.text)) {
+  if (!(untouched && standing.thread === tid && standing.text === offer.text &&
+        standing.option === (offer.option || null))) {
     // One armed offer in the box at a time. Where the box is still the one this
     // decision's arm wrote, that arm is undone first and the new offer goes
     // after what the human had before it; where they have edited it since, what
