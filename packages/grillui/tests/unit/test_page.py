@@ -1824,9 +1824,36 @@ def test_a_turn_carries_the_flag_only_where_the_human_pressed_for_it() -> None:
     describes asks for the first rung.
     """
     builder = function_body("ev")
-    assert "pressed(channel)" in builder, "the stamp is not read off the human's press"
+    assert "unspent(channel)" in builder, "the stamp is not read off the human's press"
     assert "onExpert" not in builder, "the turn is stamped with what this page believes"
+    assert "pressed(channel)" in function_body("unspent"), "the press outlives the log that spoke"
     assert "pressed(channel)" in function_body("onExpert"), "the control reads the press twice"
+
+
+def test_a_press_rides_one_turn_and_the_control_alone_goes_on_showing_it() -> None:
+    """Spent by the turn that carries it, and still on the control after that.
+
+    A press that stayed live would ride every turn sent before the poll that
+    brings the first one back -- so a human who pressed for the first rung, was
+    answered, and typed again would send the policy's transfer back down a
+    second time, on a press they made before it happened. One turn is what the
+    control promises: it forces the next turn, not the conversation.
+
+    The control keeps reading the press anyway, and the two readings are why:
+    a label that reverted the moment the turn went out would say the press did
+    not take, one poll before the record shows that it did.
+
+    A refusal is the one thing that gives a press back, and it is read off the
+    receipt that names the turn. A `duplicate` receipt is not a refusal -- that
+    key is in the log, and the press went with it.
+    """
+    builder = function_body("ev")
+    assert "meant.spent = key" in builder, "the turn that carries a press does not spend it"
+    assert "!meant.spent" in function_body("unspent"), "a spent press is stamped again"
+    assert "spent" not in function_body("onExpert"), "the control drops the press it is showing"
+    sender = function_body("send")
+    assert 'r.status !== "rejected"' in sender
+    assert "unspend(r.idempotency_key)" in sender, "a refused turn keeps the press it spent"
 
 
 def test_a_page_turn_carrying_the_flag_moves_that_channel_and_only_that_one(

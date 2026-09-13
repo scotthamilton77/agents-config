@@ -485,11 +485,17 @@ function ev(kind, channel, payload) {
   // Stamped here rather than at the emission sites so the declaration is again
   // what decides: the table says which kinds carry the flag, and no gesture that
   // is not a turn — a fold, a park, a queue verb — can acquire one.
-  var meant = rule.payload.indexOf(TRANSFER_FLAG) >= 0 ? pressed(channel) : null;
-  if (meant) payload[TRANSFER_FLAG] = meant.on;
+  var meant = rule.payload.indexOf(TRANSFER_FLAG) >= 0 ? unspent(channel) : null;
   KEYS += 1;
+  var key = PAGE_ID + ":" + KEYS;
+  // Spending it here is what makes a press force one turn rather than every
+  // turn until the next poll. The turn it rode carries the press into the log,
+  // and the log is what the backend reads from then on; a second turn built
+  // before that one comes back would ask for the tier again on the human's
+  // behalf, which is the same thing as stamping a belief.
+  if (meant) { payload[TRANSFER_FLAG] = meant.on; meant.spent = key; }
   return { kind: kind, actor: "human", channel: channel,
-           idempotency_key: PAGE_ID + ":" + KEYS, payload: payload };
+           idempotency_key: key, payload: payload };
 }
 
 /* The only place an event leaves this page. Takes a batch because some human
@@ -532,6 +538,7 @@ function send() {
         window.close();
       }
       if (r.status !== "rejected") return;
+      unspend(r.idempotency_key);
       WIRE.rejected += 1;
       // A refusal the human cannot see is a message they believe they sent.
       WIRE.lastRejection = r;
@@ -547,7 +554,9 @@ function send() {
     // A refused POST wrote nothing; an unreachable one may have. The first
     // leaves the outbox, the second stays in it until the log settles the
     // question, because a page that cleared it would be claiming to know.
-    if (e && e.answered) out.forEach(function (o) { delete OUTBOX[o.idempotency_key]; });
+    if (e && e.answered) {
+      out.forEach(function (o) { delete OUTBOX[o.idempotency_key]; unspend(o.idempotency_key); });
+    }
     wireFailed(e);
   });
 }
@@ -774,10 +783,12 @@ function foldReady(threadId) {
    nothing landed after it; a click the policy then overtook loses it, because
    the control must name where the channel is now and not the tier it has left.
 
-   A live click is also the only thing a turn says the tier out of. A turn taken
-   with no click behind it carries no transfer key at all, so this page tells the
-   backend what the human pressed and never what this page last managed to
-   read. */
+   A live click is also the only thing a turn says the tier out of, and it says
+   it once. A turn with no click behind it carries no transfer key at all, and
+   neither does any turn after the one that carried the click out — so this page
+   tells the backend what the human pressed, never what it last managed to read,
+   and never the same press twice. A refused turn gives the click back, because
+   nothing was said with it. */
 var TRANSFER = {};
 function loggedMode(channel) {
   for (var i = LOG.length - 1; i >= 0; i--) {
@@ -790,14 +801,31 @@ function loggedMode(channel) {
   }
   return { on: false, at: -1 };
 }
-// The click the log has not spoken after, or nothing at all. One reading, for
-// the two things that need it: the control names the tier the next turn goes
-// to, and that turn carries the flag only while this says the human pressed
-// for it. Two readings of "is the click still what the human means" would be
-// a control that offers one tier and a turn that asks for the other.
+// The click the log has not spoken after, or nothing at all. This is what the
+// control names the channel by, and it goes on naming it until the log carries
+// the press back: a label that reverted the moment the turn went out would tell
+// the human their press did not take, one poll before the record proves it did.
 function pressed(channel) {
   var meant = TRANSFER[channel];
   return meant && meant.since > loggedMode(channel).at ? meant : null;
+}
+// The press that has not yet ridden a turn, which is the only thing a turn says
+// a tier out of. The two readings differ for exactly one poll, and they have to:
+// a press is spent by the turn that carries it, while the control it was made on
+// still has nothing else to show.
+function unspent(channel) {
+  var meant = pressed(channel);
+  return meant && !meant.spent ? meant : null;
+}
+// A turn the backend refused wrote nothing, so the press it carried was never
+// said and is the human's again. Keyed by the turn that took it, because the
+// receipts name the turn: a press given back on any refusal would be given back
+// on somebody else's, and a `duplicate` receipt is not a refusal at all -- that
+// key is in the log, and the press with it.
+function unspend(key) {
+  Object.keys(TRANSFER).forEach(function (name) {
+    if (TRANSFER[name].spent === key) TRANSFER[name].spent = null;
+  });
 }
 function onExpert(channel) {
   var meant = pressed(channel);
