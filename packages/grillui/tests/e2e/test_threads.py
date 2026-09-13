@@ -21,9 +21,10 @@ catch-up telling its seat what the board did while it was away.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
-from conftest import decision, document, handoff, turn
+from conftest import RENDER, decision, document, handoff, turn
 
 from grillui.tiers import BOARD_LEGEND
 
@@ -252,3 +253,70 @@ def test_a_parked_thread_is_picked_back_up_and_its_seat_is_told_what_it_missed(
     assert len(given) == 2, [one["catch_up"] for one in given]
     assert given[0]["catch_up"] == [], given[0]["catch_up"]
     assert [one["target"] for one in given[1]["catch_up"]] == ["d2"], given[1]["catch_up"]
+
+
+# A thread turn that offers an answer to the decision the thread is about, which
+# is the only shape the board takes an offer in.
+OFFERED = json.dumps(
+    {
+        "text": "Then thirty days is what it turns on.",
+        "proposed_answer": {
+            "decision": "d1",
+            "option": "a",
+            "text": "Keep a session for thirty days, then archive it.",
+            "because": "recovery never reaches further back than that",
+        },
+    }
+)
+
+
+def test_taking_an_offer_shows_in_the_thread_and_the_fold_takes_it_back(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a thread on a decision whose seat has offered an answer
+    When the human takes that offer, and then folds the thread
+    Then the offer reads as armed with no control left to press, and folding
+         takes the arm with it: the option carries no mark and the decision's
+         box is empty again.
+
+    Taking an offer sends nothing -- it fills the decision's box for the human
+    to send from there -- so the thread saying so is the only evidence the press
+    landed. And the arm belongs to the conversation that made it: a folded
+    thread that left one behind would hold a ringed option and a filled box on
+    the strength of a conversation that is over.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.stub.script(OFFERED)
+    session.script_claude(turn(document("Folded in.")))
+    page = board(session)
+
+    page.click('[data-act="threads"][data-id="d1"]')
+    page.wait_for_timeout(400)
+    say(page, "How long is a session kept?")
+    session.settled()
+    channel = thread_id(session)
+
+    # Nothing goes on the wire, so there is no log move to wait on here.
+    page.click('[data-act="arm"]')
+    page.wait_for_timeout(RENDER)
+
+    # Arming closes the slide-out onto the decision it filled, so the thread is
+    # opened again to read what the offer says now.
+    page.click('[data-act="threads"][data-id="d1"]')
+    page.wait_for_timeout(400)
+    assert page.locator('[data-act="arm"]').count() == 0, "the control is still on offer"
+    armed = page.locator('[data-armed="d1"]')
+    assert armed.count() == 1, page.locator(".offer").inner_text()
+    assert "send it from there" in armed.inner_text(), armed.inner_text()
+
+    marked = page.locator('#col-d1 [data-act="pick"][data-opt="a"]')
+    assert "armed" in (marked.get_attribute("class") or ""), marked.get_attribute("class")
+    assert page.input_value("#ft-d1").strip(), "the offer never reached the decision's box"
+
+    page.click(f'[data-act="fold"][data-tid="{channel}"]')
+    session.settled()
+    page.wait_for_timeout(RENDER)
+
+    assert "armed" not in (marked.get_attribute("class") or ""), marked.get_attribute("class")
+    assert page.input_value("#ft-d1") == "", page.input_value("#ft-d1")
