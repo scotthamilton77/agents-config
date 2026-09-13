@@ -35,13 +35,34 @@ def test_unreadable_lines_are_skipped_rather_than_failing_the_read() -> None:
 
 
 def test_a_directory_of_runs_is_read_with_one_argument() -> None:
-    runs = load_runs([FIXTURES])
-    assert [run.name for run in runs] == ["run2", "run3"]
+    assert [run.name for run in load_runs([FIXTURES])] == ["invalid-run", "run2", "run3"]
+
+
+def test_the_two_recordings_are_valid_and_the_failed_run_is_not() -> None:
+    by_name = {run.name: run for run in load_runs([FIXTURES])}
+    assert by_name["run2"].valid
+    assert by_name["run3"].valid
+    invalid = by_name["invalid-run"]
+    assert not invalid.valid
+    assert invalid.outcome == "instruction-never-typed"
+    assert "the instruction was never typed" in invalid.invalid_reason
+
+
+def test_a_run_directory_with_no_record_of_its_outcome_does_not_count(tmp_path: Path) -> None:
+    (tmp_path / "events.jsonl").write_text("")
+    run = load_runs([tmp_path])[0]
+    assert run.outcome == "unrecorded"
+    assert not run.valid
+    assert run.invalid_reason == "unrecorded"
 
 
 def test_the_table_reports_a_rate_per_behaviour_and_the_versions_observed() -> None:
-    rows = report.aggregate(load_runs([FIXTURES]))
+    runs = load_runs([FIXTURES])
+    rows = report.aggregate(runs)
     by_name = {row.behaviour: row for row in rows}
+    # Three run directories were read and one of them measured nothing, so every
+    # denominator is two. A failed run counted as a run would read as a release fixing
+    # every behaviour at once.
     assert by_name["phantom-idle"].hits == 2
     assert by_name["phantom-idle"].runs == 2
     assert by_name["phantom-idle"].versions == ["2.1.270 (Claude Code)"]
@@ -60,18 +81,60 @@ def test_a_long_note_is_cut_to_one_readable_line() -> None:
     assert len(rendered.splitlines()[-1]) < 350
 
 
-def test_the_table_says_so_when_no_runs_were_read() -> None:
-    assert report.render(report.aggregate([])) == "no runs read"
+def test_every_behaviour_gets_exactly_one_evidence_line_in_the_tables_order() -> None:
+    runs = load_runs([FIXTURES])
+    rows = report.aggregate(runs)
+    rendered = report.render(rows, report.invalid_runs(runs))
+    order = [row.behaviour for row in rows]
+    assert len(order) == 8
+    table, notes = rendered.split("\n\n")[0], rendered.split("\n\n")[1]
+    assert [line.split()[0] for line in table.splitlines()[2:]] == order
+    evidence = notes.splitlines()
+    assert [line.split(":")[0] for line in evidence] == order
+    for behaviour in order:
+        assert sum(line.startswith(f"{behaviour}:") for line in evidence) == 1
+
+
+def test_the_invalid_section_names_the_excluded_run_and_why() -> None:
+    runs = load_runs([FIXTURES])
+    rendered = report.render(report.aggregate(runs), report.invalid_runs(runs))
+    tail = rendered.split("\n\n")[-1].splitlines()
+    assert tail[0] == "invalid, excluded from every rate above (1):"
+    assert tail[1].strip().startswith("invalid-run: instruction-never-typed:")
+    assert "the instruction was never typed" in tail[1]
+    assert len(tail) == 2
+
+
+def test_the_table_says_so_when_nothing_valid_was_read() -> None:
+    assert report.render(report.aggregate([])) == "no valid runs read"
+    invalid = load_runs([FIXTURES / "invalid-run"])
+    rendered = report.render(report.aggregate(invalid), report.invalid_runs(invalid))
+    assert rendered.splitlines()[0] == "no valid runs read"
+    assert "invalid-run: instruction-never-typed" in rendered
 
 
 def test_report_measures_and_never_fails(capsys) -> None:  # type: ignore[no-untyped-def]
     assert cli.main(["report", str(FIXTURES)]) == 0
-    assert "hits/runs" in capsys.readouterr().out
+    printed = capsys.readouterr().out.splitlines()
+    assert printed[0].split() == ["behaviour", "hits/runs", "versions"]
+    rates = {line.split()[0]: line.split()[1] for line in printed[2:10]}
+    assert rates == {
+        "phantom-idle": "2/2",
+        "team-lead-reachable": "2/2",
+        "main-send-lacks-sender": "2/2",
+        "missing-posttooluse": "0/2",
+        "child-to-parent-by-name": "2/2",
+        "duplicate-arrival": "0/2",
+        "gate-phantom-blocks": "2/2",
+        "report-file-guard": "0/2",
+    }
+    assert "invalid, excluded from every rate above (1):" in printed
+    assert any("invalid-run: instruction-never-typed" in line for line in printed)
 
 
 def test_report_tolerates_a_directory_that_is_not_there(capsys) -> None:  # type: ignore[no-untyped-def]
     assert cli.main(["report", "/nowhere/at/all"]) == 0
-    assert capsys.readouterr().out.strip() == "no runs read"
+    assert capsys.readouterr().out.strip() == "no valid runs read"
 
 
 def test_a_dry_run_prints_the_command_and_launches_nothing(tmp_path: Path, capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]

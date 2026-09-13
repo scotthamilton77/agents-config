@@ -8,6 +8,11 @@ should show a falling hit rate. A Claude Code release that changes the underlyin
 behaviour should show a step change, in either direction, with no mitigation having
 moved. Neither is visible without repeated, identically-scripted runs.
 
+A run only counts once its scenario actually ran. A session whose driver never managed to
+type the instruction, or whose lead never reached its terminal state, is reported as
+invalid and excluded from every rate. Counting such a run would read as a release having
+fixed every behaviour at once.
+
 ## A run spends real agent turns
 
 `agentprobe run` launches an interactive Claude Code session on a pseudo-terminal, under
@@ -37,13 +42,16 @@ Each run gets its own directory under `--out`, holding:
 | `lead.md` | whatever the scenario's lead wrote |
 | `tty.log` | the raw terminal stream, escape sequences and all |
 | `claude.err` | the driver's account of the run: what it saw, what it typed, why it stopped |
-| `meta.json` | the Claude Code version, the start and end times, the scenario and the session id |
+| `meta.json` | the Claude Code version, the outcome, the start and end times, the scenario and the session id |
 
 ## Reading the report
 
 The table gives one row per behaviour, its hits over the runs read, and the version
 strings those runs recorded. Under the table, one line per behaviour names the evidence:
 event indices into `events.jsonl`, or the message text that carried it.
+
+Under that, any run that did not count is listed by name with the reason, taken from the
+driver's own account of the session.
 
 `report` exits 0 whatever it finds. It measures; it does not judge. A behaviour that
 shows up is a fact about this version, not a failed build.

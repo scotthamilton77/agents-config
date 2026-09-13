@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,11 @@ ECHO_PREFIX_CHARS = 24
 # How long the event log must go untouched before the session counts as finished.
 DEFAULT_QUIET_SECONDS = 25
 DEFAULT_MAX_SECONDS = 600
+
+# The one outcome that makes a run measurable. Anything else means the scenario did not
+# happen, and counting it as a run where no behaviour appeared would read as a release
+# having fixed something.
+COMPLETED = "completed"
 
 HOOK_EVENTS = (
     "SessionStart",
@@ -108,10 +114,17 @@ def awaiting_trust(tail: str) -> bool:
     return "itrustthisfolder" in _squashed(tail)
 
 
-def input_ready(tail: str) -> bool:
-    """Whether the main screen is up and the input line is accepting text."""
+def input_ready(tail: str, trusted: bool = False) -> bool:
+    """Whether the main screen is up and the input line is accepting text.
+
+    The dialog and the main screen both draw the prompt glyph, so an untrusted session has
+    to rule the dialog out by its text. Once trust has been accepted the dialog is gone by
+    definition, and the check must stop looking for it: accepting it makes the terminal
+    echo the chosen line back, so "I trust this folder" stays in the captured screen for
+    the rest of the run and would otherwise block the session forever.
+    """
     squashed = _squashed(tail)
-    if "itrustthisfolder" in squashed[-1500:]:
+    if not trusted and "itrustthisfolder" in squashed[-1500:]:
         return False
     return "❯" in tail[-2500:] or "?forshortcuts" in squashed
 
@@ -134,16 +147,49 @@ def prompt_echoed(tail: str, prompt_path: Path) -> bool:
     return needle in _squashed(tail).replace("/", "")
 
 
-def should_finish(event_log_age: float, tail: str, seconds_since_prompt: float, quiet_seconds: float) -> bool:
-    """Whether the scenario is over.
+def finish_reason(
+    event_log_age: float, tail: str, seconds_since_prompt: float, quiet_seconds: float
+) -> str | None:
+    """How the scenario ended, or None while it is still running.
 
     The normal ending is a quiet event log plus the lead printing its done word. The
     fallback covers a lead that stopped without saying so: a log quiet for three times as
-    long, well after the prompt was sent.
+    long, well after the prompt was sent. Those two are not the same outcome. A lead that
+    never reached its terminal state did not finish the scenario.
     """
     if event_log_age > quiet_seconds and "done" in _squashed(tail[-600:]):
-        return True
-    return event_log_age > quiet_seconds * 3 and seconds_since_prompt > 120
+        return COMPLETED
+    if event_log_age > quiet_seconds * 3 and seconds_since_prompt > 120:
+        return "no-terminal-state"
+    return None
+
+
+# Two tries at typing, because the first can be swallowed by a screen still being drawn.
+ECHO_ATTEMPTS = 2
+ECHO_WAIT_SECONDS = 1.5
+
+
+def type_instruction(
+    prompt_path: Path,
+    write: Callable[[bytes], object],
+    read_tail: Callable[[], str],
+    pause: Callable[[float], object],
+    attempts: int = ECHO_ATTEMPTS,
+) -> bool:
+    """Type the instruction, confirm it echoed, and submit it. Return whether it was sent.
+
+    Return is pressed only after the instruction has been read back off the screen.
+    Submitting an unconfirmed line would run the session on whatever fragment survived the
+    dropped keystrokes, and that run would look like a scenario that found nothing.
+    """
+    line = f"Read {prompt_path} and follow it exactly.".encode()
+    for _attempt in range(attempts):
+        write(line)
+        pause(ECHO_WAIT_SECONDS)
+        if prompt_echoed(read_tail(), prompt_path):
+            write(b"\r")
+            return True
+    return False
 
 
 def claude_version() -> str:
@@ -230,8 +276,8 @@ def run_session(  # pragma: no cover - drives a real terminal; the decisions it 
     launch: Launch,
     quiet_seconds: float = DEFAULT_QUIET_SECONDS,
     max_seconds: float = DEFAULT_MAX_SECONDS,
-) -> None:
-    """Launch Claude Code on a pseudo-terminal, drive the scenario, and let the session exit."""
+) -> str:
+    """Launch Claude Code, drive the scenario, and return how the run ended."""
     import fcntl
     import os
     import pty
@@ -265,6 +311,7 @@ def run_session(  # pragma: no cover - drives a real terminal; the decisions it 
     started = time.time()
     sent_at: float | None = None
     trusted_at: float | None = None
+    outcome = "timed-out"
 
     def drain() -> None:
         nonlocal seen
@@ -282,6 +329,11 @@ def run_session(  # pragma: no cover - drives a real terminal; the decisions it 
             tty_log.flush()
             seen = (seen + visible_text(chunk))[-200000:]
 
+    def read_tail() -> str:
+        """Take in whatever the terminal has produced, and return the end of the screen."""
+        drain()
+        return seen[-3000:]
+
     try:
         while time.time() - started < max_seconds:
             drain()
@@ -298,29 +350,35 @@ def run_session(  # pragma: no cover - drives a real terminal; the decisions it 
                     seen = ""
                     time.sleep(3)
                     continue
-                ready = trust_settled(trusted_at, time.time()) and input_ready(tail)
+                ready = trust_settled(trusted_at, time.time()) and input_ready(
+                    tail, trusted=trusted_at is not None
+                )
                 if ready and time.time() - started > 8:
-                    echoed = False
-                    for _attempt in range(2):
-                        os.write(fd, f"Read {launch.prompt_path} and follow it exactly.".encode())
-                        time.sleep(1.5)
-                        drain()
-                        echoed = prompt_echoed(seen[-3000:], launch.prompt_path)
-                        if echoed:
-                            break
-                    os.write(fd, b"\r")
+                    submitted = type_instruction(
+                        launch.prompt_path,
+                        lambda data: os.write(fd, data),
+                        read_tail,
+                        time.sleep,
+                    )
+                    if not submitted:
+                        note("the instruction never echoed back, so it was not submitted")
+                        outcome = "instruction-never-typed"
+                        break
                     sent_at = time.time()
-                    note(f"typed the instruction, echo confirmed={echoed}")
+                    note("typed the instruction and confirmed it echoed back")
                     continue
                 if time.time() - started > 120:
                     note("gave up waiting for an input line; the instruction was never typed")
+                    outcome = "instruction-never-typed"
                     break
                 time.sleep(1)
                 continue
             if launch.events_path.exists():
                 age = time.time() - launch.events_path.stat().st_mtime
-                if should_finish(age, tail, time.time() - sent_at, quiet_seconds):
-                    note(f"event log quiet for {age:.0f}s; ending the session")
+                reason = finish_reason(age, tail, time.time() - sent_at, quiet_seconds)
+                if reason is not None:
+                    note(f"event log quiet for {age:.0f}s; ending the session as {reason}")
+                    outcome = reason
                     break
             time.sleep(3)
         drain()
@@ -334,7 +392,8 @@ def run_session(  # pragma: no cover - drives a real terminal; the decisions it 
         else:
             os.kill(pid, signal.SIGTERM)
     finally:
-        note("session closed")
+        note(f"session closed as {outcome}")
         notes.close()
         tty_log.close()
         os.close(fd)
+    return outcome

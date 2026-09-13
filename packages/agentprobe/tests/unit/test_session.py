@@ -10,6 +10,8 @@ from agentprobe import session
 
 SYNTHETIC = Path("/probe/run-001")
 
+POST_TRUST_SCREEN = (Path(__file__).parent / "fixtures" / "post-trust-screen.txt").read_text()
+
 TRUST_SCREEN = """
  Do you trust the files in this folder?
 
@@ -57,6 +59,17 @@ def test_input_is_ready_only_once_the_trust_dialog_is_gone() -> None:
     assert not session.input_ready(TRUST_SCREEN)
 
 
+def test_the_main_screen_is_ready_after_trust_although_the_dialog_echo_survives() -> None:
+    # Captured from a real session. Accepting the dialog makes the terminal echo the
+    # chosen line back, so "Yes, I trust this folder" is still in the driver's buffer long
+    # after the dialog itself is gone. An untrusted reading of this screen is blocked by
+    # that echo, and a session that reads it that way never types anything at all.
+    screen = POST_TRUST_SCREEN
+    assert "I trust this folder" in screen
+    assert not session.input_ready(screen)
+    assert session.input_ready(screen, trusted=True)
+
+
 def test_input_is_ready_on_the_prompt_glyph_alone() -> None:
     assert session.input_ready("some earlier output\n ❯ ")
 
@@ -77,16 +90,35 @@ def test_prompt_echo_is_absent_when_the_keystrokes_were_dropped() -> None:
     assert not session.prompt_echoed(MAIN_SCREEN, Path("/probe/run-001/prompt.md"))
 
 
-def test_the_run_ends_on_a_quiet_log_and_the_leads_done_word() -> None:
-    assert session.should_finish(30.0, "the lead says DONE", 200.0, 25.0)
-    assert not session.should_finish(10.0, "the lead says DONE", 200.0, 25.0)
-    assert not session.should_finish(30.0, "still working", 200.0, 25.0)
+def test_the_run_completes_on_a_quiet_log_and_the_leads_done_word() -> None:
+    assert session.finish_reason(30.0, "the lead says DONE", 200.0, 25.0) == session.COMPLETED
+    assert session.finish_reason(10.0, "the lead says DONE", 200.0, 25.0) is None
+    assert session.finish_reason(30.0, "still working", 200.0, 25.0) is None
 
 
-def test_a_lead_that_never_says_done_still_ends_the_run() -> None:
-    assert session.should_finish(80.0, "still working", 200.0, 25.0)
+def test_a_lead_that_never_says_done_ends_the_run_without_completing_it() -> None:
+    assert session.finish_reason(80.0, "still working", 200.0, 25.0) == "no-terminal-state"
     # Not before the prompt has had time to produce anything, though.
-    assert not session.should_finish(80.0, "still working", 30.0, 25.0)
+    assert session.finish_reason(80.0, "still working", 30.0, 25.0) is None
+
+
+def test_the_instruction_is_submitted_only_once_it_has_echoed_back() -> None:
+    prompt = Path("/probe/run-001/prompt.md")
+    written: list[bytes] = []
+    screens = iter(["", f"❯ Read {prompt} and follow it exactly."])
+    assert session.type_instruction(prompt, written.append, lambda: next(screens), lambda _seconds: None)
+    assert written[-1] == b"\r"
+    assert written.count(b"\r") == 1
+
+
+def test_an_instruction_that_never_echoes_is_never_submitted() -> None:
+    prompt = Path("/probe/run-001/prompt.md")
+    written: list[bytes] = []
+    assert not session.type_instruction(
+        prompt, written.append, lambda: "nothing was typed here", lambda _seconds: None
+    )
+    assert b"\r" not in written
+    assert len(written) == session.ECHO_ATTEMPTS
 
 
 def test_visible_text_strips_escape_sequences() -> None:

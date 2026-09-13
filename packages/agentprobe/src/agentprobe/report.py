@@ -31,13 +31,19 @@ def _versions(runs: list[Run]) -> list[str]:
     return seen
 
 
+def invalid_runs(runs: list[Run]) -> list[tuple[str, str]]:
+    """Return the runs that measured nothing, each with why."""
+    return [(run.name, run.invalid_reason) for run in runs if not run.valid]
+
+
 def aggregate(runs: list[Run]) -> list[Row]:
-    """Score every behaviour across every run.
+    """Score every behaviour across the runs that actually measured something.
 
     The note quotes the first run that hit, because that is the evidence a reader wants to
     check. When nothing hit, it quotes the first run anyway, so a miss can be told apart
     from a detector that found nothing to look at.
     """
+    runs = [run for run in runs if run.valid]
     if not runs:
         return []
     findings: list[list[Finding]] = [detect_all(run) for run in runs]
@@ -59,10 +65,11 @@ def aggregate(runs: list[Run]) -> list[Row]:
     return rows
 
 
-def render(rows: list[Row]) -> str:
-    """Render the table and its notes as plain text."""
+def render(rows: list[Row], invalid: list[tuple[str, str]] | None = None) -> str:
+    """Render the table, its notes, and the runs that did not count, as plain text."""
+    invalid = invalid or []
     if not rows:
-        return "no runs read"
+        return "\n".join(["no valid runs read", *_invalid_lines(invalid)])
     width = max(len(row.behaviour) for row in rows)
     lines = [f"{'behaviour'.ljust(width)}  hits/runs  versions", f"{'-' * width}  ---------  --------"]
     for row in rows:
@@ -70,7 +77,16 @@ def render(rows: list[Row]) -> str:
         lines.append(f"{row.behaviour.ljust(width)}  {rate.ljust(9)}  {', '.join(row.versions)}")
     lines.append("")
     lines += [f"{row.behaviour}: {_one_line(row.note)}" for row in rows]
+    lines += _invalid_lines(invalid)
     return "\n".join(lines)
+
+
+def _invalid_lines(invalid: list[tuple[str, str]]) -> list[str]:
+    if not invalid:
+        return []
+    return ["", f"invalid, excluded from every rate above ({len(invalid)}):"] + [
+        f"  {name}: {reason}" for name, reason in invalid
+    ]
 
 
 def _one_line(note: str) -> str:

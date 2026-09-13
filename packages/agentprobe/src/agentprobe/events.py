@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .session import COMPLETED
+
 
 @dataclass(frozen=True)
 class Event:
@@ -63,6 +65,7 @@ class Run:
     lead_md: str = ""
     gate_decisions: list[dict[str, Any]] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
+    driver_log: str = ""
 
     @property
     def name(self) -> str:
@@ -73,6 +76,37 @@ class Run:
         """Return the Claude Code version string recorded for this run, or a placeholder."""
         value = self.meta.get("claude_version")
         return value if isinstance(value, str) and value else "unknown"
+
+    @property
+    def outcome(self) -> str:
+        """Return how the run ended, or a marker for a directory that never recorded one."""
+        value = self.meta.get("outcome")
+        return value if isinstance(value, str) and value else "unrecorded"
+
+    @property
+    def valid(self) -> bool:
+        """Whether this run measured anything.
+
+        A run whose driver gave up before typing, or whose lead never reached its terminal
+        state, did not run the scenario. Counting it as a run in which no behaviour
+        appeared would read as a release having fixed something.
+        """
+        return self.outcome == COMPLETED
+
+    @property
+    def invalid_reason(self) -> str:
+        """Return why this run does not count, in the driver's own words where it has them.
+
+        The driver's closing note only repeats the outcome, so the line before it is the
+        one that says what actually went wrong.
+        """
+        told = (
+            line.strip()
+            for line in reversed(self.driver_log.splitlines())
+            if line.strip() and "session closed" not in line
+        )
+        last = next(told, "")
+        return f"{self.outcome}: {last}" if last else self.outcome
 
     @property
     def team_members(self) -> list[str]:
@@ -159,6 +193,7 @@ def load_run(directory: Path) -> Run:
         lead_md=_read(directory / "lead.md"),
         gate_decisions=parse_decisions(_read(directory / "decisions.jsonl")),
         meta=meta if isinstance(meta, dict) else {},
+        driver_log=_read(directory / "claude.err"),
     )
 
 

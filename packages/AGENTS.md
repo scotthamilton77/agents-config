@@ -32,7 +32,8 @@ scoped workflow — read it before changing that package.
 - `agentprobe/` — drives scripted Claude Code sessions on a pseudo-terminal under a
   hook that records every payload, then reports per-behaviour hit rates against the
   Claude Code version each run recorded, so a house mitigation's effect and a release
-  that changes a behaviour can be told apart. **A run spends real agent turns on the
+  that changes a behaviour can be told apart. A run whose scenario never actually ran is
+  reported as invalid and excluded from every rate. **A run spends real agent turns on the
   operator's account and is never part of any gate**; the suite works only from recorded
   runs, and `--dry-run` prints the command and the scrubbed environment without launching
   anything. Gated by `make ci`, and deliberately off the PATH-install list below. See

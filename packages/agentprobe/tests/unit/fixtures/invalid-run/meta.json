@@ -1,0 +1,8 @@
+{
+  "claude_version": "2.1.270 (Claude Code)",
+  "scenario": "report-file-guard",
+  "outcome": "instruction-never-typed",
+  "session_id": "9cf15c27-5908-4592-b09c-ae88ed5026b2",
+  "started_at": "2026-09-13T13:38:15Z",
+  "ended_at": "2026-09-13T13:40:18Z"
+}

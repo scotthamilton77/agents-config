@@ -1,1 +1,1 @@
-"""agentprobe — measure how a Claude Code release behaves under scripted agent scenarios."""
+"""Measure how a Claude Code release behaves under scripted agent scenarios."""

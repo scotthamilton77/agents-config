@@ -2,7 +2,7 @@
 
 Package-scoped guidance for the `agentprobe` CLI. The repo-root `AGENTS.md` still
 applies; this file adds what is specific to this package. Like the other packages here,
-**this is real code with a real quality gate** — unlike the config content under `src/`.
+**this is real code with a real quality gate**, unlike the config content under `src/`.
 
 ## The quality gate is mandatory
 
@@ -15,13 +15,13 @@ make ci-agentprobe
 
 It runs, in order: `ruff check`, `ruff format --check`, `mypy --strict src`,
 `pytest --cov` (90% branch floor), `pip-audit`, and `agentprobe --help`. Do not hand-pick
-a subset — the linter and the formatter are orthogonal. Faster inner loop:
+a subset. The linter and the formatter are orthogonal. Faster inner loop:
 `make test-agentprobe`.
 
 This package is **not** in the installer's PATH-install registry. It is a diagnostic the
-operator runs from this repository against this repository's mitigations, not a tool
-other projects need, and membership of that registry is earned rather than granted by
-being gated.
+operator runs from this repository against this repository's own mitigations, rather than
+a tool other projects need. Membership of that registry is earned, and being gated does
+not earn it.
 
 ## Never run a probe as verification
 

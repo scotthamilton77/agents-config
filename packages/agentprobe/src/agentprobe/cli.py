@@ -34,23 +34,24 @@ def run_command(args: argparse.Namespace) -> int:
             return 0
         started = _timestamp()
         version = session.claude_version()
-        session.run_session(launch, quiet_seconds=args.quiet, max_seconds=args.max_seconds)
+        outcome = session.run_session(launch, quiet_seconds=args.quiet, max_seconds=args.max_seconds)
         meta = {
             "claude_version": version,
             "scenario": args.scenario,
+            "outcome": outcome,
             "session_id": session.session_id_of(launch.events_path),
             "started_at": started,
             "ended_at": _timestamp(),
         }
         (run_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
-        print(f"{run_dir}: {meta['session_id'] or 'no session id recorded'}")
+        print(f"{run_dir}: {outcome}, session {meta['session_id'] or 'not recorded'}")
     return 0
 
 
 def report_command(args: argparse.Namespace) -> int:
     roots = [Path(d).expanduser().resolve() for d in args.directories]
     runs = load_runs([root for root in roots if root.exists()])
-    print(report.render(report.aggregate(runs)))
+    print(report.render(report.aggregate(runs), report.invalid_runs(runs)))
     # Reporting measures; it does not judge, so a behaviour that was observed is not a
     # failure and never changes the exit status.
     return 0
