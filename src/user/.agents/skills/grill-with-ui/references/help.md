@@ -115,7 +115,7 @@ everything already said there. It lights up when what has been said on that chan
 the backend's own test for a question the expert should take — the test is code, and never
 a model's opinion of its own reach. Acting on it is normally yours to do; a session can be
 set up to let the backend act on the test itself, and either way the move is announced on
-that channel. Pressing the control again, now reading **Return to fast agent**, puts the
+that channel. Pressing the control again, now reading **Return to assistant**, puts the
 channel back on the first rung. It is per channel — moving one thread leaves the map and
 every other thread where they were.
 

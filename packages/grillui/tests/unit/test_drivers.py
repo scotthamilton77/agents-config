@@ -1430,7 +1430,7 @@ def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
 
 # --- an offer the board cannot take, arriving as an offer and not as bytes -----
 
-# The reply a fast agent actually sent on the session-scoped thread: one line,
+# The reply a first-rung agent actually sent on the session-scoped thread: one line,
 # fence and object together, and no prose beside the offer. Kept verbatim
 # because every part of it is what went wrong -- the layout the fence reader
 # missed, and the decision a thread anchoring nothing has no business naming.

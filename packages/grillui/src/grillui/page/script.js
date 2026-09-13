@@ -884,7 +884,7 @@ function onExpert(channel) {
 // turns, the backend's, and anything an older session recorded before tiers were
 // written down.
 function tierLabel(tier) {
-  return tier === HEAVY_TIER ? "expert agent" : tier === FAST_TIER ? "fast agent" : "";
+  return tier === HEAVY_TIER ? "expert" : tier === FAST_TIER ? "assistant" : "";
 }
 // The tier an entry attributed itself to, for the map channel's turns: those
 // reach the page as queue items and notifications rather than as projected
@@ -1846,7 +1846,7 @@ function transferControl(channel) {
     '" data-act="transfer" data-channel="' + esc(channel) + '"' +
     ' data-mode="' + esc(on ? "expert" : "fast") + '"' +
     ' data-recommended="' + esc(rec ? "1" : "0") + '" title="' + esc(why) + '">' +
-    (on ? "⚡ Return to fast agent" : "⚡ Transfer to expert") + "</button>";
+    (on ? "⚡ Return to assistant" : "⚡ Transfer to expert") + "</button>";
 }
 function isExpanded(id) {
   var st = statusOf(id);

@@ -300,7 +300,7 @@ def test_an_unhashable_who_falls_back_to_the_entrys_actor() -> None:
 
 def test_a_thread_turn_carries_the_tier_that_took_it_into_image_one() -> None:
     """
-    Given a thread carrying a fast agent turn, a heavy one, and the human's
+    Given a thread carrying a fast-tier agent turn, a heavy one, and the human's
     When the fold projects it
     Then each agent turn carries the tier its own entry was attributed to,
     And the human's carries none.
