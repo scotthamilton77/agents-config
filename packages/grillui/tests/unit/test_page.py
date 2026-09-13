@@ -2455,11 +2455,11 @@ def test_only_a_settled_decision_offers_the_way_back_to_open() -> None:
 
     Each half is silent on its own. A control drawn outside the settled gate
     offers to withdraw an answer that was never given, on a decision still
-    being asked or on one that has left the flow -- neither of which the fold
+    being asked or on one that has left the flow -- neither of which the replay
     moves, so the press would do nothing and say nothing. A control that
     reached the wire as anything but the human's own `unsettle` would be a
     second way to undermine a decision, beside the one the projector already
-    folds for an unsettle the human applied.
+    replays for an unsettle the human applied.
     """
     block = balanced_body("renderColumn")
     control = 'data-act="reopen"'
