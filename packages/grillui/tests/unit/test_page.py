@@ -3422,9 +3422,9 @@ def test_the_boards_next_open_control_walks_the_frontier_and_says_why_it_cannot(
     it wraps, and that the disabled reason is `boardFinished`'s reading -- a
     second hand-written condition is how a control comes to call a stalled board
     finished, which is the one distinction it exists to draw. That the header
-    control is the walk's only caller is measured too: every focus move hands the
-    caret to the focused decision's note box, so a bare-key shortcut into this
-    would type into what the human is writing rather than move the board.
+    control is the walk's only caller is measured too: a bare-key shortcut into
+    this would fire while the human is typing into a box, moving the board under
+    the words they are writing.
     """
     source = page_source()
     walk = function_body("nextOpen")
