@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from conftest import (
+    InterleavingLog,
     ScriptedCli,
     ScriptedFast,
     attributions,
@@ -1240,16 +1241,22 @@ def test_a_cli_seat_hands_its_obligation_to_the_recorder(session_dir: Path, buil
     assert [one.get(DROPPED_RULINGS_KEY) for one in landed] == [["d9"]]
 
 
-@pytest.mark.parametrize(
-    "build",
-    [
-        pytest.param(
-            lambda said: FastDriver(TierConfig(), ScriptedFast(replies=[said])), id="openrouter"
-        ),
-        pytest.param(lambda said: HeavyDriver(TierConfig(), ScriptedCli(reply=said)), id="claude"),
-        pytest.param(lambda said: CodexDriver(TierConfig(), ScriptedCodex(reply=said)), id="codex"),
-    ],
-)
+# Every seat that takes a map turn, each built around one scripted reply. What
+# a driver comes back with is returned from its own `run`, so a check on the
+# receipt has to reach all three rather than stand on whichever one is handy.
+MAP_SEATS = [
+    pytest.param(
+        lambda said: FastDriver(TierConfig(), ScriptedFast(replies=[said])), id="openrouter"
+    ),
+    pytest.param(lambda said: HeavyDriver(TierConfig(), ScriptedCli(reply=said)), id="claude"),
+    pytest.param(lambda said: CodexDriver(TierConfig(), ScriptedCodex(reply=said)), id="codex"),
+]
+
+# What a second turn puts on the map in the instant the first one's reply lands.
+INTRUDED = "Another turn got there first."
+
+
+@pytest.mark.parametrize("build", MAP_SEATS)
 def test_a_seat_comes_back_with_the_sequence_its_own_reply_landed_at(
     session_dir: Path, build: Any
 ) -> None:
@@ -1275,3 +1282,45 @@ def test_a_seat_comes_back_with_the_sequence_its_own_reply_landed_at(
     assert spoke is not None and spoke > before
     assert [one.actor for one in log.entries() if one.seq == spoke] == ["grill-master"]
     assert build(document(text="")).run(log, record_dispatch(log)) is None
+
+
+@pytest.mark.parametrize("build", MAP_SEATS)
+def test_a_seat_names_its_own_entry_when_a_second_reply_lands_on_top_of_it(
+    session_dir: Path, build: Any
+) -> None:
+    """
+    Given a seat taking a map turn, and a second grill-master reply landing in
+          the instant its own reply is appended
+    When the turn is run
+    Then the sequence it comes back with names its own entry, and the log's
+         latest sequence names the other one.
+
+    The receipt is what the append returned, never where the log has got to by
+    the time the turn is over. A seat reading the log's position after its own
+    append names whatever landed last, which on a board taking two map turns at
+    once is the other turn's reply -- and the coverage check then credits this
+    turn with rulings nobody made for it. The second reply rides the turn's own
+    thread, because what is pinned here is which entry the receipt names rather
+    than the lock the appends contend for.
+    """
+    # Seeded through the ordinary path, then reopened as a log that can let a
+    # second reply in at the one moment that tells the two entries apart.
+    briefed(session_dir)
+    log = InterleavingLog(session_dir)
+    log.hook = lambda: log.submit(
+        [
+            EventSubmission(
+                kind="informational",
+                actor="grill-master",
+                idempotency_key="a-second-reply",
+                payload={"text": INTRUDED},
+            )
+        ],
+        log.epoch,
+    )
+
+    spoke = build(document(text=MAP_SAID)).run(log, record_dispatch(log))
+
+    said = {one.seq: one.payload.get("text") for one in log.entries()}
+    assert said[log.seq] == INTRUDED, "the second reply never landed on top of the seat's own"
+    assert said[spoke] == MAP_SAID
