@@ -52,8 +52,8 @@ Two of them are read here, off the board and before any model is called:
   turn was wrong, and the backend's own hand-up of a refused turn is the other.
   Three readings here serve it and none of them decides anything: which
   dismissals are that gesture, how many such signals the log holds, and whether
-  the policy has already moved a channel. The count is a fold over the log, so
-  it is the session's and a successor process reaches the same number. The move
+  the policy has already moved a channel. The count is read off the log, so it
+  is the session's and a successor process reaches the same number. The move
   is the lane's -- it asks all three and writes the entry under one hold of the
   append lock, which is what makes the move once per session. The entry is
   sticky, so a channel the human took back down stays down rather than being
@@ -349,8 +349,8 @@ def hands_up(entry: LogEntry) -> bool:
 def distrust_count(entries: Sequence[LogEntry], epoch: str, channel: str, expert_tier: str) -> int:
     """How many times the human has said this channel's first rung was not enough.
 
-    Folded out of the log rather than tallied as the signals arrive, which is
-    what makes the count the session's rather than one process's. The signals
+    Read off the log rather than tallied as the signals arrive, which is what
+    makes the count the session's rather than one process's. The signals
     below the threshold write nothing of their own, so a tally kept in memory
     leaves a successor nothing to read back: a backend replaced after the first
     signal would start again at nothing, and the second signal the human made

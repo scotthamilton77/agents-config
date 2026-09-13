@@ -535,8 +535,8 @@ was wrong, and the backend pressing it to the expert seat because it left a name
 decision unruled. It exists because the human's other gestures on the map channel
 carry no text for a transcript condition to read. Once the count is high enough
 the policy moves the map channel up and leaves it there; the way back down is the
-human's own transfer control. The count is a fold over the session log rather
-than a tally any one process keeps: a dismissal is counted off the human's own
+human's own transfer control. The count is read off the session log rather than
+a tally any one process keeps: a dismissal is counted off the human's own
 entry, a press off the marked `composing` entry the hand-up writes, so the count
 is per session and a backend replaced mid-session reaches the same number.
 

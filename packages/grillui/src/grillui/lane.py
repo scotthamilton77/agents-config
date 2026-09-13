@@ -55,8 +55,8 @@ dismissing carry no text, so no transcript condition sees them: a dismissal of
 a first-rung proposal and a press onto the expert are counted alike, and the
 second of them moves the map channel up through the same status entry the
 escalation policy writes. One writes nothing, because one is noise. The count
-and the entry it writes are both the log's: the count is folded out of the
-records the two signals leave, so it is the session's and survives the backend
+and the entry it writes are both the log's: the count is read off the records
+the two signals leave, so it is the session's and survives the backend
 being replaced, and the entry is sticky, so a channel already moved is never
 moved twice -- and the way back down stays the human's.
 

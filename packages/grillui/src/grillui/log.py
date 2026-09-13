@@ -121,7 +121,7 @@ def _judged_on_options(event: EventSubmission) -> bool:
 
 @dataclass
 class LogIndex:
-    """What a write is judged against, folded forward one entry at a time."""
+    """What a write is judged against, carried forward one entry at a time."""
 
     last_seq: int = 0
     keys: dict[str, int] = field(default_factory=dict)
