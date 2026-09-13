@@ -212,8 +212,13 @@ def test_a_document_the_appender_refuses_is_retried_on_the_same_seat_and_then_la
     assert d2["status"] == "settled", d2
     assert d2["answer"] == {"option": "a", "text": SETTLED}, d2
 
-    # And the refused turn left nothing behind it.
-    assert "d9" not in (session.directory / "log.jsonl").read_text(encoding="utf-8")
+    # And the refused turn left nothing behind it: no entry's payload names the
+    # node it settled. Read off parsed payloads rather than the file's bytes,
+    # because every entry's idempotency key is random hex and two characters of
+    # it collide with a short node id on most runs.
+    assert not [entry.seq for entry in session.entries() if "d9" in json.dumps(entry.payload)], (
+        "the refused document reached the log"
+    )
 
 
 def test_a_withdrawal_with_nothing_to_ride_on_is_a_document_problem_and_walks_the_ladder(
