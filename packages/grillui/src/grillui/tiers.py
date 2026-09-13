@@ -1130,7 +1130,11 @@ READ_REQUEST_RULE = (
     "`needs_to_read` beside `text`: a list of strings naming what you would have to read, each "
     "a path or a pattern in the project, or a document outside it. Name what you would read, "
     "not what you think it says -- do not guess at the content, and do not answer as though "
-    "you had read it. The backend takes the list as a request to hand this conversation to a "
+    "you had read it. Telling the human you cannot verify something, that you cannot confirm "
+    "it, or that you have no access to what would settle it is exactly this case: send the "
+    "list in that same turn, naming what you would read to settle it. Declaring the inability "
+    "in prose and sending no list is this rule missed. "
+    "The backend takes the list as a request to hand this conversation to a "
     "seat that can read, and the human is shown what you asked for."
 )
 

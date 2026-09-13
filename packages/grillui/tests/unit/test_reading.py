@@ -96,7 +96,11 @@ READ_REQUEST = (
     "`needs_to_read` beside `text`: a list of strings naming what you would have to read, each "
     "a path or a pattern in the project, or a document outside it. Name what you would read, "
     "not what you think it says -- do not guess at the content, and do not answer as though "
-    "you had read it. The backend takes the list as a request to hand this conversation to a "
+    "you had read it. Telling the human you cannot verify something, that you cannot confirm "
+    "it, or that you have no access to what would settle it is exactly this case: send the "
+    "list in that same turn, naming what you would read to settle it. Declaring the inability "
+    "in prose and sending no list is this rule missed. "
+    "The backend takes the list as a request to hand this conversation to a "
     "seat that can read, and the human is shown what you asked for."
 )
 
@@ -430,6 +434,28 @@ def test_the_thread_seat_is_told_it_cannot_read_and_how_to_ask(tier: str) -> Non
     assert READ_REQUEST_RULE == READ_REQUEST
     assert brief.count(READ_REQUEST) == 1
     assert READ_REQUEST not in system_prompt(tier, "grill-master")
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, "heavy"])
+def test_the_thread_seat_is_told_an_inability_to_verify_is_the_case_that_asks(tier: str) -> None:
+    """
+    Given the thread agent's brief on each tier
+    When it is read for what to do on the turn where it tells the human it
+         cannot verify or confirm something
+    Then the brief names that turn as the one that sends the list, and says a
+         declaration carrying no list is the rule missed.
+
+    The seat reaches for "I cannot verify this" and "I have no access" far more
+    readily than for "I would have to read something", and the condition that
+    lights the transfer control reads the list and nothing else. A brief that
+    binds the key only to the second wording leaves the control dark on the
+    reply that most needs it.
+    """
+    brief = system_prompt(tier, "thread-agent")
+
+    assert "you cannot verify something, that you cannot confirm it" in brief
+    assert "you have no access to what would settle it is exactly this case" in brief
+    assert "Declaring the inability in prose and sending no list is this rule missed" in brief
 
 
 def transfers(log: SessionLog, channel: str) -> list[str]:
