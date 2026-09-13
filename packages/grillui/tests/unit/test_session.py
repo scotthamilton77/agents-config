@@ -21,7 +21,7 @@ from grillui.dispatch import DISPATCH_DIR
 from grillui.lane import Lane, close_dead_turns, unclosed_turns
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE, LOG_FILE, SessionLog, read_entries
 from grillui.persistence import project_and_persist
-from grillui.projector import fold, to_image1
+from grillui.projector import replay, to_image1
 from grillui.schemas import (
     MAP_CHANNEL,
     SESSION_START_KIND,
@@ -39,7 +39,7 @@ FIXED_EPOCH = "fixed"
 
 
 def image1(log: SessionLog) -> Image1:
-    return to_image1(fold(log.epoch, log.entries()))
+    return to_image1(replay(log.epoch, log.entries()))
 
 
 def board_json(log: SessionLog) -> str:
@@ -49,7 +49,7 @@ def board_json(log: SessionLog) -> str:
     comparison across a restart has to hold it fixed or it compares process
     identity instead of board content.
     """
-    return to_image1(fold(FIXED_EPOCH, log.entries())).model_dump_json()
+    return to_image1(replay(FIXED_EPOCH, log.entries())).model_dump_json()
 
 
 def on_disk(session_dir: Path) -> dict[str, Any]:
@@ -78,7 +78,7 @@ def test_a_conforming_handoff_seeds_every_decision_prereq_and_option_it_names(
     Then every decision, prereq and option it named is on the board, carrying
          the optional parts of the node shape it declared.
 
-    The seeding is read back through the fold rather than from the handoff, so
+    The seeding is read back through the replay rather than from the handoff, so
     what is asserted is the board a fresh process would rebuild.
     """
     log = open_session(session_dir, write_handoff(session_dir, handoff_doc()))
@@ -146,7 +146,7 @@ def test_each_talk_seed_a_handoff_declares_reaches_the_board_on_its_own(
 def test_the_seeded_board_is_reproduced_by_re_folding_the_log_alone(session_dir: Path) -> None:
     """
     Given a session seeded from a handoff
-    When the log is folded by a reader that never sees the handoff file
+    When the log is replayed by a reader that never sees the handoff file
     Then it yields the same board.
 
     This is the invariant the whole inversion rests on: the briefing is seeded
@@ -156,7 +156,7 @@ def test_the_seeded_board_is_reproduced_by_re_folding_the_log_alone(session_dir:
     log = open_session(session_dir, write_handoff(session_dir, handoff_doc()))
     (session_dir / "handoff.json").unlink()
 
-    rebuilt = fold("later-tenure", read_entries(session_dir / LOG_FILE))
+    rebuilt = replay("later-tenure", read_entries(session_dir / LOG_FILE))
 
     assert [node.id for node in rebuilt.decisions] == [node.id for node in image1(log).decisions]
     assert rebuilt.frontier == image1(log).frontier
@@ -788,7 +788,7 @@ def test_an_image_file_left_from_a_previous_tenure_is_discarded_and_rebuilt(
     """
     Given a session whose image file on disk says something the log does not
     When it is restarted
-    Then the file is overwritten by the fold of the log.
+    Then the file is overwritten by the replay of the log.
 
     A stale image is more dangerous than a missing one: it is readable, so
     anything that trusted it would resume a board nobody ever answered.

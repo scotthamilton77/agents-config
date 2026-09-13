@@ -62,7 +62,7 @@ from grillui.drivers import (
 from grillui.escalation import CONDITION_COMMITMENT, CONDITION_IRREDUCIBLE, CONDITION_MULTIPLE
 from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import LOG_FILE, SessionLog
-from grillui.projector import fold
+from grillui.projector import replay
 from grillui.schemas import (
     CHAIN_KEY,
     CONTEXT_BYTES_KEY,
@@ -1161,7 +1161,7 @@ def queued_warnings(log: SessionLog) -> list[Any]:
     backend = {
         entry.seq for entry in entries if entry.kind == "informational" and entry.actor == "backend"
     }
-    return [one for one in fold(log.epoch, entries).pending if one.authored_at in backend]
+    return [one for one in replay(log.epoch, entries).pending if one.authored_at in backend]
 
 
 def test_a_fast_turn_records_its_size_and_the_count_the_provider_returned(

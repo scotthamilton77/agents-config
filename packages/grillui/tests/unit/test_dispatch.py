@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from grillui.dispatch import DISPATCH_DIR, DispatchIncompleteError, record_dispatch, verify_complete
 from grillui.log import SessionLog
-from grillui.projector import fold, whole_board
+from grillui.projector import replay, whole_board
 from grillui.schemas import (
     MAP_THREAD_KIND,
     SESSION_START_KIND,
@@ -74,7 +74,7 @@ def test_a_recorded_dispatch_carries_image_two_whole_including_every_settled_ans
     receipt, log entry or later read would say which one went missing.
     """
     _settled_board(client, log.epoch)
-    expected = fold(log.epoch, log.entries())
+    expected = replay(log.epoch, log.entries())
 
     record_dispatch(log)
 
@@ -104,7 +104,7 @@ def test_a_context_missing_any_part_of_image_two_is_refused_rather_than_truncate
     anywhere.
     """
     _settled_board(client, log.epoch)
-    image = fold(log.epoch, log.entries())
+    image = replay(log.epoch, log.entries())
     complete = record_dispatch(log).read_text(encoding="utf-8")
 
     verify_complete(complete, image)
@@ -142,7 +142,7 @@ def test_each_dispatch_is_recorded_as_its_own_file_in_dispatch_order(
     """
     Given two dispatches with a write between them
     When both have been recorded
-    Then each has its own file, in order, folded at its own dispatch time.
+    Then each has its own file, in order, replayed at its own dispatch time.
 
     One file per dispatch is what makes the completeness check auditable after
     the fact rather than only at the moment of dispatching.

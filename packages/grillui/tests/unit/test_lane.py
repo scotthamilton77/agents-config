@@ -40,7 +40,7 @@ from grillui import lane as lane_module
 from grillui.dispatch import DISPATCH_DIR
 from grillui.lane import DocumentRefusedError, Lane, UnreachableDriver
 from grillui.log import SessionLog
-from grillui.projector import fold
+from grillui.projector import replay
 from grillui.schemas import (
     APPLY_KIND,
     DISMISS_KIND,
@@ -785,7 +785,7 @@ def test_an_obligation_met_or_never_created_presses_nobody(log: SessionLog, tmp_
     assert first_rung.dispatches == [], "a judgment gesture went through the first rung"
     assert len(honoured.dispatches) == 1, "the classed seat was asked twice for one gesture"
     assert _notices(log) == []
-    queued = fold(log.epoch, log.entries()).pending
+    queued = replay(log.epoch, log.entries()).pending
     assert sorted(str(one.target) for one in queued if one.kind == "invalidate") == KILLED
 
     plain = SessionLog(tmp_path / "unmarked")
@@ -1079,7 +1079,7 @@ def test_an_invalidate_the_human_applied_obliges_the_map_turn_it_buys(
         ],
         log.epoch,
     )
-    queued = fold(log.epoch, log.entries()).pending[0].id
+    queued = replay(log.epoch, log.entries()).pending[0].id
 
     run_turns(
         lane,

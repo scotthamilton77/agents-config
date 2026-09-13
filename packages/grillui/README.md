@@ -1,7 +1,7 @@
 # grillui
 
 The backend behind a grilling session's user interface: it serves the UI,
-folds the session's decision log into the images the UI and the agents read,
+replays the session's decision log into the images the UI and the agents read,
 and drives the grilling tiers. The design it is being built to is
 `docs/specs/2026-08-18-grilling-ui-v1.md`.
 
@@ -84,7 +84,7 @@ mutation and a document that says so.
 Every grill-master dispatch carries the pending queue — what the human has not
 dealt with yet, the notices they were told and the map mutations an agent
 proposed that the board has not taken, each with its id, its target and its kind
-— as it stood when the dispatch was folded. Answering a decision is dealing with
+— as it stood when the dispatch was replayed. Answering a decision is dealing with
 the notices standing on it, and they leave the queue. A response may withdraw
 entries it authored itself by naming their ids in `supersedes`: those stay in the
 queue marked superseded, for the page to drop. When the human already acted on
@@ -125,17 +125,17 @@ The modules, and the separation between them is load-bearing:
 - `log.py` — the appender. It assigns the sequence, writes durably before
   anything else can observe the entry, and answers every write with a typed
   receipt: `accepted` with the sequence assigned, `duplicate` naming where the
-  key already landed, or `rejected` naming the reason. It never folds a
+  key already landed, or `rejected` naming the reason. It never replays a
   projection.
-- `projector.py` — a pure fold over the log into the two context images: no
+- `projector.py` — a pure replay of the log into the two context images: no
   clock, no randomness, no I/O. The same log therefore always yields
   byte-identical images, and an image rebuilt from disk matches one held in
   memory. It is also where each update kind's meaning lives — what a revise, an
   invalidate, an unsettle or a blocking alert does to a decision's status — and
-  the module docstring is the table. The thread projection is folded here too,
+  the module docstring is the table. The thread projection is replayed here too,
   by the same rules: pure, reproducible, and reducing nothing but the bodies of
   threads the dispatched agent is not having.
-- `persistence.py` — the only image I/O there is, downstream of the fold: it
+- `persistence.py` — the only image I/O there is, downstream of the replay: it
   refreshes both image files after an accepted batch. The files are derived
   caches, never a recovery source, so a failure here surfaces as an error on
   the status lane and blocks neither the log nor the next event.
@@ -191,7 +191,7 @@ The modules, and the separation between them is load-bearing:
   image file left by a previous tenure is discarded rather than trusted. Ending
   is a human gesture: an agent's `session-end` is refused with a typed receipt
   and appends nothing.
-- `capture.py` — the terminal result, folded from a session directory and
+- `capture.py` — the terminal result, replayed from a session directory and
   nothing else, so the same operation serves the backend at end-session and a
   fresh reader pointed at last week's grilling. Everything structural is pure
   code over the log; the prose summary goes through a summarizer seam whose
@@ -201,7 +201,7 @@ The modules, and the separation between them is load-bearing:
   no model behind it.
 - `api.py` — the board endpoints. `/status` is answered from memory and opens
   no file, so it stays cheap whatever the log has grown to; `/state`, `/image1`
-  and `/image2` fold; `/updates` refuses a stale epoch with 409; `/events`
+  and `/image2` replay; `/updates` refuses a stale epoch with 409; `/events`
   takes a batch under one epoch and returns one receipt per event in
   submission order, and returns them without waiting on the turn it scheduled.
   `/doctor` and `/claim` sit beside the board routes as controls rather than
@@ -222,7 +222,7 @@ The modules, and the separation between them is load-bearing:
   with no build and no dependencies, which is what the reference prototype was
   and what a page served off disk can afford. The split is so that a style
   change and a script change are two diffs rather than one file two people are
-  queued on. Its board is the state read and nothing else: it never folds the log
+  queued on. Its board is the state read and nothing else: it never replays the log
   into decisions, statuses or a queue, and it never re-derives which of an
   agent's changes waited — that is the backend's answer, made when the change
   arrived, and the page renders the queue it is handed. It emits eight kinds
@@ -231,7 +231,7 @@ The modules, and the separation between them is load-bearing:
   accepted set by the suite.
 
 The update kinds are complete. An add-node mints its node id from the sequence
-it lands at — deterministic, because the receipt echoes the node the fold will
+it lands at — deterministic, because the receipt echoes the node the replay will
 later materialise, and two readers of one node is how a receipt and a board come
 to disagree. An invalidate carries its own rationale onto the decision it
 blocks. A `fold` is one gesture carrying an ordered set of sub-updates, applied

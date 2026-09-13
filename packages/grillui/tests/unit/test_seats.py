@@ -1156,7 +1156,7 @@ def test_the_format_rule_names_every_update_kind_the_backend_folds() -> None:
     """
     Given the standing brief's format rule
     When the kinds it offers are read back
-    Then they are exactly the kinds the appender folds -- read off the same
+    Then they are exactly the kinds the appender replays -- read off the same
          vocabulary rather than retyped, because a seat told nothing about the
          list invents a kind that is refused, and the refusal takes the whole
          turn with it.

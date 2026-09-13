@@ -634,8 +634,8 @@ def test_a_stale_epoch_is_turned_away_on_the_update_read_and_the_state_read_stil
 def test_the_state_read_alone_carries_the_whole_board(client: TestClient, log: Any) -> None:
     """No delta is needed to know what the board says.
 
-    A page that had to replay the log to know the board would be folding it --
-    and a page that folds is a page that can fold differently.
+    A page that had to replay the log to know the board would be replaying it --
+    and a page that replays is a page that can replay differently.
     """
     node = seed_node(client, log.epoch)
     post(

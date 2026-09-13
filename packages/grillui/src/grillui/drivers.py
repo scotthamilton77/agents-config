@@ -40,7 +40,7 @@ are refused there, and no driver holds a second way to the board.
 
 Declaring is not applying. What an agent's update does on arrival -- land, or
 wait in the human's queue for their gesture -- is decided against the board by
-the fold, not here. No driver may pre-empt that: one that decided for itself
+the replay, not here. No driver may pre-empt that: one that decided for itself
 which of its updates were safe would be the agent applying its own turn again,
 by a longer route.
 
@@ -91,7 +91,7 @@ from grillui.escalation import (
 )
 from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import TRANSCRIPT_DIR, PayloadRefusedError
-from grillui.projector import fold
+from grillui.projector import replay
 from grillui.schemas import (
     CHAIN_KEY,
     CONTEXT_BYTES_KEY,
@@ -1034,7 +1034,7 @@ def advise(
         if source is not None:
             attribution[TRANSFER_SOURCE_KEY] = source
         return None
-    advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel, reads)
+    advice = recommend(replay(log.epoch, entries), turns_of(entries, channel), channel, reads)
     if advice is not None:
         attribution[RECOMMENDATION_KEY] = advice.as_payload()
     return advice
@@ -1582,7 +1582,7 @@ def declared_updates(
     half-shaped is prose here and prose everywhere else.
 
     Whether the offer is usable is not judged here. This reads what the turn
-    said; the fold decides what the board can do with it, so an offer and the
+    said; the replay decides what the board can do with it, so an offer and the
     prose it rode in on cannot be judged by two readers that disagree.
     """
     document = _declaring(reply)
@@ -1976,7 +1976,7 @@ def record_reply(
 
     Which of the declared updates land and which wait for the human is not this
     function's question and must not become one: it is a property of the board
-    at the moment the gesture arrives, answered once by the fold.
+    at the moment the gesture arrives, answered once by the replay.
 
     What the reply withdrew rides on the turn's own spoken entry, and so does
     the answer it offered and what it asked to read, because that is what each

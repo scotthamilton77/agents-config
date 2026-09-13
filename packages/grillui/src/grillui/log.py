@@ -15,7 +15,7 @@ maintained entry by entry so that judging a write never reads a file.
 
 What an index cannot answer is anything that turns on the *board* rather than on
 the log: whether a proposal is still waiting, and which options a decision
-currently offers. Both are read by folding, because an agent's update may be
+currently offers. Both are read by replaying, because an agent's update may be
 sitting in the queue and the bytes in the log are then not what anyone can see.
 One reader for each question means the answer a receipt is judged against and
 the answer the page renders are the same answer -- and that is the same reason
@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from grillui.projector import Proposed, fold, node_from_payload, queue
+from grillui.projector import Proposed, node_from_payload, queue, replay
 from grillui.schemas import (
     ANSWER_KINDS,
     APPLY_KIND,
@@ -127,7 +127,7 @@ class LogIndex:
     keys: dict[str, int] = field(default_factory=dict)
     nodes: set[str] = field(default_factory=set)
     # Thread id to the decision it anchors, or None for a session-scoped one.
-    # The anchor is here rather than only in the fold because an answer's
+    # The anchor is here rather than only in the replay because an answer's
     # provenance is judged at append time: whether the thread this answer was
     # armed from is the thread that asked this question decides whether the
     # entry lands at all.
@@ -197,7 +197,7 @@ class SessionLog:
         return self._index.threads.get(channel)
 
     def entries(self) -> list[LogEntry]:
-        """A stable snapshot: taken under the append lock, so a reader folding
+        """A stable snapshot: taken under the append lock, so a reader replaying
         it never sees a batch half-landed."""
         with self._lock:
             return list(self._entries)
@@ -364,14 +364,14 @@ class SessionLog:
     def _queue(self) -> dict[str, Proposed]:
         """The proposals waiting for the human, as of right now.
 
-        Folded rather than indexed, because whether an update waits is a
+        Replayed rather than indexed, because whether an update waits is a
         property of the board at the moment it arrived and this appender holds
         no board. One reader for the question means the queue a receipt is
         judged against and the queue the page is shown are the same answer.
 
-        The ceiling is one fold per queue gesture and per gesture that could
+        The ceiling is one replay per queue gesture and per gesture that could
         produce one. Each of those is a human-paced act over a log bounded by
-        one grilling, so the repeated folding costs nothing that matters.
+        one grilling, so the repeated replaying costs nothing that matters.
         """
         return queue(self._entries)
 
@@ -383,15 +383,15 @@ class SessionLog:
         not a change: there is nothing to apply, and the human being done with
         it is the gesture that lifts the lock a blocking alert took.
 
-        The ceiling is one fold per dismiss, which is a human-paced act over
+        The ceiling is one replay per dismiss, which is a human-paced act over
         a log bounded by one grilling.
         """
-        return frozenset(item.id for item in fold(self.epoch, self._entries).pending)
+        return frozenset(item.id for item in replay(self.epoch, self._entries).pending)
 
     def _offered(self) -> dict[str, frozenset[str]]:
         """What each decision offers, as the board has it right now.
 
-        Folded rather than indexed, for the reason the queue beside it is: an
+        Replayed rather than indexed, for the reason the queue beside it is: an
         agent's revise waits for the human when the decision it rewrites is
         already answered, so the options in the log are not the options on the
         board until the human applies them. An appender that indexed the bytes
@@ -401,18 +401,18 @@ class SessionLog:
         can read. One reader for the question means the options an answer is
         judged against and the options the page renders are the same answer.
 
-        The ceiling is one fold per answer, which is a human-paced act over a
+        The ceiling is one replay per answer, which is a human-paced act over a
         log bounded by one grilling.
         """
         return {
             node.id: frozenset(option.id for option in node.options)
-            for node in fold(self.epoch, self._entries).decisions
+            for node in replay(self.epoch, self._entries).decisions
         }
 
     def _queued_ids(self, entry: LogEntry) -> set[str]:
         """Which of this entry's updates went to the queue instead of the board.
 
-        Read after the append, from the fold that now includes the entry, so the
+        Read after the append, from the replay that now includes the entry, so the
         receipt cannot disagree with the board about what an agent's turn did --
         it is the same answer, read once.
         """
@@ -586,7 +586,7 @@ def _resolve(
     """An apply, with the proposals it named resolved into the updates it carries.
 
     Materialised before the append for the same reason a minted node id is: the
-    receipt, the fold and the durable entry then read one set of bytes. Those
+    receipt, the replay and the durable entry then read one set of bytes. Those
     bytes are the authoring agent's own, taken out of the queue rather than off
     the wire, so applying is the human choosing *that* an update lands and never
     choosing what it says.
@@ -603,7 +603,7 @@ def _applied_updates(
 
     A refusal cannot reach here -- the gesture is accepted whole or not at all --
     so every outcome is `applied` or `queued`, and which it is comes from the
-    fold that has already absorbed the entry rather than from a second judgment
+    replay that has already absorbed the entry rather than from a second judgment
     made here. A lone update that went to the queue gets an outcome too: without
     one its receipt would say a decision moved when none did.
     """

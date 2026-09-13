@@ -8,7 +8,7 @@ fresh agent pointed at a directory whose log is already terminal-ready.
 Everything structural here is pure code over the log: the decisions and their
 answers, what is still open and what stopped it, the threads, the session's own
 identity, and how it ended. Running it twice over a fixed log yields byte-
-identical output, because the fold it rests on has no clock, no randomness and
+identical output, because the replay it rests on has no clock, no randomness and
 no I/O.
 
 `summary` is the one field code does not write. It goes through the summarizer
@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE, LOG_FILE, RESULT_FILE, read_entries
-from grillui.projector import answers_from_threads, conclusion_of, fold
+from grillui.projector import answers_from_threads, conclusion_of, replay
 from grillui.schemas import (
     PROPOSABLE_KINDS,
     SESSION_END_KIND,
@@ -91,14 +91,14 @@ def default_summary(result: TerminalResult) -> str:
 
 
 def capture(directory: Path, *, summarize: Summarizer = default_summary) -> TerminalResult:
-    """Fold the session directory's log into its terminal result.
+    """Replay the session directory's log into its terminal result.
 
     The log is the only thing read. The images are referenced rather than
     opened, because they are derived caches and a capture that trusted one
     would report a board no log ever held.
     """
     entries = read_entries(directory / LOG_FILE)
-    image = fold(entries[-1].epoch if entries else "", entries)
+    image = replay(entries[-1].epoch if entries else "", entries)
     applied = answers_from_threads(entries)
     start = _first(entries, SESSION_START_KIND)
     end = _last(entries, SESSION_END_KIND)
@@ -129,7 +129,7 @@ def capture(directory: Path, *, summarize: Summarizer = default_summary) -> Term
 
 
 def write_result(directory: Path, result: TerminalResult) -> Path:
-    """Persist the terminal result beside the log it was folded from."""
+    """Persist the terminal result beside the log it was replayed from."""
     path = directory / RESULT_FILE
     path.write_text(result.model_dump_json(), encoding="utf-8")
     return path

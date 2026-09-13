@@ -15,7 +15,7 @@ from conftest import SEED_NODE, apply_all, event, post, queue_gesture, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.log import SessionLog
-from grillui.projector import fold
+from grillui.projector import replay
 from grillui.schemas import (
     DISMISS_KIND,
     REASON_UNKNOWN_KIND,
@@ -859,7 +859,7 @@ def test_a_log_carrying_every_update_kind_still_folds_byte_identically(
 ) -> None:
     """
     Given a log exercising every update kind this protocol carries
-    When it is folded twice, and again by a second process from the file alone
+    When it is replayed twice, and again by a second process from the file alone
     Then all three images are byte-identical.
 
     Determinism is what makes an image a projection rather than a state: a kind
@@ -894,10 +894,10 @@ def test_a_log_carrying_every_update_kind_still_folds_byte_identically(
         ),
     )
 
-    first = fold(log.epoch, log.entries()).model_dump_json()
-    again = fold(log.epoch, log.entries()).model_dump_json()
+    first = replay(log.epoch, log.entries()).model_dump_json()
+    again = replay(log.epoch, log.entries()).model_dump_json()
     reloaded = SessionLog(session_dir)
-    from_disk = fold(log.epoch, reloaded.entries()).model_dump_json()
+    from_disk = replay(log.epoch, reloaded.entries()).model_dump_json()
 
     assert first == again == from_disk
 

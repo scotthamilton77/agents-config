@@ -77,7 +77,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
-from grillui.projector import fold
+from grillui.projector import replay
 from grillui.schemas import (
     AGENT_ACTORS,
     DISCHARGING_KINDS,
@@ -305,7 +305,7 @@ def dismisses_first_rung(
     """Whether this dismissal is the human saying a first-rung turn was wrong.
 
     Read off the queue as it stands with the item still in it, so the caller
-    asks before the gesture lands rather than after the fold has removed what
+    asks before the gesture lands rather than after the replay has removed what
     the question is about.
 
     Two things in that queue are not this gesture. The queue holds notices as
@@ -361,7 +361,7 @@ def distrust_count(entries: Sequence[LogEntry], epoch: str, channel: str, expert
     which is the log prefix before that entry. A hand-up is the marked
     `composing` entry the press path writes as it announces the expert's turn.
 
-    The prefix is folded once per dismissal on this channel. The ceiling is a
+    The prefix is replayed once per dismissal on this channel. The ceiling is a
     session whose human dismissed a great many proposals, where the work is
     quadratic in the log; the count is asked only when a signal arrives, and the
     upgrade if a session ever feels it is a tally cached against the last
@@ -381,7 +381,7 @@ def distrust_count(entries: Sequence[LogEntry], epoch: str, channel: str, expert
             continue
         before = entries[:index]
         if dismisses_first_rung(
-            fold(epoch, before),
+            replay(epoch, before),
             before,
             [one for one in named if isinstance(one, str)],
             expert_tier,

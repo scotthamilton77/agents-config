@@ -31,7 +31,7 @@ from grillui.capture import capture
 from grillui.dispatch import GRILL_MASTER, THREAD_AGENT, assemble
 from grillui.drivers import declared_updates, record_reply
 from grillui.log import LOG_FILE
-from grillui.projector import fold
+from grillui.projector import replay
 from grillui.schemas import (
     FAST_TIER,
     HEAVY_TIER,
@@ -506,7 +506,7 @@ def test_a_live_proposal_reaches_no_grill_master_dispatch_as_a_pending_update(
     board(client, epoch)
     offer(client, epoch, shape.thread, SAID, shape.proposal)
 
-    context = DispatchContext.model_validate_json(assemble(fold(epoch, log.entries())))
+    context = DispatchContext.model_validate_json(assemble(replay(epoch, log.entries())))
 
     assert context.agent == GRILL_MASTER
     assert context.image2.pending == []

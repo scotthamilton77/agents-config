@@ -45,7 +45,7 @@ from grillui.dispatch import GRILL_MASTER, THREAD_AGENT, record_dispatch
 from grillui.drivers import FastDriver, HeavyDriver, ReplyRefusedError
 from grillui.lane import DocumentRefusedError, Lane, TurnDriver
 from grillui.log import LOG_FILE, SessionLog
-from grillui.projector import fold, project_thread, to_image1
+from grillui.projector import project_thread, replay, to_image1
 from grillui.schemas import (
     MAP_CHANNEL,
     MAP_MUTATION_KINDS,
@@ -240,7 +240,7 @@ def test_the_dispatched_thread_crosses_in_full_and_every_other_as_a_stub(
     conclusion is a thread that changed the board and will not say how.
     """
     board(client, log.epoch)
-    image = fold(log.epoch, log.entries())
+    image = replay(log.epoch, log.entries())
 
     projection = project_thread(image, MINE)
 
@@ -287,7 +287,7 @@ def test_the_projections_board_is_image_twos_board_unchanged(
             why="the audit trail is the point",
         ),
     )
-    image = fold(log.epoch, log.entries())
+    image = replay(log.epoch, log.entries())
 
     projected = json.loads(project_thread(image, MINE).model_dump_json())
 
@@ -303,7 +303,7 @@ def test_projecting_a_fixed_board_twice_yields_byte_identical_bytes(
 ) -> None:
     """
     Given one log
-    When it is folded and projected twice over
+    When it is replayed and projected twice over
     Then both projections are byte-identical.
 
     The same determinism guarantee the images carry: a dispatch is reproducible
@@ -312,9 +312,9 @@ def test_projecting_a_fixed_board_twice_yields_byte_identical_bytes(
     """
     board(client, log.epoch)
 
-    once = project_thread(fold(log.epoch, log.entries()), MINE).model_dump_json()
+    once = project_thread(replay(log.epoch, log.entries()), MINE).model_dump_json()
 
-    assert once == project_thread(fold(log.epoch, log.entries()), MINE).model_dump_json()
+    assert once == project_thread(replay(log.epoch, log.entries()), MINE).model_dump_json()
 
 
 def test_a_thread_gesture_sets_that_threads_state_and_moves_no_decision(
@@ -322,7 +322,7 @@ def test_a_thread_gesture_sets_that_threads_state_and_moves_no_decision(
 ) -> None:
     """
     Given a folded thread and a parked one
-    When the board is folded
+    When the board is replayed
     Then each thread carries the state its gesture set, and no decision moved.
 
     Folding a thread is not a map mutation: the conclusion reaches the board
@@ -333,12 +333,12 @@ def test_a_thread_gesture_sets_that_threads_state_and_moves_no_decision(
     open_thread(client, log.epoch, MINE, "Retention", MINE_SAID)
     open_thread(client, log.epoch, DONE, "Naming", DONE_ASKED)
     say(client, log.epoch, DONE, DONE_CONCLUDED)
-    before = fold(log.epoch, log.entries()).decisions
+    before = replay(log.epoch, log.entries()).decisions
 
     assert gesture(client, log.epoch, THREAD_FOLD_KIND, DONE)["status"] == "accepted"
     assert gesture(client, log.epoch, THREAD_PARK_KIND, MINE)["status"] == "accepted"
 
-    image = fold(log.epoch, log.entries())
+    image = replay(log.epoch, log.entries())
     assert {thread.id: thread.state for thread in image.threads} == {
         MINE: "parked",
         DONE: "folded",
@@ -351,7 +351,7 @@ def test_parking_and_closing_both_leave_the_turns_readable_and_take_nothing_away
 ) -> None:
     """
     Given one thread the human parks and one the human closes
-    When the board is folded
+    When the board is replayed
     Then each carries the state its gesture set, both keep every turn they took,
          and the log has grown rather than lost an entry.
 
@@ -367,7 +367,7 @@ def test_parking_and_closing_both_leave_the_turns_readable_and_take_nothing_away
     assert gesture(client, log.epoch, THREAD_PARK_KIND, PARKED)["status"] == "accepted"
     assert gesture(client, log.epoch, THREAD_CLOSE_KIND, MINE)["status"] == "accepted"
 
-    image = fold(log.epoch, log.entries())
+    image = replay(log.epoch, log.entries())
     threads = {thread.id: thread for thread in image.threads}
     assert {tid: one.state for tid, one in threads.items()} == {
         PARKED: "parked",
@@ -398,13 +398,13 @@ def test_a_human_turn_opens_a_closed_thread_and_it_takes_the_turn(
     open_thread(client, log.epoch, OTHER, "Compaction", OTHER_SAID)
     assert gesture(client, log.epoch, THREAD_CLOSE_KIND, MINE)["status"] == "accepted"
     assert gesture(client, log.epoch, THREAD_CLOSE_KIND, OTHER)["status"] == "accepted"
-    states = {one.id: one.state for one in fold(log.epoch, log.entries()).threads}
+    states = {one.id: one.state for one in replay(log.epoch, log.entries()).threads}
     assert states == {MINE: "closed", OTHER: "closed"}, states
 
     say(client, log.epoch, MINE, "and what about the archive?", actor="human")
     say(client, log.epoch, OTHER, "the agent is still thinking about it", actor="thread-agent")
 
-    threads = {one.id: one for one in fold(log.epoch, log.entries()).threads}
+    threads = {one.id: one for one in replay(log.epoch, log.entries()).threads}
     assert threads[MINE].state == "open"
     assert [turn.text for turn in threads[MINE].turns] == [
         MINE_SAID,
@@ -434,13 +434,13 @@ def test_a_human_turn_opens_a_parked_thread_and_it_takes_the_turn(
     open_thread(client, log.epoch, OTHER, "Compaction", OTHER_SAID)
     assert gesture(client, log.epoch, THREAD_PARK_KIND, MINE)["status"] == "accepted"
     assert gesture(client, log.epoch, THREAD_PARK_KIND, OTHER)["status"] == "accepted"
-    states = {one.id: one.state for one in fold(log.epoch, log.entries()).threads}
+    states = {one.id: one.state for one in replay(log.epoch, log.entries()).threads}
     assert states == {MINE: "parked", OTHER: "parked"}, states
 
     say(client, log.epoch, MINE, "and what about the archive?", actor="human")
     say(client, log.epoch, OTHER, "the agent is still thinking about it", actor="thread-agent")
 
-    threads = {one.id: one for one in fold(log.epoch, log.entries()).threads}
+    threads = {one.id: one for one in replay(log.epoch, log.entries()).threads}
     assert threads[MINE].state == "open"
     assert [turn.text for turn in threads[MINE].turns] == [
         MINE_SAID,
@@ -512,7 +512,7 @@ def test_a_thread_dispatch_is_recorded_for_the_thread_agent_carrying_its_project
     one told it may change it.
     """
     board(client, log.epoch)
-    image = fold(log.epoch, log.entries())
+    image = replay(log.epoch, log.entries())
 
     recorded = record_dispatch(log, channel=MINE)
 
@@ -535,7 +535,7 @@ def test_a_map_dispatch_is_still_the_grill_masters_and_carries_image_two_whole(
     grill-master.
     """
     board(client, log.epoch)
-    image = fold(log.epoch, log.entries())
+    image = replay(log.epoch, log.entries())
 
     recorded = record_dispatch(log)
 
@@ -791,7 +791,9 @@ def test_accepting_a_thread_conclusion_dispatches_the_grill_master_carrying_it(
     assert dispatched.conclusion is not None
     assert (dispatched.conclusion.thread, dispatched.conclusion.text) == (MINE, MINE_CONCLUDED)
     assert MINE_CONCLUDED in transport.calls[0]["prompt"]
-    folded = next(thread for thread in fold(log.epoch, log.entries()).threads if thread.id == MINE)
+    folded = next(
+        thread for thread in replay(log.epoch, log.entries()).threads if thread.id == MINE
+    )
     assert folded.state == "folded"
 
 
@@ -821,7 +823,7 @@ def test_the_map_mutation_a_folded_conclusion_produces_is_the_grill_masters(
     applied = [entry for entry in log.entries() if entry.kind == "fold"]
     assert [(entry.actor, entry.channel) for entry in applied] == [("grill-master", MAP_CHANNEL)]
     node = next(
-        one for one in to_image1(fold(log.epoch, log.entries())).decisions if one.id == NODE
+        one for one in to_image1(replay(log.epoch, log.entries())).decisions if one.id == NODE
     )
     assert node.title == "Store, for 30d"
     assert not [
@@ -849,12 +851,12 @@ def test_a_conclusion_folded_as_context_only_leaves_the_board_alone_and_says_so(
     said = "Nothing on the board changes: retention was already priced into the store answer."
     driver, _ = fast_tier(document(text=said))
     lane = Lane(log, driver)
-    before = fold(log.epoch, log.entries()).decisions
+    before = replay(log.epoch, log.entries()).decisions
     cursor = log.seq
 
     run_turns(lane, turn_event(THREAD_FOLD_KIND, MINE, "fold-mine"))
 
-    image = fold(log.epoch, log.entries())
+    image = replay(log.epoch, log.entries())
     assert image.decisions == before
     assert [entry.kind for entry in log.entries() if entry.kind == "fold"] == []
     spoken = [entry for entry in log.entries_after(cursor) if entry.actor == GRILL_MASTER]

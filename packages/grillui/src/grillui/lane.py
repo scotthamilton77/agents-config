@@ -100,7 +100,7 @@ from grillui.escalation import (
     rulings_of,
     unruled,
 )
-from grillui.projector import fold, supersede_conflicts
+from grillui.projector import replay, supersede_conflicts
 from grillui.schemas import (
     ANSWERABLE_KINDS,
     APPLY_KIND,
@@ -443,13 +443,13 @@ class Lane:
     def _judgment(self, gesture: Turn) -> str | None:
         """Which judgment class this turn is, read off the board as it stands.
 
-        Folded here rather than at dispatch time because the seat has to be
+        Replayed here rather than at dispatch time because the seat has to be
         named before the turn is announced: a class read after the first rung
         had the turn is a class that arrived too late to skip it.
         """
         entries = self.log.entries()
         return judgment_class(
-            fold(self.log.epoch, entries),
+            replay(self.log.epoch, entries),
             entries,
             gesture.channel,
             concluding=gesture.concluding is not None,
@@ -557,7 +557,7 @@ class Lane:
         if turn.channel != MAP_CHANNEL:
             return None
         entries = self.log.entries()
-        return mootness_obligation(fold(self.log.epoch, entries), entries, MAP_CHANNEL)
+        return mootness_obligation(replay(self.log.epoch, entries), entries, MAP_CHANNEL)
 
     @staticmethod
     def _owes_rulings(event: EventSubmission, owed: MootnessObligation | None) -> bool:
@@ -825,7 +825,7 @@ class Lane:
             return None
 
     def _board(self) -> Image2:
-        return fold(self.log.epoch, self.log.entries())
+        return replay(self.log.epoch, self.log.entries())
 
     @staticmethod
     def _watching(turn: Turn) -> bool:

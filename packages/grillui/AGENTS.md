@@ -23,7 +23,7 @@ is the kept end-to-end harness: `make e2e-grillui` launches a real backend
 through the same `launch` path a `grillui serve` takes, seats it on a local
 stub and two scripted CLI shims, and drives every grill-master use case with
 headless Playwright. Run it standalone too, and when a change touches seating,
-the lane, the map document's retry ladder or the fold, run it as well as
+the lane, the map document's retry ladder or the replay, run it as well as
 `ci-grillui` — `testpaths` is `tests/unit`, so nothing else collects it. Its scenarios run on a
 PATH holding only those shims: a scenario must never be able to reach a real
 `codex` or `claude`, which would spend an account and read as a passing seat.
@@ -39,7 +39,7 @@ real calls".
 ## What this package is
 
 The grilling-session backend, per `docs/specs/2026-08-18-grilling-ui-v1.md`.
-It serves the session UI, folds the decision log into the context images, and
+It serves the session UI, replays the decision log into the context images, and
 drives the grilling tiers. The two skills that bracket a session —
 `grill-with-ui` and `grill-capture` — are deployed content and live under
 `src/`, not here.
@@ -71,7 +71,7 @@ Current state, by area:
   apply/dismiss gestures and proposal-driven frontier locks.
 - **The page** — authored as separate style, script and markup sources that
   the package assembles into the single self-contained document it serves. It
-  renders the board straight from image 1 without folding anything
+  renders the board straight from image 1 without replaying anything
   client-side, and carries a two-layer channel-state model — transport
   lifecycle and per-channel protocol state — behind a worst-state-wins
   three-signal indicator with an on-demand per-channel diagnostic. The v1 UI
