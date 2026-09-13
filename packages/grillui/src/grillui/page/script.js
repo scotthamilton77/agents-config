@@ -11,6 +11,7 @@
 //---PAGE-EMISSIONS-START---
 var EMISSIONS = {
   "answer":         { "channel": "map",    "payload": ["target", "answer", "transfer", "from_thread"] },
+  "unsettle":       { "channel": "map",    "payload": ["target"] },
   "thread-created": { "channel": "thread", "payload": ["turns", "decision", "kind", "title", "requires_action", "transfer"] },
   "thread-turn":    { "channel": "thread", "payload": ["turns", "transfer"] },
   "thread-fold":    { "channel": "thread", "payload": [] },
@@ -1502,6 +1503,17 @@ function abandonAnswer(id) {
   focusOn(id);
   render();
 }
+// Reopening a settled decision is the human withdrawing an answer they gave.
+// It is the same `unsettle` an agent may only propose, authored by the human
+// instead, so it lands when it arrives and takes the fold an applied proposal
+// takes: the answer goes, the decision is a question again, and everything
+// settled on top of it needs re-confirming. Nothing local is cleared and
+// nothing is announced -- the board that comes back from the backend is what
+// says the answer has gone, and a block the page shut when it settled opens
+// itself again once it is no longer settled.
+function reopenDecision(id) {
+  send(ev("unsettle", MAP, { target: id }));
+}
 // The gesture is sent and nothing is announced. What the apply landed becomes
 // news when the apply itself comes back down the update read -- which is the
 // only way to be sure it landed at all. Announcing it here would tell the human
@@ -2049,6 +2061,17 @@ function renderColumn() {
           : "Waiting on " + esc(wait.list.join(", ")) + ".") + "</div>";
       } else {
         h += answerControls(d, !takesAnswer(id) || !!lock);
+      }
+      // Only a settled decision offers the way back: there is no answer to
+      // withdraw on one still being asked, and one that has left the flow is
+      // not brought back by putting its question again. While something holds
+      // the decision the control is dead beside the answer controls the same
+      // hold disables, because withdrawing the answer under a change waiting on
+      // it is the overwrite that hold exists to stop.
+      if (st === "settled") {
+        h += '<div style="margin-top:9px"><button class="btn sm" data-act="reopen" data-id="' +
+          esc(id) + '"' + (lock ? " disabled" : "") +
+          ">Reopen — the answer is withdrawn and whatever rests on it needs re-confirming</button></div>";
       }
       h += changeLine(id);
       noticesOn(id).forEach(function (n) { h += infoNote(n); });
@@ -2913,7 +2936,7 @@ function popOut(tid) {
 // `send`, which refuses once the session is over; this is the surface saying the
 // same thing, so an ended board offers no control whose click would be swallowed.
 var WRITE_ACTS = ["pick", "free", "say", "seed", "draftsay", "newthread", "discuss", "discussnotice",
-  "fold", "park", "closethread", "abandon", "applyone", "applyall", "dismissone", "transfer",
+  "fold", "park", "closethread", "abandon", "reopen", "applyone", "applyall", "dismissone", "transfer",
   "doctor", "endsession"];
 // Reading stays: the board, the map, the history, the inbox, the notifications
 // and the read markers are all this window's own and go nowhere. What goes is
@@ -3061,6 +3084,7 @@ document.addEventListener("click", function (e) {
     case "closethread": closeThread(tid); break;
     case "fold": foldThread(tid); break;
     case "abandon": abandonAnswer(id); break;
+    case "reopen": reopenDecision(id); break;
     case "popout": popOut(tid); break;
     case "applyone": applyPending([uid]); break;
     case "applyall": applyPending(proposals().map(function (p) { return p.id; })); break;

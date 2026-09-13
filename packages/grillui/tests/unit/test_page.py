@@ -228,6 +228,7 @@ def log_lines(session_dir: Path) -> list[dict[str, Any]]:
 # only that the backend has a word for the kind at all.
 SHAPES: dict[str, tuple[str, dict[str, Any]]] = {
     "answer": (MAP_CHANNEL, {"target": "n1", "answer": {"option": "a", "text": None}}),
+    "unsettle": (MAP_CHANNEL, {"target": "n1"}),
     "thread-created": (
         THREAD,
         {
@@ -2425,6 +2426,29 @@ def test_abandoning_a_held_answer_leaves_the_mandated_thread_where_it_is() -> No
     blocking = function_body("blockingThreads")
     assert "d.mandate.threadId" in blocking and "tid !== mandated" in blocking
     assert "mandateHolding(id)" in function_body("holdOn"), "the hold is a hold of its own"
+
+
+def test_only_a_settled_decision_offers_the_way_back_to_open() -> None:
+    """The control that withdraws an answer, and the gesture behind it.
+
+    Each half is silent on its own. A control drawn outside the settled gate
+    offers to withdraw an answer that was never given, on a decision still
+    being asked or on one that has left the flow -- neither of which the fold
+    moves, so the press would do nothing and say nothing. A control that
+    reached the wire as anything but the human's own `unsettle` would be a
+    second way to undermine a decision, beside the one the projector already
+    folds for an unsettle the human applied.
+    """
+    block = balanced_body("renderColumn")
+    control = 'data-act="reopen"'
+    assert control in block, "a settled decision offers no way back to open"
+    gated = block.split('if (st === "settled") {', 1)
+    assert len(gated) == 2 and control in gated[1].split("}", 1)[0], (
+        "the reopen control is drawn outside the settled gate"
+    )
+    assert "reopenDecision(id)" in click_cases()["reopen"]
+    assert 'ev("unsettle", MAP, { target: id })' in balanced_body("reopenDecision")
+    assert "reopen" in write_acts(), "an ended board goes on offering the control"
 
 
 def test_a_pick_made_after_an_abandon_tells_the_thread_what_it_is_holding() -> None:

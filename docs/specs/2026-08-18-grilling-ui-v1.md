@@ -856,6 +856,14 @@ follows, and changes nothing else.
   thread turns can reference them by label. Three is a ceiling, not a target. Alongside
   choosing an option and writing free text, the human can select an option *and* attach a
   note.
+- **GUI-U32 — A settled decision's block offers the control that reopens it.** The control
+  appends the human's own `unsettle` on that decision, and the board then treats it exactly
+  as it treats an `unsettle` the human applied: the answer is withdrawn, the decision is a
+  question again, and everything settled on top of it needs re-confirming. Only a settled
+  decision offers it. A decision still being asked has no answer to withdraw, and one that
+  has left the flow is not brought back by putting its question again. An agent may only
+  propose an unsettle, so without this control an answer the human regrets stands for the
+  rest of the session unless some agent happens to propose withdrawing it.
 - **GUI-U19 — Each option's trade-off rides behind that option's own icon.** Where an
   option carries `pcr` (§8.2), a small icon sits beside that option and is the whole of the
   hover target; hovering it raises an overlay carrying that option's three statements —
@@ -1451,6 +1459,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U29 | GUI-A96, GUI-A97, GUI-A98 |
 | GUI-U30 | GUI-A105 |
 | GUI-U31 | GUI-A110 |
+| GUI-U32 | GUI-A111 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1975,6 +1984,13 @@ Each criterion is mechanically checkable and convertible to a red test.
   rather than shown to the human; and the growth in the `turn.completed` input count, not
   the byte estimate, is what the context measurement records — the deliberate exception
   being the one turn a restarted backend over-reports, having no earlier total to subtract.
+- **GUI-A111** The reopen control is drawn on a settled decision's block and under that
+  gate alone, and it reaches the wire as the human's own `unsettle` naming that decision.
+  Over a settled chain of three, that entry lands rather than joining the queue, leaves its
+  decision open with no answer, and leaves both decisions resting on it stale — the board an
+  applied proposal leaves. The end-to-end suite drives the whole path against a running
+  backend: a decision answered, its block opened again and the control pressed leaves that
+  decision reading as a question again.
 
 ## 10. Open questions for the implementing work
 
@@ -2089,6 +2105,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   help kind alone, and the history entry's `proposed_by` and verdict — AC: GUI-D47, GMR-A7.
 - feat: `puts_in_question` stated as a prediction the grill-master rules on, in the schema,
   the spec and the handoff-assembling skill alike — AC: GUI-D37, GMR-A8.
+- feat: The control that reopens a settled decision, as the human's own unsettle taking the
+  fold an applied one takes — AC: GUI-U32, GUI-A111.
 
 ## Evidence
 
@@ -2245,3 +2263,6 @@ opens one proves something else.
 - GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_a_restart_over_the_same_session_writes_no_second_transfer
 - GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_humans_transfer_control_returns_the_channel_to_the_first_rung
 - GMR-A11 | test: packages/grillui/tests/unit/test_seats.py::test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter
+- GUI-A111 | test: packages/grillui/tests/unit/test_page.py::test_only_a_settled_decision_offers_the_way_back_to_open
+- GUI-A111 | test: packages/grillui/tests/unit/test_update_kinds.py::test_the_human_reopening_a_decision_folds_as_an_applied_unsettle_does
+- GUI-A111 | test: packages/grillui/tests/e2e/test_board.py::test_the_human_reopens_a_decision_they_settled
