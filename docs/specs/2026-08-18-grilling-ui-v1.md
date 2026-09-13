@@ -1988,8 +1988,9 @@ Each criterion is mechanically checkable and convertible to a red test.
   gate alone, and it reaches the wire as the human's own `unsettle` naming that decision.
   Over a settled chain of three, that entry lands rather than joining the queue, leaves its
   decision open with no answer, and leaves both decisions resting on it stale — the board an
-  applied proposal leaves. In a browser, answering a decision and then pressing the control
-  leaves that decision reading as a question again.
+  applied proposal leaves. The end-to-end suite drives the whole path against a running
+  backend: a decision answered, its block opened again and the control pressed leaves that
+  decision reading as a question again.
 
 ## 10. Open questions for the implementing work
 
