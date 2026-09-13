@@ -1569,9 +1569,9 @@ function answerControls(d, locked) {
       (held.note ? " — " + esc(held.note) : "") + "</div>";
   }
   if (!d.options.length) return h + '<div class="muted">This decision offers no options yet.</div>';
-  // The caption answers to the same rule as the fill: a settled decision has an
-  // answer and offers no recommendation, so a caption that kept calling the row
-  // the recommended answer would contradict the mark below it.
+  // The caption answers to the same rule as the fill: a settled decision offers
+  // no recommendation, whatever its answer names, so a caption that kept calling
+  // the row the recommended answer would contradict the mark below it.
   h += '<div class="rec-line">' + (d.status === "settled" ? "Options" : "Recommended answer") +
     (locked ? " · locked" : "") + "</div>";
   // Every option wears its label, the recommended one included, because the
