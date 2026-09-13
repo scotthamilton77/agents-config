@@ -64,3 +64,31 @@ def test_a_settled_decision_marks_the_option_the_human_chose(
     worn = passed_over.get_attribute("class") or ""
     assert "primary" not in worn, worn
     assert "chosen" not in worn, worn
+
+
+def test_the_human_reopens_a_decision_they_settled(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a decision the human has answered
+    When they open its block again and press the control that reopens it
+    Then the board reads that decision as a question again.
+
+    An agent's unsettle waits in the queue for the human to apply it, so on a
+    board where no agent has proposed one this control is the only way back
+    from an answer the human regrets. The whole path is exercised because that
+    is where it breaks: a gesture the page builds, a kind the backend accepts
+    from the human, and the fold that returns the decision to the frontier.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_codex(turn(document("Noted.")))
+    page = board(session)
+
+    page.click('#col-d1 [data-act="pick"][data-opt="b"]')
+    session.settled()
+    page.wait_for_selector("#col-d1 .pill.settled", timeout=BOARD_TIMEOUT)
+    page.click('#col-d1 [data-act="toggle"]')
+
+    page.click('#col-d1 [data-act="reopen"]')
+    session.settled()
+    page.wait_for_selector("#col-d1 .pill.open", timeout=BOARD_TIMEOUT)

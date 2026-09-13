@@ -110,7 +110,7 @@ def test_the_second_wordless_refusal_moves_the_channel_and_the_third_buys_nothin
     # again after they have reversed it.
     page.wait_for_timeout(800)
     control = page.locator('[data-act="transfer"][data-channel="map"]')
-    assert control.inner_text().strip().endswith("Return to fast agent"), control.inner_text()
+    assert control.inner_text().strip().endswith("Return to assistant"), control.inner_text()
     control.click()
     page.wait_for_timeout(300)
     answer(page, "d2")

@@ -241,7 +241,7 @@ def test_the_autonomous_policy_hands_the_request_to_the_expert_once(
     # The human takes the thread back down, and the same request buys nothing.
     showing(page, channel, "expert")
     control = page.locator(f'[data-act="transfer"][data-channel="{channel}"]')
-    assert control.inner_text().strip().endswith("Return to fast agent"), control.inner_text()
+    assert control.inner_text().strip().endswith("Return to assistant"), control.inner_text()
     control.click()
     showing(page, channel, "fast")
     say(page, "Never mind, tell me what you can.")

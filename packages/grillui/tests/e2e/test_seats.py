@@ -192,7 +192,7 @@ def test_the_human_moves_a_channel_up_and_back_down_by_their_own_gesture(
     # The control now offers the way back, and the way back is theirs.
     page.wait_for_timeout(600)
     control = page.locator('[data-act="transfer"][data-channel="map"]')
-    assert control.inner_text().strip().endswith("Return to fast agent"), control.inner_text()
+    assert control.inner_text().strip().endswith("Return to assistant"), control.inner_text()
     control.click()
     page.wait_for_timeout(300)
     answer(page, "d2", "a")
