@@ -662,6 +662,15 @@ function poll() {
       var arrived = u.entries.filter(function (e) { return !SEEN[e.seq]; });
       arrived.forEach(function (e) { SEEN[e.seq] = true; });
       LOG = LOG.concat(arrived);
+      // Read for channel state here rather than after the board arrives, because
+      // the cursor has already moved past these entries and they are already
+      // marked seen: a state read that fails below takes the whole callback with
+      // it, and an entry tracked nowhere is never offered again. A `composing`
+      // dropped that way leaves the channel reading as quiet for the rest of a
+      // turn that is still running. None of what this reads is on the board --
+      // it is the outbox, the status lane and the channel model, all of which
+      // are facts about the log alone.
+      arrived.forEach(track);
       // The board is re-read rather than folded from what just arrived: the
       // state read is the only thing that decides what the board says.
       return srvGet("/state").then(function (st) {
@@ -670,7 +679,9 @@ function poll() {
         advance();
         UI.fresh = [];
         UI.touched = [];
-        arrived.forEach(track);
+        // Judged after the board it names has arrived, which is why this one
+        // stays here: a notification points at a decision, and pointing at one
+        // the page has not read yet is a notification about nothing.
         arrived.forEach(function (e, i) { observe(e, arrived, i); });
         WIRE.doctorKnown = false;
         done();

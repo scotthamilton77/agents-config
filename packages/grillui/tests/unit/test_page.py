@@ -3191,6 +3191,19 @@ def test_the_ending_asks_again_off_the_channel_model_rather_than_a_count_of_its_
     writes = source.split("var WRITE_ACTS = ", 1)[1].split("]", 1)[0]
     assert '"confirm-end"' in writes, "confirming the ending is not sealed on an ended board"
 
+    # The lane's record is only as good as the reading that builds it. The
+    # cursor has moved past an arriving entry and marked it seen before the
+    # board is read, so an entry tracked after that read is an entry a failed
+    # read drops for good -- and a dropped `composing` leaves the channel
+    # reading as quiet for the rest of a turn that is still running.
+    cycle = function_body("poll")
+    assert cycle.index("arrived.forEach(track);") < cycle.index('srvGet("/state")'), (
+        "the board is read before the arriving entries are tracked"
+    )
+    # A reload rebuilds the record by replaying the whole log, so nothing about
+    # the guard depends on the page having been open when a turn was announced.
+    assert "u.entries.forEach(track);" in function_body("hydrate")
+
     warning = function_body("endWarning")
     assert "pendingTurns()" in warning and "boardFinished()" in warning, warning
     assert source.count("confirmEnd(") == 2, "the confirmation is built somewhere else as well"
