@@ -1989,6 +1989,12 @@ def test_every_gesture_that_empties_a_box_refuses_on_the_one_hold_the_wire_refus
     assert "if (boardHeld()) return;" in refused, (
         "a box the page will not post from is emptied anyway"
     )
+    # Answering is the other way that clear is reached, and the mandate branch
+    # sends before it, so the whole gesture is what refuses rather than its tail.
+    answering = function_body("answerDecision").split("send(", 1)[0]
+    assert "if (boardHeld()) return;" in answering, (
+        "an answer is taken, and its draft emptied, on a board that posts nothing"
+    )
     boot = function_body("popOut")
     asked = boot.split("window.opener.popAct", 1)[0]
     assert "window.opener.boardHeld()" in asked, (

@@ -1372,6 +1372,11 @@ function answerDecision(id, payload) {
   // hold is what the page will not answer around. Neither is re-derived: a
   // refusal the human never sees is the thing this page exists to avoid.
   if (!d || !takesAnswer(id) || holdOn(id)) return;
+  // A board this page will not post from takes no answer either, whether or not
+  // a scrim happens to be in front of the control that was pressed. Refusing the
+  // whole gesture keeps the pick and the words typed beside it together: a draft
+  // emptied for an answer that never left is emptied for nothing.
+  if (boardHeld()) return;
   // The warning was worth something only before the answer. Once one is sent the
   // board says what the board says, so the live sources let go here rather than
   // waiting for the pointer to move off a control that is about to be replaced.
