@@ -225,6 +225,13 @@ def _moved_by(entries: Sequence[LogEntry], channel: str) -> LogEntry | None:
     transfer, and a payload key is open surface, so one that could set this
     would spend the human's subscription without being asked.
 
+    The key rides a human turn only where their own press on the transfer
+    control put it there, and a turn that says nothing about the tier leaves
+    whatever is beneath it standing. That is what makes the human's branch a
+    gesture rather than an opinion: a page that stamped every turn with the tier
+    it last read would undo a transfer written while it was between polls, and
+    the expert turn the policy had just bought would run on the first rung.
+
     Both branches name their author. The appender already refuses a client that
     offers a `status` kind -- it is outside the submission registry, so the
     rejection is `unknown event kind` -- which makes the actor test on the
@@ -388,7 +395,9 @@ def in_expert_mode(entries: Sequence[LogEntry], channel: str) -> bool:
     if moved is None:
         return False
     # A `transferred` entry only ever moves a channel up; the way back down is
-    # the human's, and it is their own turn that carries it.
+    # the human's, and it is their own turn that carries it -- carrying the key
+    # because they pressed for it, so a turn that carries nothing asks for
+    # nothing and leaves the channel where the record has it.
     return moved.kind == STATUS_KIND or moved.payload[TRANSFER_FLAG] is True
 
 

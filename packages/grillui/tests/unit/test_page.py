@@ -1853,7 +1853,79 @@ def test_the_flag_is_stamped_by_the_one_checked_constructor_off_the_declaration(
     assert len(written) == 1, "a second place stamps the flag"
     builder = function_body("ev")
     assert "rule.payload.indexOf(TRANSFER_FLAG)" in builder
-    assert "payload[TRANSFER_FLAG] = onExpert(channel)" in builder
+    assert "payload[TRANSFER_FLAG] = meant.on" in builder
+
+
+def test_a_turn_carries_the_flag_only_where_the_human_pressed_for_it() -> None:
+    """The stamp is the human's own press, never the tier this page last read.
+
+    A page is behind the log by as much as one poll. Stamping every turn with
+    the mode it last read sends `transfer: false` on a channel the policy has
+    just moved, and the backend reads that as the human's own way back down --
+    so the expert turn the transfer bought is taken by the tier the channel was
+    moved off, and nothing on the lane says so. A turn with no press behind it
+    carries no transfer key at all, and the log's own last word stands.
+
+    One reading decides both what the control offers and what the next turn
+    says. A second reading is a control offering the expert while the turn it
+    describes asks for the first rung.
+    """
+    builder = function_body("ev")
+    assert "unspent(channel)" in builder, "the stamp is not read off the human's press"
+    assert "onExpert" not in builder, "the turn is stamped with what this page believes"
+    assert "pressed(channel)" in function_body("unspent"), "the press outlives the log that spoke"
+    assert "pressed(channel)" in function_body("onExpert"), "the control reads the press twice"
+
+
+def test_a_press_rides_one_turn_and_the_control_alone_goes_on_showing_it() -> None:
+    """Spent by the turn that carries it, and still on the control after that.
+
+    A press that stayed live would ride every turn sent before the poll that
+    brings the first one back -- so a human who pressed for the first rung, was
+    answered, and typed again would send the policy's transfer back down a
+    second time, on a press they made before it happened. One turn is what the
+    control promises: it forces the next turn, not the conversation.
+
+    The control keeps reading the press anyway, and the two readings are why:
+    a label that reverted the moment the turn went out would say the press did
+    not take, one poll before the record shows that it did.
+
+    A refusal is the one thing that gives a press back, and it is read off the
+    receipt that names the turn. A `duplicate` receipt is not a refusal -- that
+    key is in the log, and the press went with it.
+    """
+    assert "meant.spent = e.idempotency_key" in function_body("spend"), (
+        "the turn that carries a press does not spend it"
+    )
+    assert "!meant.spent" in function_body("unspent"), "a spent press is stamped again"
+    assert "spent" not in function_body("onExpert"), "the control drops the press it is showing"
+    sender = function_body("send")
+    assert 'r.status !== "rejected"' in sender
+    assert "unspend(r.idempotency_key)" in sender, "a refused turn keeps the press it spent"
+
+
+def test_a_press_is_spent_by_the_turn_that_reaches_the_wire_and_not_by_the_one_built() -> None:
+    """Building a turn is not sending one, and this page builds turns it drops.
+
+    `send` posts nothing at all while the doctor holds the board, before the
+    epoch is known, and once the session has ended. A press spent where the turn
+    was built would be spent by every one of those, and nothing would ever give
+    it back: the control would go on offering a press that no turn could carry
+    again, which is the label and the wire disagreeing with no poll able to
+    settle it.
+
+    So one rule says when a press is used up, and it is about the wire rather
+    than about the page. The turn that reaches the wire spends it, a batch this
+    page declined to post spends nothing, and a turn the backend refused gives
+    it back.
+    """
+    assert ".spent =" not in function_body("ev"), "a turn nobody posted spends the press"
+    sender = function_body("send")
+    assert "spend(out)" in sender, "the wire does not spend the press"
+    declined = sender.split("spend(out)")[0]
+    assert "return;" in declined, "the press is spent before the page decides to post"
+    for refusing in ("WIRE.epoch", "WIRE.doctor", "sessionOver()"):
+        assert refusing in declined, f"a send declined on {refusing} still spends the press"
 
 
 def test_a_page_turn_carrying_the_flag_moves_that_channel_and_only_that_one(
@@ -2070,11 +2142,13 @@ def test_the_control_follows_the_log_rather_than_the_click_the_policy_overtook()
     The click is an intent held until the log speaks after it, which is why it
     carries where the log stood when it was made. Without that, a human who had
     just sent a channel back to the first rung would see *Transfer to expert* on a
-    channel the policy had since escalated -- and their next turn, which stamps
-    the flag off exactly this reading, would silently undo the transfer.
+    channel the policy had since escalated -- and their next turn, which asks for
+    a tier off exactly this reading, would silently undo the transfer.
     """
     assert "since: LOG.length" in function_body("toggleTransfer"), "the click is not placed"
-    assert "meant.since > said.at" in function_body("onExpert"), "a stale click outranks the log"
+    assert "meant.since > loggedMode(channel).at" in function_body("pressed"), (
+        "a stale click outranks the log"
+    )
     assert '(on ? "⚡ Return to fast agent"' in function_body("transferControl")
 
 
