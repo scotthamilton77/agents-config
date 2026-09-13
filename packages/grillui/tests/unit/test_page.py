@@ -1217,6 +1217,9 @@ def test_a_settled_decision_marks_the_option_the_human_chose() -> None:
     assert '"btn wide" + rec.cls' in controls, "the recommendation dresses itself"
     assert '"btn wide sm" + dress.cls' in controls
     assert ".btn.chosen {" in page_source(), "the mark has no styling"
+    assert '(d.status === "settled" && d.answer ? "Options" : "Recommended answer")' in controls, (
+        "a settled row is still captioned as the recommendation"
+    )
 
 
 def test_an_option_and_a_note_are_one_answer_carrying_both(client: TestClient, log: Any) -> None:

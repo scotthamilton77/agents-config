@@ -1569,7 +1569,11 @@ function answerControls(d, locked) {
       (held.note ? " — " + esc(held.note) : "") + "</div>";
   }
   if (!d.options.length) return h + '<div class="muted">This decision offers no options yet.</div>';
-  h += '<div class="rec-line">Recommended answer' + (locked ? " · locked" : "") + "</div>";
+  // The caption answers to the same rule as the fill: a settled decision has an
+  // answer and offers no recommendation, so a caption that kept calling the row
+  // the recommended answer would contradict the mark below it.
+  h += '<div class="rec-line">' + (d.status === "settled" && d.answer ? "Options" : "Recommended answer") +
+    (locked ? " · locked" : "") + "</div>";
   // Every option wears its label, the recommended one included, because the
   // label is what the human writes down and says in a thread — and a
   // recommendation that had no label would be the one option nobody could name.
