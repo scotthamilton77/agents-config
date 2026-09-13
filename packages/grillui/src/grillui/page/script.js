@@ -2892,6 +2892,14 @@ function popOut(tid) {
     "function seal(){try{window.opener.sealSurface(document);}catch(x){}}" +
     "document.addEventListener('click',function(e){var el=e.target.closest('[data-act]');if(!el)return;" +
     "var ta=document.getElementById('pop-say');" +
+    // Whether the board is held is the opener's to say, like the chord: this
+    // window asks rather than keeping a copy of the rule that could drift from
+    // it. The scrim is over there, so a human typing here is given no sign that
+    // the board is refusing -- and a box emptied for a turn the opener will not
+    // post is emptied for nothing. An opener that has gone answers nothing and
+    // posts nothing, which is held as well.
+    "var typed=el.dataset.act==='say'||el.dataset.act==='draftsay';" +
+    "var held=true;try{held=window.opener.boardHeld();}catch(x){}if(typed&&held)return;" +
     // The thread this window is on is this window's to keep: an act that opens
     // one hands it back, and from then on this window is on that thread.
     "var made=null;try{made=window.opener.popAct(tid,anchor,el.dataset.act,ta?ta.value:'',el.dataset.field);}catch(x){}if(made)tid=made;" +
