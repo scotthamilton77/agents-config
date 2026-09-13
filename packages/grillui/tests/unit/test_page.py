@@ -1204,8 +1204,9 @@ def test_a_settled_decision_marks_the_option_the_human_chose() -> None:
     page to check against, so it is the one the row must not offer.
     """
     dress = balanced_body("optionDress")
-    assert 'var answer = d.status === "settled" ? d.answer : null;' in dress
-    assert 'answer.option === o.id ? { cls: " chosen", lead: "\u2713 " }' in dress
+    assert 'if (d.status === "settled") {' in dress, "settled is read off the status alone"
+    assert "var taken = d.answer && d.answer.option === o.id;" in dress
+    assert 'taken ? { cls: " chosen", lead: "\u2713 " }' in dress
     assert 'recommended ? { cls: " primary", lead: "\u27a1\ufe0f " }' in dress
     # Twice: a settled decision answered in free text names no option, so it
     # marks nothing -- and it offers no recommendation either, because the
@@ -1217,7 +1218,7 @@ def test_a_settled_decision_marks_the_option_the_human_chose() -> None:
     assert '"btn wide" + rec.cls' in controls, "the recommendation dresses itself"
     assert '"btn wide sm" + dress.cls' in controls
     assert ".btn.chosen {" in page_source(), "the mark has no styling"
-    assert '(d.status === "settled" && d.answer ? "Options" : "Recommended answer")' in controls, (
+    assert '(d.status === "settled" ? "Options" : "Recommended answer")' in controls, (
         "a settled row is still captioned as the recommendation"
     )
 

@@ -1572,7 +1572,7 @@ function answerControls(d, locked) {
   // The caption answers to the same rule as the fill: a settled decision has an
   // answer and offers no recommendation, so a caption that kept calling the row
   // the recommended answer would contradict the mark below it.
-  h += '<div class="rec-line">' + (d.status === "settled" && d.answer ? "Options" : "Recommended answer") +
+  h += '<div class="rec-line">' + (d.status === "settled" ? "Options" : "Recommended answer") +
     (locked ? " · locked" : "") + "</div>";
   // Every option wears its label, the recommended one included, because the
   // label is what the human writes down and says in a thread — and a
@@ -1599,10 +1599,15 @@ function answerControls(d, locked) {
 // The option the human took wears the mark; the first option is dressed as the
 // recommendation only while the decision is still asking. A settled decision
 // that went on filling its first option would show option a as the standing
-// answer on a board whose answer line says the human took option b.
+// answer on a board whose answer line says the human took option b. Settled is
+// read off the status alone: a settled decision recommends nothing whether or
+// not its answer names an option, and an answer naming an option the row no
+// longer carries marks nothing rather than something else.
 function optionDress(d, o, recommended) {
-  var answer = d.status === "settled" ? d.answer : null;
-  if (answer) return answer.option === o.id ? { cls: " chosen", lead: "✓ " } : { cls: "", lead: "" };
+  if (d.status === "settled") {
+    var taken = d.answer && d.answer.option === o.id;
+    return taken ? { cls: " chosen", lead: "✓ " } : { cls: "", lead: "" };
+  }
   return recommended ? { cls: " primary", lead: "➡️ " } : { cls: "", lead: "" };
 }
 function optionButton(d, o, index, cls, lead, dis) {
