@@ -177,8 +177,10 @@ first buys nothing and edits the evidence: a body trimmed by hand is no longer w
 returned, and the ledger records the trimmed version as the reviewer's.
 
 A transport may also replay the whole prompt on stdout ahead of the reviewer's output. The ladder
-reads only what follows the prompt's closing untrusted-content marker, and it never accepts the
-prompt's own report schema, so an echoed prompt yields the reviewer's report or nothing.
+reads only what follows the line holding nothing but the prompt's closing untrusted-content marker,
+and it never accepts the prompt's own report schema, so an echoed prompt yields the reviewer's
+report or nothing. A finding that quotes that marker shares its line with the report around it, so
+a reviewer may cite the marker freely.
 
 Past the ladder the output is **unparseable**: the lens has no entry and the round is incomplete
 unless it is re-dispatched with reason `unusable-output`. Tolerance stops there on purpose.

@@ -676,6 +676,31 @@ class TestIngest:
         assert code == gate.EXIT_OK
         assert ingested["report"] == REPORT
 
+    def test_a_report_quoting_the_end_marker_is_still_the_report(self, round_dir, capsys):
+        """A finding may quote anything the reviewer read, the prompt's closing marker
+        included. The prompt renders that marker alone on its own line, and a marker
+        quoted inside a finding shares its line with the JSON around it."""
+        report = {
+            "lens": "correctness",
+            "verdict": "findings",
+            "findings": [
+                {
+                    "ac": "AC1",
+                    "claim": f"the notice names {gate.PROMPT_END_MARKER} without emitting it",
+                    "evidence": "the prompt closes on the marker and the notice quotes it",
+                    "id": "f1",
+                    "lens": "correctness",
+                    "type": "mechanical",
+                }
+            ],
+        }
+        answer = authorize(round_dir, capsys)
+        output = write_output(answer, json.dumps(report, indent=2))
+        code, ingested = run(["ingest", "--out-dir", str(round_dir), "--output", str(output)],
+                             capsys)
+        assert code == gate.EXIT_OK
+        assert ingested["report"] == report
+
     def test_the_schema_alone_is_not_a_report(self, round_dir, capsys):
         """The alternations the schema spells out identify it on their own, so a
         transport that echoes the contract without the marker gains nothing."""

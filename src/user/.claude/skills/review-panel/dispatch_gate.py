@@ -85,10 +85,15 @@ NEXT_NON_SPACE_RE = re.compile(r"\S")
 
 # The marker the reviewer prompt closes its fenced data with. A transport that replays the
 # prompt on stdout puts the prompt's own report schema in front of the reviewer's output, so
-# everything up to this marker is prompt rather than anything a lens wrote. The prompt
-# neutralises the marker in the data it interpolates, which leaves its first occurrence as
-# the prompt's own.
+# everything up to this marker is prompt rather than anything a lens wrote.
 PROMPT_END_MARKER = "<<<END UNTRUSTED CONTENT>>>"
+
+# The prompt emits that marker on a line of its own. A reviewer is free to quote the marker
+# in a finding, where it sits among the JSON around it on the same line, so only a line
+# holding nothing else is the prompt's own close.
+PROMPT_END_RE = re.compile(
+    rf"^[ \t]*{re.escape(PROMPT_END_MARKER)}[ \t]*\r?$", re.MULTILINE
+)
 
 # The report schema in the prompt spells out both alternatives in each field the reviewer
 # chooses a value for. A report carries one alternative, so an object still carrying the
@@ -585,11 +590,12 @@ def parse_report(body: str) -> tuple[dict, str]:
     report from prose makes the harvester the reviewer, and nothing downstream
     can tell the difference. It stops short of the prompt as well: a transport
     that replays the prompt on stdout offers the prompt's own report schema as
-    the earliest object in the body. Everything up to the marker the prompt
-    closes with is therefore prompt, and the schema is refused at every rung.
+    the earliest object in the body. Everything up to the line the prompt closes
+    with is therefore prompt, and the schema is refused at every rung.
     """
-    if PROMPT_END_MARKER in body:
-        body = body.split(PROMPT_END_MARKER, 1)[1]
+    prompt_end = PROMPT_END_RE.search(body)
+    if prompt_end is not None:
+        body = body[prompt_end.end():]
     document = _as_object(body)
     if document is not None and not _is_template(document):
         return document, "whole-body"
