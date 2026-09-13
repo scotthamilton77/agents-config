@@ -420,8 +420,8 @@ def test_a_press_survives_a_turn_this_page_declined_to_post(
     Given a thread whose transfer control the human has pressed
     When the board goes read-only, they send into the thread anyway from the
          keyboard, and the page builds that turn without posting it
-    Then their press is still on the next turn they really send, and the expert
-         composes it.
+    Then the box still holds what they typed, their press is still on the next
+         turn they really send, and the expert composes it.
 
     The keyboard is the way in. The scrim over a held board stops a control
     being clicked and stops nothing that is typed: a caret already in the say
@@ -448,6 +448,9 @@ def test_a_press_survives_a_turn_this_page_declined_to_post(
     page.press("#ft-say", "Enter")
     assert DECLINED not in json.dumps([one.payload for one in session.entries()]), (
         "the page posted a turn while the board was held"
+    )
+    assert page.input_value("#ft-say") == DECLINED, (
+        "the box was emptied by a turn the page never posted"
     )
 
     hold_board(page, False)

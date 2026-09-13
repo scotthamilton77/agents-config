@@ -502,12 +502,18 @@ function ev(kind, channel, payload) {
            idempotency_key: PAGE_ID + ":" + KEYS, payload: payload };
 }
 
+/* The board is held when this page will post nothing: the doctor has it
+   read-only, the epoch every event goes out under is not known yet, or the
+   session has ended. One rule for all three, because a gesture that empties the
+   box it was typed in has to refuse on exactly what the wire refuses on. */
+function boardHeld() { return !WIRE.epoch || WIRE.doctor || sessionOver(); }
+
 /* The only place an event leaves this page. Takes a batch because some human
    gestures are one act with two events in them, and half of one landing is not
    a state the human ever asked for. */
 function send() {
   var out = Array.prototype.slice.call(arguments);
-  if (!out.length || !WIRE.epoch || WIRE.doctor || sessionOver()) return;
+  if (!out.length || boardHeld()) return;
   var ending = out.filter(function (e) { return e.kind === SESSION_END_KIND; })[0];
   WIRE.sent += out.length;
   out.forEach(function (e) { OUTBOX[e.idempotency_key] = true; });
@@ -2942,6 +2948,11 @@ document.addEventListener("input", function (e) {
 });
 function sendFrom(ta) {
   if (!ta || !ta.value.trim()) return;
+  // This is the one gesture that empties the box it was typed in, and a held
+  // board posts nothing. Refusing here rather than at the wire leaves the
+  // human's words where they wrote them instead of clearing a box in exchange
+  // for a turn nobody sent.
+  if (boardHeld()) return;
   var kind = ta.dataset.send;
   if (kind === "free") {
     answerDecision(ta.dataset.id, { free: true, text: ta.value.trim() });

@@ -1953,8 +1953,35 @@ def test_a_press_is_spent_by_the_turn_that_reaches_the_wire_and_not_by_the_one_b
     assert "spend(out)" in sender, "the wire does not spend the press"
     declined = sender.split("spend(out)")[0]
     assert "return;" in declined, "the press is spent before the page decides to post"
+    assert "boardHeld()" in declined, "a send declined on a held board still spends the press"
     for refusing in ("WIRE.epoch", "WIRE.doctor", "sessionOver()"):
-        assert refusing in declined, f"a send declined on {refusing} still spends the press"
+        assert refusing in function_body("boardHeld"), (
+            f"a send declined on {refusing} still spends the press"
+        )
+
+
+def test_a_turn_typed_into_a_board_this_page_will_not_post_from_keeps_its_words() -> None:
+    """A box is emptied by the turn that reached the wire, and by nothing else.
+
+    The scrim over a held board stops a control being clicked and stops nothing
+    that is typed: a caret already in a box sends on Enter, and the page builds
+    that turn before it decides not to post it. A draft cleared at that moment
+    is taken from the human in exchange for nothing -- no event on the wire, no
+    banner, and no way back to the words they had just written.
+
+    So the one gesture that empties a box refuses on exactly what the wire
+    refuses on, and it refuses before it clears anything.
+    """
+    assert "!WIRE.epoch || WIRE.doctor || sessionOver()" in function_body("boardHeld"), (
+        "the hold this page posts nothing under is written in more than one place"
+    )
+    assert "boardHeld()" in function_body("send").split("spend(out)")[0], (
+        "the wire posts into a held board"
+    )
+    refused = function_body("sendFrom").split("UI.drafts", 1)[0]
+    assert "if (boardHeld()) return;" in refused, (
+        "a box the page will not post from is emptied anyway"
+    )
 
 
 def test_a_page_turn_carrying_the_flag_moves_that_channel_and_only_that_one(
@@ -2504,7 +2531,8 @@ def test_nothing_more_is_said_into_a_log_that_has_been_closed() -> None:
     the moment the terminal entry is durable, so the update read that would
     carry that entry may never answer.
     """
-    assert "|| sessionOver()) return;" in function_body("send")
+    assert "|| boardHeld()) return;" in function_body("send")
+    assert "sessionOver()" in function_body("boardHeld")
     assert "if (sessionOver()) return;" in function_body("poll")
     assert "if (sessionOver()) return;" in function_body("callDoctor")
     assert "ENDED = true;" in function_body("send")
