@@ -71,7 +71,10 @@ Nothing here writes to the map: the insistence buys another agent turn, and the
 human is told when it buys nothing.
 
 The driver seam is the whole of what a tier has to implement. A turn is one
-invocation: the driver runs, says what it has to say into the log, and returns.
+invocation: the driver runs, says what it has to say into the log, and returns
+the sequence of the entry it appended -- which is the receipt the coverage check
+reads this turn's rulings off, rather than reading them off a window on the log
+that another turn's reply can land inside.
 There is no polling loop and no resident agent process, because the orchestrator
 is what decides when any agent gets a turn. The invocation happens off the
 append lock and off the request path, so a slow or hung tier delays nothing the
@@ -200,11 +203,18 @@ class TurnDriver(Protocol):
     image 2 whole, as the agent got it -- and the log to say its piece into. It
     is called once per turn, from a thread of its own, and returns when the turn
     is over.
+
+    What it returns is where its own turn landed: the sequence of the entry it
+    appended, or nothing where it appended none. The obligation check reads this
+    turn's rulings off that one entry, so a driver that appends and reports
+    nothing is a turn credited with nothing -- which is the safe direction to be
+    wrong in, since it costs an expert turn rather than discharging an
+    obligation nobody ruled on.
     """
 
     tier: str
 
-    def run(self, log: SessionLog, dispatch: Path, /) -> None: ...
+    def run(self, log: SessionLog, dispatch: Path, /) -> int | None: ...
 
 
 class UnreachableDriver:
@@ -217,36 +227,45 @@ class UnreachableDriver:
 
     tier = "unreachable"
 
-    def run(self, _log: SessionLog, _dispatch: Path, /) -> None:
+    def run(self, _log: SessionLog, _dispatch: Path, /) -> int | None:
         raise AgentUnreachableError(self.tier)
 
 
 class _Pressed(NamedTuple):
-    """What one pressed turn came back as.
+    """What one turn came back as: why the board would not take it, and where it
+    landed.
 
-    A wrapper over a string that may be nothing, because three outcomes have to
-    be told apart and two of them are absences: the seat was not reached at all,
-    the seat answered and its document was refused, and the seat answered
-    properly. Collapsing the first two loses the distinction between a turn to
-    fall back from and a turn to end the ladder on.
+    `refusal` may be nothing, because three outcomes have to be told apart and
+    two of them are absences: the seat was not reached at all, the seat answered
+    and its document was refused, and the seat answered properly. Collapsing the
+    first two loses the distinction between a turn to fall back from and a turn
+    to end the ladder on.
+
+    `spoke` is the sequence of the entry this turn appended, and nothing where it
+    appended none. It is what the coverage check correlates against, so it must
+    be the driver's own receipt and never a position the lane read off the log
+    around the turn.
     """
 
     refusal: str | None
+    spoke: int | None = None
 
 
-def _run(driver: TurnDriver, log: SessionLog, dispatch: Path) -> str | None:
+def _run(driver: TurnDriver, log: SessionLog, dispatch: Path) -> _Pressed:
     """One turn, with a refused document handed back rather than raised.
 
     A document that will not validate is not the end of the turn -- there is a
     rung above, and the ladder is the caller's to walk -- so it comes back as
     the fault it is. Every other failure still raises: a seat that could not be
     reached has no turn to press on.
+
+    A refused turn appended nothing, so it names no entry: what the ladder does
+    next is decided by the fault, and the coverage read never runs on it.
     """
     try:
-        driver.run(log, dispatch)
+        return _Pressed(None, driver.run(log, dispatch))
     except DocumentRefusedError as error:
-        return error.detail
-    return None
+        return _Pressed(error.detail)
 
 
 def _lost(tier: str) -> str:
@@ -652,13 +671,7 @@ class Lane:
                 reassess=turn.reassess,
                 mootness=turn.mootness,
             )
-            # Where the log stood before this turn spoke. Coverage is read from
-            # the window after it, never from the log whole: a turn whose
-            # document validated and carried nothing appends no entry, and a
-            # backward scan over everything would then credit it with the
-            # previous turn's rulings.
-            cursor = self.log.seq
-            took = self._press(driver, turn, dispatch, _run(driver, self.log, dispatch), cursor)
+            took = self._press(driver, turn, dispatch, _run(driver, self.log, dispatch))
             if self._watching(turn):
                 self._hand_back(took, standing)
             self.log.emit_status(
@@ -679,9 +692,7 @@ class Lane:
             if turn.reassess:
                 self._doctor = False
 
-    def _press(
-        self, driver: TurnDriver, turn: Turn, dispatch: Path, refusal: str | None, cursor: int
-    ) -> TurnDriver:
+    def _press(self, driver: TurnDriver, turn: Turn, dispatch: Path, reply: _Pressed) -> TurnDriver:
         """Press a turn that did not answer, and say so when no seat will.
         Returns whichever seat ended up taking it.
 
@@ -711,12 +722,12 @@ class Lane:
         # list, or a decision the first seat ruled on is reported as one nobody
         # did -- and the human is sent to argue about a verdict that was made.
         standing = [] if obligation is None else list(obligation.ids)
+        refusal = reply.refusal
         if refusal is None:
-            standing = self._unruled(standing, cursor)
+            standing = self._unruled(standing, reply.spoke)
         if refusal is None and not standing:
             return driver
         if self.expert is not None and self.expert is not driver:
-            handed = self.log.seq
             # The press is the second thing the distrust counter counts, and it
             # is counted where the decision to press is made rather than on the
             # way out: a seat that could not be reached still leaves the first
@@ -727,7 +738,7 @@ class Lane:
             if pressed is not None:
                 driver, refusal = self.expert, pressed.refusal
                 if refusal is None:
-                    standing = self._unruled(standing, handed)
+                    standing = self._unruled(standing, pressed.spoke)
         if refusal is not None:
             self.log.record("informational", {"text": _lost(driver.tier)})
             raise DocumentRefusedError(driver.tier, refusal)
@@ -737,14 +748,18 @@ class Lane:
             self.log.record("informational", {"text": _unmet(obligation, standing)})
         return driver
 
-    def _unruled(self, owed: Sequence[str], cursor: int) -> list[str]:
+    def _unruled(self, owed: Sequence[str], spoke: int | None) -> list[str]:
         """Which of these decisions the turn just taken left unruled.
 
-        Read from the entries after `cursor`, which is where the log stood
-        before that turn spoke. A turn that appended nothing then credits
-        nothing, instead of inheriting the rulings of whatever spoke last.
+        Read off the single entry that turn appended, which its own driver named
+        by sequence. A window on the log would not do: map turns run
+        concurrently, so a second turn's reply can land between the moment this
+        one was dispatched and the moment it answered, and coverage read from a
+        window would then credit this turn with rulings made for another. A turn
+        that appended nothing names no entry and credits nothing, which is the
+        turn the ladder owes a hand-up.
         """
-        return unruled(owed, *rulings_of(self.log.entries_after(cursor), MAP_CHANNEL))
+        return unruled(owed, *rulings_of(self.log.entries(), spoke))
 
     def _insist(
         self,
@@ -782,7 +797,7 @@ class Lane:
                 reassess=turn.reassess,
                 mootness=narrowed,
             )
-            return _Pressed(_run(expert, self.log, dispatch))
+            return _run(expert, self.log, dispatch)
         except Exception:
             return None
 

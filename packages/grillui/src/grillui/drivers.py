@@ -1068,7 +1068,7 @@ class FastDriver:
     tier: str = FAST_TIER
     seat: Seat | None = None
 
-    def run(self, log: SessionLog, dispatch: Path, /) -> None:
+    def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
         recorded = dispatch.read_text(encoding="utf-8")
         context = DispatchContext.model_validate_json(recorded)
         channel = context.channel
@@ -1082,7 +1082,13 @@ class FastDriver:
         def ask(text: str) -> tuple[str, int | None]:
             return self.transport(model=model, system=system, prompt=text, shaped=ruling_turn)
 
+        # Where this turn's own reply landed, for the ladder above to read its
+        # rulings off. A turn that appended nothing leaves it unset, which is
+        # what tells the coverage check that this turn is credited nothing.
+        spoke: int | None = None
+
         def land(outcome: tuple[str, int | None]) -> None:
+            nonlocal spoke
             # Everything measured off the reply is measured off the attempt
             # being landed, never off the first one: a retried turn is a second
             # completion with its own count and its own recommendation, and
@@ -1109,7 +1115,7 @@ class FastDriver:
             # that costs nothing -- a refusal raises out of the block before either
             # is written, and nothing else could have read the log in between.
             with log.appending():
-                record_reply(log, self.tier, channel, reply, attribution, context.mootness)
+                spoke = record_reply(log, self.tier, channel, reply, attribution, context.mootness)
                 spend = self.config.autonomous and not capped(log.entries(), channel, advice)
                 if advice is not None and spend:
                     log.emit_status(
@@ -1125,6 +1131,7 @@ class FastDriver:
             take_document(self.tier, prompt, ask, _first, land)
         else:
             land(ask(prompt))
+        return spoke
 
 
 @dataclass
@@ -1152,7 +1159,7 @@ class HeavyDriver:
     # unreachable the moment the turn walks away from it.
     copying: threading.Thread | None = field(default=None, repr=False, init=False)
 
-    def run(self, log: SessionLog, dispatch: Path, /) -> None:
+    def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
         recorded = dispatch.read_text(encoding="utf-8")
         context = DispatchContext.model_validate_json(recorded)
         channel = context.channel
@@ -1191,7 +1198,13 @@ class HeavyDriver:
                 write_resume(log.directory, channel, outcome[1], chains)
             return outcome
 
+        # Where this turn's own reply landed, for the ladder above to read its
+        # rulings off. A turn that appended nothing leaves it unset, which is
+        # what tells the coverage check that this turn is credited nothing.
+        spoke: int | None = None
+
         def land(outcome: tuple[str, str | None, int | None]) -> None:
+            nonlocal spoke
             # Built from the attempt being landed rather than once for the turn:
             # a retried turn resumed the chain again, so its chain id and its
             # count are its own.
@@ -1228,7 +1241,7 @@ class HeavyDriver:
             # and conditional on the reply -- a refusal raises out of the block
             # before anything is said about a turn that never happened.
             with log.appending():
-                record_reply(log, self.tier, channel, reply, attribution, context.mootness)
+                spoke = record_reply(log, self.tier, channel, reply, attribution, context.mootness)
                 measured.warn(log, model)
 
         # The turn is landed inside the chain lock, because landing it is what
@@ -1249,6 +1262,7 @@ class HeavyDriver:
                 self.copying = copy_in_background(
                     log.directory, chain, self.transcript, self.copying
                 )
+        return spoke
 
 
 @dataclass
@@ -1287,7 +1301,7 @@ class CodexDriver:
         default_factory=dict, repr=False, init=False
     )
 
-    def run(self, log: SessionLog, dispatch: Path, /) -> None:
+    def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
         recorded = dispatch.read_text(encoding="utf-8")
         context = DispatchContext.model_validate_json(recorded)
         channel = context.channel
@@ -1327,7 +1341,13 @@ class CodexDriver:
                 raise AgentUnreachableError(self.tier, NO_TURN)
             return said, thread, read
 
+        # Where this turn's own reply landed, for the ladder above to read its
+        # rulings off. A turn that appended nothing leaves it unset, which is
+        # what tells the coverage check that this turn is credited nothing.
+        spoke: int | None = None
+
         def land(outcome: tuple[str, str | None, int | None]) -> None:
+            nonlocal spoke
             # Built from the attempt being landed rather than once for the turn:
             # a retried turn is its own ask on the thread, with its own id and
             # its own share of the count.
@@ -1347,7 +1367,7 @@ class CodexDriver:
             # one: the transfer a policy buys and the warning this turn measured are
             # about the reply immediately above them.
             with log.appending():
-                record_reply(log, self.tier, channel, reply, attribution, context.mootness)
+                spoke = record_reply(log, self.tier, channel, reply, attribution, context.mootness)
                 spend = self.config.autonomous and not capped(log.entries(), channel, advice)
                 if advice is not None and spend:
                     log.emit_status(
@@ -1374,6 +1394,7 @@ class CodexDriver:
                 self.copying = copy_in_background(
                     log.directory, chain, self.transcript, self.copying
                 )
+        return spoke
 
     def _read_since(self, channel: str, thread: str | None, total: int | None) -> int | None:
         """What this turn was given, out of the running total the thread reports.
@@ -1838,8 +1859,8 @@ def record_document(
     document: GrillMasterDocument,
     attribution: dict[str, Any],
     owed: MootnessObligation | None = None,
-) -> None:
-    """Put a grill-master turn into the log, whole.
+) -> int | None:
+    """Put a grill-master turn into the log, whole, and say where it landed.
 
     The turn is one gesture: the notice, the updates it proposes, and the
     informational each `stands` ruling mints, all under one entry, because a
@@ -1885,7 +1906,7 @@ def record_document(
         # lost the gesture. That is a failed turn rather than a silent drop.
         if document.supersedes:
             raise ReplyRefusedError(tier, "it withdrew items with nothing to record them on")
-        return
+        return None
     if document.supersedes:
         updates[0] = {**updates[0], SUPERSEDES_KEY: document.supersedes}
     judgement: dict[str, Any] = {
@@ -1904,7 +1925,7 @@ def record_document(
         else {"updates": updates, **attribution}
     )
     kind = "informational" if solo else FOLD_KIND
-    _submit(log, tier, MAP_CHANNEL, kind, {**payload, **judgement})
+    return _submit(log, tier, MAP_CHANNEL, kind, {**payload, **judgement})
 
 
 def record_reply(
@@ -1914,8 +1935,8 @@ def record_reply(
     text: str,
     attribution: dict[str, Any],
     owed: MootnessObligation | None = None,
-) -> None:
-    """Put the turn into the log, attributed.
+) -> int | None:
+    """Put the turn into the log, attributed, and say where it landed.
 
     An agent is a client of the same appender the page writes through, so a
     reply is judged like any other write and a refusal is not swallowed: the
@@ -1947,8 +1968,7 @@ def record_reply(
     an obligation it was never given.
     """
     if channel == MAP_CHANNEL:
-        record_document(log, tier, read_document(text), attribution, owed)
-        return
+        return record_document(log, tier, read_document(text), attribution, owed)
     prose, updates, superseded, proposal, asked = declared_updates(text)
     refusal = _proposal_refusal(log, channel, text, proposal)
     if refusal is not None:
@@ -1973,10 +1993,10 @@ def record_reply(
     payload: dict[str, Any] = (
         {**solo, **attribution} if not updates else {"updates": [spoken, *updates], **attribution}
     )
-    _submit(log, tier, channel, FOLD_KIND if updates else "thread-turn", payload)
+    return _submit(log, tier, channel, FOLD_KIND if updates else "thread-turn", payload)
 
 
-def _submit(log: SessionLog, tier: str, channel: str, kind: str, payload: dict[str, Any]) -> None:
+def _submit(log: SessionLog, tier: str, channel: str, kind: str, payload: dict[str, Any]) -> int:
     """The one way a turn reaches the log: through the appender the page writes
     through, so a driver holds no second path to the board.
 
@@ -1984,6 +2004,10 @@ def _submit(log: SessionLog, tier: str, channel: str, kind: str, payload: dict[s
     than a receipt, and it is the same outcome from the human's side: they asked
     something and no answer exists. It surfaces with the appender's own words,
     so the agent is told which field it left out.
+
+    The sequence the entry landed at goes back to the caller, and from there up
+    to the lane: the coverage check reads a map turn's rulings off the entry
+    that turn appended, so it has to be told which entry that was.
     """
     try:
         receipt = log.submit(
@@ -2002,6 +2026,7 @@ def _submit(log: SessionLog, tier: str, channel: str, kind: str, payload: dict[s
         raise ReplyRefusedError(tier, f"the appender refused it: {refused.problem}") from refused
     if receipt.status != "accepted":
         raise ReplyRefusedError(tier, _refusal(receipt))
+    return receipt.seq
 
 
 def _refusal(receipt: Receipt) -> str:
