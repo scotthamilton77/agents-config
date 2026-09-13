@@ -1638,8 +1638,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   verified by a scripted turn whose context omits the fact and an assertion check on the
   reply.
 - **GUI-A55** Parking a thread and closing one both leave its turns readable on the board
-  and append rather than remove, and a closed thread reopens into an open thread that takes
-  a further turn. Over one session carrying one of each, the terminal result names the
+  and append rather than remove, and a thread set aside by either gesture reopens on a human
+  turn into an open thread that takes a further turn. Over one session carrying one of each, the terminal result names the
   parked thread as an open loose end and the closed thread as a line item that no open item
   and no agent-raised item names — asserted identically on the live end-session result and
   on a capture run over the same session directory.
