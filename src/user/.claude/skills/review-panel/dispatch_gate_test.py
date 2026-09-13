@@ -37,6 +37,36 @@ gate = _load_gate()
 
 REPORT = {"lens": "correctness", "verdict": "clean", "findings": []}
 
+# What a transport replaying the prompt on stdout puts in front of the reviewer's own
+# output: the prompt's report schema, and the marker the prompt closes with.
+PROMPT_ECHO = (
+    "# Review round 1 - correctness\n\n"
+    "## Completion contract\n\n"
+    "Return exactly one JSON object and nothing else, in this shape:\n\n"
+    "```json\n"
+    + json.dumps(
+        {
+            "findings": [
+                {
+                    "ac": "the criterion this violates",
+                    "claim": "what is wrong",
+                    "evidence": "what shows it",
+                    "id": "f1",
+                    "lens": "correctness",
+                    "type": "mechanical|advisory",
+                }
+            ],
+            "lens": "correctness",
+            "verdict": "clean|findings",
+        },
+        indent=2,
+    )
+    + "\n```\n\n"
+    "<<<BEGIN UNTRUSTED CONTENT>>>\n\n"
+    "## Acceptance criteria under judgment\n\nAC1 The gate refuses what no lens wrote.\n\n"
+    f"{gate.PROMPT_END_MARKER}\n"
+)
+
 
 @pytest.fixture
 def round_dir(tmp_path) -> Path:
@@ -622,6 +652,73 @@ class TestIngest:
         refused = refuse(["ingest", "--out-dir", str(round_dir), "--output", str(output)], capsys)
         assert codes(refused) == ["unparseable-output"]
         assert "report" not in refused
+
+    def test_an_echoed_prompt_is_not_a_report(self, round_dir, capsys):
+        """A transport that replays the prompt puts the prompt's own report schema in
+        front of everything else, and filing it would post the schema as a clean review."""
+        answer = authorize(round_dir, capsys)
+        output = write_output(answer, PROMPT_ECHO)
+        refused = refuse(["ingest", "--out-dir", str(round_dir), "--output", str(output)], capsys)
+        assert codes(refused) == ["unparseable-output"]
+        assert "report" not in refused
+
+    def test_a_report_behind_an_echoed_prompt_is_still_the_report(self, round_dir, capsys):
+        """The reviewer reviewed; only its transport was noisy. The echo costs the round
+        a lens if the schema in it wins, and the reviewer's own report is right there."""
+        answer = authorize(round_dir, capsys)
+        output = write_output(
+            answer,
+            f"{PROMPT_ECHO}\ncodex\nI read the change.\n{json.dumps(REPORT)}\n"
+            "[exited with code 0]\n",
+        )
+        code, ingested = run(["ingest", "--out-dir", str(round_dir), "--output", str(output)],
+                             capsys)
+        assert code == gate.EXIT_OK
+        assert ingested["report"] == REPORT
+
+    def test_a_report_quoting_the_end_marker_is_still_the_report(self, round_dir, capsys):
+        """A finding may quote anything the reviewer read, the prompt's closing marker
+        included. The prompt renders that marker alone on its own line, and a marker
+        quoted inside a finding shares its line with the JSON around it."""
+        report = {
+            "lens": "correctness",
+            "verdict": "findings",
+            "findings": [
+                {
+                    "ac": "AC1",
+                    "claim": f"the notice names {gate.PROMPT_END_MARKER} without emitting it",
+                    "evidence": "the prompt closes on the marker and the notice quotes it",
+                    "id": "f1",
+                    "lens": "correctness",
+                    "type": "mechanical",
+                }
+            ],
+        }
+        answer = authorize(round_dir, capsys)
+        output = write_output(answer, json.dumps(report, indent=2))
+        code, ingested = run(["ingest", "--out-dir", str(round_dir), "--output", str(output)],
+                             capsys)
+        assert code == gate.EXIT_OK
+        assert ingested["report"] == report
+
+    def test_the_schema_alone_is_not_a_report(self, round_dir, capsys):
+        """The alternations the schema spells out identify it on their own, so a
+        transport that echoes the contract without the marker gains nothing."""
+        answer = authorize(round_dir, capsys)
+        output = write_output(
+            answer,
+            json.dumps({"lens": "correctness", "verdict": "clean|findings", "findings": []}),
+        )
+        refused = refuse(["ingest", "--out-dir", str(round_dir), "--output", str(output)], capsys)
+        assert codes(refused) == ["unparseable-output"]
+
+    def test_the_echo_signatures_are_the_ones_the_prompt_emits(self):
+        """The gate keys the echo rule on literals the prompt emitter owns; they agree
+        by inspection or the rule reads for a prompt nobody sends."""
+        emitted = (HERE / "emit_prompts.py").read_text(encoding="utf-8")
+        assert f'FENCE_CLOSE = "{gate.PROMPT_END_MARKER}"' in emitted
+        for alternation in gate.TEMPLATE_ALTERNATIONS:
+            assert f'"{alternation}"' in emitted
 
     def test_an_unparseable_body_records_its_outcome_too(self, round_dir, capsys):
         answer = authorize(round_dir, capsys)

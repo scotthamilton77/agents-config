@@ -83,6 +83,23 @@ LINE_OBJECT_RE = re.compile(r"^[ \t]*\{", re.MULTILINE)
 ENCLOSED_NEXT = frozenset(",]}")
 NEXT_NON_SPACE_RE = re.compile(r"\S")
 
+# The marker the reviewer prompt closes its fenced data with. A transport that replays the
+# prompt on stdout puts the prompt's own report schema in front of the reviewer's output, so
+# everything up to this marker is prompt rather than anything a lens wrote.
+PROMPT_END_MARKER = "<<<END UNTRUSTED CONTENT>>>"
+
+# The prompt emits that marker on a line of its own. A reviewer is free to quote the marker
+# in a finding, where it sits among the JSON around it on the same line, so only a line
+# holding nothing else is the prompt's own close.
+PROMPT_END_RE = re.compile(
+    rf"^[ \t]*{re.escape(PROMPT_END_MARKER)}[ \t]*\r?$", re.MULTILINE
+)
+
+# The report schema in the prompt spells out both alternatives in each field the reviewer
+# chooses a value for. A report carries one alternative, so an object still carrying the
+# alternation is the schema itself and never a review.
+TEMPLATE_ALTERNATIONS = frozenset({"clean|findings", "mechanical|advisory"})
+
 HALT_GUIDANCE = (
     "Every route this lens ran on died in transport. The round is over: abandon every dispatch "
     "not yet made, write the verdict halted with these routes and their errors verbatim in the "
@@ -520,6 +537,19 @@ def _as_object(text: str) -> dict | None:
     return value if isinstance(value, dict) else None
 
 
+def _is_template(document: dict) -> bool:
+    """True when this object is the prompt's report schema rather than a report.
+
+    The schema reaches a capture only because a transport echoed the prompt, and
+    accepting it files the shape of a review as a clean review.
+    """
+    chosen = [document.get("verdict")]
+    findings = document.get("findings")
+    if isinstance(findings, list):
+        chosen += [one.get("type") for one in findings if isinstance(one, dict)]
+    return any(value in TEMPLATE_ALTERNATIONS for value in chosen if isinstance(value, str))
+
+
 def _first_object_from(body: str, offsets: list[int]) -> dict | None:
     """The first of these offsets that begins a decodable object, trailing text ignored.
 
@@ -535,6 +565,8 @@ def _first_object_from(body: str, offsets: list[int]) -> dict | None:
         except (json.JSONDecodeError, ValueError):
             continue
         if not isinstance(decoded, dict):
+            continue
+        if _is_template(decoded):
             continue
         following = NEXT_NON_SPACE_RE.search(body, offset + end)
         if following is not None and following.group() in ENCLOSED_NEXT:
@@ -556,15 +588,21 @@ def parse_report(body: str) -> tuple[dict, str]:
 
     Tolerance stops at the end of this ladder on purpose — reconstructing a
     report from prose makes the harvester the reviewer, and nothing downstream
-    can tell the difference.
+    can tell the difference. It stops short of the prompt as well: a transport
+    that replays the prompt on stdout offers the prompt's own report schema as
+    the earliest object in the body. Everything up to the line the prompt closes
+    with is therefore prompt, and the schema is refused at every rung.
     """
+    prompt_end = PROMPT_END_RE.search(body)
+    if prompt_end is not None:
+        body = body[prompt_end.end():]
     document = _as_object(body)
-    if document is not None:
+    if document is not None and not _is_template(document):
         return document, "whole-body"
     fenced = FENCED_RE.match(body)
     if fenced is not None:
         document = _as_object(fenced.group("body"))
-        if document is not None:
+        if document is not None and not _is_template(document):
             return document, "fenced-block"
     line_opened = [match.end() - 1 for match in LINE_OBJECT_RE.finditer(body)]
     anywhere = [offset for offset, char in enumerate(body) if char == "{"]
