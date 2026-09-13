@@ -652,9 +652,10 @@ OPTION_REFERENCE_RULE = (
 # before implementing an answer, which is an observation about the decision and
 # not a request for anything.
 GAP_RULE = (
-    "When a decision rests on something nobody has supplied, say so rather than supplying it "
-    "yourself. The update for that is `elicit-alert`: `target` is the decision, `text` is what "
-    "is missing, and `blocking` says whether the decision can be answered without it.\n"
+    "When a decision rests on an input nobody has supplied and the human can supply it, ask "
+    "them for it rather than supplying it yourself. The update for that is `elicit-alert`: "
+    "`target` is the decision, `text` is the question that asks for what is missing, and "
+    "`blocking` says whether the decision can be answered without it.\n"
     "An `elicit-alert` asks the human for a specific input they can supply. A note that asks "
     "them for nothing is an `informational` naming that decision in its `target` -- what "
     "someone has to read before implementing the answer, a caveat on it, an observation you "
@@ -738,7 +739,7 @@ UPDATE_EXAMPLES: dict[str, dict[str, Any]] = {
     "elicit-alert": {
         "kind": "elicit-alert",
         "target": "d1",
-        "text": "this rests on a throughput figure nobody has",
+        "text": "what throughput does this have to hold? nobody has supplied a figure",
         "blocking": True,
     },
     "informational": {"kind": "informational", "target": "d1", "text": "what you are telling them"},

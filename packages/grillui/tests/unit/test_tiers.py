@@ -1119,6 +1119,13 @@ def test_the_grill_master_brief_reserves_an_alert_for_a_note_that_asks_for_somet
         "nothing" in brief
     )
     assert "the gap is worth knowing about" not in brief
+    # The opening sentence and the rendered example are what a seat copies, so
+    # both have to ask: a licence over anything unsupplied, or an example that
+    # merely records a gap, is the wrong kind taught by the rule that forbids it.
+    assert "rests on an input nobody has supplied and the human can supply it, ask" in brief
+    assert "`text` is the question that asks for what is missing" in brief
+    assert "what throughput does this have to hold? nobody has supplied a figure" in brief
+    assert "this rests on a throughput figure nobody has" not in brief
 
 
 def answered_board() -> DispatchContext:
