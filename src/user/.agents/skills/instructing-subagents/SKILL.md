@@ -56,9 +56,8 @@ its own names itself in that child's brief as the report's recipient, and the ch
 addresses its send to that name. Prefix progress messages `UPDATE <n>:` and the
 deliverable `FINAL REPORT:` — the markers make delivery mechanically checkable, and
 delivery gates key on them where they run. A "report back with…" list describes an
-artifact and commands no action; agents finish,
-go idle, and deliver nothing while holding a good report. Code survives that;
-judgement does not.
+artifact and commands no action; agents finish, go idle, and deliver nothing while
+holding a good report. Code survives that; judgement does not.
 
 **Fail-fast cases.** Beyond the report on completion, name the task-specific conditions
 under which the agent must stop *mid-execution* and come back for clarification or help —
