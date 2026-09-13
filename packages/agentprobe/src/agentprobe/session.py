@@ -21,6 +21,12 @@ from typing import Any
 
 ANSI = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b[=>]")
 
+# Box borders, banner blocks and spinner glyphs. A single input box draws several hundred
+# of these characters, which is enough to push the lead's last words out of any window
+# short enough to be specific. The prompt glyph is deliberately absent: the readiness
+# check looks for it.
+CHROME = re.compile(r"[─│╭╮╰╯┌┐└┘━┃▌▐█▀▄▁░▒▓⏵⏺✳✽✻⎿·•]+")
+
 SCENARIOS_DIR = Path(__file__).parent / "scenarios"
 HOOKLOG = Path(__file__).parent / "hooklog.py"
 
@@ -106,7 +112,8 @@ def visible_text(raw: bytes) -> str:
 
 
 def _squashed(text: str) -> str:
-    return re.sub(r"\s+", "", text).lower()
+    """Reduce a captured screen to the characters that carry meaning, in lower case."""
+    return re.sub(r"\s+", "", CHROME.sub("", text)).lower()
 
 
 def awaiting_trust(tail: str) -> bool:
@@ -157,12 +164,17 @@ def finish_reason(
     long, well after the prompt was sent. Those two are not the same outcome. A lead that
     never reached its terminal state did not finish the scenario.
     """
-    if event_log_age > quiet_seconds and "done" in _squashed(tail[-600:]):
+    if event_log_age > quiet_seconds and "done" in _squashed(tail)[-DONE_WINDOW_CHARS:]:
         return COMPLETED
     if event_log_age > quiet_seconds * 3 and seconds_since_prompt > 120:
         return "no-terminal-state"
     return None
 
+
+# How much of the end of the screen the lead's done word has to appear in. Wide enough to
+# survive the status line that follows it, narrow enough not to match the chatter of a
+# subagent that finished minutes earlier.
+DONE_WINDOW_CHARS = 900
 
 # Two tries at typing, because the first can be swallowed by a screen still being drawn.
 ECHO_ATTEMPTS = 2

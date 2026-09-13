@@ -131,57 +131,60 @@ def test_gate_phantom_blocks_misses_without_a_decision_log(run2: Run) -> None:
     assert not detect.gate_phantom_blocks(stripped).hit
 
 
-def test_report_file_guard_reads_blocked_and_allowed_writes() -> None:
+def test_the_guard_is_read_from_what_the_agents_reported(guard_run: Run) -> None:
+    # A refused Write produces no hook event at all, not even a PreToolUse: the guard sits
+    # above the hook layer. The agents' own reports, which the lead wrote down, are the
+    # only record that the attempt happened.
+    attempted = [
+        e
+        for e in guard_run.events
+        if e.name == "PreToolUse"
+        and e.tool_name == "Write"
+        and str(e.tool_input.get("file_path", "")).endswith("/report.md")
+    ]
+    assert attempted == []
+    finding = detect.report_file_guard(guard_run)
+    assert finding.hit
+    assert "report.md: blocked, refused with the guard wording in 2 report(s)" in finding.evidence
+    assert "summary.md: blocked, refused with the guard wording in 2 report(s)" in finding.evidence
+    # The guard covers markdown only, so the same stem with another extension goes through.
+    assert "report.txt: allowed, written at post[" in finding.evidence
+    assert "notes-report.md: allowed, written at post[" in finding.evidence
+
+
+def test_a_guarded_name_inside_a_longer_name_is_not_mistaken_for_it() -> None:
+    run = Run(SYNTHETIC, events=[], lead_md=f"beta | notes-report.md: {detect.WRITE_GUARD_ERROR}")
+    finding = detect.report_file_guard(run)
+    segments = finding.evidence.split("; ")
+    assert "notes-report.md: blocked, refused with the guard wording in 1 report(s)" in segments
+    assert not any(segment.startswith("report.md:") for segment in segments)
+
+
+def test_a_write_that_landed_outweighs_a_report_that_it_did_not() -> None:
     run = Run(
         SYNTHETIC,
         events=_events(
             [
                 {
-                    "hook_event_name": "PreToolUse",
+                    "hook_event_name": "PostToolUse",
                     "tool_name": "Write",
                     "tool_use_id": "a",
-                    "tool_input": {"file_path": "/run/report.md"},
-                },
-                {
-                    "hook_event_name": "PreToolUse",
-                    "tool_name": "Write",
-                    "tool_use_id": "b",
-                    "tool_input": {"file_path": "/run/report.txt"},
-                },
-                {
-                    "hook_event_name": "PostToolUse",
-                    "tool_name": "Write",
-                    "tool_use_id": "b",
-                    "tool_input": {"file_path": "/run/report.txt"},
-                    "tool_response": {"filePath": "/run/report.txt"},
-                },
-                {
-                    "hook_event_name": "PreToolUse",
-                    "tool_name": "Write",
-                    "tool_use_id": "c",
                     "tool_input": {"file_path": "/run/summary.md"},
-                },
-                {
-                    "hook_event_name": "PostToolUse",
-                    "tool_name": "Write",
-                    "tool_use_id": "c",
-                    "tool_input": {"file_path": "/run/summary.md"},
-                    "tool_response": {"error": detect.WRITE_GUARD_ERROR},
-                },
+                    "tool_response": {"type": "create"},
+                }
             ]
         ),
+        lead_md=f"beta | summary.md: {detect.WRITE_GUARD_ERROR}",
     )
     finding = detect.report_file_guard(run)
-    assert finding.hit
-    assert "report.md: blocked (pre[0] had no PostToolUse)" in finding.evidence
-    assert "report.txt: allowed at post[2]" in finding.evidence
-    assert "summary.md: blocked with the guard error at post[4]" in finding.evidence
+    assert not finding.hit
+    assert finding.evidence == "summary.md: allowed, written at post[0]"
 
 
 def test_report_file_guard_misses_when_no_guarded_name_was_attempted(run2: Run) -> None:
     finding = detect.report_file_guard(run2)
     assert not finding.hit
-    assert finding.evidence == "no Write attempted a guarded basename"
+    assert finding.evidence == "no guarded basename was written or reported on"
 
 
 def test_detect_all_reports_every_behaviour_once(run2: Run) -> None:

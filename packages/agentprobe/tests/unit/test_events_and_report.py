@@ -35,7 +35,7 @@ def test_unreadable_lines_are_skipped_rather_than_failing_the_read() -> None:
 
 
 def test_a_directory_of_runs_is_read_with_one_argument() -> None:
-    assert [run.name for run in load_runs([FIXTURES])] == ["invalid-run", "run2", "run3"]
+    assert [run.name for run in load_runs([FIXTURES])] == ["guard-run", "invalid-run", "run2", "run3"]
 
 
 def test_the_two_recordings_are_valid_and_the_failed_run_is_not() -> None:
@@ -60,17 +60,17 @@ def test_the_table_reports_a_rate_per_behaviour_and_the_versions_observed() -> N
     runs = load_runs([FIXTURES])
     rows = report.aggregate(runs)
     by_name = {row.behaviour: row for row in rows}
-    # Three run directories were read and one of them measured nothing, so every
-    # denominator is two. A failed run counted as a run would read as a release fixing
+    # Four run directories were read and one of them measured nothing, so every
+    # denominator is three. A failed run counted as a run would read as a release fixing
     # every behaviour at once.
     assert by_name["phantom-idle"].hits == 2
-    assert by_name["phantom-idle"].runs == 2
+    assert by_name["phantom-idle"].runs == 3
     assert by_name["phantom-idle"].versions == ["2.1.270 (Claude Code)"]
     assert "idle[24]" in by_name["phantom-idle"].note
-    assert by_name["report-file-guard"].hits == 0
+    assert by_name["report-file-guard"].hits == 1
     rendered = report.render(rows)
     assert "phantom-idle" in rendered
-    assert "2/2" in rendered
+    assert "2/3" in rendered
     assert "2.1.270 (Claude Code)" in rendered
 
 
@@ -119,14 +119,14 @@ def test_report_measures_and_never_fails(capsys) -> None:  # type: ignore[no-unt
     assert printed[0].split() == ["behaviour", "hits/runs", "versions"]
     rates = {line.split()[0]: line.split()[1] for line in printed[2:10]}
     assert rates == {
-        "phantom-idle": "2/2",
-        "team-lead-reachable": "2/2",
-        "main-send-lacks-sender": "2/2",
-        "missing-posttooluse": "0/2",
-        "child-to-parent-by-name": "2/2",
-        "duplicate-arrival": "0/2",
-        "gate-phantom-blocks": "2/2",
-        "report-file-guard": "0/2",
+        "phantom-idle": "2/3",
+        "team-lead-reachable": "2/3",
+        "main-send-lacks-sender": "3/3",
+        "missing-posttooluse": "0/3",
+        "child-to-parent-by-name": "2/3",
+        "duplicate-arrival": "0/3",
+        "gate-phantom-blocks": "2/3",
+        "report-file-guard": "1/3",
     }
     assert "invalid, excluded from every rate above (1):" in printed
     assert any("invalid-run: instruction-never-typed" in line for line in printed)

@@ -18,6 +18,12 @@ def run2() -> Run:
 
 
 @pytest.fixture
+def guard_run() -> Run:
+    """A recording of the report-file-guard scenario, where the guard actually fired."""
+    return load_run(FIXTURES / "guard-run")
+
+
+@pytest.fixture
 def run3() -> Run:
     """A second recording of the same scenario, for the rate a report prints across runs."""
     return load_run(FIXTURES / "run3")

@@ -10,7 +10,9 @@ from agentprobe import session
 
 SYNTHETIC = Path("/probe/run-001")
 
-POST_TRUST_SCREEN = (Path(__file__).parent / "fixtures" / "post-trust-screen.txt").read_text()
+FIXTURES = Path(__file__).parent / "fixtures"
+POST_TRUST_SCREEN = (FIXTURES / "post-trust-screen.txt").read_text()
+LEAD_DONE_SCREEN = (FIXTURES / "lead-done-screen.txt").read_text()
 
 TRUST_SCREEN = """
  Do you trust the files in this folder?
@@ -100,6 +102,18 @@ def test_a_lead_that_never_says_done_ends_the_run_without_completing_it() -> Non
     assert session.finish_reason(80.0, "still working", 200.0, 25.0) == "no-terminal-state"
     # Not before the prompt has had time to produce anything, though.
     assert session.finish_reason(80.0, "still working", 30.0, 25.0) is None
+
+
+def test_the_leads_done_word_is_found_under_the_terminal_chrome() -> None:
+    # Captured from a real session at the moment the driver decided. The lead printed DONE
+    # and then the input box and the status line redrew, which is several hundred
+    # characters of border. A window that counts those characters never sees the word.
+    assert "DONE" in LEAD_DONE_SCREEN
+    assert session.finish_reason(40.0, LEAD_DONE_SCREEN, 200.0, 25.0) == session.COMPLETED
+
+
+def test_chrome_is_stripped_but_the_prompt_glyph_survives() -> None:
+    assert session.input_ready("──────────────\n❯ \n──────────────")
 
 
 def test_the_instruction_is_submitted_only_once_it_has_echoed_back() -> None:

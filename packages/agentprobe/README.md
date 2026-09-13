@@ -73,7 +73,8 @@ The behaviours:
 - **gate-phantom-blocks** — the teammate report gate's block and release decisions that
   coincide with a phantom idle, each one holding a teammate that was never idle.
 - **report-file-guard** — per report-shaped filename, whether a subagent's write was
-  refused.
+  refused. The refusal happens above the hook layer and produces no event at all, so this
+  one reads the agents' own reports, which the scenario has the lead write down.
 
 ## Scenarios
 
@@ -86,4 +87,6 @@ find it.
   teammate by name. The lead records every message that reaches it.
 - **report-file-guard** — a lead spawns one unnamed subagent and one named teammate.
   Each tries to write four report-shaped filenames, then edits a file the shell created
-  for it, then reports which attempts were refused and with what wording.
+  for it, then reports which attempts were refused and with what wording. The two write
+  into separate directories, so neither can be refused merely because the other got there
+  first.

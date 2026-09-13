@@ -53,6 +53,10 @@ session.py — the only module that opens a terminal
   `run_session` touches a pseudo-terminal, and it is excluded from coverage.
 - **A detector returns a hit and its evidence, never a verdict.** Adding one means adding
   a pure function of a `Run` and a test pinning it against a recording.
+- **Not every behaviour is visible in the event log.** A Write refused by the report-file
+  guard produces no hook event at all, not even a PreToolUse, because the refusal sits
+  above the hook layer. The only record is the agent's own account, which is why a
+  scenario asks its agents to report what a tool returned and has the lead write it down.
 
 ## Why the session is interactive
 
@@ -63,8 +67,13 @@ pseudo-terminal is the only way to reach them.
 
 Two details of that driving are load-bearing, and both were learned by losing runs to
 them. Accepting the workspace-trust dialog repaints the screen, and keystrokes sent
-during the repaint are dropped silently; the driver therefore waits, and then reads the
-instruction back off the screen before pressing return.
+during the repaint are dropped silently. The driver therefore waits, and then reads the
+instruction back off the screen before pressing return. An instruction that never echoes
+is never submitted, because a session driven by a fragment is not the scenario.
+
+Accepting the dialog also makes the terminal echo the chosen line back, so its text stays
+in the captured screen for the rest of the run. Nothing may exclude the main screen on
+that text once trust has been accepted.
 
 ## Recordings
 

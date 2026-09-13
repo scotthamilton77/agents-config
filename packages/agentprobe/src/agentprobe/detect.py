@@ -7,6 +7,7 @@ Claude Code version.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -253,34 +254,54 @@ def _basename(path: object) -> str:
     return path.rsplit("/", 1)[-1]
 
 
-def report_file_guard(run: Run) -> Finding:
-    """Which report-shaped filenames a Write was refused for, and which slipped through.
+def _mentions(text: str) -> list[tuple[str, str]]:
+    """Split an agent's report into what it said about each report-shaped filename.
 
-    The refusal arrives as a tool error, so a blocked Write shows up as a PreToolUse with
-    no PostToolUse, or as a PostToolUse whose response carries the guard's wording.
+    An agent lists every attempt on one line, so a mention runs until the next filename is
+    named. The boundary before a name keeps `report.md` from matching inside
+    `notes-report.md`.
     """
-    posts = {
-        e.payload.get("tool_use_id"): e
+    found: list[tuple[int, str]] = []
+    for name in GUARDED_BASENAMES:
+        for match in re.finditer(rf"(?<![\w.-]){re.escape(name)}", text):
+            found.append((match.start(), name))
+    found.sort()
+    return [
+        (name, text[start : found[i + 1][0] if i + 1 < len(found) else len(text)])
+        for i, (start, name) in enumerate(found)
+    ]
+
+
+def report_file_guard(run: Run) -> Finding:
+    """Which report-shaped filenames a subagent's Write was refused for.
+
+    The refusal happens above the hook layer: a blocked Write produces no hook event at
+    all, not even a PreToolUse. The only record of it is the agent's own account, which
+    the scenario has the lead write down. A Write that did land leaves a PostToolUse, and
+    that is the harder evidence of the two, so it wins where both exist.
+    """
+    written = {
+        _basename(e.tool_input.get("file_path")): e
         for e in run.events
         if e.name == "PostToolUse" and e.tool_name == "Write"
     }
     notes: list[str] = []
     blocked_any = False
-    for event in (e for e in run.events if e.name == "PreToolUse" and e.tool_name == "Write"):
-        name = _basename(event.tool_input.get("file_path"))
-        if name not in GUARDED_BASENAMES:
+    for name in GUARDED_BASENAMES:
+        post = written.get(name)
+        if post is not None:
+            notes.append(f"{name}: allowed, written at post[{post.index}]")
             continue
-        post = posts.get(event.payload.get("tool_use_id"))
-        if post is None:
+        refused = [
+            segment
+            for mentioned, segment in _mentions(run.lead_md)
+            if mentioned == name and WRITE_GUARD_ERROR in segment
+        ]
+        if refused:
             blocked_any = True
-            notes.append(f"{name}: blocked (pre[{event.index}] had no PostToolUse)")
-        elif WRITE_GUARD_ERROR in str(post.tool_response):
-            blocked_any = True
-            notes.append(f"{name}: blocked with the guard error at post[{post.index}]")
-        else:
-            notes.append(f"{name}: allowed at post[{post.index}]")
+            notes.append(f"{name}: blocked, refused with the guard wording in {len(refused)} report(s)")
     if not notes:
-        return Finding("report-file-guard", False, "no Write attempted a guarded basename")
+        return Finding("report-file-guard", False, "no guarded basename was written or reported on")
     return Finding("report-file-guard", blocked_any, "; ".join(notes))
 
 
