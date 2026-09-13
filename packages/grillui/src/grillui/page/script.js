@@ -302,7 +302,7 @@ var UI = {
   // holding.
   focus: null, open: {}, drafts: {}, panel: null, held: {}, armed: {},
   overOpt: null, keyedOpt: null,
-  lastFocus: null, lastPanelKey: null, centerNext: true, justSettled: null,
+  takeBox: false, lastPanelKey: null, centerNext: true, justSettled: null,
   fresh: [], touched: [], autoshut: {}, advanceFrom: null,
   bubbles: [], bubbleSeen: {}, bubbleSig: null, bubbleTick: 0, ptr: null,
   popped: {}, draftBase: {}, popFail: false, diag: false, discussing: {},
@@ -663,7 +663,12 @@ function poll() {
 function advance() {
   if (!UI.advanceFrom) return;
   var next = nextFocus(UI.advanceFrom);
-  if (next && next !== UI.advanceFrom) focusOn(next);
+  // The one move that hands the caret over: the decision scrolling into view is
+  // the one the human is now being asked, so its box is where they are typing
+  // next. Marked here rather than read off the focus having moved, because the
+  // focus moves for navigation too -- a human clicking a decision to read it is
+  // not asking for the caret.
+  if (next && next !== UI.advanceFrom) { focusOn(next); UI.takeBox = true; }
   UI.advanceFrom = null;
 }
 function refreshDoctor() {
@@ -1156,9 +1161,11 @@ function nextOpen() {
 function nextOpenWhy() {
   return boardFinished() ? "nothing is left open" : "everything still open is waiting";
 }
-// The walk itself. There is no bare-key shortcut beside it: every focus move
-// hands the caret to the focused decision's note box, so a second press of a
-// bare letter would land in what the human is writing rather than on the board.
+// The walk itself. It moves the focus and centres what it lands on; the caret
+// stays wherever the human left it. There is no bare-key shortcut beside it: a
+// settled decision hands the caret to the next decision's note box, so a bare
+// letter pressed after an answer would land in what the human is writing rather
+// than on the board.
 function goNextOpen() {
   var id = nextOpen();
   if (id) { focusOn(id); render(); }
@@ -2604,6 +2611,58 @@ function takeCaret(el, caret) {
   el.focus({ preventScroll: true });
   if (caret !== undefined) { try { el.setSelectionRange(caret, caret); } catch (e) {} }
 }
+// A selection the human is holding is theirs until they drop it, and a render
+// replaces every node it runs over -- so it is held as where it sits in the text
+// of the nearest element the board gives an id, and laid back over the fresh
+// nodes. Held by the nodes themselves it would be restored onto nothing: the
+// nodes that come back are not the ones it was made on. A selection that runs
+// out of that element is not held at all, which is the rebuild dropping it.
+function heldSelection() {
+  var sel = window.getSelection();
+  if (!sel || sel.rangeCount !== 1 || sel.isCollapsed) return null;
+  var r = sel.getRangeAt(0);
+  var host = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+  host = host && host.closest("[id]");
+  if (!host || !host.contains(r.endContainer)) return null;
+  var before = document.createRange();
+  before.selectNodeContents(host);
+  before.setEnd(r.startContainer, r.startOffset);
+  // A selection has a direction: the anchor is where the drag began, and
+  // extending one with the keyboard grows it from the other end. Asked by
+  // building a range from the anchor to the focus, which collapses when the
+  // focus is the earlier of the two.
+  var probe = document.createRange();
+  probe.setStart(sel.anchorNode, sel.anchorOffset);
+  probe.setEnd(sel.focusNode, sel.focusOffset);
+  return { id: host.id, at: before.toString().length, text: r.toString(), back: probe.collapsed };
+}
+function relaySelection(held) {
+  if (!held) return;
+  var host = document.getElementById(held.id);
+  if (!host) return;
+  // The words have to still be where they were. Looking for them anywhere else
+  // in the element picks the first copy of however many it holds, which is a
+  // highlight over text the human never chose; an element whose text moved
+  // under the selection drops it instead.
+  if (host.textContent.substr(held.at, held.text.length) !== held.text) return;
+  var end = held.at + held.text.length;
+  var walk = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  var seen = 0, node, from = null, fromAt = 0;
+  while ((node = walk.nextNode())) {
+    var next = seen + node.nodeValue.length;
+    if (!from && held.at <= next) { from = node; fromAt = held.at - seen; }
+    if (from && end <= next) {
+      // An anchor and a focus rather than a range, because a range has no
+      // direction: a backwards selection restored from one comes back forwards
+      // and then grows from the end the human was not extending.
+      var sel = window.getSelection();
+      if (held.back) sel.setBaseAndExtent(node, end - seen, from, fromAt);
+      else sel.setBaseAndExtent(from, fromAt, node, end - seen);
+      return;
+    }
+    seen = next;
+  }
+}
 // A thread's turns scroll inside the panel rather than with the page, and that
 // element is replaced on every re-render — so a thread follows the rule a chat
 // log follows, or it follows none. Whoever is at the bottom is reading the
@@ -2631,11 +2690,19 @@ function render() {
   var caret = focusId ? act.selectionStart : 0;
   // The caret is on a control rather than in a box. The render replaces every
   // control on the board, so an option the human tabbed to is destroyed under
-  // them and the caret falls to the body -- which the default below reads as
-  // nobody holding anything, and hands to the free-text box of whatever
-  // decision is focused. Held by what names the control rather than by the
-  // element, since the element this finds is not the one that comes back.
+  // them and the caret falls to the body, which is the page losing their place.
+  // Held by what names the control rather than by the element, since the
+  // element this finds is not the one that comes back.
   var focusOpt = focusId ? null : optionOf(act);
+  // A caret in a box outranks a selection outside it: the two cannot both be
+  // where the human is, and the box is the one they are typing into.
+  var held = focusId ? null : heldSelection();
+  // Read once and cleared here rather than in the branch that spends it: an
+  // advance that arrives while the human is typing is an advance they did not
+  // follow, and a flag left standing would hand the caret over on some later
+  // render that has nothing to do with it.
+  var take = UI.takeBox;
+  UI.takeBox = false;
 
   noteCompletion();
   harvestBubbles();
@@ -2674,15 +2741,18 @@ function render() {
     takeCaret(document.getElementById(focusId), caret);
   } else if (focusOpt) {
     takeCaret(optionControl(focusOpt));
-  } else if (UI.panel && UI.panel.kind === "thread") {
-    takeCaret(document.getElementById("ft-say"));
-  } else if (UI.focus !== UI.lastFocus || document.activeElement === document.body) {
-    // The focused decision's free-text box holds focus by default. Only ever
-    // taken when nothing else holds it, so typing is never interrupted.
+  } else if (take) {
+    // The advance's own caret, and the only one this page takes that no gesture
+    // of the human's asked for. A box that merely happens to be on screen is
+    // never taken: a caret handed over on the standing state of the board is a
+    // re-render reaching into whatever the human was reading, which is how a
+    // selection they were holding came to vanish under them on a poll tick.
     var box = document.getElementById("ft-" + UI.focus);
     if (box && !UI.panel && !box.disabled) takeCaret(box);
   }
-  UI.lastFocus = UI.focus;
+  // After the caret, because taking one into a box is the human's place moving
+  // rather than this render disturbing it.
+  relaySelection(held);
   // Last, because a render replaces the elements the mark is painted on -- and
   // after the caret has been placed, since placing it is one of the things that
   // decides which option is in hand.

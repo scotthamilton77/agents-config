@@ -2571,10 +2571,95 @@ def test_taking_the_caret_never_moves_the_page() -> None:
     # position rides with it -- restoring the selection is what made one of the
     # sites a second call rather than a call to the same helper. The count is a
     # census: a site appearing without this number moving is a caret nobody
-    # declared. The fifth is the option control, which the render replaces under
+    # declared. The fourth is the option control, which the render replaces under
     # a human standing on it exactly as it replaces a text box.
-    assert function_body("render").count("takeCaret(") == 5
+    assert function_body("render").count("takeCaret(") == 4
     assert "el.setSelectionRange(caret, caret)" in function_body("takeCaret")
+
+
+def test_a_re_render_lays_the_selection_back_over_the_nodes_that_replace_it() -> None:
+    """The selection is the human's, and a re-render is not a reason to drop it.
+
+    The board is drawn again on every poll that brings entries, and drawing it
+    replaces every node the selection runs over -- so a selection held as the
+    nodes it was made on is restored onto nothing. It is held as where it sits
+    in the text of the nearest element the board gives an id, and as the words
+    themselves, so that a restore which would land on different text drops the
+    selection rather than highlighting something nobody chose.
+
+    Read before the rebuild and written after it, which is the whole of the
+    ordering: a capture taken after `renderShell` would be reading the fresh
+    document, where the selection is already gone.
+
+    Restored where it was or not at all. The element's text is the same text or
+    it is different text, and there is no third reading: hunting the words down
+    elsewhere in the element finds the first of however many copies of them it
+    holds, which is a highlight over something nobody chose.
+
+    The direction rides along. A selection made right to left has its anchor at
+    the right-hand end, and a human extending it with the keyboard grows it from
+    the left; restored as a range it comes back forwards and then grows from the
+    wrong end.
+    """
+    body = balanced_body("render")
+    assert "var held = focusId ? null : heldSelection();" in body, (
+        "the render does not hold the selection, or holds it over a caret in a box"
+    )
+    assert body.index("heldSelection()") < body.index("renderShell()"), (
+        "the selection is read after the rebuild, which is after it is gone"
+    )
+    assert body.index("renderShell()") < body.index("relaySelection(held)"), (
+        "the selection is laid back over nodes the rebuild then replaces"
+    )
+    held = balanced_body("heldSelection")
+    assert "sel.isCollapsed" in held, "a caret with nothing selected is held as a selection"
+    assert 'closest("[id]")' in held, (
+        "the selection is anchored to a node rather than to something named"
+    )
+    assert "probe.collapsed" in held, "the selection is held without its direction"
+    relay = balanced_body("relaySelection")
+    assert "indexOf" not in relay, (
+        "the words are hunted for elsewhere in the element, which finds the wrong copy"
+    )
+    assert "host.textContent.substr(held.at, held.text.length) !== held.text" in relay, (
+        "a selection whose words have moved is restored onto whatever is there instead"
+    )
+    assert "createTreeWalker" in relay, "the offset is not mapped back onto the fresh text"
+    assert relay.count("sel.setBaseAndExtent(") == 2 and "held.back" in relay, (
+        "the selection comes back without the direction it was made in"
+    )
+
+
+def test_the_page_takes_an_answer_box_on_the_advance_and_on_nothing_else() -> None:
+    """One caret this page takes on its own, and it is a transition rather than
+    a standing state.
+
+    A settled decision advances to the next one, which scrolls into view with
+    its box ready to answer. Every other caret it took was a standing condition
+    -- a box is on screen and nothing else holds the caret -- which made every
+    re-render a reach into whatever the human was doing: a poll tick took the
+    caret out of a notice they were reading and put it in an answer box, and
+    took the selection they were holding with it.
+    """
+    source = page_source()
+    body = balanced_body("render")
+    assert "document.activeElement === document.body" not in source, (
+        "a render still takes a box because nothing else holds the caret"
+    )
+    assert "UI.lastFocus" not in source, "the focus having moved still hands over a caret"
+    assert "UI.takeBox = true" in balanced_body("advance"), "the advance hands over no caret"
+    assert source.count("UI.takeBox = true") == 1, "something besides the advance takes a box"
+    assert "var take = UI.takeBox;\n  UI.takeBox = false;" in body, (
+        "the mark is not spent by the render that reads it"
+    )
+    # The advance's own caret, unchanged: still the focused decision's box, still
+    # declined when a panel is over it or the decision cannot take an answer.
+    assert 'var box = document.getElementById("ft-" + UI.focus);' in body
+    assert "if (box && !UI.panel && !box.disabled) takeCaret(box);" in body
+    # And a thread's say box on the one transition that claims it, the opening.
+    assert body.count('takeCaret(document.getElementById("ft-say"))') == 1, (
+        "a re-render takes the say box while a thread merely stands open"
+    )
 
 
 def test_a_re_render_puts_the_decision_log_back_where_the_human_had_it() -> None:
@@ -3351,9 +3436,9 @@ def test_the_boards_next_open_control_walks_the_frontier_and_says_why_it_cannot(
     it wraps, and that the disabled reason is `boardFinished`'s reading -- a
     second hand-written condition is how a control comes to call a stalled board
     finished, which is the one distinction it exists to draw. That the header
-    control is the walk's only caller is measured too: every focus move hands the
-    caret to the focused decision's note box, so a bare-key shortcut into this
-    would type into what the human is writing rather than move the board.
+    control is the walk's only caller is measured too: a bare-key shortcut into
+    this would fire while the human is typing into a box, moving the board under
+    the words they are writing.
     """
     source = page_source()
     walk = function_body("nextOpen")
