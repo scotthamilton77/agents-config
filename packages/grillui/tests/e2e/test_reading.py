@@ -11,6 +11,11 @@ says what was asked for. Under `autonomous` the backend decides, so the claim is
 on the lane and on the expert's own prompt -- and on the cap, because a seat that
 could buy an expert turn by asking for one every turn would be spending the
 human's subscription on its own say-so.
+
+A third scenario is about the gap between the two. The backend moves the channel
+while the page is between polls, so for a moment the human is typing into a page
+that still shows the first rung, and the turn they send then is the very turn the
+transfer was bought for.
 """
 
 from __future__ import annotations
@@ -38,6 +43,11 @@ ASKING = json.dumps({"text": SAID, "needs_to_read": WANTED})
 SAID_AGAIN = "The window is still the thing I cannot see."
 ASKING_AGAIN = json.dumps({"text": SAID_AGAIN, "needs_to_read": WANTED})
 EXPERT_SAID = "Thirty days. The window is in the retention note, and it drops on age."
+
+# One exchange that asks for nothing, so a scenario can get the thread onto the
+# page and the seat onto the first rung before anything moves it.
+ANSWERED = "It drops whatever nothing else refers to."
+PRESSED = "And how does it know what refers to what?"
 
 CONDITION = "the seat asked to read something it was not given"
 # How the request reaches the seat above: its own line in the channel's
@@ -102,13 +112,14 @@ def say(page: Page, said: str) -> None:
 def showing(page: Page, channel: str, mode: str) -> None:
     """Wait until the page's own transfer control says this channel is on `mode`.
 
-    Not a convenience, and not a substitute for a sleep. Every human turn is
-    stamped with the tier the page believes its channel is on, and the backend
-    reads that stamp as the human's own gesture -- which outranks a transfer the
-    policy wrote, because the way back down is theirs. So a turn typed before the
-    page has seen the policy move carries `transfer: false` and takes the channel
-    straight back to the first rung. Waiting on the control is waiting on the
-    exact state the next turn will carry.
+    Not a convenience, and not a substitute for a sleep. The control is where a
+    scenario reads what this page has managed to learn about its channel, which
+    is a poll behind the log -- so a scenario asserting against the backend
+    instead would be asserting against a state the human never saw.
+
+    A turn typed while the control still names the tier the channel has left is
+    not something to wait out. It carries no transfer key at all, so the log's
+    own last word stands and the seat the policy bought takes the turn.
     """
     page.wait_for_selector(
         f'[data-act="transfer"][data-channel="{channel}"][data-mode="{mode}"]',
@@ -201,9 +212,9 @@ def test_the_autonomous_policy_hands_the_request_to_the_expert_once(
         f"the escalation policy moved this channel to the expert tier: {CONDITION}"
     ]
 
-    # The turn the transfer bought, on the seat that can read. The human types
-    # it once their page knows where the channel is, which is what their turn
-    # will say.
+    # The turn the transfer bought, on the seat that can read. The page is given
+    # its poll first, so this scenario is about the ordinary path; the turn typed
+    # before that poll lands is the scenario at the end of this file.
     showing(page, channel, "expert")
     say(page, "Then find it.")
     session.settled()
@@ -226,3 +237,80 @@ def test_the_autonomous_policy_hands_the_request_to_the_expert_once(
     assert len(session.claude_calls()) == 1, session.claude_calls()
     assert composings(session, channel) == ["fast", "heavy", "fast"]
     assert [one["text"] for one in turns_on(session, channel)][-1] == SAID_AGAIN
+
+
+def freeze(page: Page) -> None:
+    """Answer this page's update read with nothing, from here on.
+
+    The stale window is held open rather than raced for. A scenario that typed
+    its turn quickly enough to beat the board's poll would pass on a fast
+    machine and prove nothing on a loaded one; a page whose update read returns
+    an empty batch stays exactly as stale as the scenario needs it to be, and
+    its transfer control is checked before the turn is typed to say so.
+    """
+    page.route(
+        "**/updates*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"entries": [], "seq": 0}),
+        ),
+    )
+
+
+def typed_on(session: Session, channel: str) -> list[dict[str, Any]]:
+    """Every entry the human spoke on one channel, as the log holds them."""
+    return [
+        dict(one.payload)
+        for one in session.entries()
+        if one.actor == "human" and one.channel == channel
+    ]
+
+
+def test_a_turn_typed_before_the_page_learns_of_the_transfer_composes_on_the_expert(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given an autonomous session whose page can no longer read the log
+    When the thread's seat asks to read something, the policy moves that thread
+         to the expert, and the human says the next thing while their page still
+         shows the first rung
+    Then the turn carries no claim about the tier at all, and the expert composes
+         it.
+
+    This is the turn the transfer was bought for, and it is the one most likely
+    to be typed inside the window: the human has just been answered, so they are
+    already writing. A page that stamped every turn with the tier it last read
+    would send this one back to the first rung -- the cheap seat would answer,
+    and the lane would carry a transfer that changed nothing.
+    """
+    session = launcher(handoff=handoff(PLAN), config={"GRILLUI_ESCALATION_POLICY": "autonomous"})
+    session.script_codex(turn(document("Noted.")))
+    session.script_claude(turn(EXPERT_SAID))
+    session.stub.script(ANSWERED, ASKING)
+    page = board(session)
+
+    start_thread(page, "d2", ASKED)
+    session.settled()
+    channel = thread_id(session)
+    showing(page, channel, "fast")
+
+    # From here the page is blind, so the move below happens entirely behind it.
+    freeze(page)
+    say(page, PRESSED)
+    session.settled()
+    assert transferred(session, channel) == [
+        f"the escalation policy moved this channel to the expert tier: {CONDITION}"
+    ]
+    showing(page, channel, "fast")
+
+    say(page, "Then find it.")
+    session.settled()
+
+    assert composings(session, channel) == ["fast", "fast", "heavy"]
+    calls = session.claude_calls()
+    assert len(calls) == 1, calls
+    assert REQUEST_LINE + ", ".join(WANTED) in conversation(calls[0]["prompt"], channel)
+    # And the turn asked for nothing: the tier above is the log's own word about
+    # this channel, not something the blind page claimed on the human's behalf.
+    assert "transfer" not in typed_on(session, channel)[-1], typed_on(session, channel)[-1]

@@ -475,11 +475,18 @@ function ev(kind, channel, payload) {
     if (rule.payload.indexOf(k) < 0) throw new Error(kind + " carries no " + k);
   });
   // A kind that declares the transfer key is a kind the human speaks a turn in,
-  // and every one of those turns says which tier the human has put its channel
-  // on. Stamped here rather than at the emission sites so the declaration is
-  // again what decides: the table says which kinds carry the flag, and no
-  // gesture that is not a turn — a fold, a park, a queue verb — can acquire one.
-  if (rule.payload.indexOf(TRANSFER_FLAG) >= 0) payload[TRANSFER_FLAG] = onExpert(channel);
+  // and the key is the human's own press riding the turn that carries it out.
+  // Only a press the log has not overtaken is stamped. Every other turn says
+  // nothing about the tier, and the log's own last word about this channel
+  // stands — which is what the backend reads when the key is absent. A turn
+  // that instead restated the tier this page last saw would undo a transfer the
+  // policy wrote while the page was between polls: the expert turn the policy
+  // bought would run on the first rung, and nothing on the lane would say so.
+  // Stamped here rather than at the emission sites so the declaration is again
+  // what decides: the table says which kinds carry the flag, and no gesture that
+  // is not a turn — a fold, a park, a queue verb — can acquire one.
+  var meant = rule.payload.indexOf(TRANSFER_FLAG) >= 0 ? pressed(channel) : null;
+  if (meant) payload[TRANSFER_FLAG] = meant.on;
   KEYS += 1;
   return { kind: kind, actor: "human", channel: channel,
            idempotency_key: PAGE_ID + ":" + KEYS, payload: payload };
@@ -765,7 +772,12 @@ function foldReady(threadId) {
    speaks after it — which is why the click is stamped with where the log stood
    when it was made. A click whose turn was refused keeps its intent, because
    nothing landed after it; a click the policy then overtook loses it, because
-   the control must name where the channel is now and not the tier it has left. */
+   the control must name where the channel is now and not the tier it has left.
+
+   A live click is also the only thing a turn says the tier out of. A turn taken
+   with no click behind it carries no transfer key at all, so this page tells the
+   backend what the human pressed and never what this page last managed to
+   read. */
 var TRANSFER = {};
 function loggedMode(channel) {
   for (var i = LOG.length - 1; i >= 0; i--) {
@@ -778,9 +790,18 @@ function loggedMode(channel) {
   }
   return { on: false, at: -1 };
 }
+// The click the log has not spoken after, or nothing at all. One reading, for
+// the two things that need it: the control names the tier the next turn goes
+// to, and that turn carries the flag only while this says the human pressed
+// for it. Two readings of "is the click still what the human means" would be
+// a control that offers one tier and a turn that asks for the other.
+function pressed(channel) {
+  var meant = TRANSFER[channel];
+  return meant && meant.since > loggedMode(channel).at ? meant : null;
+}
 function onExpert(channel) {
-  var said = loggedMode(channel), meant = TRANSFER[channel];
-  return meant && meant.since > said.at ? meant.on : said.on;
+  var meant = pressed(channel);
+  return meant ? meant.on : loggedMode(channel).on;
 }
 // What an agent turn is called, read off that turn's own attribution and never
 // off the channel it sits on. The channel's mode says where the channel is now;

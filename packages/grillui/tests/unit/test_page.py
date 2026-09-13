@@ -1806,7 +1806,27 @@ def test_the_flag_is_stamped_by_the_one_checked_constructor_off_the_declaration(
     assert len(written) == 1, "a second place stamps the flag"
     builder = function_body("ev")
     assert "rule.payload.indexOf(TRANSFER_FLAG)" in builder
-    assert "payload[TRANSFER_FLAG] = onExpert(channel)" in builder
+    assert "payload[TRANSFER_FLAG] = meant.on" in builder
+
+
+def test_a_turn_carries_the_flag_only_where_the_human_pressed_for_it() -> None:
+    """The stamp is the human's own press, never the tier this page last read.
+
+    A page is behind the log by as much as one poll. Stamping every turn with
+    the mode it last read sends `transfer: false` on a channel the policy has
+    just moved, and the backend reads that as the human's own way back down --
+    so the expert turn the transfer bought is taken by the tier the channel was
+    moved off, and nothing on the lane says so. A turn with no press behind it
+    carries no transfer key at all, and the log's own last word stands.
+
+    One reading decides both what the control offers and what the next turn
+    says. A second reading is a control offering the expert while the turn it
+    describes asks for the first rung.
+    """
+    builder = function_body("ev")
+    assert "pressed(channel)" in builder, "the stamp is not read off the human's press"
+    assert "onExpert" not in builder, "the turn is stamped with what this page believes"
+    assert "pressed(channel)" in function_body("onExpert"), "the control reads the press twice"
 
 
 def test_a_page_turn_carrying_the_flag_moves_that_channel_and_only_that_one(
@@ -2023,11 +2043,13 @@ def test_the_control_follows_the_log_rather_than_the_click_the_policy_overtook()
     The click is an intent held until the log speaks after it, which is why it
     carries where the log stood when it was made. Without that, a human who had
     just sent a channel back to the first rung would see *Transfer to expert* on a
-    channel the policy had since escalated -- and their next turn, which stamps
-    the flag off exactly this reading, would silently undo the transfer.
+    channel the policy had since escalated -- and their next turn, which asks for
+    a tier off exactly this reading, would silently undo the transfer.
     """
     assert "since: LOG.length" in function_body("toggleTransfer"), "the click is not placed"
-    assert "meant.since > said.at" in function_body("onExpert"), "a stale click outranks the log"
+    assert "meant.since > loggedMode(channel).at" in function_body("pressed"), (
+        "a stale click outranks the log"
+    )
     assert '(on ? "⚡ Return to fast agent"' in function_body("transferControl")
 
 
