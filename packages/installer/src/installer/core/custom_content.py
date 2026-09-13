@@ -24,14 +24,17 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-#: The boundary line. A written heading extends it with the notice and digest
-#: comment; a line is the boundary if it merely starts with this text, so a
-#: hand-placed bare heading is recognised too.
+#: The boundary line. A written heading extends it with an HTML comment carrying
+#: the notice and digest; a hand-placed bare heading is the boundary too. The
+#: match is exact apart from that comment, so a user's own heading that merely
+#: begins with these words ("## Custom content for X") is not mistaken for it.
 HEADING = "## Custom content"
 
 _NOTICE = "the installer rewrites everything above this line and nothing below it"
 _DIGEST_CHARS = 12
-_DIGEST_RE = re.compile(rf"digest ([0-9a-f]{{{_DIGEST_CHARS}}})")
+_HEADING_RE = re.compile(rf"^{re.escape(HEADING)}(?: <!--.*-->)?[ \t]*$")
+# Any token after "digest" is the pinned value, compared verbatim.
+_DIGEST_RE = re.compile(r"digest (\S+)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +64,8 @@ class CustomContentConflictError(RuntimeError):
         listed = "".join(f"\n  {path}" for path in self.paths)
         super().__init__(
             "unexpected custom content sits above the "
-            f"'{HEADING}' heading and must be moved below it by hand"
+            f"'{HEADING}' heading and must be moved below it by hand; then delete the "
+            "digest comment from the heading line so the next install accepts the file"
             f"{listed}"
         )
 
@@ -140,17 +144,24 @@ def _split(text: str) -> tuple[str, str, str] | None:
     """
     lines = text.splitlines(keepends=True)
     for index, line in enumerate(lines):
-        if line.startswith(HEADING):
+        if _HEADING_RE.match(line.rstrip("\r\n")):
             return "".join(lines[:index]), line, "".join(lines[index + 1 :])
     return None
 
 
 def _stale_digest(heading: str, above: str) -> bool:
-    """Whether a heading's digest disagrees with the text above it. A heading
-    with no digest comment was placed by hand and pins nothing, so it never
-    disagrees."""
+    """Whether a heading's digest disagrees with the text above it.
+
+    A bare heading was placed by hand, or had its comment deleted after a refused
+    install; it pins nothing, so it never disagrees. Any comment on the heading
+    line has to carry a digest that matches: one that is mangled, re-cased, or
+    missing from the comment must not read as "no digest", which would unpin the
+    managed part and let an edit through.
+    """
+    if heading.strip() == HEADING:
+        return False
     match = _DIGEST_RE.search(heading)
-    return match is not None and match.group(1) != _digest(above)
+    return match is None or match.group(1) != _digest(above)
 
 
 def _digest(above: str) -> str:

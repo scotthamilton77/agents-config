@@ -233,6 +233,54 @@ def test_a_hand_placed_heading_without_a_digest_is_accepted() -> None:
     assert not heading_conflicts(existing)
 
 
+def test_a_heading_that_merely_begins_with_the_words_is_not_the_boundary() -> None:
+    """
+    Given a file with no boundary but a heading of the user's own that starts
+    with the same words
+    When it is merged
+    Then that heading is ordinary content: the whole file migrates under the new
+    boundary and nothing above it is lost.
+    """
+    existing = f"# preamble\n{HEADING} for another feature\nkeep\n".encode()
+
+    assert not heading_conflicts(existing)
+    result = merge_custom_content(_INCOMING, existing)
+
+    assert result.migrated
+    assert result.content == (
+        _MANAGED + _stamped(_MANAGED) + f"\n# preamble\n{HEADING} for another feature\nkeep\n"
+    ).encode("utf-8")
+
+
+def test_a_heading_with_trailing_whitespace_or_crlf_is_still_the_boundary() -> None:
+    """
+    Given a written file whose heading line picked up trailing spaces and CRLF
+    line endings from an editor
+    When the boundary is looked for
+    Then it is found: the digest still covers the bytes above it, so the check
+    stays meaningful rather than reading the file as boundary-less.
+    """
+    written = merge_custom_content(_INCOMING, None).content.decode("utf-8")
+    above, heading = written.split(HEADING, 1)
+    edited = (above + HEADING + heading.rstrip("\n") + "  \r\n" + "mine\r\n").encode("utf-8")
+
+    assert not heading_conflicts(edited)
+    assert merge_custom_content(_INCOMING, edited).content.endswith(b"-->\nmine\r\n")
+
+
+def test_a_corrupted_digest_is_a_conflict() -> None:
+    """
+    Given a written file whose digest was re-cased or otherwise mangled
+    When the conflict check runs
+    Then it is a conflict: a digest that no longer parses must not read as
+    "no digest", which would unpin the managed part and let an edit through.
+    """
+    written = merge_custom_content(_INCOMING, None).content.decode("utf-8")
+    above, heading = written.split(HEADING, 1)
+
+    assert heading_conflicts((above + HEADING + heading.upper()).encode("utf-8"))
+
+
 def test_the_written_digest_covers_exactly_the_bytes_above_the_heading() -> None:
     """
     Given a merged result

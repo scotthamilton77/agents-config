@@ -218,7 +218,8 @@ def refuse_custom_content_conflicts(conflicts: Sequence[Path], *, io: IOPort) ->
     listed = ", ".join(str(path) for path in conflicts)
     io.err(
         f"content above the '{HEADING}' heading was edited by hand in: {listed}. "
-        "Move it below the heading and re-run; nothing was installed."
+        "Move it below the heading, delete the digest comment from the heading line, "
+        "and re-run; nothing was installed."
     )
     raise CustomContentConflictError(conflicts)
 
