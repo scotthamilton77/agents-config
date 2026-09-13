@@ -18,9 +18,9 @@ short bounded number of retries rather than wedging the teammate forever.
 The harness also fires a TeammateIdle for a teammate whose own child subagent
 stopped while the teammate itself is still blocked inside the Agent call that
 spawned it. Such an idle carries nothing the teammate could have answered, so
-the hook recognises it by the subagent stop that preceded it — a stop belonging
-to some agent other than this teammate, moments earlier — and lets it through
-without spending any of the teammate's idle allowance.
+the hook recognises it by the subagent stop that preceded it. That stop belongs
+to some agent other than this teammate, moments earlier. The hook lets such an
+idle through without spending any of the teammate's idle allowance.
 
 Every other event — including both events without a ``teammate_name``, which
 covers classic auto-returning subagents, workflow subagents, and main
@@ -154,6 +154,12 @@ def followed_another_agents_stop(directory: Path, name: str) -> bool:
     The idle payload names no agent, so the stop that preceded it is the only
     evidence available. When the teammate's own stop is the most recent one,
     the teammate really did finish its turn.
+
+    Concurrent teammates can race here. One teammate's idle can arrive inside
+    the window while another teammate's stop is the most recent one, and that
+    idle is then excused although the teammate really did go idle. The race
+    runs one way only. It costs a block the gate would otherwise have placed,
+    and it never blocks a teammate that had nothing to answer.
     """
     stop = latest_stop(directory)
     if stop is None or stop.get("name") == name:
