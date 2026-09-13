@@ -659,10 +659,24 @@ OPTION_REFERENCE_RULE = (
 # nothing, it spends the lock freely and leaves the human a question they cannot
 # answer; told the lock is its alone to lift, it rations the lock against a
 # price nobody pays and calls a gap survivable when it is not.
+#
+# Which kind carries the note is here too, because the seat reaching for a gap
+# is the seat that gets it wrong. An alert is a demand on the human, and one
+# that asks them for nothing is a demand they cannot meet and have to clear by
+# hand -- the case that produces it is a note about what someone must read
+# before implementing an answer, which is an observation about the decision and
+# not a request for anything.
 GAP_RULE = (
-    "When a decision rests on something nobody has supplied, say so rather than supplying it "
-    "yourself. The update for that is `elicit-alert`: `target` is the decision, `text` is what "
-    "is missing, and `blocking` says whether the decision can be answered without it.\n"
+    "When a decision rests on an input nobody has supplied and the human can supply it, ask "
+    "them for it rather than supplying it yourself. The update for that is `elicit-alert`: "
+    "`target` is the decision, `text` is the question that asks for what is missing, and "
+    "`blocking` says whether the decision can be answered without it.\n"
+    "An `elicit-alert` asks the human for a specific input they can supply. A note that asks "
+    "them for nothing is an `informational` naming that decision in its `target` -- what "
+    "someone has to read before implementing the answer, a caveat on it, an observation you "
+    "are telling them rather than asking them for. An alert whose `text` asks for nothing is "
+    "the wrong kind, whatever `blocking` says -- with one exception, the second alert below "
+    "that lifts a lock by saying what they supplied.\n"
     "`blocking` true locks the decision: nobody answers it while it stands. The human lifts it "
     "by dismissing the alert, and you lift it by withdrawing it -- naming its id in "
     "`supersedes`, the reply's list of your own pending items you take back -- or by sending a "
@@ -670,7 +684,8 @@ GAP_RULE = (
     "they supplied, once they have supplied it in that decision's thread. So set `blocking` "
     "true only where the decision truly cannot be answered.\n"
     "`blocking` false leaves the decision answerable, and states the gap on the record. Use it "
-    "where the gap is worth knowing about and the human could still decide without it."
+    "where you are still asking them for something, or lifting a lock you set, and the human "
+    "could decide without it."
 )
 
 # How to read a board that moved. A thread agent is handed the record of every
@@ -741,7 +756,7 @@ UPDATE_EXAMPLES: dict[str, dict[str, Any]] = {
     "elicit-alert": {
         "kind": "elicit-alert",
         "target": "d1",
-        "text": "this rests on a throughput figure nobody has",
+        "text": "what throughput does this have to hold? nobody has supplied a figure",
         "blocking": True,
     },
     "informational": {"kind": "informational", "target": "d1", "text": "what you are telling them"},
@@ -782,10 +797,13 @@ UPDATE_EXAMPLES: dict[str, dict[str, Any]] = {
 KIND_DEFINITIONS: dict[str, str] = {
     "add-node": "put a new question on the board, with the options it can be answered from",
     "elicit-alert": (
-        "name something this decision rests on that nobody has supplied; `blocking` true says "
-        "the decision cannot be answered until they supply it"
+        "ask the human for something this decision rests on that nobody has supplied; "
+        "`blocking` true says the decision cannot be answered until they supply it"
     ),
-    "informational": "tell the human something, changing no decision",
+    "informational": (
+        "tell the human something about a decision, changing no decision and asking them for "
+        "nothing"
+    ),
     "invalidate": "the decision has no question left to ask, and stops being offered",
     "resolve-stale": "judge a decision that went stale under a withdrawn answer",
     "revise": (

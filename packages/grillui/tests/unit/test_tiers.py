@@ -1115,6 +1115,55 @@ def test_the_grill_master_brief_gives_a_gap_a_kind_and_a_way_out_of_it(tier: str
     assert GAP_RULE not in system_prompt(tier, THREAD_AGENT)
 
 
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_grill_master_brief_reserves_an_alert_for_a_note_that_asks_for_something(
+    tier: str,
+) -> None:
+    """
+    Given the grill-master brief on each tier
+    When it is read for which kind carries a note about a decision
+    Then an `elicit-alert` asks the human for a specific input they can supply, a
+         note that asks them for nothing is an `informational` naming that
+         decision, and an alert whose `text` asks for nothing is the wrong kind
+         whichever way `blocking` is set.
+
+    An alert is a demand on the human. One that asks for nothing is a demand
+    they cannot meet, so they clear it by hand and learn that alerts are noise.
+    The note that produces it reads as a gap to the seat writing it: what
+    someone has to read before implementing an answer is missing in the same
+    sense, and nothing in the kind's own line said it had to be a request.
+    """
+    brief = system_prompt(tier, GRILL_MASTER)
+
+    assert "An `elicit-alert` asks the human for a specific input they can supply" in brief
+    assert (
+        "A note that asks them for nothing is an `informational` naming that decision in its "
+        "`target`" in brief
+    )
+    assert "what someone has to read before implementing the answer" in brief
+    assert (
+        "An alert whose `text` asks for nothing is the wrong kind, whatever `blocking` says -- "
+        "with one exception, the second alert below that lifts a lock by saying what they "
+        "supplied" in brief
+    )
+    assert "where you are still asking them for something, or lifting a lock you set" in brief
+    # The per-kind list is where the kind is picked, so the two lines there have
+    # to draw the same line the rule above does.
+    assert "ask the human for something this decision rests on that nobody has supplied" in brief
+    assert (
+        "tell the human something about a decision, changing no decision and asking them for "
+        "nothing" in brief
+    )
+    assert "the gap is worth knowing about" not in brief
+    # The opening sentence and the rendered example are what a seat copies, so
+    # both have to ask: a licence over anything unsupplied, or an example that
+    # merely records a gap, is the wrong kind taught by the rule that forbids it.
+    assert "rests on an input nobody has supplied and the human can supply it, ask" in brief
+    assert "`text` is the question that asks for what is missing" in brief
+    assert "what throughput does this have to hold? nobody has supplied a figure" in brief
+    assert "this rests on a throughput figure nobody has" not in brief
+
+
 def answered_board() -> DispatchContext:
     """A map dispatch whose board carries the decision the human just answered."""
     return DispatchContext(
