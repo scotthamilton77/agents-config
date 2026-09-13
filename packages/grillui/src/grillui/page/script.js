@@ -1161,9 +1161,11 @@ function nextOpen() {
 function nextOpenWhy() {
   return boardFinished() ? "nothing is left open" : "everything still open is waiting";
 }
-// The walk itself. There is no bare-key shortcut beside it: every focus move
-// hands the caret to the focused decision's note box, so a second press of a
-// bare letter would land in what the human is writing rather than on the board.
+// The walk itself. It moves the focus and centres what it lands on; the caret
+// stays wherever the human left it. There is no bare-key shortcut beside it: a
+// settled decision hands the caret to the next decision's note box, so a bare
+// letter pressed after an answer would land in what the human is writing rather
+// than on the board.
 function goNextOpen() {
   var id = nextOpen();
   if (id) { focusOn(id); render(); }
@@ -2613,10 +2615,8 @@ function takeCaret(el, caret) {
 // replaces every node it runs over -- so it is held as where it sits in the text
 // of the nearest element the board gives an id, and laid back over the fresh
 // nodes. Held by the nodes themselves it would be restored onto nothing: the
-// nodes that come back are not the ones it was made on. The words go with it
-// too, so a restore that would land on different text -- the element grew a line
-// above the selection, or lost the words entirely -- drops the selection rather
-// than highlighting something nobody chose.
+// nodes that come back are not the ones it was made on. A selection that runs
+// out of that element is not held at all, which is the rebuild dropping it.
 function heldSelection() {
   var sel = window.getSelection();
   if (!sel || sel.rangeCount !== 1 || sel.isCollapsed) return null;
@@ -2627,28 +2627,37 @@ function heldSelection() {
   var before = document.createRange();
   before.selectNodeContents(host);
   before.setEnd(r.startContainer, r.startOffset);
-  return { id: host.id, at: before.toString().length, text: r.toString() };
+  // A selection has a direction: the anchor is where the drag began, and
+  // extending one with the keyboard grows it from the other end. Asked by
+  // building a range from the anchor to the focus, which collapses when the
+  // focus is the earlier of the two.
+  var probe = document.createRange();
+  probe.setStart(sel.anchorNode, sel.anchorOffset);
+  probe.setEnd(sel.focusNode, sel.focusOffset);
+  return { id: host.id, at: before.toString().length, text: r.toString(), back: probe.collapsed };
 }
 function relaySelection(held) {
   if (!held) return;
   var host = document.getElementById(held.id);
   if (!host) return;
-  var text = host.textContent;
-  // Where it was, unless what is above it moved -- then the same words wherever
-  // they now are.
-  var at = text.substr(held.at, held.text.length) === held.text ? held.at : text.indexOf(held.text);
-  if (at < 0) return;
-  var end = at + held.text.length;
-  var walk = document.createTreeWalker(host, NodeFilter.SHOW_TEXT), r = document.createRange();
-  var seen = 0, node;
+  // The words have to still be where they were. Looking for them anywhere else
+  // in the element picks the first copy of however many it holds, which is a
+  // highlight over text the human never chose; an element whose text moved
+  // under the selection drops it instead.
+  if (host.textContent.substr(held.at, held.text.length) !== held.text) return;
+  var end = held.at + held.text.length;
+  var walk = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  var seen = 0, node, from = null, fromAt = 0;
   while ((node = walk.nextNode())) {
     var next = seen + node.nodeValue.length;
-    if (seen <= at && at <= next) r.setStart(node, at - seen);
-    if (seen <= end && end <= next) {
-      r.setEnd(node, end - seen);
+    if (!from && held.at <= next) { from = node; fromAt = held.at - seen; }
+    if (from && end <= next) {
+      // An anchor and a focus rather than a range, because a range has no
+      // direction: a backwards selection restored from one comes back forwards
+      // and then grows from the end the human was not extending.
       var sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(r);
+      if (held.back) sel.setBaseAndExtent(node, end - seen, from, fromAt);
+      else sel.setBaseAndExtent(from, fromAt, node, end - seen);
       return;
     }
     seen = next;

@@ -2590,6 +2590,16 @@ def test_a_re_render_lays_the_selection_back_over_the_nodes_that_replace_it() ->
     Read before the rebuild and written after it, which is the whole of the
     ordering: a capture taken after `renderShell` would be reading the fresh
     document, where the selection is already gone.
+
+    Restored where it was or not at all. The element's text is the same text or
+    it is different text, and there is no third reading: hunting the words down
+    elsewhere in the element finds the first of however many copies of them it
+    holds, which is a highlight over something nobody chose.
+
+    The direction rides along. A selection made right to left has its anchor at
+    the right-hand end, and a human extending it with the keyboard grows it from
+    the left; restored as a range it comes back forwards and then grows from the
+    wrong end.
     """
     body = balanced_body("render")
     assert "var held = focusId ? null : heldSelection();" in body, (
@@ -2606,14 +2616,18 @@ def test_a_re_render_lays_the_selection_back_over_the_nodes_that_replace_it() ->
     assert 'closest("[id]")' in held, (
         "the selection is anchored to a node rather than to something named"
     )
+    assert "probe.collapsed" in held, "the selection is held without its direction"
     relay = balanced_body("relaySelection")
-    assert "text.indexOf(held.text)" in relay, (
-        "the words are not looked for where the element grew a line above them"
+    assert "indexOf" not in relay, (
+        "the words are hunted for elsewhere in the element, which finds the wrong copy"
     )
-    assert "if (at < 0) return;" in relay, (
-        "a selection whose words are gone is restored onto whatever is there instead"
+    assert "host.textContent.substr(held.at, held.text.length) !== held.text" in relay, (
+        "a selection whose words have moved is restored onto whatever is there instead"
     )
     assert "createTreeWalker" in relay, "the offset is not mapped back onto the fresh text"
+    assert relay.count("sel.setBaseAndExtent(") == 2 and "held.back" in relay, (
+        "the selection comes back without the direction it was made in"
+    )
 
 
 def test_the_page_takes_an_answer_box_on_the_advance_and_on_nothing_else() -> None:
