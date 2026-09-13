@@ -3045,12 +3045,13 @@ def test_taking_an_offer_appends_nothing_and_writes_after_the_humans_own_words()
     arming = balanced_body("armAnswer")
     assert not reaches_send(arming), "arming puts something on the wire"
     assert "arm" not in acts_that_write()
-    assert 'UI.drafts[id] = draft ? draft + "\\n\\n" + offer.text : offer.text;' in arming, (
+    assert 'var written = before ? before + "\\n\\n" + offer.text : offer.text;' in arming, (
         "the offer is not written after what the human already had"
     )
     assert (
-        "UI.armed[id] = { thread: tid, option: offer.option || null, text: offer.text };" in arming
-    )
+        "UI.armed[id] = { thread: tid, option: offer.option || null, "
+        "text: offer.text, before: before, written: written };"
+    ) in arming
     # The live offer and no other, even from a window drawn before the last turn
     # arrived: a control the human can still see is not a proposal still on offer.
     assert "t.turns[t.turns.length - 1]" in arming
@@ -3142,33 +3143,35 @@ def test_the_arm_is_dropped_by_every_way_its_thread_ends() -> None:
     one rings an option and holds a filled box on the strength of it -- which
     the human reads as an answer they have already given.
 
-    What comes out of the box is the sentence the arm put in it, and nothing
-    else. A restore that put back a snapshot of the draft instead would delete
-    every word the human wrote after the arming, which is the case a snapshot
-    cannot tell apart from the one it was written for.
+    What goes back is what arming found, and only where the box is still the one
+    arming wrote. A box the human has touched since is theirs and is left alone,
+    arm and all. The alternative is to find the offer's words in the box and cut
+    them out, which deletes their sentence whenever they wrote the same words --
+    on a decision whose answer an agent has just proposed, the likely case.
     """
     arming = balanced_body("armAnswer")
-    assert "UI.armed[id] = { thread: tid, option: offer.option || null, text: offer.text };" in (
+    assert "var untouched = !!standing && box === standing.written;" in arming, (
+        "arming does not know whether the box is still the one it wrote"
+    )
+    # The same offer, from the same thread, into the box taking it produced.
+    assert "if (!(untouched && standing.thread === tid && standing.text === offer.text)) {" in (
         arming
-    ), "the arm remembers something other than the words it put in the box"
-    assert "var draft = stripArm(id, UI.armed[id]).trim();" in arming, (
-        "a second arming stacks a second agent sentence in the box"
+    ), "taking one offer twice writes it twice"
+    assert "var before = (untouched ? standing.before : box).trim();" in arming, (
+        "an edited box is overwritten by what the standing arm found"
     )
     dropping = balanced_body("disarmFrom")
-    assert "UI.armed[id].thread !== tid" in dropping, (
-        "an arm from another thread is dropped with this one's"
+    assert "arm.thread !== tid" in dropping, "an arm from another thread is dropped with this one's"
+    assert 'if ((UI.drafts[id] || "") === arm.written) UI.drafts[id] = arm.before;' in dropping, (
+        "the box is put back without first checking it is the one arming wrote"
     )
-    assert "UI.drafts[id] = stripArm(id, UI.armed[id]);" in dropping
     assert "delete UI.armed[id];" in dropping
-    # Both paths take the words out through the one stripper, and it takes out
-    # the arm's own sentence rather than restoring a remembered draft over
-    # whatever the human wrote after it.
-    stripping = balanced_body("stripArm")
-    assert 'draft.replace("\\n\\n" + arm.text, "")' in stripping
-    assert 'draft.replace(arm.text + "\\n\\n", "")' in stripping
-    assert 'return draft.replace(arm.text, "");' in stripping, (
-        "a draft the human rewrote past the offer is not left alone"
-    )
+    # Recognition, never search. Hunting the offer's words in the box deletes a
+    # human's own sentence whenever they wrote the same words -- and on a
+    # decision whose answer an agent has just proposed, that is the likely case.
+    assert "replace(" not in arming, "arming edits the draft by text search"
+    assert "replace(" not in dropping, "disarming edits the draft by text search"
+    assert "indexOf(" not in dropping
     for gesture in ("foldThread", "parkThread", "closeThread"):
         assert "disarmFrom(tid);" in balanced_body(gesture), f"{gesture} leaves the arm standing"
 
