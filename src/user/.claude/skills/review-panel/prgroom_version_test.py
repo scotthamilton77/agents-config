@@ -14,6 +14,7 @@ Run: uv run prgroom_version_test.py
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -42,6 +43,9 @@ def _repo(tmp_path: Path, version: str) -> Path:
     return tmp_path
 
 
+REINSTALL = "a human has to reinstall it before this round posts"
+
+
 def _run(repo: Path, installed):
     return check.main(["--repo-root", str(repo)], installed=lambda: installed)
 
@@ -53,7 +57,7 @@ def test_an_older_installed_copy_refuses(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "0.1.0" in err
     assert "0.2.0" in err
-    assert "reinstall" in err
+    assert REINSTALL in err.lower()
 
 
 def test_the_same_version_passes(tmp_path, capsys):
@@ -93,7 +97,7 @@ def test_a_prgroom_that_will_not_report_its_version_refuses(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "answers the version flag with a failure" in err
     assert "older than any version that reports one" in err
-    assert "reinstall" in err
+    assert REINSTALL in err.lower()
     assert "0.2.0" in err
 
 
@@ -108,7 +112,7 @@ def test_an_unreadable_version_refuses(tmp_path, capsys):
     assert code == check.EXIT_REFUSED
     err = capsys.readouterr().err
     assert "cannot compare" in err
-    assert "a human has to reinstall it before this round posts" in err.lower()
+    assert REINSTALL in err.lower()
 
 
 def test_a_version_with_another_label_is_malformed(tmp_path, capsys):
@@ -167,11 +171,39 @@ def test_a_project_without_prgroom_is_not_the_checks_business(tmp_path, capsys):
     assert "nothing to check" in captured.out
 
 
-def test_the_doctrine_puts_the_check_before_the_post(tmp_path):
-    """The check is worth nothing if the procedure does not name it at the posting step."""
+def test_a_prgroom_that_never_answers_refuses(tmp_path, capsys):
+    """
+    Given a prgroom on PATH that does not answer the version flag at all
+    When the check runs
+    Then it refuses as a tool that is stuck, not as a tool that is missing: the
+    two need different things from the human.
+    """
+
+    def hangs():
+        raise subprocess.TimeoutExpired(cmd="prgroom --version", timeout=30)
+
+    code = check.main(["--repo-root", str(_repo(tmp_path, "0.2.0"))], installed=hangs)
+    assert code == check.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "did not answer the version flag" in err
+    assert str(check.VERSION_TIMEOUT_SECONDS) in err
+    assert "reinstall" in err
+
+
+def test_the_check_runs_immediately_before_the_post():
+    """
+    Given the posting section of the round's doctrine
+    When its commands are read in order
+    Then the check is the line directly above the post.
+
+    The ordering exists nowhere else. A check that runs after the verdict is
+    posted, or somewhere else in the round, prevents nothing.
+    """
     harvest = HARVEST_PATH.read_text(encoding="utf-8")
-    assert "prgroom_version.py" in harvest
-    assert harvest.index("prgroom_version.py") < harvest.index("prgroom post-verdict")
+    block = harvest.split("## Posting a pull request's verdict", 1)[1].split("```")[1]
+    lines = [line for line in block.splitlines() if line.strip()]
+    check_line = next(i for i, line in enumerate(lines) if "prgroom_version.py --repo-root" in line)
+    assert lines[check_line + 1].startswith("prgroom post-verdict")
 
 
 if __name__ == "__main__":

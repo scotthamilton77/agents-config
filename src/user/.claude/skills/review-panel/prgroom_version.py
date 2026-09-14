@@ -37,6 +37,11 @@ from pathlib import Path
 EXIT_OK = 0
 EXIT_REFUSED = 2
 
+# How long the installed tool gets to answer the version flag. Printing a
+# version is immediate work, so a wait beyond this is a tool that is stuck
+# rather than a tool that is slow.
+VERSION_TIMEOUT_SECONDS = 30
+
 
 class UnreadableProject(Exception):
     """The prgroom package is present and says nothing usable about its version."""
@@ -87,17 +92,19 @@ def installed_version() -> str | None:
 
     None means no prgroom runs at all. An empty string means one runs but answers
     the version flag with a failure, which is itself an answer: it is older than
-    any version that reports one.
+    any version that reports one. A tool that never answers raises
+    ``subprocess.TimeoutExpired`` rather than reading as absent — a hung tool and
+    a missing one need different things from the human.
     """
     try:
         proc = subprocess.run(
             ["prgroom", "--version"],  # noqa: S603,S607
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=VERSION_TIMEOUT_SECONDS,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError:
         return None
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
@@ -132,7 +139,17 @@ def main(
         print("prgroom-version: this repository builds no prgroom; nothing to check")
         return EXIT_OK
 
-    running = installed()
+    try:
+        running = installed()
+    except subprocess.TimeoutExpired:
+        print(
+            "prgroom-version: the prgroom on PATH did not answer the version flag within "
+            f"{VERSION_TIMEOUT_SECONDS} seconds, so nothing here can say which version "
+            "would post. A human has to reinstall it, or find out what it is stuck on, "
+            "before this round posts.",
+            file=sys.stderr,
+        )
+        return EXIT_REFUSED
     if running is None:
         print(
             "prgroom-version: no prgroom on PATH, so the verdict cannot be posted. "

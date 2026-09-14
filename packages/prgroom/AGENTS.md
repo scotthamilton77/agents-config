@@ -162,10 +162,16 @@ both.
 
 A bump is therefore a message to the human: reinstall before the next review
 round. The round posts its verdict through the `prgroom` on PATH, and only a
-human runs the installer, so a merged fix does not reach the tool by itself. The
-`review-panel` skill checks the installed release against this package's before
-it posts. It refuses when the installed copy is older, when no prgroom is on
-PATH, and when the one that is there will not report a version.
+human runs the installer, so a merged fix does not reach the tool by itself. An
+unbumped change is what makes a stale tool indistinguishable from a current one,
+which is why the guard refuses it rather than warning. The `review-panel` skill
+checks the installed release against this package's before it posts, and its own
+doctrine states which answers it refuses.
+
+This section is the rule. The delivery contract in the repo-root `AGENTS.md` and
+the `version-guard` recipe in the `Makefile` point here rather than restating it,
+because a rule written in four places is three places that go stale on the next
+change to the code.
 
 ## Do not run grooming against a live PR automatically
 

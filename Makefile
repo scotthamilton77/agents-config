@@ -94,18 +94,14 @@ content-tests:
 doc-lint:
 	uv --project $(INSTALLER) run python -m installer.doc_lint_cli .
 
-# version-guard fails a change to a deployed CLI package's source that neither
-# bumps its release version, as a bare x.y.z, nor marks the released version
-# partial. The two are exclusive: a bumped version wearing the partial label is
-# one the installer refuses to deploy and the review round demands be installed,
-# so the guard refuses it as well. Only a human runs the
-# installer, so a merged fix does not reach the copy on the operator's PATH by
-# itself: the version is the only signal that the installed tool is behind, and
-# an unbumped change leaves a stale tool indistinguishable from a current one. It
-# compares against the pull request's base branch, and skips when there is no
-# base to compare against — a push to the default branch asks nothing. Repo-root
-# invocation (no `cd`) so it resolves the package and the revisions against the
-# repo; `uv --project` selects the installer venv.
+# version-guard refuses a change to a deployed CLI package's source whose version
+# neither bumps the release nor marks the released version partial, and refuses
+# one that does both. `packages/prgroom/AGENTS.md` states that rule and why it
+# holds; this recipe only runs it. It compares against the pull request's base
+# branch, and skips when there is no base to compare against — a push to the
+# default branch asks nothing. Repo-root invocation (no `cd`) so it resolves the
+# package and the revisions against the repo; `uv --project` selects the
+# installer venv.
 version-guard:
 	uv --project $(INSTALLER) run python -m installer.version_guard_cli .
 
