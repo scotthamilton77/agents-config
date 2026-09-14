@@ -19,6 +19,10 @@ first rung, and the turn they send then is the very turn the transfer was bought
 for. The second puts the human's own press inside that window, because a press
 forces the next turn and no turn after it. The third is a turn this page built
 and then declined to post, which spends nothing at all.
+
+The last of those has a popped-out window beside it. The scrim lies over the
+board and over nothing else, so the window a thread was popped into is where a
+held board is easiest to type into without being told it is held.
 """
 
 from __future__ import annotations
@@ -420,8 +424,8 @@ def test_a_press_survives_a_turn_this_page_declined_to_post(
     Given a thread whose transfer control the human has pressed
     When the board goes read-only, they send into the thread anyway from the
          keyboard, and the page builds that turn without posting it
-    Then their press is still on the next turn they really send, and the expert
-         composes it.
+    Then the box still holds what they typed, their press is still on the next
+         turn they really send, and the expert composes it.
 
     The keyboard is the way in. The scrim over a held board stops a control
     being clicked and stops nothing that is typed: a caret already in the say
@@ -449,6 +453,9 @@ def test_a_press_survives_a_turn_this_page_declined_to_post(
     assert DECLINED not in json.dumps([one.payload for one in session.entries()]), (
         "the page posted a turn while the board was held"
     )
+    assert page.input_value("#ft-say") == DECLINED, (
+        "the box was emptied by a turn the page never posted"
+    )
 
     hold_board(page, False)
     page.wait_for_selector(".scrim", state="detached", timeout=BOARD_TIMEOUT)
@@ -460,3 +467,43 @@ def test_a_press_survives_a_turn_this_page_declined_to_post(
     assert len(session.claude_calls()) == 1, session.claude_calls()
     typed = typed_on(session, channel)
     assert typed[-1]["transfer"] is True, typed[-1]
+
+
+def test_a_popped_window_keeps_what_was_typed_into_a_board_that_is_held(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a thread the human has popped out into its own window
+    When the board goes read-only and they send into that window anyway
+    Then the window still holds what they typed, and nothing reached the log.
+
+    The scrim lies over the board and over nothing else. A window already popped
+    out stays a live pane with its own box and its own Send, and the turn that
+    Send makes goes back through the opener -- which will not post it. A box
+    emptied on the way out is emptied for nothing, and this window is where that
+    is hardest to notice, because the thing saying the board is held is in
+    another window entirely.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.stub.script(ANSWERED)
+    page = board(session)
+
+    start_thread(page, "d2", ASKED)
+    session.settled()
+    with page.expect_popup() as popped:
+        page.click('.slide [data-act="popout"]')
+    window = popped.value
+    window.wait_for_selector("#pop-say", timeout=BOARD_TIMEOUT)
+
+    hold_board(page, True)
+    page.wait_for_selector(".scrim", timeout=BOARD_TIMEOUT)
+    window.fill("#pop-say", DECLINED)
+    window.click('[data-act="say"]')
+
+    assert window.input_value("#pop-say") == DECLINED, (
+        "the popped window emptied a box the board would not post from"
+    )
+    window.wait_for_timeout(300)
+    assert DECLINED not in json.dumps([one.payload for one in session.entries()]), (
+        "the popped window posted a turn while the board was held"
+    )

@@ -1954,8 +1954,54 @@ def test_a_press_is_spent_by_the_turn_that_reaches_the_wire_and_not_by_the_one_b
     assert "spend(out)" in sender, "the wire does not spend the press"
     declined = sender.split("spend(out)")[0]
     assert "return;" in declined, "the press is spent before the page decides to post"
+    assert "boardHeld()" in declined, "a send declined on a held board still spends the press"
     for refusing in ("WIRE.epoch", "WIRE.doctor", "sessionOver()"):
-        assert refusing in declined, f"a send declined on {refusing} still spends the press"
+        assert refusing in function_body("boardHeld"), (
+            f"a send declined on {refusing} still spends the press"
+        )
+
+
+def test_every_gesture_that_empties_a_box_refuses_on_the_one_hold_the_wire_refuses_on() -> None:
+    """The shape of the refusal, rather than the behaviour it produces.
+
+    That the box keeps the human's words is measured in a browser, because
+    reading the code that declines to clear one is not evidence that anyone got
+    their words back. What is measured here is the arrangement underneath it.
+
+    The scrim over a held board stops a control being clicked and stops nothing
+    that is typed: a caret already in a box sends on Enter, and the page builds
+    that turn before it decides not to post it. A draft cleared at that moment
+    is taken from the human in exchange for nothing -- no event on the wire, no
+    banner, and no way back to the words they had just written.
+
+    So one predicate says when this page posts nothing, every gesture that
+    empties the box it was typed in refuses on that same predicate, and each
+    refuses before it clears anything. The popped window is one of those
+    gestures, and it asks the opener rather than carrying a second copy of the
+    rule that could drift from this one.
+    """
+    assert "!WIRE.epoch || WIRE.doctor || sessionOver()" in function_body("boardHeld"), (
+        "the hold this page posts nothing under is written in more than one place"
+    )
+    assert "boardHeld()" in function_body("send").split("spend(out)")[0], (
+        "the wire posts into a held board"
+    )
+    refused = function_body("sendFrom").split("UI.drafts", 1)[0]
+    assert "if (boardHeld()) return;" in refused, (
+        "a box the page will not post from is emptied anyway"
+    )
+    # Answering is the other way that clear is reached, and the mandate branch
+    # sends before it, so the whole gesture is what refuses rather than its tail.
+    answering = function_body("answerDecision").split("send(", 1)[0]
+    assert "if (boardHeld()) return;" in answering, (
+        "an answer is taken, and its draft emptied, on a board that posts nothing"
+    )
+    boot = function_body("popOut")
+    asked = boot.split("window.opener.popAct", 1)[0]
+    assert "window.opener.boardHeld()" in asked, (
+        "the popped window sends before it asks whether the board is held"
+    )
+    assert "if(typed&&held)return;" in asked, "a held board still empties the popped window's box"
 
 
 def test_a_page_turn_carrying_the_flag_moves_that_channel_and_only_that_one(
@@ -2550,7 +2596,8 @@ def test_nothing_more_is_said_into_a_log_that_has_been_closed() -> None:
     the moment the terminal entry is durable, so the update read that would
     carry that entry may never answer.
     """
-    assert "|| sessionOver()) return;" in function_body("send")
+    assert "|| boardHeld()) return;" in function_body("send")
+    assert "sessionOver()" in function_body("boardHeld")
     assert "if (sessionOver()) return;" in function_body("poll")
     assert "if (sessionOver()) return;" in function_body("callDoctor")
     assert "ENDED = true;" in function_body("send")
