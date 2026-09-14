@@ -716,6 +716,13 @@ def test_reachability_no_tty_without_yes_raises(tmp_path: Path) -> None:
         )
 
 
+def _names_the_label_and_the_bump(message: str) -> bool:
+    """The refusal's two clauses: the version is partial, and a release bump lifts it."""
+    return "is partial, so it does not install" in message and (
+        "bump its release version to make it installable" in message
+    )
+
+
 def _partial_version(tmp_path: Path) -> Path:
     """Give the package a version carrying the label that refuses installation."""
     pkg = tmp_path / "packages" / "prgroom"
@@ -754,7 +761,7 @@ def test_partial_version_refuses_the_fresh_install(tmp_path: Path) -> None:
     assert outcome.any_failed
     assert not any(t[0] == "tool_install" for t in deploy.transcript)
     errors = [e.message for e in io.transcript if e.channel == "err"]
-    assert any("partial" in m and "release version" in m for m in errors)
+    assert any(_names_the_label_and_the_bump(m) for m in errors)
 
 
 def test_partial_version_refuses_the_forcing_install(tmp_path: Path) -> None:
@@ -795,37 +802,47 @@ def test_partial_version_refuses_the_forcing_install(tmp_path: Path) -> None:
     # The guidance is the point of the refusal, and this path reaches it through
     # a different caller than the fresh row does.
     errors = [e.message for e in io.transcript if e.channel == "err"]
-    assert any("partial" in m and "release version" in m for m in errors)
+    assert any(_names_the_label_and_the_bump(m) for m in errors)
 
 
-def test_release_version_installs_as_before(tmp_path: Path) -> None:
+@pytest.mark.parametrize("row", ["fresh", "forcing"])
+def test_release_version_installs_as_before(tmp_path: Path, row: str) -> None:
     """
-    Given a package declaring a plain release version
-    When the fresh row runs
+    Given prgroom declaring a plain release version
+    When the fresh row or the forcing row runs
     Then the install fires, so the refusal reads only the label.
 
     Shim budget: 2.
     """
-    pkg = _pkg(tmp_path)
+    pkg = tmp_path / "packages" / "prgroom"
+    (pkg / "src").mkdir(parents=True)
+    (pkg / "src" / "m.py").write_bytes(b"pass")
     (pkg / "pyproject.toml").write_text('[project]\nversion = "0.2.0"\n', encoding="utf-8")
-    shim = tmp_path / "bin" / "grind"
+    shim = tmp_path / "bin" / "prgroom"
+    forcing = row == "forcing"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
-        tool_list={},
-        which_map={"grind": shim},
-        shims=[None, shim],
+        tool_list={"prgroom": frozenset({"prgroom"})} if forcing else {},
+        which_map={"prgroom": shim},
+        shims=[shim, shim] if forcing else [None, shim],
         installs=[_OK],
         smokes=[_OK],
     )
+    prior = (
+        Receipt(clis=(CliReceiptEntry(name="prgroom", binary="prgroom", digest="sha256:stale"),))
+        if forcing
+        else Receipt()
+    )
     outcome = deploy_clis(
-        (_SPEC,),
+        (_PRGROOM_SPEC,),
         repo_root=tmp_path,
-        prior=Receipt(),
+        prior=prior,
         deploy=deploy,
         io=ScriptedIO(),
         dry_run=False,
         auto_yes=True,
     )
     assert not outcome.any_failed
-    assert "grind" in outcome.deployed
+    assert any(t[0] == "tool_install" for t in deploy.transcript)
+    assert "prgroom" in outcome.deployed
