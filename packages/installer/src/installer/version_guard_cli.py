@@ -83,11 +83,16 @@ def changed_paths(repo_root: Path, base: str) -> list[str] | None:
     carrying a non-ASCII or control character, and a quoted path matches no
     prefix this guard tests — so the one file whose name is unusual would be the
     one file that ships without a bump.
+
+    Rename detection is off for the same reason. A detected rename is reported
+    by its destination alone, so a file moved out of the watched package would
+    look like a change somewhere else and the package it left would ship
+    without a bump.
     """
-    committed = _git(repo_root, "diff", "--name-only", "-z", f"{base}...HEAD")
+    committed = _git(repo_root, "diff", "--name-only", "--no-renames", "-z", f"{base}...HEAD")
     if committed.returncode != 0:
         return None
-    working = _git(repo_root, "diff", "--name-only", "-z", "HEAD")
+    working = _git(repo_root, "diff", "--name-only", "--no-renames", "-z", "HEAD")
     entries = committed.stdout.split("\0") + working.stdout.split("\0")
     return sorted({entry for entry in entries if entry})
 

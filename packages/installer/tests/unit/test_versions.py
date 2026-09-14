@@ -395,6 +395,43 @@ def test_a_path_git_would_quote_still_matches(tmp_path: Path) -> None:
     assert bump_refusal(changed=changed or [], base_version="0.1.0", head_version="0.1.0")
 
 
+def test_a_file_moved_out_of_the_watched_package_is_still_a_watched_change(
+    tmp_path: Path,
+) -> None:
+    """
+    Given a watched file moved, unchanged, to a path outside the watched package
+    When the guard reads the changed paths
+    Then the path it left is among them — git reports a detected rename by its
+    destination alone, and a package that lost a file has changed.
+    """
+
+    def git(*args: str) -> None:
+        subprocess.run(  # noqa: S603  # fixed argv into git, in a temp repository
+            ["git", "-C", str(tmp_path), *args],  # noqa: S607
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-b", "base")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+    pyproject = tmp_path / WATCHED_PACKAGE / "pyproject.toml"
+    pyproject.parent.mkdir(parents=True)
+    pyproject.write_text('[project]\nversion = "0.1.0"\n', encoding="utf-8")
+    source = tmp_path / _SRC
+    source.parent.mkdir(parents=True)
+    source.write_text("x = 1\n" * 20, encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "base")
+    git("checkout", "-b", "work")
+    git("mv", _SRC, "elsewhere.py")
+    git("commit", "-m", "work")
+
+    changed = version_guard_cli.changed_paths(tmp_path, "base")
+    assert changed == ["elsewhere.py", _SRC]
+    assert bump_refusal(changed=changed or [], base_version="0.1.0", head_version="0.1.0")
+
+
 def test_module_is_runnable_as_python_dash_m(monkeypatch: pytest.MonkeyPatch) -> None:
     """``python -m installer.version_guard_cli`` is the make-target invocation
     shape; pins the ``__main__`` guard."""
