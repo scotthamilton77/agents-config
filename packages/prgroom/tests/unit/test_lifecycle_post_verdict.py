@@ -941,6 +941,20 @@ class TestTheLineCommentAReaderSees:
         body = render_comment(item)
         assert json.loads(envelope_of(body)) == item
 
+    def test_a_run_in_any_field_sets_the_fence_not_only_one_in_the_claim(self) -> None:
+        # The block holds the whole record, so the fence is chosen against every
+        # string the finding wrote. A run hiding in the criterion would close the
+        # block exactly as a run in the claim does.
+        item = finding("f1", ac="`" * 5, claim="a ``` run", evidence=f"{APP_PY}:3")
+        body = render_comment(item)
+        (opener,) = [
+            line
+            for line in body.splitlines()
+            if line.endswith(FENCE_LANGUAGE) and set(line[: -len(FENCE_LANGUAGE)]) == {"`"}
+        ]
+        assert opener == "`" * 6 + FENCE_LANGUAGE
+        assert json.loads(envelope_of(body)) == item
+
     @pytest.mark.parametrize(
         "item",
         [

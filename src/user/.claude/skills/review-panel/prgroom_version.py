@@ -19,6 +19,10 @@ The repository root is named rather than assumed. This script is read from the
 skill's own directory, so the working directory is not the repository under
 review, and defaulting to it would check the wrong tree and pass.
 
+Every version this prints is quoted. The strings come off disk and out of another
+process, and the operator reads the refusal in a terminal that would act on a
+control sequence embedded in one.
+
 Only the release part of a version is compared. A version carrying the
 ``+partial`` local label is tweaks accumulating on top of the release it names,
 deliberately not worth a reinstall, so the label is ignored on both sides.
@@ -75,16 +79,17 @@ def repo_version(repo_root: Path) -> str | None:
     something is wrong with the tree and passing the round through it is a guess.
     """
     pyproject = repo_root / PACKAGE_PYPROJECT
-    if not pyproject.is_file():
+    if not pyproject.exists():
         return None
     try:
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise UnreadableProject(str(exc)) from exc
-    version = data.get("project", {}).get("version")
-    if not version:
+    project = data.get("project")
+    version = project.get("version") if isinstance(project, dict) else None
+    if not isinstance(version, str) or not version:
         raise UnreadableProject("it declares no project version")
-    return str(version)
+    return version
 
 
 def installed_version() -> str | None:
@@ -153,7 +158,7 @@ def main(
     if running is None:
         print(
             "prgroom-version: no prgroom on PATH, so the verdict cannot be posted. "
-            f"This repository builds {wanted}, and a human has to install it before "
+            f"This repository builds {wanted!r}, and a human has to install it before "
             "this round posts.",
             file=sys.stderr,
         )
@@ -162,7 +167,7 @@ def main(
         print(
             "prgroom-version: the prgroom on PATH answers the version flag with a "
             "failure, so it is older than any version that reports one, and older than "
-            f"the {wanted} this repository builds. A human has to reinstall it before "
+            f"the {wanted!r} this repository builds. A human has to reinstall it before "
             "this round posts.",
             file=sys.stderr,
         )
@@ -179,13 +184,13 @@ def main(
         return EXIT_REFUSED
     if have < want:
         print(
-            f"prgroom-version: the prgroom on PATH is {running}, and this repository "
-            f"builds {wanted}. Posting would go through the older tool. A human has to "
+            f"prgroom-version: the prgroom on PATH is {running!r}, and this repository "
+            f"builds {wanted!r}. Posting would go through the older tool. A human has to "
             "reinstall it before this round posts.",
             file=sys.stderr,
         )
         return EXIT_REFUSED
-    print(f"prgroom-version: installed {running} against repository {wanted}; current")
+    print(f"prgroom-version: installed {running!r} against repository {wanted!r}; current")
     return EXIT_OK
 
 

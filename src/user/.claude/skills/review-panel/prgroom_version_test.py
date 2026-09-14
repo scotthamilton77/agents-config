@@ -146,6 +146,46 @@ def test_a_present_but_unreadable_package_refuses(tmp_path, capsys):
     assert "declares no project version" in capsys.readouterr().err
 
 
+def test_a_project_table_of_the_wrong_shape_refuses(tmp_path, capsys):
+    """
+    Given valid TOML whose project key is not a table, or whose version is not a
+    string
+    When the check runs
+    Then it refuses as unreadable, naming the file, rather than raising past the
+    handler on a shape nobody anticipated.
+    """
+    pyproject = tmp_path / check.PACKAGE_PYPROJECT
+    pyproject.parent.mkdir(parents=True)
+    for body in ('project = "prgroom"\n', "[project]\nversion = 2\n"):
+        pyproject.write_text(body, encoding="utf-8")
+        assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
+        assert str(check.PACKAGE_PYPROJECT) in capsys.readouterr().err
+
+
+def test_a_pyproject_that_cannot_be_read_refuses(tmp_path, capsys):
+    """
+    Given a path where the pyproject should be that cannot be read as a file
+    When the check runs
+    Then it refuses naming the file, rather than reading as a project that has
+    no prgroom in it.
+    """
+    (tmp_path / check.PACKAGE_PYPROJECT).mkdir(parents=True)
+    assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
+    assert str(check.PACKAGE_PYPROJECT) in capsys.readouterr().err
+
+
+def test_versions_are_quoted_in_every_message(tmp_path, capsys):
+    """
+    Given a version string carrying a terminal escape sequence
+    When the check names it
+    Then it is quoted rather than replayed into the operator's terminal.
+    """
+    assert _run(_repo(tmp_path, "0.2.0"), "0.1.0\x1b[2J") == check.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "\x1b[2J" not in err
+    assert "\\x1b" in err
+
+
 def test_the_repository_root_has_no_default():
     """
     Given no --repo-root

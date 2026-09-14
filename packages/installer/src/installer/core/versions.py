@@ -124,7 +124,7 @@ def bump_refusal(
         if head == base:
             return None
         return (
-            f"{WATCHED_PACKAGE} is at {head_version}, which bumps the release and marks "
+            f"{WATCHED_PACKAGE} is at {head_version!r}, which bumps the release and marks "
             f"it {PARTIAL_LABEL} at once. A version takes one of the two shapes: tweaks "
             f"on the released version, {base_version}{PARTIAL_LABEL}, or a bump that is a "
             "bare release and obliges a reinstall."
@@ -132,7 +132,7 @@ def bump_refusal(
     if head > base:
         return None
     return (
-        f"{WATCHED_PACKAGE} changed, and its version is still {head_version} "
-        f"(base {base_version}). Bump the release version, or mark the change "
+        f"{WATCHED_PACKAGE} changed, and its version is still {head_version!r} "
+        f"(base {base_version!r}). Bump the release version, or mark the change "
         f"{PARTIAL_LABEL} to say it is not worth reinstalling yet."
     )

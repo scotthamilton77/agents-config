@@ -129,6 +129,21 @@ def test_guard_says_nothing_when_the_base_declares_no_version() -> None:
     assert bump_refusal(changed=[_SRC], base_version=None, head_version="0.1.0") is None
 
 
+def test_guard_quotes_the_versions_it_echoes() -> None:
+    """
+    Given a version string carrying a terminal escape sequence
+    When the refusal names it
+    Then it is quoted rather than replayed: the string comes off disk, and the
+    operator reads the message in a terminal that acts on control characters.
+    """
+    refusal = bump_refusal(
+        changed=[_SRC], base_version="0.1.0", head_version="0.1.0+partial\x1b[2J"
+    )
+    assert refusal is not None
+    assert "\x1b[2J" not in refusal
+    assert "\\x1b" in refusal
+
+
 def test_guard_fails_a_malformed_base_version() -> None:
     refusal = bump_refusal(changed=[_SRC], base_version="oops", head_version="0.2.0")
     assert refusal is not None
@@ -191,7 +206,7 @@ def test_cli_fails_on_the_refusal(
     monkeypatch.setattr(version_guard_cli, "changed_paths", lambda *_a: [_SRC])
     monkeypatch.setattr(version_guard_cli, "base_version", lambda *_a: "0.1.0")
     assert version_guard_cli.main([str(tmp_path), "--base", "origin/main"]) == 1
-    assert "still 0.1.0" in capsys.readouterr().err
+    assert "still '0.1.0'" in capsys.readouterr().err
 
 
 def test_cli_passes_a_clear_change(
@@ -247,6 +262,41 @@ def test_changed_paths_and_base_version_read_real_git(tmp_path: Path) -> None:
         f"{WATCHED_PACKAGE}/pyproject.toml",
         _SRC,
     ]
+
+
+def test_a_base_that_is_there_but_unusable_is_not_a_new_package(tmp_path: Path) -> None:
+    """
+    Given a base revision whose prgroom pyproject does not parse
+    When the guard reads it
+    Then it reads as empty rather than as absent, so the change refuses: only a
+    base with no such file at all is the package's introduction.
+    """
+
+    def git(*args: str) -> None:
+        subprocess.run(  # noqa: S603  # fixed argv into git, in a temp repository
+            ["git", "-C", str(tmp_path), *args],  # noqa: S607
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-b", "base")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+    pyproject = tmp_path / WATCHED_PACKAGE / "pyproject.toml"
+    pyproject.parent.mkdir(parents=True)
+    pyproject.write_text("this is = = not toml\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "base")
+
+    assert version_guard_cli.base_version(tmp_path, "base") == ""
+    assert bump_refusal(changed=[_SRC], base_version="", head_version="0.1.0") is not None
+
+    # A base with no such file is the genuine new-package case, and it passes.
+    git("checkout", "-b", "no-package")
+    pyproject.unlink()
+    git("commit", "-am", "no package")
+    assert version_guard_cli.base_version(tmp_path, "no-package") is None
+    assert bump_refusal(changed=[_SRC], base_version=None, head_version="0.1.0") is None
 
 
 def test_a_path_git_would_quote_still_matches(tmp_path: Path) -> None:

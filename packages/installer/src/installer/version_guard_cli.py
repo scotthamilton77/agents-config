@@ -87,11 +87,18 @@ def changed_paths(repo_root: Path, base: str) -> list[str] | None:
 
 
 def base_version(repo_root: Path, base: str) -> str | None:
-    """The watched package's version on ``base``, or None when it declares none."""
+    """The watched package's version on ``base``, or None when the file is not there.
+
+    A file that is there and says nothing usable comes back as the empty string
+    rather than as None. None means the base predates the package, which is the
+    one case with nothing to compare against; an unreadable base is a base whose
+    version this change cannot be measured against, and passing it would let a
+    broken base wave every later change through.
+    """
     proc = _git(repo_root, "show", f"{base}:{WATCHED_PACKAGE}/pyproject.toml")
     if proc.returncode != 0:
         return None
-    return version_in(proc.stdout) or None
+    return version_in(proc.stdout)
 
 
 def main(argv: list[str] | None = None) -> int:
