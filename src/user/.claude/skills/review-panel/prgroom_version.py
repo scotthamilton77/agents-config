@@ -82,21 +82,30 @@ def repo_version(repo_root: Path) -> str | None:
 
     This is the one boundary between the repository and the rest of the check.
     None means the package is genuinely not here, which is the ordinary case for
-    every project but prgroom's own: nothing at the path, and no symlink standing
-    where it should be. Every other way of failing to get a version — a read that
-    errors, bytes that do not decode, TOML that does not parse, a project table or
-    a version of some shape nobody anticipated — raises ``UnreadableProject``, so
-    a failure mode this comment does not list still arrives as the refusal rather
-    than as a traceback.
+    every project but prgroom's own: opening the file finds nothing at the path,
+    and no symlink stands where it should be. Absence is judged by the open
+    itself rather than by a stat beforehand, because a stat that fails for any
+    reason reports "not there", and a directory the check cannot search would
+    then read as a project without the package. Every other way of failing to
+    get a version — a read that errors, bytes that do not decode, TOML that does
+    not parse, a project table or a version of some shape nobody anticipated —
+    raises ``UnreadableProject``, so a failure mode this comment does not list
+    still arrives as the refusal rather than as a traceback.
     """
     pyproject = repo_root / PACKAGE_PYPROJECT
-    if not pyproject.exists() and not pyproject.is_symlink():
-        return None
     try:
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        text = pyproject.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        if pyproject.is_symlink():
+            raise UnreadableProject(str(exc)) from exc
+        return None
+    except (OSError, UnicodeDecodeError) as exc:
+        raise UnreadableProject(str(exc)) from exc
+    try:
+        data = tomllib.loads(text)
         project = data.get("project")
         version = project.get("version") if isinstance(project, dict) else None
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
+    except ValueError as exc:
         raise UnreadableProject(str(exc)) from exc
     if not isinstance(version, str) or not version.strip():
         raise UnreadableProject("it declares no usable project version")

@@ -14,6 +14,7 @@ Run: uv run prgroom_version_test.py
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -194,6 +195,24 @@ def test_a_pyproject_that_cannot_be_read_refuses(tmp_path, capsys):
     """
     (tmp_path / check.PACKAGE_PYPROJECT).mkdir(parents=True)
     assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
+    assert str(check.PACKAGE_PYPROJECT) in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root is not refused by directory permissions")
+def test_a_package_directory_the_check_cannot_search_refuses(tmp_path, capsys):
+    """
+    Given a prgroom pyproject that is there, under a directory with no search permission
+    When the check runs
+    Then it refuses naming the file. A tree the check cannot look into is not a
+    tree without the package, and passing it would let a stale prgroom post.
+    """
+    pyproject = _repo(tmp_path, "0.2.0") / check.PACKAGE_PYPROJECT
+    package = pyproject.parent
+    package.chmod(0)
+    try:
+        assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
+    finally:
+        package.chmod(0o755)
     assert str(check.PACKAGE_PYPROJECT) in capsys.readouterr().err
 
 
