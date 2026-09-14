@@ -499,6 +499,10 @@ class TestPostingTwiceIsANoOp:
         [
             pytest.param({"commit_id": MOVED}, id="the-same-text-at-another-head"),
             pytest.param({"body": "a different verdict"}, id="another-text-at-this-head"),
+            pytest.param(
+                {"body": render_body(verdict_of(finding("f9", claim="another round's finding")))},
+                id="another-verdict-file-at-this-head",
+            ),
             pytest.param({"user": {"login": "someone-else"}}, id="another-identity"),
             pytest.param({"body": ""}, id="an-empty-body"),
         ],
