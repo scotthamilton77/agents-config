@@ -695,8 +695,10 @@ class TestTheSummaryAboveTheEnvelope:
         assert render_body(verdict_of()) == POSTED_VERDICT_BODY
 
     def test_the_same_verdict_renders_the_same_body_every_time(self, tmp_path: Path) -> None:
-        # Idempotence is equality on the body, so a rendering that varied between
-        # two runs would repost a verdict already posted.
+        # A posted verdict is recognized by the envelope its body carries, and the
+        # envelope is the file verbatim, so the rendering around it must not vary
+        # between two runs either: a reader comparing two postings of one verdict
+        # should see one body.
         verdict = load_verdict(written(tmp_path))
         assert render_body(verdict) == render_body(verdict)
         assert render_body(load_verdict(written(tmp_path))) == render_body(verdict)
