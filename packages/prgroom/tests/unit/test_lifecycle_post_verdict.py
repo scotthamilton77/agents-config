@@ -1085,6 +1085,24 @@ class TestReadingACriteriaFile:
             "A2": "The second.",
         }
 
+    @pytest.mark.parametrize("marker", ["-", "*", "+"])
+    def test_a_sentence_beginning_on_the_continuation_line_is_the_criterion(
+        self, tmp_path: Path, marker: str
+    ) -> None:
+        # An author who wraps right after the id has written one bullet, and an id
+        # with nothing after it on any line states no criterion at all.
+        text = (
+            f"{marker} **A1**\n"
+            "  The sentence starts here\n"
+            "  and wraps once more.\n"
+            f"{marker} **A2**\n"
+            f"{marker} **A3** On one line.\n"
+        )
+        assert dict(load_criteria(criteria_written(tmp_path, text))) == {
+            "A1": "The sentence starts here and wraps once more.",
+            "A3": "On one line.",
+        }
+
     def test_a_file_that_cannot_be_read_is_refused_and_names_the_path(self, tmp_path: Path) -> None:
         missing = tmp_path / "nowhere" / "criteria.md"
         with pytest.raises(PreconditionError) as caught:

@@ -70,10 +70,14 @@ FENCE_LANGUAGE = "json"
 # wants the fields the prose renders from.
 FINDING_SUMMARY = "Finding record"
 
-# Where one acceptance criterion starts: a bullet whose id is in bold, then the
-# first line of the criterion's sentence. Markdown spells a bullet three ways,
-# and an author who picks the third must not lose every criterion sentence.
-_CRITERION = re.compile(r"^[ \t]*[-*+][ \t]+\*\*(?P<id>[^*\s]+)\*\*:?[ \t]+(?P<sentence>\S.*)$")
+# Where one acceptance criterion starts: a bullet whose first token is an id in
+# bold. The sentence may follow on the same line or begin on the next, since an
+# author who wraps right after the id has still written one bullet. Markdown
+# spells a bullet three ways, and an author who picks the third must not lose
+# every criterion sentence.
+_CRITERION = re.compile(
+    r"^[ \t]*[-*+][ \t]+\*\*(?P<id>[^*\s]+)\*\*:?(?:[ \t]+(?P<sentence>\S.*))?[ \t]*$"
+)
 
 # Any markdown list item at all. A criterion's sentence runs to the next one, and
 # a bullet stating something other than a criterion must not be read as more of
@@ -187,13 +191,15 @@ def load_criteria(path: Path) -> Mapping[str, str]:
         if opened is not None:
             # A fresh list, so a file stating one id twice is read as the later
             # bullet rather than as both of them run together.
-            reading = criteria[opened["id"]] = [opened["sentence"]]
+            reading = criteria[opened["id"]] = [opened["sentence"] or ""]
         elif reading is not None:
             if not line.strip() or _LIST_ITEM.match(line) or line.lstrip().startswith("#"):
                 reading = None
             else:
                 reading.append(line)
-    return {identifier: _line(" ".join(parts)) for identifier, parts in criteria.items()}
+    # A bullet that is an id and nothing else states no criterion to render.
+    sentences = {identifier: _line(" ".join(parts)) for identifier, parts in criteria.items()}
+    return {identifier: sentence for identifier, sentence in sentences.items() if sentence}
 
 
 def load_verdict(path: Path, criteria: Mapping[str, str] = NO_CRITERIA) -> Verdict:
