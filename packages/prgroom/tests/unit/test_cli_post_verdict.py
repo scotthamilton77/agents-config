@@ -24,6 +24,7 @@ from prgroom.lifecycle.post_verdict import (
     envelope_of,
     load_criteria,
     render_body,
+    render_comment,
 )
 from prgroom.lifecycle.run import Verbs
 from prgroom.proc import CommandResult
@@ -790,3 +791,73 @@ class TestTheCriteriaTheRoundJudgedAgainst:
         assert result.exit_code == 2
         assert ErrorCode.PRECONDITION_VERDICT_TOO_LARGE.value in result.output
         assert refused.calls == []
+
+
+def envelope_whose_comment_renders_to(length: int) -> dict[str, Any]:
+    """One finding whose line comment comes out at exactly ``length`` characters.
+
+    The padding goes in the evidence, which the comment prints once as prose and
+    once inside the record, so each character added costs two. Whatever is left
+    over is spent on the id, which only the record carries.
+    """
+    finding = dict(ENVELOPE["findings"][0], evidence=f"{APP_PY}:3 x")
+    finding["evidence"] += "x" * ((length - len(render_comment(finding))) // 2)
+    while len(render_comment(finding)) < length:
+        finding["id"] += "x"
+    assert len(render_comment(finding)) == length
+    return dict(ENVELOPE, findings=[finding])
+
+
+class TestAnInlineCommentTooLargeToPost:
+    """The ceiling applies to each comment, not only to the body above them.
+
+    GitHub rejects the whole review when one comment in it is oversized, so a
+    comment past the ceiling loses the body and every other comment with it. The
+    diff decides which findings anchor and the diff costs a call, so every
+    finding's comment is measured rather than only the ones that would be posted.
+    """
+
+    def write(self, workspace: tuple[Path, Path], length: int) -> tuple[Path, Path]:
+        config, verdict = workspace
+        verdict.write_text(json.dumps(envelope_whose_comment_renders_to(length)))
+        return config, verdict
+
+    def test_a_comment_exactly_at_the_ceiling_is_accepted(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The refusal is on exceeding the ceiling, not on reaching it: a comment
+        # the API would take must not be turned away here.
+        config, verdict = self.write(workspace, MAX_BODY_CHARS)
+        http = transport(BASE_ROUTES)
+        wire(monkeypatch, http)
+        assert invoke(config, verdict).exit_code == 0
+        (posted,) = http.posted_reviews()
+        assert len(posted["comments"][0]["body"]) == MAX_BODY_CHARS
+
+    def test_a_comment_one_character_past_it_is_refused_before_any_api_call(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config, verdict = self.write(workspace, MAX_BODY_CHARS + 1)
+        identifier = json.loads(verdict.read_text())["findings"][0]["id"]
+        http = transport({})
+        wire(monkeypatch, http)
+        result = invoke(config, verdict)
+        assert result.exit_code == 2
+        output = " ".join(result.output.split())
+        assert ErrorCode.PRECONDITION_VERDICT_TOO_LARGE.value in output
+        assert f"the comment for finding {identifier} renders to {MAX_BODY_CHARS + 1}" in output
+        assert http.calls == []
+
+    def test_a_body_that_fits_does_not_excuse_an_oversized_comment(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The evidence is the whole of the padding, and the body prints it once
+        # while the comment prints it twice, so this is a verdict whose body is
+        # comfortably inside the ceiling and whose comment is not.
+        config, verdict = self.write(workspace, MAX_BODY_CHARS + 1)
+        text = verdict.read_text()
+        assert len(render_body(Verdict(text=text, head_sha=HEAD, findings=()))) < MAX_BODY_CHARS
+        http = transport({})
+        wire(monkeypatch, http)
+        assert invoke(config, verdict).exit_code == 2
+        assert http.calls == []

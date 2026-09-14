@@ -1005,6 +1005,14 @@ class TestReadingACriteriaFile:
         assert caught.value.code is ErrorCode.PRECONDITION_CRITERIA_UNREADABLE
         assert str(missing) in str(caught.value.detail)
 
+    def test_a_file_carrying_bytes_that_are_not_utf8_still_reads(self, tmp_path: Path) -> None:
+        # A criteria document is prose someone wrote in an editor, and one stray
+        # byte in it must cost the criterion its character rather than costing the
+        # round its posting.
+        path = tmp_path / "criteria.md"
+        path.write_bytes(b"- **A1** A criterion with a \xff in it.\n")
+        assert list(load_criteria(path)) == ["A1"]
+
     def test_a_file_naming_no_criteria_yields_none_rather_than_failing(
         self, tmp_path: Path
     ) -> None:
@@ -1036,7 +1044,7 @@ class TestReadingACriteriaFile:
         path = criteria_written(
             tmp_path,
             "- **A1** A criterion.\n\nA paragraph below it.\n\n"
-            "- **A2** Another criterion.\n## A heading\n"
+            "- **A2** Another criterion.\n  ## An indented heading\n"
             "- **A3** A third criterion.\n- A bullet stating something else.\n",
         )
         assert dict(load_criteria(path)) == {

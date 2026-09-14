@@ -98,10 +98,17 @@ def test_a_prgroom_that_will_not_report_its_version_refuses(tmp_path, capsys):
 
 
 def test_an_unreadable_version_refuses(tmp_path, capsys):
-    """Two versions that cannot be compared are a human's problem, not a pass."""
+    """
+    Given a prgroom that exits 0 and prints something that is not a version
+    When the check runs
+    Then it refuses and names the reinstall, as every other refusal does: an
+    unreadable answer is no evidence that the tool is current.
+    """
     code = _run(_repo(tmp_path, "0.2.0"), "prgroom, version 0.2.0")
     assert code == check.EXIT_REFUSED
-    assert "cannot compare" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "cannot compare" in err
+    assert "a human has to reinstall it before this round posts" in err.lower()
 
 
 def test_a_version_with_another_label_is_malformed(tmp_path, capsys):

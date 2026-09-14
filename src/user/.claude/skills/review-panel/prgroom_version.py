@@ -155,7 +155,8 @@ def main(
     if want is None or have is None:
         print(
             f"prgroom-version: cannot compare versions (installed {running!r}, "
-            f"repository {wanted!r}); a human has to sort out which prgroom is on PATH.",
+            f"repository {wanted!r}), so nothing here can say the tool is current. A "
+            "human has to reinstall it before this round posts.",
             file=sys.stderr,
         )
         return EXIT_REFUSED

@@ -76,9 +76,35 @@ def test_guard_passes_a_bumped_release() -> None:
     assert bump_refusal(changed=[_SRC], base_version="0.1.0", head_version="0.2.0") is None
 
 
-def test_guard_passes_a_partial_version() -> None:
-    """The label is the other way to satisfy the rule, so no comparison is needed."""
+def test_guard_passes_a_partial_on_the_released_version() -> None:
+    """A partial rides on the release the base already names, so it compares equal."""
     assert bump_refusal(changed=[_SRC], base_version="0.1.0", head_version="0.1.0+partial") is None
+
+
+def test_guard_refuses_a_bump_that_also_wears_the_label() -> None:
+    """
+    Given a version that bumps the release and marks it partial at once
+    When the guard runs
+    Then it refuses, naming both shapes.
+
+    No state satisfies that version: the installer refuses to deploy a partial,
+    and the round's check reads the bump and demands the install just refused.
+    """
+    refusal = bump_refusal(changed=[_SRC], base_version="0.1.0", head_version="0.2.0+partial")
+    assert refusal is not None
+    assert "0.1.0+partial" in refusal
+    assert "bare release" in refusal
+
+
+def test_guard_reads_the_packages_own_pyproject_as_a_change() -> None:
+    """
+    Given only the package's pyproject changed
+    When the guard runs
+    Then it compares: the file carries the version and the dependency set, both
+    of which decide what the installed tool is.
+    """
+    changed = [f"{WATCHED_PACKAGE}/pyproject.toml"]
+    assert bump_refusal(changed=changed, base_version="0.1.0", head_version="0.1.0") is not None
 
 
 def test_guard_ignores_a_change_outside_the_watched_source() -> None:

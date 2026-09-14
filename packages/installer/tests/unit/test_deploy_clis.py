@@ -786,6 +786,10 @@ def test_partial_version_refuses_the_forcing_install(tmp_path: Path) -> None:
     assert outcome.any_failed
     assert not any(t[0] == "tool_install" for t in deploy.transcript)
     assert "grind" not in outcome.deployed
+    # The guidance is the point of the refusal, and this path reaches it through
+    # a different caller than the fresh row does.
+    errors = [e.message for e in io.transcript if e.channel == "err"]
+    assert any("partial" in m and "release version" in m for m in errors)
 
 
 def test_release_version_installs_as_before(tmp_path: Path) -> None:

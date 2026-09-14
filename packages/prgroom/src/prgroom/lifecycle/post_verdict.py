@@ -49,10 +49,11 @@ COMMENT_EVENT = "COMMENT"
 # own posting comes back as, and the only state its idempotence check accepts.
 COMMENT_STATE = "COMMENTED"
 
-# The ceiling GitHub puts on a comment body, measured against the body this verb
-# renders rather than the file it renders from: the summary is part of what gets
-# posted, so a file that fits and a body that fits are different questions. A
-# verdict past it is refused rather than truncated: a truncated verdict is a
+# The ceiling GitHub puts on a comment body, measured against everything this verb
+# renders rather than the file it renders from: the review body and each inline
+# comment are separate bodies the API measures separately, and neither is the file
+# they render from. A verdict past it is refused rather than truncated: a
+# truncated verdict is a
 # different document that still reads as the round's result, and the JSON would no
 # longer parse for anyone consuming it. Refusal is on exceeding the ceiling, not
 # on reaching it — a body the API would take must not be turned away here.
@@ -124,19 +125,21 @@ T = TypeVar("T")
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
-    """A verdict file as this verb reads it: its bytes, and the two fields it uses.
+    """Everything a posting renders from: the verdict file, and what it is judged by.
 
     ``text`` is the whole file, and the posted body reproduces it verbatim — the
     verb re-serializes nothing, so the envelope a reader takes back out of the
-    review cannot be a rounding of the file. Schema validation belongs to whatever
-    assembled the file; this reads only what it must, and says which field failed
-    when one is not there.
+    review cannot be a rounding of the file. ``head_sha`` is the commit the review
+    pins to, and ``findings`` are the records the inline comments are built from.
+    Schema validation belongs to whatever assembled the file; this reads only what
+    it must, and says which field failed when one is not there.
 
     ``criteria`` maps a criterion id to its sentence, from the criteria file the
-    round judged against. It rides here rather than being passed alongside because
-    every rendering is then a function of this object alone: the body measured
-    against the size ceiling is the body posted, and the body compared for
-    idempotence is the body a repost would build.
+    round judged against. Both the body's findings list and each line comment read
+    it, to say what a criterion means rather than only naming it. It rides here
+    rather than being passed alongside because every rendering is then a function
+    of this object alone: what gets measured against the size ceiling is what gets
+    posted, and what a repost compares is what the first posting left.
     """
 
     text: str
@@ -201,8 +204,13 @@ def load_verdict(path: Path, criteria: Mapping[str, str] = NO_CRITERIA) -> Verdi
     that makes a repost a no-op and any later comparison against what was
     reviewed.
 
-    The size refusal is taken here, against the body the file renders to, so a
-    verdict too large to post costs no API call.
+    The size refusal is taken here, against everything the file renders to, so a
+    verdict too large to post costs no API call. Every finding's comment is
+    measured, not only those that will find a line in the diff, because which
+    findings anchor is a question only the diff answers and the diff costs a call.
+    Measuring one comment too many refuses a verdict that could not have posted
+    whole anyway: GitHub rejects the review a single oversized comment arrives in,
+    which would lose the body and every other comment with it.
     """
     try:
         raw = path.read_bytes()
@@ -255,6 +263,16 @@ def load_verdict(path: Path, criteria: Mapping[str, str] = NO_CRITERIA) -> Verdi
             ErrorCode.PRECONDITION_VERDICT_TOO_LARGE,
             detail=f"{path} renders to {rendered} characters; the limit is {MAX_BODY_CHARS}",
         )
+    for finding in verdict.findings:
+        comment = len(render_comment(finding, criteria))
+        if comment > MAX_BODY_CHARS:
+            raise PreconditionError(
+                ErrorCode.PRECONDITION_VERDICT_TOO_LARGE,
+                detail=(
+                    f"{path}: the comment for finding {finding['id']} renders to "
+                    f"{comment} characters; the limit is {MAX_BODY_CHARS}"
+                ),
+            )
     return verdict
 
 

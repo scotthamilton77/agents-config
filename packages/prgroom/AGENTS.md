@@ -148,11 +148,17 @@ possible for a no-installer or specific-checkout workflow.
 
 The version in `pyproject.toml` is either a release `x.y.z` or that release
 carrying the PEP 440 local label `+partial`. A change to `src/` or to
-`pyproject.toml` either bumps the release or carries the label, and
-`make version-guard` fails the build when it does neither. The label means
-tweaks accumulating on top of the installed release that are not yet worth a
-reinstall, so the installer refuses to deploy a version carrying it; every
-comparison elsewhere reads the release part alone.
+`pyproject.toml` either bumps the release, as a bare `x.y.z`, or leaves the
+released version where it is and appends the label; `make version-guard` fails
+the build on anything else. The label means tweaks accumulating on top of the
+released version that are not yet worth a reinstall, so the installer refuses to
+deploy a version carrying it; every comparison elsewhere reads the release part
+alone.
+
+The two shapes are exclusive. A bumped version wearing the label satisfies
+nothing: the installer refuses it for being partial, and the review round's check
+reads the bump and demands the install that was just refused. Bump or label, not
+both.
 
 A bump is therefore a message to the human: reinstall before the next review
 round. The round posts its verdict through the `prgroom` on PATH, and only a

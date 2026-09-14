@@ -101,6 +101,12 @@ def bump_refusal(
     ``base_version`` is None when the base revision declares no version for the
     package, which is the branch that introduces it: there is nothing to bump
     against, so the guard has nothing to say.
+
+    A partial version rides on the released one, so its release part is the
+    base's. A bumped release wearing the label would be a version no state can
+    satisfy: the guard would pass it, the installer would refuse to deploy it
+    for being partial, and the round's check would read the bump and demand the
+    install that was just refused.
     """
     if not touches_watched(changed):
         return None
@@ -108,14 +114,21 @@ def bump_refusal(
         head = release(head_version)
     except ValueError as exc:
         return f"{WATCHED_PACKAGE}: {exc}"
-    if is_partial(head_version):
-        return None
     if base_version is None:
         return None
     try:
         base = release(base_version)
     except ValueError as exc:
         return f"{WATCHED_PACKAGE} on the base revision: {exc}"
+    if is_partial(head_version):
+        if head == base:
+            return None
+        return (
+            f"{WATCHED_PACKAGE} is at {head_version}, which bumps the release and marks "
+            f"it {PARTIAL_LABEL} at once. A version takes one of the two shapes: tweaks "
+            f"on the released version, {base_version}{PARTIAL_LABEL}, or a bump that is a "
+            "bare release and obliges a reinstall."
+        )
     if head > base:
         return None
     return (

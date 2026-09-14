@@ -95,7 +95,10 @@ doc-lint:
 	uv --project $(INSTALLER) run python -m installer.doc_lint_cli .
 
 # version-guard fails a change to a deployed CLI package's source that neither
-# bumps its release version nor marks the version partial. Only a human runs the
+# bumps its release version, as a bare x.y.z, nor marks the released version
+# partial. The two are exclusive: a bumped version wearing the partial label is
+# one the installer refuses to deploy and the review round demands be installed,
+# so the guard refuses it as well. Only a human runs the
 # installer, so a merged fix does not reach the copy on the operator's PATH by
 # itself: the version is the only signal that the installed tool is behind, and
 # an unbumped change leaves a stale tool indistinguishable from a current one. It
