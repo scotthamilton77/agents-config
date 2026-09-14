@@ -198,7 +198,10 @@ def test_the_real_version_call_surfaces_a_timeout(tmp_path, capsys, monkeypatch)
     at the boundary and reported as a prgroom that is not installed.
     """
 
-    def hangs(*_args, **_kwargs):
+    seen: dict[str, object] = {}
+
+    def hangs(*_args, **kwargs):
+        seen.update(kwargs)
         raise subprocess.TimeoutExpired(
             cmd="prgroom --version", timeout=check.VERSION_TIMEOUT_SECONDS
         )
@@ -206,6 +209,9 @@ def test_the_real_version_call_surfaces_a_timeout(tmp_path, capsys, monkeypatch)
     monkeypatch.setattr(check.subprocess, "run", hangs)
     code = check.main(["--repo-root", str(_repo(tmp_path, "0.2.0"))])
     assert code == check.EXIT_REFUSED
+    # A stub that raises regardless of its arguments proves nothing about the
+    # real call; the limit has to reach subprocess, or a hung tool blocks forever.
+    assert seen.get("timeout") == check.VERSION_TIMEOUT_SECONDS
     err = capsys.readouterr().err
     assert "did not answer the version flag" in err
     assert "no prgroom on PATH" not in err
