@@ -79,10 +79,10 @@ _CRITERION = re.compile(
     r"^[ \t]*[-*+][ \t]+\*\*(?P<id>[^*\s]+)\*\*:?(?:[ \t]+(?P<sentence>\S.*))?[ \t]*$"
 )
 
-# Any markdown list item at all. A criterion's sentence runs to the next one, and
-# a bullet stating something other than a criterion must not be read as more of
-# the criterion above it.
-_LIST_ITEM = re.compile(r"^[ \t]*[-*+][ \t]+")
+# Any markdown list item at all, ordered ones included. A criterion's sentence
+# runs to the next one, and an item stating something other than a criterion
+# must not be read as more of the criterion above it.
+_LIST_ITEM = re.compile(r"^[ \t]*(?:[-*+]|[0-9]+[.)])[ \t]+")
 
 # How much of a criterion the body's findings list shows. Every finding competes
 # for one line there, so the sentence is cut to a gloss that says which criterion

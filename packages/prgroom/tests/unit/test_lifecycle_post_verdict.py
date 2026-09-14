@@ -1116,6 +1116,8 @@ class TestReadingACriteriaFile:
             pytest.param("- **A1** One.\n\n  Not more.\n", {"A1": "One."}, id="blank-ends"),
             pytest.param("- **A1** One.\n# H\n", {"A1": "One."}, id="heading-ends"),
             pytest.param("- **A1** One.\n- plain\n", {"A1": "One."}, id="plain-bullet-ends"),
+            pytest.param("- **A1** One.\n1. **A2** Two.\n", {"A1": "One."}, id="ordered-item-ends"),
+            pytest.param("- **A1** One.\n2) more\n", {"A1": "One."}, id="paren-ordered-item-ends"),
             pytest.param("- **A1**\n", {}, id="id-alone"),
             pytest.param("- **A1**\n\n  Loose.\n", {}, id="loose-item"),
             pytest.param("- **A1**:Tight.\n", {}, id="colon-no-space"),
