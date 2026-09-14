@@ -1123,6 +1123,7 @@ class TestReadingACriteriaFile:
             pytest.param("1. **A1** One.\n", {}, id="ordered-item"),
             pytest.param("**A1** One.\n", {}, id="no-marker"),
             pytest.param("- A1 One.\n", {}, id="id-not-bold"),
+            pytest.param("- __A1__ One.\n", {}, id="id-in-underscores"),
         ],
     )
     def test_the_loader_reads_exactly_the_line_grammar_the_criterion_states(
