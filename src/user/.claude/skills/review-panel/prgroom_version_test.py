@@ -73,21 +73,26 @@ def test_a_newer_installed_copy_passes(tmp_path):
 
 
 def test_prgroom_absent_from_path_refuses(tmp_path, capsys):
+    """The message names the install as a human's act, due before the round posts."""
     code = _run(_repo(tmp_path, "0.2.0"), None)
     assert code == check.EXIT_REFUSED
-    assert "no prgroom on PATH" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "no prgroom on PATH" in err
+    assert "a human has to install it before this round posts" in err
 
 
-def test_a_prgroom_too_old_to_report_its_version_refuses(tmp_path, capsys):
+def test_a_prgroom_that_will_not_report_its_version_refuses(tmp_path, capsys):
     """
-    Given a prgroom on PATH that fails the version flag
+    Given a prgroom on PATH that answers the version flag with a failure
     When the check runs
-    Then it refuses as stale rather than as absent, because the flag has been
-    there since the rule and a copy without it predates both.
+    Then it refuses as stale rather than as absent, and says what it observed
+    rather than asserting anything about when the flag arrived.
     """
     code = _run(_repo(tmp_path, "0.2.0"), "")
     assert code == check.EXIT_REFUSED
     err = capsys.readouterr().err
+    assert "answers the version flag with a failure" in err
+    assert "older than any version that reports one" in err
     assert "reinstall" in err
     assert "0.2.0" in err
 
@@ -97,6 +102,49 @@ def test_an_unreadable_version_refuses(tmp_path, capsys):
     code = _run(_repo(tmp_path, "0.2.0"), "prgroom, version 0.2.0")
     assert code == check.EXIT_REFUSED
     assert "cannot compare" in capsys.readouterr().err
+
+
+def test_a_version_with_another_label_is_malformed(tmp_path, capsys):
+    """
+    Given versions whose label is not the one label the rule allows
+    When the check runs
+    Then it refuses: only x.y.z and x.y.z+partial are versions this compares.
+    """
+    assert _run(_repo(tmp_path, "0.2.0"), "0.2.0+other") == check.EXIT_REFUSED
+    assert "cannot compare" in capsys.readouterr().err
+    assert _run(_repo(tmp_path, "bogus+partial"), "0.2.0") == check.EXIT_REFUSED
+    assert "cannot compare" in capsys.readouterr().err
+
+
+def test_a_present_but_unreadable_package_refuses(tmp_path, capsys):
+    """
+    Given a prgroom pyproject that is there and says nothing usable
+    When the check runs
+    Then it refuses naming the file, because a tree that cannot answer is not a
+    tree without the question.
+    """
+    pyproject = tmp_path / check.PACKAGE_PYPROJECT
+    pyproject.parent.mkdir(parents=True)
+    pyproject.write_text("this is not = = toml\n", encoding="utf-8")
+    assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert str(check.PACKAGE_PYPROJECT) in err
+
+    pyproject.write_text('[project]\nname = "prgroom"\n', encoding="utf-8")
+    assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
+    assert "declares no project version" in capsys.readouterr().err
+
+
+def test_the_repository_root_has_no_default():
+    """
+    Given no --repo-root
+    When the check runs
+    Then argparse rejects it, because the working directory is the skill's own
+    and checking it would pass on a tree nobody reviewed.
+    """
+    with pytest.raises(SystemExit) as exc_info:
+        check.main([], installed=lambda: "0.2.0")
+    assert exc_info.value.code == 2
 
 
 def test_a_project_without_prgroom_is_not_the_checks_business(tmp_path, capsys):

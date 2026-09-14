@@ -25,26 +25,34 @@ PARTIAL_LABEL = "+partial"
 # review round posts its verdict through the installed copy.
 WATCHED_PACKAGE = "packages/prgroom"
 
-_RELEASE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)(\+partial)?$")
 
 
 def release(raw: str) -> tuple[int, int, int]:
-    """The ``x.y.z`` part of a version, ignoring any local label.
+    """The ``x.y.z`` part of a version, ignoring the partial label.
 
-    Raises ``ValueError`` when what precedes the label is not three integers.
+    Raises ``ValueError`` on anything that is not one of the two shapes the rule
+    allows. A version matching neither is malformed however plausible it looks:
+    a label other than the one label is not a local variant to tolerate, it is a
+    version nothing here knows how to compare.
     """
-    base = raw.strip().split("+", 1)[0]
-    match = _RELEASE.match(base)
+    match = _VERSION.match(raw.strip())
     if match is None:
         msg = f"version {raw!r} is neither x.y.z nor x.y.z{PARTIAL_LABEL}"
         raise ValueError(msg)
-    major, minor, patch = match.groups()
+    major, minor, patch, _ = match.groups()
     return int(major), int(minor), int(patch)
 
 
 def is_partial(raw: str) -> bool:
-    """Whether this version carries the label that makes it uninstallable."""
-    return raw.strip().endswith(PARTIAL_LABEL)
+    """Whether this is a well-formed version carrying the uninstallable label.
+
+    A malformed version is not partial. Reading the label off a string whose
+    release part is unparseable would let any spelling of the suffix wave a
+    change past the guard.
+    """
+    match = _VERSION.match(raw.strip())
+    return match is not None and match.group(4) is not None
 
 
 def version_in(pyproject_text: str) -> str:
@@ -96,12 +104,12 @@ def bump_refusal(
     """
     if not touches_watched(changed):
         return None
-    if is_partial(head_version):
-        return None
     try:
         head = release(head_version)
     except ValueError as exc:
         return f"{WATCHED_PACKAGE}: {exc}"
+    if is_partial(head_version):
+        return None
     if base_version is None:
         return None
     try:

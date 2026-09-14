@@ -158,7 +158,8 @@ A bump is therefore a message to the human: reinstall before the next review
 round. The round posts its verdict through the `prgroom` on PATH, and only a
 human runs the installer, so a merged fix does not reach the tool by itself. The
 `review-panel` skill checks the installed release against this package's before
-it posts and refuses when the installed one is older.
+it posts. It refuses when the installed copy is older, when no prgroom is on
+PATH, and when the one that is there will not report a version.
 
 ## Do not run grooming against a live PR automatically
 

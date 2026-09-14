@@ -18,6 +18,8 @@ from prgroom.errors import ErrorCode, PreconditionError
 from prgroom.gh.app import FILES_PER_PAGE, REVIEWS_PER_PAGE
 from prgroom.lifecycle.approve import APPROVE_EVENT
 from prgroom.lifecycle.post_verdict import (
+    FENCE_LANGUAGE,
+    GLOSS_WORDS,
     Anchor,
     Verdict,
     build_comments,
@@ -1009,3 +1011,81 @@ class TestReadingACriteriaFile:
         # A criteria document the round judged against may be prose the parser
         # recognizes nothing in; that is a summary without glosses, not a refusal.
         assert dict(load_criteria(criteria_written(tmp_path, "no bullets here at all\n"))) == {}
+
+    def test_a_bullet_wrapped_onto_a_continuation_line_is_one_sentence(
+        self, tmp_path: Path
+    ) -> None:
+        # The wrap is a decision about line width, not about what the criterion
+        # says, and the second bullet below it stays a criterion of its own.
+        path = criteria_written(
+            tmp_path,
+            "- **A1** The first half of a criterion,\n"
+            "  and the indented continuation that finishes it.\n"
+            "- **A2** A second criterion nobody should swallow.\n",
+        )
+        assert dict(load_criteria(path)) == {
+            "A1": "The first half of a criterion, and the indented continuation that finishes it.",
+            "A2": "A second criterion nobody should swallow.",
+        }
+
+    def test_a_bullet_ends_at_a_blank_line_a_heading_or_a_plain_bullet(
+        self, tmp_path: Path
+    ) -> None:
+        # Each of the three is what an author writes to end a bullet, so none of
+        # them may be read as more of the criterion above it.
+        path = criteria_written(
+            tmp_path,
+            "- **A1** A criterion.\n\nA paragraph below it.\n\n"
+            "- **A2** Another criterion.\n## A heading\n"
+            "- **A3** A third criterion.\n- A bullet stating something else.\n",
+        )
+        assert dict(load_criteria(path)) == {
+            "A1": "A criterion.",
+            "A2": "Another criterion.",
+            "A3": "A third criterion.",
+        }
+
+
+class TestHowMuchOfACriterionTheGlossShows:
+    """The word boundary the body's roster cuts a criterion at."""
+
+    def gloss_of(self, sentence: str) -> str:
+        """The roster entry for one finding judged against ``sentence``."""
+        text = json.dumps({"head_sha": HEAD, "findings": [{"id": "f1", "ac": "A1"}]})
+        verdict = Verdict(text=text, head_sha=HEAD, findings=(), criteria={"A1": sentence})
+        (row,) = [line for line in render_body(verdict).splitlines() if line.startswith("- f1 (A1")]
+        return row
+
+    def test_a_sentence_of_exactly_twelve_words_is_shown_whole(self) -> None:
+        # The boundary is the last length that still fits, so the cut is one word
+        # past it and never one word short of it.
+        whole = " ".join(f"word{index}" for index in range(1, GLOSS_WORDS + 1))
+        assert self.gloss_of(whole) == f"- f1 (A1: {whole})"
+
+    def test_a_sentence_one_word_longer_is_cut_at_twelve_words(self) -> None:
+        words = [f"word{index}" for index in range(1, GLOSS_WORDS + 2)]
+        cut = " ".join(words[:GLOSS_WORDS])
+        assert self.gloss_of(" ".join(words)) == f"- f1 (A1: {cut}...)"
+
+
+class TestTheFenceHoldingATextVerbatim:
+    """How wide the fence is, against what the text it holds carries."""
+
+    def opener(self, text: str) -> str:
+        """The line that opens the collapsed block in a body rendering ``text``."""
+        (line,) = [
+            row
+            for row in render_body(Verdict(text=text, head_sha=HEAD, findings=())).splitlines()
+            if row.endswith(FENCE_LANGUAGE) and set(row[: -len(FENCE_LANGUAGE)]) == {"`"}
+        ]
+        return line
+
+    def test_a_fence_is_one_backtick_longer_than_the_longest_run_inside_it(self) -> None:
+        # One longer, exactly: a shorter fence is closed by the text itself, and a
+        # longer one is a width nothing in the text called for.
+        assert self.opener('{"note": "a ``` run"}') == "````" + FENCE_LANGUAGE
+
+    def test_a_text_carrying_no_backticks_is_fenced_with_three(self) -> None:
+        # Three is the floor markdown puts on a fence, and a text with nothing to
+        # escape takes the floor rather than anything wider.
+        assert self.opener('{"note": "no runs at all"}') == "```" + FENCE_LANGUAGE

@@ -95,9 +95,10 @@ doc-lint:
 	uv --project $(INSTALLER) run python -m installer.doc_lint_cli .
 
 # version-guard fails a change to a deployed CLI package's source that neither
-# bumps its release version nor marks the version partial. Without it a fix
-# merges and the copy on the operator's PATH stays the old one with nothing
-# saying so, which is how a review round once posted through a stale tool. It
+# bumps its release version nor marks the version partial. Only a human runs the
+# installer, so a merged fix does not reach the copy on the operator's PATH by
+# itself: the version is the only signal that the installed tool is behind, and
+# an unbumped change leaves a stale tool indistinguishable from a current one. It
 # compares against the pull request's base branch, and skips when there is no
 # base to compare against — a push to the default branch asks nothing. Repo-root
 # invocation (no `cd`) so it resolves the package and the revisions against the

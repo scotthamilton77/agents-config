@@ -72,13 +72,18 @@ def changed_paths(repo_root: Path, base: str) -> list[str] | None:
     Committed work and uncommitted edits both count. CI only ever sees the
     former, but a local run of the gate is worth nothing if it passes on an
     unbumped change that is still sitting in the editor.
+
+    The paths come back NUL-separated. Git's default output quotes a path
+    carrying a non-ASCII or control character, and a quoted path matches no
+    prefix this guard tests — so the one file whose name is unusual would be the
+    one file that ships without a bump.
     """
-    committed = _git(repo_root, "diff", "--name-only", f"{base}...HEAD")
+    committed = _git(repo_root, "diff", "--name-only", "-z", f"{base}...HEAD")
     if committed.returncode != 0:
         return None
-    working = _git(repo_root, "diff", "--name-only", "HEAD")
-    lines = committed.stdout.splitlines() + working.stdout.splitlines()
-    return sorted({line for line in lines if line})
+    working = _git(repo_root, "diff", "--name-only", "-z", "HEAD")
+    entries = committed.stdout.split("\0") + working.stdout.split("\0")
+    return sorted({entry for entry in entries if entry})
 
 
 def base_version(repo_root: Path, base: str) -> str | None:

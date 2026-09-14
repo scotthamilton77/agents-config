@@ -69,13 +69,14 @@ FENCE_LANGUAGE = "json"
 # wants the fields the prose renders from.
 FINDING_SUMMARY = "Finding record"
 
-# One acceptance criterion as a criteria file writes it: a bullet whose id is in
-# bold, then the criterion's sentence on the same line. A sentence continued on a
-# following line is read as far as its first line and no further, which is how
-# every criteria file a round is handed writes one.
-_CRITERION = re.compile(
-    r"^[ \t]*[-*][ \t]+\*\*(?P<id>[^*\s]+)\*\*:?[ \t]+(?P<sentence>\S.*)$", re.M
-)
+# Where one acceptance criterion starts: a bullet whose id is in bold, then the
+# first line of the criterion's sentence.
+_CRITERION = re.compile(r"^[ \t]*[-*][ \t]+\*\*(?P<id>[^*\s]+)\*\*:?[ \t]+(?P<sentence>\S.*)$")
+
+# Any markdown list item at all. A criterion's sentence runs to the next one, and
+# a bullet stating something other than a criterion must not be read as more of
+# the criterion above it.
+_LIST_ITEM = re.compile(r"^[ \t]*[-*][ \t]+")
 
 # How much of a criterion the body's findings list shows. Every finding competes
 # for one line there, so the sentence is cut to a gloss that says which criterion
@@ -158,6 +159,11 @@ class Anchor:
 def load_criteria(path: Path) -> Mapping[str, str]:
     """Read a criteria file's bullets as criterion id to criterion sentence.
 
+    A criterion is the whole of its bullet. An author wraps a long sentence onto a
+    continuation line, and the wrap is a decision about line width rather than
+    about what the criterion says, so the lines are joined back into one sentence.
+    A bullet ends where the next list item, a blank line, or a heading begins.
+
     A file whose bullets this recognizes none of yields no criteria rather than
     failing: the criteria document a round judged against may state them in prose
     this does not read, and a review that says the id alone is still a review. A
@@ -170,7 +176,20 @@ def load_criteria(path: Path) -> Mapping[str, str]:
         raise PreconditionError(
             ErrorCode.PRECONDITION_CRITERIA_UNREADABLE, detail=f"{path}: {exc}"
         ) from exc
-    return {match["id"]: _line(match["sentence"]) for match in _CRITERION.finditer(text)}
+    criteria: dict[str, list[str]] = {}
+    reading: list[str] | None = None
+    for line in text.splitlines():
+        opened = _CRITERION.match(line)
+        if opened is not None:
+            # A fresh list, so a file stating one id twice is read as the later
+            # bullet rather than as both of them run together.
+            reading = criteria[opened["id"]] = [opened["sentence"]]
+        elif reading is not None:
+            if not line.strip() or _LIST_ITEM.match(line) or line.lstrip().startswith("#"):
+                reading = None
+            else:
+                reading.append(line)
+    return {identifier: _line(" ".join(parts)) for identifier, parts in criteria.items()}
 
 
 def load_verdict(path: Path, criteria: Mapping[str, str] = NO_CRITERIA) -> Verdict:

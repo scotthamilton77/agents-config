@@ -227,15 +227,17 @@ fixer's work reaches the branch. A fix moves the head, and a verdict is only pos
 head it judged — post late and the round's record is stranded off the commit it speaks about.
 
 ```bash
-uv run prgroom_version.py
+uv run prgroom_version.py --repo-root <repo-root>
 prgroom post-verdict <pr> --verdict <path> --criteria <path>
 ```
 
-The check runs first, every round. prgroom is installed onto PATH by a human-run installer, so a
-fix that landed in the repository is not necessarily in the tool: it compares the installed release
-with the one the repository builds and refuses when the installed one is older or missing. A refusal
-is a stop, not a warning — the reinstall is a human's to do, and posting through a tool that
-predates the fix is how a round reports a defect that is already closed.
+The check runs first, every round, from this directory like the round's other scripts — which is
+why it names the reviewed repository rather than reading the working directory. prgroom is installed
+onto PATH by a human-run installer, so a fix that landed in the repository is not necessarily in the
+tool: the check compares the installed release with the one that repository builds, and refuses when
+the installed one is older, absent, or will not report a version. A refusal is a stop, not a
+warning — the reinstall is a human's to do, and posting through a tool that predates the fix is how
+a round reports a defect that is already closed.
 
 That submits the reviewing App's comment-only review pinned to the reviewed head. The body is a
 rendered summary of the round — the verdict word, the round, the lenses and what ran them, one entry

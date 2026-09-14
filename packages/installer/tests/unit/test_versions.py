@@ -31,9 +31,33 @@ def test_release_rejects_what_is_not_three_integers() -> None:
         release("0.2")
 
 
-def test_is_partial_reads_only_the_label() -> None:
+def test_is_partial_reads_only_the_one_label_on_a_well_formed_version() -> None:
+    """A label other than the one label is malformed, and malformed is not partial."""
     assert is_partial("0.2.0+partial")
     assert not is_partial("0.2.0")
+    assert not is_partial("bogus+partial")
+    assert not is_partial("0.2.0+other")
+
+
+def test_release_rejects_any_label_but_the_one_label() -> None:
+    """
+    Given a version carrying some other local label
+    When it is parsed
+    Then it is malformed, rather than the release part with the label discarded.
+    """
+    with pytest.raises(ValueError, match=r"neither x\.y\.z"):
+        release("0.2.0+other")
+
+
+def test_guard_fails_versions_wearing_a_label_that_is_not_the_label() -> None:
+    """
+    Given a source change whose version is not one of the two allowed shapes
+    When the guard runs
+    Then it refuses both: a stray label must not read as a bump, and a malformed
+    release must not read as partial.
+    """
+    assert bump_refusal(changed=[_SRC], base_version="0.1.0", head_version="0.2.0+other")
+    assert bump_refusal(changed=[_SRC], base_version="0.1.0", head_version="bogus+partial")
 
 
 def test_guard_fails_a_source_change_with_no_bump() -> None:
@@ -197,6 +221,42 @@ def test_changed_paths_and_base_version_read_real_git(tmp_path: Path) -> None:
         f"{WATCHED_PACKAGE}/pyproject.toml",
         _SRC,
     ]
+
+
+def test_a_path_git_would_quote_still_matches(tmp_path: Path) -> None:
+    """
+    Given a changed watched file whose name carries a non-ASCII character
+    When the guard reads the changed paths
+    Then it sees the real path, not git's quoted rendering of it — otherwise the
+    one file with an unusual name is the one file that ships unbumped.
+    """
+
+    def git(*args: str) -> None:
+        subprocess.run(  # noqa: S603  # fixed argv into git, in a temp repository
+            ["git", "-C", str(tmp_path), *args],  # noqa: S607
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-b", "base")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+    pyproject = tmp_path / WATCHED_PACKAGE / "pyproject.toml"
+    pyproject.parent.mkdir(parents=True)
+    pyproject.write_text('[project]\nversion = "0.1.0"\n', encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "base")
+    git("checkout", "-b", "work")
+    quoted = f"{WATCHED_PACKAGE}/src/prgroom/caf\u00e9.py"
+    source = tmp_path / quoted
+    source.parent.mkdir(parents=True)
+    source.write_text("x = 1\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "work")
+
+    changed = version_guard_cli.changed_paths(tmp_path, "base")
+    assert changed == [quoted]
+    assert bump_refusal(changed=changed or [], base_version="0.1.0", head_version="0.1.0")
 
 
 def test_module_is_runnable_as_python_dash_m(monkeypatch: pytest.MonkeyPatch) -> None:
