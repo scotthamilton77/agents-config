@@ -71,13 +71,14 @@ FENCE_LANGUAGE = "json"
 FINDING_SUMMARY = "Finding record"
 
 # Where one acceptance criterion starts: a bullet whose id is in bold, then the
-# first line of the criterion's sentence.
-_CRITERION = re.compile(r"^[ \t]*[-*][ \t]+\*\*(?P<id>[^*\s]+)\*\*:?[ \t]+(?P<sentence>\S.*)$")
+# first line of the criterion's sentence. Markdown spells a bullet three ways,
+# and an author who picks the third must not lose every criterion sentence.
+_CRITERION = re.compile(r"^[ \t]*[-*+][ \t]+\*\*(?P<id>[^*\s]+)\*\*:?[ \t]+(?P<sentence>\S.*)$")
 
 # Any markdown list item at all. A criterion's sentence runs to the next one, and
 # a bullet stating something other than a criterion must not be read as more of
 # the criterion above it.
-_LIST_ITEM = re.compile(r"^[ \t]*[-*][ \t]+")
+_LIST_ITEM = re.compile(r"^[ \t]*[-*+][ \t]+")
 
 # How much of a criterion the body's findings list shows. Every finding competes
 # for one line there, so the sentence is cut to a gloss that says which criterion

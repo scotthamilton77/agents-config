@@ -1026,6 +1026,22 @@ class TestReadingACriteriaFile:
         criteria = load_criteria(criteria_written(tmp_path))
         assert dict(criteria) == {"PV-A6": PV_A6_SENTENCE, "PV-A7": "Rendering is deterministic."}
 
+    @pytest.mark.parametrize("marker", ["-", "*", "+"])
+    def test_every_markdown_bullet_marker_starts_a_criterion(
+        self, tmp_path: Path, marker: str
+    ) -> None:
+        # An author picks whichever marker the editor gives them; a criteria file
+        # written with the third one must render its sentences like the others.
+        text = (
+            f"{marker} **A1** The first criterion.\n"
+            f"{marker} **A2** The second.\n"
+            f"{marker} Not one.\n"
+        )
+        assert dict(load_criteria(criteria_written(tmp_path, text))) == {
+            "A1": "The first criterion.",
+            "A2": "The second.",
+        }
+
     def test_a_file_that_cannot_be_read_is_refused_and_names_the_path(self, tmp_path: Path) -> None:
         missing = tmp_path / "nowhere" / "criteria.md"
         with pytest.raises(PreconditionError) as caught:
