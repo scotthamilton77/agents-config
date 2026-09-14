@@ -9,7 +9,8 @@ finding that names a line the diff touches, pinned to the head the verdict
 declares.
 
 It refuses when the PR's live head has moved off that declared head, is a no-op
-when the App has already posted this exact body there, and never approves:
+when a review the App posted there already carries this verdict file, and never
+approves:
 approval is a separate review the caller decides on separately.
 
 Like ``approve`` it stands outside the grooming loop — no grooming state is read
