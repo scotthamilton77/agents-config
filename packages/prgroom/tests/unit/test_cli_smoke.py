@@ -117,6 +117,23 @@ class TestTheVersionFlag:
         with pyproject.open("rb") as fh:
             assert tomllib.load(fh)["project"]["version"] == __version__
 
+    def test_the_version_is_read_from_the_distribution_not_written_in_source(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A literal equal to the declared version would pass the comparison above
+        # today and drift on the next bump; only a read follows the metadata.
+        import importlib
+        import importlib.metadata
+
+        import prgroom
+
+        monkeypatch.setattr(importlib.metadata, "version", lambda _name: "9.9.9")
+        try:
+            assert importlib.reload(prgroom).__version__ == "9.9.9"
+        finally:
+            monkeypatch.undo()
+            importlib.reload(prgroom)
+
     def test_the_flag_needs_neither_a_subcommand_nor_a_store(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

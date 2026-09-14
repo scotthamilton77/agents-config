@@ -11,6 +11,8 @@ from installer.core.receipt import CliReceiptEntry, Receipt
 from installer.core.run import deploy_clis
 
 _SPEC = CliSpec("grind", "packages/grind", "grind", ("--help",))
+# The partial-label refusal is proven on the package the rule exists for.
+_PRGROOM_SPEC = CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
 _OK = CommandResult(ok=True, output="")
 
 
@@ -716,7 +718,9 @@ def test_reachability_no_tty_without_yes_raises(tmp_path: Path) -> None:
 
 def _partial_version(tmp_path: Path) -> Path:
     """Give the package a version carrying the label that refuses installation."""
-    pkg = _pkg(tmp_path)
+    pkg = tmp_path / "packages" / "prgroom"
+    (pkg / "src").mkdir(parents=True)
+    (pkg / "src" / "m.py").write_bytes(b"pass")
     (pkg / "pyproject.toml").write_text('[project]\nversion = "0.2.0+partial"\n', encoding="utf-8")
     return pkg
 
@@ -739,7 +743,7 @@ def test_partial_version_refuses_the_fresh_install(tmp_path: Path) -> None:
     )
     io = ScriptedIO()
     outcome = deploy_clis(
-        (_SPEC,),
+        (_PRGROOM_SPEC,),
         repo_root=tmp_path,
         prior=Receipt(),
         deploy=deploy,
@@ -764,18 +768,20 @@ def test_partial_version_refuses_the_forcing_install(tmp_path: Path) -> None:
     install routes through. Shim budget: 1.
     """
     _partial_version(tmp_path)
-    shim = tmp_path / "bin" / "grind"
-    prior = Receipt(clis=(CliReceiptEntry(name="grind", binary="grind", digest="sha256:stale"),))
+    shim = tmp_path / "bin" / "prgroom"
+    prior = Receipt(
+        clis=(CliReceiptEntry(name="prgroom", binary="prgroom", digest="sha256:stale"),)
+    )
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
-        tool_list={"grind": frozenset({"grind"})},
-        which_map={"grind": shim},
+        tool_list={"prgroom": frozenset({"prgroom"})},
+        which_map={"prgroom": shim},
         shims=[shim],
     )
     io = ScriptedIO()
     outcome = deploy_clis(
-        (_SPEC,),
+        (_PRGROOM_SPEC,),
         repo_root=tmp_path,
         prior=prior,
         deploy=deploy,
@@ -785,7 +791,7 @@ def test_partial_version_refuses_the_forcing_install(tmp_path: Path) -> None:
     )
     assert outcome.any_failed
     assert not any(t[0] == "tool_install" for t in deploy.transcript)
-    assert "grind" not in outcome.deployed
+    assert "prgroom" not in outcome.deployed
     # The guidance is the point of the refusal, and this path reaches it through
     # a different caller than the fresh row does.
     errors = [e.message for e in io.transcript if e.channel == "err"]

@@ -1,15 +1,8 @@
-"""Version reading for CLI packages, the partial label, and the bump guard.
+"""Version reading for CLI packages: the release, the partial label, and the bump guard.
 
-A CLI package's version is either a release ``x.y.z`` or that same release
-carrying the PEP 440 local label ``+partial``. The label means the source has
-moved on from the installed release by tweaks nobody wants to reinstall for, so
-the installer refuses to deploy it and every comparison elsewhere reads the
-release part alone.
-
-The guard is the other half of the same rule: a change to the watched package's
-deployable source either bumps the release or says it is partial. Without one of
-those two, a fix merges and the copy on the operator's PATH stays the old one
-with nothing saying so.
+The rule these implement, when a change bumps the release and when it appends the
+label instead, is stated once, in the prgroom package's own guidance; this module
+only reads versions and applies it.
 """
 
 from __future__ import annotations
