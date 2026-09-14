@@ -197,6 +197,22 @@ def test_a_version_of_any_other_shape_refuses(tmp_path, capsys):
     assert "no usable project version" in capsys.readouterr().err
 
 
+def test_a_version_the_parser_refuses_to_convert_is_refused_not_raised(tmp_path, capsys):
+    """
+    Given a pyproject whose version is an integer longer than the parser's digit limit
+    When the check reads it
+    Then the parser's error arrives as the one refusal rather than as a traceback.
+
+    tomllib raises ValueError, not its own decode error, past the digit limit, so
+    this is the door a handler catching only the decode error leaves open.
+    """
+    pyproject = tmp_path / check.PACKAGE_PYPROJECT
+    pyproject.parent.mkdir(parents=True)
+    pyproject.write_text("[project]\nversion = " + "9" * 5000 + "\n", encoding="utf-8")
+    assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
+    assert str(pyproject) in capsys.readouterr().err
+
+
 def test_undecodable_output_from_the_tool_refuses(tmp_path, capsys, monkeypatch):
     """
     Given a prgroom whose version output is not valid text
