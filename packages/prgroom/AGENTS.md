@@ -22,7 +22,7 @@ on a worktree branch — the `Makefile` `cd`s relative to the invoking directory
 so a run from the main checkout gates code you did not change):
 
 ```bash
-make ci-prgroom   # the full gate CI enforces
+make ci-prgroom   # this package's gate; `make ci` at the root adds the version guard
 ```
 
 It runs, in order: `ruff check` (lint), `ruff format --check` (formatting),
@@ -168,10 +168,10 @@ which is why the guard refuses it rather than warning. The `review-panel` skill
 checks the installed release against this package's before it posts, and its own
 doctrine states which answers it refuses.
 
-This section is the rule. The delivery contract in the repo-root `AGENTS.md` and
-the `version-guard` recipe in the `Makefile` point here rather than restating it,
-because a rule written in four places is three places that go stale on the next
-change to the code.
+This section is the rule. The delivery contract in the repo-root `AGENTS.md`
+states it in one sentence and points here for the whole of it, and the
+`version-guard` recipe in the `Makefile` points here, because a rule written in
+full in four places is three places that go stale on the next change to the code.
 
 ## Do not run grooming against a live PR automatically
 

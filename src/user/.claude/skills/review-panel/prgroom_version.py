@@ -183,8 +183,8 @@ def main(
     if running is None:
         print(
             "prgroom-version: no prgroom on PATH, so the verdict cannot be posted. "
-            f"This repository builds {wanted!r}, and a human has to install it before "
-            "this round posts.",
+            f"This repository builds {wanted!r}, and a human has to reinstall it, or "
+            "install it for the first time, before this round posts.",
             file=sys.stderr,
         )
         return EXIT_REFUSED

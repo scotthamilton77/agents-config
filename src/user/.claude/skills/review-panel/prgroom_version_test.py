@@ -101,12 +101,12 @@ def test_a_newer_installed_copy_passes(tmp_path):
 
 
 def test_prgroom_absent_from_path_refuses(tmp_path, capsys):
-    """The message names the install as a human's act, due before the round posts."""
+    """The message names the reinstall as a human's act, due before the round posts."""
     code = _run(_repo(tmp_path, "0.2.0"), None)
     assert code == check.EXIT_REFUSED
     err = capsys.readouterr().err
     assert "no prgroom on PATH" in err
-    assert "a human has to install it before this round posts" in err
+    assert "a human has to reinstall it, or install it for the first time, before this round posts" in err
 
 
 def test_a_prgroom_that_will_not_report_its_version_refuses(tmp_path, capsys):

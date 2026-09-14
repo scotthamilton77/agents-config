@@ -927,6 +927,20 @@ class TestTheLineCommentAReaderSees:
         assert "The anchor grammar accepts a token" in prose
         assert "fails PV-A6" in prose
 
+    def test_an_unmatched_ac_is_one_line_in_prose_and_verbatim_in_the_record(self) -> None:
+        # The reference sits on the first line and in a roster bullet, so its
+        # whitespace runs collapse there; the bytes survive in the record beneath.
+        item = finding("f1", ac="AC  with\nbreaks", claim="a claim")
+        comment = render_comment(item)
+        prose = comment[: comment.index("<details>")]
+        assert "AC with breaks" in prose
+        assert "AC  with" not in prose
+        assert json.loads(envelope_of(comment))["ac"] == "AC  with\nbreaks"
+        body = render_body(verdict_of(item))
+        summary = body[: body.index("<details>")]
+        assert "AC with breaks" in summary
+        assert "AC  with" not in summary
+
     def test_the_record_comes_back_out_of_the_collapsed_block(self, tmp_path: Path) -> None:
         verdict = with_criteria(tmp_path)
         body = only_comment(verdict)
@@ -977,6 +991,19 @@ class TestTheLineCommentAReaderSees:
             pytest.param({"id": "f1"}, id="a-finding-holding-only-an-id"),
             pytest.param({"id": "f1", "lens": 7, "type": [], "ac": None}, id="mistyped-tags"),
             pytest.param({"id": "f1", "claim": None, "evidence": None}, id="null-prose"),
+            pytest.param(
+                {
+                    "id": "f1",
+                    "lens": {},
+                    "type": 1.5,
+                    "ac": ["x"],
+                    "claim": 3,
+                    "evidence": {"a": 1},
+                },
+                id="every-optional-field-mistyped",
+            ),
+            pytest.param({"id": None}, id="an-unreadable-id"),
+            pytest.param({"id": "f1", "evidence": ["one", 2, None]}, id="mixed-evidence-list"),
         ],
     )
     def test_rendering_a_comment_never_raises_on_a_shape_it_cannot_read(
