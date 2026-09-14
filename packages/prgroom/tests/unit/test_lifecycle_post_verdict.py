@@ -1103,6 +1103,35 @@ class TestReadingACriteriaFile:
             "A3": "On one line.",
         }
 
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            pytest.param("- **A1** One line.\n", {"A1": "One line."}, id="dash"),
+            pytest.param("* **A1** One line.\n", {"A1": "One line."}, id="star"),
+            pytest.param("+ **A1** One line.\n", {"A1": "One line."}, id="plus"),
+            pytest.param("  - **A1** One line.\n", {"A1": "One line."}, id="indented"),
+            pytest.param("- **A1**: One line.\n", {"A1": "One line."}, id="colon-then-space"),
+            pytest.param("- **A1**\n  Next line.\n", {"A1": "Next line."}, id="continuation"),
+            pytest.param("- **A1** Wraps\n  here.\n", {"A1": "Wraps here."}, id="wrapped"),
+            pytest.param("- **A1** One.\n\n  Not more.\n", {"A1": "One."}, id="blank-ends"),
+            pytest.param("- **A1** One.\n# H\n", {"A1": "One."}, id="heading-ends"),
+            pytest.param("- **A1** One.\n- plain\n", {"A1": "One."}, id="plain-bullet-ends"),
+            pytest.param("- **A1**\n", {}, id="id-alone"),
+            pytest.param("- **A1**\n\n  Loose.\n", {}, id="loose-item"),
+            pytest.param("- **A1**:Tight.\n", {}, id="colon-no-space"),
+            pytest.param("- **A1:** One.\n", {"A1:": "One."}, id="colon-inside-bold"),
+            pytest.param("1. **A1** One.\n", {}, id="ordered-item"),
+            pytest.param("**A1** One.\n", {}, id="no-marker"),
+            pytest.param("- A1 One.\n", {}, id="id-not-bold"),
+        ],
+    )
+    def test_the_loader_reads_exactly_the_line_grammar_the_criterion_states(
+        self, tmp_path: Path, text: str, expected: dict[str, str]
+    ) -> None:
+        # The criterion names a line grammar, and the loader is a regex; this
+        # table is the shapes the grammar admits and excludes, run as one.
+        assert dict(load_criteria(criteria_written(tmp_path, text))) == expected
+
     def test_a_file_that_cannot_be_read_is_refused_and_names_the_path(self, tmp_path: Path) -> None:
         missing = tmp_path / "nowhere" / "criteria.md"
         with pytest.raises(PreconditionError) as caught:
