@@ -143,7 +143,7 @@ def test_a_present_but_unreadable_package_refuses(tmp_path, capsys):
 
     pyproject.write_text('[project]\nname = "prgroom"\n', encoding="utf-8")
     assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
-    assert "declares no project version" in capsys.readouterr().err
+    assert "no usable project version" in capsys.readouterr().err
 
 
 def test_a_project_table_of_the_wrong_shape_refuses(tmp_path, capsys):
@@ -172,6 +172,53 @@ def test_a_pyproject_that_cannot_be_read_refuses(tmp_path, capsys):
     (tmp_path / check.PACKAGE_PYPROJECT).mkdir(parents=True)
     assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
     assert str(check.PACKAGE_PYPROJECT) in capsys.readouterr().err
+
+
+def test_a_symlink_pointing_at_nothing_refuses(tmp_path, capsys):
+    """
+    Given a pyproject path that is a symlink to a file that is not there
+    When the check runs
+    Then it refuses naming the file. The package is meant to be here — something
+    stands where it should — so this is a broken tree, not another project.
+    """
+    pyproject = tmp_path / check.PACKAGE_PYPROJECT
+    pyproject.parent.mkdir(parents=True)
+    pyproject.symlink_to(tmp_path / "nothing-here.toml")
+    assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
+    assert str(check.PACKAGE_PYPROJECT) in capsys.readouterr().err
+
+
+def test_a_version_of_any_other_shape_refuses(tmp_path, capsys):
+    """A version that is a list is one more shape the one boundary turns away."""
+    pyproject = tmp_path / check.PACKAGE_PYPROJECT
+    pyproject.parent.mkdir(parents=True)
+    pyproject.write_text('[project]\nversion = ["0.2.0"]\n', encoding="utf-8")
+    assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
+    assert "no usable project version" in capsys.readouterr().err
+
+
+def test_undecodable_output_from_the_tool_refuses(tmp_path, capsys, monkeypatch):
+    """
+    Given a prgroom whose version output is not valid text
+    When the check reads it through its own runner
+    Then the bytes are replaced rather than raised, and the unreadable answer
+    refuses like any other.
+    """
+    seen = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "0.2.0\ufffd\ufffd"
+
+    def fake_run(*_args, **kwargs):
+        seen.update(kwargs)
+        return _Proc()
+
+    monkeypatch.setattr(check.subprocess, "run", fake_run)
+    assert check.main(["--repo-root", str(_repo(tmp_path, "0.2.0"))]) == check.EXIT_REFUSED
+    assert "cannot compare" in capsys.readouterr().err
+    # The decode itself is what must not raise, and only this argument stops it.
+    assert seen["errors"] == "replace"
 
 
 def test_versions_are_quoted_in_every_message(tmp_path, capsys):

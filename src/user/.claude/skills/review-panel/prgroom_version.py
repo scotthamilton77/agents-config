@@ -73,31 +73,39 @@ def release(raw: str) -> tuple[int, int, int] | None:
 def repo_version(repo_root: Path) -> str | None:
     """The version the repository's prgroom package declares.
 
-    None means the package is not in this repository, which is the ordinary case
-    for every project but prgroom's own. A present file that says nothing usable
-    raises ``UnreadableProject`` instead: that is a different answer, because
-    something is wrong with the tree and passing the round through it is a guess.
+    This is the one boundary between the repository and the rest of the check.
+    None means the package is genuinely not here, which is the ordinary case for
+    every project but prgroom's own: nothing at the path, and no symlink standing
+    where it should be. Every other way of failing to get a version — a read that
+    errors, bytes that do not decode, TOML that does not parse, a project table or
+    a version of some shape nobody anticipated — raises ``UnreadableProject``, so
+    a failure mode this comment does not list still arrives as the refusal rather
+    than as a traceback.
     """
     pyproject = repo_root / PACKAGE_PYPROJECT
-    if not pyproject.exists():
+    if not pyproject.exists() and not pyproject.is_symlink():
         return None
     try:
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        project = data.get("project")
+        version = project.get("version") if isinstance(project, dict) else None
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise UnreadableProject(str(exc)) from exc
-    project = data.get("project")
-    version = project.get("version") if isinstance(project, dict) else None
-    if not isinstance(version, str) or not version:
-        raise UnreadableProject("it declares no project version")
-    return version
+    if not isinstance(version, str) or not version.strip():
+        raise UnreadableProject("it declares no usable project version")
+    return version.strip()
 
 
 def installed_version() -> str | None:
     """The version the prgroom on PATH reports.
 
-    None means no prgroom runs at all. An empty string means one runs but answers
-    the version flag with a failure, which is itself an answer: it is older than
-    any version that reports one. A tool that never answers raises
+    This is the one boundary between the installed tool and the rest of the check.
+    None means no prgroom runs at all. The empty string means one runs and gives
+    no version back — it failed the flag, or printed nothing — which is itself an
+    answer: it is older than any version that reports one. Anything else it prints
+    is returned as it came, for the comparison to accept or refuse. Undecodable
+    bytes are replaced rather than raised, so a tool emitting them refuses like
+    any other unreadable answer. A tool that never answers raises
     ``subprocess.TimeoutExpired`` rather than reading as absent — a hung tool and
     a missing one need different things from the human.
     """
@@ -106,6 +114,7 @@ def installed_version() -> str | None:
             ["prgroom", "--version"],  # noqa: S603,S607
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=VERSION_TIMEOUT_SECONDS,
             check=False,
         )

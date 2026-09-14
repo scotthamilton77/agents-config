@@ -85,7 +85,8 @@ def touches_watched(changed: Iterable[str]) -> bool:
     """Whether any changed path is deployable source of the watched package.
 
     Its tests and its own guidance are excluded on the same reasoning the
-    install digest excludes them: neither changes the tool the operator runs.
+    installer's own change detection excludes them: neither changes the tool the
+    operator runs.
     """
     return any(
         path == f"{WATCHED_PACKAGE}/pyproject.toml" or path.startswith(f"{WATCHED_PACKAGE}/src/")

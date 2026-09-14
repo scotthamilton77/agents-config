@@ -989,6 +989,20 @@ class TestTheCriterionInTheBodysFindingRoster:
         assert "PV-A7: Rendering is deterministic." in summary
         assert "..." not in summary
 
+    def test_a_criterion_the_supplied_file_does_not_name_is_shown_as_written(
+        self, tmp_path: Path
+    ) -> None:
+        # A criteria file is supplied and names other criteria than this one. The
+        # entry still carries what the finding wrote, because that text is what a
+        # reader takes back to the round that raised it.
+        verdict = with_criteria(tmp_path, findings=[dict(FULL_ENVELOPE["findings"][0], ac="PV-A9")])
+        assert "PV-A9" not in verdict.criteria
+        summary = render_body(verdict)
+        assert (
+            "- correctness.r4.f1 (mechanical, correctness, PV-A9): "
+            in summary[: summary.index("<details>")]
+        )
+
     def test_without_a_criteria_file_the_entry_names_the_criterion_alone(
         self, tmp_path: Path
     ) -> None:
