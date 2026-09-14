@@ -190,6 +190,27 @@ def test_a_prgroom_that_never_answers_refuses(tmp_path, capsys):
     assert "reinstall" in err
 
 
+def test_the_real_version_call_surfaces_a_timeout(tmp_path, capsys, monkeypatch):
+    """
+    Given the prgroom on PATH never returns from the version flag
+    When the check runs with its own runner, not an injected one
+    Then the timeout reaches the refusal that names it, rather than being caught
+    at the boundary and reported as a prgroom that is not installed.
+    """
+
+    def hangs(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd="prgroom --version", timeout=check.VERSION_TIMEOUT_SECONDS
+        )
+
+    monkeypatch.setattr(check.subprocess, "run", hangs)
+    code = check.main(["--repo-root", str(_repo(tmp_path, "0.2.0"))])
+    assert code == check.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "did not answer the version flag" in err
+    assert "no prgroom on PATH" not in err
+
+
 def test_the_check_runs_immediately_before_the_post():
     """
     Given the posting section of the round's doctrine
