@@ -140,6 +140,15 @@ def test_guard_ignores_a_change_outside_the_watched_source() -> None:
     assert bump_refusal(changed=changed, base_version="0.1.0", head_version="0.1.0") is None
 
 
+def test_a_version_past_the_parsers_digit_limit_is_malformed_not_raised(tmp_path: Path) -> None:
+    """tomllib raises a plain ValueError past its digit limit, and that is malformed, not a crash."""
+    text = "[project]\nversion = " + "9" * 5000 + "\n"
+    assert version_in(text) == ""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(text, encoding="utf-8")
+    assert project_version(pyproject) == ""
+
+
 def test_guard_fails_a_malformed_version() -> None:
     """A version neither form accepts cannot be compared, so it does not ship."""
     refusal = bump_refusal(changed=[_SRC], base_version="0.1.0", head_version="0.1")

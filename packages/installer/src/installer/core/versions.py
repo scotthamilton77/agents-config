@@ -66,7 +66,11 @@ def version_in(pyproject_text: str) -> str:
     """The ``[project] version`` declared in a pyproject's text, or "" if absent."""
     try:
         data = tomllib.loads(pyproject_text)
-    except tomllib.TOMLDecodeError:
+    except ValueError:
+        # tomllib's decode error is a ValueError, and so is the plain ValueError
+        # it raises unwrapped when a number exceeds the integer digit limit; the
+        # broader catch is what keeps every parse failure a malformed version
+        # rather than a traceback.
         return ""
     project = data.get("project")
     if not isinstance(project, dict):
