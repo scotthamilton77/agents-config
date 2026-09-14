@@ -64,10 +64,19 @@ def base_revision(env: Mapping[str, str]) -> str | None:
 
 
 def _git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run git and hand back its output as text that survives any path.
+
+    Git writes paths as the bytes they are, and a filename need not be valid in
+    the locale's encoding. A strict decode would raise on such a path before the
+    guard could say anything about it, so undecodable bytes are escaped instead,
+    which keeps them distinct from every real character and lets the guard's
+    prefix test proceed.
+    """
     return subprocess.run(  # noqa: S603  # fixed argv; only the root and revision vary
         ["git", "-C", str(repo_root), *args],  # noqa: S607
         capture_output=True,
         text=True,
+        errors="surrogateescape",
         check=False,
     )
 

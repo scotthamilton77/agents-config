@@ -13,6 +13,7 @@ from installer.core.versions import (
     is_partial,
     project_version,
     release,
+    touches_watched,
     version_in,
 )
 
@@ -439,6 +440,43 @@ def test_a_file_moved_out_of_the_watched_package_is_still_a_watched_change(
     changed = version_guard_cli.changed_paths(tmp_path, "base")
     assert changed == ["elsewhere.py", _SRC]
     assert bump_refusal(changed=changed or [], base_version="0.1.0", head_version="0.1.0")
+
+
+def test_a_path_that_is_not_text_in_the_locale_is_still_compared(tmp_path: Path) -> None:
+    """
+    Given a changed file, outside the watched package, whose name holds a byte
+    that is not valid in the locale's encoding
+    When the guard reads the changed paths
+    Then it reads them, and the change outside the package is clear, rather than
+    raising on a name git was only ever going to report as bytes.
+    """
+
+    def git(*args: str | bytes, stdin: bytes | None = None) -> bytes:
+        return subprocess.run(  # noqa: S603  # fixed argv into git, in a temp repository
+            ["git", "-C", str(tmp_path), *args],  # noqa: S607
+            check=True,
+            capture_output=True,
+            input=stdin,
+        ).stdout
+
+    git("init", "-b", "base")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+    pyproject = tmp_path / WATCHED_PACKAGE / "pyproject.toml"
+    pyproject.parent.mkdir(parents=True)
+    pyproject.write_text('[project]\nversion = "0.1.0"\n', encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "base")
+    git("checkout", "-b", "work")
+    # The name goes straight into the index: a filesystem may refuse to create
+    # it, and git reports it either way.
+    blob = git("hash-object", "-w", "--stdin", stdin=b"x\n").strip()
+    git(b"update-index", b"--add", b"--cacheinfo", b"100644," + blob + b",docs/caf\xff.md")
+    git("commit", "-m", "work")
+
+    changed = version_guard_cli.changed_paths(tmp_path, "base")
+    assert changed == ["docs/caf\udcff.md"]
+    assert not touches_watched(changed)
 
 
 def test_module_is_runnable_as_python_dash_m(monkeypatch: pytest.MonkeyPatch) -> None:
