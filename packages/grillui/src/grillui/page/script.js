@@ -1363,12 +1363,34 @@ function armAnswer(tid, id) {
   // window drawn before the last turn arrived may still be showing its control.
   var offer = (t.turns[t.turns.length - 1] || {}).proposal;
   if (!offer || offer.decision !== id || t.state !== "open") return;
-  var draft = (UI.drafts[id] || "").trim();
-  UI.drafts[id] = draft ? draft + "\n\n" + offer.text : offer.text;
-  // Re-keyed rather than overwritten, so this map reads newest-last: which of
-  // several armed options is the one in hand is a question about recency.
-  delete UI.armed[id];
-  UI.armed[id] = { thread: tid, option: offer.option || null };
+  // What the box holds and what the arm standing on it, if any, last wrote
+  // there. Both are needed before anything is written: an arm is undone by
+  // recognising the box it produced, and a box that is no longer that one is
+  // the human's.
+  var box = UI.drafts[id] || "", standing = UI.armed[id];
+  var untouched = !!standing && box === standing.written;
+  // The same offer, from the same thread, into the box that taking it produced:
+  // the human has pressed a control that is already pressed, and a second copy
+  // of one sentence is not what they asked for.
+  if (!(untouched && standing.thread === tid && standing.text === offer.text &&
+        standing.option === (offer.option || null))) {
+    // One armed offer in the box at a time. Where the box is still the one this
+    // decision's arm wrote, that arm is undone first and the new offer goes
+    // after what the human had before it; where they have edited it since, what
+    // they have now is what the new offer goes after.
+    var before = (untouched ? standing.before : box).trim();
+    var written = before ? before + "\n\n" + offer.text : offer.text;
+    UI.drafts[id] = written;
+    // Re-keyed rather than overwritten, so this map reads newest-last: which of
+    // several armed options is the one in hand is a question about recency.
+    delete UI.armed[id];
+    // Exactly what arming found and exactly what it wrote, so undoing it is a
+    // comparison rather than a search. Looking for the offer's words in the box
+    // instead would delete the human's own sentence whenever they had written
+    // the same words -- which, on a decision whose answer the agent has just
+    // proposed, is the likely case rather than the freak one.
+    UI.armed[id] = { thread: tid, option: offer.option || null, text: offer.text, before: before, written: written };
+  }
   // The decision the human is about to answer, in view and open -- a settled one
   // is collapsed, and arming it out of sight would fill a box nobody is looking at.
   UI.panel = null;
@@ -1448,6 +1470,27 @@ function settledFocus(id) {
   UI.advanceFrom = id;
   render();
 }
+// An arm is one thread's offer sitting in a decision's answer box, and it lives
+// exactly as long as the thread it came from. Ending that thread -- folding,
+// parking or closing it -- puts the box back the way arming found it, and only
+// where the box is still untouched since. An arm that outlived its thread would
+// leave an option ringed and a box filled by a conversation that is over, which
+// the human reads as an answer they have already given.
+//
+// Every decision this thread armed, not just the one it anchors: an arm is
+// keyed by decision and the thread is what it came from, so the thread is what
+// it is looked up by here.
+function disarmFrom(tid) {
+  Object.keys(UI.armed).forEach(function (id) {
+    var arm = UI.armed[id];
+    if (arm.thread !== tid) return;
+    // Undone only where the box is still the one arming wrote. A box the human
+    // has touched since is theirs, and it is left exactly as it stands -- the
+    // arm goes either way, because the thread it belonged to is over.
+    if ((UI.drafts[id] || "") === arm.written) UI.drafts[id] = arm.before;
+    delete UI.armed[id];
+  });
+}
 function foldThread(tid) {
   var t = thread(tid);
   if (!t) return;
@@ -1475,6 +1518,7 @@ function foldThread(tid) {
       return;
     }
   }
+  disarmFrom(tid);
   if (held) {
     // Concluding a mandated thread is what settles the decision, on the answer
     // that was held. One batch, because the two are one gesture.
@@ -1490,6 +1534,7 @@ function foldThread(tid) {
   render();
 }
 function parkThread(tid) {
+  disarmFrom(tid);
   send(ev("thread-park", tid, {}));
   UI.panel = null;
   render();
@@ -1500,6 +1545,7 @@ function parkThread(tid) {
 // stays readable, and saying something in one opens it again, which is why
 // there is no re-open gesture to send.
 function closeThread(tid) {
+  disarmFrom(tid);
   send(ev("thread-close", tid, {}));
   UI.panel = null;
   render();
@@ -2240,17 +2286,33 @@ function offerBlock(t, offer, live) {
     (offer.because ? '<div class="muted">' + esc(offer.because) + "</div>" : "") +
     (live ? armControl(t, offer) : "") + "</div>";
 }
-// One control, naming the decision it would arm. Where that decision is settled
-// it says the answer it fills in would replace the one the human gave, and
-// where the board will not take an answer on it the control is inert and names
-// what is holding it -- a live control over a box nothing will accept from is
-// the press that appears to do nothing.
+// One control, naming the decision it would arm and what pressing it does: the
+// offer's words go into that decision's answer box, and the human sends them
+// from there. The label says so because the press puts nothing on the board,
+// and one that only said "take this answer" reads as the answer having been
+// given. Where that decision is settled it says the answer it fills in would
+// replace the one the human gave, and where the board will not take an answer
+// on it the control is inert and names what is holding it -- a live control
+// over a box nothing will accept from is the press that appears to do nothing.
+//
+// Once this thread's offer is armed the control goes and the thread says where
+// the answer went. A control left standing after the press is a press with
+// nothing to show for it, so the human presses it again or takes it for an
+// answer already sent. It comes back if the arm is dropped -- the box emptied,
+// or the answer sent -- while the offer is still the live one.
 function armControl(t, offer) {
   var d = node(offer.decision), block = armBlock(offer.decision);
+  var armed = UI.armed[offer.decision];
+  if (armed && armed.thread === t.id) {
+    return '<div class="muted" data-armed="' + esc(offer.decision) + '" style="margin-top:7px">' +
+      esc("Armed on " + offer.decision +
+        " — the answer is in its answer box, and you send it from there.") + "</div>";
+  }
   var label = block ? "Cannot take this — " + offer.decision + " " + block
     : d && d.status === "settled"
-      ? "Take this answer — replaces your answer to " + offer.decision
-      : "Take this answer — fills in " + offer.decision;
+      ? "Put this answer in " + offer.decision +
+        "'s box — it replaces your answer when you send it"
+      : "Put this answer in " + offer.decision + "'s box — you send it from there";
   return '<div style="margin-top:7px"><button class="btn sm' + (block ? "" : " primary") +
     '" data-act="arm" data-tid="' + esc(t.id) + '" data-id="' + esc(offer.decision) + '"' +
     (block ? " disabled" : "") + ">" + esc(label) + "</button></div>";

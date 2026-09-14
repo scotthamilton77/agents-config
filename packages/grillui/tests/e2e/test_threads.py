@@ -21,9 +21,10 @@ catch-up telling its seat what the board did while it was away.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
-from conftest import decision, document, handoff, turn
+from conftest import BOARD_TIMEOUT, RENDER, decision, document, handoff, turn
 
 from grillui.tiers import BOARD_LEGEND
 
@@ -252,3 +253,158 @@ def test_a_parked_thread_is_picked_back_up_and_its_seat_is_told_what_it_missed(
     assert len(given) == 2, [one["catch_up"] for one in given]
     assert given[0]["catch_up"] == [], given[0]["catch_up"]
     assert [one["target"] for one in given[1]["catch_up"]] == ["d2"], given[1]["catch_up"]
+
+
+# A thread turn that offers an answer to the decision the thread is about, which
+# is the only shape the board takes an offer in.
+OFFER_TEXT = "Keep a session for thirty days, then archive it."
+OFFERED = json.dumps(
+    {
+        "text": "Then thirty days is what it turns on.",
+        "proposed_answer": {
+            "decision": "d1",
+            "option": "a",
+            "text": OFFER_TEXT,
+            "because": "recovery never reaches further back than that",
+        },
+    }
+)
+
+COMPACTED = "Compact on read and never on a timer."
+OFFERED_ON_D2 = json.dumps(
+    {
+        "text": "Compaction follows the read, then.",
+        "proposed_answer": {
+            "decision": "d2",
+            "option": "a",
+            "text": COMPACTED,
+            "because": "a timer compacts sessions nobody is reading",
+        },
+    }
+)
+
+# What the human writes into the decision's box after taking an offer: once
+# under the offer, and once as a sentence with the offer's own words inside it.
+# The second is what a fold that hunted for those words would cut out of their
+# own sentence.
+MINE = "Thirty is fine, but say what archiving costs."
+REWRITTEN = "My answer is " + OFFER_TEXT + ", with one caveat."
+
+
+def newest_thread(session: Session) -> str:
+    """The channel of the thread opened most recently."""
+    opened = [one for one in session.entries() if one.kind == "thread-created"]
+    assert opened, "no thread was created"
+    return str(opened[-1].channel)
+
+
+def take_the_offer(page: Page, session: Session, node: str, asked: str) -> str:
+    """Open a thread on a decision, let its seat offer an answer, and take it.
+
+    The control is waited for rather than assumed: the seat's turn reaches the
+    page on the page's own poll, and the board having settled is the backend's
+    word rather than the browser's. Taking it puts nothing on the wire, so there
+    is no log move to wait on afterwards.
+    """
+    page.click(f'[data-act="threads"][data-id="{node}"]')
+    page.wait_for_timeout(400)
+    say(page, asked)
+    session.settled()
+    page.wait_for_selector('[data-act="arm"]', timeout=BOARD_TIMEOUT)
+    page.click('[data-act="arm"]')
+    page.wait_for_timeout(RENDER)
+    return newest_thread(session)
+
+
+def test_taking_an_offer_shows_in_the_thread_and_the_fold_undoes_only_its_own_writing(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given two decisions whose threads have each offered an answer
+    When the human takes the first into an empty box and folds that thread, and
+         takes the second, writes more of their own under it and folds that one
+    Then the first fold leaves the box empty, the second leaves the box exactly
+         as the human last had it, and neither option is left marked.
+
+    Taking an offer sends nothing -- it fills the decision's box for the human
+    to send from there -- so the thread saying so is the only evidence the press
+    landed. The arm belongs to the conversation that made it and goes when that
+    conversation ends, but what the fold puts back is what arming found, and
+    only while the box is still the one arming wrote. A box the human has
+    touched since is theirs.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.stub.script(OFFERED, OFFERED_ON_D2)
+    session.script_claude(turn(document("Folded in.")), turn(document("And that one too.")))
+    page = board(session)
+
+    channel = take_the_offer(page, session, "d1", "How long is a session kept?")
+
+    # Arming closes the slide-out onto the decision it filled, so the thread is
+    # opened again to read what the offer says now.
+    page.click('[data-act="threads"][data-id="d1"]')
+    page.wait_for_selector('[data-armed="d1"]', timeout=BOARD_TIMEOUT)
+    assert page.locator('[data-act="arm"]').count() == 0, "the control is still on offer"
+    armed = page.locator('[data-armed="d1"]')
+    assert "send it from there" in armed.inner_text(), armed.inner_text()
+
+    marked = page.locator('#col-d1 [data-act="pick"][data-opt="a"]')
+    assert "armed" in (marked.get_attribute("class") or ""), marked.get_attribute("class")
+    assert page.input_value("#ft-d1") == OFFER_TEXT, page.input_value("#ft-d1")
+
+    page.click(f'[data-act="fold"][data-tid="{channel}"]')
+    session.settled()
+    page.wait_for_timeout(RENDER)
+    assert "armed" not in (marked.get_attribute("class") or ""), marked.get_attribute("class")
+    assert page.input_value("#ft-d1") == "", page.input_value("#ft-d1")
+
+    # The same again, with the human's own words written under the offer before
+    # the thread ends.
+    channel = take_the_offer(page, session, "d2", "And what compacts it?")
+    theirs = COMPACTED + "\n\n" + MINE
+    page.fill("#ft-d2", theirs)
+    page.wait_for_timeout(400)
+
+    page.click('[data-act="threads"][data-id="d2"]')
+    page.wait_for_selector('[data-armed="d2"]', timeout=BOARD_TIMEOUT)
+    page.click(f'[data-act="fold"][data-tid="{channel}"]')
+    session.settled()
+    page.wait_for_timeout(RENDER)
+
+    second = page.locator('#col-d2 [data-act="pick"][data-opt="a"]')
+    assert "armed" not in (second.get_attribute("class") or ""), second.get_attribute("class")
+    assert page.input_value("#ft-d2") == theirs, page.input_value("#ft-d2")
+
+
+def test_a_box_the_human_wrote_the_offers_own_words_into_survives_the_fold(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given an offer taken into a decision's box
+    When the human rewrites the box into a sentence of their own that quotes the
+         offer's words, and then folds the thread
+    Then the box is exactly what they wrote.
+
+    This is the sequence that says why the fold recognises the box rather than
+    searching it: a fold that cut the offer's words out wherever it found them
+    would cut them out of the human's sentence, and on a decision whose answer
+    an agent has just proposed, writing the same words is the likely case.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.stub.script(OFFERED)
+    session.script_claude(turn(document("Folded in.")))
+    page = board(session)
+
+    channel = take_the_offer(page, session, "d1", "How long is a session kept?")
+    page.fill("#ft-d1", REWRITTEN)
+    page.wait_for_timeout(400)
+
+    page.click('[data-act="threads"][data-id="d1"]')
+    page.wait_for_selector('[data-armed="d1"]', timeout=BOARD_TIMEOUT)
+    page.click(f'[data-act="fold"][data-tid="{channel}"]')
+    session.settled()
+    page.wait_for_timeout(RENDER)
+
+    marked = page.locator('#col-d1 [data-act="pick"][data-opt="a"]')
+    assert "armed" not in (marked.get_attribute("class") or ""), marked.get_attribute("class")
+    assert page.input_value("#ft-d1") == REWRITTEN, page.input_value("#ft-d1")

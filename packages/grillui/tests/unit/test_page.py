@@ -3421,10 +3421,13 @@ def test_taking_an_offer_appends_nothing_and_writes_after_the_humans_own_words()
     arming = balanced_body("armAnswer")
     assert not reaches_send(arming), "arming puts something on the wire"
     assert "arm" not in acts_that_write()
-    assert 'UI.drafts[id] = draft ? draft + "\\n\\n" + offer.text : offer.text;' in arming, (
+    assert 'var written = before ? before + "\\n\\n" + offer.text : offer.text;' in arming, (
         "the offer is not written after what the human already had"
     )
-    assert "UI.armed[id] = { thread: tid, option: offer.option || null };" in arming
+    assert (
+        "UI.armed[id] = { thread: tid, option: offer.option || null, "
+        "text: offer.text, before: before, written: written };"
+    ) in arming
     # The live offer and no other, even from a window drawn before the last turn
     # arrived: a control the human can still see is not a proposal still on offer.
     assert "t.turns[t.turns.length - 1]" in arming
@@ -3467,7 +3470,7 @@ def test_a_decision_the_board_will_not_take_an_answer_on_names_what_holds_it() -
     assert 'if (d.status === "settled") return null;' in block
     control = balanced_body("armControl")
     assert "Cannot take this — " in control
-    assert "replaces your answer to" in control
+    assert "it replaces your answer when you send it" in control
     assert '(block ? " disabled" : "")' in control, "a blocked control is still pressable"
     # Only the armed decision reopens, and only while the arming stands.
     assert 'answerable(id) || !!(UI.armed[id] && d && d.status === "settled")' in balanced_body(
@@ -3483,6 +3486,73 @@ def test_emptying_an_armed_draft_discards_its_provenance() -> None:
     handler = source.split('document.addEventListener("input"', 1)[1].split("});", 1)[0]
     assert "delete UI.armed[id]" in handler, "an emptied draft keeps its provenance"
     assert "!e.target.value.trim()" in handler, "provenance is dropped on every keystroke"
+
+
+def test_a_taken_offer_says_so_in_the_thread_instead_of_offering_itself_again() -> None:
+    """The press has visible consequence where the human made it.
+
+    The control puts the offer in the decision's box and sends nothing, so a
+    control still standing afterwards is a press with nothing to show for it:
+    the human presses it a second time, or reads it as an answer already given.
+    The thread says where the answer went instead, naming the decision, and the
+    control comes back only if the arm is dropped while the offer is still live.
+    """
+    control = balanced_body("armControl")
+    assert "var armed = UI.armed[offer.decision];" in control
+    assert "if (armed && armed.thread === t.id) {" in control, (
+        "another thread's arm silences this thread's control"
+    )
+    assert "Armed on " in control
+    assert "you send it from there" in control
+    # The label says what the press does, which is fill a box rather than answer.
+    # "Take this answer" is what it must not lead with: the press takes nothing.
+    assert "Put this answer in " in control
+    assert "box — you send it from there" in control
+    assert "it replaces your answer when you send it" in control
+    assert "Take this answer" not in control, "the label still promises to take the answer"
+
+
+def test_the_arm_is_dropped_by_every_way_its_thread_ends() -> None:
+    """An arm belongs to the conversation that offered it.
+
+    A thread that is folded, parked or closed is over, and an arm left behind by
+    one rings an option and holds a filled box on the strength of it -- which
+    the human reads as an answer they have already given.
+
+    What goes back is what arming found, and only where the box is still the one
+    arming wrote. A box the human has touched since is theirs and is left alone,
+    arm and all. The alternative is to find the offer's words in the box and cut
+    them out, which deletes their sentence whenever they wrote the same words --
+    on a decision whose answer an agent has just proposed, the likely case.
+    """
+    arming = balanced_body("armAnswer")
+    assert "var untouched = !!standing && box === standing.written;" in arming, (
+        "arming does not know whether the box is still the one it wrote"
+    )
+    # The same offer, from the same thread, into the box taking it produced.
+    assert "if (!(untouched && standing.thread === tid && standing.text === offer.text &&" in (
+        arming
+    ), "taking one offer twice writes it twice"
+    assert "var before = (untouched ? standing.before : box).trim();" in arming, (
+        "an edited box is overwritten by what the standing arm found"
+    )
+    dropping = balanced_body("disarmFrom")
+    assert "arm.thread !== tid" in dropping, "an arm from another thread is dropped with this one's"
+    assert 'if ((UI.drafts[id] || "") === arm.written) UI.drafts[id] = arm.before;' in dropping, (
+        "the box is put back without first checking it is the one arming wrote"
+    )
+    assert "delete UI.armed[id];" in dropping
+    # Recognition, never search. Hunting the offer's words in the box deletes a
+    # human's own sentence whenever they wrote the same words -- and on a
+    # decision whose answer an agent has just proposed, that is the likely case.
+    assert "replace(" not in arming, "arming edits the draft by text search"
+    assert "replace(" not in dropping, "disarming edits the draft by text search"
+    assert "indexOf(" not in arming and "indexOf(" not in dropping
+    # The same offer text on a later turn can name a different option, and a
+    # stale control clicked then is a new arm, not a repeat of the old one.
+    assert "standing.option === (offer.option || null)" in arming
+    for gesture in ("foldThread", "parkThread", "closeThread"):
+        assert "disarmFrom(tid);" in balanced_body(gesture), f"{gesture} leaves the arm standing"
 
 
 # ---------------------------------------------------------------- GUI-A80
