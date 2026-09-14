@@ -255,6 +255,21 @@ def test_a_version_the_parser_refuses_to_convert_is_refused_not_raised(tmp_path,
     assert str(pyproject) in capsys.readouterr().err
 
 
+def test_a_version_the_parser_cannot_survive_is_refused_not_raised(tmp_path, capsys):
+    """
+    Given a pyproject whose version is nested deeply enough to exhaust the parser
+    When the check runs
+    Then it refuses naming the file. The parser raises something that is not a
+    decode error here, and the boundary's promise is that nothing it raises
+    reaches the caller as a traceback.
+    """
+    pyproject = tmp_path / check.PACKAGE_PYPROJECT
+    pyproject.parent.mkdir(parents=True)
+    pyproject.write_text("[project]\nversion = " + "[" * 3000 + "]" * 3000 + "\n", encoding="utf-8")
+    assert _run(tmp_path, "0.2.0") == check.EXIT_REFUSED
+    assert str(check.PACKAGE_PYPROJECT) in capsys.readouterr().err
+
+
 def test_undecodable_output_from_the_tool_refuses(tmp_path, capsys, monkeypatch):
     """
     Given a prgroom whose version output is not valid text

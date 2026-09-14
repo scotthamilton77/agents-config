@@ -140,9 +140,18 @@ def test_guard_ignores_a_change_outside_the_watched_source() -> None:
     assert bump_refusal(changed=changed, base_version="0.1.0", head_version="0.1.0") is None
 
 
-def test_a_version_past_the_parsers_digit_limit_is_malformed_not_raised(tmp_path: Path) -> None:
-    """Past its digit limit tomllib raises a plain ValueError, which is malformed, not a crash."""
-    text = "[project]\nversion = " + "9" * 5000 + "\n"
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param("9" * 5000, id="past-the-digit-limit"),
+        pytest.param("[" * 3000 + "]" * 3000, id="nested-past-the-recursion-limit"),
+    ],
+)
+def test_a_version_the_parser_cannot_survive_is_malformed_not_raised(
+    tmp_path: Path, value: str
+) -> None:
+    """Whatever the parser raises on a pathological value, both readers say malformed."""
+    text = f"[project]\nversion = {value}\n"
     assert version_in(text) == ""
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(text, encoding="utf-8")

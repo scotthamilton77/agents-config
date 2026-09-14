@@ -105,7 +105,7 @@ def repo_version(repo_root: Path) -> str | None:
         data = tomllib.loads(text)
         project = data.get("project")
         version = project.get("version") if isinstance(project, dict) else None
-    except ValueError as exc:
+    except Exception as exc:  # noqa: BLE001  # the docstring's promise, kept by construction
         raise UnreadableProject(str(exc)) from exc
     if not isinstance(version, str) or not version.strip():
         raise UnreadableProject("it declares no usable project version")
