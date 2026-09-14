@@ -141,7 +141,7 @@ def test_guard_ignores_a_change_outside_the_watched_source() -> None:
 
 
 def test_a_version_past_the_parsers_digit_limit_is_malformed_not_raised(tmp_path: Path) -> None:
-    """tomllib raises a plain ValueError past its digit limit, and that is malformed, not a crash."""
+    """Past its digit limit tomllib raises a plain ValueError, which is malformed, not a crash."""
     text = "[project]\nversion = " + "9" * 5000 + "\n"
     assert version_in(text) == ""
     pyproject = tmp_path / "pyproject.toml"
