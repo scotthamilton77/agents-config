@@ -324,6 +324,16 @@ def envelope_of(body: str) -> str:
     return "\n".join(lines[start + 1 : close])
 
 
+def _carries(body: Any, text: str) -> bool:
+    """Whether a posted body carries this verdict text as its envelope."""
+    if not isinstance(body, str):
+        return False
+    try:
+        return envelope_of(body) == text
+    except ValueError:
+        return False
+
+
 def commentable_spans(patch: str) -> list[tuple[int, int]]:
     """The inclusive right-side line ranges a patch's hunks make commentable.
 
@@ -507,9 +517,11 @@ def post_verdict_pr(
             ),
         )
 
-    # Rendered once and compared whole. The rendering is a pure function of the
-    # verdict, so the body a repost builds is the body the first posting left, and
-    # equality on it is still equality on the verdict behind it.
+    # A verdict already posted is recognized by the envelope its body carries,
+    # which is the verdict file verbatim. The rest of the body renders that file
+    # against a criteria file, and the criteria file is context rather than
+    # verdict: a repost differing only in a criterion's wording is the same
+    # verdict, and comparing whole bodies would post it twice.
     body = render_body(verdict)
     existing = find_own_review(
         http,
@@ -522,7 +534,7 @@ def post_verdict_pr(
         match=lambda review: (
             review_field(review, "state") == COMMENT_STATE
             and review_field(review, "commit_id") == verdict.head_sha
-            and review_field(review, "body") == body
+            and _carries(review_field(review, "body"), verdict.text)
         ),
     )
     if existing is not None:

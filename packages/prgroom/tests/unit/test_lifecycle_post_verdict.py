@@ -482,6 +482,18 @@ class TestPostingTwiceIsANoOp:
         assert "review 7" in message
         assert "nothing posted" in message
 
+    def test_a_repost_differing_only_in_criterion_wording_posts_nothing(self) -> None:
+        # The first posting rendered its criterion one way; the retry carries the
+        # same findings at the same head and a reworded criterion. The bodies
+        # differ, the verdict does not, and a verdict posts once.
+        verdict = verdict_of(finding("f1", ac="A1", claim="a claim"))
+        first = Verdict(verdict.text, HEAD, verdict.findings, {"A1": "The first wording."})
+        again = Verdict(verdict.text, HEAD, verdict.findings, {"A1": "A second wording."})
+        assert render_body(first) != render_body(again)
+        message, http = post(again, self.routes_with_review(self.existing(body=render_body(first))))
+        assert http.posted_reviews() == []
+        assert "nothing posted" in message
+
     @pytest.mark.parametrize(
         "overrides",
         [
