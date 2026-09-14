@@ -60,6 +60,29 @@ def test_an_older_installed_copy_refuses(tmp_path, capsys):
     assert REINSTALL in err.lower()
 
 
+def test_only_bounded_ascii_digits_are_a_version():
+    """
+    Given digits that are not ASCII, or more of them than a version ever holds
+    When they are parsed
+    Then they are not versions, and the long one answers rather than raising
+    from the integer conversion underneath.
+
+    The pattern is the same literal the installer package carries, and this test
+    is its twin: neither file can import the other.
+    """
+    for raw in ("\u0660.\u0662.\u0660", "\uff10.\uff12.\uff10", "1234567890.0.0", "1" * 5000 + ".0.0"):
+        assert check.release(raw) is None
+        assert check.release(f"{raw}+partial") is None
+    assert check.release("0.2.0") == (0, 2, 0)
+    assert check.release("0.2.0+partial") == (0, 2, 0)
+
+
+def test_a_unicode_digit_version_does_not_read_as_current(tmp_path, capsys):
+    """A version nobody can type must not compare as equal to the one on disk."""
+    assert _run(_repo(tmp_path, "0.2.0"), "\uff10.\uff12.\uff10") == check.EXIT_REFUSED
+    assert "cannot compare" in capsys.readouterr().err
+
+
 def test_the_same_version_passes(tmp_path, capsys):
     assert _run(_repo(tmp_path, "0.2.0"), "0.2.0") == check.EXIT_OK
     assert capsys.readouterr().err == ""

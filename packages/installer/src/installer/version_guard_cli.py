@@ -16,7 +16,13 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 
-from installer.core.versions import WATCHED_PACKAGE, bump_refusal, project_version, version_in
+from installer.core.versions import (
+    WATCHED_PACKAGE,
+    bump_refusal,
+    project_version,
+    touches_watched,
+    version_in,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -118,6 +124,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    if not touches_watched(changed):
+        sys.stdout.write(
+            f"version-guard: nothing under {WATCHED_PACKAGE} changed against {base}; clear\n"
+        )
+        return 0
+
+    # Both versions are read only now. A change with no question to answer must
+    # not be able to fail on the state of a file it never touched.
     refusal = bump_refusal(
         changed=changed,
         base_version=base_version(repo_root, base),

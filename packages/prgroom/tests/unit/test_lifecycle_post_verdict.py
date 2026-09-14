@@ -255,7 +255,7 @@ class TestInlineComments:
         message, http = post(verdict_of(finding("f1", evidence="nothing locatable here")))
         (posted,) = http.posted_reviews()
         assert "comments" not in posted
-        assert "no line in the diff for finding f1" in message
+        assert "no line in the diff for finding 'f1'" in message
 
     def test_the_reported_lines_are_assembled_one_per_line(self) -> None:
         # The whole rendering, not a substring of it: the unplaced findings each
@@ -269,15 +269,15 @@ class TestInlineComments:
             )
         )
         assert message == (
-            "no line in the diff for finding f1\n"
-            "no line in the diff for finding f3\n"
+            "no line in the diff for finding 'f1'\n"
+            "no line in the diff for finding 'f3'\n"
             f"posted: review 99 by {LOGIN} pinned to {HEAD} with 1 inline comment(s)"
         )
 
     def test_a_file_the_diff_reports_without_a_patch_anchors_nothing(self) -> None:
         message, http = post(verdict_of(finding("f1", evidence=f"{BINARY}:3 changed")))
         assert "comments" not in http.posted_reviews()[0]
-        assert "no line in the diff for finding f1" in message
+        assert "no line in the diff for finding 'f1'" in message
 
 
 # Every form the corpus of real verdicts writes a location in, plus the forms that

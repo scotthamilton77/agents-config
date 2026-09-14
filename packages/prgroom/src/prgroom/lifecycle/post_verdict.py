@@ -269,7 +269,7 @@ def load_verdict(path: Path, criteria: Mapping[str, str] = NO_CRITERIA) -> Verdi
             raise PreconditionError(
                 ErrorCode.PRECONDITION_VERDICT_TOO_LARGE,
                 detail=(
-                    f"{path}: the comment for finding {finding['id']} renders to "
+                    f"{path}: the comment for finding {finding['id']!r} renders to "
                     f"{comment} characters; the limit is {MAX_BODY_CHARS}"
                 ),
             )
@@ -542,7 +542,10 @@ def post_verdict_pr(
         commit_id=verdict.head_sha,
         comments=comments,
     )
-    lines = [f"no line in the diff for finding {finding_id}" for finding_id in unplaced]
+    # Quoted, because the id is written by whatever assembled the verdict and
+    # this line is read in a terminal: an escape sequence arriving raw would be
+    # executed there rather than read.
+    lines = [f"no line in the diff for finding {finding_id!r}" for finding_id in unplaced]
     lines.append(
         f"posted: review {review_id} by {minted.login} pinned to {verdict.head_sha} "
         f"with {len(comments)} inline comment(s)"

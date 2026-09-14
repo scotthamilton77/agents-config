@@ -180,7 +180,7 @@ def test_a_finding_with_no_placeable_anchor_is_named_on_stdout(
     wire(monkeypatch, http)
     result = invoke(config, verdict)
     assert result.exit_code == 0
-    assert "no line in the diff for finding correctness.r1.f1" in result.output
+    assert "no line in the diff for finding 'correctness.r1.f1'" in result.output
 
 
 def test_the_verdict_is_required(
@@ -626,7 +626,7 @@ def test_a_line_number_longer_than_any_file_is_not_a_line_number(
     assert result.exit_code == 0
     (posted,) = http.posted_reviews()
     assert "comments" not in posted
-    assert "no line in the diff for finding f1" in result.output
+    assert "no line in the diff for finding 'f1'" in result.output
 
 
 @pytest.mark.parametrize(
@@ -845,7 +845,25 @@ class TestAnInlineCommentTooLargeToPost:
         assert result.exit_code == 2
         output = " ".join(result.output.split())
         assert ErrorCode.PRECONDITION_VERDICT_TOO_LARGE.value in output
-        assert f"the comment for finding {identifier} renders to {MAX_BODY_CHARS + 1}" in output
+        assert f"the comment for finding {identifier!r} renders to {MAX_BODY_CHARS + 1}" in output
+        assert http.calls == []
+
+    def test_the_named_finding_is_quoted_so_a_hostile_id_cannot_drive_the_terminal(
+        self, workspace: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The id is written by whatever assembled the verdict, and the refusal is
+        # read in a terminal. An escape sequence arriving raw would be executed
+        # there rather than read, so the id is shown the way Python quotes it.
+        config, verdict = workspace
+        envelope = envelope_whose_comment_renders_to(MAX_BODY_CHARS + 64)
+        envelope["findings"][0]["id"] = "f1\x1b[2Jx"
+        verdict.write_text(json.dumps(envelope))
+        http = transport({})
+        wire(monkeypatch, http)
+        result = invoke(config, verdict)
+        assert result.exit_code == 2
+        assert "\x1b" not in result.output
+        assert "\\x1b[2Jx" in " ".join(result.output.split())
         assert http.calls == []
 
     def test_a_body_that_fits_does_not_excuse_an_oversized_comment(

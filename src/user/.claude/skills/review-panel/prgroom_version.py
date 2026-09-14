@@ -53,7 +53,14 @@ class UnreadableProject(Exception):
 
 PACKAGE_PYPROJECT = Path("packages/prgroom/pyproject.toml")
 
-_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)(\+partial)?$")
+# One strict shape, and everything else is malformed by construction rather than
+# by a list of bad inputs: ASCII digits only, because a Unicode decimal digit is
+# a digit to `\d` and compares as the number it looks like; at most nine per
+# component, because what the pattern captures is what reaches int(), and an
+# unbounded run of digits raises there instead of refusing here. This literal is
+# duplicated verbatim in the installer package that owns the same rule, because
+# this script is standalone and cannot import from it.
+_VERSION = re.compile(r"^([0-9]{1,9})\.([0-9]{1,9})\.([0-9]{1,9})(\+partial)?$", re.ASCII)
 
 
 def release(raw: str) -> tuple[int, int, int] | None:

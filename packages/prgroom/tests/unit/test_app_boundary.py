@@ -334,7 +334,7 @@ def test_a_files_entry_with_no_commentable_line_still_posts_the_envelope(entry: 
     message = call_post_verdict(http)
     (posted,) = http.posted_reviews()
     assert "comments" not in posted
-    assert "no line in the diff for finding f1" in message
+    assert "no line in the diff for finding 'f1'" in message
 
 
 @pytest.mark.parametrize("shape", SHAPES, ids=repr)

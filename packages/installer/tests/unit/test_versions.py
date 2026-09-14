@@ -31,6 +31,29 @@ def test_release_rejects_what_is_not_three_integers() -> None:
         release("0.2")
 
 
+def test_only_bounded_ascii_digits_are_a_version() -> None:
+    """
+    Given digits that are not ASCII, or more of them than a version ever holds
+    When they are parsed
+    Then they are malformed, and the long one refuses rather than raising from
+    the integer conversion underneath.
+
+    Unicode decimal digits read as digits to a permissive pattern and compare as
+    the number they resemble, so a version nobody can type would sort as current.
+    """
+    for raw in (
+        "\u0660.\u0662.\u0660",
+        "\uff10.\uff12.\uff10",
+        "1234567890.0.0",
+        "1" * 5000 + ".0.0",
+    ):
+        with pytest.raises(ValueError, match=r"neither x\.y\.z"):
+            release(raw)
+        assert not is_partial(f"{raw}+partial")
+    assert release("0.2.0") == (0, 2, 0)
+    assert release("0.2.0+partial") == (0, 2, 0)
+
+
 def test_is_partial_reads_only_the_one_label_on_a_well_formed_version() -> None:
     """A label other than the one label is malformed, and malformed is not partial."""
     assert is_partial("0.2.0+partial")
@@ -207,6 +230,34 @@ def test_cli_fails_on_the_refusal(
     monkeypatch.setattr(version_guard_cli, "base_version", lambda *_a: "0.1.0")
     assert version_guard_cli.main([str(tmp_path), "--base", "origin/main"]) == 1
     assert "still '0.1.0'" in capsys.readouterr().err
+
+
+def test_cli_reads_no_version_when_nothing_watched_changed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a change touching nothing under the watched package, and a package
+    version that is malformed
+    When the guard runs
+    Then it passes without reading either version: a change with no question to
+    answer must not fail on the state of a file it never touched.
+    """
+    pyproject = tmp_path / WATCHED_PACKAGE / "pyproject.toml"
+    pyproject.parent.mkdir(parents=True)
+    pyproject.write_text('[project]\nversion = "not-a-version"\n', encoding="utf-8")
+
+    read: list[str] = []
+
+    def _unread(*_args: object) -> str:
+        read.append("version")
+        return "not-a-version"
+
+    monkeypatch.setattr(version_guard_cli, "changed_paths", lambda *_a: ["README.md"])
+    monkeypatch.setattr(version_guard_cli, "base_version", _unread)
+    monkeypatch.setattr(version_guard_cli, "project_version", _unread)
+    assert version_guard_cli.main([str(tmp_path), "--base", "origin/main"]) == 0
+    assert "clear" in capsys.readouterr().out
+    assert read == []
 
 
 def test_cli_passes_a_clear_change(
