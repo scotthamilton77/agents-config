@@ -161,10 +161,12 @@ reads the bump and demands the install that was just refused. Bump or label, not
 both.
 
 A bump is therefore a message to the human: reinstall before the next review
-round. The round posts its verdict through the `prgroom` on PATH, and only a
-human runs the installer, so a merged fix does not reach the tool by itself. An
-unbumped change is what makes a stale tool indistinguishable from a current one,
-which is why the guard refuses it rather than warning. The `review-panel` skill
+round, unless the copy on PATH already reports that release or a newer one,
+which is the check's own test. The round posts its verdict through the `prgroom` on PATH, and only a
+human runs the installer, so a merged fix does not reach the tool by itself. A
+change that neither bumps nor wears the label is what makes a stale tool
+indistinguishable from a current one, which is why the guard refuses it rather
+than warning. The `review-panel` skill
 checks the installed release against this package's before it posts, and its own
 doctrine states which answers it refuses.
 

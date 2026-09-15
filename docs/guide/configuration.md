@@ -183,17 +183,21 @@ when either of you reaches for it, not a habit the configuration enforces.
 
 A normal install puts five CLIs from this repo on your PATH via `uv tool
 install` — `prgroom`, `grind`, `executor`, `gitclean` and `grillui` — no
-separate step needed. Two are reached for by installed skills: `gitclean` by
+separate step needed, with one exception: a CLI whose declared version carries
+the `+partial` label is refused rather than deployed, because that label marks
+source that has moved past its released version by changes not yet worth a
+reinstall. Three are reached for by installed skills: `gitclean` by
 `post-merge-cleanup` (which uses it to decide safely which branches and
 worktrees a merged PR made disposable) and by the `/clean-up-git` slash command,
-and `grillui` by `grill-with-ui` and `grill-capture`, which run a grilling
-session in your browser and capture its result.
+`grillui` by `grill-with-ui` and `grill-capture`, which run a grilling session
+in your browser and capture its result, and `prgroom` by `review-panel`, which
+posts every review verdict through it and first checks that the installed copy
+is not older than the repository's.
 
-The other three are components of the rebuild rather than finished user tools.
-`prgroom` grooms a PR deterministically but the skills that drove it were
-retired; `grind` and `executor` are runtime pieces with no driver yet. They are
-installed because the repo's own development uses them, and they are harmless if
-you ignore them.
+The other two are components of the rebuild rather than finished user tools:
+`grind` and `executor` are runtime pieces with no driver yet. They are installed
+because the repo's own development uses them, and they are harmless if you
+ignore them.
 
 `work` is not among them: it ships from its own repository and is installed
 from there.
