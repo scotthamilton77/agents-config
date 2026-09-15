@@ -227,15 +227,28 @@ fixer's work reaches the branch. A fix moves the head, and a verdict is only pos
 head it judged — post late and the round's record is stranded off the commit it speaks about.
 
 ```bash
-prgroom post-verdict <pr> --verdict <path>
+uv run prgroom_version.py --repo-root <repo-root>
+prgroom post-verdict <pr> --verdict <path> --criteria <path>
 ```
+
+The check runs first, every round, from this directory like the round's other scripts — which is
+why it names the reviewed repository rather than reading the working directory. prgroom is installed
+onto PATH by a human-run installer, so a fix that landed in the repository is not necessarily in the
+tool: the check compares the installed release with the one that repository builds, and refuses when
+the installed one is older, absent, or will not report a version. A refusal is a stop, not a
+warning — the reinstall is a human's to do, and posting through a tool that predates the fix is how
+a round reports a defect that is already closed.
 
 That submits the reviewing App's comment-only review pinned to the reviewed head. The body is a
 rendered summary of the round — the verdict word, the round, the lenses and what ran them, one entry
 per finding — above a collapsed block holding the verdict's own bytes in a fenced `json` block.
 Anything reading the envelope back off the review takes that block, not the whole body. Each finding
-that names a file and line the diff touches also gets an inline comment carrying its JSON — in its
-evidence, or failing that in its claim. A finding whose
+that names a file and line the diff touches also gets an inline comment, and that comment leads with
+the finding's prose — what is wrong and what it rests on — above a collapsed block holding the
+record itself. A human reads the line comment where it sits, so the sentence goes where the eye
+lands and the JSON stays available underneath. Pass the round's criteria file so a finding citing a
+criterion renders the criterion as a sentence rather than as an id the reader has to go look up. A
+finding whose
 location is a path with no line, a symbol, or a file the diff leaves alone lands in the body alone and is
 named on stdout — read that list, because a finding nobody sees at the line is a finding the fixer
 is likelier to skim past. It refuses when the live head has already moved, reposting the same

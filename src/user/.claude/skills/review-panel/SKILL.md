@@ -125,5 +125,5 @@ fails closed, an unauthorized dispatch is refused, an unevidenced mechanical fin
 to advisory with the demotion marked, a settled-item re-citation is suppressed with the match
 recorded. It prints the distinct-vendor count (one means collapse) and `--indict` turns a
 criteria-indicting finding into the upstream-defect halt. `harvest.md` holds the operating
-doctrine — posting a pull request's verdict, the round's records, transports and failover, a
+doctrine — posting a verdict, the stale-prgroom gate, the round's records, transports and failover, a
 dead route vs a failed reviewer, what each refusal obliges.

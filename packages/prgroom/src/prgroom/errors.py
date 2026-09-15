@@ -104,6 +104,7 @@ class ErrorCode(StrEnum):
     PRECONDITION_VERDICT_UNREADABLE = "PRECONDITION_VERDICT_UNREADABLE"
     PRECONDITION_VERDICT_MALFORMED = "PRECONDITION_VERDICT_MALFORMED"
     PRECONDITION_VERDICT_TOO_LARGE = "PRECONDITION_VERDICT_TOO_LARGE"
+    PRECONDITION_CRITERIA_UNREADABLE = "PRECONDITION_CRITERIA_UNREADABLE"
     # RUNTIME_*
     RUNTIME_GH_TRANSIENT = "RUNTIME_GH_TRANSIENT"
     RUNTIME_GH_TERMINAL = "RUNTIME_GH_TERMINAL"
@@ -274,6 +275,11 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         what="the verdict is longer than a review body may be",
         why="a truncated verdict is a different document that still reads as the round's result",
         how="shorten the round's findings or split the round; nothing is truncated automatically",
+    ),
+    ErrorCode.PRECONDITION_CRITERIA_UNREADABLE: RegistryEntry(
+        what="the acceptance-criteria file could not be opened",
+        why="a review naming a criterion by id alone leaves a reader nothing to judge against",
+        how="check the path passed to --criteria, or drop the option to post the ids alone",
     ),
     ErrorCode.RUNTIME_GH_TRANSIENT: RegistryEntry(
         what="gh API returned 5xx or rate-limited with Retry-After",

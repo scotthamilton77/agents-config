@@ -18,6 +18,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
+from prgroom import __version__, cli
 from prgroom.cli import app
 
 runner = CliRunner()
@@ -95,3 +96,50 @@ def test_the_package_declares_exactly_one_runtime_dependency() -> None:
     pyproject = Path(__file__).parents[2] / "pyproject.toml"
     with pyproject.open("rb") as fh:
         assert tomllib.load(fh)["project"]["dependencies"] == ["typer"]
+
+
+class TestTheVersionFlag:
+    """What a preflight comparing an installed prgroom against this tree reads.
+
+    A stale install on PATH is invisible without a version to compare, so the flag
+    prints the version and nothing else — a caller parses the whole line.
+    """
+
+    def test_the_flag_prints_the_version_alone_and_exits_zero(self) -> None:
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+        assert result.stdout == f"{__version__}\n"
+
+    def test_the_version_reported_is_the_one_the_package_declares(self) -> None:
+        # One source of truth: the distribution metadata built from pyproject. A
+        # second literal in the source would drift from it silently.
+        pyproject = Path(__file__).parents[2] / "pyproject.toml"
+        with pyproject.open("rb") as fh:
+            assert tomllib.load(fh)["project"]["version"] == __version__
+
+    def test_the_version_is_read_from_the_distribution_not_written_in_source(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A literal equal to the declared version would pass the comparison above
+        # today and drift on the next bump; only a read follows the metadata.
+        import importlib
+        import importlib.metadata
+
+        import prgroom
+
+        monkeypatch.setattr(importlib.metadata, "version", lambda _name: "9.9.9")
+        try:
+            assert importlib.reload(prgroom).__version__ == "9.9.9"
+        finally:
+            monkeypatch.undo()
+            importlib.reload(prgroom)
+
+    def test_the_flag_needs_neither_a_subcommand_nor_a_store(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A store resolved on the way to the version is a store that can fail on
+        # the way to it, and no verb has to be named to ask for one.
+        built: list[str | None] = []
+        monkeypatch.setattr(cli, "_build_store", built.append)
+        assert runner.invoke(app, ["--version"]).exit_code == 0
+        assert built == []

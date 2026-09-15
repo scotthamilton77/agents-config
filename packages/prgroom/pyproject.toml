@@ -1,6 +1,6 @@
 [project]
 name = "prgroom"
-version = "0.1.0"
+version = "0.2.0"
 description = "prgroom — deterministic PR-grooming CLI: polls PR review feedback, clusters it, dispatches fixes, pushes, replies, and resolves threads."
 requires-python = ">=3.11"
 dependencies = ["typer"]

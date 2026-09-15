@@ -22,7 +22,7 @@ on a worktree branch — the `Makefile` `cd`s relative to the invoking directory
 so a run from the main checkout gates code you did not change):
 
 ```bash
-make ci-prgroom   # the full gate CI enforces
+make ci-prgroom   # this package's gate; `make ci` at the root adds the version guard
 ```
 
 It runs, in order: `ruff check` (lint), `ruff format --check` (formatting),
@@ -143,6 +143,37 @@ a non-interactive run without `--yes` leaves the older receipt-owned install
 in place rather than upgrading silently. Manual `uv tool install
 ./packages/prgroom` (or `uv run prgroom …` from `packages/prgroom/`) remains
 possible for a no-installer or specific-checkout workflow.
+
+## The version says whether the installed copy is stale
+
+The version in `pyproject.toml` is either a release `x.y.z` or that release
+carrying the PEP 440 local label `+partial`. A change to `src/` or to
+`pyproject.toml` either bumps the release, as a bare `x.y.z`, or leaves the
+released version where it is and appends the label; `make version-guard` fails
+the build on anything else. The label means tweaks accumulating on top of the
+released version that are not yet worth a reinstall, so the installer refuses to
+deploy a version carrying it; every comparison elsewhere reads the release part
+alone.
+
+The two shapes are exclusive. A bumped version wearing the label satisfies
+nothing: the installer refuses it for being partial, and the review round's check
+reads the bump and demands the install that was just refused. Bump or label, not
+both.
+
+A bump is therefore a message to the human: reinstall before the next review
+round, unless the copy on PATH already reports that release or a newer one,
+which is the check's own test. The round posts its verdict through the `prgroom` on PATH, and only a
+human runs the installer, so a merged fix does not reach the tool by itself. A
+change that neither bumps nor wears the label is what makes a stale tool
+indistinguishable from a current one, which is why the guard refuses it rather
+than warning. The `review-panel` skill
+checks the installed release against this package's before it posts, and its own
+doctrine states which answers it refuses.
+
+This section is the rule. The delivery contract in the repo-root `AGENTS.md`
+states it in one sentence and points here for the whole of it, and the
+`version-guard` recipe in the `Makefile` points here, because a rule written in
+full in four places is three places that go stale on the next change to the code.
 
 ## Do not run grooming against a live PR automatically
 

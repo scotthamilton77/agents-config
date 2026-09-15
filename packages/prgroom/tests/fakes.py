@@ -263,11 +263,12 @@ class MissingBinaryRunner:
 # One verdict file, and the review body ``post-verdict`` renders from it.
 #
 # Both are written out by hand rather than produced by the renderer. The verb
-# recognizes a verdict it has already posted by comparing bodies, so a fixture the
-# renderer built would only prove that the renderer equals itself: a change to the
-# posted format would move the fixture with it and leave the check green. Every
-# test that stands a posted body up against the flow uses these, and the rendering
-# suite pins the renderer's output against the second one.
+# recognizes a verdict it has already posted by the envelope a posted body
+# carries, so a fixture the renderer built would only prove that the renderer
+# equals itself: a change to the posted format would move the fixture with it and
+# leave the check green. Every test that stands a posted body up against the flow
+# uses these, and the rendering suite pins the renderer's output against the
+# second one.
 POSTED_VERDICT_TEXT = """\
 {
   "schema_version": "3",

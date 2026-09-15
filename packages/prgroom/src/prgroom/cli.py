@@ -21,6 +21,7 @@ from typing import IO
 
 import typer
 
+from prgroom import __version__
 from prgroom.agent.contracts import ClusterContract, FixContract
 from prgroom.agent.dispatcher import (
     ClusterDispatcher,
@@ -53,7 +54,12 @@ from prgroom.lifecycle import (
 from prgroom.lifecycle.approve import resolve_key_path
 from prgroom.lifecycle.human_review import derive_human_review, fetch_human_review_inputs
 from prgroom.lifecycle.locking import with_lock
-from prgroom.lifecycle.post_verdict import load_verdict, post_verdict_pr
+from prgroom.lifecycle.post_verdict import (
+    NO_CRITERIA,
+    load_criteria,
+    load_verdict,
+    post_verdict_pr,
+)
 from prgroom.lifecycle.push import has_queued_fix_commits
 from prgroom.lifecycle.resolver import apply_retry_budget_gate, retry_budget_exhausted
 from prgroom.lifecycle.run import Mode, run_lifecycle, wait_lifecycle
@@ -190,6 +196,19 @@ def _build_sink() -> Sink:
     return StderrSink()  # pragma: no cover - trivial production default
 
 
+def _report_version(asked: bool) -> None:
+    """Print the package version and stop, when ``--version`` asked for it.
+
+    Handled before the callback's body, so the version answers without a verb
+    being named and without a store being resolved: whoever asks is checking which
+    prgroom is on PATH, and an unusable store must not hide the answer. The line is
+    the bare version and nothing else, because a caller compares the whole of it.
+    """
+    if asked:
+        sys.stdout.write(f"{__version__}\n")
+        raise typer.Exit()
+
+
 @app.callback()
 def _root(
     ctx: typer.Context,
@@ -198,6 +217,13 @@ def _root(
         "--store",
         help="State store adapter: file (default) or bd (deferred).",
         envvar=None,  # env precedence is owned by resolve_store, not typer
+    ),
+    version: bool = typer.Option(  # noqa: ARG001 - read by its eager callback
+        False,
+        "--version",
+        help="Print the prgroom version and exit.",
+        is_eager=True,
+        callback=_report_version,
     ),
 ) -> None:
     """Resolve the state store eagerly so an invalid --store fails before any verb.
@@ -768,6 +794,11 @@ def post_verdict(
         # named without them.
         help="Project config whose merge-policy approver table names the App.",
     ),
+    criteria: str | None = typer.Option(
+        None,
+        "--criteria",
+        help="Acceptance criteria the round judged against; a finding's criterion reads in full.",
+    ),
 ) -> None:
     """Submit the configured GitHub App's comment-only review carrying a verdict.
 
@@ -780,7 +811,10 @@ def post_verdict(
     """
     try:
         ref = PRRef.parse(pr)
-        loaded = load_verdict(Path(verdict))
+        # Read before the verdict, because the criteria decide part of what the
+        # body says and therefore what its size is measured against.
+        named = NO_CRITERIA if criteria is None else load_criteria(Path(criteria))
+        loaded = load_verdict(Path(verdict), named)
         approver = _load_approver(Path(project_config))
         key_path = resolve_key_path(approver, os.environ)
         message = post_verdict_pr(

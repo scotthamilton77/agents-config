@@ -8,6 +8,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # version-guard compares a change against the branch it targets, so
+          # the base branch has to be in the clone; a shallow fetch omits it.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true

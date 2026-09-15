@@ -46,6 +46,7 @@ from installer.core.sync import (
     sync_plan,
     sync_routes,
 )
+from installer.core.versions import is_partial, project_version
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -580,6 +581,8 @@ def _deploy_one(
         if dry_run:
             io.info(f"cli:{spec.name}: would install")
             return _done(False, False)
+        if _refuses_partial(spec, package_dir, io):
+            return _done(True, False)
         result = deploy.tool_install(package_dir, force=False)
         if result.ok:
             return _done(
@@ -663,6 +666,24 @@ def _consented_install(
     )
 
 
+def _refuses_partial(spec: CliSpec, package_dir: Path, io: IOPort) -> bool:
+    """Whether the package's own version forbids installing it, saying so if it does.
+
+    The partial label marks source that has moved past the installed release by
+    changes its author judged not worth a reinstall. Deploying it anyway would put
+    a version on PATH that no release names, which is the confusion the label
+    exists to prevent.
+    """
+    version = project_version(package_dir / "pyproject.toml")
+    if not is_partial(version):
+        return False
+    io.err(
+        f"cli:{spec.name}: version {version} is partial, so it does not install; "
+        f"bump its release version to make it installable"
+    )
+    return True
+
+
 def _install(
     spec: CliSpec,
     package_dir: Path,
@@ -675,6 +696,8 @@ def _install(
     c: Counters,
     counter_attr: str,
 ) -> tuple[bool, bool]:
+    if _refuses_partial(spec, package_dir, io):
+        return True, False
     result = deploy.tool_install(package_dir, force=force)
     if not result.ok:
         io.err(f"cli:{spec.name}: install failed\n{result.output}")

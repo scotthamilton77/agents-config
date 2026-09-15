@@ -15,7 +15,8 @@
         e2e-grillui eval-grillui \
         ci-agentprobe test-agentprobe lint-agentprobe format-check-agentprobe \
         typecheck-agentprobe cov-agentprobe audit-agentprobe verify-entry-agentprobe \
-        spec-lint content-lint content-tests doc-lint ponytail-lint
+        spec-lint content-lint content-tests doc-lint version-guard \
+        ponytail-lint
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
@@ -32,7 +33,8 @@ AGENTPROBE := packages/agentprobe
 # the check exists.
 ci: ci-installer ci-prgroom ci-grind ci-gitclean ci-executor ci-grillui \
     ci-agentprobe \
-    lint-actions spec-lint content-lint content-tests doc-lint ponytail-lint
+    lint-actions spec-lint content-lint content-tests doc-lint version-guard \
+    ponytail-lint
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -91,6 +93,17 @@ content-tests:
 # nothing and never invokes the installer. In `ci` — see the note there.
 doc-lint:
 	uv --project $(INSTALLER) run python -m installer.doc_lint_cli .
+
+# version-guard refuses a change to a deployed CLI package's source whose version
+# neither bumps the release nor marks the released version partial, and refuses
+# one that does both. `packages/prgroom/AGENTS.md` states that rule and why it
+# holds; this recipe only runs it. It compares against the pull request's base
+# branch, and skips when there is no base to compare against — a push to the
+# default branch asks nothing. Repo-root invocation (no `cd`) so it resolves the
+# package and the revisions against the repo; `uv --project` selects the
+# installer venv.
+version-guard:
+	uv --project $(INSTALLER) run python -m installer.version_guard_cli .
 
 # ponytail-lint keeps the `ponytail:` label out of packages/ and src/. An
 # implementer agent can be prompted to tag a deliberate simplification with that

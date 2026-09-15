@@ -18,15 +18,19 @@ from prgroom.errors import ErrorCode, PreconditionError
 from prgroom.gh.app import FILES_PER_PAGE, REVIEWS_PER_PAGE
 from prgroom.lifecycle.approve import APPROVE_EVENT
 from prgroom.lifecycle.post_verdict import (
+    FENCE_LANGUAGE,
+    GLOSS_WORDS,
     Anchor,
     Verdict,
     build_comments,
     commentable_spans,
     envelope_of,
+    load_criteria,
     load_verdict,
     place_anchor,
     post_verdict_pr,
     render_body,
+    render_comment,
 )
 from prgroom.proc import CommandResult
 from prgroom.prsession.pr_ref import PRRef
@@ -220,11 +224,14 @@ class TestInlineComments:
         assert (comment["start_line"], comment["line"]) == (50, 59)
         assert comment["start_side"] == comment["side"] == "RIGHT"
 
-    def test_a_comments_body_is_the_findings_own_json(self) -> None:
+    def test_a_comments_body_carries_the_findings_own_record_below_its_prose(self) -> None:
+        # The record is what a reader parses back out; the prose above it is what a
+        # person reads. Both are in the one body, and the record is unchanged.
         item = finding("f1", evidence=f"{APP_PY}:3", claim="a claim", ac="AC-1")
         _, http = post(verdict_of(item))
         ((comment,),) = [posted["comments"] for posted in http.posted_reviews()]
-        assert json.loads(comment["body"]) == item
+        assert json.loads(envelope_of(comment["body"])) == item
+        assert comment["body"].startswith("**correctness** (mechanical, fails AC-1)")
 
     def test_every_anchored_finding_gets_its_own_comment(self) -> None:
         _, http = post(
@@ -248,7 +255,7 @@ class TestInlineComments:
         message, http = post(verdict_of(finding("f1", evidence="nothing locatable here")))
         (posted,) = http.posted_reviews()
         assert "comments" not in posted
-        assert "no line in the diff for finding f1" in message
+        assert "no line in the diff for finding 'f1'" in message
 
     def test_the_reported_lines_are_assembled_one_per_line(self) -> None:
         # The whole rendering, not a substring of it: the unplaced findings each
@@ -262,15 +269,15 @@ class TestInlineComments:
             )
         )
         assert message == (
-            "no line in the diff for finding f1\n"
-            "no line in the diff for finding f3\n"
+            "no line in the diff for finding 'f1'\n"
+            "no line in the diff for finding 'f3'\n"
             f"posted: review 99 by {LOGIN} pinned to {HEAD} with 1 inline comment(s)"
         )
 
     def test_a_file_the_diff_reports_without_a_patch_anchors_nothing(self) -> None:
         message, http = post(verdict_of(finding("f1", evidence=f"{BINARY}:3 changed")))
         assert "comments" not in http.posted_reviews()[0]
-        assert "no line in the diff for finding f1" in message
+        assert "no line in the diff for finding 'f1'" in message
 
 
 # Every form the corpus of real verdicts writes a location in, plus the forms that
@@ -475,11 +482,27 @@ class TestPostingTwiceIsANoOp:
         assert "review 7" in message
         assert "nothing posted" in message
 
+    def test_a_repost_differing_only_in_criterion_wording_posts_nothing(self) -> None:
+        # The first posting rendered its criterion one way; the retry carries the
+        # same findings at the same head and a reworded criterion. The bodies
+        # differ, the verdict does not, and a verdict posts once.
+        verdict = verdict_of(finding("f1", ac="A1", claim="a claim"))
+        first = Verdict(verdict.text, HEAD, verdict.findings, {"A1": "The first wording."})
+        again = Verdict(verdict.text, HEAD, verdict.findings, {"A1": "A second wording."})
+        assert render_body(first) != render_body(again)
+        message, http = post(again, self.routes_with_review(self.existing(body=render_body(first))))
+        assert http.posted_reviews() == []
+        assert "nothing posted" in message
+
     @pytest.mark.parametrize(
         "overrides",
         [
             pytest.param({"commit_id": MOVED}, id="the-same-text-at-another-head"),
             pytest.param({"body": "a different verdict"}, id="another-text-at-this-head"),
+            pytest.param(
+                {"body": render_body(verdict_of(finding("f9", claim="another round's finding")))},
+                id="another-verdict-file-at-this-head",
+            ),
             pytest.param({"user": {"login": "someone-else"}}, id="another-identity"),
             pytest.param({"body": ""}, id="an-empty-body"),
         ],
@@ -672,8 +695,10 @@ class TestTheSummaryAboveTheEnvelope:
         assert render_body(verdict_of()) == POSTED_VERDICT_BODY
 
     def test_the_same_verdict_renders_the_same_body_every_time(self, tmp_path: Path) -> None:
-        # Idempotence is equality on the body, so a rendering that varied between
-        # two runs would repost a verdict already posted.
+        # A posted verdict is recognized by the envelope its body carries, and the
+        # envelope is the file verbatim, so the rendering around it must not vary
+        # between two runs either: a reader comparing two postings of one verdict
+        # should see one body.
         verdict = load_verdict(written(tmp_path))
         assert render_body(verdict) == render_body(verdict)
         assert render_body(load_verdict(written(tmp_path))) == render_body(verdict)
@@ -787,3 +812,427 @@ def test_a_finding_the_envelope_does_not_name_gets_no_entry() -> None:
     text = json.dumps({"head_sha": HEAD, "findings": [{"id": 7, "claim": "unattributable"}]})
     body = render_body(Verdict(text=text, head_sha=HEAD, findings=()))
     assert "unattributable" not in body[: body.index("<details>")]
+
+
+PV_A6_SENTENCE = (
+    "The anchor grammar refuses a token with characters glued to the line number, "
+    "so a bare path never anchors a comment."
+)
+PV_A6_GLOSS = "The anchor grammar refuses a token with characters glued to the line..."
+
+# A criteria file as the lenses are handed one: markdown bullets, the id in bold
+# and the criterion's sentence on the same line. The second sentence is short
+# enough that the body's gloss cannot truncate it, which is what separates a
+# truncation from a rendering that always truncates.
+CRITERIA_FILE = f"""\
+# Acceptance criteria for the change under review
+
+Artifact class: typed-code.
+
+- **PV-A6** {PV_A6_SENTENCE}
+- **PV-A7** Rendering is deterministic.
+
+Retained (out of scope):
+
+- Every module the diff does not touch.
+"""
+
+# The line comment for the full envelope's one finding, written out by hand: the
+# prose a reader sees at the line, then the record it was rendered from. Pinned
+# here rather than assembled from the renderer, so a rendering that changed shape
+# fails rather than agreeing with itself.
+PINNED_COMMENT = f"""\
+**correctness** (mechanical, fails PV-A6)
+
+The anchor grammar accepts a token with characters glued to the line.
+
+Evidence: {APP_PY}:3 has no trailing boundary
+
+Criterion PV-A6: {PV_A6_SENTENCE}
+
+<details>
+<summary>Finding record</summary>
+
+```json
+{{
+  "id": "correctness.r4.f1",
+  "lens": "correctness",
+  "type": "mechanical",
+  "ac": "PV-A6",
+  "claim": "The anchor grammar accepts a token with characters glued to the line.",
+  "evidence": "{APP_PY}:3 has no trailing boundary"
+}}
+```
+
+</details>"""
+
+
+# One finding the round recorded no lens for, naming a criterion no criteria file
+# was supplied for, written out by hand. Every line here is one the renderer
+# decides to include or leave out, so a rendering that emits a spare line or a
+# stray marker fails rather than passing on a substring.
+PINNED_COMMENT_WITHOUT_A_LENS = """\
+(mechanical, fails AC-1)
+
+the guard is missing
+
+<details>
+<summary>Finding record</summary>
+
+```json
+{
+  "id": "f1",
+  "type": "mechanical",
+  "ac": "AC-1",
+  "claim": "the guard is missing"
+}
+```
+
+</details>"""
+
+
+def criteria_written(tmp_path: Path, text: str = CRITERIA_FILE) -> Path:
+    path = tmp_path / "criteria.md"
+    path.write_text(text)
+    return path
+
+
+def with_criteria(tmp_path: Path, **overrides: Any) -> Verdict:
+    """The full envelope loaded against the criteria file the round judged it by."""
+    return load_verdict(written(tmp_path, **overrides), load_criteria(criteria_written(tmp_path)))
+
+
+def only_comment(verdict: Verdict) -> str:
+    """The body of the one inline comment the full envelope's finding places."""
+    comments, unplaced = build_comments(verdict.findings, SPANS, criteria=verdict.criteria)
+    assert unplaced == []
+    (comment,) = comments
+    return str(comment["body"])
+
+
+class TestTheLineCommentAReaderSees:
+    def test_the_comment_is_the_one_pinned_by_hand(self, tmp_path: Path) -> None:
+        assert only_comment(with_criteria(tmp_path)) == PINNED_COMMENT
+
+    def test_a_finding_recorded_without_a_lens_is_the_one_pinned_by_hand(self) -> None:
+        # The heading is assembled from the parts the finding carries, so one part
+        # missing must not leave the spacing or the punctuation of the other behind.
+        item = {"id": "f1", "type": "mechanical", "ac": "AC-1", "claim": "the guard is missing"}
+        assert render_comment(item) == PINNED_COMMENT_WITHOUT_A_LENS
+
+    def test_the_comment_opens_with_prose_rather_than_the_record(self, tmp_path: Path) -> None:
+        # The tripwire for the line comment: a body that is the finding's JSON and
+        # nothing else fails here, whatever else it satisfies.
+        body = only_comment(with_criteria(tmp_path))
+        prose = body[: body.index("<details>")]
+        assert not prose.lstrip().startswith("{")
+        assert "The anchor grammar accepts a token" in prose
+        assert "fails PV-A6" in prose
+
+    def test_an_unmatched_ac_is_one_line_in_prose_and_verbatim_in_the_record(self) -> None:
+        # The reference sits on the first line and in a roster bullet, so its
+        # whitespace runs collapse there; the bytes survive in the record beneath.
+        item = finding("f1", ac="AC  with\nbreaks", claim="a claim")
+        comment = render_comment(item)
+        prose = comment[: comment.index("<details>")]
+        assert "AC with breaks" in prose
+        assert "AC  with" not in prose
+        assert json.loads(envelope_of(comment))["ac"] == "AC  with\nbreaks"
+        body = render_body(verdict_of(item))
+        summary = body[: body.index("<details>")]
+        assert "AC with breaks" in summary
+        assert "AC  with" not in summary
+
+    def test_the_record_comes_back_out_of_the_collapsed_block(self, tmp_path: Path) -> None:
+        verdict = with_criteria(tmp_path)
+        body = only_comment(verdict)
+        assert json.loads(envelope_of(body)) == verdict.findings[0]
+
+    def test_a_finding_carrying_no_evidence_states_no_evidence_line(self) -> None:
+        body = render_comment(finding("f1", claim="the guard is missing"))
+        assert "Evidence:" not in body
+        assert "the guard is missing" in body
+
+    def test_the_criterion_sentence_is_given_in_full(self, tmp_path: Path) -> None:
+        # Truncation belongs to the body's roster, where every finding competes for
+        # one line; at the line there is one finding and room to read it.
+        assert f"Criterion PV-A6: {PV_A6_SENTENCE}" in only_comment(with_criteria(tmp_path))
+
+    def test_a_criterion_no_bullet_names_is_shown_as_the_finding_wrote_it(
+        self, tmp_path: Path
+    ) -> None:
+        verdict = with_criteria(
+            tmp_path, findings=[dict(FULL_ENVELOPE["findings"][0], ac="no such criterion")]
+        )
+        body = only_comment(verdict)
+        assert "fails no such criterion" in body
+        assert "Criterion" not in body[: body.index("<details>")]
+
+    def test_a_record_carrying_a_fence_cannot_close_the_block_early(self) -> None:
+        item = finding("f1", claim="````json and ``` too", evidence=f"{APP_PY}:3")
+        body = render_comment(item)
+        assert json.loads(envelope_of(body)) == item
+
+    def test_a_run_in_any_field_sets_the_fence_not_only_one_in_the_claim(self) -> None:
+        # The block holds the whole record, so the fence is chosen against every
+        # string the finding wrote. A run hiding in the criterion would close the
+        # block exactly as a run in the claim does.
+        item = finding("f1", ac="`" * 5, claim="a ``` run", evidence=f"{APP_PY}:3")
+        body = render_comment(item)
+        (opener,) = [
+            line
+            for line in body.splitlines()
+            if line.endswith(FENCE_LANGUAGE) and set(line[: -len(FENCE_LANGUAGE)]) == {"`"}
+        ]
+        assert opener == "`" * 6 + FENCE_LANGUAGE
+        assert json.loads(envelope_of(body)) == item
+
+    @pytest.mark.parametrize(
+        "item",
+        [
+            pytest.param({"id": "f1"}, id="a-finding-holding-only-an-id"),
+            pytest.param({"id": "f1", "lens": 7, "type": [], "ac": None}, id="mistyped-tags"),
+            pytest.param({"id": "f1", "claim": None, "evidence": None}, id="null-prose"),
+            pytest.param(
+                {
+                    "id": "f1",
+                    "lens": {},
+                    "type": 1.5,
+                    "ac": ["x"],
+                    "claim": 3,
+                    "evidence": {"a": 1},
+                },
+                id="every-optional-field-mistyped",
+            ),
+            pytest.param({"id": None}, id="an-unreadable-id"),
+            pytest.param({"id": "f1", "evidence": ["one", 2, None]}, id="mixed-evidence-list"),
+        ],
+    )
+    def test_rendering_a_comment_never_raises_on_a_shape_it_cannot_read(
+        self, item: dict[str, Any]
+    ) -> None:
+        # The comment renderer is public and the loader's shape check is narrower
+        # than what a lens can write, so an unreadable field costs its line. A
+        # finding with nothing readable is the record alone, with no line standing
+        # in for the prose that could not be written.
+        body = render_comment(item)
+        assert body.startswith("<details>")
+        assert json.loads(envelope_of(body)) == item
+
+
+class TestTheCriterionInTheBodysFindingRoster:
+    def test_the_entry_glosses_the_criterion_to_its_first_twelve_words(
+        self, tmp_path: Path
+    ) -> None:
+        body = render_body(with_criteria(tmp_path))
+        assert f"PV-A6: {PV_A6_GLOSS}" in body
+
+    def test_a_criterion_short_enough_to_fit_is_not_ellipsised(self, tmp_path: Path) -> None:
+        verdict = with_criteria(tmp_path, findings=[dict(FULL_ENVELOPE["findings"][0], ac="PV-A7")])
+        summary = render_body(verdict)
+        summary = summary[: summary.index("<details>")]
+        assert "PV-A7: Rendering is deterministic." in summary
+        assert "..." not in summary
+
+    def test_a_criterion_the_supplied_file_does_not_name_is_shown_as_written(
+        self, tmp_path: Path
+    ) -> None:
+        # A criteria file is supplied and names other criteria than this one. The
+        # entry still carries what the finding wrote, because that text is what a
+        # reader takes back to the round that raised it.
+        verdict = with_criteria(tmp_path, findings=[dict(FULL_ENVELOPE["findings"][0], ac="PV-A9")])
+        assert "PV-A9" not in verdict.criteria
+        summary = render_body(verdict)
+        assert (
+            "- correctness.r4.f1 (mechanical, correctness, PV-A9): "
+            in summary[: summary.index("<details>")]
+        )
+
+    def test_without_a_criteria_file_the_entry_names_the_criterion_alone(
+        self, tmp_path: Path
+    ) -> None:
+        body = render_body(load_verdict(written(tmp_path)))
+        assert "- correctness.r4.f1 (mechanical, correctness, PV-A6): " in body
+        assert PV_A6_GLOSS not in body
+
+    def test_the_summary_names_the_finding_in_prose_above_the_envelope(
+        self, tmp_path: Path
+    ) -> None:
+        # The tripwire for the review body: a body that is the envelope and nothing
+        # else fails here.
+        body = render_body(with_criteria(tmp_path))
+        prose = body[: body.index("<details>")]
+        assert prose.startswith("## Review verdict")
+        assert "The anchor grammar accepts a token" in prose
+
+
+class TestReadingACriteriaFile:
+    def test_every_bold_id_bullet_becomes_a_criterion(self, tmp_path: Path) -> None:
+        criteria = load_criteria(criteria_written(tmp_path))
+        assert dict(criteria) == {"PV-A6": PV_A6_SENTENCE, "PV-A7": "Rendering is deterministic."}
+
+    @pytest.mark.parametrize("marker", ["-", "*", "+"])
+    def test_every_markdown_bullet_marker_starts_a_criterion(
+        self, tmp_path: Path, marker: str
+    ) -> None:
+        # An author picks whichever marker the editor gives them; a criteria file
+        # written with the third one must render its sentences like the others.
+        text = (
+            f"{marker} **A1** The first criterion.\n"
+            f"{marker} **A2** The second.\n"
+            f"{marker} Not one.\n"
+        )
+        assert dict(load_criteria(criteria_written(tmp_path, text))) == {
+            "A1": "The first criterion.",
+            "A2": "The second.",
+        }
+
+    @pytest.mark.parametrize("marker", ["-", "*", "+"])
+    def test_a_sentence_beginning_on_the_continuation_line_is_the_criterion(
+        self, tmp_path: Path, marker: str
+    ) -> None:
+        # An author who wraps right after the id has written one bullet, and an id
+        # with nothing after it on any line states no criterion at all.
+        text = (
+            f"{marker} **A1**\n"
+            "  The sentence starts here\n"
+            "  and wraps once more.\n"
+            f"{marker} **A2**\n"
+            f"{marker} **A3** On one line.\n"
+        )
+        assert dict(load_criteria(criteria_written(tmp_path, text))) == {
+            "A1": "The sentence starts here and wraps once more.",
+            "A3": "On one line.",
+        }
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            pytest.param("- **A1** One line.\n", {"A1": "One line."}, id="dash"),
+            pytest.param("* **A1** One line.\n", {"A1": "One line."}, id="star"),
+            pytest.param("+ **A1** One line.\n", {"A1": "One line."}, id="plus"),
+            pytest.param("  - **A1** One line.\n", {"A1": "One line."}, id="indented"),
+            pytest.param("- **A1**: One line.\n", {"A1": "One line."}, id="colon-then-space"),
+            pytest.param("- **A1**\n  Next line.\n", {"A1": "Next line."}, id="continuation"),
+            pytest.param("- **A1** Wraps\n  here.\n", {"A1": "Wraps here."}, id="wrapped"),
+            pytest.param("- **A1** One.\n\n  Not more.\n", {"A1": "One."}, id="blank-ends"),
+            pytest.param("- **A1** One.\n# H\n", {"A1": "One."}, id="heading-ends"),
+            pytest.param("- **A1** One.\n- plain\n", {"A1": "One."}, id="plain-bullet-ends"),
+            pytest.param("- **A1** One.\n1. **A2** Two.\n", {"A1": "One."}, id="ordered-item-ends"),
+            pytest.param("- **A1** One.\n2) more\n", {"A1": "One."}, id="paren-ordered-item-ends"),
+            pytest.param("- **A1**\n", {}, id="id-alone"),
+            pytest.param("- **A1**\n\n  Loose.\n", {}, id="loose-item"),
+            pytest.param("- **A1**:Tight.\n", {}, id="colon-no-space"),
+            pytest.param("- **A1:** One.\n", {"A1:": "One."}, id="colon-inside-bold"),
+            pytest.param("1. **A1** One.\n", {}, id="ordered-item"),
+            pytest.param("**A1** One.\n", {}, id="no-marker"),
+            pytest.param("- A1 One.\n", {}, id="id-not-bold"),
+            pytest.param("- __A1__ One.\n", {}, id="id-in-underscores"),
+        ],
+    )
+    def test_the_loader_reads_exactly_the_line_grammar_the_criterion_states(
+        self, tmp_path: Path, text: str, expected: dict[str, str]
+    ) -> None:
+        # The criterion names a line grammar, and the loader is a regex; this
+        # table is the shapes the grammar admits and excludes, run as one.
+        assert dict(load_criteria(criteria_written(tmp_path, text))) == expected
+
+    def test_a_file_that_cannot_be_read_is_refused_and_names_the_path(self, tmp_path: Path) -> None:
+        missing = tmp_path / "nowhere" / "criteria.md"
+        with pytest.raises(PreconditionError) as caught:
+            load_criteria(missing)
+        assert caught.value.code is ErrorCode.PRECONDITION_CRITERIA_UNREADABLE
+        assert str(missing) in str(caught.value.detail)
+
+    def test_a_file_carrying_bytes_that_are_not_utf8_still_reads(self, tmp_path: Path) -> None:
+        # A criteria document is prose someone wrote in an editor, and one stray
+        # byte in it must cost the criterion its character rather than costing the
+        # round its posting.
+        path = tmp_path / "criteria.md"
+        path.write_bytes(b"- **A1** A criterion with a \xff in it.\n")
+        assert list(load_criteria(path)) == ["A1"]
+
+    def test_a_file_naming_no_criteria_yields_none_rather_than_failing(
+        self, tmp_path: Path
+    ) -> None:
+        # A criteria document the round judged against may be prose the parser
+        # recognizes nothing in; that is a summary without glosses, not a refusal.
+        assert dict(load_criteria(criteria_written(tmp_path, "no bullets here at all\n"))) == {}
+
+    def test_a_bullet_wrapped_onto_a_continuation_line_is_one_sentence(
+        self, tmp_path: Path
+    ) -> None:
+        # The wrap is a decision about line width, not about what the criterion
+        # says, and the second bullet below it stays a criterion of its own.
+        path = criteria_written(
+            tmp_path,
+            "- **A1** The first half of a criterion,\n"
+            "  and the indented continuation that finishes it.\n"
+            "- **A2** A second criterion nobody should swallow.\n",
+        )
+        assert dict(load_criteria(path)) == {
+            "A1": "The first half of a criterion, and the indented continuation that finishes it.",
+            "A2": "A second criterion nobody should swallow.",
+        }
+
+    def test_a_bullet_ends_at_a_blank_line_a_heading_or_a_plain_bullet(
+        self, tmp_path: Path
+    ) -> None:
+        # Each of the three is what an author writes to end a bullet, so none of
+        # them may be read as more of the criterion above it.
+        path = criteria_written(
+            tmp_path,
+            "- **A1** A criterion.\n\nA paragraph below it.\n\n"
+            "- **A2** Another criterion.\n  ## An indented heading\n"
+            "- **A3** A third criterion.\n- A bullet stating something else.\n",
+        )
+        assert dict(load_criteria(path)) == {
+            "A1": "A criterion.",
+            "A2": "Another criterion.",
+            "A3": "A third criterion.",
+        }
+
+
+class TestHowMuchOfACriterionTheGlossShows:
+    """The word boundary the body's roster cuts a criterion at."""
+
+    def gloss_of(self, sentence: str) -> str:
+        """The roster entry for one finding judged against ``sentence``."""
+        text = json.dumps({"head_sha": HEAD, "findings": [{"id": "f1", "ac": "A1"}]})
+        verdict = Verdict(text=text, head_sha=HEAD, findings=(), criteria={"A1": sentence})
+        (row,) = [line for line in render_body(verdict).splitlines() if line.startswith("- f1 (A1")]
+        return row
+
+    def test_a_sentence_of_exactly_twelve_words_is_shown_whole(self) -> None:
+        # The boundary is the last length that still fits, so the cut is one word
+        # past it and never one word short of it.
+        whole = " ".join(f"word{index}" for index in range(1, GLOSS_WORDS + 1))
+        assert self.gloss_of(whole) == f"- f1 (A1: {whole})"
+
+    def test_a_sentence_one_word_longer_is_cut_at_twelve_words(self) -> None:
+        words = [f"word{index}" for index in range(1, GLOSS_WORDS + 2)]
+        cut = " ".join(words[:GLOSS_WORDS])
+        assert self.gloss_of(" ".join(words)) == f"- f1 (A1: {cut}...)"
+
+
+class TestTheFenceHoldingATextVerbatim:
+    """How wide the fence is, against what the text it holds carries."""
+
+    def opener(self, text: str) -> str:
+        """The line that opens the collapsed block in a body rendering ``text``."""
+        (line,) = [
+            row
+            for row in render_body(Verdict(text=text, head_sha=HEAD, findings=())).splitlines()
+            if row.endswith(FENCE_LANGUAGE) and set(row[: -len(FENCE_LANGUAGE)]) == {"`"}
+        ]
+        return line
+
+    def test_a_fence_is_one_backtick_longer_than_the_longest_run_inside_it(self) -> None:
+        # One longer, exactly: a shorter fence is closed by the text itself, and a
+        # longer one is a width nothing in the text called for.
+        assert self.opener('{"note": "a ``` run"}') == "````" + FENCE_LANGUAGE
+
+    def test_a_text_carrying_no_backticks_is_fenced_with_three(self) -> None:
+        # Three is the floor markdown puts on a fence, and a text with nothing to
+        # escape takes the floor rather than anything wider.
+        assert self.opener('{"note": "no runs at all"}') == "```" + FENCE_LANGUAGE
