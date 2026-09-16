@@ -55,11 +55,13 @@ def looked(said: str) -> str:
 TYPED = "Does the retention window decide it?"
 CARET = 6
 
-# Where the notice's own words are drawn: the box of the text run carrying them,
-# which is not the box of the notice. The notice also holds a stamp and a row of
-# buttons, and a drag across the notice's vertical middle lands on whichever of
-# those the wrapping put there -- on a loaded machine the words wrap differently
-# and the middle line is the buttons.
+# Where the notice's own words are drawn: the widest line of the text run
+# carrying them, which is not the box of the notice. The notice also holds a
+# stamp and a row of buttons, and a drag across the notice's vertical middle
+# lands on whichever of those the wrapping put there -- on a loaded machine the
+# words wrap differently and the middle line is the buttons. The widest line
+# rather than the first, because the first may be the tail end of a line the
+# tier label filled, too narrow to drag across.
 WORDS = """([selector, words]) => {
   const note = document.querySelector(selector);
   const walker = document.createTreeWalker(note, NodeFilter.SHOW_TEXT);
@@ -69,10 +71,23 @@ WORDS = """([selector, words]) => {
     const range = document.createRange();
     range.setStart(node, at);
     range.setEnd(node, at + words.length);
-    const line = range.getClientRects()[0];
-    return {x: line.x, y: line.y, width: line.width, height: line.height};
+    let line = null;
+    for (const drawn of range.getClientRects()) {
+      if (!line || drawn.width > line.width) line = drawn;
+    }
+    return line && {x: line.x, y: line.y, width: line.width, height: line.height};
   }
   return null;
+}"""
+
+# What the selection's two ends sit in. A selection is a run of text between an
+# anchor and a focus, and the words it holds are the words of whatever nodes
+# those are -- so a selection whose ends are both in the notice's own text node
+# is a selection of the notice, and one whose end is in a button label is not,
+# however much the two happen to share.
+ENDS = """() => {
+  const sel = document.getSelection();
+  return [sel.anchorNode, sel.focusNode].map(n => n && n.textContent);
 }"""
 
 # Whether the selection runs the way it was made: a range from the anchor to the
@@ -98,8 +113,10 @@ def select_across(page: Page, backwards: bool) -> dict[str, object]:
     in one direction or the other."""
     box = page.evaluate(WORDS, ["#col-d1 .infonote", NOTICED[:24]])
     assert box, "the notice's words are not drawn on the board"
+    assert box["width"] > 40, f"the words' widest line is too narrow to drag across: {box}"
     middle = box["y"] + box["height"] / 2
-    ends = [box["x"] + 20, box["x"] + box["width"] - 20]
+    # A quarter in from either end, so the two are ordered whatever the width.
+    ends = [box["x"] + box["width"] / 4, box["x"] + box["width"] * 3 / 4]
     start, finish = (ends[1], ends[0]) if backwards else (ends[0], ends[1])
     page.mouse.move(start, middle)
     page.mouse.down()
@@ -154,8 +171,12 @@ def test_a_poll_leaves_the_selection_the_human_is_holding_alone(
     assert held["text"], "nothing was selected to hold"
     # The notice's own words, and only those: a drag that crossed the stamp or
     # the button row instead is the wrong selection to hold, and it is named
-    # here rather than after the polls.
+    # here rather than after the polls. Both ends of the selection sit in the
+    # text node carrying the notice, which is what rules out a button label
+    # that happens to share a few letters with it.
     assert str(held["text"]) in NOTICED, f"the drag captured {held['text']!r}"
+    ends = page.evaluate(ENDS)
+    assert all(NOTICED in str(one) for one in ends), f"the selection's ends are in {ends!r}"
     assert held["backwards"] is backwards, "the drag did not make the selection it was asked for"
 
     polled(session, page, ROUNDS[0])
