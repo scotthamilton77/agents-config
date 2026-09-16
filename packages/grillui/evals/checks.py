@@ -114,9 +114,11 @@ def an_alert_asks_the_human_for_something(document: GrillMasterDocument) -> str 
     An alert is a demand on the human, and one they cannot meet is one they
     read twice and then clear by hand. What the turn had to say belongs on the
     decision as an informational instead. A question mark is the whole of what
-    is read here, so an alert asking in the imperative passes, and so does the
-    second alert on a decision that lifts a lock by saying what the human
-    supplied, which is the one alert the contract allows to ask for nothing.
+    is read here, and that is the ceiling: an alert asking in the imperative
+    reads red, and so does the second alert on a decision that lifts a lock by
+    saying what the human supplied, which the contract allows to ask for
+    nothing. The report keeps the reply, so a red cell of either kind is one
+    the reader settles from the alert's own words.
     """
     silent = [
         one.get("target", "?")

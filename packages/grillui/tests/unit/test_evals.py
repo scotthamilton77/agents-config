@@ -174,19 +174,26 @@ def test_the_seed_cases_are_the_behaviours_this_suite_watches() -> None:
     Then the four seeded behaviours are among them: a turn owing rulings, a
          turn owing none, a turn whose recorded reply revised without changing
          anything, and a turn whose recorded reply alerted the human without
-         asking them for anything.
+         asking them for anything -- each of the last two pinned as the turn
+         the seat is handed, since what its recorded reply did is not in the
+         fixture.
     """
     cases = {one.name: one for one in load_cases()}
 
     assert cases["2026-09-04-expert-owed-rulings"].owed_rulings == ("d2", "d3")
     assert cases["2026-09-04-first-rung-nothing-owed"].owed_rulings == ()
-    assert cases["2026-09-08-alert-asking-nothing"].owed_rulings == ("d3",)
 
-    # The disagreement case is the first-rung map turn at that seq. What its
-    # recorded reply did is not in the fixture, so the turn is pinned, not it.
     revise = cases["2026-08-27-revise-without-substance"]
     assert (revise.tier, revise.channel, revise.context.seq) == (FAST_TIER, MAP_CHANNEL, 25)
     assert revise.owed_rulings == ()
+
+    # The expert's map turn at seq 4, owing d3 the ruling the answer on d1 put
+    # in question, with the grilling not yet over: a case that stopped, or that
+    # replayed some other turn, would be measuring a different behaviour.
+    alert = cases["2026-09-08-alert-asking-nothing"]
+    assert (alert.tier, alert.channel, alert.context.seq) == (HEAVY_TIER, MAP_CHANNEL, 4)
+    assert (alert.owed_rulings, alert.stop) == (("d3",), False)
+    assert tuple(one.seq for one in alert.entries) == (1, 2, 3, 4)
 
 
 @pytest.mark.parametrize("named", ["../elsewhere/dispatch.json", "/etc/passwd", ".."])
@@ -379,6 +386,24 @@ def test_an_alert_that_asks_the_human_for_nothing_fails() -> None:
     assert an_alert_asks_the_human_for_something(asking) is not None
     assert an_alert_asks_the_human_for_something(informing) is None
     assert an_alert_asks_the_human_for_something(question) is None
+
+
+def test_an_alert_asking_nothing_is_a_red_cell_of_the_run() -> None:
+    """
+    Given a reply that is the map document and carries an alert asking nothing
+    When the run checks it
+    Then the alert check is among the results and is the one that failed: a
+         check the run does not consult is one no matrix can show red.
+    """
+    case = load_cases()[0]
+    silent = {"kind": "elicit-alert", "target": "d1", "text": "Read lane.py first.", "blocking": False}
+    reply = document(updates=[silent]).model_dump_json()
+
+    results = check(case, reply, None, baseline=False)
+
+    assert results[the_reply_is_the_map_document.__name__] is None
+    assert results[an_alert_asks_the_human_for_something.__name__] is not None
+    assert an_alert_asks_the_human_for_something in DEPENDENT
 
 
 # --- the run and its report -----------------------------------------------------
