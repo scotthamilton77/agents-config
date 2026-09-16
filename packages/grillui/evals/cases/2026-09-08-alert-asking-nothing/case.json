@@ -6,5 +6,6 @@
     "d3"
   ],
   "speech_limit": 1,
-  "stop": false
+  "stop": false,
+  "prompt_tokens": 10907
 }
