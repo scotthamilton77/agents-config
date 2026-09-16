@@ -111,7 +111,7 @@ def selection(page: Page) -> dict[str, object]:
 def select_across(page: Page, backwards: bool) -> dict[str, object]:
     """Drag a selection across the widest drawn line of the notice's words on d1,
     in one direction or the other."""
-    box = page.evaluate(WORDS, ["#col-d1 .infonote", NOTICED[:24]])
+    box = page.evaluate(WORDS, ["#col-d1 .infonote", NOTICED])
     assert box, "the notice's words are not drawn on the board"
     assert box["width"] > 40, f"the words' widest line is too narrow to drag across: {box}"
     middle = box["y"] + box["height"] / 2
@@ -165,7 +165,7 @@ def test_a_poll_leaves_the_selection_the_human_is_holding_alone(
     # two fetches, and a notice drawn between them shows a placeholder for its
     # text until the log catches up; a selection made across that placeholder
     # is over other words than the ones the next render draws.
-    page.wait_for_selector(f'#col-d1 .infonote:has-text("{NOTICED[:24]}")')
+    page.wait_for_selector(f'#col-d1 .infonote:has-text("{NOTICED}")')
 
     held = select_across(page, backwards)
     assert held["text"], "nothing was selected to hold"
