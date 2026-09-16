@@ -396,7 +396,7 @@ def test_an_alert_asking_nothing_is_a_red_cell_of_the_run() -> None:
          check the run does not consult is one no matrix can show red.
     """
     case = load_cases()[0]
-    silent = {"kind": "elicit-alert", "target": "d1", "text": "Read lane.py first.", "blocking": False}
+    silent = {"kind": "elicit-alert", "target": "d1", "text": "Read lane.py.", "blocking": False}
     reply = document(updates=[silent]).model_dump_json()
 
     results = check(case, reply, None, baseline=False)
