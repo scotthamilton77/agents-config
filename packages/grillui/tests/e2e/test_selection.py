@@ -55,6 +55,26 @@ def looked(said: str) -> str:
 TYPED = "Does the retention window decide it?"
 CARET = 6
 
+# Where the notice's own words are drawn: the box of the text run carrying them,
+# which is not the box of the notice. The notice also holds a stamp and a row of
+# buttons, and a drag across the notice's vertical middle lands on whichever of
+# those the wrapping put there -- on a loaded machine the words wrap differently
+# and the middle line is the buttons.
+WORDS = """([selector, words]) => {
+  const note = document.querySelector(selector);
+  const walker = document.createTreeWalker(note, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const at = node.data.indexOf(words);
+    if (at < 0) continue;
+    const range = document.createRange();
+    range.setStart(node, at);
+    range.setEnd(node, at + words.length);
+    const line = range.getClientRects()[0];
+    return {x: line.x, y: line.y, width: line.width, height: line.height};
+  }
+  return null;
+}"""
+
 # Whether the selection runs the way it was made: a range from the anchor to the
 # focus collapses when the focus is the earlier of the two, which is a selection
 # dragged right to left.
@@ -74,9 +94,10 @@ def selection(page: Page) -> dict[str, object]:
 
 
 def select_across(page: Page, backwards: bool) -> dict[str, object]:
-    """Drag a selection across the notice on d1, in one direction or the other."""
-    box = page.locator("#col-d1 .infonote").last.bounding_box()
-    assert box, "the notice is not on the board"
+    """Drag a selection across the first drawn line of the notice's words on d1,
+    in one direction or the other."""
+    box = page.evaluate(WORDS, ["#col-d1 .infonote", NOTICED[:24]])
+    assert box, "the notice's words are not drawn on the board"
     middle = box["y"] + box["height"] / 2
     ends = [box["x"] + 20, box["x"] + box["width"] - 20]
     start, finish = (ends[1], ends[0]) if backwards else (ends[0], ends[1])
@@ -123,15 +144,18 @@ def test_a_poll_leaves_the_selection_the_human_is_holding_alone(
     # the caret the selection then has to take away from it.
     page.click('#col-d2 [data-act="pick"][data-opt="a"]')
     session.settled()
-    page.wait_for_selector("#col-d1 .infonote")
+    # Waited for with its words on it. The board image and the log arrive on
+    # two fetches, and a notice drawn between them shows a placeholder for its
+    # text until the log catches up; a selection made across that placeholder
+    # is over other words than the ones the next render draws.
+    page.wait_for_selector(f'#col-d1 .infonote:has-text("{NOTICED[:24]}")')
 
     held = select_across(page, backwards)
     assert held["text"], "nothing was selected to hold"
-    # A run of the notice as it is drawn -- the drag crosses whatever the line
-    # under the mouse holds, which is the notice's words and the stamp after
-    # them.
-    drawn = page.evaluate("document.querySelector('#col-d1 .infonote').textContent")
-    assert held["text"] in drawn, held
+    # The notice's own words, and only those: a drag that crossed the stamp or
+    # the button row instead is the wrong selection to hold, and it is named
+    # here rather than after the polls.
+    assert str(held["text"]) in NOTICED, f"the drag captured {held['text']!r}"
     assert held["backwards"] is backwards, "the drag did not make the selection it was asked for"
 
     polled(session, page, ROUNDS[0])
