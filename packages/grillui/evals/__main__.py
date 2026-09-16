@@ -22,6 +22,7 @@ from evals.cases import Case, load_cases
 from evals.checks import (
     a_revise_supplies_what_it_revises,
     added_nodes_carry_short_and_body,
+    an_alert_asks_the_human_for_something,
     option_references_name_their_decision,
     the_reply_is_the_map_document,
     the_rulings_are_the_ones_owed,
@@ -65,6 +66,7 @@ DEPENDENT = (
     option_references_name_their_decision,
     the_stop_verdict_is_expected,
     a_revise_supplies_what_it_revises,
+    an_alert_asks_the_human_for_something,
 )
 
 
@@ -295,6 +297,9 @@ def check(
                 document, case.stop
             ),
             a_revise_supplies_what_it_revises.__name__: a_revise_supplies_what_it_revises(document),
+            an_alert_asks_the_human_for_something.__name__: (
+                an_alert_asks_the_human_for_something(document)
+            ),
         }
     if baseline and case.prompt_tokens is not None:
         results[BASELINE] = _near(tokens, case.prompt_tokens, turns)

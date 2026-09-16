@@ -30,6 +30,7 @@ from evals.cases import CASES, CaseRefusedError, load_case, load_cases
 from evals.checks import (
     a_revise_supplies_what_it_revises,
     added_nodes_carry_short_and_body,
+    an_alert_asks_the_human_for_something,
     option_references_name_their_decision,
     the_reply_is_the_map_document,
     the_rulings_are_the_ones_owed,
@@ -170,14 +171,16 @@ def test_the_seed_cases_are_the_behaviours_this_suite_watches() -> None:
     """
     Given the cases checked in
     When they are read
-    Then the three seeded behaviours are among them: a turn owing rulings, a
-         turn owing none, and a turn whose recorded reply revised without
-         changing anything.
+    Then the four seeded behaviours are among them: a turn owing rulings, a
+         turn owing none, a turn whose recorded reply revised without changing
+         anything, and a turn whose recorded reply alerted the human without
+         asking them for anything.
     """
     cases = {one.name: one for one in load_cases()}
 
     assert cases["2026-09-04-expert-owed-rulings"].owed_rulings == ("d2", "d3")
     assert cases["2026-09-04-first-rung-nothing-owed"].owed_rulings == ()
+    assert cases["2026-09-08-alert-asking-nothing"].owed_rulings == ("d3",)
 
     # The disagreement case is the first-rung map turn at that seq. What its
     # recorded reply did is not in the fixture, so the turn is pinned, not it.
@@ -340,6 +343,42 @@ def test_a_revise_that_changes_nothing_fails() -> None:
 
     assert a_revise_supplies_what_it_revises(why_only) is not None
     assert a_revise_supplies_what_it_revises(substantive) is None
+
+
+def test_an_alert_that_asks_the_human_for_nothing_fails() -> None:
+    """
+    Given the alert the recorded 2026-09-08 turn sent on d1, which names three
+          things someone must read and asks for none of them
+    When the checks read the document it arrived in
+    Then the alert fails, the same words carried as an informational on that
+         decision pass, and an alert that does ask a question passes: what the
+         turn had to say belongs on the decision, and an alert the human cannot
+         answer is one they clear by hand.
+    """
+    said = (
+        "Option a of d1 rests on three things the context does not state and nobody has "
+        "asserted, each needing a read of lane.py and the page's projector before "
+        "implementation. First, whether the page today deliberately ignores any error-phase "
+        "status entries that would now surface as notices. Second, whether the projector can "
+        "home a status entry on the channel when the turn has no decision node, which is the "
+        "ruling-turn case that bit. Third, whether the lane's stringified exception tells a "
+        "timeout kill apart from an unreachable transport."
+    )
+    asking = document(updates=[{"kind": "elicit-alert", "target": "d1", "text": said}])
+    informing = document(updates=[{"kind": "informational", "target": "d1", "text": said}])
+    question = document(
+        updates=[
+            {
+                "kind": "elicit-alert",
+                "target": "d1",
+                "text": "Does the projector home an error-phase status entry on the channel?",
+            }
+        ]
+    )
+
+    assert an_alert_asks_the_human_for_something(asking) is not None
+    assert an_alert_asks_the_human_for_something(informing) is None
+    assert an_alert_asks_the_human_for_something(question) is None
 
 
 # --- the run and its report -----------------------------------------------------

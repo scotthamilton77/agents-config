@@ -14,6 +14,7 @@ from grillui.drivers import document_problem
 from grillui.schemas import GrillMasterDocument
 
 SPEAKING_KIND = "informational"
+ALERT_KIND = "elicit-alert"
 SUBSTANCE = ("short", "title", "body", "options")
 # An option is named by a letter, and the decision it belongs to by an id. A
 # reply that says "option b" leaves the human to guess which board row moved.
@@ -105,3 +106,21 @@ def a_revise_supplies_what_it_revises(document: GrillMasterDocument) -> str | No
         if one.get("kind") == "revise" and not any(one.get(field) for field in SUBSTANCE)
     ]
     return None if not empty else f"revise supplying no change: {empty}"
+
+
+def an_alert_asks_the_human_for_something(document: GrillMasterDocument) -> str | None:
+    """An alert that asks the human for nothing is the wrong kind of note.
+
+    An alert is a demand on the human, and one they cannot meet is one they
+    read twice and then clear by hand. What the turn had to say belongs on the
+    decision as an informational instead. A question mark is the whole of what
+    is read here, so an alert asking in the imperative passes, and so does the
+    second alert on a decision that lifts a lock by saying what the human
+    supplied, which is the one alert the contract allows to ask for nothing.
+    """
+    silent = [
+        one.get("target", "?")
+        for one in document.updates
+        if one.get("kind") == ALERT_KIND and "?" not in str(one.get("text", ""))
+    ]
+    return None if not silent else f"elicit-alert asking nothing: {silent}"

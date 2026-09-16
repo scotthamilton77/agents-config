@@ -1,0 +1,10 @@
+{
+  "tier": "heavy",
+  "context_bytes": 32295,
+  "samples": 1,
+  "owed_rulings": [
+    "d3"
+  ],
+  "speech_limit": 1,
+  "stop": false
+}
