@@ -109,9 +109,14 @@ def selection(page: Page) -> dict[str, object]:
 
 
 def select_across(page: Page, backwards: bool) -> dict[str, object]:
-    """Drag a selection across the widest drawn line of the notice's words on d1,
-    in one direction or the other."""
-    box = page.evaluate(WORDS, ["#col-d1 .infonote", NOTICED])
+    """Drag a selection across the widest drawn line of the notice's opening
+    words on d1, in one direction or the other.
+
+    The opening words rather than the whole notice: a drag across the middle
+    of a full line of it comes back empty in this browser for some pairs of
+    endpoints, and the first two dozen characters have never done that.
+    """
+    box = page.evaluate(WORDS, ["#col-d1 .infonote", NOTICED[:24]])
     assert box, "the notice's words are not drawn on the board"
     assert box["width"] > 40, f"the words' widest line is too narrow to drag across: {box}"
     middle = box["y"] + box["height"] / 2
