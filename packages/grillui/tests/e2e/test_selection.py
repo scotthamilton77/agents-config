@@ -109,7 +109,7 @@ def selection(page: Page) -> dict[str, object]:
 
 
 def select_across(page: Page, backwards: bool) -> dict[str, object]:
-    """Drag a selection across the first drawn line of the notice's words on d1,
+    """Drag a selection across the widest drawn line of the notice's words on d1,
     in one direction or the other."""
     box = page.evaluate(WORDS, ["#col-d1 .infonote", NOTICED[:24]])
     assert box, "the notice's words are not drawn on the board"
