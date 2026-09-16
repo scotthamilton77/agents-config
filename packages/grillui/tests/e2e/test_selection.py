@@ -114,7 +114,7 @@ def select_across(page: Page, backwards: bool) -> dict[str, object]:
 
     The opening words rather than the whole notice: a drag across the middle
     of a full line of it comes back empty in this browser for some pairs of
-    endpoints, and the first two dozen characters have never done that.
+    endpoints, and a drag across its first two dozen characters does not.
     """
     box = page.evaluate(WORDS, ["#col-d1 .infonote", NOTICED[:24]])
     assert box, "the notice's words are not drawn on the board"
