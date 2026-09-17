@@ -1,15 +1,17 @@
 # OpenRouter Model Routing Table
 
-Captured **2026-08-20** from `https://openrouter.ai/api/v1/models`, OpenRouter's
+Captured **2026-09-17** from `https://openrouter.ai/api/v1/models`, OpenRouter's
 public catalog endpoint. That endpoint is authoritative for price, context
 length, max output, and which reasoning-effort levels a model accepts, and it
-is machine-readable — refresh this table from it rather than reading ten model
-pages by hand. Re-verify there before routing anything cost-sensitive:
-OpenRouter reprices and retires models without notice, and this table is a
-snapshot that starts decaying immediately.
+is machine-readable — refresh this table from it rather than reading model
+pages by hand. Read the interactive row of each model, never its `:batch`
+variant: batch prices are half and are not what a dispatch from here pays.
+Re-verify there before routing anything cost-sensitive: OpenRouter reprices and
+retires models without notice, and this table is a snapshot that starts
+decaying immediately.
 
 This launcher also denies two model families outright, independent of price:
-Claude models, and non-`-mini` `gpt-5.5`/`gpt-5.6` tiers (`scripts/proxy.js`'s
+Claude models, and every `gpt-` model (`scripts/proxy.js`'s
 `DENIED_MODEL_PREFIXES` — see `references/proxy-contract.md`'s Denylist
 section). Both run properly through other transports, so the table below
 omits them entirely: every row here is a model this launcher can actually
@@ -19,12 +21,56 @@ Prices are $/M tokens. Rows are sorted by input price.
 
 | Model ID (`--model` value) | Input $/M | Output $/M | Context | Effort levels accepted | Best for |
 |---|---|---|---|---|---|
-| `google/gemini-3.5-flash-lite` | $0.30 | $2.50 | 1M / 64K out | `minimal` `low` `medium` `high` | Cheapest input of any row — high-volume triage, extraction, formatting |
-| `google/gemini-3.7-flash` | $0.375 | $1.875 | 1M / 64K out | `low` `medium` `high` — no `minimal` | Cheapest output of any row, and it still caps its reasoning; fast agentic coding |
-| `moonshotai/kimi-k2.7-code` | $0.71 | $3.50 | 262K | **none** — reasoning always on, **cannot be capped** | Code-tuned mid-tier, strong cost/perf for implementation |
+| `deepseek/deepseek-v4.1-flash` | $0.15 | $0.60 | 1M / 384K out | `low` `high` `max` — no `medium` | Cheapest capped reasoner in the table; unqualified for a whole-artifact read until a run completes one |
+| `google/gemini-3.5-flash-lite` | $0.30 | $2.50 | 1M / 64K out | `minimal` `low` `medium` `high` | High-volume triage, extraction, formatting |
+| `moonshotai/kimi-k2.7-code` | $0.71 | $3.21 | 262K | **none** — reasoning always on, **cannot be capped** | Code-tuned mid-tier, strong cost/perf for implementation |
+| `google/gemini-3.8-flash` | $0.75 | $3.75 | 1M / 64K out | `low` `medium` `high` — no `minimal` | Fast agentic coding; the OpenRouter mid seat below |
 | `moonshotai/kimi-k2.6` | $0.95 | $4.00 | 262K | **none** — reasoning on/off only | General/mechanical Kimi tier; the one Kimi whose thinking can be switched off |
-| `z-ai/glm-5.3` | $1.40 | $4.40 | 1M / 131K out | `low` `high` `max` — no `medium`, no `xhigh` | Long-horizon agentic coding and judgment work at 1M context |
-| `moonshotai/kimi-k3` | $3.00 | $15.00 | 1M | `low` `high` `max` — no `medium`, no `xhigh` | Frontier-tier agentic coding, large repos |
+| `z-ai/glm-5.3` | $1.40 | $4.40 | 1.3M / 944K out | `low` `high` `max` — no `medium`, no `xhigh` | Long-horizon agentic coding at 1M context; returns thinking-only turns on a whole-document single pass, so unfit for one until a run completes it |
+| `moonshotai/kimi-k3` | $3.00 | $15.00 | 1M / 944K out | `low` `high` `max` — no `medium`, no `xhigh` | Frontier-tier agentic coding, large repos; the OpenRouter frontier seat below |
+
+## Review seats
+
+A review-panel or ac-attack lens does not go through the task buckets. Its
+transport and tier resolve to one row here, and the row fixes the model, the
+effort and the tool grant. A lens's scope changes the row: a whole-artifact
+read (round 1, a sweep, or any document attack) is one long single pass, while
+a delta read (a later round over the change since the head the lens last
+judged) is short. The round record states which one each lens has.
+
+| Seat | Model | Effort | Tools |
+|---|---|---|---|
+| OpenRouter frontier, delta read | `moonshotai/kimi-k3` | `high` | `Read` `Grep` `Glob` |
+| OpenRouter frontier, whole-artifact read | `moonshotai/kimi-k3` | `low` | none when the prompt carries the text inline; `Read` `Grep` `Glob` when the lens must resolve the target itself |
+| OpenRouter mid (the re-review tier of the frontier seats) | `google/gemini-3.8-flash` | `high` | `Read` `Grep` `Glob` |
+| Staffing recommender | `moonshotai/kimi-k2.6` | reasoning on | none |
+
+Why the rows are what they are, stated so the next refresh can attack them:
+
+- `kimi-k3` at `high` on a whole-artifact read ends the stream inside a
+  thinking block having delivered no message — after an hour of upstream
+  timeouts, with the proxy warning "response ends on thinking and contains no
+  text block to promote". At a capped budget the same read completes in
+  minutes with comparable output. On a delta read `high` completes and reads
+  per criterion, which a cheaper Flash-class model in the seat does not.
+- A `Read` grant on a prompt that already carries the whole text invites the
+  nested harness to explore the repository instead of answering in one turn:
+  a dozen forwarded requests at frontier prices for a review that needed one.
+- The two OpenRouter seats name different vendors on purpose. Both on Kimi is
+  one vendor filling two seats, and the verdict's distinct-vendor count cannot
+  see it.
+- `gemini-3.8-flash` holds the mid seat with the least evidence in the table.
+  Its predecessor `gemini-3.7-flash` returned a clean lens verdict in under a
+  minute with no read of the target recorded; the review panel's dispatch gate
+  refuses that shape now, which is what makes the seat tolerable rather than
+  proven.
+- `kimi-k2.6` recommends staffing: on a five-lens typed-code roster it keeps
+  every seat with a target-shaped reason each, where a Flash-class recommender
+  drops correctness on test-only deltas and security on small ones, and a
+  dropped security seat costs a whole sweep round later.
+
+The Codex seats are rows in the `delegating-to-codex` skill; the trend
+checkpoint runs on Fable in the launching harness.
 
 ## Reading the effort column
 
@@ -32,10 +78,10 @@ The column lists the discrete levels each model accepts on OpenRouter's
 normalized `reasoning.effort` parameter. Two consequences worth internalizing
 before dispatch:
 
-- **Not every level exists on every model.** `glm-5.3` and `kimi-k3` both run
-  `low`/`high`/`max` with no `medium` and no `xhigh` — a task that wants "high
-  or xhigh" gets `high` or `max`, nothing between. Both Kimi mid-tier models
-  accept no level at all.
+- **Not every level exists on every model.** `glm-5.3`, `kimi-k3` and
+  `deepseek-v4.1-flash` run `low`/`high`/`max` with no `medium` and no `xhigh`
+  — a task that wants "high or xhigh" gets `high` or `max`, nothing between.
+  Both Kimi mid-tier models accept no level at all.
 - **One of those cannot be capped at all.** `kimi-k2.7-code` reasons
   mandatorily and takes no effort level, so its thinking can only be endured,
   never bounded. Give an uncappable model a long whole-artifact task behind a
@@ -46,13 +92,17 @@ before dispatch:
   effort you can set, and re-check this column before trusting a model that
   reads as `none`. `kimi-k2.6` reads as `none` too but differs where it
   matters — its reasoning is optional, so it can be switched off outright.
+  A cappable model is not safe by that fact alone: `kimi-k3` at `high` dies the
+  same way on a whole-artifact read, and only its `low` row completes one.
 - **The mapping from the CLI to that parameter is unverified.** The Claude
   Code CLI's `--effort` flag travels through OpenRouter's Anthropic-compatible
   skin, which speaks the Messages API's thinking budget rather than
   `reasoning.effort` directly. What this table records is what the *model*
-  accepts, not proof that a given `--effort` value arrives as that level. Where
-  the effort lever matters to an outcome, treat model choice as the reliable
-  control and the effort level as a hint.
+  accepts, not proof that a given `--effort` value arrives as that level. A
+  `medium` asked of `kimi-k3`, which lists no such level, still produced a
+  capped run that completed, so something reaches the model; what, exactly, is
+  unmeasured. Where the effort lever matters to an outcome, treat model choice
+  as the reliable control and the effort level as a hint.
 
 ## Sampling parameters
 
@@ -83,9 +133,9 @@ anything, per provider:
 
 | Bucket | Default pick | Step down (user said "cheap") | Step up (user said "best"/"most capable") |
 |---|---|---|---|
-| Mechanical / triage | `google/gemini-3.5-flash-lite` | — cheapest input is already here; take `google/gemini-3.7-flash` instead when the output dominates | `moonshotai/kimi-k2.6` |
+| Mechanical / triage | `google/gemini-3.5-flash-lite` | — cheapest input is already here; take `google/gemini-3.8-flash` instead when the output dominates | `moonshotai/kimi-k2.6` |
 | Standard implementation | `moonshotai/kimi-k2.7-code` | `google/gemini-3.5-flash-lite` | `moonshotai/kimi-k3` |
-| Architecture / judgment-heavy | `z-ai/glm-5.3` | `google/gemini-3.7-flash` | `moonshotai/kimi-k3` |
+| Architecture / judgment-heavy | `z-ai/glm-5.3` | `google/gemini-3.8-flash` | `moonshotai/kimi-k3` |
 
 ## Anthropic-compatibility mechanics
 

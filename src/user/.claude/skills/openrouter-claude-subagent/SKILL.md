@@ -1,6 +1,6 @@
 ---
 name: openrouter-claude-subagent
-description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT mini tiers), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex or Gemini CLI, and not for the Claude models and large GPT tiers this transport refuses. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with a Write grant scoped to that one path.
+description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, DeepSeek), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex or Gemini CLI, and not for the Claude and GPT models this transport refuses. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with a Write grant scoped to that one path.
 admission:
   provides: A nested Claude Code harness whose model traffic is repointed at a non-Anthropic model, plus the stream repair that makes the reply actually arrive — so a task runs on another vendor's weights while keeping this harness's tool loop, permission system, and file editing.
   cost: A local proxy process for the life of each nested run, and an OpenRouter API key the user must supply and pay against. Node must be installed, and the model routing table needs a refresh whenever OpenRouter reprices or retires a model.
@@ -47,9 +47,9 @@ a dispatch that names `sonnet`, or an agent type whose own model is one of those
 aliases, still lands there. Anything outside that vocabulary is refused with an
 error explaining the alternative, including an agent type pinned to a specific
 vendor model id and a request that names no model at all. Two families are refused outright, pin or no pin:
-Claude models, which belong in the harness you are already running, and the
-large GPT tiers (`gpt-5.5*`, `gpt-5.6*`, `-mini` variants excepted), which have
-their own transport. Naming one exits `78` before anything starts, and there is
+Claude models, which belong in the harness you are already running, and every
+GPT model, which runs through Codex on a subscription that beats this
+transport's per-token rate. Naming one exits `78` before anything starts, and there is
 no rerouting around it — if that transport is down, the task waits.
 
 `references/proxy-contract.md` covers what the proxy repairs, why the tool
@@ -90,7 +90,9 @@ from memory routes work to a model that may be repriced or retired, and
 re-deriving a "cheapest" pick by hand is how the bias drifts from what the
 bucket table already encodes.
 
-1. Classify the task: mechanical/triage, standard implementation, or
+1. A review-panel or ac-attack seat skips the buckets: its row in the routing
+   table's seat table names the model, the effort and the tool grant. Otherwise
+   classify the task: mechanical/triage, standard implementation, or
    architecture/judgment-heavy.
 2. Take that bucket's **Default pick** — unless the user said "cheap" (use
    **Step down**) or "best"/"most capable" (use **Step up**).

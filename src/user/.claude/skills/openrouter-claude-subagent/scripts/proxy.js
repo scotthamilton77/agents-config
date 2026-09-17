@@ -173,17 +173,12 @@ function stripDeferredTools(body) {
 // transports and have no business arriving here at all.
 
 /** Model families this transport never carries, matched as slug prefixes.
- *  Claude models run natively in the harness that launches these runs, and the
- *  large GPT tiers have their own vendor transport; reaching either one from
- *  here means something upstream misrouted. A literal list is the point — it
- *  needs revisiting when the model roster moves, and a clever pattern would
- *  hide that. */
-const DENIED_MODEL_PREFIXES = ["claude", "gpt-5.5", "gpt-5.6"];
-
-/** Prefixes above whose `-mini` variants stay reachable: they are cheap enough
- *  to be worth having, and are not what the denial is protecting against.
- *  `claude` is absent on purpose — no Claude model belongs on this transport. */
-const MINI_EXEMPT_PREFIXES = ["gpt-5.5", "gpt-5.6"];
+ *  Claude models run natively in the harness that launches these runs, and
+ *  every GPT model runs through Codex, whose subscription beats OpenRouter's
+ *  per-token rate; reaching either one from here means something upstream
+ *  misrouted. A literal list is the point — it needs revisiting when the model
+ *  roster moves, and a clever pattern would hide that. */
+const DENIED_MODEL_PREFIXES = ["claude", "gpt-"];
 
 /** Reduce a routing id to its bare model slug. Ids arrive as `vendor/slug`,
  *  sometimes with an OpenRouter `:variant` suffix, and the vendor prefix must
@@ -198,10 +193,7 @@ function modelSlug(model) {
 function isDeniedModel(model) {
   const slug = modelSlug(model);
   if (!slug) return false;
-  const matched = DENIED_MODEL_PREFIXES.find((p) => slug.startsWith(p));
-  if (!matched) return false;
-  if (!MINI_EXEMPT_PREFIXES.includes(matched)) return true;
-  return !slug.split("-").includes("mini");
+  return DENIED_MODEL_PREFIXES.some((p) => slug.startsWith(p));
 }
 
 /** The gate applies to completion requests only — those are the requests that

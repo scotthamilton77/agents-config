@@ -52,9 +52,9 @@ The launcher pins the run to the one model you named, three ways:
   message says what to do instead — carry on unaided, or delegate with the
   model field left out — because an API error is the only channel back to
   whatever asked.
-- **Denylist.** Claude models and the large GPT tiers are refused outright,
-  pin or no pin: they are served properly elsewhere, so arriving here means
-  something misrouted. The `-mini` GPT variants are exempt. The launcher exits
+- **Denylist.** Claude models and every GPT model are refused outright, pin
+  or no pin: they are served properly elsewhere, so arriving here means
+  something misrouted. The launcher exits
   `78` before binding a listener when `--model` names one; the proxy refuses
   them too, so neither layer depends on the other.
 

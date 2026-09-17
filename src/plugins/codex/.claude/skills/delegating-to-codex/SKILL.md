@@ -29,16 +29,35 @@ this skill's.
 A Codex run carries no explicit model by default, and the runtime keeps it that
 way unless the caller names one. Naming it is this skill's whole job.
 
-Captured **2026-08-01** against OpenAI's published Codex tiers at the time.
-OpenAI renames and retires tiers without much notice — re-verify against
-OpenAI's current model documentation before routing anything cost-sensitive.
+Verified **2026-09-17** against OpenAI's model pages (`developers.openai.com/api/docs/models`
+and the Codex models page). OpenAI renames and retires tiers without much notice —
+re-verify there before routing anything cost-sensitive.
 
 | Task profile | Model |
 |---|---|
 | Architecture, cross-subsystem, security, final pre-merge pass | `gpt-5.6-sol` |
 | Standard review, implementation, general default | `gpt-5.6-terra` |
 | First-pass triage, diff summary, per-file parallel review, cost-sensitive runs | `gpt-5.6-luna` |
-| Deeply code-centric, Codex-tuned agentic work | `gpt-5.3-codex` |
+
+`gpt-6-astra` sits above sol and is not a row: it is user-blessed only, under the
+same sentence the delegation rule applies to Fable — a per-seat blessing or an
+explicit ask is the only route to it. `gpt-5.3-codex` is retired; its successor,
+`gpt-5.3-codex-spark`, is a text-only near-instant preview and not a review or
+implementation tier.
+
+### Review seats
+
+A review-panel or ac-attack lens on the codex transport takes its model and effort
+from its tier, not from the task profile:
+
+| Seat | Model | Effort |
+|---|---|---|
+| frontier lens | `gpt-5.6-sol` | `high` |
+| mid lens | `gpt-5.6-terra` | `medium` |
+
+The OpenRouter seats and the staffing recommender are rows in the
+`openrouter-claude-subagent` skill's routing table; the trend checkpoint runs on Fable
+in the launching harness.
 
 No profile matching cleanly is itself an answer: leave the model unset and take
 the plugin's default rather than forcing a row to fit.
@@ -74,6 +93,6 @@ fingerprint. Hold the companion path in a variable of another name.
 
 ## What this skill does not decide
 
-Whether a run may write, what effort it uses, and how the prompt reaches Codex
-belong to the plugin runtime's own contract. Follow that contract where it
-speaks. This skill adds a model, and nothing else.
+Whether a run may write and how the prompt reaches Codex belong to the plugin
+runtime's own contract. Follow that contract where it speaks. This skill adds a
+model — and, for a review seat, its effort — and nothing else.
