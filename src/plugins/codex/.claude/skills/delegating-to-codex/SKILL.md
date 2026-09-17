@@ -27,8 +27,8 @@ this skill's.
 ## Which model
 
 A Codex run carries no explicit model by default, and the runtime keeps it that
-way unless the caller names one. Naming it, and for a review seat its effort, is
-this skill's whole job.
+way unless the caller names one. Naming it, and for a review seat its effort and
+tool grant, is this skill's whole job.
 
 Verified **2026-09-17** against OpenAI's model pages (`developers.openai.com/api/docs/models`
 and the Codex models page, `learn.chatgpt.com/docs/models`). OpenAI renames and retires tiers without much notice —
@@ -48,13 +48,16 @@ implementation tier.
 
 ### Review seats
 
-A review-panel or ac-attack lens on the codex transport takes its model and effort
-from its tier, not from the task profile:
+A review-panel or ac-attack lens on the codex transport takes its model, effort and
+tool grant from its tier, not from the task profile:
 
-| Seat | Model | Effort |
-|---|---|---|
-| frontier lens | `gpt-5.6-sol` | `high` |
-| mid lens | `gpt-5.6-terra` | `medium` |
+| Seat | Model | Effort | Tools |
+|---|---|---|---|
+| frontier lens | `gpt-5.6-sol` | `high` | the runtime's read-only sandbox; never `--write` |
+| mid lens | `gpt-5.6-terra` | `medium` | the runtime's read-only sandbox; never `--write` |
+
+A lens reads untrusted content, so its run is never write-capable: the dispatch omits
+`--write`, and the runtime's sandbox is then read-only.
 
 The OpenRouter seats, the staffing recommender and the trend checkpoint are rows in
 the `openrouter-claude-subagent` skill's seat table.
@@ -95,4 +98,4 @@ fingerprint. Hold the companion path in a variable of another name.
 
 Whether a run may write and how the prompt reaches Codex belong to the plugin
 runtime's own contract. Follow that contract where it speaks. This skill adds a
-model — and, for a review seat, its effort — and nothing else.
+model — and, for a review seat, its effort and tool grant — and nothing else.

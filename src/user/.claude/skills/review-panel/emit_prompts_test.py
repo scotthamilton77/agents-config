@@ -340,6 +340,44 @@ class TestPromptContent:
         assert {lens["transport"] for lens in lenses} == {"codex", "openrouter"}
         assert {lens["tier"] for lens in lenses} == {"frontier", "mid"}
 
+    @pytest.mark.parametrize("artifact_class", sorted(CLASSES))
+    def test_b1_every_class_seats_exactly_one_openrouter_lens_and_names_it(self, artifact_class):
+        """Each class routes exactly one seat through openrouter and the rest through codex: one
+        foreign seat keeps the verdict on two vendors while the subscription-priced transport
+        carries the others. The foreign seat is the class's frontier openrouter lens where it
+        declares one; spec-code declares none, so its mid contract-only-boundary seat is it."""
+        foreign_seat = {"typed-code": ("security", "frontier"),
+                        "spec-code": ("contract-only-boundary", "mid"),
+                        "spec": ("ac-testability", "frontier"),
+                        "prose": ("global-consistency", "frontier")}
+        lenses = CLASSES[artifact_class]["lenses"]
+        foreign = [(lens["lens"], lens["tier"]) for lens in lenses
+                   if lens["transport"] == "openrouter"]
+        assert foreign == [foreign_seat[artifact_class]]
+        assert all(lens["transport"] == "codex" for lens in lenses
+                   if lens["lens"] != foreign_seat[artifact_class][0])
+
+    def test_b1_the_harvest_resolves_a_model_from_the_seat_tables(self):
+        """No lens declares a model: the harvest sends the dispatcher to the seat row in the
+        transport's routing table, which names model, effort and tool grant, and its failover
+        example names a model that table seats rather than an uncappable one."""
+        harvest = (HERE / "harvest.md").read_text(encoding="utf-8")
+        section = harvest.split("## Choosing the model", 1)[1].split("\n## ", 1)[0]
+        assert "`delegating-to-codex`" in section
+        assert "`openrouter-claude-subagent`" in section
+        assert "the model, the effort and the tool grant" in section
+        assert "exactly one `openrouter` seat" in section
+        openrouter_table = (HERE.parent / "openrouter-claude-subagent" / "references"
+                            / "model-routing.md").read_text(encoding="utf-8")
+        codex_table = (HERE.parents[3] / "plugins" / "codex" / ".claude" / "skills"
+                       / "delegating-to-codex" / "SKILL.md").read_text(encoding="utf-8")
+        seat_rows = (openrouter_table.split("## Review seats", 1)[1].split("\n## ", 1)[0]
+                     + codex_table.split("### Review seats", 1)[1].split("\n## ", 1)[0])
+        example_models = re.findall(r"--model (\S+)", harvest)
+        assert example_models
+        for model in example_models:
+            assert f"`{model}`" in seat_rows, model
+
     def test_b9_every_mandate_states_what_makes_a_finding_worth_reporting(self):
         """A lens that can always produce output always will, so every mandate ends with the
         observable a finding must cite. ac-testability already names one in its own body."""

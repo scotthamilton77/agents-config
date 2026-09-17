@@ -1,13 +1,14 @@
 # Harvesting a round
 
-What to do around dispatching the lenses and writing the verdict. Every rule here exists because
-a round hit the case and the invoker had to improvise; an improvised rule is one nobody can audit
+What to do around dispatching the lenses and writing the verdict. Every rule here is one an
+invoker would otherwise improvise mid-round, and an improvised rule is one nobody can audit
 afterwards.
 
 ## The records a round runs on
 
-Three records exist before prompts are emitted, written by the invoker and retained afterwards as
-campaign records beside the verdicts — the trend analyst reads across them. A mixed target adds a
+Three records feed the emitter, written by the invoker and retained afterwards as campaign
+records beside the verdicts — the trend analyst reads across them. Two exist before the first
+prompts are emitted; the third falls due as non-clean rounds accumulate. A mixed target adds a
 campaign-level record before any of them: the circuit plan — the ordered grouping of its class
 partitions into circuits, with rationale. `references/circuits.md` is its doctrine, including the
 re-arm cap and the spec-code class's cannot-ship rationale.
@@ -49,8 +50,8 @@ The `transport` in `contracts.json` is a claim about vendor diversity, not about
 credentials. **Any lens may run on any transport that is actually up.** An `openrouter` lens runs
 through the codex command-line tool when OpenRouter is down; a `codex` lens runs through the
 `openrouter-claude-subagent` skill when the codex credential has expired. Neither direction is the
-exceptional one, and neither transport is the more reliable one — both have been down while the
-other worked.
+exceptional one, and neither transport is the more reliable one: either can be down while the
+other works.
 
 What you may not do is run the lens and say nothing. Whenever a lens runs on something other than
 its declared entry, its verdict entry carries `substitution` naming what it moved off — the
@@ -61,18 +62,19 @@ reason, and, when the swap was forced rather than chosen, the dead route's error
 ## Choosing the model
 
 No lens declares a model, and `contracts.json` never carries one; the seat does. A lens's
-transport and tier resolve to one seat row — the Codex seats in the `delegating-to-codex`
+transport and tier name its seat row — the Codex seats in the `delegating-to-codex`
 skill's table, the OpenRouter seats and the staffing recommender in the routing table the
-`openrouter-claude-subagent` skill carries — and the row names the model, the effort and the
-tool grant. Read the row at dispatch, not from memory: the tables are the source of truth for
-price, context window and which reasoning efforts a model accepts, and all three move
-underneath a remembered pick, because OpenRouter reprices and retires models without notice.
+`openrouter-claude-subagent` skill carries — except that the OpenRouter frontier seat has
+two rows, keyed on the scope `round.json` gives the lens, so there transport, tier and scope
+pick the row. The row names the model, the effort and the tool grant. Read the row at
+dispatch, not from memory: the OpenRouter table is also the source of truth for price,
+context window and which reasoning efforts a model accepts, and all three move underneath a
+remembered pick, because OpenRouter reprices and retires models without notice.
 
 Every class declares exactly one `openrouter` seat and routes the rest through `codex`: one
 foreign seat is what keeps the round on two vendors, and the Codex subscription prices the
-others below OpenRouter's per-token rate. The OpenRouter frontier seat has two rows, keyed on
-the scope `round.json` gives the lens: a delta read and a whole-artifact read. The split
-exists because a long single pass strands a reasoning model inside a thinking block and
+others below OpenRouter's per-token rate. The frontier seat's two rows are a delta read and a
+whole-artifact read. The split exists because a long single pass strands a reasoning model inside a thinking block and
 returns no report at all, burning a full lens latency before the failover starts; the
 whole-artifact row caps the thinking and, when the prompt carries the text, grants no tools.
 A dispatch that departs from its row is a `substitution` and says why.
@@ -82,8 +84,9 @@ that a deliberate choice is possible and is visible afterwards. The discipline i
 
 ## Every dispatch is claimed first
 
-The gate authorizes each dispatch, records it, and refuses the ones past the bound. Run it from
-this directory before every dispatch of a lens, the first one included:
+The gate authorizes each dispatch, records it, and refuses the ones past the bound. Run it
+before every dispatch of a lens, the first one included, by its path in this directory and
+from the directory the reviewer will read:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
@@ -92,13 +95,14 @@ uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
 
 An authorized answer carries the `output_path` this attempt writes its raw output to — one path
 per attempt, so an attempt that wrote nothing reads as nothing rather than as the previous
-attempt's report — and, for a recovery, the `backoff_seconds` to wait first. Run the claim from
-the directory the reviewer will read: the gate records the working directory it was invoked in,
-and a review of the wrong tree is the failure that leaves no trace of itself.
+attempt's report — and, for a recovery, the `backoff_seconds` to wait first. The working
+directory matters because the gate records the one it was invoked in, and a review of the
+wrong tree is the failure that leaves no trace of itself.
 
-A refusal (exit 2) ends that lens. However many attempts it took, a lens ends with exactly one
-entry, for the attempt that produced the report, carrying the `substitution` record above. Two
-entries for one lens is a validation error, not a fuller record: it double-counts coverage.
+A refusal (exit 2) ends that lens, with no entry. However many attempts it took, a lens that
+reported ends with exactly one entry, for the attempt that produced the report, carrying the
+`substitution` record above. Two entries for one lens is a validation error, not a fuller
+record: it double-counts coverage.
 
 ## A dispatch that came back with no report
 
@@ -237,8 +241,9 @@ uv run prgroom_version.py --repo-root <repo-root>
 prgroom post-verdict <pr> --verdict <path> --criteria <path>
 ```
 
-The check runs first, every round, from this directory like the round's other scripts — which is
-why it names the reviewed repository rather than reading the working directory. prgroom is installed
+The check runs first, every round, by its path in this directory like the round's other
+scripts — which is why it names the reviewed repository rather than reading the working
+directory. prgroom is installed
 onto PATH by a human-run installer, so a fix that landed in the repository is not necessarily in the
 tool: the check compares the installed release with the one that repository builds, and refuses when
 the installed one is older, absent, or will not report a version. A refusal is a stop, not a
