@@ -21,7 +21,7 @@ Prices are $/M tokens. Rows are sorted by input price.
 
 | Model ID (`--model` value) | Input $/M | Output $/M | Context | Effort levels accepted | Best for |
 |---|---|---|---|---|---|
-| `deepseek/deepseek-v4.1-flash` | $0.15 | $0.60 | 1M / 384K out | `low` `high` `max` — no `medium` | Cheapest capped reasoner in the table; unqualified for a whole-artifact read until a run completes one |
+| `deepseek/deepseek-v4.1-flash` | $0.15; $0.30 weekdays 01:00–04:00 and 06:00–10:00 UTC | $0.60; $1.20 in those windows | 1M / 384K out | `low` `high` `max` — no `medium` | Cheapest capped reasoner in the table; unqualified for a whole-artifact read until a run completes one |
 | `google/gemini-3.5-flash-lite` | $0.30 | $2.50 | 1M / 64K out | `minimal` `low` `medium` `high` | High-volume triage, extraction, formatting |
 | `moonshotai/kimi-k2.7-code` | $0.71 | $3.21 | 262K | **none** — reasoning always on, **cannot be capped** | Code-tuned mid-tier, strong cost/perf for implementation |
 | `google/gemini-3.8-flash` | $0.75 | $3.75 | 1M / 64K out | `low` `medium` `high` — no `minimal` | Fast agentic coding; the OpenRouter mid seat below |
@@ -70,13 +70,15 @@ Why the rows are what they are, stated so the next refresh can attack them:
   nested harness to explore the repository instead of answering in one turn:
   a dozen forwarded requests at frontier prices for a review that needed one.
 - The two OpenRouter seats name different vendors on purpose. Both on Kimi is
-  one vendor filling two seats, and the verdict's distinct-vendor count cannot
+  one vendor filling two seats, and the distinct-vendor count the
+  `review-verdict` skill's envelope derives from the lenses' vendors cannot
   see it.
 - `gemini-3.8-flash` holds the mid seat with the least evidence in the table.
   A Flash-class model in this seat can return a clean verdict having read
-  little or nothing of the target; the review panel's dispatch gate refuses a
-  clean report with no recorded read, which is what makes the seat tolerable
-  rather than proven.
+  little or nothing of the target, so a clean report from it counts only
+  beside the read the proxy's ledger recorded for that run: one forwarded
+  turn is a reviewer that called no tool. That record is what makes the seat
+  tolerable rather than proven.
 - `kimi-k2.6` recommends staffing because it keeps every seat, with a
   target-shaped reason for each, where a Flash-class recommender drops
   correctness on a test-only delta and security on a small one, and a dropped
