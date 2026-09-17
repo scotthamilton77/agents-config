@@ -363,10 +363,13 @@ class TestPromptContent:
         example names a model that table seats rather than an uncappable one."""
         harvest = (HERE / "harvest.md").read_text(encoding="utf-8")
         section = harvest.split("## Choosing the model", 1)[1].split("\n## ", 1)[0]
+        section = " ".join(section.split())  # a phrase may wrap across lines
         assert "`delegating-to-codex`" in section
         assert "`openrouter-claude-subagent`" in section
         assert "the model, the effort and the tool grant" in section
         assert "exactly one `openrouter` seat" in section
+        assert "keyed on the scope `round.json` gives the lens" in section
+        assert "`tier_this_round` is the lens's re-review tier" in section
         openrouter_table = (HERE.parent / "openrouter-claude-subagent" / "references"
                             / "model-routing.md").read_text(encoding="utf-8")
         codex_table = (HERE.parents[3] / "plugins" / "codex" / ".claude" / "skills"

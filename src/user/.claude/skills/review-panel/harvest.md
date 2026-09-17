@@ -62,11 +62,13 @@ reason, and, when the swap was forced rather than chosen, the dead route's error
 ## Choosing the model
 
 No lens declares a model, and `contracts.json` never carries one; the seat does. A lens's
-transport and tier name its seat row — the Codex seats in the `delegating-to-codex`
-skill's table, the OpenRouter seats and the staffing recommender in the routing table the
-`openrouter-claude-subagent` skill carries — except that the OpenRouter frontier seat has
-two rows, keyed on the scope `round.json` gives the lens, so there transport, tier and scope
-pick the row. The row names the model, the effort and the tool grant. Read the row at
+transport and the tier `round.json` gives it for the round, `tier_this_round`, name its seat
+row — the Codex seats in the `delegating-to-codex` skill's table, the OpenRouter seats and
+the staffing recommender in the routing table the `openrouter-claude-subagent` skill carries
+— except that the OpenRouter frontier seat has two rows, keyed on the scope `round.json`
+gives the lens, so there transport, tier and scope pick the row. From round 2 on,
+`tier_this_round` is the lens's re-review tier where it declares one, so a frontier lens
+with a mid re-review tier takes the mid seat. The row names the model, the effort and the tool grant. Read the row at
 dispatch, not from memory: the OpenRouter table is also the source of truth for price,
 context window and which reasoning efforts a model accepts, and all three move underneath a
 remembered pick, because OpenRouter reprices and retires models without notice.
@@ -74,8 +76,9 @@ remembered pick, because OpenRouter reprices and retires models without notice.
 Every class declares exactly one `openrouter` seat and routes the rest through `codex`: one
 foreign seat is what keeps the round on two vendors, and the Codex subscription prices the
 others below OpenRouter's per-token rate. The frontier seat's two rows are a delta read and a
-whole-artifact read. The split exists because a long single pass strands a reasoning model inside a thinking block and
-returns no report at all, burning a full lens latency before the failover starts; the
+whole-artifact read. The split exists because a long single pass strands a reasoning model
+inside a thinking block and returns no report at all, burning a full lens latency before
+the failover starts; the
 whole-artifact row caps the thinking and, when the prompt carries the text, grants no tools.
 A dispatch that departs from its row is a `substitution` and says why.
 
