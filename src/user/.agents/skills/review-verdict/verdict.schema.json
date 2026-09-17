@@ -130,6 +130,11 @@
             "type": "string",
             "pattern": "\\S",
             "description": "Identifier of the work item a transferred finding was filed as. A defect ruled out of scope stays accounted for only if something outside this campaign now carries it."
+          },
+          "artifact": {
+            "type": "string",
+            "pattern": "\\.md$",
+            "description": "The Markdown file a typed-code lens located a fixed finding in, spelled as the finding spells it. Its fix is a prose edit and names no test; the emitter admits the disposition only when the path appears in the finding's own claim or evidence."
           }
         },
         "allOf": [
