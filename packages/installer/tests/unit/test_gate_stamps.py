@@ -155,13 +155,81 @@ def test_a_filename_holding_a_newline_is_digested_like_any_other(repo: Path) -> 
     assert worktree_digest(repo, "alpha") == index_digest(repo, "alpha")
 
 
-def test_an_empty_package_digests_without_asking_git_to_hash_nothing(repo: Path) -> None:
+def test_an_empty_package_digests_to_the_same_thing_on_both_sides(repo: Path) -> None:
     """Given a package directory holding no file git would list
     When it is digested
     Then a digest comes back rather than an error.
     """
     (repo / "packages" / "gamma").mkdir()
     assert worktree_digest(repo, "gamma") == index_digest(repo, "gamma")
+
+
+def _executable(path: Path) -> None:
+    path.write_text("#!/bin/sh\necho hello\n")
+    path.chmod(0o755)
+
+
+@pytest.mark.parametrize(
+    "add",
+    [
+        pytest.param(lambda p: (p / "plain.py").write_text("v = 1\n"), id="regular-file"),
+        pytest.param(lambda p: _executable(p / "run.sh"), id="executable-file"),
+        pytest.param(lambda p: (p / "link.py").symlink_to("code.py"), id="symlink-to-file"),
+        pytest.param(lambda p: (p / "dangling").symlink_to("nowhere"), id="broken-symlink"),
+        pytest.param(lambda p: (p / "here").symlink_to("."), id="symlink-to-directory"),
+    ],
+)
+def test_both_sides_agree_on_every_kind_of_entry_an_index_holds(repo: Path, add: object) -> None:
+    """Given a package holding an entry of some kind git records in an index
+    When both sides are digested
+    Then they agree.
+
+    Disagreement here cannot be cleared by rerunning the gate: the stamp records
+    one value and the hook demands another for the same content, so every commit
+    touching the package is refused for as long as the entry exists.
+    """
+    assert callable(add)
+    add(repo / "packages" / "alpha")
+    git(repo, "add", "-A")
+
+    assert worktree_digest(repo, "alpha") == index_digest(repo, "alpha")
+
+
+def test_both_sides_agree_on_a_repository_nested_in_a_package(repo: Path) -> None:
+    """Given a package holding a nested repository, which an index records as a commit
+    When both sides are digested
+    Then they agree, because both read the pointer rather than the directory.
+    """
+    nested = repo / "packages" / "alpha" / "vendored"
+    nested.mkdir()
+    git(nested, "init", "-b", "main")
+    git(nested, "config", "user.email", "t@example.com")
+    git(nested, "config", "user.name", "Test")
+    (nested / "file.txt").write_text("content\n")
+    git(nested, "add", "-A")
+    git(nested, "commit", "-m", "nested")
+    git(repo, "add", "-A")
+
+    assert index_digest(repo, "alpha") == worktree_digest(repo, "alpha")
+
+
+def test_a_hyphenated_package_is_gated_like_any_other(repo: Path) -> None:
+    """Given a package whose name holds a hyphen, with a gate target defined for it
+    When a change to it is staged and checked
+    Then the commit is refused, because the Makefile does define its gate.
+
+    Pass-through is for a package the Makefile gates nowhere. A package it does
+    gate must not slip through on the spelling of its name.
+    """
+    (repo / "packages" / "two-words").mkdir()
+    (repo / "packages" / "two-words" / "code.py").write_text("value = 1\n")
+    (repo / "Makefile").write_text(f"{MAKEFILE}\nci-two-words:\n\t@echo gates\n")
+    git(repo, "add", "-A")
+
+    assert "two-words" in gated_packages(repo)
+    assert refusals(repo) == [
+        "packages/two-words: no gate run is recorded. Run `make ci-two-words`, then commit again."
+    ]
 
 
 def test_the_gated_set_comes_from_the_makefile_the_commit_carries(repo: Path) -> None:
@@ -361,6 +429,28 @@ def test_a_refusal_cannot_drive_the_terminal_it_prints_on(
     path = stamp_path(repo, "ci-alpha")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"gate": "ci-alpha", "exit": "\x1b[2J\x1b[HOK", "content": ""}))
+
+    assert main(["check", str(repo)]) == 1
+    err = capsys.readouterr().err
+    assert "\x1b" not in err
+    assert "\\x1b[2J" in err
+
+
+def test_a_package_name_cannot_drive_the_terminal_either(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Given a gated package whose directory name holds terminal control bytes
+    When the refusal naming it is printed
+    Then the bytes are shown as escapes rather than sent to the terminal.
+
+    A package name reaches stderr whenever its gate target exists, and a target
+    name runs to its colon, so the name carries whatever the directory carries.
+    """
+    name = "ink\x1b[2J"
+    (repo / "packages" / name).mkdir()
+    (repo / "packages" / name / "code.py").write_text("value = 1\n")
+    (repo / "Makefile").write_text(f"{MAKEFILE}\nci-{name}:\n\t@echo gates\n")
+    git(repo, "add", "-A")
 
     assert main(["check", str(repo)]) == 1
     err = capsys.readouterr().err

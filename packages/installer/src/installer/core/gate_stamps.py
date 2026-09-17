@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
-from stat import S_ISLNK
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -30,11 +31,10 @@ if TYPE_CHECKING:
 # keeps them out of the digest they record.
 STAMP_DIR = ".gate-stamps"
 
-# Paths are handed to `git hash-object` as arguments, so a batch bounds how long
-# one command line gets.
-_HASH_BATCH = 256
-
-_GATE_TARGET = re.compile(r"(?m)^ci-([A-Za-z0-9_]+):")
+# A gate target's name runs to the colon that ends it. A package name may hold
+# any byte a directory name may hold, and hyphens are the Makefile's own habit,
+# so anything narrower silently ungates a package whose target exists.
+_GATE_TARGET = re.compile(r"(?m)^ci-([^:\s]+):")
 
 # The path the hook tests for, and the module that answers it. Naming it here
 # keeps the stanza and the checker from drifting apart.
@@ -80,7 +80,9 @@ def package_of(gate: str) -> str:
     return package
 
 
-def _git(repo_root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    repo_root: Path, *args: str, check: bool = True, index: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     """Run git in ``repo_root`` and hand back its output as text that survives any path.
 
     Git writes a path as the bytes it is, and those bytes need not be valid in
@@ -89,7 +91,9 @@ def _git(repo_root: Path, *args: str, check: bool = True) -> subprocess.Complete
 
     A failed command raises unless the caller asks otherwise, because an empty
     answer read as "nothing to check" is how a broken git turns into a commit
-    nobody gated.
+    nobody gated. Naming an index points the command at that one instead of the
+    repository's own, which is how the working tree gets measured without
+    touching what the author has staged.
     """
     done = subprocess.run(  # noqa: S603  # fixed argv; only the root and the pathspec vary
         ["git", "-C", str(repo_root), *args],  # noqa: S607
@@ -97,6 +101,7 @@ def _git(repo_root: Path, *args: str, check: bool = True) -> subprocess.Complete
         text=True,
         errors="surrogateescape",
         check=False,
+        env={**os.environ, "GIT_INDEX_FILE": str(index)} if index is not None else None,
     )
     if check and done.returncode != 0:
         msg = f"git {args[0]} failed ({done.returncode}): {done.stderr.strip()}"
@@ -118,66 +123,16 @@ def _digest(entries: Iterable[tuple[str, str, str]]) -> str:
     return running.hexdigest()
 
 
-def _mode(path: Path) -> str:
-    """The mode git records for a path, which distinguishes only three kinds of file."""
-    status = path.lstat()
-    if S_ISLNK(status.st_mode):
-        return "120000"
-    return "100755" if status.st_mode & 0o111 else "100644"
+def _entries(
+    repo_root: Path, package: str, index: Path | None = None
+) -> list[tuple[str, str, str]]:
+    """The (path, mode, blob id) triples an index holds for a package.
 
-
-def _blob_ids(repo_root: Path, paths: list[str]) -> list[str]:
-    """Git's blob id for each path, in the order given.
-
-    The paths go as arguments rather than down stdin, because ``--stdin-paths``
-    separates them by newline and a newline is a legal byte in a filename. A
-    count that does not match the paths asked about means the ids cannot be
-    paired with them, which raises rather than pairing them wrongly.
+    An index stores a mode and an object id per path, so nothing is hashed here.
+    Both sides of the comparison read their triples through this one function,
+    which is what keeps them from disagreeing about how an entry is read.
     """
-    ids: list[str] = []
-    for start in range(0, len(paths), _HASH_BATCH):
-        hashed = _git(repo_root, "hash-object", "--", *paths[start : start + _HASH_BATCH])
-        ids.extend(hashed.stdout.split())
-    if len(ids) != len(paths):
-        msg = f"git hashed {len(ids)} of {len(paths)} files"
-        raise GateStampError(msg)
-    return ids
-
-
-def worktree_digest(repo_root: Path, package: str) -> str:
-    """The digest of a package's content as it sits in the working tree.
-
-    Tracked files and untracked files git would not ignore both count, because
-    that is exactly what a gate run over the package sees. A tracked file
-    deleted on disk contributes nothing, which is what the index will say about
-    it once the deletion is staged.
-    """
-    listed = _git(
-        repo_root,
-        "ls-files",
-        "-z",
-        "--cached",
-        "--others",
-        "--exclude-standard",
-        "--",
-        f"packages/{package}",
-    )
-    paths = sorted({p for p in listed.stdout.split("\0") if p and (repo_root / p).is_file()})
-    if not paths:
-        return _digest([])
-    blobs = _blob_ids(repo_root, paths)
-    return _digest(
-        (path, _mode(repo_root / path), blob) for path, blob in zip(paths, blobs, strict=True)
-    )
-
-
-def index_digest(repo_root: Path, package: str) -> str:
-    """The digest of a package's content as the index holds it, which is what a commit carries.
-
-    The index already stores a mode and a blob id per path, so nothing is hashed
-    here; both are the ones git wrote when the content was staged.
-    """
-    listed = _git(repo_root, "ls-files", "-s", "-z", "--", f"packages/{package}")
+    listed = _git(repo_root, "ls-files", "-s", "-z", "--", f"packages/{package}", index=index)
     entries = []
     for record in listed.stdout.split("\0"):
         if not record:
@@ -185,7 +140,33 @@ def index_digest(repo_root: Path, package: str) -> str:
         meta, _, path = record.partition("\t")
         mode, blob, _stage = meta.split()
         entries.append((path, mode, blob))
-    return _digest(entries)
+    return entries
+
+
+def worktree_digest(repo_root: Path, package: str) -> str:
+    """The digest of a package's content as it sits in the working tree.
+
+    The working tree is measured by staging it into a scratch index, so what
+    gets digested is exactly what git would record had the author staged the
+    same content. Every kind of entry an index can hold is then git's business
+    rather than this module's: a symlink contributes its link text, a submodule
+    its commit, an executable its mode, and a file git would ignore nothing at
+    all. Reproducing those rules here instead is how the two sides come to
+    disagree over content that is in fact identical, which refuses a commit that
+    no rerun of the gate can rescue.
+
+    The scratch index lives outside the repository, because a file written
+    inside the package would become part of the content being measured.
+    """
+    with TemporaryDirectory() as scratch:
+        index = Path(scratch) / "index"
+        _git(repo_root, "add", "--all", "--", f"packages/{package}", index=index)
+        return _digest(_entries(repo_root, package, index))
+
+
+def index_digest(repo_root: Path, package: str) -> str:
+    """The digest of a package's content as the index holds it, which is what a commit carries."""
+    return _digest(_entries(repo_root, package))
 
 
 def stamp_path(repo_root: Path, gate: str) -> Path:
