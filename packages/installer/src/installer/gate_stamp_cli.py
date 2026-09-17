@@ -14,7 +14,23 @@ import subprocess
 import sys
 from pathlib import Path
 
-from installer.core.gate_stamps import install_hook, package_of, refusals, write_stamp
+from installer.core.gate_stamps import (
+    GateStampError,
+    install_hook,
+    package_of,
+    refusals,
+    write_stamp,
+)
+
+
+def _printable(text: str) -> str:
+    """The text with every byte that could drive a terminal shown as an escape.
+
+    A package name is a path component, and a path component may hold any byte
+    but NUL and the separator. Printing one raw lets a staged directory name
+    repaint the terminal the refusal is being read on.
+    """
+    return text.encode("unicode_escape").decode("ascii")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -68,7 +84,7 @@ def _check(repo_root: Path) -> int:
         return 0
     sys.stderr.write("gate-stamp: refusing this commit.\n")
     for line in refused:
-        sys.stderr.write(f"  {line}\n")
+        sys.stderr.write(f"  {_printable(line)}\n")
     sys.stderr.write(
         "The hook reads only the gates the Makefile stamps; `--no-verify` bypasses it.\n"
     )
@@ -78,11 +94,17 @@ def _check(repo_root: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     repo_root: Path = args.repo_root
-    if args.command == "write":
-        return _write(repo_root, args.gate, args.exit_code)
-    if args.command == "check":
-        return _check(repo_root)
-    hook = install_hook(hooks_dir(repo_root))
+    try:
+        if args.command == "write":
+            return _write(repo_root, args.gate, args.exit_code)
+        if args.command == "check":
+            return _check(repo_root)
+        hook = install_hook(hooks_dir(repo_root))
+    except GateStampError as error:
+        # A question left unanswered refuses the commit. `check` is the hook, so
+        # its failure has to read as a refusal rather than as a broken tool.
+        sys.stderr.write(f"gate-stamp: {_printable(str(error))}\n")
+        return 1 if args.command == "check" else 2
     sys.stdout.write(f"gate-stamp: pre-commit check installed in {hook}\n")
     return 0
 
