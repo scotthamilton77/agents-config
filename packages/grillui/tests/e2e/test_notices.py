@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+import pytest
 from conftest import BOARD_TIMEOUT, RENDER, decision, document, handoff, option, ruling, turn
 
 if TYPE_CHECKING:
@@ -289,12 +290,32 @@ NOTICED = "Compaction is now a question about the log, and nothing here says wha
 # What the board falls back to when it holds a queued notice and not the entry
 # that authored it: the kind and the target, in place of the words.
 PLACEHOLDER = "informational on d2"
-# The page's log read, answered with an empty tail. That is the state the page
-# is in for as long as the board image is ahead of the log, and holding it still
-# is what lets a scenario read the render it produces: a window that closes on
-# its own closes before anything can be asserted about it.
+# The tier that composed the turn below, as the board and the panel name it.
+COMPOSED_BY = "expert"
+# The page's two reads of the backend, which these scenarios answer themselves to
+# put the board image and the log out of step on purpose.
 UPDATE_READ = "**/updates*"
+STATE_READ = "**/state"
+# The log read answered with an empty tail, which is the state the page is in for
+# as long as the image is ahead of the log. Holding it still is what lets a
+# scenario read the render it produces: a window that closes on its own closes
+# before anything can be asserted about it.
 HELD_LOG = {"seq": 0, "entries": []}
+
+
+def arrive(page: Page, session: Session, fresh: bool) -> None:
+    """Bring the board up again, as a reload or as a window arriving cold.
+
+    Hydration is what both of them run, and a window that has never claimed this
+    session runs it one gesture later: its claim is refused, and the take-over is
+    what gets it the board.
+    """
+    if not fresh:
+        page.reload()
+        return
+    page.evaluate("() => window.sessionStorage.clear()")
+    page.goto(session.url)
+    page.click('[data-act="takeover"]')
 
 
 def accounted(page: Page) -> tuple[int, int]:
@@ -310,13 +331,14 @@ def accounted(page: Page) -> tuple[int, int]:
     return int(unread_pill(page)), found
 
 
+@pytest.mark.parametrize("fresh", [False, True], ids=["a reload", "a window arriving cold"])
 def test_a_queued_notice_is_neither_drawn_nor_counted_before_its_words_arrive(
-    launcher: Callable[..., Session], board: Callable[[Session], Page]
+    fresh: bool, launcher: Callable[..., Session], board: Callable[[Session], Page]
 ) -> None:
     """
     Given a turn that writes a message on d2 and a message the board has nowhere
           to show, both of which reach the page as queued notices
-    When the page comes back with the board image ahead of the log, so the queue
+    When the page comes up with the board image ahead of the log, so the queue
          names notices whose entries the page has not read
     Then none of them is drawn, no placeholder stands in for anyone's words, and
          the bell counts nothing the board and the panel cannot account for --
@@ -354,7 +376,7 @@ def test_a_queued_notice_is_neither_drawn_nor_counted_before_its_words_arrive(
         )
 
     page.route(UPDATE_READ, empty_tail)
-    page.reload()
+    arrive(page, session, fresh)
     page.wait_for_selector("#col-d2", timeout=BOARD_TIMEOUT)
     # The page's own word that it has read a board and a log, which is the
     # render everything below is asserted against.
@@ -373,5 +395,51 @@ def test_a_queued_notice_is_neither_drawn_nor_counted_before_its_words_arrive(
     # the bell back on the number it left.
     assert accounted(page) == before
     assert page.locator("#col-d2 .infonote .unreadmark").count() == 1
+    # Each one wears the tier its own entry was composed by, on the block and in
+    # the panel alike.
+    on_d2 = page.locator("#col-d2 .infonote").inner_text()
+    assert f"{COMPOSED_BY}, informational" in on_d2, on_d2
     listed = open_panel(page)
-    assert sum(STORY in one for one in listed) == 1, listed
+    said_once = [one for one in listed if STORY in one]
+    assert len(said_once) == 1, listed
+    assert COMPOSED_BY in said_once[0], said_once
+
+
+def test_a_notice_the_image_missed_is_drawn_without_waiting_for_another_entry(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a page hydrating on a board image taken before the turn its log read
+          brings back, which is what an entry appended between the two reads
+          leaves it holding
+    When nothing else happens in the session, so no later entry brings a board
+         with it
+    Then the notice is drawn on the decision it names, because the page reads the
+         board again rather than counting itself level with a log it is behind.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_claude(
+        turn(
+            document(
+                STORY,
+                updates=[{"kind": "informational", "target": "d2", "text": NOTICED}],
+            )
+        )
+    )
+    page = board(session)
+    # The board as it stood before the turn: what a state read answers with when
+    # the entry lands after it. Answered once, so every read after hydration's is
+    # the backend's own.
+    stale = json.dumps(session.state())
+
+    page.click('#col-d1 [data-act="pick"][data-opt="a"]')
+    session.settled()
+    page.wait_for_selector(f'#col-d2 .infonote:has-text("{NOTICED}")', timeout=BOARD_TIMEOUT)
+
+    page.route(
+        STATE_READ,
+        lambda route: route.fulfill(status=200, content_type="application/json", body=stale),
+        times=1,
+    )
+    page.reload()
+    page.wait_for_selector(f'#col-d2 .infonote:has-text("{NOTICED}")', timeout=BOARD_TIMEOUT)

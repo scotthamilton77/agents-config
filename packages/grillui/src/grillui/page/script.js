@@ -626,7 +626,16 @@ function hydrate() {
       NOTES.forEach(function (n) { UI.bubbleSeen[n.id] = true; });
       UI.fresh = fresh;
       UI.touched = touched;
-      WIRE.cursor = u.seq;
+      // The cursor never passes what both reads account for: the log was read
+      // to one position and the board drawn at another, and hydration is level
+      // only up to the earlier of the two. An entry appended between the reads
+      // is in the log and not in the image, and a cursor past it makes the next
+      // read empty -- which is the one answer that ends a poll without re-reading
+      // the board, so a queue item the image missed would sit undrawn until an
+      // unrelated entry brought a board with it. From here the next read offers
+      // those entries again, and they are already marked seen, so nothing is
+      // judged twice.
+      WIRE.cursor = Math.min(st.seq, u.seq);
       WIRE.hydrated = true;
       if (!UI.focus) UI.focus = (BOARD.frontier[0] || (BOARD.decisions[0] || {}).id || null);
       wire("reached");
