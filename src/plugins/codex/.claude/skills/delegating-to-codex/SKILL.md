@@ -55,9 +55,8 @@ from its tier, not from the task profile:
 | frontier lens | `gpt-5.6-sol` | `high` |
 | mid lens | `gpt-5.6-terra` | `medium` |
 
-The OpenRouter seats and the staffing recommender are rows in the
-`openrouter-claude-subagent` skill's routing table; the trend checkpoint runs on Fable
-in the launching harness.
+The OpenRouter seats, the staffing recommender and the trend checkpoint are rows in
+the `openrouter-claude-subagent` skill's seat table.
 
 No profile matching cleanly is itself an answer: leave the model unset and take
 the plugin's default rather than forcing a row to fit.

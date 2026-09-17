@@ -43,19 +43,19 @@ judged) is short. The round record states which one each lens has.
 | OpenRouter frontier, delta read | `moonshotai/kimi-k3` | `high` | `Read` `Grep` `Glob` |
 | OpenRouter frontier, whole-artifact read | `moonshotai/kimi-k3` | `medium` — reaches the model as a thinking budget, since it lists no such level | none when the prompt carries the text inline; `Read` `Grep` `Glob` when the lens must resolve the target itself |
 | OpenRouter mid (the re-review tier of the frontier seats) | `google/gemini-3.8-flash` | `high` | `Read` `Grep` `Glob` |
-| Staffing recommender | `moonshotai/kimi-k2.6` | reasoning on | none |
+| Staffing recommender | `moonshotai/kimi-k2.6` | `medium` | none |
+| Trend checkpoint | Fable, in the launching harness | `high` | the harness's own |
 
 Why the rows are what they are, stated so the next refresh can attack them:
 
 - `kimi-k3` at `high` on a whole-artifact read ends the stream inside a
-  thinking block having delivered no message — after an hour of upstream
-  timeouts, with the proxy warning "response ends on thinking and contains no
-  text block to promote". Asked for `medium` — a level it does not list, so
-  the CLI's flag arrives as a thinking budget rather than a named effort — the
-  same read completes in minutes with comparable output; `low` would bound the
-  thinking harder and has no completing run behind it. On a delta read `high`
-  completes and reads per criterion, which a cheaper Flash-class model in the
-  seat does not.
+  thinking block and delivers no message: the proxy sees a response that ends
+  on thinking with no text block to promote, after the upstream request has
+  timed out repeatedly. At `medium`, a level the model does not list, the CLI's
+  flag arrives as a thinking budget rather than a named effort, and the same
+  read completes with comparable output. `low` bounds the thinking harder and
+  is unmeasured for this seat. On a delta read `high` completes and reads per
+  criterion, which a cheaper Flash-class model in the seat does not.
 - A `Read` grant on a prompt that already carries the whole text invites the
   nested harness to explore the repository instead of answering in one turn:
   a dozen forwarded requests at frontier prices for a review that needed one.
@@ -63,17 +63,19 @@ Why the rows are what they are, stated so the next refresh can attack them:
   one vendor filling two seats, and the verdict's distinct-vendor count cannot
   see it.
 - `gemini-3.8-flash` holds the mid seat with the least evidence in the table.
-  Its predecessor `gemini-3.7-flash` returned a clean lens verdict in under a
-  minute with no read of the target recorded; the review panel's dispatch gate
-  refuses that shape now, which is what makes the seat tolerable rather than
-  proven.
+  A Flash-class model in this seat can return a clean verdict having read
+  little or nothing of the target; the review panel's dispatch gate refuses a
+  clean report with no recorded read, which is what makes the seat tolerable
+  rather than proven.
 - `kimi-k2.6` recommends staffing: on a five-lens typed-code roster it keeps
   every seat with a target-shaped reason each, where a Flash-class recommender
   drops correctness on test-only deltas and security on small ones, and a
   dropped security seat costs a whole sweep round later.
 
-The Codex seats are rows in the `delegating-to-codex` skill; the trend
-checkpoint runs on Fable in the launching harness.
+The Codex seats are rows in the `delegating-to-codex` skill. The checkpoint row
+lives here because this is the seat table; its dispatch never touches OpenRouter.
+The recommender's `medium` satisfies the launcher, which requires an effort flag;
+`kimi-k2.6` lists no levels and keeps its reasoning on regardless.
 
 ## Reading the effort column
 
@@ -101,9 +103,9 @@ before dispatch:
   Code CLI's `--effort` flag travels through OpenRouter's Anthropic-compatible
   skin, which speaks the Messages API's thinking budget rather than
   `reasoning.effort` directly. What this table records is what the *model*
-  accepts, not proof that a given `--effort` value arrives as that level. A
-  `medium` asked of `kimi-k3`, which lists no such level, still produced a
-  capped run that completed, so something reaches the model; what, exactly, is
+  accepts, not proof that a given `--effort` value arrives as that level.
+  Asking `kimi-k3` for `medium`, a level it does not list, produces a capped
+  run that completes, so something reaches the model; what, exactly, is
   unmeasured. Where the effort lever matters to an outcome, treat model choice
   as the reliable control and the effort level as a hint.
 
