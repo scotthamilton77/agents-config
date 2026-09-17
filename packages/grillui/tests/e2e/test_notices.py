@@ -197,9 +197,10 @@ def caught_up(session: Session, page: Page) -> None:
     """Wait until the page has read every entry the log holds.
 
     What is counted below is counted in two reads -- the bell, and the surfaces
-    the bell is a count of -- and a turn closes over several entries. A page
+    the bell is a count of -- and one turn lands as several entries. A page
     still taking them in answers the two reads from two different logs, so the
-    wait is on the page's own cursor rather than on the turn having landed.
+    wait is on the page's own cursor rather than on the log having stopped
+    growing.
     """
     landed = session.entries()[-1].seq
     page.wait_for_function("at => window.WIRE && WIRE.cursor >= at", arg=landed)
@@ -415,7 +416,9 @@ def test_a_notice_the_image_missed_is_drawn_without_waiting_for_another_entry(
     When nothing else happens in the session, so no later entry brings a board
          with it
     Then the notice is drawn on the decision it names, because the page reads the
-         board again rather than counting itself level with a log it is behind.
+         board again rather than counting itself level with a log it is behind --
+         and the entries it reads a second time to get there are judged once,
+         each message listed once in the panel and counted once on the bell.
     """
     session = launcher(handoff=handoff(PLAN))
     session.script_claude(
@@ -435,6 +438,8 @@ def test_a_notice_the_image_missed_is_drawn_without_waiting_for_another_entry(
     page.click('#col-d1 [data-act="pick"][data-opt="a"]')
     session.settled()
     page.wait_for_selector(f'#col-d2 .infonote:has-text("{NOTICED}")', timeout=BOARD_TIMEOUT)
+    caught_up(session, page)
+    before = accounted(page)
 
     page.route(
         STATE_READ,
@@ -443,3 +448,9 @@ def test_a_notice_the_image_missed_is_drawn_without_waiting_for_another_entry(
     )
     page.reload()
     page.wait_for_selector(f'#col-d2 .infonote:has-text("{NOTICED}")', timeout=BOARD_TIMEOUT)
+    caught_up(session, page)
+    # Reading an entry twice is what getting here costs, and it buys the board:
+    # the messages those entries carry are the same messages, said once each.
+    assert accounted(page) == before
+    listed = open_panel(page)
+    assert sum(STORY in one for one in listed) == 1, listed
