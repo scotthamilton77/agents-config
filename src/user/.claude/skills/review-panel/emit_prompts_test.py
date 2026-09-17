@@ -1548,10 +1548,11 @@ class TestDispositions:
         assert code == 2 and result["errors"][0]["code"] == "untransferable-blocking"
 
     @staticmethod
-    def _prose_located_round(tmp_path, repo, acs_file, entry):
-        """Round 1's mechanical finding sits in a Markdown file the lens itself named."""
+    def _prose_located_round(tmp_path, repo, acs_file, entry, where="evidence"):
+        """Round 1's mechanical finding sits in a Markdown file the lens itself named, in its
+        claim or in its evidence, with the other field left as the fixture wrote it."""
         verdict = verdict_round1(repo)
-        verdict["findings"][0]["evidence"] = (
+        verdict["findings"][0][where] = (
             "docs/routing.md:12 credits the gate with a refusal the gate does not make")
         head = repo.write_lines(4, "fix.txt")
         prior = write_json(tmp_path / "verdict-1.json", verdict)
@@ -1563,13 +1564,15 @@ class TestDispositions:
         flat = argv(repo, acs_file, out_dir, **{"--round": "2", "--head-sha": head})
         return flat + ["--prior-verdict", str(prior), "--disposition", str(ledger)], out_dir
 
+    @pytest.mark.parametrize("where", ["claim", "evidence"])
     def test_b6_a_fix_located_in_prose_by_the_lens_names_the_file_not_a_test(
-            self, repo, acs_file, tmp_path, capsys):
+            self, repo, acs_file, tmp_path, capsys, where):
         """A typed-code lens reading the surrounding repository can find a defect in a
         Markdown file; its fix is a prose edit, and the disposition names the file the
-        lens's own evidence located it in instead of a test."""
+        lens's own claim or evidence located it in instead of a test."""
         flat, out_dir = self._prose_located_round(tmp_path, repo, acs_file, {
-            "artifact": "docs/routing.md", "evidence": "the sentence is rewritten; doc-lint exit 0"})
+            "artifact": "docs/routing.md", "evidence": "the sentence is rewritten; doc-lint exit 0"},
+            where=where)
         code, result = run(flat, capsys)
         assert code == 0 and result["emitted"] is True
         ledger = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))["prior_dispositions"]
@@ -1588,6 +1591,7 @@ class TestDispositions:
         flat, _ = self._prose_located_round(tmp_path, repo, acs_file, entry)
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "unsupported-fix"
+        assert "'artifact'" in result["errors"][0]["message"]
 
     def test_b6_a_typed_code_fix_names_the_test_that_shows_it(self, repo, acs_file, tmp_path,
                                                               capsys):

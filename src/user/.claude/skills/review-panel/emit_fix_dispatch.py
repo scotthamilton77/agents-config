@@ -164,7 +164,7 @@ CLAUSES = (
         "test named in its evidence is refused exactly as a bare rebuttal is. Write the test "
         "first, watch it fail, then fix. A finding the lens located in a Markdown file is the "
         "one exception: its disposition names that file as `artifact`, spelled as the finding "
-        "spells it, and states the prose gate that passed.",
+        "spells it, with evidence saying what was done.",
     ),
     (
         "Replacement-first for prose",

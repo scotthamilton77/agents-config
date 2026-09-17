@@ -933,8 +933,8 @@ def build_ledger(
                     'fails-without/passes-with observation. The check is the word "test" in the '
                     "evidence, a deliberately mechanical proxy for that naming. A finding the "
                     "lens located in a Markdown file is the exception: name that file as "
-                    "'artifact', exactly as the finding's claim or evidence spells it, and state "
-                    "the prose gate that passed",
+                    "'artifact', exactly as the finding's claim or evidence spells it, with "
+                    "evidence saying what was done",
                 )
         record = {"round": key[0], "id": key[1], "lens": lens_of.get(key),
                   "disposition": disposition}
