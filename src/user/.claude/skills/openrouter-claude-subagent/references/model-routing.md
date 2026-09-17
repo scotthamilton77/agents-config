@@ -41,21 +41,31 @@ judged) is short. The round record states which one each lens has.
 | Seat | Model | Effort | Tools |
 |---|---|---|---|
 | OpenRouter frontier, delta read | `moonshotai/kimi-k3` | `high` | `Read` `Grep` `Glob` |
-| OpenRouter frontier, whole-artifact read | `moonshotai/kimi-k3` | `medium` — reaches the model as a thinking budget, since it lists no such level | none when the prompt carries the text inline; `Read` `Grep` `Glob` when the lens must resolve the target itself |
+| OpenRouter frontier, whole-artifact read | `moonshotai/kimi-k3` | `medium`, a level the model does not list; the launcher passes it and the read completes with the thinking bounded | none when the prompt carries the text inline; `Read` `Grep` `Glob` when the lens must resolve the target itself |
 | OpenRouter mid (the re-review tier of the frontier seats) | `google/gemini-3.8-flash` | `high` | `Read` `Grep` `Glob` |
 | Staffing recommender | `moonshotai/kimi-k2.6` | `medium` | none |
 | Trend checkpoint | Fable, in the launching harness | `high` | the harness's own |
 
 Why the rows are what they are, stated so the next refresh can attack them:
 
-- `kimi-k3` at `high` on a whole-artifact read ends the stream inside a
-  thinking block and delivers no message: the proxy sees a response that ends
-  on thinking with no text block to promote, after the upstream request has
-  timed out repeatedly. At `medium`, a level the model does not list, the CLI's
-  flag arrives as a thinking budget rather than a named effort, and the same
-  read completes with comparable output. `low` bounds the thinking harder and
-  is unmeasured for this seat. On a delta read `high` completes and reads per
-  criterion, which a cheaper Flash-class model in the seat does not.
+- `kimi-k3` at `high` on a whole-artifact read ends its response inside a
+  thinking block with no text block for the proxy to promote, the one shape
+  `references/proxy-contract.md` names as beyond repair, so the caller receives
+  an empty result. At `medium`, a level the model does not list, the launcher
+  passes the flag, the thinking stays bounded, and the same read completes with
+  comparable output; what the flag becomes on the wire is unmeasured, as the
+  effort-column note below states. `low` bounds the thinking harder and still
+  dies the same way on an inline read, so it is not a fallback below `medium`.
+  On a delta read `high` completes and reads per criterion, which a cheaper
+  Flash-class model in the seat does not.
+- A `kimi-k3` run's ceiling is silence, not total wall clock. A lens with
+  `Read` `Grep` `Glob` that keeps forwarding turns is reading, and its best
+  reports arrive after twenty-five or more turns; the thinking-block death
+  shows as no forwarded turn at all. Kill such a run only when the proxy's
+  ledger has recorded no forward for ten minutes, with an outer bound of
+  forty-five minutes. A read with the text inline and no tools is one turn, so
+  twenty minutes flat bounds it. A killed run fails over to the Codex frontier
+  seat; it is never retried at a higher effort.
 - A `Read` grant on a prompt that already carries the whole text invites the
   nested harness to explore the repository instead of answering in one turn:
   a dozen forwarded requests at frontier prices for a review that needed one.
@@ -67,10 +77,10 @@ Why the rows are what they are, stated so the next refresh can attack them:
   little or nothing of the target; the review panel's dispatch gate refuses a
   clean report with no recorded read, which is what makes the seat tolerable
   rather than proven.
-- `kimi-k2.6` recommends staffing: on a five-lens typed-code roster it keeps
-  every seat with a target-shaped reason each, where a Flash-class recommender
-  drops correctness on test-only deltas and security on small ones, and a
-  dropped security seat costs a whole sweep round later.
+- `kimi-k2.6` recommends staffing because it keeps every seat, with a
+  target-shaped reason for each, where a Flash-class recommender drops
+  correctness on a test-only delta and security on a small one, and a dropped
+  security seat costs a whole sweep round later.
 
 The Codex seats are rows in the `delegating-to-codex` skill. The checkpoint row
 lives here because this is the seat table; its dispatch never touches OpenRouter.

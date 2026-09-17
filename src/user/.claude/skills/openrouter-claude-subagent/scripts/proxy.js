@@ -1,12 +1,15 @@
 // OpenRouter SSE-repair proxy.
 //
-// Forwards Anthropic-protocol traffic to OpenRouter unmodified, with one
-// repair: an assistant response must not END on a `thinking` or
-// `redacted_thinking` block. When it does, Claude Code yields an empty
-// result with exit 0 and no stderr while still billing the tokens. The fix
-// moves the most recent text block to the end of the response.
+// Forwards Anthropic-protocol traffic to OpenRouter with two repairs and a
+// routing gate. The first repair: an assistant response must not END on a
+// `thinking` or `redacted_thinking` block. When it does, Claude Code yields
+// an empty result with exit 0 and no stderr while still billing the tokens.
+// The fix moves the most recent text block to the end of the response. The
+// second repair strips the deferred-tool declaration OpenRouter rejects for
+// non-Anthropic models. The gate pins the model and refuses the families
+// other transports serve; each is documented where it is defined below.
 //
-// The repair is deliberately narrow. The evidence supports only the
+// The first repair is deliberately narrow. The evidence supports only the
 // must-not-end-on-reasoning constraint, so blocks are otherwise left in
 // upstream order: the client replays that order back on the next turn, and
 // rewriting it would corrupt the conversation record the model reads.
@@ -224,8 +227,8 @@ function pinAdvice(requested, pinned) {
 function deniedAdvice(requested, pinned) {
   return (
     `${requested} is not reachable over this transport, by design and not by accident: Claude ` +
-    "models run natively in the harness that launched this run, and the large GPT tiers run " +
-    "through their own vendor transport. Nothing here can route to it. " +
+    "models run natively in the harness that launched this run, and every GPT model runs " +
+    "through Codex. Nothing here can route to it. " +
     (pinned ? `This run is pinned to ${pinned}. ` : "") +
     "Carry on in your own context, or delegate with the model field left out so the work runs " +
     "on the same model this run does."

@@ -13,9 +13,11 @@ status or the logs says so. This is why pointing `ANTHROPIC_BASE_URL` straight
 at `openrouter.ai` is not a shortcut but a silent, billable dead end.
 
 `scripts/proxy.js` moves the trailing text block to the end of the response so
-it never terminates on reasoning. The repair is deliberately narrow — block
-order is otherwise preserved, because the client replays that order back
-upstream on the next turn.
+it does not terminate on reasoning. A response with no text block at all is
+beyond repair: it ships as-is, the proxy logs a warning naming the block it
+ended on, and the caller still sees the empty result. The repair is
+deliberately narrow — block order is otherwise preserved, because the client
+replays that order back upstream on the next turn.
 
 ## The second repair, and its consequence for tool grants
 

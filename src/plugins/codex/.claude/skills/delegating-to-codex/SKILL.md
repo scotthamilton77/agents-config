@@ -27,10 +27,11 @@ this skill's.
 ## Which model
 
 A Codex run carries no explicit model by default, and the runtime keeps it that
-way unless the caller names one. Naming it is this skill's whole job.
+way unless the caller names one. Naming it, and for a review seat its effort, is
+this skill's whole job.
 
 Verified **2026-09-17** against OpenAI's model pages (`developers.openai.com/api/docs/models`
-and the Codex models page). OpenAI renames and retires tiers without much notice —
+and the Codex models page, `learn.chatgpt.com/docs/models`). OpenAI renames and retires tiers without much notice —
 re-verify there before routing anything cost-sensitive.
 
 | Task profile | Model |

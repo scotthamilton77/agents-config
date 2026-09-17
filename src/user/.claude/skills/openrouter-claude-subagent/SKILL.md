@@ -1,6 +1,6 @@
 ---
 name: openrouter-claude-subagent
-description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, DeepSeek), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex or Gemini CLI, and not for the Claude and GPT models this transport refuses. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with a Write grant scoped to that one path.
+description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, DeepSeek), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex or Gemini CLI, and not for the Claude and GPT models this transport refuses. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with an Edit grant scoped to that one path.
 admission:
   provides: A nested Claude Code harness whose model traffic is repointed at a non-Anthropic model, plus the stream repair that makes the reply actually arrive — so a task runs on another vendor's weights while keeping this harness's tool loop, permission system, and file editing.
   cost: A local proxy process for the life of each nested run, and an OpenRouter API key the user must supply and pay against. Node must be installed, and the model routing table needs a refresh whenever OpenRouter reprices or retires a model.
@@ -29,9 +29,10 @@ node "${CLAUDE_SKILL_DIR}/scripts/run.js" \
   -p "<the task prompt>"
 ```
 
-Never invoke `claude` directly against `openrouter.ai`. It returns an empty
-result with exit 0, no stderr, and the tokens billed — you pay for an answer
-that never arrives. `run.js` is the only supported entry point: it starts the
+Never invoke `claude` directly against `openrouter.ai`. Whenever the response
+ends on a reasoning block, which OpenRouter emits routinely, it returns an
+empty result with exit 0, no stderr, and the tokens billed — you pay for an
+answer that never arrives. `run.js` is the only supported entry point: it starts the
 repair proxy, owns every variable that decides where the traffic goes,
 forwards the rest of argv untouched, and propagates the child's exit code.
 
@@ -128,7 +129,9 @@ Not every model accepts every level. `references/model-routing.md` lists the
 levels each one takes — pick from that list, since two of the listed models
 accept no level at all, one of those cannot be capped even in principle, and
 others are missing the middle of the range. Trust the recorded value rather
-than re-verifying at dispatch.
+than re-verifying at dispatch. A review seat's row is the one exception: it
+may name a level its model does not list, the launcher passes it anyway, and
+the routing table's rationale states what that buys.
 
 ## Example
 
