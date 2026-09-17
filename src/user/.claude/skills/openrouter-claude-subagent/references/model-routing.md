@@ -41,7 +41,7 @@ judged) is short. The round record states which one each lens has.
 | Seat | Model | Effort | Tools |
 |---|---|---|---|
 | OpenRouter frontier, delta read | `moonshotai/kimi-k3` | `high` | `Read` `Grep` `Glob` |
-| OpenRouter frontier, whole-artifact read | `moonshotai/kimi-k3` | `low` | none when the prompt carries the text inline; `Read` `Grep` `Glob` when the lens must resolve the target itself |
+| OpenRouter frontier, whole-artifact read | `moonshotai/kimi-k3` | `medium` — reaches the model as a thinking budget, since it lists no such level | none when the prompt carries the text inline; `Read` `Grep` `Glob` when the lens must resolve the target itself |
 | OpenRouter mid (the re-review tier of the frontier seats) | `google/gemini-3.8-flash` | `high` | `Read` `Grep` `Glob` |
 | Staffing recommender | `moonshotai/kimi-k2.6` | reasoning on | none |
 
@@ -50,9 +50,12 @@ Why the rows are what they are, stated so the next refresh can attack them:
 - `kimi-k3` at `high` on a whole-artifact read ends the stream inside a
   thinking block having delivered no message — after an hour of upstream
   timeouts, with the proxy warning "response ends on thinking and contains no
-  text block to promote". At a capped budget the same read completes in
-  minutes with comparable output. On a delta read `high` completes and reads
-  per criterion, which a cheaper Flash-class model in the seat does not.
+  text block to promote". Asked for `medium` — a level it does not list, so
+  the CLI's flag arrives as a thinking budget rather than a named effort — the
+  same read completes in minutes with comparable output; `low` would bound the
+  thinking harder and has no completing run behind it. On a delta read `high`
+  completes and reads per criterion, which a cheaper Flash-class model in the
+  seat does not.
 - A `Read` grant on a prompt that already carries the whole text invites the
   nested harness to explore the repository instead of answering in one turn:
   a dozen forwarded requests at frontier prices for a review that needed one.
@@ -93,7 +96,7 @@ before dispatch:
   reads as `none`. `kimi-k2.6` reads as `none` too but differs where it
   matters — its reasoning is optional, so it can be switched off outright.
   A cappable model is not safe by that fact alone: `kimi-k3` at `high` dies the
-  same way on a whole-artifact read, and only its `low` row completes one.
+  same way on a whole-artifact read, and only a budget-capped row completes one.
 - **The mapping from the CLI to that parameter is unverified.** The Claude
   Code CLI's `--effort` flag travels through OpenRouter's Anthropic-compatible
   skin, which speaks the Messages API's thinking budget rather than
