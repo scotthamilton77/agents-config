@@ -1,7 +1,7 @@
 {
  "schema_version": "1",
  "spec_path": "2026-09-16-acceptance-criteria-lifecycle.md",
- "spec_revision": "sha256:1025473ef743cc9f9f1f82151f241058c8a1805d5ab099e2ecf95054dc6338ff",
+ "spec_revision": "sha256:09b53a9babab83a13d3bf41a27e2a0ed8cf2149c5c230a40b479b2ee51494656",
  "lenses": [
   {
    "lens": "criteria-holes",
@@ -18,657 +18,511 @@
  ],
  "proposals": [
   {
-   "hole": "A facade path other than `work claim` can move a leaf from open to in-progress without running the criteria gate, while ACL-A1 tests only the claim command.",
+   "hole": "A structural child can use `work deliver --pr` to ship implementation changes without criteria or attestation because ACL-A1 exempts every structural-child delivery.",
    "lens": "criteria-holes",
-   "proposed_ac": "Every facade operation that can transition a leaf into `in_progress` applies the same empty, rendering, and attestation checks as `work claim`; operations that cannot apply those checks cannot perform that transition.",
+   "proposed_ac": "A structural child may deliver without criteria only when the proposed change is confined to its spec and attack record; `work deliver --pr` otherwise refuses the structural child or applies the ordinary criteria and attestation gates.",
    "red_test_sketch": {
-    "expect": "The transition is refused with the same missing-attestation error as `work claim`, and the item remains open.",
-    "given": "An open non-trivial feat leaf with non-empty criteria and no current attestation",
-    "when": "The item is moved to `in_progress` through each facade operation capable of changing status, including an operation other than `work claim`"
+    "expect": "Delivery is refused naming that the structural-child exemption does not cover implementation changes.",
+    "given": "A claimed structural child with no criteria or attestation whose branch changes executable code rather than only its spec and attack record.",
+    "when": "`work deliver --pr` is invoked."
    },
    "target_ac": "ACL-A1",
    "id": "p1"
   },
   {
-   "hole": "The noun-based exemption lets PR-shipping work classified as `chore` bypass attack entirely; the document's own workcli continuations demonstrate such chores, despite the stated purpose covering work that ships a PR.",
+   "hole": "A correctly shaped marker typed by hand, or left behind after its record is deleted, satisfies the claim, emission, posting, and delivery checks even though no surviving attack proves the criteria were reviewed.",
    "lens": "criteria-holes",
-   "proposed_ac": "A leaf whose configured delivery is a PR requires a current criteria attestation before implementation or PR delivery regardless of whether its noun is `feat`, `bugfix`, or `chore`; a non-PR chore remains exempt.",
+   "proposed_ac": "A marker counts as an attestation only while the canonical attack record exists, closes over the current attackable document, and identifies the marker-producing attestation; claim, emission, posting, and delivery refuse an orphaned marker.",
    "red_test_sketch": {
-    "expect": "The operation is refused naming the attack step until the chore has a current attestation.",
-    "given": "A chore leaf assigned to a PR-backed delivery track with non-empty criteria and no attestation",
-    "when": "An agent claims it or attempts to record its PR delivery"
+    "expect": "The claim is refused naming the missing canonical attack record.",
+    "given": "An open feature has current criteria and a syntactically valid matching marker, but its canonical attack record is absent.",
+    "when": "The feature is claimed."
    },
    "target_ac": "ACL-A1",
    "id": "p2"
   },
   {
-   "hole": "An already-started item can amend its criteria, render the amended bytes, and emit a review round before re-attack because ACL-A4 checks freshness of the rendering but not freshness of the attestation.",
+   "hole": "Only claim checks that criteria render to something. A started non-feature leaf can be amended to an empty set, close and attest an empty attack record, and then pass `work deliver --pr`.",
    "lens": "criteria-holes",
-   "proposed_ac": "For a tracker-backed PR round, the panel refuses emission unless the item has an attestation matching its current attackable-document digest, even when the supplied criteria file is byte-equal to the current rendering.",
+   "proposed_ac": "`work deliver --pr` refuses every non-structural leaf whose current criteria render to nothing, regardless of whether a matching marker exists or the leaf was non-empty when claimed.",
    "red_test_sketch": {
-    "expect": "Round emission is refused as unattested; it succeeds only after a fresh attack closes and the current digest is attested.",
-    "given": "An in-progress feat whose criteria were attested and then amended, with a criteria file freshly rendered after the amendment",
-    "when": "The review panel emits the next round"
+    "expect": "Delivery is refused naming `work acceptance set`.",
+    "given": "An in-progress nontrivial chore was claimed with criteria, then amended to an empty field and given a marker matching the empty rendering.",
+    "when": "`work deliver --pr` is invoked."
    },
-   "target_ac": "ACL-A4",
+   "target_ac": "ACL-A2",
    "id": "p3"
   },
   {
-   "hole": "A subagent can be dispatched against amended, unattacked criteria because ACL-A8 constrains the brief's text but never requires the rendered criteria to have a current attestation.",
+   "hole": "The CI gate inventories only records that still exist. Staging deletion of the sole required record makes the tree a no-record tree and therefore green.",
    "lens": "criteria-holes",
-   "proposed_ac": "For PR-backed work, the briefing workflow refuses to produce or dispatch an implementation brief when the current attackable-document digest lacks an attestation, even if every current criterion is copied verbatim into the brief.",
+   "proposed_ac": "The CI gate derives the set of attack-required documents independently of the record-file inventory and reports each missing expected record; a tree with no records is green only when it contains no attack-required document.",
    "red_test_sketch": {
-    "expect": "Brief production or dispatch is refused until the amended criteria are re-attacked and attested.",
-    "given": "An in-progress PR-backed item whose previously attested criteria were amended",
-    "when": "The briefing skill is invoked to dispatch implementation work using the amended rendering"
+    "expect": "The gate is red and names the document whose attack record is missing.",
+    "given": "A tracked attacked spec remains in the tree while its previously tracked attack record is staged for deletion.",
+    "when": "The whole-repository attack-record gate runs."
    },
-   "target_ac": "ACL-A8",
+   "target_ac": "ACL-A3",
    "id": "p4"
   },
   {
-   "hole": "ACL-A6 reruns the new behavioural-outcome lens over records present during registration but does not require the checker to reject future records that omit that lens; a syntactically closed record can therefore pass without the required attack.",
+   "hole": "A tracker-born item can be attacked and attested from untracked files. Claim then succeeds, while CI ignores the files and the eventual branch need not contain the survival record.",
    "lens": "criteria-holes",
-   "proposed_ac": "The checker rejects every attack record that lacks a completed round from the registered behavioural-outcome lens, including records created after the lens was registered, and names the missing lens.",
+   "proposed_ac": "Before claim or PR delivery, a tracker-born item's canonical rendering and record must be tracked at their required paths and match the current attestation; untracked or differently located files do not satisfy the gate.",
    "red_test_sketch": {
-    "expect": "The checker exits nonzero and names the missing behavioural-outcome lens.",
-    "given": "A newly created, otherwise closed attack record whose rounds omit the behavioural-outcome lens",
-    "when": "The whole-repository attack-record gate runs"
+    "expect": "The claim is refused naming both untracked canonical attack files.",
+    "given": "A tracker-born feature has been rendered, attacked, and attested, but `.work/attacks/<item-id>.md` and its record remain untracked.",
+    "when": "The feature is claimed."
    },
-   "target_ac": "ACL-A6",
+   "target_ac": "ACL-A3",
    "id": "p5"
   },
   {
-   "hole": "The standard requires every edge-case-taxonomy row to be resolved or ruled out per criterion, but no acceptance criterion makes an attack find missing resolutions or prevents such a record from closing.",
+   "hole": "Rendered IDs need not be unique across cited entries, explicit IDs on text criteria, and positionally minted IDs. A collision can make downstream parsing ambiguous while every specified rendering rule is followed.",
    "lens": "criteria-holes",
-   "proposed_ac": "For every behavioural criterion, the attack produces a finding for each unresolved taxonomy row among inverse, empty or boundary, dependency failure, repeated or concurrent invocation, and idempotency; the record cannot close until every row is resolved or ruled out with a reason.",
+   "proposed_ac": "A rendering contains one unique ID per rendered criterion; any collision among cited, explicit, and positionally minted IDs is deterministically avoided or refused by the colliding ID before output is produced.",
    "red_test_sketch": {
-    "expect": "The attack reports the omitted taxonomy rows by criterion and the record remains open.",
-    "given": "A criterion set containing a well-formed behavioural criterion but no recorded dependency-failure or concurrency resolution",
-    "when": "The criteria attack runs and its record is checked"
+    "expect": "Rendering either assigns a distinct deterministic positional ID or refuses naming the colliding ID; it never emits duplicate IDs.",
+    "given": "An item's first unlabelled text criterion would mint an ID already used by another full-text criterion in the same field.",
+    "when": "`work acceptance render` is invoked."
    },
-   "target_ac": "ACL-A6",
+   "target_ac": "ACL-A5",
    "id": "p6"
   },
   {
-   "hole": "A criterion such as “the gate is green” names an allowed observer, is false before the work, is distinguishable afterward, and converts to a failing test, so it passes ACL-A6 despite reproducing the evidence-shaped criteria the document exists to exclude.",
+   "hole": "The standard says every taxonomy row is resolved or ruled out per criterion, but ACL-A6 requires findings only for outcome-shape defects. A happy-path criterion with no inverse, boundary, failure, repetition, concurrency, or idempotency analysis can pass the lens.",
    "lens": "criteria-holes",
-   "proposed_ac": "The behavioural-outcome lens reports a finding when the claimed outcome is only test success, gate success, artifact presence, byte equality, or another evidence state, unless the criterion also names the externally observable behaviour that evidence demonstrates.",
+   "proposed_ac": "The attack reports a finding for every behavioural criterion and every edge-case-taxonomy row that is neither covered by an observable criterion nor explicitly ruled out with a criterion-specific reason.",
    "red_test_sketch": {
-    "expect": "The attack reports that the criterion states evidence rather than behaviour.",
-    "given": "A set whose only criterion is `The CI gate observes a green result after the change`",
-    "when": "The behavioural-outcome lens attacks the set"
+    "expect": "The attack reports the unresolved taxonomy rows by criterion ID.",
+    "given": "A well-formed happy-path behavioural criterion with no recorded taxonomy resolutions or ruled-out reasons.",
+    "when": "The behavioural-outcome lens attacks the set."
    },
    "target_ac": "ACL-A6",
    "id": "p7"
   },
   {
-   "hole": "The four authoring skills can cite the standard exactly as ACL-A7 requires while continuing to emit criteria that violate it; only citation presence, not authoring behaviour, is tested.",
+   "hole": "A criterion can name an observer and a visible result without naming the triggering action, input, or starting state. A test writer must invent that scope, and an implementation that displays the result unconditionally can satisfy the words.",
    "lens": "criteria-holes",
-   "proposed_ac": "Criteria produced by each deployed authoring skill on every tool that deploys it pass the behavioural-outcome and taxonomy checks without findings for representative spec, ticket, grilling, and docs-attached-grilling inputs.",
+   "proposed_ac": "Each behavioural criterion identifies the triggering action or event and the material starting conditions needed to distinguish the intended outcome; the attack reports a finding when those conditions must be invented to construct its red test.",
    "red_test_sketch": {
-    "expect": "Each produced criterion set contains a behavioural outcome with an observer, excludes evidence-only criteria, and records every taxonomy resolution; the attack checker reports no related findings.",
-    "given": "Equivalent feature requests supplied separately to the grilling, docs-attached grilling, spec-synthesis, and ticket-authoring skills",
-    "when": "Each skill produces criteria and those criteria are passed through the registered criteria lenses"
+    "expect": "The attack reports that the trigger and relevant starting state are missing.",
+    "given": "The sole criterion is `A signed-in user sees a success message`, with no action or condition that should cause the message.",
+    "when": "The behavioural-outcome lens attacks the set."
    },
-   "target_ac": "ACL-A7",
+   "target_ac": "ACL-A6",
    "id": "p8"
   },
   {
-   "hole": "Tracker-born full-text lines need not use the bullet grammar or carry stable unique identifiers, so they can be preserved byte-for-byte while spec-lint and the verdict poster silently parse no criterion or a different set.",
+   "hole": "One criterion may bundle several independently implementable outcomes into one sentence and one broad test. Partial delivery then has no criterion-level state even though the observer and outcome checks pass.",
    "lens": "criteria-holes",
-   "proposed_ac": "Every non-citation criterion in a tracker-born or mixed field must round-trip through the single criteria grammar as exactly one uniquely identified criterion in field order; rendering refuses an unparseable line or duplicate identifier by name.",
+   "proposed_ac": "The attack reports a finding when one criterion combines independently satisfiable observable outcomes that can pass or fail separately; each such outcome must be split or justified as one indivisible observation.",
    "red_test_sketch": {
-    "expect": "Rendering refuses the unidentified line, rather than emitting bytes that the downstream criteria parsers ignore.",
-    "given": "A tracker-born item whose acceptance field contains the behavioural sentence `A user sees the saved result` without a criterion identifier",
-    "when": "`work acceptance render` is invoked"
+    "expect": "The attack reports that the independently satisfiable email, UI, and audit outcomes require separate criteria.",
+    "given": "One criterion says that after approval a requester sees confirmation, receives email, and an administrator sees an audit entry.",
+    "when": "The behavioural-outcome lens attacks the set."
    },
-   "target_ac": "ACL-A5",
+   "target_ac": "ACL-A6",
    "id": "p9"
   },
   {
-   "hole": "Because the description is emitted verbatim before the criteria with no tested structural boundary, criterion-shaped Markdown in the description can be parsed as an additional criterion even though byte-equality checks all pass.",
+   "hole": "An artifact criterion passes ACL-A6 merely by naming exactly one behavioural criterion, even when the artifact has no evidentiary or contractual relationship to that behaviour.",
    "lens": "criteria-holes",
-   "proposed_ac": "Parsing a rendered item yields criteria only from the acceptance field; criterion-shaped bullets in the description remain description, and spec-lint, the panel, and the verdict poster recover the same ordered criterion set.",
+   "proposed_ac": "An artifact criterion is admitted only when it states how its property evidences or constrains the served behavioural outcome; the attack reports a resolved but unrelated or unexplained service reference.",
    "red_test_sketch": {
-    "expect": "Every downstream parser returns only `REAL-1` as a criterion and preserves `FAKE-1` solely as description text.",
-    "given": "An item whose description contains `- **FAKE-1** descriptive example` and whose acceptance field contains `- **REAL-1** A user sees the result`",
-    "when": "The item is rendered and the output is parsed by spec-lint, the panel, and the verdict poster"
+    "expect": "The attack reports that the artifact criterion does not serve the referenced login outcome.",
+    "given": "A behavioural criterion covers a user's successful login, while an artifact criterion says an unrelated README contains a color name and declares that it serves the login criterion.",
+    "when": "The behavioural-outcome lens attacks the set."
    },
-   "target_ac": "ACL-A9",
+   "target_ac": "ACL-A6",
    "id": "p10"
   },
   {
-   "hole": "The criterion-ID pattern used to recognize citation-only lines is not defined or tied to the existing parser grammar, so an implementation can recognize only the IDs used in its fixtures and treat other valid IDs as text.",
+   "hole": "Every mandatory standard violation can be dispositioned as rejected without changing the document. The record then closes and the invalid criteria become attestable.",
    "lens": "criteria-holes",
-   "proposed_ac": "A whole-line identifier is recognized as a citation if and only if it is an identifier accepted for an Acceptance Criteria entry by the shared criteria parser; render and spec-lint use the same identifier grammar.",
+   "proposed_ac": "A closing revision must satisfy the mechanically decidable criteria-standard invariants; merely rejecting or accepting a finding without resolving the invariant does not let the checker close the record.",
    "red_test_sketch": {
-    "expect": "Every valid identifier resolves to its spec entry, while each invalid near-match remains literal text.",
-    "given": "A named spec containing criterion IDs at every accepted grammar boundary and an item whose acceptance field contains those IDs plus invalid near-matches",
-    "when": "`work acceptance render` processes the item"
+    "expect": "The checker remains red and the record cannot attest because the closing revision still has no behavioural criterion.",
+    "given": "An artifact-only criterion set received the required no-behaviour finding, and that finding was marked rejected without changing the document.",
+    "when": "The attack checker and attestation step run."
    },
-   "target_ac": "ACL-A5",
+   "target_ac": "ACL-A6",
    "id": "p11"
   },
   {
-   "hole": "A preserved continuation line can itself look like a `- **ID**` bullet, allowing downstream parsers to split one cited criterion into two while the renderer still satisfies the literal preservation requirement.",
+   "hole": "A whole spec can contain a valid behavioural criterion while a minted child cites only an artifact criterion. The spec-level attack closes, but the child's own criterion set has no behavioural termination condition.",
    "lens": "criteria-holes",
-   "proposed_ac": "A cited criterion with continuation lines round-trips through spec-lint and the verdict poster as exactly one criterion with its complete text, even when a continuation line is criterion-shaped.",
+   "proposed_ac": "Each child assignment produced by `work deliver --spec` renders to a criterion set containing at least one behavioural criterion, and every assigned artifact criterion's served criterion resolves within that same child set.",
    "red_test_sketch": {
-    "expect": "Both parsers return one criterion, `AC-1`, whose text includes the criterion-shaped continuation; neither reports a second `PHANTOM-2` criterion.",
-    "given": "A spec entry `AC-1` whose continuation text contains a line beginning `- **PHANTOM-2**`",
-    "when": "An item citing `AC-1` is rendered and the output is parsed by both downstream parsers"
+    "expect": "Child minting is refused naming the artifact-only assignment and its missing served behavioural criterion.",
+    "given": "An attacked spec contains behavioural criterion B1 and artifact criterion P1 serving B1, while its manifest assigns only P1 to one child.",
+    "when": "`work deliver --spec` mints the children."
    },
-   "target_ac": "ACL-A5",
+   "target_ac": "ACL-A12",
    "id": "p12"
   },
   {
-   "hole": "The whole-repo CI gate discovery does not specify excluding sibling worktrees (such as .claude/worktrees/), .git/, or gitignored paths, allowing in-progress or scratch attack records in other worktrees to fail CI in the active tree.",
-   "lens": "edge-cases",
-   "proposed_ac": "The whole-repo CI gate discovers attack records in the active working tree while excluding sibling worktrees, .git/, and gitignored directories; an unclosed record in a sibling worktree or untracked scratch directory does not cause the gate to fail.",
+   "hole": "ACL-A7 audits a fixed list of seven skills. A later deployed skill can write or amend criteria without citing the standard and all stated counts still pass.",
+   "lens": "criteria-holes",
+   "proposed_ac": "The adoption check derives the current inventory of deployed criteria-writing, amending, briefing, attacking, and judging consumers and fails for every inventoried consumer that lacks a resolvable citation at its criteria-handling point.",
    "red_test_sketch": {
-    "expect": "The gate exits 0 and reports green.",
-    "given": "A repository with all active records closed and valid, and an unclosed attack record placed inside .claude/worktrees/other-feature/.work/attacks/item-ac-attack.json.",
-    "when": "The attack record CI gate make target is executed in the active worktree."
+    "expect": "The adoption check fails and names the uncited eighth consumer.",
+    "given": "A new admitted deployed skill writes acceptance criteria but contains neither a private definition nor a citation to `acceptance-criteria`; the original seven skills remain correct.",
+    "when": "The standard-adoption check runs."
    },
-   "target_ac": "ACL-A3",
+   "target_ac": "ACL-A7",
    "id": "p13"
   },
   {
-   "hole": "ACL-A11 specifies closing revision behavior for records whose proposals were all rejected, but does not explicitly state the closing revision rule when an attack round yields zero proposals (proposals: [], report: 'empty').",
-   "lens": "edge-cases",
-   "proposed_ac": "An attack record with zero proposals (proposals: [], report: 'empty') closes at its attacked revision, and work acceptance attacked accepts it and writes the attestation marker when that attacked revision matches the document's current digest.",
+   "hole": "The briefing requirement is exercised only with several criteria and several tests. An implementation can special-case plural input while dropping or misplacing the sole criterion or evidence item in a singleton dispatch.",
+   "lens": "criteria-holes",
+   "proposed_ac": "A dispatch containing exactly one assigned criterion and one evidence item preserves that criterion verbatim, maps the evidence to it, and introduces no additional criterion.",
    "red_test_sketch": {
-    "expect": "The command exits 0 and writes the attestation marker note carrying the document's current digest.",
-    "given": "An attackable document whose current digest matches the attacked revision of a closed attack record with report 'empty' and an empty proposals list.",
-    "when": "work acceptance attacked ID --record PATH is executed against the item."
+    "expect": "The brief contains the one criterion verbatim and maps the one test to it under evidence.",
+    "given": "A dispatch is assigned exactly one rendered criterion and exactly one supporting test.",
+    "when": "The briefing skill produces the subagent brief."
    },
-   "target_ac": "ACL-A11",
+   "target_ac": "ACL-A8",
    "id": "p14"
   },
   {
-   "hole": "ACL-A5 does not specify that relative paths in an item's --spec attribute must resolve relative to the repository root, permitting work acceptance render to fail with a missing spec error when invoked from a nested subdirectory.",
-   "lens": "edge-cases",
-   "proposed_ac": "work acceptance render resolves relative spec paths against the repository root, producing byte-equal output regardless of the working directory from which the command is executed.",
+   "hole": "The briefing skill only states that amended criteria must be re-attacked; no behavioural criterion makes it refuse or pause when handed a stale attestation. It can brief implementation against amended, unattacked criteria while satisfying the required prose.",
+   "lens": "criteria-holes",
+   "proposed_ac": "When a dispatch names a tracker item whose current criteria are not covered by a current attestation, the briefing workflow refuses to issue the brief and directs the agent through re-attack before including those criteria.",
    "red_test_sketch": {
-    "expect": "The command exits 0 and outputs rendered criteria byte-equal to the output produced when run from the repository root.",
-    "given": "A tracker item configured with --spec docs/specs/example.md citing valid criteria IDs.",
-    "when": "work acceptance render ID is executed from a nested subdirectory within the repository."
+    "expect": "No implementation brief is produced, and the response names the required re-attack.",
+    "given": "An in-progress tracker-born item was attested and then had its criteria amended without a new attack.",
+    "when": "The briefing skill is asked to dispatch work using the amended criteria."
    },
-   "target_ac": "ACL-A5",
+   "target_ac": "ACL-A8",
    "id": "p15"
   },
   {
-   "hole": "No criterion requires the edge-case taxonomy to be walked for every criterion, so a set can pass while inverse, boundary, dependency-failure, concurrency, and idempotency rows are absent or ruled out without reasons.",
-   "lens": "absent-requirements",
-   "proposed_ac": "Every criterion has an explicit resolution for each edge-case taxonomy row; a missing resolution or a ruled-out row without a reason produces a finding that prevents the attack record from closing.",
+   "hole": "The stale-version checks omit the two verbs that enforce the lifecycle. An old facade can execute `work claim` or `work deliver --pr` without the new gates, even though the attack, panel, and poster paths perform version checks.",
+   "lens": "criteria-holes",
+   "proposed_ac": "Every deployed workflow that invokes claim or PR delivery checks for the facade version shipping the corresponding criteria gate before state changes; an older facade is refused by required version rather than allowed to use its legacy behaviour.",
    "red_test_sketch": {
-    "expect": "The attack reports each missing or reasonless taxonomy row and the record remains open.",
-    "given": "A criterion set whose behavioural and artifact criteria satisfy ACL-A6 but whose taxonomy resolutions are incomplete.",
-    "when": "The set is attacked and its record is checked for closure."
+    "expect": "The workflow refuses before changing item state and names the facade version that ships the claim gate.",
+    "given": "The configured `work` binary predates the claim gate, and an unattested feature otherwise satisfies the legacy claim rules.",
+    "when": "The deployed claiming workflow is invoked."
    },
-   "target_ac": "ACL-A6",
+   "target_ac": "ACL-A10",
    "id": "p16"
   },
   {
-   "hole": "The slice promises that the behavioural-outcome lens is first-ranked, but no criterion would fail if another lens ran before it.",
-   "lens": "absent-requirements",
-   "proposed_ac": "The behavioural-outcome lens is dispatched before every other registered attack lens.",
+   "hole": "The attest verb checks record shape and revision but not whether the checker would accept the record. A syntactically closed record with no execution of a required lens can write a marker when the verb is called directly.",
+   "lens": "criteria-holes",
+   "proposed_ac": "`work acceptance attacked` writes a marker only when the applicable attack checker accepts the supplied record, including its required-lens roster, document binding, closure, and revision checks.",
    "red_test_sketch": {
-    "expect": "The dispatch trace names the behavioural-outcome lens first.",
-    "given": "An attack configuration containing the behavioural-outcome lens and at least two other lenses.",
-    "when": "A criteria attack round is started."
+    "expect": "Attestation is refused with no marker, naming the missing required lens.",
+    "given": "A matching parseable record has no proposals and appears closed at the current revision, but it contains no run of the required behavioural-outcome lens.",
+    "when": "`work acceptance attacked ID --record PATH` is invoked directly."
    },
-   "target_ac": "ACL-A6",
+   "target_ac": "ACL-A11",
    "id": "p17"
   },
   {
-   "hole": "No criterion directly requires the checker to reject a record that omits the behavioural-outcome lens; the criteria only require existing records to be rerun during registration.",
-   "lens": "absent-requirements",
-   "proposed_ac": "The checker refuses a record for the current document revision when that record contains otherwise closed attack results but no completed behavioural-outcome lens result, naming the missing lens.",
+   "hole": "The cross-tool handoff is tested only as repository prose. A non-Claude session can fail to hand off the attack and still satisfy the artifact check that the rule is written down.",
+   "lens": "criteria-holes",
+   "proposed_ac": "On a tool that cannot run the attack, following the tracker-item attack path produces a verifiable handoff to a Claude Code session and does not attest or claim the item until that session returns a checker-clean record.",
    "red_test_sketch": {
-    "expect": "The checker exits nonzero and names the behavioural-outcome lens; adding its completed result makes the same record eligible to close.",
-    "given": "A record closed under every previously registered lens but lacking the behavioural-outcome lens.",
-    "when": "The attack checker runs."
+    "expect": "The session creates the handoff, leaves the item unattested while it is pending, and proceeds only after receiving a checker-clean result.",
+    "given": "A tracker-born feature with unattacked criteria is being handled in a supported non-Claude tool.",
+    "when": "The agent follows the deployed tracker-item attack path."
    },
-   "target_ac": "ACL-A6",
+   "target_ac": "ACL-A13",
    "id": "p18"
   },
   {
-   "hole": "The dependency-failure promise for the behavioural-outcome lens is uncovered: no criterion says a transport failure must leave the round open.",
-   "lens": "absent-requirements",
-   "proposed_ac": "When the behavioural-outcome lens cannot return a result, the attack round remains open and no successful result for that lens is recorded.",
+   "hole": "The CI gate criteria (ACL-A3) verify moved specs, unclosed rounds, and unparseable records, but do not specify the outcome when a tracked attack record references a target document that has been deleted or is missing from disk.",
+   "lens": "edge-cases",
+   "proposed_ac": "An attack record whose referenced target document is missing from disk causes the attack-record CI gate to fail red and name both the record path and the missing document path.",
    "red_test_sketch": {
-    "expect": "The round is open and the failure names the unavailable lens transport.",
-    "given": "A criteria attack whose behavioural-outcome lens transport fails.",
-    "when": "The attack runner attempts to complete and check the round."
+    "expect": "The gate exits non-zero, reporting a failure that names .work/attacks/orphan-ac-attack.json and the missing document path.",
+    "given": "A tracked attack record .work/attacks/orphan-ac-attack.json whose referenced document .work/attacks/orphan.md is missing from the working tree.",
+    "when": "The attack-record CI gate make target runs."
    },
-   "target_ac": "ACL-A6",
+   "target_ac": "ACL-A3",
    "id": "p19"
   },
   {
-   "hole": "The taxonomy promises that rerunning the behavioural-outcome lens on the same malformed revision reproduces the finding, but no criterion covers that repeatability.",
-   "lens": "absent-requirements",
-   "proposed_ac": "Two behavioural-outcome attacks over the same revision both identify every ACL-A6 violation present in that revision.",
+   "hole": "ACL-A11 specifies refusals when attesting an item for missing/unparseable records, document mismatches, and revision discrepancies, but does not define the failure outcome when a spec-born item's cited spec file is missing or unreadable on disk during attestation.",
+   "lens": "edge-cases",
+   "proposed_ac": "An agent attempting to attest a spec-born item whose named spec file is missing or unreadable on disk is refused with no marker written, naming the missing or unreadable spec path.",
    "red_test_sketch": {
-    "expect": "Both rounds contain findings for the same missing observer, with neither round silently passing.",
-    "given": "An unchanged criterion whose outcome names no observer.",
-    "when": "Two independent behavioural-outcome rounds attack its revision."
+    "expect": "The command exits non-zero, writes no marker to the tracker item, and outputs an error naming docs/specs/missing.md.",
+    "given": "A spec-born tracker item naming spec docs/specs/missing.md which does not exist on disk, and a closed attack record file.",
+    "when": "work acceptance attacked <item-id> --record docs/specs/missing-ac-attack.json is run."
    },
-   "target_ac": "ACL-A6",
+   "target_ac": "ACL-A11",
    "id": "p20"
   },
   {
-   "hole": "ACL-D2 relies on work deliver copying criterion citations from a spec, but ACL-A12 only describes children that already cite an ID and can pass vacuously if delivery emits copied text or no citation.",
-   "lens": "absent-requirements",
-   "proposed_ac": "For each criterion ID assigned to a continuation, work deliver --spec writes that ID as a citation in the minted child's acceptance field and does not copy the criterion text.",
+   "hole": "ACL-A5 specifies refusals for duplicate spec citations or duplicate spec definitions, but omits the case where duplicate IDs arise from explicit IDs on text lines or a collision between an explicit text ID and a cited spec ID in a mixed-field item.",
+   "lens": "edge-cases",
+   "proposed_ac": "An item whose criteria render to duplicate criterion IDs—whether from duplicate explicit IDs on text lines or a collision between an explicit text ID and a cited spec ID—refuses rendering and names the duplicated ID.",
    "red_test_sketch": {
-    "expect": "The child's raw acceptance field contains the assigned ID citation, contains no expanded criterion text, and its rendering resolves to the spec text.",
-    "given": "A parseable spec whose continuation assigns a criterion ID with nonempty text to a child.",
-    "when": "work deliver --spec mints the child."
+    "expect": "The command exits non-zero and outputs an error naming the duplicate criterion ID SPEC-A1.",
+    "given": "A tracker item with acceptance text containing citation SPEC-A1 and a text line explicitly formatted as - **SPEC-A1** inline criterion.",
+    "when": "work acceptance render <item-id> is run."
    },
-   "target_ac": "ACL-A12",
+   "target_ac": "ACL-A5",
    "id": "p21"
   },
   {
-   "hole": "The design requires both tracker-born attack files to be committed before claim, but ACL-A13 only requires the files to exist.",
+   "hole": "The criteria require the taxonomy to exist and be cited, but nothing requires each criterion to resolve or rule out every taxonomy row with a reason.",
    "lens": "absent-requirements",
-   "proposed_ac": "Following the tracker-item attack path commits the current rendering and its closed record on the implementation branch before the first claim attempt.",
+   "proposed_ac": "For every criterion handed to the attack, each edge-case taxonomy row is either resolved to an observable expected outcome or explicitly ruled out with a reason; the attack reports every missing resolution, and reports none when all rows are resolved.",
    "red_test_sketch": {
-    "expect": "Both prescribed paths exist in HEAD before claim and neither remains untracked or modified.",
-    "given": "A clean implementation branch and an open tracker-born item.",
-    "when": "An agent completes the deployed tracker-item attack path up to its claim step."
+    "expect": "The attack produces a finding naming the criterion and its unresolved dependency-failure row; after that row is resolved or ruled out with a reason, the finding disappears.",
+    "given": "A criterion set whose behavioural criteria address inverse, empty, repeated, and idempotent cases but say nothing about dependency failure.",
+    "when": "The criterion set is attacked."
    },
-   "target_ac": "ACL-A13",
+   "target_ac": "ACL-A6",
    "id": "p22"
   },
   {
-   "hole": "The attack workflow promises to invoke attestation only after the checker exits zero, but no criterion tests this sequencing.",
+   "hole": "ACL-A6 tests findings produced by the behavioural-outcome lens, but it does not require the checker to reject records that omit that lens or require the lens to remain first-ranked.",
    "lens": "absent-requirements",
-   "proposed_ac": "The tracker-item attack path does not invoke work acceptance attacked or write a marker unless the checker has exited zero for the record being attested.",
+   "proposed_ac": "The behavioural-outcome lens is first in the attack's ranked lens registry, and the checker refuses a record for the current document revision when that lens has no completed result for that revision, even if every other registered lens completed.",
    "red_test_sketch": {
-    "expect": "No attestation invocation or marker occurs until the checker returns zero.",
-    "given": "A record that passes the attest verb's local validations but that the checker rejects, such as one missing a required lens result.",
-    "when": "An agent follows the deployed tracker-item attack path."
+    "expect": "The checker refuses the record by naming the missing behavioural-outcome lens, and the attack's observable invocation order places that lens before every lower-ranked lens.",
+    "given": "A closed-looking record for the current revision containing completed results for every registered lens except the behavioural-outcome lens.",
+    "when": "The checker validates the record and the attack is run with invocation tracing enabled."
    },
-   "target_ac": "ACL-A13",
+   "target_ac": "ACL-A6",
    "id": "p23"
   },
   {
-   "hole": "No criterion requires a successful attestation to use the exact marker format and a parseable ISO-8601 timestamp.",
+   "hole": "ACL-A1 can be satisfied by guarding only work claim even though ACL-D4 promises the gate on every operation that transitions an item from open to in_progress.",
    "lens": "absent-requirements",
-   "proposed_ac": "A successful work acceptance attacked invocation writes one marker matching `[work] acceptance attacked <ISO-8601> <document-digest>`, with a parseable timestamp and the digest of the current attackable document.",
+   "proposed_ac": "Every facade operation that transitions an open leaf to in_progress applies the same empty, rendering, and attestation checks before changing state, regardless of the operation's command name.",
    "red_test_sketch": {
-    "expect": "Exactly one newly written note matches the marker grammar, its timestamp parses as ISO-8601, and its digest equals the independently computed document digest.",
-    "given": "An item and a closed matching attack record with no current marker.",
-    "when": "work acceptance attacked is invoked."
+    "expect": "The alternate transition is refused for the same missing-attestation reason as work claim, and the item remains open.",
+    "given": "An open, non-trivial feat leaf with non-empty criteria and no valid attestation, plus a facade operation other than work claim that can transition it to in_progress.",
+    "when": "That alternate transition operation is invoked."
    },
-   "target_ac": "ACL-A11",
+   "target_ac": "ACL-A1",
    "id": "p24"
   },
   {
-   "hole": "The central promise that amended criteria are not used before re-attack is not enforced by any criterion at review-round emission; ACL-A4 only checks that the supplied file matches the amended rendering.",
+   "hole": "The claim criteria gate is covered, but no criterion requires work deliver --pr to reject empty or unrenderable criteria. This leaves already-started and trivial leaves able to bypass the promise that triviality exempts attestation but not criteria.",
    "lens": "absent-requirements",
-   "proposed_ac": "After a criteria-indicting halt and amendment, the review-panel workflow refuses to emit the next round while the amended attackable document lacks a closed matching attack and attestation, then proceeds after re-attack and attestation.",
+   "proposed_ac": "work deliver --pr refuses every leaf whose criteria render to nothing or whose rendering fails, including an already-in-progress leaf and a --trivial leaf; --trivial exempts only the attestation requirement.",
    "red_test_sketch": {
-    "expect": "The first emission is refused naming the required re-attack; the second proceeds using the same freshly rendered criteria.",
-    "given": "An in-progress item whose criteria were amended after a halt, with a fresh byte-equal criteria file but only the pre-amendment record and marker.",
-    "when": "The next review round is requested before and then after a fresh attack closes and attests."
+    "expect": "Delivery is refused naming work acceptance set for the empty case and the rendering cause for the unresolved citation case; no PR delivery is recorded.",
+    "given": "Two in-progress trivial leaves, one with whitespace-only criteria and one with a citation to an undefined spec criterion.",
+    "when": "work deliver --pr is invoked for each leaf."
    },
-   "target_ac": "ACL-A13",
+   "target_ac": "ACL-A2",
    "id": "p25"
   },
   {
-   "hole": "The document says a tracker-born description edit makes the CI gate red and requires re-attack, but ACL-A3 only exercises criteria amendments while ACL-A1 only covers claim-time attestation.",
+   "hole": "ACL-A7 is conditional on tools that already deploy a skill, so it does not enforce the promised deployment topology: the four writing skills and briefing skill on every supported tool, with the attack and review-panel skills remaining Claude-only.",
    "lens": "absent-requirements",
-   "proposed_ac": "Editing the description of a started tracker-born item makes the unchanged attack record fail the whole-repo gate, and a fresh round over the new rendering restores green.",
+   "proposed_ac": "Every supported tool's staged configuration contains the four criteria-writing skills and the briefing skill with their standard citations; only the Claude configuration contains the attack and review-panel skills.",
    "red_test_sketch": {
-    "expect": "The gate first fails naming the stale record and later passes after the record is replaced by a closed round for the new rendering.",
-    "given": "A started tracker-born item with a closed record and valid attestation.",
-    "when": "Its description is edited, the gate is run, and then the rendering is re-attacked."
+    "expect": "The deployment check fails by naming each missing shared deployment and each attack or review-panel deployment found outside Claude; it passes only for the promised topology.",
+    "given": "A staged configuration where one non-Claude tool lacks the ticketing skill and another non-Claude tool contains the attack skill.",
+    "when": "The supported-tool deployment inventory is checked."
    },
-   "target_ac": "ACL-A3",
+   "target_ac": "ACL-A7",
    "id": "p26"
   },
   {
-   "hole": "The taxonomy promises that an amendment which changes nothing writes nothing and leaves the gate green, but no criterion covers this no-op behavior.",
+   "hole": "ACL-A3 requires discovery of all tracked records and exclusion of ignored records, but it does not state that an untracked, non-ignored record must also be excluded. A filesystem scan could therefore make local scratch state fail CI.",
    "lens": "absent-requirements",
-   "proposed_ac": "Setting acceptance text to its existing value writes no acceptance change, leaves the attackable document and attestation unchanged, and leaves the whole-repo gate green.",
+   "proposed_ac": "The attack-record CI gate derives its record set exclusively from files tracked by the current worktree's repository and ignores an untracked record even when its path matches a recognized record location and is not gitignored.",
    "red_test_sketch": {
-    "expect": "No acceptance mutation is recorded, the rendering digest and marker are unchanged, and the gate remains green.",
-    "given": "A started tracker-born item with a closed record and current attestation.",
-    "when": "work acceptance set --why is invoked with text identical to the existing acceptance field."
+    "expect": "The gate's result and diagnostics are byte-equal to the baseline run and do not name the untracked record.",
+    "given": "A worktree whose tracked records all close, plus an invalid untracked and non-ignored file at .work/attacks/scratch-ac-attack.json.",
+    "when": "The whole-repository attack-record gate runs."
    },
    "target_ac": "ACL-A3",
    "id": "p27"
   },
   {
-   "hole": "The taxonomy promises that two amendments before re-attack require only one round over the latest revision, but no criterion covers that lifecycle.",
+   "hole": "ACL-A9 excludes title and notes from rendering, but it does not cover ACL-D2's broader promise that rendering depends only on description, criteria, and the referenced spec content. Other item metadata could leak into the output.",
    "lens": "absent-requirements",
-   "proposed_ac": "When an attackable document is amended more than once before re-attack, one closed round over the latest revision restores the gate without requiring a round over an intermediate revision.",
+   "proposed_ac": "For fixed description, acceptance field, named spec, and referenced spec bytes, changing any other item metadata, including noun, status, priority, labels, assignee, or event history, leaves work acceptance render output byte-equal.",
    "red_test_sketch": {
-    "expect": "The old record fails before re-attack, and one round over the final revision makes the gate green without any record for the intermediate revision.",
-    "given": "A started item with a closed record that receives two successive content-changing amendments.",
-    "when": "The gate is run and then one attack round is completed over the latest document."
+    "expect": "Every rendering is byte-equal to the baseline rendering.",
+    "given": "Item snapshots with identical description, acceptance field, named spec, and spec bytes, differing one at a time only in noun, status, priority, labels, assignee, or event history.",
+    "when": "work acceptance render is invoked for each snapshot."
    },
-   "target_ac": "ACL-A3",
+   "target_ac": "ACL-A9",
    "id": "p28"
   },
   {
-   "hole": "The design says a fresh amendment record replaces the old record at the same path while Git retains the prior round, but no criterion covers this storage lifecycle.",
+   "hole": "ACL-D2 promises that a full-text tracker criterion already written in the shared bullet grammar keeps its explicit ID, but ACL-A5 only specifies ID minting for text without an ID.",
    "lens": "absent-requirements",
-   "proposed_ac": "A re-attack after amendment replaces the existing record at its canonical path, commits that replacement, and leaves the preceding record recoverable from branch history without creating a parallel current record.",
+   "proposed_ac": "A tracker acceptance line already matching the shared - **ID** text grammar renders with that exact ID and criterion text, rather than receiving a positional ID, and its parsed ID and text survive a render-and-parse round trip unchanged.",
    "red_test_sketch": {
-    "expect": "HEAD contains one current record at the canonical path, and the parent commit contains the preceding record at that same path.",
-    "given": "A committed closed record followed by an amendment and a fresh closed round.",
-    "when": "The re-attack workflow is completed and committed."
+    "expect": "The rendered acceptance section contains - **CUSTOM-7** followed by the original text, and both spec-lint's parser and the verdict parser recover CUSTOM-7 with that text.",
+    "given": "A tracker-born item with no spec whose acceptance field contains - **CUSTOM-7** A downstream reader sees the new state.",
+    "when": "The item is rendered and the rendered acceptance section is parsed by both consumers."
    },
-   "target_ac": "ACL-A13",
+   "target_ac": "ACL-A5",
    "id": "p29"
-  },
-  {
-   "hole": "The claim-time placement is a scope promise, but no criterion ensures creation remains permissive for items with empty, rough, or unattacked criteria.",
-   "lens": "absent-requirements",
-   "proposed_ac": "Creating an item remains allowed when its criteria are empty, rough, or unattacked; enforcement occurs only when an eligible leaf transitions from open to in_progress.",
-   "red_test_sketch": {
-    "expect": "Creation succeeds without an attack marker, while the later claim is refused for the applicable empty or unattacked condition.",
-    "given": "Inputs for new claimable leaves with empty criteria and with nonempty unattacked criteria.",
-    "when": "Each item is created and then claimed."
-   },
-   "target_ac": "none",
-   "id": "p30"
-  },
-  {
-   "hole": "ACL-D7 specifically promises that work discover gains no criteria requirement, but no criterion ensures discovery still succeeds before criteria are added.",
-   "lens": "absent-requirements",
-   "proposed_ac": "work discover creates a discovered item without requiring criteria or an attack, and that item becomes claimable only after acceptance is set and any noun-required attack is completed.",
-   "red_test_sketch": {
-    "expect": "Discovery succeeds unchanged; the premature claim is refused; the claim succeeds after the required acceptance lifecycle.",
-    "given": "A discovery input with no acceptance criteria.",
-    "when": "work discover is invoked and the resulting item is claimed before and after its criteria lifecycle is completed."
-   },
-   "target_ac": "none",
-   "id": "p31"
-  },
-  {
-   "hole": "The document promises no retroactive backfill of existing open items, but no criterion would fail if adoption automatically created records or markers for them.",
-   "lens": "absent-requirements",
-   "proposed_ac": "Adopting the new facade and running its gates does not mutate existing open items or synthesize attack files, records, or markers for them; their first later claim is the operation that requires remediation.",
-   "red_test_sketch": {
-    "expect": "The legacy items and repository remain unchanged until claim, and claim then refuses each item according to its current criteria and attestation state.",
-    "given": "A fake backend containing legacy open items with acceptance text but no attack files or markers.",
-    "when": "The new facade is initialized and the repository gates run without claiming those items."
-   },
-   "target_ac": "none",
-   "id": "p32"
-  },
-  {
-   "hole": "The implementation decision requires the CI target to invoke the checker from its source path, but ACL-A3 does not distinguish that from invoking a stale deployed checker on PATH.",
-   "lens": "absent-requirements",
-   "proposed_ac": "The repository attack-record make target invokes the checker at its source path under src and does not resolve a deployed checker from PATH.",
-   "red_test_sketch": {
-    "expect": "The gate uses the source checker and reports its result; replacing PATH with a stale checker does not change that result.",
-    "given": "A valid source checker and a PATH entry containing a distinguishable stale checker.",
-    "when": "The attack-record make target runs."
-   },
-   "target_ac": "ACL-A3",
-   "id": "p33"
-  },
-  {
-   "hole": "The A1 taxonomy specifies claim-versus-restatement ordering semantics, but ACL-A1 contains no concurrent interleaving test.",
-   "lens": "absent-requirements",
-   "proposed_ac": "A claim racing a restatement hashes one coherent document state: a restatement completed before the claim hash makes the stale marker fail, while a restatement completed after a successful claim leaves the new document stale for the next gate.",
-   "red_test_sketch": {
-    "expect": "The amendment-before-hash interleaving refuses claim; the hash-before-amendment interleaving has no mixed-state acceptance and the subsequent gate reports the stale record.",
-    "given": "An open item with a valid marker and controllable synchronization around claim hashing and acceptance restatement.",
-    "when": "The two operations are executed in both ordered interleavings."
-   },
-   "target_ac": "ACL-A1",
-   "id": "p34"
-  },
-  {
-   "hole": "The A13 taxonomy promises the entire tracker-item attack path is idempotent, but existing criteria only make repeated attestation idempotent.",
-   "lens": "absent-requirements",
-   "proposed_ac": "Running the tracker-item attack path twice over unchanged criteria leaves the rendering and record byte-identical and leaves exactly one marker for that document digest.",
-   "red_test_sketch": {
-    "expect": "The second run changes neither file, creates no additional record, and adds no marker.",
-    "given": "A tracker-born item whose attack path has already completed successfully.",
-    "when": "The same path is run again without changing the item or its attackable document."
-   },
-   "target_ac": "ACL-A13",
-   "id": "p35"
-  },
-  {
-   "hole": "The briefing taxonomy says a brief with no criteria is refused, but ACL-A8 only covers briefs with several criteria.",
-   "lens": "absent-requirements",
-   "proposed_ac": "The briefing workflow refuses a dispatch with no assigned criteria instead of producing an evidence-only or criterion-free brief.",
-   "red_test_sketch": {
-    "expect": "The dispatch is refused and the refusal names the missing criteria.",
-    "given": "A subagent dispatch containing tests or gates but no assigned acceptance criteria.",
-    "when": "The briefing skill produces the dispatch brief."
-   },
-   "target_ac": "ACL-A8",
-   "id": "p36"
-  },
-  {
-   "hole": "The admission taxonomy promises that an incomplete acceptance-criteria skill admission is dropped by staging, but ACL-A14 only tests the successful complete case.",
-   "lens": "absent-requirements",
-   "proposed_ac": "Installer staging excludes the acceptance-criteria skill when any required admission field is missing or incomplete and names the admission failure.",
-   "red_test_sketch": {
-    "expect": "The skill is absent from every staged tool configuration and the staging result names the incomplete admission.",
-    "given": "A fixture copy of the acceptance-criteria skill with one required admission field removed.",
-    "when": "The installer staging check runs against the fixture."
-   },
-   "target_ac": "ACL-A14",
-   "id": "p37"
   }
  ],
  "dispositions": [
   {
    "id": "p1",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A1"
+   "disposition": "rejected",
+   "rationale": "Rejected. The facade does not read a PR's diff, so it cannot tell a spec-only change from an implementation one; a structural child shipping implementation is a scope violation the review-panel round over that PR reads, and the CI gate checks the spec's record on the same PR."
   },
   {
    "id": "p2",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A1"
+   "disposition": "rejected",
+   "rationale": "Rejected as the stated ceiling: ACL-D6 says a hand-typed marker, or a record deleted after attestation, passes the gates, and that the attestation is exactly as strong as the recorded PR number and the observed: row, callable in and visible in the branch diff; binding the marker to a live record would have the facade re-derive the checker, which the out-of-scope list excludes."
   },
   {
    "id": "p3",
    "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A4"
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
+   "covering_ac": "ACL-A1"
   },
   {
    "id": "p4",
    "disposition": "rejected",
-   "rationale": "Rejected. The briefing skill is guidance an agent reads on every tool, including tools without the facade; the claim gate (ACL-D4) precedes any dispatch and the panel's emission refusal (ACL-D7, ACL-A4) catches the review, so a brief-time facade check would duplicate two gates in a place that cannot always reach the facade."
+   "rationale": "Rejected. The set of documents that require a record is not derivable from the tree: not every spec carries one, and a tracker-born document exists only once rendered; a deleted record is visible in the branch diff and the claim gate still asks for a marker whose digest matches, which ACL-D6 states as the ceiling."
   },
   {
    "id": "p5",
    "disposition": "rejected",
-   "rationale": "Rejected as already true: the checker reads its lens registry live, so once the behavioural-outcome lens is registered no record lacking it closes, whenever the record was written; the deployed attack skill states this rule."
+   "rationale": "Rejected, recorded in the out-of-scope list: the facade does not run the version-control tool and does not verify that a record's files are committed; the files are visible in the branch diff, the CI gate reads what is committed, and ACL-D6 states that ceiling rather than hiding it."
   },
   {
    "id": "p6",
-   "disposition": "rejected",
-   "rationale": "Rejected. Charter D1 places the edge-case taxonomy on the authoring side, and the edge-cases lens of this very attack is the adversarial walk over it; making closure depend on every row being written per criterion would move an authoring discipline into a record-shape rule."
+   "disposition": "accepted",
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
+   "covering_ac": "ACL-A5"
   },
   {
    "id": "p7",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A6"
+   "disposition": "rejected",
+   "rationale": "Rejected. Charter D1 places the edge-case taxonomy on the authoring side, and the edge-cases lens of this very attack is the adversarial walk over it; making closure depend on every row being written per criterion would move an authoring discipline into a record-shape rule."
   },
   {
    "id": "p8",
    "disposition": "rejected",
-   "rationale": "Rejected. An evaluation of each authoring skill's output on representative inputs is a skill eval, not a criterion of this lifecycle; the gate that catches noncompliant output is the attack itself (ACL-A6), which every criterion set faces before a claim, and ACL-A7 pins what the skills say."
+   "rationale": "Rejected. Whether a criterion's scope, its bundling, or an artifact criterion's service relation is adequate is the behavioural-outcome lens's judgment under ACL-A6's convertibility finding (a criterion that converts to no single failing test, or to several, draws that finding); the document pins the finding kinds, not a rule that would make taste decidable."
   },
   {
    "id": "p9",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A5"
+   "disposition": "rejected",
+   "rationale": "Rejected. Whether a criterion's scope, its bundling, or an artifact criterion's service relation is adequate is the behavioural-outcome lens's judgment under ACL-A6's convertibility finding (a criterion that converts to no single failing test, or to several, draws that finding); the document pins the finding kinds, not a rule that would make taste decidable."
   },
   {
    "id": "p10",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A9"
+   "disposition": "rejected",
+   "rationale": "Rejected. Whether a criterion's scope, its bundling, or an artifact criterion's service relation is adequate is the behavioural-outcome lens's judgment under ACL-A6's convertibility finding (a criterion that converts to no single failing test, or to several, draws that finding); the document pins the finding kinds, not a rule that would make taste decidable."
   },
   {
    "id": "p11",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A5"
+   "disposition": "rejected",
+   "rationale": "Rejected. A rejection carries a rationale a reviewer reads, and the record is a judgment trail, not a validator; making the checker enforce the standard's mechanically decidable invariants is the code-over-prose chore agents-config-9k9.405.3, which this spec does not pre-empt."
   },
   {
    "id": "p12",
    "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A5"
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
+   "covering_ac": "ACL-A6"
   },
   {
    "id": "p13",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A3"
+   "disposition": "rejected",
+   "rationale": "Rejected, recorded in the out-of-scope list: a new criteria consumer enters the deployed tree through the admission gate, which is where a consumer that handles criteria without citing the standard is refused; a CI inventory would duplicate that gate."
   },
   {
    "id": "p14",
    "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A11"
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
+   "covering_ac": "ACL-A8"
   },
   {
    "id": "p15",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A5"
+   "disposition": "rejected",
+   "rationale": "Rejected. The briefing skill is guidance an agent reads on every tool, including tools without the facade; the claim gate (ACL-D4) precedes any dispatch and the panel's emission refusal (ACL-D7, ACL-A4) catches the review, so a brief-time facade check would duplicate two gates in a place that cannot always reach the facade; ACL-D7 now has the skill state the re-attack rule instead."
   },
   {
    "id": "p16",
    "disposition": "rejected",
-   "rationale": "Rejected. Charter D1 places the edge-case taxonomy on the authoring side, and the edge-cases lens of this very attack is the adversarial walk over it; making closure depend on every row being written per criterion would move an authoring discipline into a record-shape rule."
+   "rationale": "Rejected. A facade older than the claim gate cannot refuse on behalf of a gate it does not ship; the version check lives in the consumers that invoke the new verbs (ACL-D8), and the claim and delivery gates arrive with the facade version that ships them."
   },
   {
    "id": "p17",
    "disposition": "rejected",
-   "rationale": "Rejected. First-ranked names the lens's priority of judgment in its mandate (agents-config-9k9.397), not the order of dispatch; dispatch order has no observable effect on the record."
+   "rationale": "Rejected, recorded in the out-of-scope list: the attest verb makes the four refusals ACL-D4 names and does not re-derive the checker's other judgments; the attack skill invokes it only after the checker exits zero, and the CI gate reads the record again over the tree."
   },
   {
    "id": "p18",
    "disposition": "rejected",
-   "rationale": "Rejected as already true: the checker reads its lens registry live, so once the behavioural-outcome lens is registered no record lacking it closes, whenever the record was written; the deployed attack skill states this rule."
+   "rationale": "Rejected. On a tool with no attack skill there is no mechanism to observe a handoff, and the claim gate is the mechanical stop: a session on any tool cannot claim an unattested feat or bugfix, whatever it did or did not hand off (ACL-A1); the handoff rule itself is prose, and ACL-A13 pins that it is written where that session reads."
   },
   {
    "id": "p19",
-   "disposition": "rejected",
-   "rationale": "Rejected as already true: the record contract states that a lens that errored or returned unreadable output has no entry and the round is unfinished; the new lens inherits that rule with the record shape."
+   "disposition": "accepted",
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
+   "covering_ac": "ACL-A3"
   },
   {
    "id": "p20",
-   "disposition": "rejected",
-   "rationale": "Rejected. Two runs of an adversarial model over one revision are not required to produce identical findings, and the spec pins determinism on the checker, not the lens; the taxonomy row says a second round reproduces the finding class, which is a property of the malformed set, not a test of the model."
+   "disposition": "accepted",
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
+   "covering_ac": "ACL-A11"
   },
   {
    "id": "p21",
    "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A12"
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
+   "covering_ac": "ACL-A5"
   },
   {
    "id": "p22",
    "disposition": "rejected",
-   "rationale": "Rejected. The facade does not run the version-control tool, and ACL-D6 states the ceiling: the files are visible in the branch diff and the CI gate reads what is committed; committing before the claim is the skill's documented step (ACL-A13), not a facade check."
+   "rationale": "Rejected. Charter D1 places the edge-case taxonomy on the authoring side, and the edge-cases lens of this very attack is the adversarial walk over it; making closure depend on every row being written per criterion would move an authoring discipline into a record-shape rule."
   },
   {
    "id": "p23",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A13"
+   "disposition": "rejected",
+   "rationale": "Rejected as already true: the checker reads its lens registry live, so once the behavioural-outcome lens is registered no record lacking it closes, whenever the record was written, and first-ranked names the lens's priority of judgment in its mandate (agents-config-9k9.397), not a checker rule."
   },
   {
    "id": "p24",
    "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A11"
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
+   "covering_ac": "ACL-A1"
   },
   {
    "id": "p25",
    "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A4"
-  },
-  {
-   "id": "p26",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A3"
-  },
-  {
-   "id": "p27",
-   "disposition": "rejected",
-   "rationale": "Rejected as already true: the facade's contract states that setting the criteria already in force writes nothing, so the attackable document, the attestation and the gate are untouched."
-  },
-  {
-   "id": "p28",
-   "disposition": "rejected",
-   "rationale": "Rejected as following from ACL-D4 and ACL-D5: the record binds to the document's content, so one round over the document as it stands closes whatever intermediate revisions existed; no criterion is needed for a case the digest rule already decides."
-  },
-  {
-   "id": "p29",
-   "disposition": "rejected",
-   "rationale": "Rejected as already true: the record's bind-by-name rule allows one record per document, so a re-attack overwrites it at its canonical path and the prior round is in history; the attack skill's record contract states this."
-  },
-  {
-   "id": "p30",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A2"
-  },
-  {
-   "id": "p31",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A2"
-  },
-  {
-   "id": "p32",
-   "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
    "covering_ac": "ACL-A1"
   },
   {
-   "id": "p33",
+   "id": "p26",
+   "disposition": "rejected",
+   "rationale": "Rejected. Where an existing skill deploys is decided by the capability-dependency placement rule and checked by the installer's staging check, outside this spec; ACL-A7 quantifies over the tools that deploy each skill precisely so that it does not restate placement, and ACL-A14 pins the one skill this spec adds."
+  },
+  {
+   "id": "p27",
    "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
    "covering_ac": "ACL-A3"
   },
   {
-   "id": "p34",
-   "disposition": "rejected",
-   "rationale": "Rejected, recorded in the out-of-scope list: each gate hashes or compares at its own moment, and an amendment landing after that moment is caught by the next gate; serializing two backend writes is beyond the facade's boundary."
-  },
-  {
-   "id": "p35",
+   "id": "p28",
    "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A13"
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
+   "covering_ac": "ACL-A9"
   },
   {
-   "id": "p36",
+   "id": "p29",
    "disposition": "accepted",
-   "revision": "sha256:80279e52084cc13c13b8290714249dd1f723efbb420b76db6b60fb8fb4b6d9ee",
-   "covering_ac": "ACL-A8"
-  },
-  {
-   "id": "p37",
-   "disposition": "rejected",
-   "rationale": "Rejected as already true: the installer drops any asset whose admission record is incomplete, for every asset, and that behaviour is tested in the installer package; ACL-A14 pins the complete case this skill must meet."
+   "revision": "sha256:8a431a14e311ded48c6ef691327f6948ffb2a7f69600499bfa46b8f3a9038962",
+   "covering_ac": "ACL-A5"
   }
  ]
 }
