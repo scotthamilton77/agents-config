@@ -944,8 +944,20 @@ function live(item) { return !item.superseded; }
 function proposals() {
   return BOARD.pending.filter(function (p) { return live(p) && PROPOSABLE_KINDS.indexOf(p.kind) >= 0; });
 }
+// Whether this page is holding the bytes a queue entry was written with. Image 1
+// says what is waiting and the entry that authored it carries the words, the
+// clock and the tier, and the two are separate reads that arrive in either
+// order. So a notice is met here before its entry is, and a notice the page
+// cannot speak for is left off every surface until it can: drawn with the kind
+// and the target standing in for the words, it is read as the message the agent
+// sent, and counted on the bell while it is drawn nowhere, it is a number the
+// board and the panel cannot account for. The next poll brings the entry, and
+// the notice with it.
+function said(item) { return !!sourceOf(item); }
 function notices() {
-  return BOARD.pending.filter(function (p) { return live(p) && NOTICE_KINDS.indexOf(p.kind) >= 0; });
+  return BOARD.pending.filter(function (p) {
+    return live(p) && said(p) && NOTICE_KINDS.indexOf(p.kind) >= 0;
+  });
 }
 // Which decision a message from the agent is read on: the one it names, and no
 // other. A message that names none is the turn's own story, and the turn is
