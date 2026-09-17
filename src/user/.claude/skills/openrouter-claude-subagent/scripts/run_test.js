@@ -400,16 +400,12 @@ test("main() refuses a denied model named without its vendor prefix too", async 
   assert.equal(code, EXIT_CONFIG_ERROR);
 });
 
-test("main() still accepts the -mini tiers the denylist exempts", async () => {
-  // Reaching proxy.start is the pass condition here — the stub throwing is
-  // proof the model cleared both refusals, and it costs no listener.
-  await assert.rejects(
-    mainWithoutProxy([
-      "--model", "openai/gpt-5.6-mini", "--effort", "low", "--permission-mode", "dontAsk",
-      "--allowedTools", "Read", "-p", "task",
-    ]),
-    /proxy\.start was reached/,
-  );
+test("main() refuses a -mini GPT tier too; the denial has no exemption", async () => {
+  const code = await mainWithoutProxy([
+    "--model", "openai/gpt-5.6-mini", "--effort", "low", "--permission-mode", "dontAsk",
+    "--allowedTools", "Read", "-p", "task",
+  ]);
+  assert.equal(code, EXIT_CONFIG_ERROR);
 });
 
 // ─── The prompt is not a source of flags ───────────────────────────

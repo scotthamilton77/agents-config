@@ -840,20 +840,13 @@ test("denies Claude models with or without a vendor prefix, in any case", () => 
   assert.equal(isDeniedModel("Anthropic/Claude-Opus-5"), true, "case must not be a way around it");
 });
 
-test("denies the large GPT tiers this transport does not carry", () => {
+test("denies every GPT tier, which runs through Codex instead", () => {
   assert.equal(isDeniedModel("openai/gpt-5.6-sol"), true);
   assert.equal(isDeniedModel("openai/gpt-5.5-turbo"), true);
   assert.equal(isDeniedModel("gpt-5.6"), true);
-});
-
-test("exempts the -mini GPT variants, which are cheap and not what the denial guards", () => {
-  assert.equal(isDeniedModel("openai/gpt-5.6-mini"), false);
-  assert.equal(isDeniedModel("openai/gpt-5.5-mini-high"), false);
-  assert.equal(isDeniedModel("gpt-5.6-minimal"), true, "the exemption is the segment `mini`, not the letters");
-});
-
-test("no -mini spelling exempts a Claude model, which never belongs on this transport", () => {
-  assert.equal(isDeniedModel("anthropic/claude-mini"), true);
+  assert.equal(isDeniedModel("openai/gpt-6-astra"), true, "a tier newer than the list was written is still a GPT tier");
+  assert.equal(isDeniedModel("openai/gpt-5.6-mini"), true, "no mini exemption: the cheap OpenAI tier is luna through Codex");
+  assert.equal(isDeniedModel("openai/gpt-5-nano"), true);
 });
 
 test("an OpenRouter :variant suffix is not a way around the denylist", () => {

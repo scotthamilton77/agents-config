@@ -1,6 +1,6 @@
 ---
 name: openrouter-claude-subagent
-description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT mini tiers), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex or Gemini CLI, and not for the Claude models and large GPT tiers this transport refuses. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with a Write grant scoped to that one path.
+description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, DeepSeek), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex or Gemini CLI, and not for the Claude and GPT models this transport refuses. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with an Edit grant scoped to that one path.
 admission:
   provides: A nested Claude Code harness whose model traffic is repointed at a non-Anthropic model, plus the stream repair that makes the reply actually arrive — so a task runs on another vendor's weights while keeping this harness's tool loop, permission system, and file editing.
   cost: A local proxy process for the life of each nested run, and an OpenRouter API key the user must supply and pay against. Node must be installed, and the model routing table needs a refresh whenever OpenRouter reprices or retires a model.
@@ -29,9 +29,10 @@ node "${CLAUDE_SKILL_DIR}/scripts/run.js" \
   -p "<the task prompt>"
 ```
 
-Never invoke `claude` directly against `openrouter.ai`. It returns an empty
-result with exit 0, no stderr, and the tokens billed — you pay for an answer
-that never arrives. `run.js` is the only supported entry point: it starts the
+Never invoke `claude` directly against `openrouter.ai`. Whenever the response
+ends on a reasoning block, which OpenRouter emits routinely, it returns an
+empty result with exit 0, no stderr, and the tokens billed — you pay for an
+answer that never arrives. `run.js` is the only supported entry point: it starts the
 repair proxy, owns every variable that decides where the traffic goes,
 forwards the rest of argv untouched, and propagates the child's exit code.
 
@@ -47,9 +48,9 @@ a dispatch that names `sonnet`, or an agent type whose own model is one of those
 aliases, still lands there. Anything outside that vocabulary is refused with an
 error explaining the alternative, including an agent type pinned to a specific
 vendor model id and a request that names no model at all. Two families are refused outright, pin or no pin:
-Claude models, which belong in the harness you are already running, and the
-large GPT tiers (`gpt-5.5*`, `gpt-5.6*`, `-mini` variants excepted), which have
-their own transport. Naming one exits `78` before anything starts, and there is
+Claude models, which belong in the harness you are already running, and every
+GPT model, which runs through Codex on a subscription that beats this
+transport's per-token rate. Naming one exits `78` before anything starts, and there is
 no rerouting around it — if that transport is down, the task waits.
 
 `references/proxy-contract.md` covers what the proxy repairs, why the tool
@@ -90,7 +91,9 @@ from memory routes work to a model that may be repriced or retired, and
 re-deriving a "cheapest" pick by hand is how the bias drifts from what the
 bucket table already encodes.
 
-1. Classify the task: mechanical/triage, standard implementation, or
+1. A review-panel or ac-attack seat skips the buckets: its row in the routing
+   table's seat table names the model, the effort and the tool grant. Otherwise
+   classify the task: mechanical/triage, standard implementation, or
    architecture/judgment-heavy.
 2. Take that bucket's **Default pick** — unless the user said "cheap" (use
    **Step down**) or "best"/"most capable" (use **Step up**).
@@ -126,7 +129,9 @@ Not every model accepts every level. `references/model-routing.md` lists the
 levels each one takes — pick from that list, since two of the listed models
 accept no level at all, one of those cannot be capped even in principle, and
 others are missing the middle of the range. Trust the recorded value rather
-than re-verifying at dispatch.
+than re-verifying at dispatch. A review seat's row is the one exception: it
+may name a level its model does not list, the launcher passes it anyway, and
+the routing table's rationale states what that buys.
 
 ## Example
 
