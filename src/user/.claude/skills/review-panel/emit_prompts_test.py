@@ -1547,6 +1547,48 @@ class TestDispositions:
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "untransferable-blocking"
 
+    @staticmethod
+    def _prose_located_round(tmp_path, repo, acs_file, entry):
+        """Round 1's mechanical finding sits in a Markdown file the lens itself named."""
+        verdict = verdict_round1(repo)
+        verdict["findings"][0]["evidence"] = (
+            "docs/routing.md:12 credits the gate with a refusal the gate does not make")
+        head = repo.write_lines(4, "fix.txt")
+        prior = write_json(tmp_path / "verdict-1.json", verdict)
+        ledger = write_json(tmp_path / "dispositions.json", [
+            {"round": 1, "id": "f1", "disposition": "fixed", **entry},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        out_dir = tmp_path / "round-2"
+        flat = argv(repo, acs_file, out_dir, **{"--round": "2", "--head-sha": head})
+        return flat + ["--prior-verdict", str(prior), "--disposition", str(ledger)], out_dir
+
+    def test_b6_a_fix_located_in_prose_by_the_lens_names_the_file_not_a_test(
+            self, repo, acs_file, tmp_path, capsys):
+        """A typed-code lens reading the surrounding repository can find a defect in a
+        Markdown file; its fix is a prose edit, and the disposition names the file the
+        lens's own evidence located it in instead of a test."""
+        flat, out_dir = self._prose_located_round(tmp_path, repo, acs_file, {
+            "artifact": "docs/routing.md", "evidence": "the sentence is rewritten; doc-lint exit 0"})
+        code, result = run(flat, capsys)
+        assert code == 0 and result["emitted"] is True
+        ledger = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))["prior_dispositions"]
+        assert ledger[0]["artifact"] == "docs/routing.md"
+
+    @pytest.mark.parametrize("entry", [
+        {"artifact": "docs/other.md", "evidence": "the sentence is rewritten; doc-lint exit 0"},
+        {"artifact": "src/reader.py", "evidence": "the sentence is rewritten; doc-lint exit 0"},
+        {"artifact": "docs/routing.md", "evidence": " "},
+    ])
+    def test_b6_a_prose_location_the_lens_did_not_name_does_not_excuse_the_test(
+            self, repo, acs_file, tmp_path, capsys, entry):
+        """The file must be one the finding itself spells out, must be Markdown, and the
+        evidence must still say what was done: a fixer cannot relocate a code defect into
+        prose by naming a file the lens never mentioned."""
+        flat, _ = self._prose_located_round(tmp_path, repo, acs_file, entry)
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "unsupported-fix"
+
     def test_b6_a_typed_code_fix_names_the_test_that_shows_it(self, repo, acs_file, tmp_path,
                                                               capsys):
         """On typed code a fix is checkable, so a bare "fixed" claim is as inadmissible as a
