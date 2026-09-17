@@ -60,16 +60,22 @@ reason, and, when the swap was forced rather than chosen, the dead route's error
 
 ## Choosing the model
 
-No lens declares a model. `contracts.json` carries the lens rosters and the profile table —
-never a model; the model is the dispatcher's to pick, every time.
+No lens declares a model, and `contracts.json` never carries one; the seat does. A lens's
+transport and tier resolve to one seat row — the Codex seats in the `delegating-to-codex`
+skill's table, the OpenRouter seats and the staffing recommender in the routing table the
+`openrouter-claude-subagent` skill carries — and the row names the model, the effort and the
+tool grant. Read the row at dispatch, not from memory: the tables are the source of truth for
+price, context window and which reasoning efforts a model accepts, and all three move
+underneath a remembered pick, because OpenRouter reprices and retires models without notice.
 
-Pick it by the lens's tier from the routing table the `openrouter-claude-subagent` skill carries,
-not from memory. That table is the source of truth for price, context window and which reasoning
-efforts a model accepts, and all three move underneath a remembered pick: OpenRouter reprices and
-retires models without notice. Two failures follow from picking free-hand, and the second is the
-expensive one — a model whose reasoning cannot be capped will strand a whole-artifact lens inside
-a thinking block and return no report at all, burning a full lens latency before the failover
-starts. The table marks which models those are; a whole-artifact lens must not be routed to one.
+Every class declares exactly one `openrouter` seat and routes the rest through `codex`: one
+foreign seat is what keeps the round on two vendors, and the Codex subscription prices the
+others below OpenRouter's per-token rate. The OpenRouter frontier seat has two rows, keyed on
+the scope `round.json` gives the lens: a delta read and a whole-artifact read. The split
+exists because a long single pass strands a reasoning model inside a thinking block and
+returns no report at all, burning a full lens latency before the failover starts; the
+whole-artifact row caps the thinking and, when the prompt carries the text, grants no tools.
+A dispatch that departs from its row is a `substitution` and says why.
 
 The gate does not enforce any of this: it accepts and records an unlisted model on purpose, so
 that a deliberate choice is possible and is visible afterwards. The discipline is yours.
@@ -113,7 +119,7 @@ Either way, the next claim declares that reason and the failure verbatim:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
-  --transport openrouter --model moonshotai/kimi-k2.7-code \
+  --transport openrouter --model moonshotai/kimi-k3 \
   --reason transport-error --evidence "402 Insufficient credits"
 ```
 
