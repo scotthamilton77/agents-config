@@ -195,6 +195,39 @@ def test_both_sides_agree_on_every_kind_of_entry_an_index_holds(repo: Path, add:
     assert worktree_digest(repo, "alpha") == index_digest(repo, "alpha")
 
 
+def test_both_sides_agree_on_a_tracked_file_an_ignore_rule_also_matches(repo: Path) -> None:
+    """Given a committed package file that an ignore rule also matches
+    When both sides are digested
+    Then they agree, because a tracked entry counts wherever it is read.
+
+    Disagreement here refuses every commit touching the package for good: the
+    file sits in the index the hook reads, and no rerun of the gate can put it
+    into a measurement that leaves it out.
+    """
+    (repo / "packages" / "alpha" / "kept.txt").write_text("kept\n")
+    git(repo, "add", "packages/alpha/kept.txt")
+    git(repo, "commit", "-m", "keep")
+    (repo / ".gitignore").write_text("packages/*/.gate-stamps/\nkept.txt\n")
+
+    assert worktree_digest(repo, "alpha") == index_digest(repo, "alpha")
+
+
+def test_a_file_only_an_ignore_rule_matches_is_no_part_of_the_content(repo: Path) -> None:
+    """Given an untracked package file an ignore rule matches
+    When both sides are digested
+    Then the digest is the one the package had without the file, and the sides agree.
+
+    Build output and caches land inside a package routinely. A digest that
+    counted them would stale its own stamp between the gate and the commit.
+    """
+    before = worktree_digest(repo, "alpha")
+    (repo / ".gitignore").write_text("packages/*/.gate-stamps/\n*.log\n")
+    (repo / "packages" / "alpha" / "build.log").write_text("noise\n")
+
+    assert worktree_digest(repo, "alpha") == before
+    assert worktree_digest(repo, "alpha") == index_digest(repo, "alpha")
+
+
 def test_both_sides_agree_on_a_repository_nested_in_a_package(repo: Path) -> None:
     """Given a package holding a nested repository, which an index records as a commit
     When both sides are digested

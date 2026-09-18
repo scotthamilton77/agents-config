@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -155,11 +156,21 @@ def worktree_digest(repo_root: Path, package: str) -> str:
     disagree over content that is in fact identical, which refuses a commit that
     no rerun of the gate can rescue.
 
+    The scratch index starts as a copy of the repository's own, because git's
+    staging rules turn on what is already tracked: a committed file that an
+    ignore rule also matches is refreshed into an index that already holds it
+    and skipped by an index that does not. Staging into an empty index would
+    therefore drop that file here while the hook keeps it, and every commit
+    touching the package would be refused for good.
+
     The scratch index lives outside the repository, because a file written
     inside the package would become part of the content being measured.
     """
     with TemporaryDirectory() as scratch:
         index = Path(scratch) / "index"
+        real = repo_root / _git(repo_root, "rev-parse", "--git-path", "index").stdout.strip()
+        if real.is_file():
+            shutil.copyfile(real, index)
         _git(repo_root, "add", "--all", "--", f"packages/{package}", index=index)
         return _digest(_entries(repo_root, package, index))
 
