@@ -13,15 +13,17 @@ the human in two different places, each once.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
+import pytest
 from conftest import BOARD_TIMEOUT, RENDER, decision, document, handoff, option, ruling, turn
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from harness import Session
-    from playwright.sync_api import Page
+    from playwright.sync_api import Page, Route
 
 PLAN = [
     decision(
@@ -191,6 +193,19 @@ def open_panel(page: Page) -> list[str]:
     return page.locator("#overlay .inbox-item").all_inner_texts()
 
 
+def caught_up(session: Session, page: Page) -> None:
+    """Wait until the page has read every entry the log holds.
+
+    What is counted below is counted in two reads -- the bell, and the surfaces
+    the bell is a count of -- and one turn lands as several entries. A page
+    still taking them in answers the two reads from two different logs, so the
+    wait is on the page's own cursor rather than on the log having stopped
+    growing.
+    """
+    landed = session.entries()[-1].seq
+    page.wait_for_function("at => window.WIRE && WIRE.cursor >= at", arg=landed)
+
+
 def unread_pill(page: Page) -> str:
     """What the bell says is unread, as the shell renders it."""
     said = page.locator('[data-act="notifications"]').get_attribute("data-unread")
@@ -240,6 +255,7 @@ def test_an_untargeted_message_is_still_in_the_panel_after_a_reload(
     page.wait_for_selector(
         '[data-act="notifications"]:not([data-unread="0"])', timeout=BOARD_TIMEOUT
     )
+    caught_up(session, page)
     before = open_panel(page)
     counted = unread_pill(page)
     assert [one for one in before if STORY in one], before
@@ -267,3 +283,174 @@ def test_an_untargeted_message_is_still_in_the_panel_after_a_reload(
     after = open_panel(page)
     assert sum(STORY in one for one in after) == 1, after
     assert page.locator("#overlay .inbox-item.unread").count() == 0, after
+
+
+# A message naming a decision, so the board has somewhere to draw it: on that
+# decision's own block.
+NOTICED = "Compaction is now a question about the log, and nothing here says what it drops."
+# What the board falls back to when it holds a queued notice and not the entry
+# that authored it: the kind and the target, in place of the words.
+PLACEHOLDER = "informational on d2"
+# The tier that composed the turn below, as the board and the panel name it.
+COMPOSED_BY = "expert"
+# The page's two reads of the backend, which these scenarios answer themselves to
+# put the board image and the log out of step on purpose.
+UPDATE_READ = "**/updates*"
+STATE_READ = "**/state"
+# The log read answered with an empty tail, which is the state the page is in for
+# as long as the image is ahead of the log. Holding it still is what lets a
+# scenario read the render it produces: a window that closes on its own closes
+# before anything can be asserted about it.
+HELD_LOG = {"seq": 0, "entries": []}
+
+
+def arrive(page: Page, session: Session, fresh: bool) -> None:
+    """Bring the board up again, as a reload or as a window arriving cold.
+
+    Hydration is what both of them run, and a window that has never claimed this
+    session runs it one gesture later: its claim is refused, and the take-over is
+    what gets it the board.
+    """
+    if not fresh:
+        page.reload()
+        return
+    page.evaluate("() => window.sessionStorage.clear()")
+    page.goto(session.url)
+    page.click('[data-act="takeover"]')
+
+
+def accounted(page: Page) -> tuple[int, int]:
+    """What the bell says is unread, against the unread messages the human can
+    find: the ones drawn on the board, and the ones listed in the panel."""
+    page.click('[data-act="notifications"]')
+    page.wait_for_selector("#overlay .slide", timeout=BOARD_TIMEOUT)
+    found = (
+        page.locator("#column .infonote .unreadmark").count()
+        + page.locator("#overlay .inbox-item.unread").count()
+    )
+    page.click('#overlay [data-act="closepanel"]')
+    return int(unread_pill(page)), found
+
+
+@pytest.mark.parametrize("fresh", [False, True], ids=["a reload", "a window arriving cold"])
+def test_a_queued_notice_is_neither_drawn_nor_counted_before_its_words_arrive(
+    fresh: bool, launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a turn that writes a message on d2 and a message the board has nowhere
+          to show, both of which reach the page as queued notices
+    When the page comes up with the board image ahead of the log, so the queue
+         names notices whose entries the page has not read
+    Then none of them is drawn, no placeholder stands in for anyone's words, and
+         the bell counts nothing the board and the panel cannot account for --
+         and they come back with their own words, and their own count, once the
+         log arrives.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_claude(
+        turn(
+            document(
+                STORY,
+                updates=[{"kind": "informational", "target": "d2", "text": NOTICED}],
+            )
+        )
+    )
+    page = board(session)
+
+    page.click('#col-d1 [data-act="pick"][data-opt="a"]')
+    session.settled()
+    page.wait_for_selector(f'#col-d2 .infonote:has-text("{NOTICED}")', timeout=BOARD_TIMEOUT)
+    page.wait_for_selector(
+        '[data-act="notifications"]:not([data-unread="0"])', timeout=BOARD_TIMEOUT
+    )
+    caught_up(session, page)
+    before = accounted(page)
+    assert before[0] == before[1], before
+
+    epoch = session.state()["epoch"]
+
+    def empty_tail(route: Route) -> None:
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"epoch": epoch, **HELD_LOG}),
+        )
+
+    page.route(UPDATE_READ, empty_tail)
+    arrive(page, session, fresh)
+    page.wait_for_selector("#col-d2", timeout=BOARD_TIMEOUT)
+    # The page's own word that it has read a board and a log, which is the
+    # render everything below is asserted against.
+    page.wait_for_function("() => window.WIRE && WIRE.hydrated", timeout=BOARD_TIMEOUT)
+
+    drawn = page.locator("#column").inner_text()
+    assert page.locator(".infonote").count() == 0, drawn
+    assert PLACEHOLDER not in drawn, drawn
+    assert NOTICED not in drawn, drawn
+    assert accounted(page) == (0, 0), drawn
+
+    page.unroute(UPDATE_READ, empty_tail)
+    page.wait_for_selector(f'#col-d2 .infonote:has-text("{NOTICED}")', timeout=BOARD_TIMEOUT)
+    caught_up(session, page)
+    # Nothing was lost by waiting: the same messages, unread the same way, and
+    # the bell back on the number it left.
+    assert accounted(page) == before
+    assert page.locator("#col-d2 .infonote .unreadmark").count() == 1
+    # Each one wears the tier its own entry was composed by, on the block and in
+    # the panel alike.
+    on_d2 = page.locator("#col-d2 .infonote").inner_text()
+    assert f"{COMPOSED_BY}, informational" in on_d2, on_d2
+    listed = open_panel(page)
+    said_once = [one for one in listed if STORY in one]
+    assert len(said_once) == 1, listed
+    assert COMPOSED_BY in said_once[0], said_once
+
+
+def test_a_notice_the_image_missed_is_drawn_without_waiting_for_another_entry(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a page hydrating on a board image taken before the turn its log read
+          brings back, which is what an entry appended between the two reads
+          leaves it holding
+    When nothing else happens in the session, so no later entry brings a board
+         with it
+    Then the notice is drawn on the decision it names, because the page reads the
+         board again rather than counting itself level with a log it is behind --
+         and the entries it reads a second time to get there are judged once,
+         each message listed once in the panel and counted once on the bell.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_claude(
+        turn(
+            document(
+                STORY,
+                updates=[{"kind": "informational", "target": "d2", "text": NOTICED}],
+            )
+        )
+    )
+    page = board(session)
+    # The board as it stood before the turn: what a state read answers with when
+    # the entry lands after it. Answered once, so every read after hydration's is
+    # the backend's own.
+    stale = json.dumps(session.state())
+
+    page.click('#col-d1 [data-act="pick"][data-opt="a"]')
+    session.settled()
+    page.wait_for_selector(f'#col-d2 .infonote:has-text("{NOTICED}")', timeout=BOARD_TIMEOUT)
+    caught_up(session, page)
+    before = accounted(page)
+
+    page.route(
+        STATE_READ,
+        lambda route: route.fulfill(status=200, content_type="application/json", body=stale),
+        times=1,
+    )
+    page.reload()
+    page.wait_for_selector(f'#col-d2 .infonote:has-text("{NOTICED}")', timeout=BOARD_TIMEOUT)
+    caught_up(session, page)
+    # Reading an entry twice is what getting here costs, and it buys the board:
+    # the messages those entries carry are the same messages, said once each.
+    assert accounted(page) == before
+    listed = open_panel(page)
+    assert sum(STORY in one for one in listed) == 1, listed
