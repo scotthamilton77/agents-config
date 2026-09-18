@@ -90,6 +90,29 @@ attempt's report — and, for a recovery, the `backoff_seconds` to wait first. R
 the directory the reviewer will read: the gate records the working directory it was invoked in,
 and a review of the wrong tree is the failure that leaves no trace of itself.
 
+The answer also carries `stderr_path`, beside the output path. **The invoking shell redirects both
+streams**, because the reviewer's own output records no tool use on either transport and its
+stderr is the only place a read is written down:
+
+```bash
+<dispatch> > "${OUT}" 2> "${ERR}"
+```
+
+Retain that file even when the run looks perfect. A clean report whose stderr was never captured
+is refused at ingest, and the dispatch has to be paid for a second time.
+
+A lens whose prompt carries the whole target and whose run is granted no tools has no read to
+record, and that is honest — a document lens reading text quoted inline, or a whole-artifact row
+with no tool grant. The invoker knows it before dispatching, so the claim declares it:
+
+```bash
+uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens criteria-holes \
+  --transport codex --model gpt-5.6-sol --reason initial --target-inline
+```
+
+The waiver is recorded on the claim and reads back out of the ledger. Declaring it for a lens that
+did get tools buys a clean entry nobody checked, which is the thing this gate exists to refuse.
+
 A refusal (exit 2) ends that lens. However many attempts it took, a lens ends with exactly one
 entry, for the attempt that produced the report, carrying the `substitution` record above. Two
 entries for one lens is a validation error, not a fuller record: it double-counts coverage.
@@ -181,6 +204,19 @@ reads only what follows the line holding nothing but the prompt's closing untrus
 and it never accepts the prompt's own report schema, so an echoed prompt yields the reviewer's
 report or nothing. A finding that quotes that marker shares its line with the report around it, so
 a reviewer may cite the marker freely.
+
+A **clean** report is checked against the attempt's retained stderr before it is accepted, because
+a reviewer that answers clean without opening the change costs the round a lens while looking like
+its best one. What counts as a read depends on the transport. On `openrouter` the launcher's proxy
+logs one line per API turn, and a run that called no tool forwards a single request, so anything
+above one forward is a read. On `codex` both entry points count: the plugin job runner tags each
+tool line with `[codex] `, and the command-line tool opens each call with a bare `exec` line and
+reports the result beneath it. Only what follows the prompt's closing marker counts, so a target
+that quotes these patterns cannot vouch for the reviewer that was sent to read it.
+
+A clean report with nothing recorded is **unread** — its own refusal, and neither a transport
+failure nor an unparseable body. Re-dispatch the lens with reason `unusable-output`. A findings
+report is never refused this way: it names what it found, and what it found is the evidence.
 
 Past the ladder the output is **unparseable**: the lens has no entry and the round is incomplete
 unless it is re-dispatched with reason `unusable-output`. Tolerance stops there on purpose.
