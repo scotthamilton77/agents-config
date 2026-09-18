@@ -1,6 +1,6 @@
 # OpenRouter Model Routing Table
 
-Captured **2026-09-17** from `https://openrouter.ai/api/v1/models`, OpenRouter's
+Captured **2026-09-18** from `https://openrouter.ai/api/v1/models`, OpenRouter's
 public catalog endpoint. That endpoint is authoritative for price, context
 length, max output, and which reasoning-effort levels a model accepts, and it
 is machine-readable — refresh this table from it rather than reading model
@@ -27,7 +27,7 @@ Prices are $/M tokens. Rows are sorted by input price.
 | `google/gemini-3.8-flash` | $0.75 | $3.75 | 1M / 64K out | `low` `medium` `high` — no `minimal` | Fast agentic coding; the OpenRouter mid seat below |
 | `moonshotai/kimi-k2.6` | $0.95 | $4.00 | 262K | **none** — reasoning on/off only | General/mechanical Kimi tier; the one Kimi whose thinking can be switched off |
 | `z-ai/glm-5.3` | $1.40 | $4.40 | 1.3M / 944K out | `low` `high` `max` — no `medium`, no `xhigh` | Long-horizon agentic coding at 1M context; returns thinking-only turns on a whole-document single pass, so unfit for one until a run completes it |
-| `moonshotai/kimi-k3` | $3.00 | $15.00 | 1M / 944K out | `low` `high` `max` — no `medium`, no `xhigh` | Frontier-tier agentic coding, large repos; the OpenRouter frontier seat below |
+| `moonshotai/kimi-k3` | $2.10 | $10.95 | 1M / 944K out | `low` `high` `max` — no `medium`, no `xhigh` | Frontier-tier agentic coding, large repos; the OpenRouter frontier seat below |
 
 ## Review seats
 
