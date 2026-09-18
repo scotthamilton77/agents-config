@@ -297,7 +297,7 @@
           }
         }
       },
-      "description": "On typed code a fix is checkable, so a fixed finding names the test and the fails-without/passes-with observation that shows it. Classes with no test gate keep evidence optional on fixed, where the same demand would only buy prose."
+      "description": "On typed code a fix is checkable, so a fixed finding names the test and the fails-without/passes-with observation that shows it, or names as artifact the Markdown file the finding itself located the defect in, where the fix is prose. Classes with no test gate keep evidence optional on fixed, where the same demand would only buy prose."
     }
   ]
 }
