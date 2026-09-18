@@ -10,7 +10,7 @@
       "lens": "edge-cases",
       "mandate": "Walk the case taxonomy against the criteria and name the cases none of them tests: the inverse of each stated behaviour, empty and boundary inputs, failure of something the work depends on, repeated and concurrent invocation, and running the same operation twice over. Take each class in turn — a class you skip is a class nobody covers.",
       "tier": "mid",
-      "transport": "openrouter"
+      "transport": "codex"
     },
     {
       "lens": "absent-requirements",

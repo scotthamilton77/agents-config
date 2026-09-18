@@ -29,7 +29,7 @@
           "mandate": "Judge whether the changed code is more complicated, or more costly to run, than the acceptance criteria require. A finding names the requirement the extra structure or cost serves no part of; a stylistic preference is not a finding.",
           "acs_hint": "criteria bounding the scope and cost of the change",
           "tier": "mid",
-          "transport": "openrouter"
+          "transport": "codex"
         },
         {
           "lens": "documentation-quality",
@@ -61,7 +61,7 @@
           "mandate": "Judge whether the artifact's deliberately failing tests pin the decisions the criteria enumerate — each enumerated behaviour has a red test that turns green only when the behaviour is honored. A finding names the enumerated decision no failing test pins; a test that could be added but pins no enumerated decision is not a finding.",
           "acs_hint": "the criteria whose decisions the failing tests must pin",
           "tier": "mid",
-          "transport": "openrouter"
+          "transport": "codex"
         }
       ]
     },
@@ -95,14 +95,14 @@
           "acs_hint": "criteria describing the design's obligations to the surrounding system",
           "tier": "frontier",
           "re_review_tier": "mid",
-          "transport": "openrouter"
+          "transport": "codex"
         },
         {
           "lens": "clarity-standalone-concision",
           "mandate": "Judge whether a competent reader outside this effort could act on the text without asking a question, and whether it says so in as few words as the content allows. A finding names the question an outside reader cannot answer from the text, or the passage whose words outnumber their content; a rewording that answers no such question is not a finding.",
           "acs_hint": "criteria describing how the text must read to an outside reader",
           "tier": "mid",
-          "transport": "openrouter"
+          "transport": "codex"
         }
       ]
     },

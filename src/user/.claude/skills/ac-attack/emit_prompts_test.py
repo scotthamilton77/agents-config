@@ -258,6 +258,16 @@ class TestPromptContent:
         for lens in LENSES:
             assert set(lens) == {"lens", "mandate", "tier", "transport"}
 
+    def test_c7_absent_requirements_is_the_sole_foreign_seat(self):
+        """One attack lens runs on the foreign transport and the other two through codex: the
+        absent-requirements read is the one whose blind spots a second vendor is bought for,
+        and the subscription-priced transport carries the rest."""
+        assert {lens["lens"]: lens["transport"] for lens in LENSES} == {
+            "absent-requirements": "openrouter",
+            "criteria-holes": "codex",
+            "edge-cases": "codex",
+        }
+
     def test_c1_the_document_arrives_as_fenced_data_below_the_contract(self, document, tmp_path,
                                                                        capsys):
         """S6-C1: instructions are fixed and come first; the attacked document is interpolated
