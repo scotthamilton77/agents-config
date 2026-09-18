@@ -95,9 +95,9 @@ disposition, a terminated campaign.
 Every earlier mechanical finding needs a disposition: `fixed`, `rebutted`, `advisory-deferred`, or
 `transferred`. `rebutted` requires evidence; `fixed` on a typed-code mechanical finding requires
 evidence naming the test and the fails-without/passes-with observation, or names as `artifact`
-the Markdown file the finding sits in; `transferred` moves a
-pre-existing, non-blocking finding out, carrying the provenance basis and the work item that
-inherits it — a blocking finding is not transferable. A finding indicting the criteria themselves
+a Markdown file the finding itself names, and evidence; `transferred` moves a
+pre-existing, non-blocking finding out, carrying its provenance basis and the inheriting work
+item; a blocking one is not transferable. A finding indicting the criteria
 assembles the round `halted` with the upstream-defect reason; emission refuses to resume until
 the indicted artifact changes.
 
