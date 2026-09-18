@@ -42,7 +42,7 @@ judged) is short. The round record states which one each lens has.
 |---|---|---|---|
 | OpenRouter frontier, delta read | `moonshotai/kimi-k3` | `high` | `Read` `Grep` `Glob` |
 | OpenRouter frontier, whole-artifact read | `moonshotai/kimi-k3` | `medium`, a level the model does not list; the launcher passes it and the read completes with the thinking bounded | none when the prompt carries the text inline; `Read` `Grep` `Glob` when the lens must resolve the target itself |
-| OpenRouter mid (the re-review tier of the frontier seats) | `google/gemini-3.8-flash` | `high` | `Read` `Grep` `Glob` |
+| OpenRouter mid (the re-review tier of the frontier seats) | `google/gemini-3.8-flash` | `high` | none when the prompt carries the text inline; `Read` `Grep` `Glob` when the lens must resolve the target itself |
 | Staffing recommender | `moonshotai/kimi-k2.6` | `medium` | none |
 | Trend checkpoint | Fable, in the launching harness | `high` | the harness's own |
 
@@ -61,7 +61,8 @@ Why the rows are what they are, stated so the next refresh can attack them:
 - A `kimi-k3` run's ceiling is silence, not total wall clock. A lens with
   `Read` `Grep` `Glob` that keeps forwarding turns is reading, and its best
   reports arrive after twenty-five or more turns; the thinking-block death
-  shows as no forwarded turn at all. Kill such a run only when the proxy's
+  shows as one forwarded turn with nothing after it, since the proxy logs the
+  request and the reply ends inside its thinking block. Kill such a run only when the proxy's
   ledger has recorded no forward for ten minutes, with an outer bound of
   forty-five minutes. A read with the text inline and no tools is one turn, so
   twenty minutes flat bounds it. A killed run fails over to the Codex frontier
@@ -75,9 +76,9 @@ Why the rows are what they are, stated so the next refresh can attack them:
   see it.
 - `gemini-3.8-flash` holds the mid seat with the least evidence in the table.
   A Flash-class model in this seat can return a clean verdict having read
-  little or nothing of the target, so a clean report from it counts only
-  beside the read the proxy's ledger recorded for that run: one forwarded
-  turn is a reviewer that called no tool. That record is what makes the seat
+  little or nothing of the target, so a clean report from a run with tools
+  counts only beside the read the proxy's ledger recorded for it: one
+  forwarded turn is a reviewer that called no tool. That record is what makes the seat
   tolerable rather than proven.
 - `kimi-k2.6` recommends staffing because it keeps every seat, with a
   target-shaped reason for each, where a Flash-class recommender drops
@@ -92,7 +93,7 @@ The recommender's `medium` satisfies the launcher, which requires an effort flag
 ## Reading the effort column
 
 The column lists the discrete levels each model accepts on OpenRouter's
-normalized `reasoning.effort` parameter. Two consequences worth internalizing
+normalized `reasoning.effort` parameter. Three consequences worth internalizing
 before dispatch:
 
 - **Not every level exists on every model.** `glm-5.3`, `kimi-k3` and
@@ -150,7 +151,7 @@ anything, per provider:
 
 | Bucket | Default pick | Step down (user said "cheap") | Step up (user said "best"/"most capable") |
 |---|---|---|---|
-| Mechanical / triage | `google/gemini-3.5-flash-lite` | — cheapest input is already here; take `google/gemini-3.8-flash` instead when the output dominates | `moonshotai/kimi-k2.6` |
+| Mechanical / triage | `google/gemini-3.5-flash-lite` | `deepseek/deepseek-v4.1-flash` — the cheapest input and output in the table, unqualified only for a whole-artifact read | `moonshotai/kimi-k2.6` |
 | Standard implementation | `moonshotai/kimi-k2.7-code` | `google/gemini-3.5-flash-lite` | `moonshotai/kimi-k3` |
 | Architecture / judgment-heavy | `z-ai/glm-5.3` | `google/gemini-3.8-flash` | `moonshotai/kimi-k3` |
 

@@ -1,6 +1,6 @@
 ---
 name: openrouter-claude-subagent
-description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, DeepSeek), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex or Gemini CLI, and not for the Claude and GPT models this transport refuses. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with an Edit grant scoped to that one path.
+description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, DeepSeek), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex or Gemini CLI, and not for the Claude and GPT models this transport refuses. When the dispatching brief mandates a written report file, extend this skill's read-only default with an Edit grant scoped to that one path.
 admission:
   provides: A nested Claude Code harness whose model traffic is repointed at a non-Anthropic model, plus the stream repair that makes the reply actually arrive — so a task runs on another vendor's weights while keeping this harness's tool loop, permission system, and file editing.
   cost: A local proxy process for the life of each nested run, and an OpenRouter API key the user must supply and pay against. Node must be installed, and the model routing table needs a refresh whenever OpenRouter reprices or retires a model.
@@ -123,7 +123,8 @@ to wait on.
 | Architecture, cross-subsystem design, adversarial verification, final synthesis | `high` or `xhigh` |
 
 Use the user's level if they named one. `max` only on an explicit request —
-it is the most expensive tier.
+it is the most expensive tier. A review seat takes the effort its row names;
+neither the task shape nor a user-named level overrides it.
 
 Not every model accepts every level. `references/model-routing.md` lists the
 levels each one takes — pick from that list, since two of the listed models
