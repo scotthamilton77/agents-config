@@ -1548,12 +1548,13 @@ class TestDispositions:
         assert code == 2 and result["errors"][0]["code"] == "untransferable-blocking"
 
     @staticmethod
-    def _prose_located_round(tmp_path, repo, acs_file, entry, where="evidence"):
-        """Round 1's mechanical finding sits in a Markdown file the lens itself named, in its
-        claim or in its evidence, with the other field left as the fixture wrote it."""
+    def _prose_located_round(tmp_path, repo, acs_file, entry, where="evidence",
+                             located="docs/routing.md"):
+        """Round 1's mechanical finding sits in a file the lens itself named, in its claim
+        or in its evidence, with the other field left as the fixture wrote it."""
         verdict = verdict_round1(repo)
         verdict["findings"][0][where] = (
-            "docs/routing.md:12 credits the gate with a refusal the gate does not make")
+            f"{located}:12 credits the gate with a refusal the gate does not make")
         head = repo.write_lines(4, "fix.txt")
         prior = write_json(tmp_path / "verdict-1.json", verdict)
         ledger = write_json(tmp_path / "dispositions.json", [
@@ -1578,17 +1579,20 @@ class TestDispositions:
         ledger = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))["prior_dispositions"]
         assert ledger[0]["artifact"] == "docs/routing.md"
 
-    @pytest.mark.parametrize("entry", [
-        {"artifact": "docs/other.md", "evidence": "the sentence is rewritten; doc-lint exit 0"},
-        {"artifact": "src/reader.py", "evidence": "the sentence is rewritten; doc-lint exit 0"},
-        {"artifact": "docs/routing.md", "evidence": " "},
+    @pytest.mark.parametrize("entry, located", [
+        ({"artifact": "docs/other.md", "evidence": "the sentence is rewritten; doc-lint exit 0"},
+         "docs/routing.md"),
+        ({"artifact": "src/reader.py", "evidence": "the sentence is rewritten; doc-lint exit 0"},
+         "src/reader.py"),
+        ({"artifact": "docs/routing.md", "evidence": " "}, "docs/routing.md"),
     ])
     def test_b6_a_prose_location_the_lens_did_not_name_does_not_excuse_the_test(
-            self, repo, acs_file, tmp_path, capsys, entry):
+            self, repo, acs_file, tmp_path, capsys, entry, located):
         """The file must be one the finding itself spells out, must be Markdown, and the
         evidence must still say what was done: a fixer cannot relocate a code defect into
-        prose by naming a file the lens never mentioned."""
-        flat, _ = self._prose_located_round(tmp_path, repo, acs_file, entry)
+        prose by naming a file the lens never mentioned, and a code file the lens did name
+        is still code. Each case fails exactly one of the three conditions."""
+        flat, _ = self._prose_located_round(tmp_path, repo, acs_file, entry, located=located)
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "unsupported-fix"
         assert "'artifact'" in result["errors"][0]["message"]
