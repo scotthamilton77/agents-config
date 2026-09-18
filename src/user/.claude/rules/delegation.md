@@ -52,9 +52,10 @@ it warrants no reply — do not explain the notification or restate the report.
   `agent()` knob; the Agent tool pins only the model.
 - When your own judgment is strained, a dispatch upward is legitimate: consult an
   advisor agent on a stronger model than your own.
-- **Never spawn a subagent with Fable as the model without first consulting the user.**
-  The rule guards against unconsented multiplication of top-tier token spend: this
-  covers a pinned Fable dispatch, an unpinned dispatch from a Fable session (subagents
+- **Never spawn a subagent with Fable, or GPT-6 Astra through Codex, as the model
+  without first consulting the user.** The rule guards against unconsented
+  multiplication of top-tier token spend: this covers a pinned Fable dispatch, a Codex
+  dispatch naming `gpt-6-astra`, an unpinned dispatch from a Fable session (subagents
   inherit the session model by default, so that inherited default IS a Fable spawn),
   and a fork from a Fable session (forks always run the parent model and cannot be
   pinned to anything else).

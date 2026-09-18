@@ -34,7 +34,6 @@ dispatcher (`packages/prgroom/src/prgroom/agent/dispatcher.py`).
 | Mechanical / triage / classify / cluster / finder | `gpt-5.6-luna` | `haiku` (low–high) | `ollama gemma4` |
 | Standard review / implement / fix-chain / merge-judge default | `gpt-5.6-terra` | `sonnet` / `opus` | — |
 | Architecture / security / cross-subsystem / final pre-merge / deep adversarial review / spec-writer | `gpt-5.6-sol` | `opus` (high/xhigh) | — |
-| Deeply code-centric agentic (`--write`) | `gpt-5.3-codex` | — | — |
 
 ---
 
@@ -49,7 +48,7 @@ the current review/impl tier; older `5.x` models remain available.
 | `gpt-5.6-luna` | 1.00 | 6.00 | Cheapest. Triage, cluster, classify, finder, diff-summary. |
 | `gpt-5.6-terra` | 2.50 | 15.00 | **Default review tier.** Standard review, implement, fix-chain, merge-judge default. |
 | `gpt-5.6-sol` | 5.00 | 30.00 | Complex only. Architecture, security, deep adversarial review, spec-writer. |
-| `gpt-5.3-codex` | 1.75 | 14.00 | Codex-tuned agentic `--write` coding. Retained. |
+| `gpt-5.3-codex` | 1.75 | 14.00 | Retired. Its successor `gpt-5.3-codex-spark` is a text-only near-instant preview, not a review or implementation tier. |
 | `gpt-5.5` | — | — | Legacy. Superseded by `terra`/`sol`; still available. |
 | `gpt-5.4-mini` | — | — | Legacy. Superseded by `luna`; still available. |
 

@@ -13,9 +13,11 @@ status or the logs says so. This is why pointing `ANTHROPIC_BASE_URL` straight
 at `openrouter.ai` is not a shortcut but a silent, billable dead end.
 
 `scripts/proxy.js` moves the trailing text block to the end of the response so
-it never terminates on reasoning. The repair is deliberately narrow — block
-order is otherwise preserved, because the client replays that order back
-upstream on the next turn.
+it does not terminate on reasoning. A response with no text block at all is
+beyond repair: it ships as-is, the proxy logs a warning naming the block it
+ended on, and the caller still sees the empty result. The repair is
+deliberately narrow — block order is otherwise preserved, because the client
+replays that order back upstream on the next turn.
 
 ## The second repair, and its consequence for tool grants
 
@@ -52,9 +54,9 @@ The launcher pins the run to the one model you named, three ways:
   message says what to do instead — carry on unaided, or delegate with the
   model field left out — because an API error is the only channel back to
   whatever asked.
-- **Denylist.** Claude models and the large GPT tiers are refused outright,
-  pin or no pin: they are served properly elsewhere, so arriving here means
-  something misrouted. The `-mini` GPT variants are exempt. The launcher exits
+- **Denylist.** Claude models and every GPT model are refused outright, pin
+  or no pin: they are served properly elsewhere, so arriving here means
+  something misrouted. The launcher exits
   `78` before binding a listener when `--model` names one; the proxy refuses
   them too, so neither layer depends on the other.
 

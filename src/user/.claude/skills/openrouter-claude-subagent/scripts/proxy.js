@@ -1,12 +1,15 @@
 // OpenRouter SSE-repair proxy.
 //
-// Forwards Anthropic-protocol traffic to OpenRouter unmodified, with one
-// repair: an assistant response must not END on a `thinking` or
-// `redacted_thinking` block. When it does, Claude Code yields an empty
-// result with exit 0 and no stderr while still billing the tokens. The fix
-// moves the most recent text block to the end of the response.
+// Forwards Anthropic-protocol traffic to OpenRouter with two repairs and a
+// routing gate. The first repair: an assistant response must not END on a
+// `thinking` or `redacted_thinking` block. When it does, Claude Code yields
+// an empty result with exit 0 and no stderr while still billing the tokens.
+// The fix moves the most recent text block to the end of the response. The
+// second repair strips the deferred-tool declaration OpenRouter rejects for
+// non-Anthropic models. The gate pins the model and refuses the families
+// other transports serve; each is documented where it is defined below.
 //
-// The repair is deliberately narrow. The evidence supports only the
+// The first repair is deliberately narrow. The evidence supports only the
 // must-not-end-on-reasoning constraint, so blocks are otherwise left in
 // upstream order: the client replays that order back on the next turn, and
 // rewriting it would corrupt the conversation record the model reads.
@@ -173,17 +176,12 @@ function stripDeferredTools(body) {
 // transports and have no business arriving here at all.
 
 /** Model families this transport never carries, matched as slug prefixes.
- *  Claude models run natively in the harness that launches these runs, and the
- *  large GPT tiers have their own vendor transport; reaching either one from
- *  here means something upstream misrouted. A literal list is the point — it
- *  needs revisiting when the model roster moves, and a clever pattern would
- *  hide that. */
-const DENIED_MODEL_PREFIXES = ["claude", "gpt-5.5", "gpt-5.6"];
-
-/** Prefixes above whose `-mini` variants stay reachable: they are cheap enough
- *  to be worth having, and are not what the denial is protecting against.
- *  `claude` is absent on purpose — no Claude model belongs on this transport. */
-const MINI_EXEMPT_PREFIXES = ["gpt-5.5", "gpt-5.6"];
+ *  Claude models run natively in the harness that launches these runs, and
+ *  every GPT model runs through Codex, whose subscription beats OpenRouter's
+ *  per-token rate; reaching either one from here means something upstream
+ *  misrouted. A literal list is the point — it needs revisiting when the model
+ *  roster moves, and a clever pattern would hide that. */
+const DENIED_MODEL_PREFIXES = ["claude", "gpt-"];
 
 /** Reduce a routing id to its bare model slug. Ids arrive as `vendor/slug`,
  *  sometimes with an OpenRouter `:variant` suffix, and the vendor prefix must
@@ -198,10 +196,7 @@ function modelSlug(model) {
 function isDeniedModel(model) {
   const slug = modelSlug(model);
   if (!slug) return false;
-  const matched = DENIED_MODEL_PREFIXES.find((p) => slug.startsWith(p));
-  if (!matched) return false;
-  if (!MINI_EXEMPT_PREFIXES.includes(matched)) return true;
-  return !slug.split("-").includes("mini");
+  return DENIED_MODEL_PREFIXES.some((p) => slug.startsWith(p));
 }
 
 /** The gate applies to completion requests only — those are the requests that
@@ -232,8 +227,8 @@ function pinAdvice(requested, pinned) {
 function deniedAdvice(requested, pinned) {
   return (
     `${requested} is not reachable over this transport, by design and not by accident: Claude ` +
-    "models run natively in the harness that launched this run, and the large GPT tiers run " +
-    "through their own vendor transport. Nothing here can route to it. " +
+    "models run natively in the harness that launched this run, and every GPT model runs " +
+    "through Codex. Nothing here can route to it. " +
     (pinned ? `This run is pinned to ${pinned}. ` : "") +
     "Carry on in your own context, or delegate with the model field left out so the work runs " +
     "on the same model this run does."
