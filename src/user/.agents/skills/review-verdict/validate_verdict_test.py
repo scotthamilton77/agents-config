@@ -692,6 +692,17 @@ class TestTransferredDisposition:
         entry.update(overrides)
         return entry
 
+    def test_a_fixed_entry_names_the_markdown_artifact_the_lens_located_it_in(self):
+        """A prose-located fix in a typed-code round carries the Markdown file instead of a test."""
+        doc = valid_verdict()
+        doc["prior_dispositions"] = [{
+            "round": 1, "id": "f1", "disposition": "fixed",
+            "artifact": "docs/routing.md", "evidence": "the sentence is rewritten; doc-lint exit 0",
+        }]
+        assert is_valid(doc)
+        doc["prior_dispositions"][0]["artifact"] = "src/reader.py"
+        assert not is_valid(doc)
+
     def test_transferred_with_provenance_and_work_item_validates(self):
         """PANEL-B6: both halves present is the only shape a transfer takes."""
         doc = valid_verdict()
