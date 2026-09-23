@@ -147,6 +147,13 @@ yet be checked mechanically, resolve its verification approach before calling
 it a blocking implementation contract. Do not silently substitute an artifact
 check for the outcome.
 
+The evidence ledger retains `observed:` for dated, attributed manual
+observations and supporting evidence. Existing records keep their meaning.
+For new work governed by this standard, an observation alone does not satisfy
+a blocking criterion; completion needs a test or mechanically checkable probe
+of the required outcome. Ledger syntax records what evidence is offered.
+Passing spec-lint validates its structure, not its sufficiency for completion.
+
 ### ACQ-D6: One standard feeds the existing authoring and review paths
 
 The shared acceptance-criteria standard is the deployed home of these quality
@@ -175,15 +182,18 @@ organization and its other requirements. The behavioral-outcome work,
 ## Testing decisions
 
 Use the existing skill evaluations and attack prompt/report boundary. Pair
-each deliberately defective example with a corrected control. Fix each
-example's expected finding, or absence of that finding, before running it.
-Run each labelled case three times through the configured attack routes. All
-three reports must propose a correction against the expected criterion IDs;
-corrected controls must produce no proposals against those criteria. Missing
-reports and malformed proposals fail the evaluation. The expected IDs and
-required proposal fields are checked mechanically. Explanatory quality remains
-advisory. Record the model configuration with the results. This bounded sample
-tests detection on known cases and makes no universal claim of reliability.
+each deliberately defective example with a corrected control. The quality
+assessment child spec defines how a result demonstrates detection of the
+intended defect; matching its criterion ID and proposal shape alone is
+insufficient. It assigns cases to the responsible lenses and identifies any
+cases requiring the full panel.
+
+Before implementation, that child spec settles the model configuration,
+repetition policy, evaluation budget, and pass/fail thresholds from baseline
+observations. It identifies any human or model judgment used in scoring and
+the limits of that evidence. This parent sets no fixed run count or unanimity
+rule. Designing, calibrating, and running those evaluations belongs to the
+child work, not to this documentation PR.
 
 Briefing checks inspect the generated brief at its consumer boundary. Staging
 checks inspect the standard and its citations without deploying to the user's
@@ -260,11 +270,25 @@ product state.
   private definitions with citations, and reconcile the glossary's
   falsifiability wording. This slice changes the normative source.
 - **S2: Quality assessment** (ACQ-A1, ACQ-A2, ACQ-A3, ACQ-A4, ACQ-A5, ACQ-A6,
-  ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14). Integrate the standard into the existing
-  attack mandates and their paired evaluations. This slice depends on S1.
+  ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14). First settle the assessment and
+  evaluation contract in its child spec. Then integrate the standard into the
+  existing attack mandates and their evaluations. Implementation depends on S1.
 - **S3: Brief fidelity and evidence** (ACQ-A12, ACQ-A13). Align the briefing
   skill and its generated-output evaluations with the standard. This slice
   depends on S1 and can land independently of S2.
+
+## Continuations
+
+These entries name the slice scopes. Before implementation, use `work promote`
+on each resulting feature to create its design child and blocked implementation
+placeholder. Its child spec carries the implementation manifest and the
+dependencies above. Completing a design child does not discharge the parent
+criteria; their evidence remains open until implementation supplies it.
+
+- feat: AC quality standard adoption — AC: ACQ-A11
+- feat: AC quality assessment and evaluation contract — AC: ACQ-A1, ACQ-A2,
+  ACQ-A3, ACQ-A4, ACQ-A5, ACQ-A6, ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14
+- feat: AC brief fidelity and evidence mapping — AC: ACQ-A12, ACQ-A13
 
 ## Out of scope
 
