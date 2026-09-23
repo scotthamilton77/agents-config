@@ -107,14 +107,15 @@ Its introduction includes a tracked placeholder, so the exemption never
 names an absent directory. An agent fixes a stale rendering by updating the
 item and rendering again; editing the generated file is not an amendment.
 
-### LIFE-D3: Attestation binds a closed record to the current document
+### LIFE-D3: Attestation binds to the attacked content
 
 `work acceptance attacked ID --record PATH` records an attestation in an item
-note. The marker identifies the attackable document and its content revision,
-with a parseable timestamp. Source identity is part of the binding: changing
-the named spec or changing between spec-born and tracker-born requires a new
-attestation even when two documents happen to have equal bytes. The facade
-component spec owns the marker's encoding.
+note. The marker contains a parseable timestamp and the digest of the attacked
+document's bytes. Paths locate the document and its canonical record; they are
+not part of that digest. Renaming a document preserves its attestation when
+its content is unchanged and the references and record's filename binding are
+updated together. A rename alone requires no new attack. The facade component
+spec owns the marker's encoding.
 
 The verb refuses without writing a marker if the record is unreadable or
 unparseable, is not the canonical record beside the item's document, has an
@@ -140,7 +141,7 @@ this design does not introduce tamper-proof evidence.
 ### LIFE-D4: Amendments invalidate evidence before reuse
 
 Changing tracker-born acceptance text or description changes the rendering
-and invalidates its attestation when the bytes change. Changing a spec
+and invalidates its attestation when the bytes change. Changing a spec's bytes
 invalidates the spec's record and every spec-born item's attestation against
 that revision. Changing a spec-born item's description does not invalidate
 its attack because that description is not the attacked document.
@@ -263,16 +264,17 @@ move a significant product decision into implementation.
 - **LIFE-A5** Repeated renders with unchanged description, criteria, and named
   spec are byte-equal despite changes to notes, title, or other metadata.
 - **LIFE-A6** A valid closed record for the current document produces one
-  source-and-revision attestation, including after repeated or concurrent
+  attestation for its content revision, including after repeated or concurrent
   requests to attest that same record.
 - **LIFE-A7** Attesting a record that violates the binding or closure conditions
   in LIFE-D3 is refused without writing a marker.
 - **LIFE-A8** A tracker-born amendment that changes its rendering makes its
   prior attestation unusable, even while the committed rendering is stale.
-- **LIFE-A9** A changed spec leaves all its spec-born children unattested until
-  the new revision is attacked and each child attests against it.
-- **LIFE-A10** Changing an item's attackable-document identity invalidates its
-  attestation even when the replacement document has identical bytes.
+- **LIFE-A9** Changing an attacked spec's content leaves its spec-born children
+  unattested until the new revision is attacked and each child attests against it.
+- **LIFE-A10** Renaming an attacked document without changing its bytes
+  preserves each citing item's attestation once its references and the
+  record's filename binding are updated, without another attack round.
 - **LIFE-A11** Claiming a noun-bearing leaf with empty or unresolvable criteria
   refuses the transition and names the remedy or resolution failure.
 - **LIFE-A12** Claiming an open leaf applies exactly the noun and triviality
@@ -309,7 +311,7 @@ move a significant product decision into implementation.
 | Criteria | Inverse and boundary cases | Dependency failure | Repetition and concurrency |
 | --- | --- | --- | --- |
 | LIFE-A1 to LIFE-A5, LIFE-A23 | Empty entries, mixed fields, duplicate and generated IDs, description headings | Missing or unreadable spec | Equal input renders equally; later edits are new input |
-| LIFE-A6 to LIFE-A10 | Empty proposal list, rejected-only round, malformed marker, equal bytes under another source | Unreadable record, document, or markers | Same attestation is idempotent; amendments invalidate by the state each operation reads |
+| LIFE-A6 to LIFE-A10 | Empty proposal list, rejected-only round, malformed marker, unchanged content after rename | Unreadable record, document, or markers | Same attestation is idempotent; content amendments invalidate by the state each operation reads |
 | LIFE-A11 to LIFE-A15 | Attested and unattested nouns, trivial leaves, structural roles, already-in-progress claim | Rendering or marker lookup fails | In-progress claim stays a no-op; later boundaries recheck current state |
 | LIFE-A16 to LIFE-A17 | Empty input, matching old input after amendment, no-item target | Facade cannot return a rendering | Amendment between judgment and posting refuses the post |
 | LIFE-A18 to LIFE-A20 | Valid, invalid, absent, ignored and untracked records | Checker or enumeration unavailable | Repeated checks over the same tree have equal results; checks write nothing |
@@ -322,7 +324,7 @@ move a significant product decision into implementation.
   LIFE-A23). Specify and implement the facade renderer, spec-child citations,
   and criteria-section parsing in the existing consumers.
 - **S2: Attestation and invalidation** (LIFE-A6, LIFE-A7, LIFE-A8, LIFE-A9,
-  LIFE-A10). Specify and implement the facade's source/revision binding after S1.
+  LIFE-A10). Specify and implement the facade's content binding after S1.
 - **S3: Attack workflow and compatibility** (LIFE-A21, LIFE-A22). Specify the
   version-check interface and tracker-item path after S2. Introduce the tracked
   directory and its doc-lint exemption together. Later consumers reuse the check.
@@ -333,6 +335,24 @@ move a significant product decision into implementation.
 - **S6: Review consumers** (LIFE-A16, LIFE-A17). Specify and implement emission
   and posting against the rendered criteria and attestation after S3. Include
   the before-use amendment instruction in the briefing and review paths.
+
+## Continuations
+
+These entries name the component scopes. Use `work promote` on each resulting
+feature before implementation to create its design child and blocked
+implementation placeholder. Each child spec supplies its implementation
+manifest and the dependencies above. Delivering that design does not discharge
+the parent implementation criteria or change their open evidence rows.
+
+- feat: AC lifecycle rendering and references — AC: LIFE-A1, LIFE-A2, LIFE-A3,
+  LIFE-A4, LIFE-A5, LIFE-A23
+- feat: AC lifecycle attestation and invalidation — AC: LIFE-A6, LIFE-A7,
+  LIFE-A8, LIFE-A9, LIFE-A10
+- feat: AC lifecycle attack workflow and compatibility — AC: LIFE-A21, LIFE-A22
+- feat: AC lifecycle claim and delivery gates — AC: LIFE-A11, LIFE-A12,
+  LIFE-A13, LIFE-A14, LIFE-A15
+- feat: AC lifecycle repository record gate — AC: LIFE-A18, LIFE-A19, LIFE-A20
+- feat: AC lifecycle review consumers — AC: LIFE-A16, LIFE-A17
 
 ## Out of scope
 
@@ -345,7 +365,11 @@ every document in the repository has an attack record.
 ## Evidence
 
 All criteria describe future implementation. No prior attack record attests
-to this document or discharges these criteria.
+to this document or discharges these criteria. The ledger retains `observed:`
+for manual observations and supporting evidence. For new work, the quality
+contract requires a test or mechanically checkable probe for blocking
+completion. Ledger validity and a closed attack record do not establish that
+the implementation meets its criteria.
 
 - LIFE-A1 | open
 - LIFE-A2 | open
