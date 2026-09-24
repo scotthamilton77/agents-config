@@ -1,0 +1,32 @@
+# Gitleaks configuration: the default ruleset, minus three verified false positives.
+# Each allowlist names one rule and matches only the known harmless shape, so a
+# real credential in the same file is still reported.
+
+[extend]
+useDefault = true
+
+# The prgroom tests write a bare PEM header into a temp file so a key path exists.
+# The private-key rule then matches from one stub header across to the next.
+# The allowlist applies only when both ends of the match are stubs.
+[[allowlists]]
+description = "prgroom test stubs that write only a PEM header"
+targetRules = ["private-key"]
+condition = "AND"
+paths = ['''packages/prgroom/(mutants/)?tests/unit/test_(cli_post_verdict|lifecycle_approve)\.py$''']
+regexTarget = "match"
+regexes = ['''\A-----BEGIN PRIVATE KEY-----\\n"\)(?s:.*)write_text\("-----BEGIN PRIVATE KEY-----\z''']
+
+# Grill session logs carry per-event idempotency keys, which are request ids.
+[[allowlists]]
+description = "grill session log idempotency keys"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''\Aidempotency_key"''']
+
+# A tracker dedup key in the issues export is a readable slug, not a credential.
+[[allowlists]]
+description = "tracker dedup key in the issues export"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)\.beads/issues\.jsonl$''']
+regexes = ['''\Ab7s-simplify-drift-policy\z''']
