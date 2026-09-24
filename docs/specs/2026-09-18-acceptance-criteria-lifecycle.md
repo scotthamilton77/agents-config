@@ -61,9 +61,10 @@ Notes, titles, and other item metadata do not affect it.
 
 Resolution follows these rules:
 
-- Ignore blank lines. On an item naming a spec, a whole-line criterion ID is
-  a citation into that spec. Other lines are text. Without a named spec,
-  every line is text.
+- Ignore blank lines. On an item naming a spec, a line containing only one
+  criterion ID or comma-separated criterion IDs cites those entries in order.
+  Whitespace around IDs is ignored. Other lines are text. Without a named
+  spec, every line is text.
 - Read cited entries with spec-lint's entry grammar, preserving the full
   entry and its continuation text. A criterion-shaped line starts another
   entry. Resolve citations once and preserve field order.
@@ -85,11 +86,11 @@ within these observable constraints.
 
 ### LIFE-D2: One document is attacked for each item
 
-An item is **spec-born** when every nonblank acceptance line cites an ID in
-its named spec. Its attackable document is that whole spec. Selection and
-child coverage are judged by the quality review of the spec and its slice
-assignments. An empty selection remains unclaimable even if the spec was
-attacked.
+An item is **spec-born** when every nonblank acceptance line consists solely
+of citations into its named spec under LIFE-D1. Its attackable document is
+that whole spec. Selection and child coverage are judged by the quality review
+of the spec and its slice assignments. An empty selection remains unclaimable
+even if the spec was attacked.
 
 An item with any full-text line is **tracker-born**. Its attackable document
 is its rendering, saved at `.work/attacks/<item-id>.md`. The attack record
@@ -254,7 +255,9 @@ move a significant product decision into implementation.
 ## Acceptance criteria
 
 - **LIFE-A1** A caller rendering cited criteria receives their complete spec
-  entries in field order, independent of the working directory.
+  entries in field order, independent of the working directory. Comma-separated
+  IDs and the same IDs on separate lines produce identical criteria output,
+  including for children delivered before the renderer ships.
 - **LIFE-A2** A caller rendering text or mixed text and citations receives
   stable, unique criterion IDs in the existing consumer grammar.
 - **LIFE-A3** A rendering with an invalid reference or ID collision is refused
@@ -310,7 +313,7 @@ move a significant product decision into implementation.
 
 | Criteria | Inverse and boundary cases | Dependency failure | Repetition and concurrency |
 | --- | --- | --- | --- |
-| LIFE-A1 to LIFE-A5, LIFE-A23 | Empty entries, mixed fields, duplicate and generated IDs, description headings | Missing or unreadable spec | Equal input renders equally; later edits are new input |
+| LIFE-A1 to LIFE-A5, LIFE-A23 | Empty entries, comma-separated citations, mixed fields, duplicate and generated IDs, description headings | Missing or unreadable spec | Equal input renders equally; later edits are new input |
 | LIFE-A6 to LIFE-A10 | Empty proposal list, rejected-only round, malformed marker, unchanged content after rename | Unreadable record, document, or markers | Same attestation is idempotent; content amendments invalidate by the state each operation reads |
 | LIFE-A11 to LIFE-A15 | Attested and unattested nouns, trivial leaves, structural roles, already-in-progress claim | Rendering or marker lookup fails | In-progress claim stays a no-op; later boundaries recheck current state |
 | LIFE-A16 to LIFE-A17 | Empty input, matching old input after amendment, no-item target | Facade cannot return a rendering | Amendment between judgment and posting refuses the post |
