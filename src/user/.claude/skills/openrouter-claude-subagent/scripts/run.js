@@ -197,7 +197,7 @@ async function main(argv) {
     process.stderr.write(
       `[run] ${model} is not reachable over this transport, by design and not by ` +
       "accident: Claude models run natively in the harness that launched this run, " +
-      "and the large GPT tiers run through their own vendor transport. Dispatch " +
+      "and every GPT model runs through Codex. Dispatch " +
       "through the transport that serves it, or name a model from another vendor.\n"
     );
     return EXIT_CONFIG_ERROR;
