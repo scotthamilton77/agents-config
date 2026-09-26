@@ -6,10 +6,11 @@
 **Charter:** `docs/specs/2026-07-21-harness-rework-way-forward.md`, decisions
 D3, D4, D7, D8 and D11.
 **Quality contract:** `docs/specs/2026-09-18-acceptance-criteria-quality.md`.
+**Terminology:** `CONTEXT.md`; "spec" here means a spec document.
 
 ## Problem statement
 
-Criteria can reach implementation through a spec, a tracker item, or an
+Criteria can reach implementation through a spec, a work item, or an
 amendment made during review. Independent copies in the spec, tracker, and
 review input can disagree. A completed attack on one version says nothing
 about criteria changed afterward.
@@ -20,29 +21,28 @@ ordinary workflow transitions from silently using missing or stale evidence.
 
 ## Solution and scope
 
-The tracker acceptance field selects the contract for an item. Consumers
-render that selection through the facade instead of retyping it. A closed
-attack record supports an attestation for a particular document and revision.
-Claim, review, posting, and delivery check the relevant current state.
+A work item's acceptance field selects its contract. Consumers render that
+selection through the facade instead of retyping it. An attestation ties the
+item to the content revision covered by a closed attack record. Claim, review,
+posting, and delivery check the relevant current state.
 
-This document owns authority, reference resolution, attack records,
-attestation, amendment, and enforcement. The quality contract owns what makes
-criteria sufficient and what observations establish their success. The
-lifecycle verifies references and evidence state; it does not mechanically
-judge the meaning or completeness of criteria.
+This document owns criterion authority, reference resolution, attack records,
+attestation, amendment, and enforcement. The quality contract owns criterion
+sufficiency and evidence of success. The lifecycle checks references and
+evidence state; it does not judge criterion meaning or completeness.
 
 ## User stories
 
-1. As an implementer, I want one rendering of my assigned criteria and a clear
+1. As an implementer, I want one criteria rendering for my work item and a clear
    refusal when the required attack has not closed.
-2. As a spec author, I want children to reference my criteria without creating
-   text copies that drift.
-3. As a ticket author, I want criteria without a spec to use the same attack
-   process and evidence rules.
+2. As a spec author, I want work items implementing my spec's slices to cite
+   their assigned criteria without creating text copies that drift.
+3. As a work item author, I want criteria stated without a spec to use the same
+   attack process and evidence rules.
 4. As a reviewer, I want amendments to invalidate evidence for the old
    contract before another round uses the new one.
-5. As a reader of a verdict, I want to see exactly the criteria that were
-   judged, with freshness checked when the verdict is posted.
+5. As a reader of a verdict artifact, I want to see exactly the criteria judged,
+   with freshness checked when the verdict is posted.
 
 ## Lifecycle decisions
 
@@ -88,7 +88,7 @@ within these observable constraints.
 
 An item is **spec-born** when every nonblank acceptance line consists solely
 of citations into its named spec under LIFE-D1. Its attackable document is
-that whole spec. Selection and child coverage are judged by the quality review
+that whole spec. Selection and work-item coverage are judged by the quality review
 of the spec and its slice assignments. An empty selection remains unclaimable
 even if the spec was attacked.
 
@@ -181,8 +181,8 @@ the facade does not rewrite existing items; later review and delivery still
 apply their gates. Empty criteria name `work acceptance set` as the remedy;
 missing attestation names the attack step. No gate classifies criterion prose.
 
-Structural children have no noun. A design child remains outside the claim
-and delivery gates; the spec it delivers is checked by the record gate when
+Structural children of a spec container have no noun. A design child remains
+outside claim and delivery gates; its spec is checked by the record gate when
 its record is present. An implementation placeholder remains unclaimable and
 is retired when the spec manifest expands. An item with neither a recognized
 noun nor a recognized structural role is refused by type.
@@ -198,7 +198,7 @@ review of the amended criteria; freshness alone cannot validate an old verdict.
 Both consumers refuse an empty rendering, a missing required attestation, or
 a failure to obtain the current rendering. Neither falls back to an unchecked
 file. The poster extracts criteria only from the acceptance-criteria section.
-A target with no tracker item keeps the existing supplied-file path. The
+A target with no work item keeps the existing supplied-file path. The
 invoker remains responsible for naming the work item; no PR-to-item discovery
 service is added here.
 
@@ -257,7 +257,7 @@ move a significant product decision into implementation.
 - **LIFE-A1** A caller rendering cited criteria receives their complete spec
   entries in field order, independent of the working directory. Comma-separated
   IDs and the same IDs on separate lines produce identical criteria output,
-  including for children delivered before the renderer ships.
+  including for work items created before the renderer ships.
 - **LIFE-A2** A caller rendering text or mixed text and citations receives
   stable, unique criterion IDs in the existing consumer grammar.
 - **LIFE-A3** A rendering with an invalid reference or ID collision is refused
@@ -273,8 +273,8 @@ move a significant product decision into implementation.
   in LIFE-D3 is refused without writing a marker.
 - **LIFE-A8** A tracker-born amendment that changes its rendering makes its
   prior attestation unusable, even while the committed rendering is stale.
-- **LIFE-A9** Changing an attacked spec's content leaves its spec-born children
-  unattested until the new revision is attacked and each child attests against it.
+- **LIFE-A9** Changing an attacked spec's content leaves citing spec-born work
+  items unattested until the new revision is attacked and each item attests to it.
 - **LIFE-A10** Renaming an attacked document without changing its bytes
   preserves each citing item's attestation once its references and the
   record's filename binding are updated, without another attack round.
@@ -306,8 +306,9 @@ move a significant product decision into implementation.
 - **LIFE-A22** A tracker-born attack workflow produces committed current
   rendering and record files before attestation is required, and reuses them
   unchanged on a second invocation while their evidence remains current.
-- **LIFE-A23** A spec-delivery child stores assigned IDs as citations, so an
-  edit to a cited spec entry changes its rendering without editing the child.
+- **LIFE-A23** A work item created by spec delivery stores assigned IDs as
+  citations. Editing a cited spec entry changes the item's rendering without
+  editing the work item.
 
 ### Edge-case taxonomy
 
@@ -324,12 +325,12 @@ move a significant product decision into implementation.
 ## Ordered slice list
 
 - **S1: Render and references** (LIFE-A1, LIFE-A2, LIFE-A3, LIFE-A4, LIFE-A5,
-  LIFE-A23). Specify and implement the facade renderer, spec-child citations,
+  LIFE-A23). Specify and implement the facade renderer, work-item citations,
   and criteria-section parsing in the existing consumers.
 - **S2: Attestation and invalidation** (LIFE-A6, LIFE-A7, LIFE-A8, LIFE-A9,
   LIFE-A10). Specify and implement the facade's content binding after S1.
 - **S3: Attack workflow and compatibility** (LIFE-A21, LIFE-A22). Specify the
-  version-check interface and tracker-item path after S2. Introduce the tracked
+  version-check interface and tracker-born path after S2. Introduce the tracked
   directory and its doc-lint exemption together. Later consumers reuse the check.
 - **S4: Claim and delivery** (LIFE-A11, LIFE-A12, LIFE-A13, LIFE-A14, LIFE-A15).
   Enable the facade transitions after the attack path is available.
@@ -342,10 +343,10 @@ move a significant product decision into implementation.
 ## Continuations
 
 These entries name the component scopes. Use `work promote` on each resulting
-feature before implementation to create its design child and blocked
-implementation placeholder. Each child spec supplies its implementation
-manifest and the dependencies above. Delivering that design does not discharge
-the parent implementation criteria or change their open evidence rows.
+feature before implementation to make it a spec container with a design child
+and blocked implementation placeholder. Its child spec supplies the
+implementation manifest and the dependencies above. Delivering that design
+does not discharge the parent criteria or change their open evidence rows.
 
 - feat: AC lifecycle rendering and references — AC: LIFE-A1, LIFE-A2, LIFE-A3,
   LIFE-A4, LIFE-A5, LIFE-A23
@@ -361,7 +362,7 @@ the parent implementation criteria or change their open evidence rows.
 
 Criterion quality, a new tracker backend field, automatic installation,
 cross-system transactions, cryptographic proof of review, PR-to-item lookup,
-semantic or delta-scoped invalidation, and backfilling every open tracker item
+semantic or delta-scoped invalidation, and backfilling every open work item
 are outside this design. The gate over present records does not prove that
 every document in the repository has an attack record.
 
