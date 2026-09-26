@@ -26,6 +26,14 @@ it discharges.
 Contract: `packages/installer/src/installer/core/spec_lint.py`, run as
 `make spec-lint` over `docs/specs/`.
 
+## Acceptance-criteria attack
+
+An adversarial review that identifies ways an implementation could satisfy
+the stated criteria while still being wrong. Findings propose changes to the
+criteria for the author to accept or reject.
+
+Contract: `src/user/.claude/skills/ac-attack/`.
+
 ## Admission record
 
 The front-matter block that earns a rule, skill, command or agent its place in
@@ -40,6 +48,30 @@ wherever it sits, and the drop is reported rather than silent. Records are
 repo-side bookkeeping and are stripped from the deployed bytes.
 
 Contract: `packages/installer/src/installer/core/admission.py`.
+
+## Attack record
+
+The recorded account of an acceptance-criteria attack against a document
+revision, including its proposals and their dispositions. It concerns the
+contract's adequacy, not the implementation's completion.
+
+Contract: `src/user/.claude/skills/ac-attack/record.md`.
+
+## Attestation
+
+In the proposed lifecycle, a work item's recorded association with the content
+revision covered by a closed attack record. It identifies the criteria review
+the item relies on; it does not establish implementation completion.
+
+Design: `docs/specs/2026-09-18-acceptance-criteria-lifecycle.md`.
+
+## Criteria rendering
+
+In the proposed lifecycle, a generated document containing a work item's
+description and resolved acceptance criteria. It derives from the work item
+and any cited spec document; it is not an independently authored contract.
+
+Design: `docs/specs/2026-09-18-acceptance-criteria-lifecycle.md`.
 
 ## Gate
 
@@ -112,6 +144,9 @@ them — or cites the decision it discharges, where a decision rather than a
 criterion is what mints it; it is the unit that gets dispatched, reviewed and
 merged.
 
+A slice defines the change boundary. Work items track the work needed to
+deliver it.
+
 Decomposing a spec into an ordered slice list is the spec author's deliverable,
 not a later step — a spec is not ready until it is sliced.
 
@@ -120,10 +155,22 @@ not a later step — a spec is not ready until it is sliced.
 A dated design document under `docs/specs/`, describing a change's full intent
 and carrying its acceptance criteria and slice list.
 
+**Spec document** is the explicit name when distinguishing it from a spec
+container in the tracker.
+
 A spec is a point-in-time proposal, not a progress report. One describing
 behaviour nobody has implemented yet is the normal case, not a defect. Where
 a spec and the code disagree about what exists, the code wins; where they
 disagree about what was decided, the spec does.
+
+## Spec container
+
+A work item that groups the design and implementation work for a proposed
+change. Its design child produces a spec document. Its implementation work
+delivers the document's slices. The container carries tracker status; the
+document carries the design contract.
+
+Contract: the `spec` noun in `.work/config.toml` and the `work` facade.
 
 ## Track
 
@@ -137,6 +184,11 @@ in the configuration, not a licence to invent a new one.
 
 Contract: `[tracks]` in `.work/config.toml`, read by the `work` facade's track
 verbs.
+
+## Tracker
+
+The system that stores work items and their relationships. A **tracker item**
+is one work item within that system.
 
 ## Verdict artifact
 
@@ -155,9 +207,19 @@ schema are authoritative for fields, validation and lens rules.
 ## Work item
 
 The unit the tracker holds: one piece of intent with an identifier, a parent, a
-track and a status. Work items are addressed through the `work` facade, never
-through the storage backend directly — the facade is what keeps the backend
-replaceable, so reaching past it is a defect even when it works.
+track and a status. **Tracker item** and **ticket** are synonyms; **work item**
+is the canonical term.
+
+Work items can cover design, implementation, or investigation. In the proposed
+lifecycle, their criteria may be stated directly, selected from a spec
+document, or both.
+
+> **Author:** Does this ticket need a separate spec document?
+> **Implementer:** The proposed lifecycle also supports criteria stated
+> directly on the work item.
+
+Work items are addressed through the `work` facade. Direct access to the
+storage backend would bypass that interface and undermine its replaceability.
 
 Where the facade cannot express an operation, the gap is recorded against the
 milestone rather than worked around silently.
