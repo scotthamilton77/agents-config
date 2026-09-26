@@ -247,10 +247,9 @@ with controlled item revisions. Test the CI target in temporary git repositories
 containing tracked, ignored, missing, and malformed records. No test deploys
 configuration or rewrites the user's tracker.
 
-Component child specs retain these public contracts and add the exact wire
-formats and fixtures their implementation needs. They are required before
-scaffolding their slice. Those details may not weaken the parent invariants or
-move a significant product decision into implementation.
+Component child specs define wire formats and fixtures before scaffolding.
+They retain these public contracts and may not weaken parent invariants or
+leave significant product decisions to implementation.
 
 ## Acceptance criteria
 
@@ -342,11 +341,12 @@ move a significant product decision into implementation.
 
 ## Continuations
 
-These entries name the component scopes. Use `work promote` on each resulting
-feature before implementation to make it a spec container with a design child
-and blocked implementation placeholder. Its child spec supplies the
-implementation manifest and the dependencies above. Delivering that design
-does not discharge the parent criteria or change their open evidence rows.
+Use `work promote` on each resulting feature before implementation. Its spec
+container holds a design child and blocked implementation placeholder. The
+child spec supplies the implementation manifest and dependencies above. It
+names a verification child for any parent outcome spanning slices, as the
+quality contract requires. Delivering the design does not discharge parent
+criteria or change their open evidence rows.
 
 - feat: AC lifecycle rendering and references — AC: LIFE-A1, LIFE-A2, LIFE-A3,
   LIFE-A4, LIFE-A5, LIFE-A23
@@ -368,12 +368,12 @@ every document in the repository has an attack record.
 
 ## Evidence
 
-All criteria describe future implementation. No prior attack record attests
-to this document or discharges these criteria. The ledger retains `observed:`
-for manual observations and supporting evidence. For new work, the quality
-contract requires a test or mechanically checkable probe for blocking
-completion. Ledger validity and a closed attack record do not establish that
-the implementation meets its criteria.
+All criteria describe future implementation; their evidence remains open.
+No prior attack record attests to this document. The quality contract permits
+`observed:` evidence of planned human acceptance, subject to its protocol and
+evidence requirements. A valid ledger, closed attack record, or passing
+lifecycle gate does not establish implementation success or discharge a
+pending human acceptance check.
 
 - LIFE-A1 | open
 - LIFE-A2 | open

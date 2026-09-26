@@ -64,6 +64,21 @@ contract."
   the dispatch brief names the mechanical checks that gate completion;
   anything not mechanically checkable rides as advisory review.
 
+*Amended 2026-09-26 (D1, D4 and D8):* every material commitment needs an
+explicit verification method, pass/fail rule, and acceptance authority.
+Mechanical verification remains the default. Where the outcome requires human
+participation or judgment, the contract defines the observation protocol or
+assessment standard and names the evaluator before implementation. Completion
+at the declared acceptance boundary waits for that check's recorded result.
+Checking that an authorized decision was recorded does not mechanize the
+judgment itself. Automatable criteria remain red-test-convertible; human-only
+criteria use this bounded exception. Ordinary advisory review findings remain
+non-blocking under D8. A terminal-clean review does not discharge a pending
+human acceptance check. Cost or difficulty never makes a material commitment
+optional; changing the commitment requires an authorized scope amendment.
+The quality standard specifies this contract in
+`docs/specs/2026-09-18-acceptance-criteria-quality.md`.
+
 **D5 — Foreign eyes sit in review seats, not authoring seats.** Authoring
 quality dominates in the writer seat (fresh-context Anthropic frontier);
 cross-vendor diversity pays where blind spots correlate — AC-attack, scaffold

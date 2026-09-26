@@ -25,9 +25,10 @@ Define one standard for individual criteria and for the set that constitutes
 a work item's contract. A set is ready when it covers the material outcomes
 and preservation requirements of the agreed scope, has a consistent
 interpretation, and leaves no significant product decision unresolved. Every
-blocking criterion has a feasible mechanical check with an explicit pass/fail
-rule. Implementation choices remain open unless a required outcome or
-constraint depends on them.
+material commitment has a feasible verification method, an explicit pass/fail
+rule, and an acceptance authority. Automate verification where feasible;
+identify necessary human participation or judgment before implementation.
+Implementation choices remain open unless the contract depends on them.
 
 This document owns the meaning of a sufficient contract, including what
 observation establishes success. The AC lifecycle companion owns storage,
@@ -64,9 +65,18 @@ a consumer's required output format is a contract. Merely adding a sentence
 instructing an agent to behave differently is insufficient evidence that its
 behavior changed.
 
-Each obligation has a reason in the agreed scope. There is no separate
-artifact-to-behavior reference hierarchy or minimum count of criteria in a
-particular class.
+A research spike may deliver an evidence-supported answer to a named question.
+A decision item may deliver a reasoned choice against stated constraints.
+Document existence or a matching heading does not establish either outcome.
+Define how the answer or reasoning will be assessed, including any human
+acceptance check. Decide beforehand whether a justified inconclusive result
+is acceptable; it is not an automatic substitute for a promised answer.
+
+Each obligation has a basis in the agreed purpose, decisions, constraints, or
+preservation guarantees. A parent criterion is one possible basis, not a
+mandatory ancestor. Reconcile missing coverage with the agreed scope; obtain
+authorization for a scope expansion. No artifact hierarchy or class quota is
+required.
 
 ### ACQ-D2: Granularity follows the obligation
 
@@ -82,10 +92,14 @@ eligibility, and installation behavior spans independent obligations and
 must be split. The number of test functions or assertions does not decide
 granularity.
 
-A slice receives whole criteria it can discharge. A parent outcome may span
-slices, but then it remains a parent criterion with separately identified
-child obligations. A slice cannot report a parent criterion complete after
-implementing only its portion.
+A slice receives whole criteria it can discharge. An outcome spanning slices
+remains a parent criterion with separately identified child obligations.
+Before implementation starts, assign its verification to an explicit child
+work item. That child stays open until evidence establishes the parent outcome
+at the relevant interface. It may reuse or combine sufficient existing checks;
+a separate integration test is needed only where those checks leave a gap.
+Closing implementation children does not itself discharge the parent. Purely
+structural containers need no extra check beyond their children's completion.
 
 ### ACQ-D3: Falsifiability includes preservation
 
@@ -99,9 +113,9 @@ before using them to define the expected result. If a premise is unknown and
 changes what success means, the set is not ready. The author identifies the
 missing fact or decision rather than presenting an assumption as established.
 
-The existing glossary and authoring instructions say every criterion is
-"false today." Adoption replaces that wording with this distinction. The
-charter's requirement that criteria be convertible to failing tests remains.
+Existing authoring instructions say every criterion is "false today." Adoption
+replaces that wording with this distinction. Automatable checks remain
+red-test-convertible; human checks follow the charter's explicit exception.
 
 ### ACQ-D4: Readiness is a property of the set
 
@@ -129,30 +143,49 @@ the relevant case or a reason the dimension does not apply. Several dimensions
 may share a case; walking the taxonomy does not require a new criterion for
 every cell.
 
-### ACQ-D5: Blocking evidence has a mechanical decision rule
+### ACQ-D5: Every commitment has a verification contract
 
-Before implementation, identify a feasible check at the highest relevant
-public interface. State its setup, observation, and expected result. The check
-must be capable of distinguishing the promised outcome from a plausible
-failure. Its eventual passing result is evidence for the criterion.
+Before implementation, identify a feasible check at the relevant public
+interface. State its setup, observation, pass/fail rule, and required evidence.
+Name the acceptance authority: the rule that decides a measured result, or the
+human authorized to judge it. Name the work item's completion that waits for
+the result. The check must distinguish the promise from a plausible failure.
 
-For a stochastic agent behavior, specify the scenario set, controlled inputs,
-run count, and acceptance threshold before evaluating the change. A successful
-example alone does not establish reliability outside that observation.
+Mechanical verification is the default. Human involvement takes two forms:
 
-Human judgment can identify important quality concerns, but an attributed
-observation alone does not discharge a blocking criterion. Non-mechanical
-judgment remains advisory under charter D4 and D8. If a desired outcome cannot
-yet be checked mechanically, resolve its verification approach before calling
-it a blocking implementation contract. Do not silently substitute an artifact
-check for the outcome.
+- **Human-performed measurement.** A defined protocol produces observations
+  judged by a measurable rule. For example, four of five first-time users
+  complete a named task within two minutes without help. Define participants,
+  starting conditions, assistance, and successful completion. An automated
+  agent completing the task does not establish human usability.
+- **Human judgment.** Where automation cannot establish the required property,
+  agree the assessment standard and designated evaluator before implementation.
+  A human acceptance check records that evaluator's actual decision, its basis,
+  and the artifact revision or observation it covers. Naming a human alone does
+  not make "the interface feels good" assessable. A recorded approval can be
+  checked mechanically without making the underlying judgment mechanical.
 
-The evidence ledger retains `observed:` for dated, attributed manual
-observations and supporting evidence. Existing records keep their meaning.
-For new work governed by this standard, an observation alone does not satisfy
-a blocking criterion; completion needs a test or mechanically checkable probe
-of the required outcome. Ledger syntax records what evidence is offered.
-Passing spec-lint validates its structure, not its sufficiency for completion.
+Every material commitment blocks acceptance at its declared completion boundary.
+Advisory findings cannot discharge it. A required human check stays pending
+until performed; cost or difficulty does not authorize downgrading it. Resolve
+an infeasible check or obtain an explicit scope amendment before calling the
+contract ready. Ordinary advisory review findings remain non-blocking under
+charter D8; planned human acceptance is the charter's separate, bounded check.
+
+For controlled evaluations of stochastic behavior, specify scenarios, inputs,
+run count, and threshold before evaluation. For live observation windows,
+specify the population, collection method, window, missing-data treatment, and
+threshold before collection. Define a baseline when comparison requires one.
+Window evidence can block milestone completion without blocking its individual
+PRs. An incomplete window leaves the criterion pending. Neither a successful
+example nor a window result establishes reliability beyond its stated scope.
+
+The ledger retains `observed:` for dated, attributed observations, including
+human acceptance. Its referenced account must supply the agreed protocol or
+assessment, evidence, and result; the row alone proves no outcome. Existing
+records keep their meaning. Spec-lint checks ledger structure, not evidence
+sufficiency. Adoption reconciles blanket mechanical-only completion wording
+with the charter amendment; it does not add a new review-finding class.
 
 ### ACQ-D6: One standard feeds the existing authoring and review paths
 
@@ -228,15 +261,16 @@ this documentation change does not claim to have run them.
 - **ACQ-A8** Given a relevant dependency failure omitted from a criterion's
   taxonomy walk, the review identifies the uncovered outcome; a justified
   inapplicable dimension requires no invented criterion.
-- **ACQ-A9** Given a blocking criterion whose evidence has no mechanical
-  pass/fail rule, the review identifies the missing verification contract;
-  naming a human observer alone does not remove that finding.
+- **ACQ-A9** Given a commitment without a feasible verification contract,
+  the review identifies what is missing; a defined human measurement or
+  judgment check is accepted, while naming a human observer alone is not.
 - **ACQ-A10** Given a proposed criterion that duplicates existing coverage
   without excluding another in-scope failure, the review identifies the
   existing coverage rather than requiring an additional obligation.
 - **ACQ-A11** In staging for every supported tool, the criteria definition and
   taxonomy have one deployed source, and each applicable authoring or review
-  skill's criteria step directs its reader to that source.
+  skill's criteria step directs its reader to that source. Authoring and
+  completion instructions contain no contradictory private quality rule.
 - **ACQ-A12** Given an assigned criterion set, the generated brief preserves
   exactly those criterion IDs and texts; zero assigned criteria produces a
   refusal instead of an invented contract.
@@ -247,13 +281,29 @@ this documentation change does not claim to have run them.
   factual premise, the review identifies the affected criterion and the
   unsupported premise; a control consistent with that evidence receives no
   premise finding.
+- **ACQ-A15** Given a window-based criterion, the review accepts a defined
+  observation protocol and completion boundary without requiring controlled
+  inputs or per-PR gating; an unspecified window receives a finding.
+- **ACQ-A16** Given a parent outcome spanning slices, the review identifies
+  missing verification ownership; an explicit verification child using
+  sufficient existing checks needs no duplicate integration test.
+- **ACQ-A17** Given material commitments supported only by advisory findings,
+  the review identifies the missing acceptance checks; a set using only
+  well-defined human acceptance checks receives no automation-quota finding.
+- **ACQ-A18** Given a research deliverable checked only for document existence,
+  the review identifies the missing answer assessment; an evidence-supported
+  answer, or a justified inconclusive result permitted by the contract,
+  receives no finding merely because it delivers knowledge rather than code.
+- **ACQ-A19** Given an obligation grounded in an agreed decision or preservation
+  guarantee, the review accepts that scope basis without demanding a parent AC;
+  a proposed capability outside the agreed scope requires authorization.
 
 ### Edge-case taxonomy
 
-The paired controls in ACQ-A1 through ACQ-A10 and ACQ-A14 cover the inverse of
-each finding. ACQ-A12 covers the empty set; ACQ-A4 covers one obligation with
-several observations. Dependency failures are explicit in ACQ-A8 and in the
-existing attack rule that a missing lens report leaves a round open.
+The paired controls in ACQ-A1 through ACQ-A10 and ACQ-A14 through ACQ-A19 cover
+the inverse of each finding. ACQ-A12 covers the empty set; ACQ-A4 covers one
+obligation with several observations. Dependency failures are explicit in
+ACQ-A8 and in the attack rule that a missing lens report leaves a round open.
 
 For every criterion above, repeated evaluation must use the same fixed
 scenario and scoring contract. Stochastic reports need not be byte-identical.
@@ -267,12 +317,14 @@ product state.
 ## Ordered slice list
 
 - **S1: Standard adoption** (ACQ-A11). Admit the shared standard, replace
-  private definitions with citations, and reconcile the glossary's
-  falsifiability wording. This slice changes the normative source.
+  private definitions with citations, and reconcile authoring and completion
+  instructions with preservation and planned human acceptance. The glossary
+  points to that standard. This slice changes the deployed normative source.
 - **S2: Quality assessment** (ACQ-A1, ACQ-A2, ACQ-A3, ACQ-A4, ACQ-A5, ACQ-A6,
-  ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14). First settle the assessment and
-  evaluation contract in its child spec. Then integrate the standard into the
-  existing attack mandates and their evaluations. Implementation depends on S1.
+  ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14, ACQ-A15, ACQ-A16, ACQ-A17,
+  ACQ-A18, ACQ-A19). First settle the assessment and evaluation contract in its
+  child spec. Then integrate the standard into the existing attack mandates
+  and their evaluations. Implementation depends on S1.
 - **S3: Brief fidelity and evidence** (ACQ-A12, ACQ-A13). Align the briefing
   skill and its generated-output evaluations with the standard. This slice
   depends on S1 and can land independently of S2.
@@ -287,7 +339,8 @@ criteria; their evidence remains open until implementation supplies it.
 
 - feat: AC quality standard adoption — AC: ACQ-A11
 - feat: AC quality assessment and evaluation contract — AC: ACQ-A1, ACQ-A2,
-  ACQ-A3, ACQ-A4, ACQ-A5, ACQ-A6, ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14
+  ACQ-A3, ACQ-A4, ACQ-A5, ACQ-A6, ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14,
+  ACQ-A15, ACQ-A16, ACQ-A17, ACQ-A18, ACQ-A19
 - feat: AC brief fidelity and evidence mapping — AC: ACQ-A12, ACQ-A13
 
 ## Out of scope
@@ -301,7 +354,7 @@ the agreed product scope.
 ## Evidence
 
 The criteria above describe future adoption and evaluation. Their evidence
-remains open until that work supplies the named mechanical checks.
+remains open until that work supplies the agreed verification results.
 
 - ACQ-A1 | open
 - ACQ-A2 | open
@@ -317,3 +370,8 @@ remains open until that work supplies the named mechanical checks.
 - ACQ-A12 | open
 - ACQ-A13 | open
 - ACQ-A14 | open
+- ACQ-A15 | open
+- ACQ-A16 | open
+- ACQ-A17 | open
+- ACQ-A18 | open
+- ACQ-A19 | open
