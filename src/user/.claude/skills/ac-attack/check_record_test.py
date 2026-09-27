@@ -61,7 +61,7 @@ def blob_revision(text: str) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
-def proposal(lens: str, target: str, identifier: str) -> dict[str, Any]:
+def objection(lens: str, target: str, identifier: str) -> dict[str, Any]:
     return {
         "id": identifier, "lens": lens, "target_ac": target,
         "hole": "an unwritable output path is never exercised",
@@ -91,12 +91,12 @@ class Attack:
             "spec_revision": sha_revision(DOCUMENT),
             "lenses": [
                 {"lens": name,
-                 "report": "proposals" if name in ("edge-cases", "absent-requirements")
+                 "report": "objections" if name in ("edge-cases", "absent-requirements")
                  else "empty"}
                 for name in LENS_NAMES
             ],
-            "proposals": [proposal("edge-cases", "A1", "p1"),
-                          proposal("absent-requirements", "none", "p2")],
+            "objections": [objection("edge-cases", "A1", "p1"),
+                          objection("absent-requirements", "none", "p2")],
             "dispositions": [
                 {"id": "p1", "disposition": "accepted", "rationale": "a real hole",
                  "revision": sha_revision(REVISED), "covering_ac": "A2"},
@@ -109,7 +109,7 @@ class Attack:
         record = self.record()
         record["spec_revision"] = sha_revision(REVISED)
         record["lenses"] = [{"lens": name, "report": "empty"} for name in LENS_NAMES]
-        record["proposals"] = []
+        record["objections"] = []
         record["dispositions"] = []
         return record
 
@@ -216,23 +216,23 @@ def skill_copy(tmp_path: Path, corrupt: dict[str, str | None]) -> Path:
 
 class TestCompleteRound:
     def test_c3_a_fully_adjudicated_round_is_complete(self, attack, capsys):
-        """S6-C3: the disposition set covers every proposal id, so the round terminates."""
+        """S6-C3: the disposition set covers every objection id, so the round terminates."""
         code, result = check(attack, attack.record(), capsys)
         assert code == 0
         assert result == closed(attack)
 
-    def test_c3_a_proposal_without_a_disposition_blocks_termination(self, attack, capsys):
-        """S6-C3: coverage is decided from the record — one unadjudicated proposal leaves the
+    def test_c3_a_objection_without_a_disposition_blocks_termination(self, attack, capsys):
+        """S6-C3: coverage is decided from the record — one unadjudicated objection leaves the
         round open, and the checker names which."""
         record = attack.record()
         record["dispositions"] = record["dispositions"][:1]
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"unadjudicated-proposal"}
+        assert codes(result) == {"unadjudicated-objection"}
         assert result["errors"][0]["id"] == "p2"
 
-    def test_c3_a_duplicate_or_unknown_proposal_id_is_rejected(self, attack, capsys):
-        """S6-C3: a disposition set that adjudicates one proposal twice, or one the round does
+    def test_c3_a_duplicate_or_unknown_objection_id_is_rejected(self, attack, capsys):
+        """S6-C3: a disposition set that adjudicates one objection twice, or one the round does
         not hold, is not an account of the round."""
         record = attack.record()
         record["dispositions"].append(dict(record["dispositions"][1]))
@@ -241,39 +241,39 @@ class TestCompleteRound:
         record["dispositions"].append({"id": "p7", "disposition": "rejected", "rationale": "no"})
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"unknown-proposal-id"}
-        assert error_of(result, "unknown-proposal-id")["id"] == "p7"
+        assert codes(result) == {"unknown-objection-id"}
+        assert error_of(result, "unknown-objection-id")["id"] == "p7"
 
-    def test_c3_two_proposals_may_not_share_an_id(self, attack, capsys):
-        """S6-C3: the id is what a disposition adjudicates through, so two proposals wearing one
+    def test_c3_two_objections_may_not_share_an_id(self, attack, capsys):
+        """S6-C3: the id is what a disposition adjudicates through, so two objections wearing one
         id leave every disposition naming it ambiguous — refused rather than resolved towards
-        either proposal, since the record cannot say which was adjudicated."""
+        either objection, since the record cannot say which was adjudicated."""
         record = attack.record()
-        record["proposals"][1]["id"] = "p1"
+        record["objections"][1]["id"] = "p1"
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"duplicate-proposal-id", "unknown-proposal-id"}
-        assert error_of(result, "duplicate-proposal-id")["id"] == "p1"
+        assert codes(result) == {"duplicate-objection-id", "unknown-objection-id"}
+        assert error_of(result, "duplicate-objection-id")["id"] == "p1"
 
-    def test_c3_dropping_a_proposal_leaves_the_rest_bound_to_their_dispositions(self, attack,
+    def test_c3_dropping_a_objection_leaves_the_rest_bound_to_their_dispositions(self, attack,
                                                                                 capsys):
-        """S6-C3: a malformed proposal is dropped from the round, which moves every proposal after
-        it up a position; dispositions name their proposal by id, so the survivors stay paired
+        """S6-C3: a malformed objection is dropped from the round, which moves every objection after
+        it up a position; dispositions name their objection by id, so the survivors stay paired
         with the adjudication written for them instead of silently re-pointing at a neighbour."""
         attack.write_document(DOCUMENT)
         record = attack.record()
-        del record["proposals"][0]
+        del record["objections"][0]
         del record["dispositions"][0]
         record["lenses"] = [
-            {"lens": name, "report": "proposals" if name == "absent-requirements" else "empty"}
+            {"lens": name, "report": "objections" if name == "absent-requirements" else "empty"}
             for name in LENS_NAMES
         ]
-        assert [entry["id"] for entry in record["proposals"]] == ["p2"]
+        assert [entry["id"] for entry in record["objections"]] == ["p2"]
         assert record["dispositions"][0]["id"] == "p2"
         assert check(attack, record, capsys)[0] == 0
 
     def test_c3_an_acceptance_must_name_the_revision_that_carries_it(self, attack, capsys):
-        """S6-C3: accepting with the document unchanged adjudicates nothing — the proposal is
+        """S6-C3: accepting with the document unchanged adjudicates nothing — the objection is
         neither carried into the criteria nor answered — in whichever notation the unchanged
         revision is written; the same acceptance naming the revision that does carry it closes
         the round (inverse)."""
@@ -309,9 +309,9 @@ class TestCompleteRound:
 
 
 class TestEmptyUnion:
-    def test_c4_a_round_where_no_lens_proposes_anything_terminates_clean(self, attack, capsys):
+    def test_c4_a_round_where_no_lens_objects_terminates_clean(self, attack, capsys):
         """S6-C4: the empty union is a first-class outcome, not a degenerate one — every lens
-        reported, nothing was proposed, and the round is over."""
+        reported, none objected, and the round is over."""
         code, result = check(attack, attack.empty_round(), capsys)
         assert code == 0
         assert result == closed(attack, clean=True)
@@ -327,7 +327,7 @@ class TestOrdering:
         code, result = check(attack, record, capsys, "--implementation-started")
         assert code == 1
         assert "ordering-violation" in codes(result)
-        assert "unadjudicated-proposal" in codes(result)
+        assert "unadjudicated-objection" in codes(result)
 
     def test_c4_the_check_can_reach_nothing_but_the_files_it_is_handed(self):
         """S6-C4: the verdict comes from the record, the document, and the declared observation —
@@ -375,7 +375,7 @@ class TestStaleness:
 
     def test_c6_an_edit_an_acceptance_drove_keeps_the_round_current(self, attack, capsys):
         """S6-C6: inverse — a revision an acceptance names accounts for the document, so
-        incorporating a proposal cannot invalidate the round that drove the incorporation."""
+        incorporating an objection cannot invalidate the round that drove the incorporation."""
         record = attack.record()
         assert record["spec_revision"] == sha_revision(DOCUMENT)
         assert attack.document.read_text(encoding="utf-8") == REVISED
@@ -383,10 +383,10 @@ class TestStaleness:
 
     def test_c6_a_document_still_at_the_revision_attacked_does_not_close_an_accepting_round(
             self, attack, capsys):
-        """S6-C6: an acceptance says the document was edited to carry the proposal, so a document
+        """S6-C6: an acceptance says the document was edited to carry the objection, so a document
         still hashing to the revision attacked means that edit was reverted, lost in a rebase, or
         never made. Closing the round would clear work to start against criteria every accepted
-        proposal is absent from — and this is decided, not attested: the checker holds the
+        objection is absent from — and this is decided, not attested: the checker holds the
         document's bytes and can see they are the pre-attack ones."""
         record = attack.record()
         attack.write_document(DOCUMENT)
@@ -398,7 +398,7 @@ class TestStaleness:
     def test_c6_a_round_that_accepted_nothing_stands_at_the_revision_it_attacked(self, attack,
                                                                                  capsys):
         """S6-C6: inverse — only an acceptance obliges the document to have moved, so a round that
-        proposed nothing, and one whose every proposal was rejected, close over the document
+        objected to nothing, and one whose every objection was rejected, close over the document
         exactly as attacked."""
         assert check(attack, attack.empty_round(), capsys) == (0, closed(attack, clean=True))
         record = attack.record()
@@ -412,7 +412,7 @@ class TestStaleness:
         revisions asks it to be in two states at once — and settling for either one would close
         the round with the other acceptance's criterion provably absent from the text in front of
         the checker, whether its revision names a reverted edit or was never a revision at all.
-        An acceptance names the revision the document reached once every accepted proposal was in
+        An acceptance names the revision the document reached once every accepted objection was in
         it, and the round closes once they all do (inverse)."""
         record = attack.record()
         record["dispositions"][1] = {"id": "p2", "disposition": "accepted",
@@ -868,21 +868,21 @@ class TestRevisionNotation:
         assert codes(result) == {"untrimmed-revision"}
         assert "git hash-object" in error_of(result, "untrimmed-revision")["message"]
 
-    @pytest.mark.parametrize("stray", ("a proposal the round does not hold", "one already judged"))
+    @pytest.mark.parametrize("stray", ("an objection the round does not hold", "one already judged"))
     def test_c6_an_acceptance_the_adjudication_discards_refuses_nothing(self, attack, capsys,
                                                                         stray):
-        """S6-C6: an acceptance naming a proposal the round does not hold, and a second acceptance
-        of a proposal already adjudicated, are both read by nothing, so the revision on either
+        """S6-C6: an acceptance naming an objection the round does not hold, and a second acceptance
+        of an objection already adjudicated, are both read by nothing, so the revision on either
         decides nothing either. Refusing the record over how one of them is written answers
         fatally, and hides the error naming the disposition itself — the one the reader has to act
         on, and the one the notation check is there to keep out of the way of."""
         record = attack.record()
         record["dispositions"].append({
-            "id": "p7" if stray.startswith("a proposal") else "p1", "disposition": "accepted",
+            "id": "p7" if stray.startswith("an objection") else "p1", "disposition": "accepted",
             "revision": blob_revision(FURTHER), "covering_ac": "A9"})
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"unknown-proposal-id" if stray.startswith("a proposal")
+        assert codes(result) == {"unknown-objection-id" if stray.startswith("an objection")
                                  else "duplicate-disposition"}
 
     def test_c6_either_notation_alone_decides_the_round_the_same_way(self, attack, capsys):
@@ -903,7 +903,7 @@ class TestLensCoverage:
     def test_c7_a_lens_that_did_not_report_leaves_the_round_unfinished(self, attack, capsys,
                                                                         silent):
         """S6-C7: a silent or errored attack lens has no entry and the round is incomplete —
-        fail closed, never inferring coverage from an empty proposal list."""
+        fail closed, never inferring coverage from an empty objection list."""
         record = attack.empty_round()
         record["lenses"] = [entry for entry in record["lenses"] if entry["lens"] != silent]
         code, result = check(attack, record, capsys)
@@ -918,79 +918,79 @@ class TestLensCoverage:
         record["lenses"].append({"lens": "criteria-holes", "report": "empty"})
         assert codes(check(attack, record, capsys)[1]) == {"duplicate-lens"}
 
-    def test_c7_every_proposal_names_its_producing_lens(self, attack, capsys):
-        """S6-C7: the record identifies which lens produced each proposal; one that does not is
+    def test_c7_every_objection_names_its_producing_lens(self, attack, capsys):
+        """S6-C7: the record identifies which lens produced each objection; one that does not is
         not a record."""
         record = attack.record()
-        del record["proposals"][0]["lens"]
+        del record["objections"][0]["lens"]
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
 
-    def test_c7_a_proposal_credited_elsewhere_leaves_its_lens_contributing_nothing(self, attack,
+    def test_c7_a_objection_credited_elsewhere_leaves_its_lens_contributing_nothing(self, attack,
                                                                                     capsys):
-        """S6-C7: a lens's only proposal credited to a name the record does not report is two
-        losses at once, and the record answers for both — the proposal traces to no attacker, and
-        the lens that made it is left reporting proposals the round holds none of. Either alone
+        """S6-C7: a lens's only objection credited to a name the record does not report is two
+        losses at once, and the record answers for both — the objection traces to no attacker, and
+        the lens that made it is left reporting objections the round holds none of. Either alone
         refuses the record; a record showing both is told both, since repairing the attribution is
         one edit and repairing the report is another."""
         record = attack.record()
-        record["proposals"][0]["lens"] = "vibes"
+        record["objections"][0]["lens"] = "vibes"
         code, result = check(attack, record, capsys)
         assert code == 1
-        assert codes(result) == {"unreported-proposal-lens", "contradicted-proposals-report"}
-        assert "edge-cases" in error_of(result, "contradicted-proposals-report")["message"]
-        assert error_of(result, "unreported-proposal-lens")["id"] == "p1"
+        assert codes(result) == {"unreported-objection-lens", "contradicted-objections-report"}
+        assert "edge-cases" in error_of(result, "contradicted-objections-report")["message"]
+        assert error_of(result, "unreported-objection-lens")["id"] == "p1"
 
-    def test_c7_a_proposal_traces_to_a_lens_that_reported_in_this_round(self, attack, capsys):
-        """S6-C7: a lens that produced a proposal reported, so a proposal attributed to a name the
+    def test_c7_a_objection_traces_to_a_lens_that_reported_in_this_round(self, attack, capsys):
+        """S6-C7: a lens that produced an objection reported, so an objection attributed to a name the
         record files no report for traces to no attacker at all — nothing in the round says that
-        lens looked, and the proposal is adjudicated as though one had.
+        lens looked, and the objection is adjudicated as though one had.
 
         The record here exits 0 without this check, and that is the case it exists for: `edge-cases`
-        produced two proposals and one attribution is misspelled, so the lens keeps the other, its
+        produced two objections and one attribution is misspelled, so the lens keeps the other, its
         report is contradicted by nothing, and every other lens is self-consistent. The check that
-        holds a report against its proposals cannot see this, and the one that reads coverage sees a
+        holds a report against its objections cannot see this, and the one that reads coverage sees a
         lens set that matches. Three attribution checks that look redundant are three directions,
-        and this is the only one watching a proposal whose lens is not in the record at all."""
+        and this is the only one watching an objection whose lens is not in the record at all."""
         record = attack.record()
         record["lenses"] = [
-            {"lens": name, "report": "proposals" if name == "edge-cases" else "empty"}
+            {"lens": name, "report": "objections" if name == "edge-cases" else "empty"}
             for name in LENS_NAMES
         ]
-        record["proposals"] = [proposal("edge-cases", "A1", "p1"),
-                               proposal("edge_cases", "none", "p2")]
+        record["objections"] = [objection("edge-cases", "A1", "p1"),
+                               objection("edge_cases", "none", "p2")]
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"unreported-proposal-lens"}
-        error = error_of(result, "unreported-proposal-lens")
+        assert codes(result) == {"unreported-objection-lens"}
+        error = error_of(result, "unreported-objection-lens")
         assert error["id"] == "p2" and "edge_cases" in error["message"]
 
-    def test_c7_a_lens_reporting_empty_cannot_have_proposals_attributed_to_it(self, attack,
+    def test_c7_a_lens_reporting_empty_cannot_have_objections_attributed_to_it(self, attack,
                                                                               capsys):
-        """S6-C7: the report and the proposal list are two accounts of one round — a lens that
-        said it found nothing, credited with a proposal, means one of them is wrong and the
+        """S6-C7: the report and the objection list are two accounts of one round — a lens that
+        said it found nothing, credited with an objection, means one of them is wrong and the
         record cannot say which."""
         record = attack.record()
-        record["proposals"].append(proposal("criteria-holes", "A1", "p3"))
+        record["objections"].append(objection("criteria-holes", "A1", "p3"))
         record["dispositions"].append({"id": "p3", "disposition": "rejected",
                                        "rationale": "already covered by A2"})
         code, result = check(attack, record, capsys)
         assert code == 1 and codes(result) == {"contradicted-empty-report"}
         assert "criteria-holes" in result["errors"][0]["message"]
 
-    def test_c7_a_lens_reporting_proposals_must_have_contributed_one(self, attack, capsys):
+    def test_c7_a_lens_reporting_objections_must_have_contributed_one(self, attack, capsys):
         """S6-C7: the inverse loss — a lens reported holes and the record carries none of them,
-        so a proposal an attacker made is a hole nobody will adjudicate."""
+        so an objection an attacker made is a hole nobody will adjudicate."""
         record = attack.record()
-        record["proposals"] = record["proposals"][:1]
+        record["objections"] = record["objections"][:1]
         record["dispositions"] = record["dispositions"][:1]
         code, result = check(attack, record, capsys)
-        assert code == 1 and codes(result) == {"contradicted-proposals-report"}
+        assert code == 1 and codes(result) == {"contradicted-objections-report"}
         assert "absent-requirements" in result["errors"][0]["message"]
 
-    def test_c7_reports_and_proposals_that_agree_close_the_round(self, attack, capsys):
-        """S6-C7: inverse of all three — a record whose reports and proposals are one account,
-        with proposals or without any, terminates."""
+    def test_c7_reports_and_objections_that_agree_close_the_round(self, attack, capsys):
+        """S6-C7: inverse of all three — a record whose reports and objections are one account,
+        with objections or without any, terminates."""
         assert check(attack, attack.record(), capsys)[0] == 0
         assert check(attack, attack.empty_round(), capsys)[0] == 0
 
@@ -1016,30 +1016,30 @@ class TestLensCoverage:
                   for name in LENS_NAMES])
         assert check(attack, attack.record(), capsys) == (0, closed(attack))
 
-    def test_c7_a_proposal_attributed_in_the_other_spelling_traces_to_the_lens_that_made_it(
+    def test_c7_a_objection_attributed_in_the_other_spelling_traces_to_the_lens_that_made_it(
             self, attack, capsys):
-        """S6-C7: the same matching read off the proposal rather than off the report. An
+        """S6-C7: the same matching read off the objection rather than off the report. An
         attribution differing from the lens's own entry in case alone names the prompt file that
-        ran, so the proposal traces to the attacker that produced it and that attacker is not left
-        reporting proposals the round holds none of. Held apart, one spelling would be answered as
+        ran, so the objection traces to the attacker that produced it and that attacker is not left
+        reporting objections the round holds none of. Held apart, one spelling would be answered as
         two losses at once, neither of them real — and the report side of this matching is guarded
         elsewhere, so nothing but the attribution differs here."""
         record = attack.record()
-        assert record["proposals"][0]["lens"] == "edge-cases"
-        record["proposals"][0]["lens"] = "Edge-Cases"
+        assert record["objections"][0]["lens"] == "edge-cases"
+        record["objections"][0]["lens"] = "Edge-Cases"
         assert check(attack, record, capsys) == (0, closed(attack))
 
     def test_c7_a_lens_reporting_empty_is_contradicted_in_either_spelling(self, attack, capsys):
-        """S6-C7: the contradiction between a report and the proposal list is decided over that
-        same matching. A lens whose entry says it found nothing, credited with a proposal under
+        """S6-C7: the contradiction between a report and the objection list is decided over that
+        same matching. A lens whose entry says it found nothing, credited with an objection under
         another spelling of its name, is one attacker with two accounts of what it found — and
-        matched literally the record would close instead, with a proposal adjudicated as the work
+        matched literally the record would close instead, with an objection adjudicated as the work
         of a lens that reports having made none."""
         record = attack.record()
         for entry in record["lenses"]:
             if entry["lens"] == "criteria-holes":
                 entry["lens"] = "Criteria-Holes"
-        record["proposals"].append(proposal("criteria-holes", "A1", "p3"))
+        record["objections"].append(objection("criteria-holes", "A1", "p3"))
         record["dispositions"].append({"id": "p3", "disposition": "rejected",
                                        "rationale": "already covered by A2"})
         code, result = check(attack, record, capsys)
@@ -1050,7 +1050,7 @@ class TestLensCoverage:
         """S6-C7: the same matching in the other direction — an entry under each spelling is not
         two lenses covering the document, it is one lens with two accounts of what it found."""
         record = attack.record()
-        record["lenses"].append({"lens": "EDGE-CASES", "report": "proposals"})
+        record["lenses"].append({"lens": "EDGE-CASES", "report": "objections"})
         code, result = check(attack, record, capsys)
         assert code == 1 and codes(result) == {"duplicate-lens"}
 
@@ -1177,16 +1177,16 @@ class TestRetiredLens:
         registry([lens_entry(lens=name) for name in LENS_NAMES if name != "criteria-holes"])
         assert check(attack, attack.record(), capsys)[0] == 0
 
-    def test_c7_a_proposal_a_retired_lens_produced_is_adjudicated_not_refused(self, attack, capsys,
+    def test_c7_a_objection_a_retired_lens_produced_is_adjudicated_not_refused(self, attack, capsys,
                                                                               registry):
-        """S6-C7: the proposals a retired lens contributed are the round's work and the record
-        adjudicates them. This is what fixes the shape of the attribution check: a proposal is held
+        """S6-C7: the objections a retired lens contributed are the round's work and the record
+        adjudicates them. This is what fixes the shape of the attribution check: an objection is held
         against the lenses this record reports, which include the retired one, and never against the
         registry, which no longer names it. Read off the registry, the check would refuse every
         record holding a retired attacker's findings — the loss containment exists to avoid."""
         registry([lens_entry(lens=name) for name in LENS_NAMES if name != "edge-cases"])
         record = attack.record()
-        assert record["proposals"][0]["lens"] == "edge-cases"  # attributed to the retired lens
+        assert record["objections"][0]["lens"] == "edge-cases"  # attributed to the retired lens
         assert "edge-cases" in [entry["lens"] for entry in record["lenses"]]
         assert check(attack, record, capsys) == (0, closed(attack))
 
@@ -1327,7 +1327,7 @@ class TestDocumentRefusal:
                                                                                   content):
         """S6-C6: an acceptance moves the document on, and the refusals are judged over the bytes
         that move it on rather than over the revision attacked. A document that states nothing now,
-        or that is not text now, carries no criterion for an accepted proposal to have landed in, so
+        or that is not text now, carries no criterion for an accepted objection to have landed in, so
         a round reading the acceptance as its excuse would close over a document there is nothing
         left to attack — and every one of these refusals is one the emitter raises over the same
         bytes, so the round it would close is one no further attacker can be dispatched at."""
@@ -1382,22 +1382,22 @@ class TestNameRefusal:
         assert emitted == checked, description
 
 
-class TestProposalShape:
+class TestObjectionShape:
     @pytest.mark.parametrize("field", ("id", "lens", "target_ac", "ground", "hole",
                                        "red_test_sketch"))
     @pytest.mark.parametrize("mutation", ("absent", "blank"))
-    def test_c2_every_part_of_a_proposal_is_required_and_carries_content(self, attack, capsys,
+    def test_c2_every_part_of_a_objection_is_required_and_carries_content(self, attack, capsys,
                                                                          field, mutation):
-        """S6-C2: a proposal is a testable claim in every part — an absent field and a field
+        """S6-C2: an objection is a testable claim in every part — an absent field and a field
         holding only whitespace are the same defect, and either drops the item as malformed
         rather than sending an unattributable or contentless item to adjudication."""
         record = attack.record()
         if mutation == "absent":
-            del record["proposals"][0][field]
+            del record["objections"][0][field]
         elif field == "red_test_sketch":
-            record["proposals"][0][field] = {}
+            record["objections"][0][field] = {}
         else:
-            record["proposals"][0][field] = " \t "
+            record["objections"][0][field] = " \t "
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
 
@@ -1408,21 +1408,21 @@ class TestProposalShape:
         a starting state, an action, and an observable outcome, none of them missing or blank."""
         record = attack.record()
         if mutation == "absent":
-            del record["proposals"][0]["red_test_sketch"][part]
+            del record["objections"][0]["red_test_sketch"][part]
         else:
-            record["proposals"][0]["red_test_sketch"][part] = "  "
+            record["objections"][0]["red_test_sketch"][part] = "  "
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
 
-    def test_c2_a_proposal_naming_all_three_parts_is_a_testable_claim(self, attack, capsys):
+    def test_c2_a_objection_naming_all_three_parts_is_a_testable_claim(self, attack, capsys):
         """S6-C2: inverse — an item that names a state, an action and an outcome enters the
         round and is adjudicated."""
         assert check(attack, attack.record(), capsys)[0] == 0
 
-    def test_c2_prose_in_place_of_a_proposal_is_rejected(self, attack, capsys):
-        """S6-C2: a bare worry returned by an attacker never enters the round as a proposal."""
+    def test_c2_prose_in_place_of_a_objection_is_rejected(self, attack, capsys):
+        """S6-C2: a bare worry returned by an attacker never enters the round as an objection."""
         record = attack.record()
-        record["proposals"][0] = {"id": "p1", "lens": "edge-cases", "concern": "this feels risky"}
+        record["objections"][0] = {"id": "p1", "lens": "edge-cases", "concern": "this feels risky"}
         assert check(attack, record, capsys)[0] == 2
 
 
@@ -1432,7 +1432,7 @@ BAD_ENVELOPE = [
     ("spec_revision", DELETE), ("spec_revision", "revision-7"), ("spec_revision", "sha256:beef"),
     ("lenses", DELETE), ("lenses", []), ("lenses", "every one of them"),
     ("lenses", [{"lens": "edge-cases"}]), ("lenses", [{"lens": "edge-cases", "report": "maybe"}]),
-    ("proposals", DELETE), ("proposals", {"0": "a proposal"}),
+    ("objections", DELETE), ("objections", {"0": "an objection"}),
     ("dispositions", DELETE), ("dispositions", "none of them"),
     ("dispositions", [{"id": "p1"}]), ("dispositions", [{"id": "p1", "disposition": "deferred"}]),
     ("dispositions", [{"disposition": "rejected", "rationale": "no"}]),
@@ -1445,13 +1445,13 @@ BAD_ENVELOPE = [
 # not declare. The envelope is covered by BAD_ENVELOPE above, which carries the same case.
 NESTED_OBJECTS = [
     ("a lens's report", lambda record: record["lenses"][0]),
-    ("a proposal", lambda record: record["proposals"][0]),
-    ("a proposal's red test sketch", lambda record: record["proposals"][0]["red_test_sketch"]),
+    ("an objection", lambda record: record["objections"][0]),
+    ("an objection's red test sketch", lambda record: record["objections"][0]["red_test_sketch"]),
     ("a disposition", lambda record: record["dispositions"][0]),
 ]
 
 # The fields each verdict needs to be an adjudication at all: an acceptance names where the
-# proposal landed, a rejection why it did not.
+# objection landed, a rejection why it did not.
 BAD_DISPOSITION = [
     ("accepted", "revision", DELETE), ("accepted", "covering_ac", DELETE),
     ("accepted", "covering_ac", " \t "),
@@ -1477,7 +1477,7 @@ class TestRecordShape:
     def test_c3_each_verdict_carries_the_fields_that_make_it_an_adjudication(self, attack, capsys,
                                                                              verdict, field,
                                                                              value):
-        """S6-C3: an acceptance names the revision and criterion that now carry the proposal and a
+        """S6-C3: an acceptance names the revision and criterion that now carry the objection and a
         rejection states its reason — a field absent and a field holding only whitespace name
         neither. The shape of a disposition is the schema's to fix, so the record is refused as
         unusable before any question about the round is decided from it."""
@@ -1495,7 +1495,7 @@ class TestRecordShape:
     def test_c3_no_object_in_the_record_carries_a_field_the_contract_leaves_undeclared(
             self, attack, capsys, where, inside):
         """S6-C3: every object in the record is closed, not only the envelope. A field the contract
-        does not declare is one nothing reads, so a proposal marked `waived`, a disposition carrying
+        does not declare is one nothing reads, so an objection marked `waived`, a disposition carrying
         a second verdict under a name of its own, or a sketch with a fourth part reads to a reviewer
         as something the round accounted for while the check decides without it — and the record a
         reviewer reads and the record the round is decided from are two documents again. Each of
@@ -1750,7 +1750,7 @@ class TestUnusableInput:
         record["dispositions"] = []
         code, result = run([checker.DECLARATION, attack.save(record)], capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"unadjudicated-proposal", "ordering-violation"}
+        assert codes(result) == {"unadjudicated-objection", "ordering-violation"}
 
     @pytest.mark.parametrize("value", ("false", "FALSE", "0", "no", "off", " false "))
     def test_c3_a_denial_declares_nothing_where_the_command_line_parses_too(self, attack, capsys,
@@ -1779,17 +1779,17 @@ class TestUnusableInput:
         assert codes(result) == {"bad-arguments"}
 
     def test_c3_one_finding_is_reported_once(self, attack, capsys):
-        """S6-C3: a record repeating a lens entry contradicts its proposal list once per copy, and
+        """S6-C3: a record repeating a lens entry contradicts its objection list once per copy, and
         the two errors are byte-identical — a reader counting findings would see two defects where
         the record holds one, and the repeat says nothing the first did not."""
         record = attack.record()
         entry = next(one for one in record["lenses"] if one["lens"] == "absent-requirements")
         record["lenses"].append(dict(entry))
-        record["proposals"] = record["proposals"][:1]
+        record["objections"] = record["objections"][:1]
         record["dispositions"] = record["dispositions"][:1]
         code, result = check(attack, record, capsys)
         assert code == 1
-        assert codes(result) == {"duplicate-lens", "contradicted-proposals-report"}
+        assert codes(result) == {"duplicate-lens", "contradicted-objections-report"}
         assert len(result["errors"]) == 2
 
     @pytest.mark.parametrize("damaged", ("lenses.json", "attack-record.schema.json"))

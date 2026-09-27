@@ -4,7 +4,7 @@ description: The standard an acceptance criterion and a criterion set must meet.
 admission:
   prevents: Criterion sets that pin artifacts instead of the promised behaviour change, such as a sentence being present, a test naming a symbol, or a gate going green. A review campaign then terminates clean on criteria that cannot fail when the behaviour does not change. This happened on a pull request whose four criteria all pinned the artifact; three review rounds converged on them and the change became mergeable with its behaviour unverified.
   cost: Every criteria-attack prompt carries this standard, which enlarges each attacker's input on another vendor's model. Where automation cannot judge an outcome, a set written to this standard names a human evaluator before implementation starts, which puts a round-trip on the human.
-  remove_when: Criteria are generated from recorded behavioural observations rather than authored, or attacks judged against this standard stop producing accepted proposals across a run of documents.
+  remove_when: Criteria are generated from recorded behavioural observations rather than authored, or attacks judged against this standard stop producing accepted objections across a run of documents.
 ---
 
 # Acceptance criteria

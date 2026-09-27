@@ -54,9 +54,9 @@ BOM = "\ufeff"
 INVISIBLE = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
 
 EXHAUSTIVENESS = (
-    "Report every hole of this lens findable this round; a withheld proposal is a defect in the "
+    "Report every hole of this lens findable this round; a withheld objection is a defect in the "
     "attack. Be exhaustive in depth within this lens and never step outside it: another attacker "
-    "holds every other lens, and a proposal outside your mandate is noise."
+    "holds every other lens, and an objection outside your mandate is noise."
 )
 WHOLE_DOCUMENT = (
     "The whole document is below, not only its criteria. Its definitions, scope, and prose are "
@@ -64,18 +64,18 @@ WHOLE_DOCUMENT = (
     "everything else as the context that gives them meaning."
 )
 TESTABLE_ONLY = (
-    "Every proposal is a testable claim about inputs and states, never a free-form concern. The "
+    "Every objection is a testable claim about inputs and states, never a free-form concern. The "
     "test sketch is the boundary: name the starting state, the action taken, and the outcome an "
-    "observer could check. A proposal that cannot fill all three is a concern and will be thrown "
+    "observer could check. An objection that cannot fill all three is a concern and will be thrown "
     "out as malformed — drop it yourself rather than padding the round with it."
 )
 OBJECTIONS = (
-    "Each proposal is an objection. Name the criterion it concerns, the rule of the standard above "
+    "Name the criterion each objection concerns, the rule of the standard above "
     "that the criteria break, and the scenario that shows it. The document's author holds context "
     "this prompt does not carry, and writes whatever criterion answers the objection."
 )
 EXPLICIT_EMPTY = (
-    'If you find nothing, return an empty proposal list and report "empty". Silence is '
+    'If you find nothing, return an empty objection list and report "empty". Silence is '
     "incompleteness, not agreement: a lens that does not report leaves the round unfinished, and "
     "an empty report is a result while a missing one is a gap."
 )
@@ -441,8 +441,8 @@ def render_prompt(lens: dict, ctx: dict) -> str:
     """One lens, one prompt: fixed instructions first, the whole document fenced after."""
     name = lens["lens"]
     contract = json.dumps({
-        "lens": name, "report": "proposals|empty",
-        "proposals": [{
+        "lens": name, "report": "objections|empty",
+        "objections": [{
             "lens": name, "target_ac": "identifier of the criterion attacked, or none",
             "hole": "what the criteria let through",
             "ground": "the rule of the standard above that the criteria break",
@@ -477,7 +477,7 @@ def render_prompt(lens: dict, ctx: dict) -> str:
         "Return exactly one JSON object and nothing else, in this shape:\n",
         f"```json\n{contract}\n```\n",
         (
-            'Report "proposals" with at least one entry when this lens finds a hole, and "empty" '
+            'Report "objections" with at least one entry when this lens finds a hole, and "empty" '
             'with an empty list when it finds none. Set "target_ac" to the identifier the '
             'document gives the criterion you attacked, or to "none" when no criterion covers the '
             "ground at all. Every field is required and none may be blank.\n"

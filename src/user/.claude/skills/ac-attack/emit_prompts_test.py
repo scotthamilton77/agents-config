@@ -150,7 +150,7 @@ def skill_copy(tmp_path: Path, corrupt: dict[str, str | None]) -> Path:
 class TestPromptContent:
     def test_c1_each_lens_gets_its_own_prompt_with_the_contract(self, document, tmp_path, capsys):
         """S6-C1: one single-lens prompt per attack lens, each carrying that lens's mandate and
-        the exact proposed-criterion output contract — no extra key, no lost nesting, and
+        the exact objection output contract — no extra key, no lost nesting, and
         nothing emitted beside the prompts and the round file. `prompts` holds the lens prompts
         and only those: a caller fanning the panel out over it would otherwise send the round
         file to a model as an attack, mandateless and with no document to read."""
@@ -164,7 +164,7 @@ class TestPromptContent:
         }
         assert sorted(path.name for path in out_dir.iterdir()) == sorted(
             [f"{name}.md" for name in LENS_NAMES] + ["round.json"])
-        proposal_schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))["$defs"]["proposal"]
+        objection_schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))["$defs"]["objection"]
         emitted = prompts(out_dir)
         for lens in LENSES:
             name = lens["lens"]
@@ -172,8 +172,8 @@ class TestPromptContent:
             assert lens["mandate"] in text
             contract = contract_of(text)
             assert contract == {
-                "lens": name, "report": "proposals|empty",
-                "proposals": [{
+                "lens": name, "report": "objections|empty",
+                "objections": [{
                     "lens": name,
                     "target_ac": "identifier of the criterion attacked, or none",
                     "hole": "what the criteria let through",
@@ -186,10 +186,10 @@ class TestPromptContent:
             # The shape asked of the attacker is the shape the record's schema will demand, less
             # the id: an attacker sees its own lens and not the round, so it cannot pick one that
             # is distinct across the union. The author assigns ids when unioning the reports.
-            item = contract["proposals"][0]
-            assert set(item) == set(proposal_schema["required"]) - {"id"}
+            item = contract["objections"][0]
+            assert set(item) == set(objection_schema["required"]) - {"id"}
             assert set(item["red_test_sketch"]) == set(
-                proposal_schema["properties"]["red_test_sketch"]["required"])
+                objection_schema["properties"]["red_test_sketch"]["required"])
 
     def test_c1_the_whole_document_travels_not_a_bare_criteria_list(self, document, tmp_path,
                                                                     capsys):
@@ -230,12 +230,12 @@ class TestPromptContent:
         """S6-C7: exhaustive within the lens, and a lens with nothing to say must say so —
         silence is incompleteness, not agreement."""
         for text in emit(document, tmp_path / "attack", capsys).values():
-            assert "a withheld proposal is a defect in the attack" in text
+            assert "a withheld objection is a defect in the attack" in text
             assert "never step outside it" in text
-            assert 'return an empty proposal list and report "empty"' in text
+            assert 'return an empty objection list and report "empty"' in text
             assert "Silence is incompleteness" in text
 
-    def test_c2_prompt_binds_every_proposal_to_a_testable_claim(self, document, tmp_path, capsys):
+    def test_c2_prompt_binds_every_objection_to_a_testable_claim(self, document, tmp_path, capsys):
         """S6-C2: the sketch's three parts are stated as the boundary, and an item that cannot
         fill them is named as malformed rather than reported as a concern."""
         for text in emit(document, tmp_path / "attack", capsys).values():
@@ -1010,7 +1010,7 @@ class TestRoundFile:
             "schema_version": "1", "spec_path": meta["spec_path"],
             "spec_revision": meta["spec_revision"],
             "lenses": [{"lens": entry["lens"], "report": "empty"} for entry in meta["lenses"]],
-            "proposals": [], "dispositions": [],
+            "objections": [], "dispositions": [],
         }
         validator = Draft202012Validator(json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
         assert list(validator.iter_errors(record)) == []
@@ -1100,7 +1100,7 @@ class TestStandard:
         scenario and the author writes whatever criterion answers it."""
         for text in emit(document, tmp_path / "attack", capsys).values():
             assert emitter.OBJECTIONS in text
-            assert "proposed_ac" not in contract_of(text)["proposals"][0]
+            assert "proposed_ac" not in contract_of(text)["objections"][0]
 
     def test_the_behavioural_outcome_lens_is_first_in_every_round(self, document, tmp_path,
                                                                     capsys):

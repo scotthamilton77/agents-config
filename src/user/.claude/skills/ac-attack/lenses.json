@@ -15,7 +15,7 @@
     {
       "lens": "set-consistency",
       "mandate": "Read the criteria as one set. Object to any two that cannot both hold in the same circumstance, naming that circumstance. Object to wording that admits materially different outcomes, naming the decision it leaves open and the outcome each reading produces.",
-      "tier": "frontier",
+      "tier": "mid",
       "transport": "openrouter"
     },
     {

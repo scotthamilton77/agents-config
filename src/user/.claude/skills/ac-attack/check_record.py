@@ -401,13 +401,13 @@ def require_comparable_revisions(record: dict) -> None:
     incorporation. Held to one spelling, string equality decides revision identity soundly.
 
     Only the revisions the adjudication reads are checked: one left behind on a disposition flipped
-    to rejected, one on a disposition naming a proposal the round does not hold, and one on a
-    second disposition for a proposal already adjudicated are all read by nothing. Refusing the
+    to rejected, one on a disposition naming an objection the round does not hold, and one on a
+    second disposition for an objection already adjudicated are all read by nothing. Refusing the
     whole record over how any of them is written would send the reader to debug a field that
     decides no part of the round — and it refuses fatally, hiding the error that names the
     disposition itself.
     """
-    held = {proposal["id"] for proposal in record["proposals"]}
+    held = {objection["id"] for objection in record["objections"]}
     adjudicating: dict[str, dict[str, Any]] = {}
     for entry in record["dispositions"]:
         if entry["id"] in held:
@@ -466,7 +466,7 @@ def _lens_errors(record: dict) -> list[dict[str, Any]]:
     errors += [
         {"code": "lens-missing",
          "message": f"the {name!r} lens has no report; a lens that errored or returned unreadable "
-                    "output leaves the round unfinished, and an empty proposal list never stands "
+                    "output leaves the round unfinished, and an empty objection list never stands "
                     "in for a report"}
         for name in declared_lenses() if fold(name) not in counted
     ]
@@ -474,20 +474,20 @@ def _lens_errors(record: dict) -> list[dict[str, Any]]:
 
 
 def _report_errors(record: dict) -> list[dict[str, Any]]:
-    """Hold each lens's report against the proposals attributed to it.
+    """Hold each lens's report against the objections attributed to it.
 
-    A report and the proposal list are two accounts of the same round, and a record where they
+    A report and the objection list are two accounts of the same round, and a record where they
     disagree describes no round at all: it either credits a lens with work it did not report or
     loses the work it did. Attribution is matched as coverage is, the way the filesystem matched
-    the prompt names, so a lens and the proposals it produced are held together by whichever of the
+    the prompt names, so a lens and the objections it produced are held together by whichever of the
     two spellings each was written in.
 
-    Three ways they disagree, and none of the three implies another: a proposal attributed to a
-    lens the record files no report for traces to no attacker at all; a lens reporting proposals
-    with none attributed to it has lost the ones it made; a lens reporting empty with proposals
+    Three ways they disagree, and none of the three implies another: an objection attributed to a
+    lens the record files no report for traces to no attacker at all; a lens reporting objections
+    with none attributed to it has lost the ones it made; a lens reporting empty with objections
     attributed to it never made them. The first is what catches a misspelled attribution on a lens
-    that produced more than one proposal — the lens keeps the others, so nothing about its report
-    contradicts anything, and the misattributed proposal would otherwise close the round traceable
+    that produced more than one objection — the lens keeps the others, so nothing about its report
+    contradicts anything, and the misattributed objection would otherwise close the round traceable
     to nothing.
 
     Attribution is read against the lenses this record reports, never against the registry. A lens
@@ -496,52 +496,52 @@ def _report_errors(record: dict) -> list[dict[str, Any]]:
     findings — which is the loss coverage is containment to avoid.
     """
     reported = {fold(entry["lens"]) for entry in record["lenses"]}
-    attributed = {fold(proposal["lens"]) for proposal in record["proposals"]}
+    attributed = {fold(objection["lens"]) for objection in record["objections"]}
     errors: list[dict[str, Any]] = [
-        {"code": "unreported-proposal-lens", "id": proposal["id"],
-         "message": f"proposal {proposal['id']!r} is attributed to {proposal['lens']!r}, which "
-                    "files no report in this round; a lens that produced a proposal reported, so "
+        {"code": "unreported-objection-lens", "id": objection["id"],
+         "message": f"objection {objection['id']!r} is attributed to {objection['lens']!r}, which "
+                    "files no report in this round; a lens that produced an objection reported, so "
                     "this one traces to no attacker the record names — correct the attribution, "
                     "or record the report the lens that made it owes"}
-        for proposal in record["proposals"]
-        if fold(proposal["lens"]) not in reported
+        for objection in record["objections"]
+        if fold(objection["lens"]) not in reported
     ]
     for entry in record["lenses"]:
         name, report = entry["lens"], entry["report"]
         if report == "empty" and fold(name) in attributed:
             errors.append({
                 "code": "contradicted-empty-report",
-                "message": f"the {name!r} lens reports empty, yet proposals in this round are "
-                           "attributed to it; a report and the proposal list are one account",
+                "message": f"the {name!r} lens reports empty, yet objections in this round are "
+                           "attributed to it; a report and the objection list are one account",
             })
-        elif report == "proposals" and fold(name) not in attributed:
+        elif report == "objections" and fold(name) not in attributed:
             errors.append({
-                "code": "contradicted-proposals-report",
-                "message": f"the {name!r} lens reports proposals, yet none in this round are "
-                           "attributed to it; a proposal it made and the record lost is a hole "
+                "code": "contradicted-objections-report",
+                "message": f"the {name!r} lens reports objections, yet none in this round are "
+                           "attributed to it; an objection it made and the record lost is a hole "
                            "nobody adjudicates",
             })
     return errors
 
 
 def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
-    """Adjudication of every proposal, plus the revisions the acceptances account for.
+    """Adjudication of every objection, plus the revisions the acceptances account for.
 
-    A disposition names its proposal by id, not by position: dropping a malformed proposal
+    A disposition names its objection by id, not by position: dropping a malformed objection
     renumbers every position after it, and a disposition keyed on position would then adjudicate a
-    proposal nobody wrote it against. Two proposals sharing an id leave the same doubt, so the
+    objection nobody wrote it against. Two objections sharing an id leave the same doubt, so the
     round is refused rather than resolved either way.
 
     An acceptance names a revision other than the one attacked, decided by string comparison: the
     record is refused upstream unless every revision in it is written in one notation, so two
     revision strings differ exactly when the content they name does.
     """
-    ids = [proposal["id"] for proposal in record["proposals"]]
+    ids = [objection["id"] for objection in record["objections"]]
     attacked = record["spec_revision"]
     errors: list[dict[str, Any]] = [
-        {"code": "duplicate-proposal-id", "id": name,
-         "message": f"two proposals in this round carry the id {name!r}; a disposition naming it "
-                    "adjudicates neither of them, so give each proposal an id of its own"}
+        {"code": "duplicate-objection-id", "id": name,
+         "message": f"two objections in this round carry the id {name!r}; a disposition naming it "
+                    "adjudicates neither of them, so give each objection an id of its own"}
         for name in dict.fromkeys(ids)
         if ids.count(name) > 1
     ]
@@ -551,15 +551,15 @@ def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
         name = entry["id"]
         if name not in ids:
             errors.append({
-                "code": "unknown-proposal-id", "id": name,
-                "message": f"there is no proposal {name!r} in this round; every disposition "
-                           "adjudicates a proposal the round holds",
+                "code": "unknown-objection-id", "id": name,
+                "message": f"there is no objection {name!r} in this round; every disposition "
+                           "adjudicates an objection the round holds",
             })
             continue
         if name in seen:
             errors.append({
                 "code": "duplicate-disposition", "id": name,
-                "message": f"proposal {name!r} is adjudicated more than once; each proposal gets "
+                "message": f"objection {name!r} is adjudicated more than once; each objection gets "
                            "exactly one disposition",
             })
             continue
@@ -568,8 +568,8 @@ def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
             if entry["revision"] == attacked:
                 errors.append({
                     "code": "unincorporated-acceptance", "id": name,
-                    "message": f"proposal {name!r} was accepted against the revision it attacked; "
-                               "accepting a proposal without changing the document leaves it "
+                    "message": f"objection {name!r} was accepted against the revision it attacked; "
+                               "accepting an objection without changing the document leaves it "
                                "unadjudicated",
                 })
             else:
@@ -577,9 +577,9 @@ def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
     for name in dict.fromkeys(ids):
         if name not in seen:
             errors.append({
-                "code": "unadjudicated-proposal", "id": name,
-                "message": f"proposal {name!r} has no disposition; the round closes only once "
-                           "every proposal is accepted or rejected",
+                "code": "unadjudicated-objection", "id": name,
+                "message": f"objection {name!r} has no disposition; the round closes only once "
+                           "every objection is accepted or rejected",
             })
     return errors, accounted
 
@@ -594,10 +594,10 @@ def check(record: dict, revisions: dict[str, str]) -> list[dict[str, Any]]:
     errors = _lens_errors(record) + _report_errors(record)
     disposition_errors, accounted = _disposition_errors(record)
     errors += disposition_errors
-    # An acceptance says the document was edited to carry the proposal, so the revision attacked
+    # An acceptance says the document was edited to carry the objection, so the revision attacked
     # accounts for the document only in a round that accepted nothing. Unioning it in regardless
     # would close a round whose edit was reverted, lost in a rebase, or never made — clearing work
-    # to start against criteria every accepted proposal is absent from. Containment rather than
+    # to start against criteria every accepted objection is absent from. Containment rather than
     # intersection for the same reason: the document hashes to one content, so matching just one of
     # several accepted revisions lets a reverted final edit, or an acceptance carrying a fabricated
     # revision, ride in on whichever acceptance does match.
@@ -609,7 +609,7 @@ def check(record: dict, revisions: dict[str, str]) -> list[dict[str, Any]]:
                        "each acceptance names the revision that carries it, and the document is "
                        "one content, so a record whose acceptances name several different "
                        "revisions asks it to be in two states at once; name in every acceptance "
-                       "the revision the document reached once every accepted proposal was in it, "
+                       "the revision the document reached once every accepted objection was in it, "
                        "and in a round that accepted nothing the revision attacked, or attack the "
                        "document as it now stands and re-adjudicate against that. The revision "
                        "names the document's bytes as they stand on disk: `git hash-object "
@@ -629,7 +629,7 @@ def report(errors: list[dict[str, Any]], started: bool, code: int, clean: bool =
     file it read. A run that opened none omits both keys rather than naming a document it never
     read.
 
-    One finding is printed once. A record repeating a lens entry contradicts its proposal list
+    One finding is printed once. A record repeating a lens entry contradicts its objection list
     once per copy, and byte-identical errors distinguish nothing for a reader while inviting them
     to count two defects where the record holds one.
     """
@@ -757,7 +757,7 @@ def main(argv: list[str]) -> int:
                       read=read)
     if errors:
         return report(errors, started, EXIT_INCOMPLETE, read=read)
-    return report([], started, EXIT_COMPLETE, clean=not record["proposals"], read=read)
+    return report([], started, EXIT_COMPLETE, clean=not record["objections"], read=read)
 
 
 if __name__ == "__main__":

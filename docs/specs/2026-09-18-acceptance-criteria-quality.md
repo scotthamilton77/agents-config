@@ -228,7 +228,7 @@ organization and its other requirements. The behavioral-outcome work,
 Use the existing skill evaluations and attack prompt/report boundary. Pair
 each deliberately defective example with a corrected control. The quality
 assessment child spec defines how a result demonstrates detection of the
-intended defect; matching its criterion ID and proposal shape alone is
+intended defect; matching its criterion ID and objection shape alone is
 insufficient. It assigns cases to the responsible lenses and identifies any
 cases requiring the full panel.
 
