@@ -178,22 +178,26 @@ testable surface is the refusal and the separable escalation signal.
 
 **AC-attack is a pre-implementation panel on the spec (D3).** The attack
 fans out like the review panel — a single attacker satisfices the same way a
-single reviewer does. The contract defines a set of **attack lenses**: holes
+single reviewer does. The contract defines a set of **attack lenses**, including at least holes
 in existing ACs ("name behaviors that satisfy these ACs while still being
 wrong"), edge-case holes against the authoring taxonomy (inverse, boundary,
 dependency failure, concurrency, idempotency cases no AC tests), and absent
 requirements (obligations the spec implies but no AC covers). One attacker
 runs per lens, exhaustive within it, reporting an explicit empty result when
-it finds no hole; the round's proposal set is the union, and at least one
+it finds no hole; the round's objection set is the union, and at least one
 attack lens runs on a foreign (non-Anthropic) model.
-Output is a JSON array of **proposed ACs**,
-each `{"target_ac", "hole", "proposed_ac", "red_test_sketch"}` — testable claims
-about inputs/states, never free-form concerns. Each proposal is adjudicated
-**accepted** (into the AC set) or **rejected** (out-of-scope); the round
-terminates only when every proposal has a disposition. The round persists as
+Output is a JSON array of **objections**, each naming the criterion concerned
+(`target_ac`, or `none` when no criterion covers the ground), the rule of the
+acceptance-criteria standard the criteria break (`ground`), what they let
+through (`objection`), and a failing scenario (`given`, `when`, `expect`) —
+testable claims about inputs/states, never free-form concerns. The attacker
+holds less context than the author, so an objection carries no replacement
+criterion. Each objection is adjudicated **accepted** (the author answers it
+with a criterion of their own) or **rejected** (out-of-scope); the round
+terminates only when every objection has a disposition. The round persists as
 a JSON record committed beside the attacked spec (same directory,
-`<spec-basename>-ac-attack.json`): the attacked revision, the proposal array
-with stable indices, and one disposition per index — coverage and the
+`<spec-basename>-ac-attack.json`): the attacked revision, the objections
+with stable ids, and one disposition per id — coverage and the
 re-run-is-a-no-op check are decided from that record, not from memory. A
 spec record is ordinary spec material, so it carries none of the PR-verdict
 staleness machinery. "Pre-implementation" has a tracker observable: the
@@ -237,7 +241,7 @@ verdicts (SHA-keyed App-authored PR reviews — the envelope in a fenced block
 inside the body, the
 findings as inline comments — queryable via the platform API, and
 distinguishable from every other comment on the PR by their author); advisory
-findings persist in the tracker backlog; AC-attack proposals
+findings persist in the tracker backlog; AC-attack objections
 and dispositions persist in the committed attack records. Aggregating these
 into a local corpus for mining candidate rules and memories is an extension
 of the S8 harvester (which already reads the verdict medium) — named in §4;
@@ -372,26 +376,30 @@ first (B and D consume the schema); B, C, D may then run in parallel.
 ### Slice C — AC-attack contract (D3)
 
 - **S6-C1** An AC-attack skill under `src/user/.claude/skills/` emits one
-  prompt per attack lens (holes in existing ACs, edge-case-taxonomy holes,
+  prompt per attack lens (at least holes in existing ACs, edge-case-taxonomy holes,
   absent requirements), each carrying the spec's AC set **plus the spec
   definitions and scope boundaries that give those ACs meaning** (an AC set
   referencing terms defined elsewhere in the spec ships with those
   definitions — a bare AC list starves the attacker into a vacuous empty
   round), that lens's attack mandate with the exhaustiveness clause, and the
-  proposed-AC output contract — and no house rulebook and no other lens's
+  objection output contract — and no house rulebook and no other lens's
   mandate (single-lens boundary).
-- **S6-C2** Output is proposed ACs (each a testable input/state claim with a
-  `red_test_sketch`); a returned item shaped as a free-form concern — no
-  testable claim — is rejected as malformed (inverse: a concern is not a valid
-  finding).
-- **S6-C3** Every proposal is adjudicated `accepted` or `rejected`
-  (out-of-scope), recorded in the round's committed attack record (proposal
-  indices → dispositions), which is the observable for coverage; an
+- **S6-C2** Output is objections, each naming the criterion concerned, the
+  rule it breaks, and a failing scenario stated as a testable input/state
+  claim (`given`, `when`, `expect`); a returned item shaped as a free-form
+  concern — no testable scenario — is rejected as malformed (inverse: a
+  concern is not a valid finding), and an item carrying a replacement
+  criterion fails the record's shape check (the author writes the answering
+  criterion).
+- **S6-C3** Every objection is adjudicated `accepted` or `rejected`
+  (out-of-scope), recorded in the round's committed attack record (objection
+  ids → dispositions), which is the observable for coverage; an
   `accepted` disposition must reference the concrete
-  revision of the attacked AC artifact that incorporates the proposal — an
-  acceptance with the artifact unchanged leaves the proposal unadjudicated. An
-  un-adjudicated proposal blocks round termination — the round terminates only
-  when the record's disposition set covers every proposal index
+  revision of the attacked AC artifact that carries the author's answering
+  criterion — an acceptance with the artifact unchanged leaves the objection
+  unadjudicated. An un-adjudicated objection blocks round termination — the
+  round terminates only when the record's disposition set covers every
+  objection id
   (repeated-invocation-safe: re-running over a complete record is a no-op,
   decided from the record).
 - **S6-C4** The round runs pre-implementation against the spec artifact —
@@ -399,7 +407,7 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   implementation work item for the slice is claimed in the tracker (a claim
   predating record completion violates the ordering) — and is
   distinct from the S6-A/S6-B PR verdict; an empty union (no attack lens
-  proposes anything) terminates the round clean (empty-input boundary).
+  objects) terminates the round clean (empty-input boundary).
 - **S6-C5** The AC-attack skill body is ≤ 2k tokens and reads standalone — no
   charter/slice/AC jargon in the deployed asset (standalone read).
 - **S6-C6** An attack round records the revision (commit SHA or content hash)
@@ -407,9 +415,9 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   invalidates the round's completion — evaluating the old disposition set
   against the edited artifact reports incomplete, requiring a fresh attack or
   explicit re-adjudication against the new revision (staleness guard).
-- **S6-C7** The round's proposal set is the union of all attack-lens reports,
-  and the record identifies each proposal's producing lens; an attack lens
-  with no proposals returns an explicit empty report, which counts toward
+- **S6-C7** The round's objection set is the union of all attack-lens reports,
+  and the record identifies each objection's producing lens; an attack lens
+  with no objections returns an explicit empty report, which counts toward
   round completeness — a silent or errored attack lens leaves the round
   incomplete (fail-closed, dependency failure) — and at least one attack lens
   runs on a foreign (non-Anthropic) model.
