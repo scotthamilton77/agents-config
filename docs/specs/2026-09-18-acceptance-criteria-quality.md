@@ -51,6 +51,8 @@ belongs to lifecycle.
 
 ### ACQ-D1: An observable obligation and its evidence are distinct
 
+Rule IDs in the standard: `observable-obligation`, `document-deliverable`, `has-basis`.
+
 A criterion states a required outcome or constraint at an observable surface.
 It identifies the relevant starting conditions, action or state, and expected
 result. The observer may be a person or a downstream system. Naming an
@@ -80,6 +82,8 @@ required.
 
 ### ACQ-D2: Granularity follows the obligation
 
+Rule IDs in the standard: `one-obligation`.
+
 Each criterion states one independently assessable obligation. Split
 obligations that can be accepted, rejected, or delivered independently. Keep
 together the conditions, cases, and observations needed to establish that
@@ -105,6 +109,8 @@ structural containers need no extra check beyond their children's completion.
 
 ### ACQ-D3: Falsifiability includes preservation
 
+Rule IDs in the standard: `can-fail`, `verified-premise`.
+
 A criterion is falsifiable when a violating implementation can make its check
 fail. A change criterion normally starts red. A preservation criterion may
 already pass and must remain true after the change. A refactor does not need
@@ -123,6 +129,8 @@ checks are automatable. Human acceptance follows the charter's bounded
 exception.
 
 ### ACQ-D4: Readiness is a property of the set
+
+Rule IDs in the standard: `coverage`, `consistency`, `decision-closure`, `sufficiency`, `restraint`, `edge-case-taxonomy`.
 
 The author checks these properties against the agreed scope:
 
@@ -149,6 +157,8 @@ may share a case; walking the taxonomy does not require a new criterion for
 every cell.
 
 ### ACQ-D5: Every commitment has a verification contract
+
+Rule IDs in the standard: `verification-contract`, `human-measurement`, `human-judgment`, `pending-until-performed`, `stochastic-and-window`.
 
 Before implementation, identify a feasible check at the relevant public
 interface. State its setup, observation, pass/fail rule, and required evidence.
@@ -195,16 +205,28 @@ with the charter amendment; it does not add a new review-finding class.
 ### ACQ-D6: One standard feeds the existing authoring and review paths
 
 The shared acceptance-criteria standard is the deployed home of these quality
-rules, subject to the admission gate. Its admission replaces the definition
+rules, subject to the admission gate. Each rule there carries the ID its
+decision above lists, so a lens, an objection and this spec name a rule the
+same way. Its admission replaces the definition
 and taxonomy copies in the authoring skills. The grilling, docs-attached
 grilling, spec synthesis, ticketing, briefing, attack, and review-panel skills
 cite it at their criteria step. The glossary points to the same standard.
 
-Use the existing attack process. Its criteria-holes, absent-requirements, and
-edge-cases mandates retain their work. A behavioral-outcome lens addresses
-criterion formulation, granularity, and checkability. A set-consistency lens
-addresses contradiction and material ambiguity across the set. Every lens
-judges against the standard, which each attack prompt carries. This does not
+Use the existing attack process, with four lenses. Each lens names the rules
+it enforces, and its prompt carries exactly those rules.
+
+- A behavioral-outcome lens addresses criterion formulation, granularity, and
+  checkability.
+- An obligation-reduction lens inventories the document's obligations and
+  maps the criteria onto them. An obligation part no criterion completely
+  discharges is a gap, and a criterion that discharges no part lacks a basis.
+  The inventory is returned with the report, so the reduction can be audited.
+- A set-consistency lens addresses contradiction and material ambiguity
+  across the set.
+- An edge-cases lens walks the taxonomy per criterion.
+
+An objection's ground cites the ID of the rule it concerns, and that rule
+must be one its lens enforces. This does not
 create a second panel or make the tracker classify criterion quality.
 
 Each finding is an objection. It names the criterion it concerns, or none, the

@@ -35,7 +35,11 @@
         "required": ["lens", "report"],
         "properties": {
           "lens": {"type": "string", "pattern": "\\S"},
-          "report": {"enum": ["objections", "empty"]}
+          "report": {"enum": ["objections", "empty"]},
+          "workings": {
+            "type": "object",
+            "description": "The inventory a lens returns beside its objections when its front matter requires workings, judged against the schema beside that lens's prompt."
+          }
         }
       },
       "description": "One entry per lens that reported, empty reports included. A lens that errored or returned unreadable output has no entry, and the round is unfinished."
@@ -78,9 +82,19 @@
           "description": "Identifier of the criterion attacked, or \"none\" when no criterion covers the ground at all."
         },
         "ground": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rule", "reason"],
+          "properties": {
+            "rule": {"type": "string", "pattern": "\\S", "description": "The ID of the acceptance-criteria rule the criteria as written break, one the producing lens enforces."},
+            "reason": {"type": "string", "pattern": "\\S", "description": "Why the criteria break that rule."}
+          },
+          "description": "The rule of the acceptance-criteria standard that the criteria as written break, and the reason."
+        },
+        "obligation": {
           "type": "string",
           "pattern": "\\S",
-          "description": "The rule of the acceptance-criteria standard that the criteria as written break."
+          "description": "Optional. The obligation, or the part of one, that the objection concerns, for a lens whose instructions name obligations."
         },
         "objection": {
           "type": "string",

@@ -25,9 +25,12 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 # The registry is every directory here holding a `prompt.md`: its name is the lens's name, its
-# front matter the lens's tier, transport and selected standard sections, and its body the lens's
-# own instructions.
+# front matter the lens's tier, transport, standard, the rules it enforces and whether it returns
+# workings, and its body the lens's own instructions. A lens returning workings keeps the schema
+# that judges them beside its prompt.
 LENSES_DIR = HERE / "lenses"
+WORKINGS_SCHEMA = "workings.schema.json"
+STANDARD = "acceptance-criteria"
 
 # Every attacker judges against the acceptance-criteria standard, read live from the skill that
 # owns it so the attack and the authoring instructions cannot drift apart. Installed, that skill
@@ -37,8 +40,8 @@ STANDARD_CANDIDATES = (
     HERE.parent / "acceptance-criteria" / "SKILL.md",
     HERE.parents[2] / ".agents" / "skills" / "acceptance-criteria" / "SKILL.md",
 )
-FRONT_MATTER_KEYS = ("tier", "transport", "standard")
-REQUIRED_KEYS = ("lens", *FRONT_MATTER_KEYS, "body")
+FRONT_MATTER_KEYS = ("tier", "transport", "standard", "enforces", "workings")
+REQUIRED_KEYS = ("lens", "tier", "transport", "standard", "enforces", "body")
 
 EXIT_OK = 0
 EXIT_REFUSED = 2
@@ -78,10 +81,11 @@ Return one JSON object in this shape:
 ```
 
 Each objection names the criterion it concerns in `target_ac`, or "none" when no criterion covers \
-it. `ground` is the rule of the standard the criteria break, `objection` is what the criteria let \
-through, and `scenario` gives a starting state, an action, and an observable outcome. Every field \
-carries content. When you find nothing, return an empty `objections` list with `report` set to \
-"empty".
+it. `ground` names the ID of the rule the criteria break, from the rules above, and the reason. \
+`objection` is what the criteria let through, and `scenario` gives a starting state, an action, \
+and an observable outcome. `obligation` is optional, for a lens whose instructions name \
+obligations. Every field you return carries content. When you find nothing, return an empty \
+`objections` list with `report` set to "empty".
 
 ## Document
 
@@ -144,29 +148,43 @@ def usable(value: Any) -> bool:
 def carries(lens: dict[str, Any], key: str) -> bool:
     """Whether a lens holds a usable value for a key it owes.
 
-    `standard` is owed a list naming at least one section, since a lens selecting nothing judges
+    `enforces` is owed a list naming at least one rule, since a lens enforcing nothing judges
     against no rule; every other key is owed a usable string.
     """
     value = lens.get(key)
-    if key == "standard":
+    if key == "enforces":
         return isinstance(value, list) and bool(value) and all(usable(item) for item in value)
     return usable(value)
 
 
-def lens_files() -> list[tuple[str, str]]:
-    """Every lens directory's name and the text of its prompt, in name order."""
-    return [(path.parent.name, path.read_text(encoding="utf-8"))
-            for path in sorted(LENSES_DIR.glob("*/prompt.md"))]
+def lens_files() -> list[tuple[str, str, str | None]]:
+    """Every lens directory's name, its prompt's text, and its workings schema's text if any."""
+    files = []
+    for path in sorted(LENSES_DIR.glob("*/prompt.md")):
+        schema = path.parent / WORKINGS_SCHEMA
+        files.append((path.parent.name, path.read_text(encoding="utf-8"),
+                      schema.read_text(encoding="utf-8") if schema.is_file() else None))
+    return files
 
 
-def parse_lens(name: Any, text: str) -> dict[str, Any]:
-    """A lens as its prompt states it: the front matter keys it sets, and its body.
+def json_object(text: str | None) -> dict[str, Any] | None:
+    """The JSON object a text holds, or None where it holds none."""
+    try:
+        value = json.loads(text) if text is not None else None
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def parse_lens(name: Any, text: str, schema: str | None = None) -> dict[str, Any]:
+    """A lens as its files state it: the front matter keys it sets, its body, its workings schema.
 
     Front matter is the `key: value` lines between two `---` fences at the head of the file, and a
     value in brackets is a comma-separated list. Text without that fence sets no key, so the
     registry check names every key the lens lacks rather than guessing at them.
     """
-    lens: dict[str, Any] = {"lens": name, "body": text.strip()}
+    lens: dict[str, Any] = {"lens": name, "body": text.strip(),
+                            "workings_schema": json_object(schema)}
     head, fence, body = text[3:].partition("\n---\n") if text.startswith("---\n") else ("", "", "")
     if not fence:
         return lens
@@ -193,11 +211,12 @@ def load_lenses() -> list[dict[str, Any]]:
     Every key a lens owes is checked here too, because `tier` and `transport` are read only when
     the round file is assembled — by then every prompt is on disk, so a lens short one of them
     would leave a directory of prompts for this document beside a round file naming the last one.
-    A standard section a lens names and the standard lacks is refused for the same reason: that
-    lens would go out without the rule it judges by. Sections are asked last, since only a
-    registry that is otherwise whole needs the standard read.
+    A lens citing another standard, or a rule the standard lacks, would go out without the rule it
+    judges by, and a lens requiring workings with no schema beside it returns an inventory nothing
+    can judge. Rules are asked last, since only a registry that is otherwise whole needs the
+    standard read.
     """
-    lenses = [parse_lens(name, text) for name, text in lens_files()]
+    lenses = [parse_lens(*entry) for entry in lens_files()]
     names = [lens["lens"] for lens in lenses if usable(lens["lens"])]
     labels = [lens["lens"] if usable(lens["lens"]) else f"the entry at position {position}"
               for position, lens in enumerate(lenses)]
@@ -213,7 +232,9 @@ def load_lenses() -> list[dict[str, Any]]:
                    "lens's instructions would overwrite the other's prompt")
     elif any(name != Path(name).name or name in ("", ".", "..") for name in names):
         problem = "names a lens that is not a bare filename, so its prompt would land elsewhere"
-    elif unknown := unknown_sections(lenses, load_standard()):
+    elif faults := lens_faults(lenses):
+        problem = f"declares {', '.join(faults)}"
+    elif unknown := unknown_rules(lenses, load_standard()):
         problem = f"declares {', '.join(unknown)}, which the standard does not have"
     else:
         return lenses
@@ -224,36 +245,57 @@ def load_lenses() -> list[dict[str, Any]]:
     )
 
 
-def unknown_sections(lenses: list[dict[str, Any]], sections: Any) -> list[str]:
-    """Each standard section a lens names that the standard has no heading for."""
-    return [f"{lens['lens']} naming the section {heading!r}"
-            for lens in lenses for heading in lens["standard"] if heading not in sections]
+def lens_faults(lenses: list[dict[str, Any]]) -> list[str]:
+    """Each lens citing another standard, or stating workings its directory cannot judge."""
+    faults = []
+    for lens in lenses:
+        name, workings = lens["lens"], lens.get("workings")
+        if lens["standard"] != STANDARD:
+            faults.append(f"{name} citing the standard {lens['standard']!r} where only {STANDARD!r} "
+                          "is served")
+        if workings is not None and workings != "required":
+            faults.append(f"{name} with workings {workings!r} where only 'required' is read")
+        elif workings == "required" and lens["workings_schema"] is None:
+            faults.append(f"{name} requiring workings with no JSON object in its {WORKINGS_SCHEMA}")
+    return faults
+
+
+def unknown_rules(lenses: list[dict[str, Any]], rules: Any) -> list[str]:
+    """Each rule a lens enforces that the standard has no heading for."""
+    return [f"{lens['lens']} enforcing the rule {rule!r}"
+            for lens in lenses for rule in lens["enforces"] if rule not in rules]
 
 
 def load_standard() -> dict[str, str]:
-    """The acceptance-criteria standard's sections by heading, each demoted one heading level.
+    """The acceptance-criteria standard's rules by ID, each its `### ` heading and its text.
 
-    A section is everything from a `## ` heading to the next, heading included, and demoting it
-    nests it under the prompt's own reference heading. Refused when no candidate holds a section:
-    an attack without the standard is the attack the standard replaced, and it would report an
-    emitted round all the same.
+    A rule runs from its heading to the next heading of any higher level, so a section's own
+    heading and preamble belong to no rule and travel in no prompt. Refused when no candidate
+    holds a rule: an attack without the standard is the attack the standard replaced, and it
+    would report an emitted round all the same.
     """
     for candidate in STANDARD_CANDIDATES:
         if candidate.is_file():
             text = candidate.read_text(encoding="utf-8")
             if text.startswith("---"):
                 text = text.split("---", 2)[2] if text.count("---") >= 2 else ""
-            demoted = re.sub(r"^(#+ )", r"#\1", text.strip(), flags=re.MULTILINE)
-            sections = {chunk.split("\n", 1)[0][4:].strip(): chunk.strip()
-                        for chunk in re.split(r"^(?=### )", demoted, flags=re.MULTILINE)
-                        if chunk.startswith("### ")}
-            if sections:
-                return sections
+            rules: dict[str, list[str]] = {}
+            current = None
+            for line in text.splitlines():
+                if line.startswith("### "):
+                    current = line[4:].strip()
+                    rules[current] = [line]
+                elif line.startswith(("# ", "## ")):
+                    current = None
+                elif current is not None:
+                    rules[current].append(line)
+            if rules:
+                return {rule: "\n".join(lines).strip() for rule, lines in rules.items()}
             break
     raise Refusal(
         "no-standard",
         "the acceptance-criteria skill is not installed beside this one, or its body holds no "
-        "section; every attacker judges criteria against that standard, so a round without it is "
+        "rule; every attacker judges criteria against that standard, so a round without it is "
         "refused",
     )
 
@@ -502,19 +544,24 @@ def write_private(path: Path, text: str) -> None:
 def render_prompt(lens: dict, ctx: dict) -> str:
     """One lens, one prompt: its instructions and standard sections first, the document fenced last."""
     name = lens["lens"]
-    contract = json.dumps({
+    contract = {
         "lens": name, "report": "objections|empty",
         "objections": [{
             "lens": name, "target_ac": "identifier of the criterion concerned, or none",
-            "ground": "the rule of the standard the criteria break",
+            "ground": {"rule": "the ID of the rule the criteria break, from the rules above",
+                       "reason": "why the criteria break it"},
             "objection": "what the criteria let through",
+            "obligation": "optional: the obligation or part the objection concerns",
             "scenario": {"given": "input or starting state", "when": "the action",
                          "expect": "the observable outcome"},
         }],
-    }, indent=2, sort_keys=True)
-    standard = "\n\n".join(ctx["standard"][heading] for heading in dict.fromkeys(lens["standard"]))
+    }
+    if lens.get("workings") == "required":
+        contract["workings"] = "the inventory your instructions define"
+    standard = "\n\n".join(ctx["standard"][rule] for rule in dict.fromkeys(lens["enforces"]))
     return TEMPLATE.format(
-        lens=name, body=inert(lens["body"]), standard=inert(standard), contract=contract,
+        lens=name, body=inert(lens["body"]), standard=inert(standard),
+        contract=json.dumps(contract, indent=2, sort_keys=True),
         fence_open=FENCE_OPEN, fence_close=FENCE_CLOSE, spec_path=inert(ctx["spec_path"]),
         revision=ctx["spec_revision"],
         # Not neutralised: the document is what `spec_revision` names, so it travels unaltered —

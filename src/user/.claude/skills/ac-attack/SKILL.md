@@ -23,21 +23,20 @@ additionally needs `jsonschema` installed first.
 
 ## Attack lenses
 
-Every lens judges against the `acceptance-criteria` standard. Each prompt carries the sections of
-it that its lens selects, read live from where that skill is installed beside this one, and the
-emitter refuses a round when it is missing or empty.
-
 The lenses are the directories under `lenses/`, and both scripts read that registry live. Each
 lens owns `lenses/<lens>/prompt.md`: its body is the lens's instructions, and its front matter
-names the `standard` sections it carries, its `tier`, and its `transport`.
+gives its `tier`, its `transport`, and the `acceptance-criteria` rule IDs it `enforces`. Its prompt
+carries exactly those rules, read live from that skill installed beside this one, and every
+objection cites one of them. A lens marked `workings: required` also returns an inventory, judged
+by the `workings.schema.json` beside its prompt, and each gap the inventory shows is owed an
+objection.
 
 | Lens | What it attacks |
 | --- | --- |
-| `behavioural-outcome` | Criteria that pin an artifact where the document promises a behaviour, bundle separable obligations, cannot fail, or have no feasible check. |
-| `criteria-holes` | Behaviours that satisfy every stated criterion and are still wrong. |
+| `behavioural-outcome` | Criteria that pin an artifact where the document promises an outcome, bundle separable obligations, or have no way to decide the result. |
+| `obligation-reduction` | Obligations no criterion discharges, and criteria that discharge no obligation, read off an obligation inventory. |
 | `set-consistency` | Criteria that cannot hold together, and wording that admits materially different outcomes. |
 | `edge-cases` | The standard's edge-case taxonomy, walked per criterion, naming cases no criterion tests. |
-| `absent-requirements` | Obligations the document takes on that no criterion covers. |
 
 A lens's `tier` names the model capability it needs and `transport` the route its prompt goes
 out on: an `openrouter` lens through the

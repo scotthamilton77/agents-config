@@ -52,7 +52,7 @@ def read_lens(name: str) -> dict:
     text = (LENSES_DIR / name / "prompt.md").read_text(encoding="utf-8")
     _, head, body = text.split("---\n", 2)
     fields = dict(line.split(": ", 1) for line in head.splitlines())
-    fields["standard"] = [part.strip() for part in fields["standard"].strip("[]").split(",")]
+    fields["enforces"] = [part.strip() for part in fields["enforces"].strip("[]").split(",")]
     return {"lens": name, **fields, "body": body.strip()}
 
 
@@ -60,11 +60,27 @@ LENS_NAMES = sorted(path.parent.name for path in LENSES_DIR.glob("*/prompt.md"))
 LENSES = [read_lens(name) for name in LENS_NAMES]
 
 
-def standard_sections() -> dict[str, str]:
-    """The source standard's sections by heading, each as the text under its heading."""
+def standard_rules() -> dict[str, str]:
+    """The source standard's rules by id, each as the text under its `### ` heading."""
     body = SOURCE_STANDARD.read_text(encoding="utf-8").split("---", 2)[2]
-    return {chunk.split("\n", 1)[0].strip(): chunk.split("\n", 1)[1].strip()
-            for chunk in re.split(r"^## ", body, flags=re.MULTILINE)[1:]}
+    rules: dict[str, list[str]] = {}
+    current = None
+    for line in body.splitlines():
+        if line.startswith("### "):
+            current = line[4:].strip()
+            rules[current] = []
+        elif line.startswith("#"):
+            current = None
+        elif current is not None:
+            rules[current].append(line)
+    return {rule: "\n".join(lines).strip() for rule, lines in rules.items()}
+
+
+# Text the standard holds outside any rule: its title, its preamble, and each section's heading
+# and preamble. No lens enforces it, so no prompt carries it.
+OUTSIDE_RULES = ("# Acceptance criteria", "## A criterion", "## The set", "## Verification",
+                 "Each rule below carries an ID.",
+                 "Check the set against the agreed scope before calling it ready.")
 
 
 DOCUMENT = """# Ledger export
@@ -123,8 +139,13 @@ def fail_on_the_last_prompt(monkeypatch) -> None:
 
 
 def contract_of(text: str) -> dict:
-    """The completion contract a prompt hands its attacker, parsed back out of the prompt."""
-    return json.loads(text.split("```json\n", 1)[1].split("\n```", 1)[0])
+    """The completion contract a prompt hands its attacker, parsed back out of its Report section.
+
+    Read from that section rather than the first JSON block, since a lens's own instructions may
+    show a shape of their own.
+    """
+    report = text.split("\n## Report\n", 1)[1]
+    return json.loads(report.split("```json\n", 1)[1].split("\n```", 1)[0])
 
 
 def phrases(text: str, size: int = 5) -> set[str]:
@@ -143,10 +164,13 @@ def distinctive_phrases(name: str, shared_text: str) -> set[str]:
 
 
 def lens_text(tier: object = "mid", transport: object = "openrouter",
-              standard: object = ("The set",), body: str = "Walk the taxonomy.") -> str:
+              standard: object = "acceptance-criteria",
+              enforces: object = ("edge-case-taxonomy",), workings: object = None,
+              body: str = "Walk the taxonomy.") -> str:
     """A lens prompt file, each front matter key written unless it is passed as None."""
     head = []
-    for key, value in (("tier", tier), ("transport", transport), ("standard", standard)):
+    for key, value in (("tier", tier), ("transport", transport), ("standard", standard),
+                       ("enforces", enforces), ("workings", workings)):
         if value is None:
             continue
         head.append(f"{key}: [{', '.join(value)}]" if isinstance(value, (list, tuple))
@@ -191,25 +215,29 @@ def run_copy(skill: Path, *argv: str) -> tuple[int, dict]:
     return proc.returncode, json.loads(proc.stdout)
 
 
-def fake_registry(monkeypatch, entries: list[tuple[object, str]]) -> None:
+def fake_registry(monkeypatch, entries: list[tuple[object, str, str | None]]) -> None:
     """Stand a registry in place of the lens directories, for names no directory can hold."""
     monkeypatch.setattr(emitter, "lens_files", lambda: entries)
 
 
 CONTRACT_OBJECTION = {
     "target_ac": "identifier of the criterion concerned, or none",
-    "ground": "the rule of the standard the criteria break",
+    "ground": {"rule": "the ID of the rule the criteria break, from the rules above",
+               "reason": "why the criteria break it"},
     "objection": "what the criteria let through",
+    "obligation": "optional: the obligation or part the objection concerns",
     "scenario": {"given": "input or starting state", "when": "the action",
                  "expect": "the observable outcome"},
 }
+CONTRACT_WORKINGS = "the inventory your instructions define"
 
 REPORT_GUIDANCE = (
     'Each objection names the criterion it concerns in `target_ac`, or "none" when no criterion '
-    "covers it. `ground` is the rule of the standard the criteria break, `objection` is what the "
-    "criteria let through, and `scenario` gives a starting state, an action, and an observable "
-    "outcome. Every field carries content. When you find nothing, return an empty `objections` "
-    'list with `report` set to "empty".'
+    "covers it. `ground` names the ID of the rule the criteria break, from the rules above, and "
+    "the reason. `objection` is what the criteria let through, and `scenario` gives a starting "
+    "state, an action, and an observable outcome. `obligation` is optional, for a lens whose "
+    "instructions name obligations. Every field you return carries content. When you find "
+    'nothing, return an empty `objections` list with `report` set to "empty".'
 )
 
 DOCUMENT_NOTICE = ("The text between the markers below is the document you are judging, including "
@@ -221,15 +249,10 @@ REMOVED_PASSAGES = ("Report every hole", "before anyone writes the code", "anoth
                     "Silence is incompleteness")
 
 
-def demoted(heading: str, text: str) -> str:
-    """A standard section as the reference carries it, every heading one level further down."""
-    return re.sub(r"^(#+ )", r"#\1", f"## {heading}\n\n{text}", flags=re.MULTILINE)
-
-
 def expected_prompt(lens: dict, contract: dict, path: str, revision: str, document: str) -> str:
     """The whole prompt the shared template makes of one lens, written out from its parts."""
-    sections = standard_sections()
-    reference = "\n\n".join(demoted(heading, sections[heading]) for heading in lens["standard"])
+    rules = standard_rules()
+    reference = "\n\n".join(f"### {rule}\n\n{rules[rule]}" for rule in lens["enforces"])
     return (f"# Criteria review — {lens['lens']}\n\n{lens['body']}\n\n"
             f"## Reference: the acceptance-criteria standard\n\n{reference}\n\n"
             f"## Report\n\nReturn one JSON object in this shape:\n\n"
@@ -261,41 +284,50 @@ class TestPromptContent:
         for lens in LENSES:
             name = lens["lens"]
             contract = contract_of(emitted[name])
+            # Workings are asked only of a lens whose front matter requires them; every other
+            # lens's contract is the objection shape alone.
+            workings = ({"workings": CONTRACT_WORKINGS}
+                        if lens.get("workings") == "required" else {})
             assert contract == {"lens": name, "report": "objections|empty",
-                                "objections": [{"lens": name, **CONTRACT_OBJECTION}]}
+                                "objections": [{"lens": name, **CONTRACT_OBJECTION}], **workings}
             # The shape asked of the attacker is the shape the record's schema will demand, less
             # the id: an attacker sees its own lens and not the round, so it cannot pick one that
             # is distinct across the union. The author assigns ids when unioning the reports.
             item = contract["objections"][0]
-            assert set(item) == set(objection_schema["required"]) - {"id"}
-            assert set(item["scenario"]) == set(
-                objection_schema["properties"]["scenario"]["required"])
+            properties = objection_schema["properties"]
+            assert set(item) == set(properties) - {"id"}
+            assert set(objection_schema["required"]) == set(properties) - {"obligation"}
+            assert set(item["ground"]) == set(properties["ground"]["required"])
+            assert set(item["scenario"]) == set(properties["scenario"]["required"])
             assert "proposed_ac" not in item
+        assert {lens["lens"] for lens in LENSES if lens.get("workings") == "required"} == {
+            "obligation-reduction"}
 
-    def test_each_prompt_is_its_lens_its_sections_and_the_shared_template(self, document,
-                                                                          tmp_path, capsys):
-        """A prompt is the lens's own instructions, the standard sections its front matter names
-        and no others, and the four shared parts: the standard reference, the output shape, the
-        explicit empty result, and the fenced document as data. Nothing else is in it, so the
+    def test_each_prompt_is_its_lens_its_rules_and_the_shared_template(self, document, tmp_path,
+                                                                       capsys):
+        """A prompt is the lens's own instructions, exactly the rules its front matter enforces in
+        the order it lists them, and the four shared parts: the standard reference, the output
+        shape, the explicit empty result, and the fenced document as data. Nothing else from the
+        standard travels: no rule the lens does not enforce, no section heading or preamble. The
         whole prompt is held against one written out from those parts."""
         emitted = emit(document, tmp_path / "attack", capsys)
         revision = "sha256:" + hashlib.sha256(document.read_bytes()).hexdigest()
-        sections = standard_sections()
+        rules = standard_rules()
         for lens in LENSES:
             text = emitted[lens["lens"]]
             assert text == expected_prompt(lens, contract_of(text), document.name, revision,
                                            DOCUMENT), lens["lens"]
             assert lens["body"] in text
-            for heading, section in sections.items():
-                named = heading in lens["standard"]
-                assert (f"### {heading}\n" in text) is named, (lens["lens"], heading)
-                lines = [line for line in section.splitlines() if line.strip()]
-                if named:
-                    assert all(line.lstrip("#") in text for line in lines), (lens["lens"], heading)
+            carried = re.findall(r"^### (\S+)$", text, flags=re.MULTILINE)
+            assert carried == lens["enforces"], lens["lens"]
+            for rule, rule_text in rules.items():
+                lines = [line for line in rule_text.splitlines() if line.strip()]
+                if rule in lens["enforces"]:
+                    assert all(line in text for line in lines), (lens["lens"], rule)
                 else:
-                    assert not any(line in text for line in lines), (lens["lens"], heading)
-            # The standard's own preamble belongs to no section, so no lens selects it.
-            assert "A work item's criterion set is its contract." not in text
+                    assert not any(line in text for line in lines), (lens["lens"], rule)
+            for passage in (*OUTSIDE_RULES, "A work item's criterion set is its contract."):
+                assert f"{passage}\n" not in text, (lens["lens"], passage)
             for passage in REMOVED_PASSAGES:
                 assert passage not in text, (lens["lens"], passage)
 
@@ -305,16 +337,14 @@ class TestPromptContent:
         skill = skill_copy(tmp_path, {}, standard=True)
         before, after = tmp_path / "before", tmp_path / "after"
         assert run_copy(skill, "--spec", str(document), "--out-dir", str(before))[0] == 0
-        edited = skill / "lenses" / "criteria-holes" / "prompt.md"
+        edited = skill / "lenses" / "set-consistency" / "prompt.md"
         edited.write_text(edited.read_text(encoding="utf-8").replace(
-            "Work criterion by criterion.", "Work through the criteria one at a time."),
-            encoding="utf-8")
+            "as one set.", "as a single set."), encoding="utf-8")
         assert run_copy(skill, "--spec", str(document), "--out-dir", str(after))[0] == 0
         changed = sorted(path.name for path in before.iterdir()
                          if path.read_bytes() != (after / path.name).read_bytes())
-        assert changed == ["criteria-holes.md"]
-        assert "Work through the criteria one at a time." in (
-            after / "criteria-holes.md").read_text(encoding="utf-8")
+        assert changed == ["set-consistency.md"]
+        assert "as a single set." in (after / "set-consistency.md").read_text(encoding="utf-8")
 
     def test_c1_the_whole_document_travels_not_a_bare_criteria_list(self, document, tmp_path,
                                                                     capsys):
@@ -621,7 +651,7 @@ class TestRefusals:
         """S6-C7: a lens's name is its prompt's filename, so a name that is not a bare filename
         drops the prompt outside the owner-only directory — while the round reports every declared
         lens emitted. No directory can carry such a name, so the registry is stood in directly."""
-        fake_registry(monkeypatch, [(LENS_NAMES[0], lens_text()), (name, lens_text())])
+        fake_registry(monkeypatch, [(LENS_NAMES[0], lens_text(), None), (name, lens_text(), None)])
         out_dir = tmp_path / "out"
         code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
         assert code == 2
@@ -630,7 +660,7 @@ class TestRefusals:
         assert not out_dir.exists()
         assert not (tmp_path / "escaped.md").exists()
 
-    @pytest.mark.parametrize("key", ("tier", "transport", "standard", "body"))
+    @pytest.mark.parametrize("key", ("tier", "transport", "standard", "enforces", "body"))
     def test_c7_a_lens_short_a_key_is_refused_before_anything_is_written(self, document,
                                                                           tmp_path, key):
         """S6-C7: `tier` and `transport` are read only when the round file is assembled, so a lens
@@ -640,7 +670,8 @@ class TestRefusals:
         is checked whole, before the round writes anything, and the refusal names what is missing
         so the reader can fix it without reading the emitter."""
         damaged = {"tier": {"tier": None}, "transport": {"transport": None},
-                   "standard": {"standard": None}, "body": {"body": ""}}[key]
+                   "standard": {"standard": None}, "enforces": {"enforces": None},
+                   "body": {"body": ""}}[key]
         skill = skill_copy(tmp_path, {"lenses/edge-cases/prompt.md": lens_text(**damaged)})
         out_dir = tmp_path / "out"
         code, result = run_copy(skill, "--spec", str(document), "--out-dir", str(out_dir))
@@ -651,14 +682,14 @@ class TestRefusals:
 
     @pytest.mark.parametrize("key,damage", (
         ("tier", {"tier": " "}), ("transport", {"transport": ["codex"]}),
-        ("standard", {"standard": []}), ("standard", {"standard": "The set"}),
-        ("body", {"body": "  \n\n"})))
+        ("enforces", {"enforces": []}), ("enforces", {"enforces": "edge-case-taxonomy"}),
+        ("standard", {"standard": ["acceptance-criteria"]}), ("body", {"body": "  \n\n"})))
     def test_c7_a_lens_value_that_is_present_but_unusable_is_refused(self, document, tmp_path,
                                                                       key, damage):
         """S6-C7: a key is owed a value an attacker can be built from, not merely a key. A lens
         with a blank body emits an attacker holding no instructions — a lens that cannot do its
-        job while the round reports full coverage — and a `standard` that is not a list of
-        section headings selects nothing from the standard. Refused whole, before anything is
+        job while the round reports full coverage — and an `enforces` that is not a list naming at
+        least one rule selects nothing from the standard. Refused whole, before anything is
         written."""
         skill = skill_copy(tmp_path, {"lenses/edge-cases/prompt.md": lens_text(**damage)})
         out_dir = tmp_path / "out"
@@ -668,20 +699,47 @@ class TestRefusals:
         assert key in result["errors"][0]["message"]
         assert not out_dir.exists()
 
-    def test_c7_a_lens_naming_a_section_the_standard_lacks_is_refused(self, document, tmp_path):
-        """A lens's `standard` entry selects a section of the standard by its heading, so an entry
-        the standard has no heading for selects nothing — the lens would go out without the rule it
-        judges by, while the round reports it emitted. Refused before anything is written, naming
-        the entry."""
-        skill = skill_copy(tmp_path, {"lenses/edge-cases/prompt.md":
-                                      lens_text(standard=["The set", "No such section"])},
+    @pytest.mark.parametrize(("damage", "named"), (
+        ({"enforces": ["edge-case-taxonomy", "no-such-rule"]}, "no-such-rule"),
+        ({"standard": "house-style"}, "house-style"),
+        ({"workings": "required"}, "workings"),
+        ({"workings": "sometimes"}, "workings")))
+    def test_c7_a_lens_the_standard_or_its_directory_cannot_serve_is_refused(self, document,
+                                                                            tmp_path, damage,
+                                                                            named):
+        """A lens enforces rules of the acceptance-criteria standard by their IDs, so a rule the
+        standard has no heading for, or a standard other than that one, leaves the lens going out
+        without the rule it judges by. A lens requiring workings needs the schema that judges
+        them beside its prompt, and a `workings` value other than `required` is a requirement the
+        lens states and nothing reads. Each is refused before anything is written, naming what is
+        at fault."""
+        skill = skill_copy(tmp_path, {"lenses/edge-cases/prompt.md": lens_text(**damage)},
                            standard=True)
         out_dir = tmp_path / "out"
         code, result = run_copy(skill, "--spec", str(document), "--out-dir", str(out_dir))
         assert code == 2
         assert [error["code"] for error in result["errors"]] == ["no-lenses"]
-        assert "No such section" in result["errors"][0]["message"]
+        assert named in result["errors"][0]["message"]
         assert not out_dir.exists()
+
+    @pytest.mark.parametrize("schema", ('{"type": "object"}', "{not json", "[]"))
+    def test_c7_workings_are_required_only_beside_a_schema_that_judges_them(self, document,
+                                                                            tmp_path, schema):
+        """Inverse and edge of the same rule: `workings: required` beside a readable schema
+        object emits, and beside a file that is not one refuses under `no-lenses`."""
+        skill = skill_copy(tmp_path, {
+            "lenses/edge-cases/prompt.md": lens_text(workings="required"),
+            "lenses/edge-cases/workings.schema.json": schema}, standard=True)
+        out_dir = tmp_path / "out"
+        code, result = run_copy(skill, "--spec", str(document), "--out-dir", str(out_dir))
+        if schema.startswith('{"'):
+            assert code == 0, result
+            text = (out_dir / "edge-cases.md").read_text(encoding="utf-8")
+            assert contract_of(text)["workings"] == CONTRACT_WORKINGS
+        else:
+            assert code == 2
+            assert [error["code"] for error in result["errors"]] == ["no-lenses"]
+            assert not out_dir.exists()
 
     @pytest.mark.parametrize("order", (("NFC", "NFD"), ("NFD", "NFC")))
     def test_c7_two_lens_names_differing_only_in_unicode_form_are_refused(self, document, tmp_path,
@@ -696,7 +754,7 @@ class TestRefusals:
         refuse to hold both directories."""
         spellings = [unicodedata.normalize(form, "café-holes") for form in order]
         assert spellings[0] != spellings[1]  # two strings; one filename where these prompts land
-        fake_registry(monkeypatch, [(spelling, lens_text()) for spelling in spellings])
+        fake_registry(monkeypatch, [(spelling, lens_text(), None) for spelling in spellings])
         out_dir = tmp_path / "out"
         code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
         assert code == 2
@@ -710,8 +768,8 @@ class TestRefusals:
         prompt, the second landing on the first, while the round reports both attackers
         emitted. That is the loss the duplicate check exists to stop, so names are compared the
         way the volume they land on compares them."""
-        fake_registry(monkeypatch, [(LENS_NAMES[0], lens_text()),
-                                    (LENS_NAMES[0].upper(), lens_text())])
+        fake_registry(monkeypatch, [(LENS_NAMES[0], lens_text(), None),
+                                    (LENS_NAMES[0].upper(), lens_text(), None)])
         out_dir = tmp_path / "out"
         code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
         assert code == 2
@@ -1151,10 +1209,10 @@ class TestStandard:
         skill = skill_copy(tmp_path, {})
         sibling = tmp_path / "acceptance-criteria"
         sibling.mkdir()
-        sections = "".join(f"## {heading}\n\nA sibling sentence.\n\n"
-                           for heading in standard_sections())
+        rules = "".join(f"### {rule}\n\nA sibling sentence.\n\n" for rule in standard_rules())
         (sibling / "SKILL.md").write_text(
-            f"---\nname: acceptance-criteria\n---\n\n# Standard\n\n{sections}", encoding="utf-8")
+            f"---\nname: acceptance-criteria\n---\n\n# Standard\n\n## Rules\n\n{rules}",
+            encoding="utf-8")
         out_dir = tmp_path / "out"
         code, result = run_copy(skill, "--spec", str(document), "--out-dir", str(out_dir))
         assert code == 0, result
@@ -1180,7 +1238,7 @@ class TestStandard:
 
 
 DEPLOYED = (SKILL_PATH, ERRORS_PATH, RECORD_PATH, SCHEMA_PATH, EMITTER_PATH, CHECKER_PATH,
-            *sorted(LENSES_DIR.glob("*/prompt.md")))
+            *sorted(LENSES_DIR.glob("*/*")))
 
 
 class TestSurface:
