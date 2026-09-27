@@ -20,14 +20,17 @@ every loop — including its own construction.**
 ### Contracts and specs
 
 **D1 — Spec falsifiability contract.** Every spec carries enumerated
-acceptance criteria, each expressible as a failing test (red-test-convertible).
+acceptance criteria, each falsifiable by a stated check. Change obligations
+normally admit a failing test before implementation. Preservation guarantees,
+live observation windows, and human acceptance use their defined verification
+contracts instead of requiring an artificial red test.
 An edge-case taxonomy is applied during authoring: for each AC — inverse case,
 empty/boundary input, dependency failure, repeated/concurrent invocation,
 idempotency. The taxonomy grows from escaped defects: every defect that leaks
 downstream is traced to its missing-AC class and added.
 
 **D2 — Decomposition shape.** One spec carries an ordered slice list. Each
-slice is the smallest change that flips a defined set of ACs red→green and is
+slice is the smallest change that discharges a defined set of ACs and is
 separately mergeable; each slice carries its own ACs and is the unit a
 scaffold picks up. Size tripwire (initial, tunable): a spec exceeding 400
 lines or 8 slices splits into a parent doc + child specs. Decomposition is the
@@ -60,9 +63,10 @@ contract."
   spec only — never the spec-writing session. A foreign model reviews the
   scaffold (bijection, contract-only, taxonomy applied). The spec author
   adjudicates disputes only.
-- **Prose deliverables** (skills, docs, config) can't scaffold as red tests:
-  the dispatch brief names the mechanical checks that gate completion;
-  anything not mechanically checkable rides as advisory review.
+- **Prose deliverables** (skills, docs, config) often cannot scaffold as red
+  tests: the dispatch brief names the mechanical checks that gate completion;
+  material commitments that require human acceptance use a planned check,
+  while other non-mechanical findings ride as advisory review.
 
 *Amended 2026-09-26 (D1, D4 and D8):* every material commitment needs an
 explicit verification method, pass/fail rule, and acceptance authority.
@@ -71,8 +75,9 @@ participation or judgment, the contract defines the observation protocol or
 assessment standard and names the evaluator before implementation. Completion
 at the declared acceptance boundary waits for that check's recorded result.
 Checking that an authorized decision was recorded does not mechanize the
-judgment itself. Automatable criteria remain red-test-convertible; human-only
-criteria use this bounded exception. Ordinary advisory review findings remain
+judgment itself. Automatable change obligations normally admit failing tests;
+preservation guarantees and live observation windows use their defined checks.
+Human acceptance uses this bounded exception. Ordinary advisory findings remain
 non-blocking under D8. A terminal-clean review does not discharge a pending
 human acceptance check. Cost or difficulty never makes a material commitment
 optional; changing the commitment requires an authorized scope amendment.
@@ -103,6 +108,9 @@ CONTEXT.md design). Mechanical findings block and must carry a mechanical
 artifact (failing test, lint output, broken link). Advisory findings route to
 the backlog, never block, and are never re-litigated in the fix loop. Review
 exits when a complete round produces zero mechanical findings.
+
+*Amended 2026-09-26:* a terminal-clean review verdict does not discharge a
+pending human acceptance check under the D4 amendment.
 
 **D9 — The PR is a thin merge vehicle.** Merge eligibility = CI green +
 verdict artifact + approval. PR comments cease to be a review medium; a human

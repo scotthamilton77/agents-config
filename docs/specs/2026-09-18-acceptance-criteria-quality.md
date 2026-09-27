@@ -94,10 +94,12 @@ granularity.
 
 A slice receives whole criteria it can discharge. An outcome spanning slices
 remains a parent criterion with separately identified child obligations.
-Before implementation starts, assign its verification to an explicit child
-work item. That child stays open until evidence establishes the parent outcome
-at the relevant interface. It may reuse or combine sufficient existing checks;
-a separate integration test is needed only where those checks leave a gap.
+Name an explicit verification child in the spec's Continuations manifest
+before implementation starts. Its child spec defines the checks and any
+dedicated verification slice. That child stays open until evidence establishes
+the parent outcome at the relevant interface. It may reuse or combine
+sufficient existing checks. A separate integration test is needed only where
+those checks leave a gap.
 Closing implementation children does not itself discharge the parent. Purely
 structural containers need no extra check beyond their children's completion.
 
@@ -114,8 +116,11 @@ changes what success means, the set is not ready. The author identifies the
 missing fact or decision rather than presenting an assumption as established.
 
 Existing authoring instructions say every criterion is "false today." Adoption
-replaces that wording with this distinction. Automatable checks remain
-red-test-convertible; human checks follow the charter's explicit exception.
+replaces that wording with this distinction. Automatable change obligations
+normally start with a failing test. Preservation guarantees and live
+observation windows follow their own verification contracts, even when their
+checks are automatable. Human acceptance follows the charter's bounded
+exception.
 
 ### ACQ-D4: Readiness is a property of the set
 
@@ -249,8 +254,9 @@ this documentation change does not claim to have run them.
   delivery, and installation obligations, the review identifies the required
   split; a single preservation guarantee needing several assertions or
   boundary cases receives no granularity finding for that reason.
-- **ACQ-A5** Given a preservation criterion already satisfied before a
-  refactor, the review accepts its falsifiability when a violating
+- **ACQ-A5** Given a preservation check that cannot fail under a violating
+  implementation, the review identifies the unfalsifiable check; a criterion
+  already satisfied before a refactor is accepted when a violating
   implementation fails its check.
 - **ACQ-A6** Given individually satisfiable criteria requiring incompatible
   outcomes for the same input and state, the review identifies the conflicting
@@ -266,7 +272,9 @@ this documentation change does not claim to have run them.
   judgment check is accepted, while naming a human observer alone is not.
 - **ACQ-A10** Given a proposed criterion that duplicates existing coverage
   without excluding another in-scope failure, the review identifies the
-  existing coverage rather than requiring an additional obligation.
+  existing coverage rather than requiring an additional obligation; a
+  criterion excluding a distinct in-scope failure receives no duplicate
+  finding.
 - **ACQ-A11** In staging for every supported tool, the criteria definition and
   taxonomy have one deployed source, and each applicable authoring or review
   skill's criteria step directs its reader to that source. Authoring and
