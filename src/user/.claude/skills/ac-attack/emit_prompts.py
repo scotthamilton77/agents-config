@@ -69,6 +69,11 @@ TESTABLE_ONLY = (
     "observer could check. A proposal that cannot fill all three is a concern and will be thrown "
     "out as malformed — drop it yourself rather than padding the round with it."
 )
+OBJECTIONS = (
+    "Each proposal is an objection. Name the criterion it concerns, the rule of the standard above "
+    "that the criteria break, and the scenario that shows it. The document's author holds context "
+    "this prompt does not carry, and writes whatever criterion answers the objection."
+)
 EXPLICIT_EMPTY = (
     'If you find nothing, return an empty proposal list and report "empty". Silence is '
     "incompleteness, not agreement: a lens that does not report leaves the round unfinished, and "
@@ -440,7 +445,7 @@ def render_prompt(lens: dict, ctx: dict) -> str:
         "proposals": [{
             "lens": name, "target_ac": "identifier of the criterion attacked, or none",
             "hole": "what the criteria let through",
-            "proposed_ac": "the new criterion, stated as an observable claim",
+            "ground": "the rule of the standard above that the criteria break",
             "red_test_sketch": {"given": "input or starting state", "when": "the action",
                                 "expect": "the observable outcome"},
         }],
@@ -449,8 +454,8 @@ def render_prompt(lens: dict, ctx: dict) -> str:
         f"# Criteria attack — {name}\n",
         (
             "You are one attacker on a panel. You hold this lens and no other. The document below "
-            "is not yet built: your proposals become criteria before anyone writes the code, so a "
-            "hole you name now is a test that gets written, and one you miss is a test nobody "
+            "is not yet built: your objections reach its author before anyone writes the code, so "
+            "a hole you name now becomes a criterion and a test, and one you miss is a test nobody "
             "writes.\n"
         ),
         "## The acceptance-criteria standard\n",
@@ -464,6 +469,7 @@ def render_prompt(lens: dict, ctx: dict) -> str:
         "## How to attack\n",
         f"{EXHAUSTIVENESS}\n",
         f"{WHOLE_DOCUMENT}\n",
+        f"{OBJECTIONS}\n",
         f"{TESTABLE_ONLY}\n",
         f"{EXPLICIT_EMPTY}\n",
         f"{UNTRUSTED_NOTICE}\n",

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agents.local/schemas/attack-record/1",
   "title": "Criteria attack record",
-  "description": "Record of one attack round over a document's acceptance criteria: the revision attacked, which lenses reported, what they proposed, and how each proposal was adjudicated.",
+  "description": "Record of one attack round over a document's acceptance criteria: the revision attacked, which lenses reported, the objections they raised, and how each was adjudicated.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -60,7 +60,7 @@
     "proposal": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "lens", "target_ac", "hole", "proposed_ac", "red_test_sketch"],
+      "required": ["id", "lens", "target_ac", "ground", "hole", "red_test_sketch"],
       "properties": {
         "id": {
           "type": "string",
@@ -77,15 +77,15 @@
           "pattern": "\\S",
           "description": "Identifier of the criterion attacked, or \"none\" when no criterion covers the ground at all."
         },
+        "ground": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "The rule of the acceptance-criteria standard that the criteria as written break."
+        },
         "hole": {
           "type": "string",
           "pattern": "\\S",
           "description": "What the criteria as written let through."
-        },
-        "proposed_ac": {
-          "type": "string",
-          "pattern": "\\S",
-          "description": "The criterion proposed to close the hole, stated as an observable claim."
         },
         "red_test_sketch": {
           "type": "object",
@@ -96,7 +96,7 @@
             "when": {"type": "string", "pattern": "\\S"},
             "expect": {"type": "string", "pattern": "\\S"}
           },
-          "description": "The failing test the proposed criterion makes writable. All three parts are required and non-blank: an item that cannot name a starting state, an action, and an observable outcome is a concern rather than a testable claim, and is not a proposal."
+          "description": "The scenario that shows the objection. All three parts are required and non-blank: an item that cannot name a starting state, an action, and an observable outcome is a concern rather than a testable claim, and is not a proposal."
         }
       }
     },
@@ -123,7 +123,7 @@
         "covering_ac": {
           "type": "string",
           "pattern": "\\S",
-          "description": "Identifier of the criterion in that revision which carries it. Required on an acceptance."
+          "description": "Identifier of the criterion in that revision which answers the objection, written by the document's author. Required on an acceptance."
         }
       },
       "allOf": [

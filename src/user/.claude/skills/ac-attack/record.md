@@ -7,13 +7,16 @@ What an attacker returns, and what the round is written down as. The machine-rea
 
 ```json
 {"lens": "edge-cases", "target_ac": "A3",
+ "ground": "the rule of the standard that the criteria break",
  "hole": "what the criteria let through",
- "proposed_ac": "the new criterion, stated as an observable claim",
  "red_test_sketch": {"given": "input or starting state", "when": "the action",
                      "expect": "the observable outcome"}}
 ```
 
-`target_ac` is the criterion attacked, or `"none"` when nothing covers the ground.
+A proposal is an objection. `target_ac` is the criterion attacked, or `"none"` when nothing covers
+the ground. `ground` names the rule of the acceptance-criteria standard the criteria break. The
+attacker states the objection and the author answers it: an accepted proposal names the criterion
+the author wrote, which the attacker never drafts because it lacks the author's context.
 
 The test sketch is the line between a testable claim and a concern: a starting state, an action,
 an observable outcome, all non-blank — a concern cannot name them. An item leaving one blank is

@@ -177,7 +177,7 @@ class TestPromptContent:
                     "lens": name,
                     "target_ac": "identifier of the criterion attacked, or none",
                     "hole": "what the criteria let through",
-                    "proposed_ac": "the new criterion, stated as an observable claim",
+                    "ground": "the rule of the standard above that the criteria break",
                     "red_test_sketch": {"given": "input or starting state",
                                         "when": "the action",
                                         "expect": "the observable outcome"},
@@ -258,7 +258,7 @@ class TestPromptContent:
         """S6-C7: at least one attack lens runs on a foreign model, and the panel is not one tier
         throughout — blind spots correlate inside a vendor."""
         assert sorted(LENS_NAMES) == ["absent-requirements", "behavioural-outcome",
-                                      "criteria-holes", "edge-cases"]
+                                      "criteria-holes", "edge-cases", "set-consistency"]
         assert {lens["tier"] for lens in LENSES} == {"frontier", "mid"}
         assert "codex" in {lens["transport"] for lens in LENSES}
         for lens in LENSES:
@@ -1093,6 +1093,14 @@ class TestStandard:
         result = json.loads(proc.stdout)
         assert [error["code"] for error in result["errors"]] == ["no-standard"]
         assert not out_dir.exists()
+
+    def test_every_prompt_asks_for_an_objection_the_author_answers(self, document, tmp_path,
+                                                                   capsys):
+        """The attacker holds less context than the author, so it states the ground and the
+        scenario and the author writes whatever criterion answers it."""
+        for text in emit(document, tmp_path / "attack", capsys).values():
+            assert emitter.OBJECTIONS in text
+            assert "proposed_ac" not in contract_of(text)["proposals"][0]
 
     def test_the_behavioural_outcome_lens_is_first_in_every_round(self, document, tmp_path,
                                                                     capsys):

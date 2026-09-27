@@ -65,7 +65,7 @@ def proposal(lens: str, target: str, identifier: str) -> dict[str, Any]:
     return {
         "id": identifier, "lens": lens, "target_ac": target,
         "hole": "an unwritable output path is never exercised",
-        "proposed_ac": "the exporter exits non-zero when the output cannot be written",
+        "ground": "a failure path the edge-case taxonomy names has no criterion",
         "red_test_sketch": {"given": "a read-only output directory",
                             "when": "the exporter runs", "expect": "a non-zero exit status"},
     }
@@ -1383,7 +1383,7 @@ class TestNameRefusal:
 
 
 class TestProposalShape:
-    @pytest.mark.parametrize("field", ("id", "lens", "target_ac", "hole", "proposed_ac",
+    @pytest.mark.parametrize("field", ("id", "lens", "target_ac", "ground", "hole",
                                        "red_test_sketch"))
     @pytest.mark.parametrize("mutation", ("absent", "blank"))
     def test_c2_every_part_of_a_proposal_is_required_and_carries_content(self, attack, capsys,

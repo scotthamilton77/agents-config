@@ -8,8 +8,9 @@ admission:
 ---
 
 Criteria that read complete rarely are. This skill attacks them: a panel of adversarial lenses
-reads the document, each naming behaviours its criteria let through, and every proposal comes back
-adjudicated into the criteria or rejected on the record.
+reads the document, each objecting to what its criteria let through on a named ground, and every
+objection comes back adjudicated on the record. An accepted one is answered by a criterion the
+author writes, since the author holds the context an attacker lacks.
 
 Running before the work starts is the point: once code exists, a review can check the tests cover
 the failure cases the criteria name, but cannot invent the ones nobody thought of. Those get
@@ -29,7 +30,8 @@ it is missing or empty.
 | Lens | What it attacks |
 | --- | --- |
 | `behavioural-outcome` | Criteria that pin an artifact where the document promises a behaviour, bundle separable obligations, cannot fail, or have no feasible check. |
-| `criteria-holes` | Behaviours that satisfy every stated criterion and are still wrong, including criteria that contradict each other or admit two readings. |
+| `criteria-holes` | Behaviours that satisfy every stated criterion and are still wrong. |
+| `set-consistency` | Criteria that cannot hold together, and wording that admits materially different outcomes. |
 | `edge-cases` | The standard's edge-case taxonomy, walked per criterion, naming cases no criterion tests. |
 | `absent-requirements` | Obligations the document takes on that no criterion covers. |
 

@@ -2,19 +2,25 @@
   "lenses": [
     {
       "lens": "behavioural-outcome",
-      "mandate": "Judge how each criterion is formulated, before anyone asks whether the set covers the document. Where the document promises a behaviour change, name every criterion that pins an artifact in place of that behaviour — a sentence present, a constant set, a test named, bytes pinned, a gate green — and propose the criterion an observer could check to see the behaviour changed. A set whose criteria name only implementation choices leaves each promise it pins that way unobserved, and each such promise is a proposal. Also name criteria that bundle obligations deliverable apart, criteria no violating implementation could fail, and commitments with no feasible check, pass/fail rule, or acceptance authority. An artifact criterion the standard admits is sound, as is one serving a behavioural criterion the set also states.",
+      "mandate": "Judge how each criterion is formulated. Where the document promises a behaviour change, object to each criterion that pins an artifact in its place — a sentence present, a constant set, a test named, bytes pinned, a gate green — and show the scenario in which that artifact passes while the behaviour stays as it was. Where the document's deliverable is itself a document — a decision, an answer, a spec — judge whether its criteria assess that content. Object to criteria that bundle obligations deliverable apart, to criteria a violating implementation still passes, and to commitments that lack a feasible check, a pass/fail rule, or an acceptance authority.",
       "tier": "frontier",
       "transport": "codex"
     },
     {
       "lens": "criteria-holes",
-      "mandate": "Name behaviours that satisfy every criterion this document states and are still wrong. Work criterion by criterion: read what it literally demands, build the cheapest implementation that passes it, and say where that implementation betrays what the document is for. Then hold the criteria against each other: two that cannot both hold in one circumstance, or wording that admits two materially different readings, let an implementation pass on the reading the document did not mean.",
+      "mandate": "Name behaviours that satisfy every criterion this document states and are still wrong. Work criterion by criterion: read what it literally demands, build the cheapest implementation that passes it, and say where that implementation betrays what the document is for.",
       "tier": "frontier",
       "transport": "codex"
     },
     {
+      "lens": "set-consistency",
+      "mandate": "Read the criteria as one set. Object to any two that cannot both hold in the same circumstance, naming that circumstance. Object to wording that admits materially different outcomes, naming the decision it leaves open and the outcome each reading produces.",
+      "tier": "frontier",
+      "transport": "openrouter"
+    },
+    {
       "lens": "edge-cases",
-      "mandate": "Walk the standard's edge-case taxonomy against every criterion and name the cases none of them tests. Take each dimension in turn — a dimension you skip is one nobody covers.",
+      "mandate": "Walk the standard's edge-case taxonomy against every criterion and name the cases none of them tests. Take each dimension in turn, since a dimension you skip is one nobody covers.",
       "tier": "mid",
       "transport": "openrouter"
     },

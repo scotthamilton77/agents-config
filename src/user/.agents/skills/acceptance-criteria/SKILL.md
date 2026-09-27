@@ -57,3 +57,5 @@ For stochastic behaviour, fix the scenarios, inputs, run count and threshold bef
 ## Attack before use, and again after amendment
 
 Have a criterion set attacked by adversarial reviewers before work is claimed against it. Attack it again after any amendment to the attacked text, including an amendment a criteria-indicting review forced. An attack on one version says nothing about the next.
+
+An attacker objects on a named rule of this standard, with a scenario that shows the break. The author holds the context the attacker lacks, so the author writes whatever criterion answers an accepted objection.
