@@ -178,11 +178,12 @@ testable surface is the refusal and the separable escalation signal.
 
 **AC-attack is a pre-implementation panel on the spec (D3).** The attack
 fans out like the review panel — a single attacker satisfices the same way a
-single reviewer does. The contract defines a set of **attack lenses**, including at least holes
-in existing ACs ("name behaviors that satisfy these ACs while still being
-wrong"), edge-case holes against the authoring taxonomy (inverse, boundary,
-dependency failure, concurrency, idempotency cases no AC tests), and absent
-requirements (obligations the spec implies but no AC covers). One attacker
+single reviewer does. The contract defines a set of **attack lenses** that together cover at least
+obligation reduction (obligations the spec takes on that no AC discharges,
+including behaviours that satisfy the ACs while still being wrong, and ACs
+that discharge no obligation) and what-if cases (inverse, boundary, dependency
+failure, concurrency and idempotency cases no AC tests and the spec neither
+covers nor rules out). One attacker
 runs per lens, exhaustive within it, reporting an explicit empty result when
 it finds no hole; the round's objection set is the union, and at least one
 attack lens runs on a foreign (non-Anthropic) model.
@@ -376,8 +377,8 @@ first (B and D consume the schema); B, C, D may then run in parallel.
 ### Slice C — AC-attack contract (D3)
 
 - **S6-C1** An AC-attack skill under `src/user/.claude/skills/` emits one
-  prompt per attack lens (at least holes in existing ACs, edge-case-taxonomy holes,
-  absent requirements), each carrying the spec's AC set **plus the spec
+  prompt per attack lens (covering at least obligation reduction and what-if
+  cases), each carrying the spec's AC set **plus the spec
   definitions and scope boundaries that give those ACs meaning** (an AC set
   referencing terms defined elsewhere in the spec ships with those
   definitions — a bare AC list starves the attacker into a vacuous empty
