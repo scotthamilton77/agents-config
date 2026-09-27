@@ -12,18 +12,22 @@
 
 ## Acceptance criterion
 
-A statement of observable behaviour that is false today and true when the work
-is done, phrased so a reader can convert it directly into a failing test. A
-spec's set of them is its contract: they are what review judges against, and
-they are what lets a review round terminate rather than generating findings
-indefinitely.
+A statement of an observable obligation with a defined pass/fail rule. It may
+require a change or preserve an existing guarantee. A spec's criterion set is
+its contract: review judges against it, giving a round a completion condition
+instead of an unbounded source of findings.
+
+Verification is mechanical by default. Planned human acceptance checks cover
+outcomes requiring human participation or judgment under the charter's stated
+exception. Advisory review findings do not substitute for acceptance.
 
 Criteria carry short IDs so that slices and tests can cite them. The ID format
 and the per-slice citation requirement are mechanically enforced; a slice
 discharges a criterion or one of the spec's own decisions, and cites whichever
 it discharges.
 
-Contract: `packages/installer/src/installer/core/spec_lint.py`, run as
+Quality design: `docs/specs/2026-09-18-acceptance-criteria-quality.md`.
+Structural lint: `packages/installer/src/installer/core/spec_lint.py`, run as
 `make spec-lint` over `docs/specs/`.
 
 ## Admission record
@@ -67,6 +71,14 @@ now redundant but harmless, and the persisted state field still carries it.
 
 Contract: the `work groom` verb; thresholds in `.work/config.toml` under
 `[operating-model]`.
+
+## Human acceptance check
+
+A planned verification of a required outcome through human participation or
+judgment. It is part of the acceptance contract, distinct from an advisory
+review finding.
+
+Design: `docs/specs/2026-09-18-acceptance-criteria-quality.md`.
 
 ## Milestone
 
@@ -151,6 +163,14 @@ class.
 
 Contract: `src/user/.agents/skills/review-verdict/` — the skill and its JSON
 schema are authoritative for fields, validation and lens rules.
+
+## Verification child
+
+A child work item responsible for establishing a parent's acceptance outcome.
+It carries the verification obligation that implementation children alone do
+not establish; it is a responsibility, not a separate tracker noun.
+
+Design: `docs/specs/2026-09-18-acceptance-criteria-quality.md`.
 
 ## Work item
 
