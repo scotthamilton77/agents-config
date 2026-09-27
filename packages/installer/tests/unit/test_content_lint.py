@@ -15,7 +15,6 @@ from pathlib import Path
 
 import pytest
 
-from installer.core.capabilities import models_skill_loading
 from installer.core.content_lint import (
     CH_BUILD,
     CH_GIT,
@@ -147,8 +146,7 @@ def test_over_cap_skill_body_in_real_src_is_a_violation(tmp_path: Path) -> None:
     CI green because nothing measured the tree the installer would actually read.
 
     Reported once for the one file, naming every tool that measured it — a line
-    per tool and a count to match would read as several separate defects. Gemini
-    is not among them: its skill loading is not modelled, so it weighs no body.
+    per tool and a count to match would read as several separate defects.
     """
     oversize = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
     repo = _repo(tmp_path, skills={"bloated": _RECORD + oversize})
@@ -158,9 +156,7 @@ def test_over_cap_skill_body_in_real_src_is_a_violation(tmp_path: Path) -> None:
     assert len(result.violations) == 1
     assert "skills/bloated" in result.violations[0]
     assert "over the" in result.violations[0]
-    for tool in known_tools():
-        measured = tool.value in result.violations[0]
-        assert measured is models_skill_loading(tool.value)
+    assert all(tool.value in result.violations[0] for tool in known_tools())
 
 
 def test_a_violation_carrying_no_tool_prefix_passes_through_whole() -> None:
@@ -933,7 +929,7 @@ def test_a_user_invoked_shared_skill_reports_one_ceiling_for_every_tool(tmp_path
 
     assert result.ok
     assert [(body.cap, body.tools) for body in result.skills] == [
-        (USER_INVOKED_SKILL_BODY_TOKEN_CAP, ("claude", "codex", "opencode")),
+        (USER_INVOKED_SKILL_BODY_TOKEN_CAP, ("claude", "codex", "gemini", "opencode")),
     ]
 
 

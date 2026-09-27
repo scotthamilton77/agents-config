@@ -49,6 +49,7 @@ from installer.core.merge.strategies.json_union import merge_settings_bytes
 from installer.core.model import Counters, FileKind, InstallOutcome, Outcome
 from installer.core.paths import is_safe_relpath
 from installer.core.staging import classify_file
+from installer.core.surface_budget import instruction_file_violations
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -222,6 +223,38 @@ def refuse_custom_content_conflicts(conflicts: Sequence[Path], *, io: IOPort) ->
         "and re-run; nothing was installed."
     )
     raise CustomContentConflictError(conflicts)
+
+
+class InstructionFileOverrunError(RuntimeError):
+    """Raised when an instruction file would land past the byte limit its runtime
+    truncates at. Every overrun in the run has already been reported."""
+
+
+def instruction_file_overruns(adapter: ToolAdapter, plan: StagingPlan, *, home: Path) -> list[str]:
+    """Violation messages for the instruction files one plan would write past the
+    byte limit their runtime truncates at.
+
+    Each file is weighed as it would land: the staged managed part merged with the
+    user's tail already on disk. The admission gate weighs the managed part alone,
+    because it runs before any home is read. Reads the filesystem and writes
+    nothing. The caller must have refused custom-content conflicts first, because
+    merging a hand-edited destination raises.
+    """
+    dest_dir = adapter.dest_dir(home)
+    overruns: list[str] = []
+    for item in plan.items.values():
+        if item.content is None or not is_safe_relpath(item.dest_relpath):
+            continue
+        if not has_custom_content_heading(item.content):
+            continue
+        dest = dest_dir / item.dest_relpath
+        old = dest.read_bytes() if dest.is_file() else None
+        merged = merge_custom_content(item.content, old).content
+        overruns += [
+            f"{dest}: {violation}"
+            for violation in instruction_file_violations(tool=adapter.name, instruction=merged)
+        ]
+    return overruns
 
 
 def sync_plan(
