@@ -51,6 +51,8 @@ belongs to lifecycle.
 
 ### ACQ-D1: An observable obligation and its evidence are distinct
 
+Rule IDs in the standard: `observable-obligation`, `document-deliverable`, `has-basis`.
+
 A criterion states a required outcome or constraint at an observable surface.
 It identifies the relevant starting conditions, action or state, and expected
 result. The observer may be a person or a downstream system. Naming an
@@ -80,6 +82,8 @@ required.
 
 ### ACQ-D2: Granularity follows the obligation
 
+Rule IDs in the standard: `one-obligation`.
+
 Each criterion states one independently assessable obligation. Split
 obligations that can be accepted, rejected, or delivered independently. Keep
 together the conditions, cases, and observations needed to establish that
@@ -105,6 +109,8 @@ structural containers need no extra check beyond their children's completion.
 
 ### ACQ-D3: Falsifiability includes preservation
 
+Rule IDs in the standard: `can-fail`, `verified-premise`.
+
 A criterion is falsifiable when a violating implementation can make its check
 fail. A change criterion normally starts red. A preservation criterion may
 already pass and must remain true after the change. A refactor does not need
@@ -124,6 +130,8 @@ exception.
 
 ### ACQ-D4: Readiness is a property of the set
 
+Rule IDs in the standard: `coverage`, `consistency`, `decision-closure`, `sufficiency`, `restraint`, `what-if-questions`.
+
 The author checks these properties against the agreed scope:
 
 - **Coverage.** Every material promised outcome and required preservation
@@ -142,13 +150,16 @@ The author checks these properties against the agreed scope:
   pins an explicit constraint. Duplicate obligations and unsupported
   implementation prescriptions do not earn additional criteria.
 
-Apply the charter's taxonomy per criterion: inverse, empty or boundary input,
-dependency failure, repeated or concurrent invocation, and idempotency. Record
-the relevant case or a reason the dimension does not apply. Several dimensions
-may share a case; walking the taxonomy does not require a new criterion for
-every cell.
+Ask the charter's what-if questions of each criterion: what if it fails, what
+if the input is empty or at a limit, what if a dependency is missing, what if it
+runs twice or concurrently, and what if it runs again with nothing changed.
+Record the relevant case or a reason the question does not apply. Several
+questions may share a case; answering the questions does not require a new
+criterion for every question.
 
 ### ACQ-D5: Every commitment has a verification contract
+
+Rule IDs in the standard: `verification-contract`, `human-measurement`, `human-judgment`, `pending-until-performed`, `stochastic-and-window`.
 
 Before implementation, identify a feasible check at the relevant public
 interface. State its setup, observation, pass/fail rule, and required evidence.
@@ -195,16 +206,28 @@ with the charter amendment; it does not add a new review-finding class.
 ### ACQ-D6: One standard feeds the existing authoring and review paths
 
 The shared acceptance-criteria standard is the deployed home of these quality
-rules, subject to the admission gate. Its admission replaces the definition
-and taxonomy copies in the authoring skills. The grilling, docs-attached
+rules, subject to the admission gate. Each rule there carries the ID its
+decision above lists, so a lens, an objection and this spec name a rule the
+same way. Its admission replaces the definition
+and what-if copies in the authoring skills. The grilling, docs-attached
 grilling, spec synthesis, ticketing, briefing, attack, and review-panel skills
 cite it at their criteria step. The glossary points to the same standard.
 
-Use the existing attack process. Its criteria-holes, absent-requirements, and
-edge-cases mandates retain their work. A behavioral-outcome lens addresses
-criterion formulation, granularity, and checkability. A set-consistency lens
-addresses contradiction and material ambiguity across the set. Every lens
-judges against the standard, which each attack prompt carries. This does not
+Use the existing attack process, with four lenses. Each lens names the rules
+it enforces, and its prompt carries exactly those rules.
+
+- A behavioral-outcome lens addresses criterion formulation, granularity, and
+  checkability.
+- An obligation-reduction lens inventories the document's obligations and
+  maps the criteria onto them. An obligation part no criterion completely
+  discharges is a gap, and a criterion that discharges no part lacks a basis.
+  The inventory is returned with the report, so the reduction can be audited.
+- A set-consistency lens addresses contradiction and material ambiguity
+  across the set.
+- A what-if lens asks the what-if questions of each criterion.
+
+An objection's ground cites the ID of the rule it concerns, and that rule
+must be one its lens enforces. This does not
 create a second panel or make the tracker classify criterion quality.
 
 Each finding is an objection. It names the criterion it concerns, or none, the
@@ -271,7 +294,7 @@ this documentation change does not claim to have run them.
   the review objects that it is uncovered, with a failing scenario; an explicitly
   excluded capability receives no missing-requirement finding.
 - **ACQ-A8** Given a relevant dependency failure omitted from a criterion's
-  taxonomy walk, the review identifies the uncovered outcome; a justified
+  what-if answers, the review identifies the uncovered outcome; a justified
   inapplicable dimension requires no invented criterion.
 - **ACQ-A9** Given a commitment without a feasible verification contract,
   the review identifies what is missing; a defined human measurement or
@@ -281,7 +304,7 @@ this documentation change does not claim to have run them.
   names the existing coverage; a criterion excluding a distinct in-scope
   failure receives no duplicate finding.
 - **ACQ-A11** In staging for every supported tool, the criteria definition and
-  taxonomy have one deployed source, and each applicable authoring or review
+  what-if questions have one deployed source, and each applicable authoring or review
   skill's criteria step directs its reader to that source. Authoring and
   completion instructions contain no contradictory private quality rule.
 - **ACQ-A12** Given an assigned criterion set, the generated brief preserves
@@ -317,7 +340,7 @@ this documentation change does not claim to have run them.
   the finding carries no drafted criterion, and an accepted finding is
   answered by a criterion the author writes.
 
-### Edge-case taxonomy
+### What-if questions
 
 The paired controls in ACQ-A1 through ACQ-A10 and ACQ-A14 through ACQ-A19 cover
 the inverse of each finding. ACQ-A20's inverse is a finding lacking a ground or
@@ -344,7 +367,12 @@ product state.
   ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14, ACQ-A15, ACQ-A16, ACQ-A17,
   ACQ-A18, ACQ-A19, ACQ-A20). First settle the assessment and evaluation
   contract in its child spec. Then integrate the standard into the existing
-  attack mandates and their evaluations. Implementation depends on S1.
+  attack mandates and their evaluations. Each lens owns its prompt, and the
+  shared attack template holds only the standard reference, the output shape,
+  the explicit empty result, and the fenced document. This evaluation contract
+  governs any addition to that shared template: an addition ships only with
+  evaluation evidence that it improves the lenses it reaches. Implementation
+  depends on S1.
 - **S3: Brief fidelity and evidence** (ACQ-A12, ACQ-A13). Align the briefing
   skill and its generated-output evaluations with the standard. This slice
   depends on S1 and can land independently of S2.

@@ -6,19 +6,22 @@ What an attacker returns, and what the round is written down as. The machine-rea
 ## An objection
 
 ```json
-{"lens": "edge-cases", "target_ac": "A3",
- "ground": "the rule of the standard that the criteria break",
- "hole": "what the criteria let through",
- "red_test_sketch": {"given": "input or starting state", "when": "the action",
-                     "expect": "the observable outcome"}}
+{"lens": "what-if", "target_ac": "A3",
+ "ground": {"rule": "what-if-questions", "reason": "why the criteria break it"},
+ "objection": "what the criteria let through",
+ "obligation": "O1.2",
+ "scenario": {"given": "input or starting state", "when": "the action",
+              "expect": "the observable outcome"}}
 ```
 
 `target_ac` is the criterion attacked, or `"none"` when nothing covers
-the ground. `ground` names the rule of the acceptance-criteria standard the criteria break. The
+the ground. `ground.rule` is the ID of the acceptance-criteria rule the criteria break, and it is
+one the producing lens enforces, since those are the only rules its prompt carried; `ground.reason`
+says why. `obligation` is optional, for a lens whose instructions name obligations or their parts. The
 attacker states the objection and the author answers it: an accepted objection names the criterion
 the author wrote, which the attacker never drafts because it lacks the author's context.
 
-The test sketch is the line between a testable claim and a concern: a starting state, an action,
+The `scenario` is the line between a testable claim and a concern: a starting state, an action,
 an observable outcome, all non-blank — a concern cannot name them. An item leaving one blank is
 malformed, and is dropped rather than adjudicated.
 
@@ -53,7 +56,7 @@ nothing to say it did. Rename one before attacking both. Every top-level field i
 | `schema_version` | `"1"`. |
 | `spec_path` | The attacked document as a bare basename. The record is committed beside it and the checker searches only the record's own directory, so a path leading out of it names a document no attacker in the round read, and an absolute one resolves only on the machine that wrote it. |
 | `spec_revision` | The revision attacked. |
-| `lenses` | `{"lens", "report": "objections"\|"empty"}`, one per lens that reported. A silent or errored lens has no entry and the round is unfinished — coverage is read off the record, never inferred from silence. |
+| `lenses` | `{"lens", "report": "objections"\|"empty", "workings"?}`, one per lens that reported. A silent or errored lens has no entry and the round is unfinished — coverage is read off the record, never inferred from silence. A lens whose front matter requires workings carries them here, valid against the `workings.schema.json` beside its prompt; each part they leave undischarged is owed an objection from that lens naming it in `obligation`, and each listed criterion discharging no part one naming it in `target_ac`. |
 | `objections` | The union of the reports, each carrying its producing lens and its `id`. Reports are held against them: a lens reporting empty contributes none, one reporting objections at least one. |
 | `dispositions` | `{"id", "disposition": "accepted"\|"rejected", "rationale"?, "revision"?, "covering_ac"?}`. |
 

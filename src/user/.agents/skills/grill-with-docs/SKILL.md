@@ -24,4 +24,4 @@ What separates this session from a plain grilling is that it maintains the proje
 
 ## What this session adds to the exit criterion
 
-`grilling` already refuses to end until every acceptance criterion carries a stable ID, meets the `acceptance-criteria` standard, and has each edge-case taxonomy row resolved or ruled out. This session adds one condition to each of those criteria: cross-check it against `CONTEXT.md` and the ADRs as you go. A criterion that contradicts the recorded glossary or a documented decision is not done — resolve the contradiction, by updating the docs or by revising the criterion, before the session ends.
+`grilling` already refuses to end until every acceptance criterion carries a stable ID, meets the `acceptance-criteria` standard, and has each what-if question answered or ruled out. This session adds one condition to each of those criteria: cross-check it against `CONTEXT.md` and the ADRs as you go. A criterion that contradicts the recorded glossary or a documented decision is not done — resolve the contradiction, by updating the docs or by revising the criterion, before the session ends.

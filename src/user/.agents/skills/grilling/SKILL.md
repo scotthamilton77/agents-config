@@ -11,7 +11,7 @@ admission:
 Source: skills/productivity/grilling/
 Upstream: https://github.com/mattpocock/skills @ 84fdeffd12f2ee307994d1eb6feb48173b6e0502
 Last sync: 2026-08-07
-Drift policy: selective-amalgamation — upstream's design-tree/round/frontier machinery is grafted onto a local exit criterion (acceptance-criteria IDs plus the edge-case taxonomy) that upstream does not carry. A byte-for-byte resync would revert the exit criterion; take upstream changes selectively.
+Drift policy: selective-amalgamation — upstream's design-tree/round/frontier machinery is grafted onto a local exit criterion (acceptance-criteria IDs plus the what-if questions) that upstream does not carry. A byte-for-byte resync would revert the exit criterion; take upstream changes selectively.
 -->
 
 Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.
@@ -32,6 +32,6 @@ Finding *facts* is your job, never the user's. When a frontier question needs a 
 
 An empty question frontier is necessary but not sufficient. The session does not end until the plan's **acceptance criteria are enumerated with stable IDs**, each one meeting the `acceptance-criteria` standard. Load that skill before enumerating them.
 
-Those criteria are branches of the same tree, not a checklist bolted onto the end. For every acceptance criterion, each row of that standard's edge-case taxonomy is itself a question on the frontier — resolve it, or explicitly rule it out with a reason.
+Those criteria are branches of the same tree, not a checklist bolted onto the end. For every acceptance criterion, each of that standard's what-if questions is itself a question on the frontier — answer it, or explicitly rule it out with a reason.
 
-If any criterion lacks an ID, falls short of the standard, or has an unaddressed taxonomy row, the frontier is not empty — keep grilling. Do not act on the plan until the user confirms you have reached a shared understanding.
+If any criterion lacks an ID, falls short of the standard, or has an unanswered what-if question, the frontier is not empty — keep grilling. Do not act on the plan until the user confirms you have reached a shared understanding.

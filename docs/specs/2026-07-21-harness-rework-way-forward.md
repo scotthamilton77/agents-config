@@ -24,10 +24,11 @@ acceptance criteria, each falsifiable by a stated check. Change obligations
 normally admit a failing test before implementation. Preservation guarantees,
 live observation windows, and human acceptance use their defined verification
 contracts instead of requiring an artificial red test.
-An edge-case taxonomy is applied during authoring: for each AC — inverse case,
-empty/boundary input, dependency failure, repeated/concurrent invocation,
-idempotency. The taxonomy grows from escaped defects: every defect that leaks
-downstream is traced to its missing-AC class and added.
+What-if questions are asked of each AC during authoring: what if it fails,
+what if the input is empty or at a limit, what if a dependency is missing,
+what if it runs twice or concurrently, what if it runs again with nothing
+changed. The questions grow from escaped defects: every defect that leaks
+downstream is traced to its missing-AC class and added as a question.
 
 **D2 — Decomposition shape.** One spec carries an ordered slice list. Each
 slice is the smallest change that discharges a defined set of ACs and is
@@ -64,7 +65,7 @@ contract."
   set is checked by script, not judgment.
 - **Separation:** the scaffold writer is a fresh-context agent receiving the
   spec only — never the spec-writing session. A foreign model reviews the
-  scaffold (bijection, contract-only, taxonomy applied). The spec author
+  scaffold (bijection, contract-only, what-if questions answered). The spec author
   adjudicates disputes only.
 - **Prose deliverables** (skills, docs, config) often cannot scaffold as red
   tests: the dispatch brief names the mechanical checks that gate completion;
@@ -250,7 +251,7 @@ once content shrinks below what justifies it.
 
 **D18 — Skills strategy: import shapes, own contracts, admit per-item.**
 Never adopt a set wholesale. Initial admissions from Pocock (each with a
-graft): `grilling` (+AC/taxonomy exit criterion) as the brainstorming core;
+graft): `grilling` (+AC/what-if exit criterion) as the brainstorming core;
 `to-spec` (+AC section and slice list as output contract); `to-tickets`
 (aimed at `work` verbs); `tdd` (executor-side); `code-review`'s two-axis
 shape (pattern feeds the verdict design, not adopted as a skill);
@@ -382,8 +383,8 @@ run in parallel after S1.
 - **S4 — Instruction-surface teardown.** Delete the INSTRUCTIONS.md mountain
   (survivors already extracted in S0) and its per-tool assembly; reassess
   DYNAMIC-INCLUDE once content shrinks below what justifies it. (D17)
-- **S5 — Spec contract.** Admit + graft `grilling`/`to-spec`; edge-case
-  taxonomy; spec lint (AC4); delete the old brainstorming skill's goals-only
+- **S5 — Spec contract.** Admit + graft `grilling`/`to-spec`; what-if
+  questions; spec lint (AC4); delete the old brainstorming skill's goals-only
   path by deleting the skill. (D1, D2, D18)
 - **S6 — Review contracts.** Verdict schema (D8); class-specific review
   contracts; AC-attack contract (D3); self-managed invocation + bot identity

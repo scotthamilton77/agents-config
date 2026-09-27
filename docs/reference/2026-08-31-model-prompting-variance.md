@@ -29,7 +29,7 @@ the transport.
 | Dispatch site | Routes to | Prompt varies by model? |
 |---|---|---|
 | `src/user/.claude/skills/review-panel/contracts.json` + `emit_prompts.py` | Review lenses → Codex or OpenRouter by vendor class; no model named in config | No — `render_prompt()` never sees the transport |
-| `src/user/.claude/skills/ac-attack/lenses.json` | AC-attack lenses → Codex / OpenRouter | No |
+| `src/user/.claude/skills/ac-attack/lenses/` | AC-attack lenses → Codex / OpenRouter | No |
 | `src/user/.claude/skills/openrouter-claude-subagent/` (`scripts/run.js`, `scripts/proxy.js`) | Gemini flash tiers, Kimi k2.6 / k2.7-code / k3, GLM (roster in `references/model-routing.md`) | No — proxy forwards unmodified; model is a `--model` flag. **No sampling params pinned either** — provider defaults apply |
 | `src/plugins/codex/.claude/skills/delegating-to-codex/SKILL.md` | `gpt-5.6-sol` / `terra` / `luna`, `gpt-5.3-codex` | No — tier picked by task profile, same mandate |
 | `src/user/.claude/skills/choosing-a-delegate/SKILL.md` | Vendor-selection logic only | n/a |
