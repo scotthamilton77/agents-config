@@ -60,7 +60,7 @@
     "objection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "lens", "target_ac", "ground", "hole", "red_test_sketch"],
+      "required": ["id", "lens", "target_ac", "ground", "objection", "scenario"],
       "properties": {
         "id": {
           "type": "string",
@@ -82,12 +82,12 @@
           "pattern": "\\S",
           "description": "The rule of the acceptance-criteria standard that the criteria as written break."
         },
-        "hole": {
+        "objection": {
           "type": "string",
           "pattern": "\\S",
           "description": "What the criteria as written let through."
         },
-        "red_test_sketch": {
+        "scenario": {
           "type": "object",
           "additionalProperties": false,
           "required": ["given", "when", "expect"],

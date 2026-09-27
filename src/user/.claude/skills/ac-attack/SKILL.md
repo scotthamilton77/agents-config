@@ -23,9 +23,13 @@ additionally needs `jsonschema` installed first.
 
 ## Attack lenses
 
-Every lens judges against the `acceptance-criteria` standard. Each prompt carries that skill's
-body, read live from where it is installed beside this one, and the emitter refuses a round when
-it is missing or empty.
+Every lens judges against the `acceptance-criteria` standard. Each prompt carries the sections of
+it that its lens selects, read live from where that skill is installed beside this one, and the
+emitter refuses a round when it is missing or empty.
+
+The lenses are the directories under `lenses/`, and both scripts read that registry live. Each
+lens owns `lenses/<lens>/prompt.md`: its body is the lens's instructions, and its front matter
+names the `standard` sections it carries, its `tier`, and its `transport`.
 
 | Lens | What it attacks |
 | --- | --- |
@@ -35,14 +39,14 @@ it is missing or empty.
 | `edge-cases` | The standard's edge-case taxonomy, walked per criterion, naming cases no criterion tests. |
 | `absent-requirements` | Obligations the document takes on that no criterion covers. |
 
-Mandates are data in `lenses.json`, each lens's `tier` naming the model capability it needs and
-`transport` the route its prompt goes out on: an `openrouter` lens through the
+A lens's `tier` names the model capability it needs and `transport` the route its prompt goes
+out on: an `openrouter` lens through the
 `openrouter-claude-subagent` skill, a `codex` lens through the codex command-line tool. When one
 transport is down, run its lenses over the other — the panel has then lost its vendor diversity,
 and blind spots correlate within a vendor. No field records that substitution and the checker
-cannot see it, so say so in your own report to the user or it is lost. One attacker runs per lens, alone, exhaustive within
-it and silent outside: asked for everything, one attacker satisfices, returning two holes where a
-panel returns seven.
+cannot see it, so say so in your own report to the user or it is lost. One attacker runs per lens,
+alone: asked for everything, one attacker satisfices, returning two holes where a panel returns
+seven.
 
 ## Emitting the prompts
 
@@ -56,7 +60,9 @@ uv run emit_prompts.py --spec /path/to/document.md --out-dir /tmp/attack-documen
 ```
 
 One `<lens>.md` prompt lands per lens, plus `round.json` recording the document, the revision
-attacked, and each lens with its tier and transport. Dispatch the lenses `round.json` names, not
+attacked, and each lens with its tier and transport. `--lens <name>` emits that lens alone, for
+evaluating one lens; its round file names only that lens, so a record built from it stays
+incomplete. Dispatch the lenses `round.json` names, not
 the files the directory holds — the round file is what says which prompts are this round's. A
 round refuses an out-dir holding a Markdown file it does not write, which catches the
 reused directory for the caller who dispatches it anyway, and catches only Markdown.

@@ -27,8 +27,17 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 SCHEMA_PATH = HERE / "attack-record.schema.json"
-LENSES_PATH = HERE / "lenses.json"
-REQUIRED_KEYS = ("lens", "mandate", "tier", "transport")
+# The emitter's registry: every directory here holding a `prompt.md`, read the way it reads them.
+LENSES_DIR = HERE / "lenses"
+FRONT_MATTER_KEYS = ("tier", "transport", "standard")
+REQUIRED_KEYS = ("lens", *FRONT_MATTER_KEYS, "body")
+
+# Where the emitter looks for the acceptance-criteria standard: installed beside this skill, then
+# where the source tree keeps shared skills.
+STANDARD_CANDIDATES = (
+    HERE.parent / "acceptance-criteria" / "SKILL.md",
+    HERE.parents[2] / ".agents" / "skills" / "acceptance-criteria" / "SKILL.md",
+)
 
 # What the record wears once the document's own extension is dropped.
 RECORD_SUFFIX = "-ac-attack.json"
@@ -101,35 +110,89 @@ def invisible(name: str) -> str | None:
 def usable(value: Any) -> bool:
     """Whether a registry field carries something an attacker can be built from — the emitter's.
 
-    Present is not usable. An entry carrying `"mandate": ""` is one the emitter refuses outright,
-    so a registry holding it dispatched nothing; and a lens named with only whitespace passes for
-    a name to demand a report for, while the record schema forbids any record from carrying it —
+    Present is not usable. A lens whose body is blank is one the emitter refuses outright, so a
+    registry holding it dispatched nothing; and a lens named with only whitespace passes for a
+    name to demand a report for, while the record schema forbids any record from carrying it —
     the round is then unclosable by any record, and no error names the entry that made it so.
     """
     return isinstance(value, str) and bool(value.strip())
+
+
+def carries(lens: dict[str, Any], key: str) -> bool:
+    """Whether a lens holds a usable value for a key it owes — the emitter's test."""
+    value = lens.get(key)
+    if key == "standard":
+        return isinstance(value, list) and bool(value) and all(usable(item) for item in value)
+    return usable(value)
+
+
+def lens_files() -> list[tuple[str, str]]:
+    """Every lens directory's name and the text of its prompt, in name order."""
+    return [(path.parent.name, path.read_text(encoding="utf-8"))
+            for path in sorted(LENSES_DIR.glob("*/prompt.md"))]
+
+
+def parse_lens(name: Any, text: str) -> dict[str, Any]:
+    """A lens as its prompt states it, the front matter keys it sets and its body — the emitter's."""
+    lens: dict[str, Any] = {"lens": name, "body": text.strip()}
+    head, fence, body = text[3:].partition("\n---\n") if text.startswith("---\n") else ("", "", "")
+    if not fence:
+        return lens
+    lens["body"] = body.strip()
+    for line in head.splitlines():
+        key, _, value = (part.strip() for part in line.partition(":"))
+        if key in FRONT_MATTER_KEYS:
+            lens[key] = ([item.strip() for item in value[1:-1].split(",") if item.strip()]
+                         if value.startswith("[") and value.endswith("]") else value)
+    return lens
+
+
+def standard_headings() -> set[str] | None:
+    """The section headings of the standard the emitter reads, or None where it finds none.
+
+    None leaves the lenses' section names unjudged. The emitter refuses every round while no
+    standard is found, which is a fault of the installation rather than of the registry, and the
+    round in hand was emitted while one was there.
+    """
+    for candidate in STANDARD_CANDIDATES:
+        if candidate.is_file():
+            text = candidate.read_text(encoding="utf-8")
+            if text.startswith("---"):
+                text = text.split("---", 2)[2] if text.count("---") >= 2 else ""
+            return {line[3:].strip() for line in text.splitlines() if line.startswith("## ")} or None
+    return None
+
+
+def unknown_sections(lenses: list[dict[str, Any]]) -> list[str]:
+    """Each standard section a lens names that the standard has no heading for, when one is found."""
+    headings = standard_headings()
+    if headings is None:
+        return []
+    return [f"{lens['lens']} naming the section {heading!r}"
+            for lens in lenses for heading in lens["standard"] if heading not in headings]
 
 
 @lru_cache(maxsize=1)
 def declared_lenses() -> tuple[str, ...]:
     """The declared lens set, refused unless the emitter would emit a round from it.
 
-    Cached: the file is static for the life of a run. Coverage is read off this set, so it has to
-    be the set the round was dispatched from — a registry the emitter refuses could not have
+    Cached: the registry is static for the life of a run. Coverage is read off this set, so it has
+    to be the set the round was dispatched from — a registry the emitter refuses could not have
     produced the round in hand, and a name declared twice would demand the same lens twice here.
 
-    Every key an entry owes is held to the same test, though only the name is read here: the
-    question this answers is whether a round could have come from this registry at all, and an
-    entry without a usable mandate, tier or transport is one the emitter refuses to emit from —
-    leaving a lens that no round could dispatch counted here as an attacker that ran.
+    Every key a lens owes is held to the same test, though only the name is read here: the
+    question this answers is whether a round could have come from this registry at all, and a lens
+    without a usable body, tier, transport or standard is one the emitter refuses to emit from —
+    leaving a lens that no round could dispatch counted here as an attacker that ran. A standard
+    section a lens names and the standard lacks is the same refusal.
     """
-    with LENSES_PATH.open(encoding="utf-8") as handle:
-        lenses = json.load(handle)["lenses"]
-    names = [entry["lens"] for entry in lenses if usable(entry.get("lens"))]
-    labels = [entry["lens"] if usable(entry.get("lens")) else f"the entry at position {position}"
-              for position, entry in enumerate(lenses)]
+    lenses = [parse_lens(name, text) for name, text in lens_files()]
+    names = [lens["lens"] for lens in lenses if usable(lens["lens"])]
+    labels = [lens["lens"] if usable(lens["lens"]) else f"the entry at position {position}"
+              for position, lens in enumerate(lenses)]
     unusable = [f"{labels[position]} without a usable {key}"
-                for position, entry in enumerate(lenses)
-                for key in REQUIRED_KEYS if not usable(entry.get(key))]
+                for position, lens in enumerate(lenses)
+                for key in REQUIRED_KEYS if not carries(lens, key)]
     if not lenses:
         problem = "declares no lens"
     elif unusable:
@@ -138,6 +201,8 @@ def declared_lenses() -> tuple[str, ...]:
         problem = "names one lens twice, matching names the way the filesystem does"
     elif any(name != Path(name).name or name in ("", ".", "..") for name in names):
         problem = "names a lens that is not a bare filename"
+    elif unknown := unknown_sections(lenses):
+        problem = f"declares {', '.join(unknown)}, which the standard does not have"
     else:
         return tuple(names)
     raise RecordError(

@@ -27,7 +27,7 @@ import pytest
 HERE = Path(__file__).resolve().parent
 CHECKER_PATH = HERE / "check_record.py"
 EMITTER_PATH = HERE / "emit_prompts.py"
-LENSES_PATH = HERE / "lenses.json"
+LENSES_DIR = HERE / "lenses"
 SCHEMA_PATH = HERE / "attack-record.schema.json"
 
 DOCUMENT = "# Ledger export\n\n- A1 The exporter writes every settled entry.\n"
@@ -49,7 +49,7 @@ checker = _load(CHECKER_PATH)
 # cannot import each other, so what keeps their registry checks identical is a test that loads both
 # and holds one loader's verdict against the other's.
 emitter = _load(EMITTER_PATH)
-LENS_NAMES = [lens["lens"] for lens in json.loads(LENSES_PATH.read_text(encoding="utf-8"))["lenses"]]
+LENS_NAMES = sorted(path.parent.name for path in LENSES_DIR.glob("*/prompt.md"))
 
 
 def sha_revision(text: str) -> str:
@@ -64,10 +64,10 @@ def blob_revision(text: str) -> str:
 def objection(lens: str, target: str, identifier: str) -> dict[str, Any]:
     return {
         "id": identifier, "lens": lens, "target_ac": target,
-        "hole": "an unwritable output path is never exercised",
+        "objection": "an unwritable output path is never exercised",
         "ground": "a failure path the edge-case taxonomy names has no criterion",
-        "red_test_sketch": {"given": "a read-only output directory",
-                            "when": "the exporter runs", "expect": "a non-zero exit status"},
+        "scenario": {"given": "a read-only output directory",
+                     "when": "the exporter runs", "expect": "a non-zero exit status"},
     }
 
 
@@ -141,14 +141,15 @@ def attack(tmp_path) -> Attack:
 def registry(tmp_path, monkeypatch):
     """Stand one lens registry in place of the shipped one for both scripts.
 
-    Each script reads its own module-level path, so pointing both at a single file is what makes
-    the two loaders answerable to the same registry. The checker's cache is cleared either side.
+    Each script lists the lens directories through its own `lens_files`, so standing one list of
+    names and prompt texts in for both is what makes the two loaders answerable to the same
+    registry — including names no directory on this volume could hold. The checker's cache is
+    cleared either side.
     """
-    def use(lenses: Any) -> None:
-        path = tmp_path / "lenses.json"
-        path.write_text(json.dumps({"lenses": lenses}), encoding="utf-8")
-        monkeypatch.setattr(checker, "LENSES_PATH", path)
-        monkeypatch.setattr(emitter, "LENSES_PATH", path)
+    def use(lenses: list[dict[str, Any]]) -> None:
+        files = [(entry.get("lens"), lens_text(entry)) for entry in lenses]
+        monkeypatch.setattr(checker, "lens_files", lambda: files)
+        monkeypatch.setattr(emitter, "lens_files", lambda: files)
         checker.declared_lenses.cache_clear()
     yield use
     checker.declared_lenses.cache_clear()
@@ -197,18 +198,18 @@ def snapshot(root: Path) -> dict[str, bytes]:
 SKILL_DIR_UNTOUCHED = snapshot(HERE)
 
 
-BUNDLED = ("check_record.py", "lenses.json", "attack-record.schema.json")
-
-
-def skill_copy(tmp_path: Path, corrupt: dict[str, str | None]) -> Path:
+def skill_copy(tmp_path: Path, corrupt: dict[str, str | bytes | None]) -> Path:
     """A standalone copy of the deployed skill, with its bundled data damaged as asked."""
     dest = tmp_path / "skill"
     dest.mkdir()
-    for name in BUNDLED:
+    for name in ("check_record.py", "attack-record.schema.json"):
         shutil.copy(HERE / name, dest / name)
+    shutil.copytree(LENSES_DIR, dest / "lenses")
     for name, content in corrupt.items():
         if content is None:
             (dest / name).unlink()
+        elif isinstance(content, bytes):
+            (dest / name).write_bytes(content)
         else:
             (dest / name).write_text(content, encoding="utf-8")
     return dest
@@ -911,6 +912,17 @@ class TestLensCoverage:
         assert codes(result) == {"lens-missing"}
         assert silent in result["errors"][0]["message"]
 
+    def test_c7_a_record_reporting_one_lens_leaves_the_rest_missing(self, attack, capsys):
+        """S6-C7: a round emitted for one lens alone is an evaluation of that lens, and coverage
+        is still read off the whole registry — so its record leaves every other lens missing."""
+        record = attack.empty_round()
+        record["lenses"] = [{"lens": "edge-cases", "report": "empty"}]
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"lens-missing"}
+        missing = " ".join(error["message"] for error in result["errors"])
+        assert len(result["errors"]) == len(LENS_NAMES) - 1
+        assert all(repr(name) in missing for name in LENS_NAMES if name != "edge-cases")
+
     def test_c7_a_lens_reporting_twice_is_a_defect_in_the_record(self, attack, capsys):
         """S6-C7: coverage is read off one entry per lens, so a doubled entry is two accounts of
         one attacker — and the two may disagree, leaving nothing to read the lens's result off."""
@@ -1055,8 +1067,17 @@ class TestLensCoverage:
         assert code == 1 and codes(result) == {"duplicate-lens"}
 
 
-COMPLETE_ENTRY = {"lens": "edge-cases", "mandate": "walk the taxonomy", "tier": "mid",
-                  "transport": "openrouter"}
+COMPLETE_ENTRY = {"lens": "edge-cases", "tier": "mid", "transport": "openrouter",
+                  "standard": ["The set"], "body": "Walk the taxonomy."}
+
+
+def lens_text(entry: dict[str, Any]) -> str:
+    """A lens prompt file carrying an entry's front matter keys, those it has, and its body."""
+    head = "".join(
+        f"{key}: [{', '.join(entry[key])}]\n" if isinstance(entry[key], list)
+        else f"{key}: {entry[key]}\n"
+        for key in ("tier", "transport", "standard") if key in entry)
+    return f"---\n{head}---\n{entry.get('body', '')}"
 
 
 def lens_entry(**damage: Any) -> dict[str, Any]:
@@ -1085,21 +1106,26 @@ REGISTRIES = [
     # and one prompt file is what the filesystem makes of the pair.
     ("two lenses differing only in Unicode form",
      [lens_entry(lens="caf\u00e9-cases"), lens_entry(lens="cafe\u0301-cases")]),
-    ("a lens with no mandate", [lens_entry(mandate=DELETE)]),
-    ("a lens whose mandate is blank", [lens_entry(mandate="")]),
-    ("a lens whose mandate is whitespace", [lens_entry(mandate="  ")]),
-    ("a lens whose mandate is not a string", [lens_entry(mandate=42)]),
+    ("a lens with no body", [lens_entry(body=DELETE)]),
+    ("a lens whose body is whitespace", [lens_entry(body="  \n\n")]),
     ("a lens with no tier", [lens_entry(tier=DELETE)]),
     ("a lens whose tier is blank", [lens_entry(tier=" ")]),
     ("a lens with no transport", [lens_entry(transport=DELETE)]),
-    ("a lens whose transport is not a string", [lens_entry(transport=["codex"])]),
+    ("a lens whose transport is a list", [lens_entry(transport=["codex"])]),
+    ("a lens with no standard", [lens_entry(standard=DELETE)]),
+    ("a lens whose standard names nothing", [lens_entry(standard=[])]),
+    ("a lens whose standard is not a list", [lens_entry(standard="The set")]),
+    ("a lens naming a section the standard lacks",
+     [lens_entry(standard=["The set", "No such section"])]),
 ]
 
 BAD_REGISTRY = [
     ([], "declares no lens"),
     ([lens_entry(lens=DELETE)], "the entry at position 0 without a usable lens"),
     ([lens_entry(lens="  ")], "the entry at position 0 without a usable lens"),
-    ([lens_entry(mandate="")], "edge-cases without a usable mandate"),
+    ([lens_entry(body="")], "edge-cases without a usable body"),
+    ([lens_entry(standard=DELETE)], "edge-cases without a usable standard"),
+    ([lens_entry(standard=["No such section"])], "No such section"),
     ([lens_entry(tier=DELETE)], "edge-cases without a usable tier"),
     ([lens_entry(transport=DELETE)], "edge-cases without a usable transport"),
     ([lens_entry(), lens_entry()], "names one lens twice"),
@@ -1383,8 +1409,8 @@ class TestNameRefusal:
 
 
 class TestObjectionShape:
-    @pytest.mark.parametrize("field", ("id", "lens", "target_ac", "ground", "hole",
-                                       "red_test_sketch"))
+    @pytest.mark.parametrize("field", ("id", "lens", "target_ac", "ground", "objection",
+                                       "scenario"))
     @pytest.mark.parametrize("mutation", ("absent", "blank"))
     def test_c2_every_part_of_a_objection_is_required_and_carries_content(self, attack, capsys,
                                                                          field, mutation):
@@ -1394,7 +1420,7 @@ class TestObjectionShape:
         record = attack.record()
         if mutation == "absent":
             del record["objections"][0][field]
-        elif field == "red_test_sketch":
+        elif field == "scenario":
             record["objections"][0][field] = {}
         else:
             record["objections"][0][field] = " \t "
@@ -1408,9 +1434,9 @@ class TestObjectionShape:
         a starting state, an action, and an observable outcome, none of them missing or blank."""
         record = attack.record()
         if mutation == "absent":
-            del record["objections"][0]["red_test_sketch"][part]
+            del record["objections"][0]["scenario"][part]
         else:
-            record["objections"][0]["red_test_sketch"][part] = "  "
+            record["objections"][0]["scenario"][part] = "  "
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
 
@@ -1418,6 +1444,17 @@ class TestObjectionShape:
         """S6-C2: inverse — an item that names a state, an action and an outcome enters the
         round and is adjudicated."""
         assert check(attack, attack.record(), capsys)[0] == 0
+
+    @pytest.mark.parametrize(("old", "new"),
+                             (("hole", "objection"), ("red_test_sketch", "scenario")))
+    def test_an_objection_under_a_retired_field_name_is_refused(self, attack, capsys, old, new):
+        """The objection's fields are `objection` and `scenario`, and a record writing either under
+        its former name is the wrong shape: no reading of the old name is kept, so a record that
+        uses it names a field the schema does not have and lacks one it requires."""
+        record = attack.record()
+        record["objections"][0][old] = record["objections"][0].pop(new)
+        code, result = check(attack, record, capsys)
+        assert code == 2 and codes(result) == {"schema"}
 
     def test_c2_prose_in_place_of_a_objection_is_rejected(self, attack, capsys):
         """S6-C2: a bare worry returned by an attacker never enters the round as an objection."""
@@ -1446,7 +1483,7 @@ BAD_ENVELOPE = [
 NESTED_OBJECTS = [
     ("a lens's report", lambda record: record["lenses"][0]),
     ("an objection", lambda record: record["objections"][0]),
-    ("an objection's red test sketch", lambda record: record["objections"][0]["red_test_sketch"]),
+    ("an objection's scenario", lambda record: record["objections"][0]["scenario"]),
     ("a disposition", lambda record: record["dispositions"][0]),
 ]
 
@@ -1792,8 +1829,9 @@ class TestUnusableInput:
         assert codes(result) == {"duplicate-lens", "contradicted-objections-report"}
         assert len(result["errors"]) == 2
 
-    @pytest.mark.parametrize("damaged", ("lenses.json", "attack-record.schema.json"))
-    @pytest.mark.parametrize("damage", (None, "{not json"))
+    @pytest.mark.parametrize(("damaged", "damage"), (
+        ("attack-record.schema.json", None), ("attack-record.schema.json", "{not json"),
+        ("lenses/edge-cases/prompt.md", b"---\ntier: \xff\n---\n")))
     def test_c3_damaged_bundled_data_is_typed_not_a_traceback(self, attack, tmp_path, damaged,
                                                               damage):
         """S6-C3: the check's own data is a dependency like any other — missing or corrupt, it

@@ -344,7 +344,12 @@ product state.
   ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14, ACQ-A15, ACQ-A16, ACQ-A17,
   ACQ-A18, ACQ-A19, ACQ-A20). First settle the assessment and evaluation
   contract in its child spec. Then integrate the standard into the existing
-  attack mandates and their evaluations. Implementation depends on S1.
+  attack mandates and their evaluations. Each lens owns its prompt, and the
+  shared attack template holds only the standard reference, the output shape,
+  the explicit empty result, and the fenced document. This evaluation contract
+  governs any addition to that shared template: an addition ships only with
+  evaluation evidence that it improves the lenses it reaches. Implementation
+  depends on S1.
 - **S3: Brief fidelity and evidence** (ACQ-A12, ACQ-A13). Align the briefing
   skill and its generated-output evaluations with the standard. This slice
   depends on S1 and can land independently of S2.
