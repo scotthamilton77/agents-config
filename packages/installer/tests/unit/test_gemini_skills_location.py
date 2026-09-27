@@ -1,6 +1,6 @@
 """Where the installer deploys skills for the gemini tool, driven end to end through main().
 
-Antigravity CLI replaced Gemini CLI and reuses ``~/.gemini``, but it discovers
+The gemini tool deploys for Antigravity CLI, which reads ``~/.gemini`` but discovers
 global skills only under ``~/.gemini/config/skills/``. The rest of
 ``~/.gemini/config/`` is Antigravity's own state. These tests run the real
 install and prune pipelines against a hermetic repo and a temporary home, with
@@ -10,7 +10,10 @@ already skips.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+
+import pytest
 
 from installer.cli import main
 from installer.core.io_port import ScriptedIO
@@ -108,12 +111,15 @@ def test_gemini_skills_deploy_under_config_skills(tmp_path: Path) -> None:
     assert (home / ".gemini" / "GEMINI.md").is_file()
 
 
-def test_prune_removes_old_gemini_skills_and_leaves_foreign_ones(tmp_path: Path) -> None:
+@pytest.mark.parametrize("prune_flag", ["--prune", "--prune-only"])
+def test_prune_removes_old_gemini_skills_and_leaves_foreign_ones(
+    tmp_path: Path, prune_flag: str
+) -> None:
     """
     Given ~/.gemini/skills/ holding skills a prior install recorded (one still
     shipped, one retired, one the user edited since) beside a skill the user
     placed there
-    When the next install runs with pruning
+    When the next install runs with either pruning flag
     Then the recorded, unedited skills are removed after a backup, and the
     edited and user-placed skills stay.
 
@@ -141,7 +147,7 @@ def test_prune_removes_old_gemini_skills_and_leaves_foreign_ones(tmp_path: Path)
     write_receipt(home / _RECEIPT, Receipt(roots=(Path(".gemini"),), entries=entries))
     (old / "edited" / "SKILL.md").write_bytes(b"the user's own change\n")
 
-    rc = _run(["--prune", "--yes", "--tools=gemini"], tmp_path=tmp_path, repo=repo, home=home)
+    rc = _run([prune_flag, "--yes", "--tools=gemini"], tmp_path=tmp_path, repo=repo, home=home)
 
     assert rc == 0
     assert not (old / "foo").exists()
@@ -153,18 +159,20 @@ def test_prune_removes_old_gemini_skills_and_leaves_foreign_ones(tmp_path: Path)
     recorded = _receipt_paths(home)
     assert Path(".gemini/skills/foo") not in recorded
     assert Path(".gemini/skills/retired") not in recorded
-    assert Path(".gemini/config/skills/foo") in recorded
+    # Only --prune installs, so only it records the skill at its new location.
+    assert (Path(".gemini/config/skills/foo") in recorded) == (prune_flag == "--prune")
 
 
 def test_install_and_prune_touch_nothing_under_gemini_config_but_skills(tmp_path: Path) -> None:
     """
     Given ~/.gemini/config/ holding Antigravity's state and a skill the user
     placed in config/skills/
-    When an install runs, a skill's source changes, and a pruning install
-    overwrites the deployed copy
+    When an install runs, a skill's source changes, a pruning install
+    overwrites the deployed copy, and a --prune-only run removes a skill
+    retired from the source
     Then the only additions under ~/.gemini/config/ are the deployed skills,
-    every pre-existing path keeps its bytes and mtime, and the overwritten
-    skill's backup lands in ~/.gemini/skills-backup/ holding the prior bytes.
+    every pre-existing path keeps its bytes and mtime, and each backup lands in
+    ~/.gemini/config-skills-backup/ holding the prior bytes.
 
     A backup inside config/skills/ would be discovered as a duplicate skill, and
     one in a config/skills-backup/ sibling would write into Antigravity's
@@ -198,6 +206,17 @@ def test_install_and_prune_touch_nothing_under_gemini_config_but_skills(tmp_path
         Path("skills/bar"),
         Path("skills/bar/SKILL.md"),
     }
-    (backup,) = (home / ".gemini" / "skills-backup").iterdir()
+    (backup,) = (home / ".gemini" / "config-skills-backup").iterdir()
     assert backup.name.startswith("foo.backup-")
     assert (backup / "SKILL.md").read_bytes() == first
+
+    retired = (config / "skills" / "bar" / "SKILL.md").read_bytes()
+    shutil.rmtree(repo / "src" / "user" / ".agents" / "skills" / "bar")
+    rc = _run(["--prune-only", "--yes", "--tools=gemini"], tmp_path=tmp_path, repo=repo, home=home)
+
+    assert rc == 0
+    after = _tree(config)
+    assert {p: after[p] for p in before} == before
+    assert set(after) - set(before) == {Path("skills/foo"), Path("skills/foo/SKILL.md")}
+    (bar_backup,) = (home / ".gemini" / "config-skills-backup").glob("bar.backup-*")
+    assert (bar_backup / "SKILL.md").read_bytes() == retired

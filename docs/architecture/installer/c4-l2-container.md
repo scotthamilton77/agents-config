@@ -98,7 +98,7 @@ One store per tool: `~/.claude`, `~/.codex`, `~/.gemini`, `~/.config/opencode`. 
 
 ### Backup dirs
 
-Not a single directory but a routing rule: a file inside a managed namespace (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows`) backs up to a parent-level `<namespace>-backup/` sibling — deliberately **outside** the namespace so the assistant's discovery walk does not pick the backup up as a real item — while a top-level file backs up in place. A relocated namespace backs up to `<namespace>-backup/` at its tool root, so a Gemini skill deployed under `~/.gemini/config/skills/` backs up to `~/.gemini/skills-backup/` and nothing lands in Antigravity's `config/` directory. Backups are written before overwrite (`sync`) and before prune (`prune`).
+Not a single directory but a routing rule: a file inside a managed namespace (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows`) backs up to a parent-level `<namespace>-backup/` sibling — deliberately **outside** the namespace so the assistant's discovery walk does not pick the backup up as a real item — while a top-level file backs up in place. A relocated namespace backs up to a `<relocated path, dash-joined>-backup/` directory at its tool root, so a Gemini skill deployed under `~/.gemini/config/skills/` backs up to `~/.gemini/config-skills-backup/`: nothing lands in Antigravity's `config/` directory, and the backup never shares a path with the backup of the copy an earlier install left in `~/.gemini/skills/`. Backups are written before overwrite (`sync`) and before prune (`prune`).
 
 ### Install receipt (installer-owned, persisted between runs)
 

@@ -72,7 +72,7 @@ def test_back_up_routes_a_relocated_skill_to_the_tool_root_with_retention(
     """
     Given a skill directory deployed to Gemini's relocated ~/.gemini/config/skills/
     When back_up is called more times than BACKUP_RETENTION_COUNT
-    Then every backup lands in ~/.gemini/skills-backup/, the newest holds the
+    Then every backup lands in ~/.gemini/config-skills-backup/, the newest holds the
     directory's latest contents, and retention keeps the newest
     BACKUP_RETENTION_COUNT.
 
@@ -88,13 +88,34 @@ def test_back_up_routes_a_relocated_skill_to_the_tool_root_with_retention(
         (target / "SKILL.md").write_text(f"content-{ts}")
         dest = back_up(target, ts)
 
-    backup_dir = tmp_path / ".gemini" / "skills-backup"
+    backup_dir = tmp_path / ".gemini" / "config-skills-backup"
     assert dest == backup_dir / f"foo.backup-{_TIMESTAMPS[-1]}"
     assert (dest / "SKILL.md").read_text() == f"content-{_TIMESTAMPS[-1]}"
     survivors = sorted(p.name for p in backup_dir.iterdir())
     assert survivors == [f"foo.backup-{ts}" for ts in _TIMESTAMPS[-BACKUP_RETENTION_COUNT:]]
     assert sorted(p.name for p in (tmp_path / ".gemini" / "config").iterdir()) == ["skills"]
     assert [p.name for p in (tmp_path / ".gemini" / "config" / "skills").iterdir()] == ["foo"]
+
+
+def test_back_up_keeps_a_relocated_skill_and_its_legacy_copy_apart(tmp_path: Path) -> None:
+    """
+    Given a Gemini skill deployed under ~/.gemini/config/skills/ and the copy an
+    earlier install left under ~/.gemini/skills/
+    When both are backed up with one timestamp, as a pruning install does when it
+    overwrites the one and removes the other within the same second
+    Then each lands at its own backup path holding its own contents.
+    """
+    gemini = tmp_path / ".gemini"
+    targets = (gemini / "config" / "skills" / "foo", gemini / "skills" / "foo")
+    for target in targets:
+        target.mkdir(parents=True)
+        (target / "SKILL.md").write_text(str(target))
+
+    dests = [back_up(target, _TS) for target in targets]
+
+    assert dests[0] != dests[1]
+    for target, dest in zip(targets, dests, strict=True):
+        assert (dest / "SKILL.md").read_text() == str(target)
 
 
 def test_back_up_prunes_in_place_backups_beyond_retention_count(tmp_path: Path) -> None:

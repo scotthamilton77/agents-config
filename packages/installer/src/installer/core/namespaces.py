@@ -93,7 +93,7 @@ BACKUP: frozenset[str] = frozenset({"commands", "skills", "agents", "rules", "ho
 # namespace's own name at the root of its tree, keyed by ``(tool, namespace)``;
 # each value is relative to the tool's destination root.
 #
-# Antigravity CLI replaced Gemini CLI and reuses ``~/.gemini``, but it discovers
+# The gemini tool deploys for Antigravity CLI, which reads ``~/.gemini`` but discovers
 # global skills only under ``~/.gemini/config/skills/``, so a skill deployed to
 # ``~/.gemini/skills/`` is never loaded. Everything else under
 # ``~/.gemini/config/`` is Antigravity's own state, which is why the relocation
