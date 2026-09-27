@@ -52,7 +52,7 @@ What makes a good test (only external behavior, not implementation details), whi
 
 A numbered list of acceptance criteria, each with a **stable ID** (`<ID>` matches `[A-Z0-9]+-[A-Z]\d+` or `AC\d+`, e.g. `AC1`, `FOO-A1`). Each criterion MUST meet the `acceptance-criteria` standard, and the set MUST be ready by that standard's set checks. Load that skill before writing this section.
 
-For every criterion, walk that standard's edge-case taxonomy: resolve each dimension or explicitly rule it out.
+For every criterion, ask that standard's what-if questions: answer each one or explicitly rule it out.
 
 ## Ordered Slice List
 

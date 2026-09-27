@@ -130,7 +130,7 @@ exception.
 
 ### ACQ-D4: Readiness is a property of the set
 
-Rule IDs in the standard: `coverage`, `consistency`, `decision-closure`, `sufficiency`, `restraint`, `edge-case-taxonomy`.
+Rule IDs in the standard: `coverage`, `consistency`, `decision-closure`, `sufficiency`, `restraint`, `what-if-questions`.
 
 The author checks these properties against the agreed scope:
 
@@ -150,11 +150,12 @@ The author checks these properties against the agreed scope:
   pins an explicit constraint. Duplicate obligations and unsupported
   implementation prescriptions do not earn additional criteria.
 
-Apply the charter's taxonomy per criterion: inverse, empty or boundary input,
-dependency failure, repeated or concurrent invocation, and idempotency. Record
-the relevant case or a reason the dimension does not apply. Several dimensions
-may share a case; walking the taxonomy does not require a new criterion for
-every cell.
+Ask the charter's what-if questions of each criterion: what if it fails, what
+if the input is empty or at a limit, what if a dependency is missing, what if it
+runs twice or concurrently, and what if it runs again with nothing changed.
+Record the relevant case or a reason the question does not apply. Several
+questions may share a case; answering the questions does not require a new
+criterion for every question.
 
 ### ACQ-D5: Every commitment has a verification contract
 
@@ -208,7 +209,7 @@ The shared acceptance-criteria standard is the deployed home of these quality
 rules, subject to the admission gate. Each rule there carries the ID its
 decision above lists, so a lens, an objection and this spec name a rule the
 same way. Its admission replaces the definition
-and taxonomy copies in the authoring skills. The grilling, docs-attached
+and what-if copies in the authoring skills. The grilling, docs-attached
 grilling, spec synthesis, ticketing, briefing, attack, and review-panel skills
 cite it at their criteria step. The glossary points to the same standard.
 
@@ -223,7 +224,7 @@ it enforces, and its prompt carries exactly those rules.
   The inventory is returned with the report, so the reduction can be audited.
 - A set-consistency lens addresses contradiction and material ambiguity
   across the set.
-- An edge-cases lens walks the taxonomy per criterion.
+- A what-if lens asks the what-if questions of each criterion.
 
 An objection's ground cites the ID of the rule it concerns, and that rule
 must be one its lens enforces. This does not
@@ -293,7 +294,7 @@ this documentation change does not claim to have run them.
   the review objects that it is uncovered, with a failing scenario; an explicitly
   excluded capability receives no missing-requirement finding.
 - **ACQ-A8** Given a relevant dependency failure omitted from a criterion's
-  taxonomy walk, the review identifies the uncovered outcome; a justified
+  what-if answers, the review identifies the uncovered outcome; a justified
   inapplicable dimension requires no invented criterion.
 - **ACQ-A9** Given a commitment without a feasible verification contract,
   the review identifies what is missing; a defined human measurement or
@@ -303,7 +304,7 @@ this documentation change does not claim to have run them.
   names the existing coverage; a criterion excluding a distinct in-scope
   failure receives no duplicate finding.
 - **ACQ-A11** In staging for every supported tool, the criteria definition and
-  taxonomy have one deployed source, and each applicable authoring or review
+  what-if questions have one deployed source, and each applicable authoring or review
   skill's criteria step directs its reader to that source. Authoring and
   completion instructions contain no contradictory private quality rule.
 - **ACQ-A12** Given an assigned criterion set, the generated brief preserves
@@ -339,7 +340,7 @@ this documentation change does not claim to have run them.
   the finding carries no drafted criterion, and an accepted finding is
   answered by a criterion the author writes.
 
-### Edge-case taxonomy
+### What-if questions
 
 The paired controls in ACQ-A1 through ACQ-A10 and ACQ-A14 through ACQ-A19 cover
 the inverse of each finding. ACQ-A20's inverse is a finding lacking a ground or

@@ -63,15 +63,23 @@ Check the set against the agreed scope before calling it ready.
 
 **Restraint.** Each criterion excludes a concrete in-scope failure or pins an explicit constraint. Duplicates and unsupported implementation prescriptions do not earn a criterion.
 
-### edge-case-taxonomy
+### what-if-questions
 
-**Edge cases.** Walk the edge-case taxonomy for each criterion. Record the relevant case, or the reason a dimension does not apply. One case may serve several dimensions.
+**What-if questions.** Ask each criterion five questions. Answer each one with a criterion, the criterion that already covers it, or the reason it does not apply. One case may answer several questions. The standard asks for an answer to each question, not a criterion for each.
 
-- **Inverse.** The failure path, not only the happy path.
-- **Empty or boundary input.** Zero, empty, minimum, maximum, first, last.
-- **Dependency failure.** Something the work relies on is absent or errors.
-- **Repeated or concurrent invocation.** Run twice, in parallel, interleaved.
-- **Idempotency.** A second identical run changes nothing beyond the first.
+- **What if it fails?** The failure path, not only the happy path.
+- **What if the input is empty or at a limit?** Zero, empty, minimum, maximum, first, last.
+- **What if something it relies on is missing?** A dependency is absent or errors.
+- **What if it runs twice, or at the same time?** Repeated, in parallel, interleaved.
+- **What if it runs again with nothing changed?** A second identical run changes nothing beyond the first.
+
+Asked of "saving a note stores it and shows it in the list":
+
+- It fails: a new criterion, "a failed save shows an error and loses no text".
+- Empty: a decision the set must record, either "an empty note is refused" or "empty notes are allowed".
+- Missing: a full disk is covered by the failure criterion.
+- Twice: a new criterion, "a double-click stores one note".
+- Nothing changed: a new criterion, "saving an unchanged note changes nothing".
 
 ## Verification
 

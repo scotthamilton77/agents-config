@@ -165,8 +165,8 @@ def distinctive_phrases(name: str, shared_text: str) -> set[str]:
 
 def lens_text(tier: object = "mid", transport: object = "openrouter",
               standard: object = "acceptance-criteria",
-              enforces: object = ("edge-case-taxonomy",), workings: object = None,
-              body: str = "Walk the taxonomy.") -> str:
+              enforces: object = ("what-if-questions",), workings: object = None,
+              body: str = "Ask the what-if questions.") -> str:
     """A lens prompt file, each front matter key written unless it is passed as None."""
     head = []
     for key, value in (("tier", tier), ("transport", transport), ("standard", standard),
@@ -382,16 +382,19 @@ class TestPromptContent:
                 assert distinctive, other["lens"]
                 assert not distinctive & present, (lens["lens"], sorted(distinctive & present))
 
-    def test_c1_the_edge_case_lens_carries_the_whole_taxonomy(self, document, tmp_path, capsys):
-        """S6-C1: the edge-case prompt walks the authoring taxonomy rather than gesturing at
-        'edge cases' — a class left out of the prompt is a class nobody attacks. The taxonomy
-        arrives with the standard section that lens selects, so the prompt is what is held to
-        carrying it."""
-        text = emit(document, tmp_path / "attack", capsys)["edge-cases"]
-        for case_class in ("Inverse", "Empty or boundary input", "Dependency failure",
-                           "Repeated or concurrent invocation", "Idempotency"):
-            assert case_class in text
-        assert "taxonomy" in next(lens["body"] for lens in LENSES if lens["lens"] == "edge-cases")
+    def test_c1_the_what_if_lens_carries_every_question(self, document, tmp_path, capsys):
+        """S6-C1: the what-if prompt asks the authoring questions rather than gesturing at
+        'edge cases' — a question left out of the prompt is a case nobody attacks. The questions
+        arrive with the standard section that lens selects, so the prompt is what is held to
+        carrying them."""
+        text = emit(document, tmp_path / "attack", capsys)["what-if"]
+        for question in ("What if it fails?", "What if the input is empty or at a limit?",
+                         "What if something it relies on is missing?",
+                         "What if it runs twice, or at the same time?",
+                         "What if it runs again with nothing changed?"):
+            assert question in text
+        assert "what-if questions" in next(lens["body"] for lens in LENSES
+                                           if lens["lens"] == "what-if")
 
     def test_c7_the_panel_mixes_tiers_and_reaches_another_vendor(self):
         """S6-C7: at least one attack lens runs on a foreign model, and the panel is not one tier
@@ -598,7 +601,7 @@ class TestRefusals:
         assert result["emitted"] is False
         assert [error["code"] for error in result["errors"]] == ["no-spec"]
 
-    @pytest.mark.parametrize("argv", (["--out-dir"], ["--bogus", "edge-cases"]))
+    @pytest.mark.parametrize("argv", (["--out-dir"], ["--bogus", "what-if"]))
     def test_a_command_line_argparse_rejects_answers_in_the_contract(self, document, tmp_path,
                                                                       argv):
         """S6-C1: argparse exits by itself on an option given without its value or an option it
@@ -672,7 +675,7 @@ class TestRefusals:
         damaged = {"tier": {"tier": None}, "transport": {"transport": None},
                    "standard": {"standard": None}, "enforces": {"enforces": None},
                    "body": {"body": ""}}[key]
-        skill = skill_copy(tmp_path, {"lenses/edge-cases/prompt.md": lens_text(**damaged)})
+        skill = skill_copy(tmp_path, {"lenses/what-if/prompt.md": lens_text(**damaged)})
         out_dir = tmp_path / "out"
         code, result = run_copy(skill, "--spec", str(document), "--out-dir", str(out_dir))
         assert code == 2
@@ -682,7 +685,7 @@ class TestRefusals:
 
     @pytest.mark.parametrize("key,damage", (
         ("tier", {"tier": " "}), ("transport", {"transport": ["codex"]}),
-        ("enforces", {"enforces": []}), ("enforces", {"enforces": "edge-case-taxonomy"}),
+        ("enforces", {"enforces": []}), ("enforces", {"enforces": "what-if-questions"}),
         ("standard", {"standard": ["acceptance-criteria"]}), ("body", {"body": "  \n\n"})))
     def test_c7_a_lens_value_that_is_present_but_unusable_is_refused(self, document, tmp_path,
                                                                       key, damage):
@@ -691,7 +694,7 @@ class TestRefusals:
         job while the round reports full coverage — and an `enforces` that is not a list naming at
         least one rule selects nothing from the standard. Refused whole, before anything is
         written."""
-        skill = skill_copy(tmp_path, {"lenses/edge-cases/prompt.md": lens_text(**damage)})
+        skill = skill_copy(tmp_path, {"lenses/what-if/prompt.md": lens_text(**damage)})
         out_dir = tmp_path / "out"
         code, result = run_copy(skill, "--spec", str(document), "--out-dir", str(out_dir))
         assert code == 2
@@ -700,7 +703,7 @@ class TestRefusals:
         assert not out_dir.exists()
 
     @pytest.mark.parametrize(("damage", "named"), (
-        ({"enforces": ["edge-case-taxonomy", "no-such-rule"]}, "no-such-rule"),
+        ({"enforces": ["what-if-questions", "no-such-rule"]}, "no-such-rule"),
         ({"standard": "house-style"}, "house-style"),
         ({"workings": "required"}, "workings"),
         ({"workings": "sometimes"}, "workings")))
@@ -713,7 +716,7 @@ class TestRefusals:
         them beside its prompt, and a `workings` value other than `required` is a requirement the
         lens states and nothing reads. Each is refused before anything is written, naming what is
         at fault."""
-        skill = skill_copy(tmp_path, {"lenses/edge-cases/prompt.md": lens_text(**damage)},
+        skill = skill_copy(tmp_path, {"lenses/what-if/prompt.md": lens_text(**damage)},
                            standard=True)
         out_dir = tmp_path / "out"
         code, result = run_copy(skill, "--spec", str(document), "--out-dir", str(out_dir))
@@ -728,13 +731,13 @@ class TestRefusals:
         """Inverse and edge of the same rule: `workings: required` beside a readable schema
         object emits, and beside a file that is not one refuses under `no-lenses`."""
         skill = skill_copy(tmp_path, {
-            "lenses/edge-cases/prompt.md": lens_text(workings="required"),
-            "lenses/edge-cases/workings.schema.json": schema}, standard=True)
+            "lenses/what-if/prompt.md": lens_text(workings="required"),
+            "lenses/what-if/workings.schema.json": schema}, standard=True)
         out_dir = tmp_path / "out"
         code, result = run_copy(skill, "--spec", str(document), "--out-dir", str(out_dir))
         if schema.startswith('{"'):
             assert code == 0, result
-            text = (out_dir / "edge-cases.md").read_text(encoding="utf-8")
+            text = (out_dir / "what-if.md").read_text(encoding="utf-8")
             assert contract_of(text)["workings"] == CONTRACT_WORKINGS
         else:
             assert code == 2
@@ -779,7 +782,7 @@ class TestRefusals:
     def test_damaged_bundled_data_is_typed_not_a_traceback(self, document, tmp_path):
         """S6-C1: the skill's own data is a dependency like any other — corrupt, it fails typed on
         stdout, because a traceback is not something a caller can parse."""
-        skill = skill_copy(tmp_path, {"lenses/edge-cases/prompt.md": b"---\ntier: \xff\n---\n"})
+        skill = skill_copy(tmp_path, {"lenses/what-if/prompt.md": b"---\ntier: \xff\n---\n"})
         code, result = run_copy(skill, "--spec", str(document), "--out-dir", str(tmp_path / "out"))
         assert code == 2 and result["emitted"] is False
         assert [error["code"] for error in result["errors"]] == ["emitter-failure"]
@@ -792,15 +795,15 @@ class TestOneLens:
         whole = emit(document, tmp_path / "whole", capsys)
         out_dir = tmp_path / "one"
         code, result = run(["--spec", str(document), "--out-dir", str(out_dir),
-                            "--lens", "edge-cases"], capsys)
+                            "--lens", "what-if"], capsys)
         assert code == 0
-        assert result == {"emitted": True, "prompts": [str(out_dir / "edge-cases.md")],
+        assert result == {"emitted": True, "prompts": [str(out_dir / "what-if.md")],
                           "round": str(out_dir / "round.json")}
-        assert sorted(path.name for path in out_dir.iterdir()) == ["edge-cases.md", "round.json"]
-        assert prompts(out_dir) == {"edge-cases": whole["edge-cases"]}
+        assert sorted(path.name for path in out_dir.iterdir()) == ["round.json", "what-if.md"]
+        assert prompts(out_dir) == {"what-if": whole["what-if"]}
         meta = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))
-        edge = next(lens for lens in LENSES if lens["lens"] == "edge-cases")
-        assert meta["lenses"] == [{"lens": "edge-cases", "tier": edge["tier"],
+        edge = next(lens for lens in LENSES if lens["lens"] == "what-if")
+        assert meta["lenses"] == [{"lens": "what-if", "tier": edge["tier"],
                                    "transport": edge["transport"]}]
 
     def test_an_unknown_lens_is_refused_and_writes_nothing(self, document, tmp_path, capsys):

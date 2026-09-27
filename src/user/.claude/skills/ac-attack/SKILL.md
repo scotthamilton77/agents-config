@@ -36,7 +36,7 @@ objection.
 | `behavioural-outcome` | Criteria that pin an artifact where the document promises an outcome, bundle separable obligations, or have no way to decide the result. |
 | `obligation-reduction` | Obligations no criterion discharges, and criteria that discharge no obligation, read off an obligation inventory. |
 | `set-consistency` | Criteria that cannot hold together, and wording that admits materially different outcomes. |
-| `edge-cases` | The standard's edge-case taxonomy, walked per criterion, naming cases no criterion tests. |
+| `what-if` | The standard's what-if questions, asked of each criterion, naming cases no criterion tests. |
 
 A lens's `tier` names the model capability it needs and `transport` the route its prompt goes
 out on: an `openrouter` lens through the

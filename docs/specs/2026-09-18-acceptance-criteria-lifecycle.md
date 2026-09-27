@@ -309,7 +309,7 @@ leave significant product decisions to implementation.
   citations. Editing a cited spec entry changes the item's rendering without
   editing the work item.
 
-### Edge-case taxonomy
+### What-if questions
 
 | Criteria | Inverse and boundary cases | Dependency failure | Repetition and concurrency |
 | --- | --- | --- | --- |

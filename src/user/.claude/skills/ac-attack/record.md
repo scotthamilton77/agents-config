@@ -6,8 +6,8 @@ What an attacker returns, and what the round is written down as. The machine-rea
 ## An objection
 
 ```json
-{"lens": "edge-cases", "target_ac": "A3",
- "ground": {"rule": "edge-case-taxonomy", "reason": "why the criteria break it"},
+{"lens": "what-if", "target_ac": "A3",
+ "ground": {"rule": "what-if-questions", "reason": "why the criteria break it"},
  "objection": "what the criteria let through",
  "obligation": "O1.2",
  "scenario": {"given": "input or starting state", "when": "the action",
