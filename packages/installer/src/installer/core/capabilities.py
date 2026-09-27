@@ -85,28 +85,6 @@ CAPABILITY_SUPPORT: dict[str, frozenset[str]] = {
 }
 
 
-#: Tools whose skill loading this project deliberately does not model, and which
-#: therefore contribute to neither skill measurement — no catalog charge, no body
-#: cap. Gemini is the only member: its CLI is deprecated, no vendor documentation
-#: establishes whether it reads a deployed skill at all, and a number invented for
-#: it would be a guess wearing a measurement's clothes. Silence is the honest
-#: report, because a guess is the thing a reader would act on.
-#:
-#: An entry leaves the day that tool's skill loading is established. The default
-#: is the safe direction: a tool absent from this set is modelled, so a newly
-#: registered tool is charged and capped rather than silently exempt.
-UNMODELLED_SKILL_LOADERS: frozenset[str] = frozenset({"gemini"})
-
-
-def models_skill_loading(tool: str) -> bool:
-    """True when this project models how ``tool``'s runtime loads a deployed skill.
-
-    False means neither the catalog charge nor the body cap is computed for that
-    tool — see ``UNMODELLED_SKILL_LOADERS``.
-    """
-    return tool not in UNMODELLED_SKILL_LOADERS
-
-
 def unsupported_keys(tool: str) -> frozenset[str]:
     """The capability keys ``tool``'s loader does not define.
 

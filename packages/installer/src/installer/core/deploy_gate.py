@@ -65,7 +65,7 @@ from installer.core.admission import (
     entry_file_text,
     is_gated,
 )
-from installer.core.capabilities import is_user_invoked, models_skill_loading
+from installer.core.capabilities import is_user_invoked
 from installer.core.conflict_audit import conflict_violations
 from installer.core.frontmatter import split_frontmatter
 from installer.core.installignore import InstallIgnore
@@ -77,6 +77,7 @@ from installer.core.surface_budget import (
     SkillMeasure,
     SurfaceMeasure,
     always_on_violations,
+    instruction_file_violations,
     measure_always_on,
     measure_skill_bodies,
     skill_body_violations,
@@ -507,13 +508,10 @@ def run_admission_gate(
                 )
             kept[dest] = item
 
-            # Only skills, and only on a tool whose skill loading is modelled.
-            # A commands namespace is charged nothing here and capped nowhere:
-            # the user types a command's name, so neither its description nor
-            # its body is a cost anyone was handed. An unmodelled tool is
-            # measured on neither count, which is the honest report when what
-            # its runtime does with a deployed skill is not established.
-            if item.namespace == "skills" and models_skill_loading(tool.value):
+            # Only skills. A commands namespace is charged nothing here and
+            # capped nowhere: the user types a command's name, so neither its
+            # description nor its body is a cost anyone was handed.
+            if item.namespace == "skills":
                 skill_bodies += [
                     SkillBodySource(
                         label=part.label,
@@ -551,6 +549,7 @@ def run_admission_gate(
             tool=tool.value, instruction=instruction, rules=rule_bytes, catalog=entries
         )
         violations += user_core_violations(tool=tool.value, instruction=instruction)
+        violations += instruction_file_violations(tool=tool.value, instruction=instruction)
     violations += skill_body_violations(skill_bodies)
     violations += conflict_violations(claims_by_artifact)
 
