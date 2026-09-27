@@ -4,7 +4,7 @@ description: Grilling session that challenges your plan against the existing dom
 admission:
   prevents: An existing plan advancing to implementation while it still contradicts the project's glossary, ADRs, and code — the drift surfaces late as rework and human intervention.
   cost: Adds a deep session that runs the grilling interview with the domain model attached, cross-checking every claim against CONTEXT.md/ADR docs and holding the plan until its acceptance criteria are enumerated.
-  remove_when: The readiness gate can mechanically detect glossary/ADR contradictions and prove enumerated red-test-convertible acceptance criteria without this session having run.
+  remove_when: The readiness gate can mechanically detect glossary/ADR contradictions and prove enumerated acceptance criteria meeting the acceptance-criteria standard without this session having run.
 ---
 
 <!--
@@ -24,4 +24,4 @@ What separates this session from a plain grilling is that it maintains the proje
 
 ## What this session adds to the exit criterion
 
-`grilling` already refuses to end until every acceptance criterion carries a stable ID, is expressible as a failing test, and has each edge-case taxonomy row resolved or ruled out. This session adds one condition to each of those criteria: cross-check it against `CONTEXT.md` and the ADRs as you go. A criterion that contradicts the recorded glossary or a documented decision is not done — resolve the contradiction, by updating the docs or by revising the criterion, before the session ends.
+`grilling` already refuses to end until every acceptance criterion carries a stable ID, meets the `acceptance-criteria` standard, and has each edge-case taxonomy row resolved or ruled out. This session adds one condition to each of those criteria: cross-check it against `CONTEXT.md` and the ADRs as you go. A criterion that contradicts the recorded glossary or a documented decision is not done — resolve the contradiction, by updating the docs or by revising the criterion, before the session ends.

@@ -13,7 +13,8 @@ adjudicated into the criteria or rejected on the record.
 
 Running before the work starts is the point: once code exists, a review can check the tests cover
 the failure cases the criteria name, but cannot invent the ones nobody thought of. Those get
-invented here.
+invented here. Attack before use, and again after amendment: an attack on one version of the
+criteria says nothing about the next.
 
 Both scripts below run via `uv run`. If `uv` is not installed, run them with plain `python3`
 instead — `emit_prompts.py` has no dependency beyond the standard library; `check_record.py`
@@ -21,10 +22,15 @@ additionally needs `jsonschema` installed first.
 
 ## Attack lenses
 
+Every lens judges against the `acceptance-criteria` standard. Each prompt carries that skill's
+body, read live from where it is installed beside this one, and the emitter refuses a round when
+it is missing or empty.
+
 | Lens | What it attacks |
 | --- | --- |
-| `criteria-holes` | Behaviours that satisfy every stated criterion and are still wrong. |
-| `edge-cases` | The taxonomy walk — inverse, empty and boundary, dependency failure, repeated and concurrent invocation, idempotency — naming cases no criterion tests. |
+| `behavioural-outcome` | Criteria that pin an artifact where the document promises a behaviour, bundle separable obligations, cannot fail, or have no feasible check. |
+| `criteria-holes` | Behaviours that satisfy every stated criterion and are still wrong, including criteria that contradict each other or admit two readings. |
+| `edge-cases` | The standard's edge-case taxonomy, walked per criterion, naming cases no criterion tests. |
 | `absent-requirements` | Obligations the document takes on that no criterion covers. |
 
 Mandates are data in `lenses.json`, each lens's `tier` naming the model capability it needs and

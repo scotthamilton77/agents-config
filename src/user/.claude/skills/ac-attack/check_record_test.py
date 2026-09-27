@@ -90,7 +90,9 @@ class Attack:
             "spec_path": self.document.name,
             "spec_revision": sha_revision(DOCUMENT),
             "lenses": [
-                {"lens": name, "report": "proposals" if name != "criteria-holes" else "empty"}
+                {"lens": name,
+                 "report": "proposals" if name in ("edge-cases", "absent-requirements")
+                 else "empty"}
                 for name in LENS_NAMES
             ],
             "proposals": [proposal("edge-cases", "A1", "p1"),
@@ -897,16 +899,17 @@ class TestRevisionNotation:
 
 
 class TestLensCoverage:
-    def test_c7_a_lens_that_did_not_report_leaves_the_round_unfinished(self, attack, capsys):
+    @pytest.mark.parametrize("silent", LENS_NAMES)
+    def test_c7_a_lens_that_did_not_report_leaves_the_round_unfinished(self, attack, capsys,
+                                                                        silent):
         """S6-C7: a silent or errored attack lens has no entry and the round is incomplete —
         fail closed, never inferring coverage from an empty proposal list."""
         record = attack.empty_round()
-        record["lenses"] = [entry for entry in record["lenses"]
-                            if entry["lens"] != "criteria-holes"]
+        record["lenses"] = [entry for entry in record["lenses"] if entry["lens"] != silent]
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
         assert codes(result) == {"lens-missing"}
-        assert "criteria-holes" in result["errors"][0]["message"]
+        assert silent in result["errors"][0]["message"]
 
     def test_c7_a_lens_reporting_twice_is_a_defect_in_the_record(self, attack, capsys):
         """S6-C7: coverage is read off one entry per lens, so a doubled entry is two accounts of

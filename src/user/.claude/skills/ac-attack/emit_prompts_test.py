@@ -113,9 +113,11 @@ def phrases(text: str, size: int = 5) -> set[str]:
     return {" ".join(words[i:i + size]) for i in range(len(words) - size + 1)}
 
 
+# The standard travels in every prompt, so a mandate phrase it also holds is shared text rather
+# than a leaked mandate.
 FIXED_INSTRUCTIONS = (f"{emitter.EXHAUSTIVENESS} {emitter.WHOLE_DOCUMENT} "
                       f"{emitter.TESTABLE_ONLY} {emitter.EXPLICIT_EMPTY} "
-                      f"{emitter.UNTRUSTED_NOTICE}")
+                      f"{emitter.UNTRUSTED_NOTICE} {emitter.load_standard()}")
 
 
 def distinctive_phrases(name: str) -> set[str]:
@@ -242,17 +244,21 @@ class TestPromptContent:
             for part in ("given", "when", "expect"):
                 assert f'"{part}"' in text
 
-    def test_c1_the_edge_case_lens_carries_the_whole_taxonomy(self):
-        """S6-C1: the edge-case mandate walks the authoring taxonomy rather than gesturing at
-        'edge cases' — a class left out of the mandate is a class nobody attacks."""
-        mandate = next(lens["mandate"] for lens in LENSES if lens["lens"] == "edge-cases")
-        for case_class in ("inverse", "boundary", "depends on", "concurrent", "twice"):
-            assert case_class in mandate
+    def test_c1_the_edge_case_lens_carries_the_whole_taxonomy(self, document, tmp_path, capsys):
+        """S6-C1: the edge-case prompt walks the authoring taxonomy rather than gesturing at
+        'edge cases' — a class left out of the prompt is a class nobody attacks. The taxonomy
+        arrives with the standard, so the prompt is what is held to carrying it."""
+        text = emit(document, tmp_path / "attack", capsys)["edge-cases"]
+        for case_class in ("Inverse", "Empty or boundary input", "Dependency failure",
+                           "Repeated or concurrent invocation", "Idempotency"):
+            assert case_class in text
+        assert "taxonomy" in next(lens["mandate"] for lens in LENSES if lens["lens"] == "edge-cases")
 
     def test_c7_the_panel_mixes_tiers_and_reaches_another_vendor(self):
         """S6-C7: at least one attack lens runs on a foreign model, and the panel is not one tier
         throughout — blind spots correlate inside a vendor."""
-        assert sorted(LENS_NAMES) == ["absent-requirements", "criteria-holes", "edge-cases"]
+        assert sorted(LENS_NAMES) == ["absent-requirements", "behavioural-outcome",
+                                      "criteria-holes", "edge-cases"]
         assert {lens["tier"] for lens in LENSES} == {"frontier", "mid"}
         assert "codex" in {lens["transport"] for lens in LENSES}
         for lens in LENSES:
@@ -1027,6 +1033,75 @@ class TestRoundFile:
         assert first.returncode == second.returncode == 0
         assert first.stdout == second.stdout
         assert {path.name: path.read_bytes() for path in sorted(out_dir.iterdir())} == written
+
+
+class TestStandard:
+    """Every attacker judges against the one acceptance-criteria standard, read live from the
+    skill that owns it, so the attack cannot drift from what authors are told to write."""
+
+    SOURCE_STANDARD = HERE.parents[2] / ".agents" / "skills" / "acceptance-criteria" / "SKILL.md"
+
+    @staticmethod
+    def body_lines(path: Path) -> list[str]:
+        body = path.read_text(encoding="utf-8").split("---", 2)[2]
+        return [line.lstrip("#").strip() for line in body.splitlines() if line.strip()]
+
+    def test_every_prompt_carries_the_whole_standard(self, document, tmp_path, capsys):
+        lines = self.body_lines(self.SOURCE_STANDARD)
+        assert "Attack before use, and again after amendment" in lines
+        for name, text in emit(document, tmp_path / "attack", capsys).items():
+            missing = [line for line in lines if line not in text]
+            assert not missing, f"{name} lacks {missing[:3]}"
+            # The standard is instructions, so it sits before the fenced document.
+            assert text.index(lines[-1]) < text.index(emitter.FENCE_OPEN)
+
+    def test_a_deployed_sibling_standard_is_the_one_read(self, document, tmp_path):
+        skill = skill_copy(tmp_path, {})
+        sibling = tmp_path / "acceptance-criteria"
+        sibling.mkdir()
+        (sibling / "SKILL.md").write_text(
+            "---\nname: acceptance-criteria\n---\n\n# Standard\n\nA sibling sentence.\n",
+            encoding="utf-8")
+        out_dir = tmp_path / "out"
+        proc = subprocess.run(
+            [sys.executable, str(skill / "emit_prompts.py"), "--spec", str(document),
+             "--out-dir", str(out_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 0, proc.stdout
+        for path in out_dir.glob("*.md"):
+            text = path.read_text(encoding="utf-8")
+            assert "A sibling sentence." in text
+            assert "name: acceptance-criteria" not in text
+
+    @pytest.mark.parametrize("content", (None, "---\nname: acceptance-criteria\n---\n  \n"),
+                             ids=("absent", "empty body"))
+    def test_a_missing_or_empty_standard_refuses_before_writing(self, document, tmp_path,
+                                                                 content):
+        """An attack without the standard is the attack the standard replaced, so it refuses."""
+        skill = skill_copy(tmp_path, {})
+        if content is not None:
+            (tmp_path / "acceptance-criteria").mkdir()
+            (tmp_path / "acceptance-criteria" / "SKILL.md").write_text(content, encoding="utf-8")
+        out_dir = tmp_path / "out"
+        proc = subprocess.run(
+            [sys.executable, str(skill / "emit_prompts.py"), "--spec", str(document),
+             "--out-dir", str(out_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 2
+        result = json.loads(proc.stdout)
+        assert [error["code"] for error in result["errors"]] == ["no-standard"]
+        assert not out_dir.exists()
+
+    def test_the_behavioural_outcome_lens_is_first_in_every_round(self, document, tmp_path,
+                                                                    capsys):
+        """Formulation is judged before coverage: a set that pins only artifacts has no outcome
+        for the other lenses to find holes in."""
+        out_dir = tmp_path / "attack"
+        emit(document, out_dir, capsys)
+        round_meta = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))
+        assert round_meta["lenses"][0]["lens"] == "behavioural-outcome"
 
 
 class TestSurface:
