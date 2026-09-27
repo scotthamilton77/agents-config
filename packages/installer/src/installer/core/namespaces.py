@@ -14,9 +14,21 @@ Ordering note: for the iterated tuple views (:data:`TOOL_SCOPED`, :data:`SHARED`
 each namespace stages under a disjoint ``dest_relpath`` prefix, so no
 cross-namespace collision can occur and the resulting plan is order-invariant.
 Order is fixed only for deterministic, reproducible plans.
+
+Where a namespace lands on disk is also decided here, by :data:`RELOCATED` and
+the two functions below it. A plan keys every namespaced item as
+``<namespace>/<name>`` for every tool, and only the step from a plan key to a
+path under the tool's destination root consults the relocation table.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+from types import MappingProxyType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 # The full universe of content-namespace directory names the installer knows.
 # Every view below satisfies ``set(view) <= ALL``.
@@ -76,3 +88,47 @@ PRUNE: tuple[str, ...] = ("commands", "skills", "agents", "rules", "hooks", "wor
 # removing one moves an existing backup from the sibling dir to in place, so it
 # is a behaviour change even when nothing currently deploys there.
 BACKUP: frozenset[str] = frozenset({"commands", "skills", "agents", "rules", "hooks", "workflows"})
+
+# Namespaces a tool reads from somewhere other than a directory of the
+# namespace's own name at the root of its tree, keyed by ``(tool, namespace)``;
+# each value is relative to the tool's destination root.
+#
+# The gemini tool deploys for Antigravity CLI, which reads ``~/.gemini`` but discovers
+# global skills only under ``~/.gemini/config/skills/``, so a skill deployed to
+# ``~/.gemini/skills/`` is never loaded. Everything else under
+# ``~/.gemini/config/`` is Antigravity's own state, which is why the relocation
+# names the ``skills`` subtree alone and never the ``config`` directory.
+#
+# The plan key stays ``skills/<name>`` for Gemini as for every other tool, since
+# profile selectors, merge collisions, admission and prune eligibility all read
+# the namespace from that key. Rewriting the key instead would have every one of
+# those readers see ``config`` where they expect ``skills``.
+RELOCATED: Mapping[tuple[str, str], Path] = MappingProxyType(
+    {("gemini", "skills"): Path("config", "skills")}
+)
+
+
+def deployed_relpath(tool: str, staged: Path) -> Path:
+    """Return where a plan item keyed ``staged`` lands, relative to ``tool``'s destination root.
+
+    A path outside every relocated namespace lands at its own key.
+    """
+    if staged.parts:
+        prefix = RELOCATED.get((tool, staged.parts[0]))
+        if prefix is not None:
+            return prefix.joinpath(*staged.parts[1:])
+    return staged
+
+
+def staged_relpath(tool: str, deployed: Path) -> Path:
+    """Return the plan key for an on-disk path relative to ``tool``'s destination root.
+
+    This inverts :func:`deployed_relpath`, so a reader that asks which namespace
+    a deployed path belongs to gets ``skills`` for a relocated skill rather than
+    the first directory of its relocated prefix. A path outside every relocated
+    prefix is its own key.
+    """
+    for (owner, namespace), prefix in RELOCATED.items():
+        if owner == tool and deployed.is_relative_to(prefix):
+            return Path(namespace).joinpath(*deployed.parts[len(prefix.parts) :])
+    return deployed
