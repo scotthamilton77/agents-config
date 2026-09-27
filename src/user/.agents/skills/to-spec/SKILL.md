@@ -4,7 +4,7 @@ description: Turn the current conversation into a spec — no interview, just sy
 admission:
   prevents: A resolved conversation evaporating into a goals-only or verbally-agreed plan that an implementer cannot execute without re-litigating decisions and edge cases.
   cost: Adds a synthesis pass that writes a dated spec whose output contract requires enumerated acceptance criteria and an ordered, AC-cited slice list before it is done.
-  remove_when: The pipeline can mechanically emit an implementable spec with red-test-convertible acceptance criteria and sliced work from the conversation without this authoring step.
+  remove_when: The pipeline can mechanically emit an implementable spec with acceptance criteria meeting the acceptance-criteria standard and sliced work from the conversation without this authoring step.
 ---
 
 <!--
@@ -50,9 +50,9 @@ What makes a good test (only external behavior, not implementation details), whi
 
 ## Acceptance Criteria
 
-A numbered list of acceptance criteria, each with a **stable ID** (`<ID>` matches `[A-Z0-9]+-[A-Z]\d+` or `AC\d+`, e.g. `AC1`, `FOO-A1`). Each criterion MUST be **red-test-convertible**: stated as a concrete observable that is false today and true when the work is done, so it maps to one failing test.
+A numbered list of acceptance criteria, each with a **stable ID** (`<ID>` matches `[A-Z0-9]+-[A-Z]\d+` or `AC\d+`, e.g. `AC1`, `FOO-A1`). Each criterion MUST meet the `acceptance-criteria` standard, and the set MUST be ready by that standard's set checks. Load that skill before writing this section.
 
-For every criterion, apply the edge-case taxonomy — resolve or explicitly rule out each of: **inverse case** (failure path), **empty/boundary input** (zero, empty, min, max), **dependency failure** (an upstream tool/file/service absent or erroring), **repeated/concurrent invocation**, and **idempotency** (a second identical run changes nothing).
+For every criterion, walk that standard's edge-case taxonomy: resolve each dimension or explicitly rule it out.
 
 ## Ordered Slice List
 

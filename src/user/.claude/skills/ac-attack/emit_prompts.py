@@ -16,6 +16,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import sys
 import unicodedata
@@ -24,6 +25,15 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 LENSES_PATH = HERE / "lenses.json"
+
+# Every attacker judges against the acceptance-criteria standard, read live from the skill that
+# owns it so the attack and the authoring instructions cannot drift apart. Installed, that skill
+# sits beside this one. The second candidate is where the source tree keeps shared skills, so a
+# round run from the source tree reads the standard it ships with.
+STANDARD_CANDIDATES = (
+    HERE.parent / "acceptance-criteria" / "SKILL.md",
+    HERE.parents[2] / ".agents" / "skills" / "acceptance-criteria" / "SKILL.md",
+)
 REQUIRED_KEYS = ("lens", "mandate", "tier", "transport")
 
 EXIT_OK = 0
@@ -44,9 +54,9 @@ BOM = "\ufeff"
 INVISIBLE = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
 
 EXHAUSTIVENESS = (
-    "Report every hole of this lens findable this round; a withheld proposal is a defect in the "
+    "Report every hole of this lens findable this round; a withheld objection is a defect in the "
     "attack. Be exhaustive in depth within this lens and never step outside it: another attacker "
-    "holds every other lens, and a proposal outside your mandate is noise."
+    "holds every other lens, and an objection outside your mandate is noise."
 )
 WHOLE_DOCUMENT = (
     "The whole document is below, not only its criteria. Its definitions, scope, and prose are "
@@ -54,13 +64,18 @@ WHOLE_DOCUMENT = (
     "everything else as the context that gives them meaning."
 )
 TESTABLE_ONLY = (
-    "Every proposal is a testable claim about inputs and states, never a free-form concern. The "
+    "Every objection is a testable claim about inputs and states, never a free-form concern. The "
     "test sketch is the boundary: name the starting state, the action taken, and the outcome an "
-    "observer could check. A proposal that cannot fill all three is a concern and will be thrown "
+    "observer could check. An objection that cannot fill all three is a concern and will be thrown "
     "out as malformed — drop it yourself rather than padding the round with it."
 )
+OBJECTIONS = (
+    "Name the criterion each objection concerns, the rule of the standard above "
+    "that the criteria break, and the scenario that shows it. The document's author holds context "
+    "this prompt does not carry, and writes whatever criterion answers the objection."
+)
 EXPLICIT_EMPTY = (
-    'If you find nothing, return an empty proposal list and report "empty". Silence is '
+    'If you find nothing, return an empty objection list and report "empty". Silence is '
     "incompleteness, not agreement: a lens that does not report leaves the round unfinished, and "
     "an empty report is a result while a missing one is a gap."
 )
@@ -156,6 +171,28 @@ def load_lenses() -> list[dict[str, Any]]:
         "no-lenses",
         f"the lens registry {problem}; a round emitted from it would leave an attacker it "
         "declared unrun, which reads downstream as coverage nobody obtained",
+    )
+
+
+def load_standard() -> str:
+    """The acceptance-criteria standard's body, its headings nested under the prompt's own.
+
+    Refused when no candidate holds a non-empty body: an attack without the standard is the attack
+    the standard replaced, and it would report an emitted round all the same.
+    """
+    for candidate in STANDARD_CANDIDATES:
+        if candidate.is_file():
+            text = candidate.read_text(encoding="utf-8")
+            if text.startswith("---"):
+                text = text.split("---", 2)[2] if text.count("---") >= 2 else ""
+            body = text.strip()
+            if body:
+                return re.sub(r"^(#+ )", r"##\1", body, flags=re.MULTILINE)
+            break
+    raise Refusal(
+        "no-standard",
+        "the acceptance-criteria skill is not installed beside this one, or its body is empty; "
+        "every attacker judges criteria against that standard, so a round without it is refused",
     )
 
 
@@ -404,11 +441,11 @@ def render_prompt(lens: dict, ctx: dict) -> str:
     """One lens, one prompt: fixed instructions first, the whole document fenced after."""
     name = lens["lens"]
     contract = json.dumps({
-        "lens": name, "report": "proposals|empty",
-        "proposals": [{
+        "lens": name, "report": "objections|empty",
+        "objections": [{
             "lens": name, "target_ac": "identifier of the criterion attacked, or none",
             "hole": "what the criteria let through",
-            "proposed_ac": "the new criterion, stated as an observable claim",
+            "ground": "the rule of the standard above that the criteria break",
             "red_test_sketch": {"given": "input or starting state", "when": "the action",
                                 "expect": "the observable outcome"},
         }],
@@ -417,15 +454,22 @@ def render_prompt(lens: dict, ctx: dict) -> str:
         f"# Criteria attack — {name}\n",
         (
             "You are one attacker on a panel. You hold this lens and no other. The document below "
-            "is not yet built: your proposals become criteria before anyone writes the code, so a "
-            "hole you name now is a test that gets written, and one you miss is a test nobody "
+            "is not yet built: your objections reach its author before anyone writes the code, so "
+            "a hole you name now becomes a criterion and a test, and one you miss is a test nobody "
             "writes.\n"
         ),
+        "## The acceptance-criteria standard\n",
+        (
+            "Every criterion in the document is held to this standard. Your mandate below says "
+            "which part of it you attack.\n"
+        ),
+        f"{inert(ctx['standard'])}\n",
         "## Mandate\n",
         f"{inert(lens['mandate'])}\n",
         "## How to attack\n",
         f"{EXHAUSTIVENESS}\n",
         f"{WHOLE_DOCUMENT}\n",
+        f"{OBJECTIONS}\n",
         f"{TESTABLE_ONLY}\n",
         f"{EXPLICIT_EMPTY}\n",
         f"{UNTRUSTED_NOTICE}\n",
@@ -433,7 +477,7 @@ def render_prompt(lens: dict, ctx: dict) -> str:
         "Return exactly one JSON object and nothing else, in this shape:\n",
         f"```json\n{contract}\n```\n",
         (
-            'Report "proposals" with at least one entry when this lens finds a hole, and "empty" '
+            'Report "objections" with at least one entry when this lens finds a hole, and "empty" '
             'with an empty list when it finds none. Set "target_ac" to the identifier the '
             'document gives the criterion you attacked, or to "none" when no criterion covers the '
             "ground at all. Every field is required and none may be blank.\n"
@@ -459,8 +503,10 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
     # Asked before the output directory exists, so a name no record could close costs nothing.
     spec_name = document_name(args.spec)
     lenses = load_lenses()
+    standard = load_standard()
     out_dir = prepare_out_dir(args.out_dir)
-    ctx = {"spec_path": spec_name, "spec_revision": revision, "document": document}
+    ctx = {"spec_path": spec_name, "spec_revision": revision, "document": document,
+           "standard": standard}
     prompts = [out_dir / f"{lens['lens']}.md" for lens in lenses]
     round_path = out_dir / "round.json"
     outputs = [*prompts, round_path]

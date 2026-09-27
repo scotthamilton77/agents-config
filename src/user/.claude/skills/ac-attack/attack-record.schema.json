@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agents.local/schemas/attack-record/1",
   "title": "Criteria attack record",
-  "description": "Record of one attack round over a document's acceptance criteria: the revision attacked, which lenses reported, what they proposed, and how each proposal was adjudicated.",
+  "description": "Record of one attack round over a document's acceptance criteria: the revision attacked, which lenses reported, the objections they raised, and how each was adjudicated.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,7 +10,7 @@
     "spec_path",
     "spec_revision",
     "lenses",
-    "proposals",
+    "objections",
     "dispositions"
   ],
   "properties": {
@@ -35,20 +35,20 @@
         "required": ["lens", "report"],
         "properties": {
           "lens": {"type": "string", "pattern": "\\S"},
-          "report": {"enum": ["proposals", "empty"]}
+          "report": {"enum": ["objections", "empty"]}
         }
       },
       "description": "One entry per lens that reported, empty reports included. A lens that errored or returned unreadable output has no entry, and the round is unfinished."
     },
-    "proposals": {
+    "objections": {
       "type": "array",
-      "items": {"$ref": "#/$defs/proposal"},
-      "description": "The union of the lens reports. Each proposal carries the id its disposition names."
+      "items": {"$ref": "#/$defs/objection"},
+      "description": "The union of the lens reports. Each objection carries the id its disposition names."
     },
     "dispositions": {
       "type": "array",
       "items": {"$ref": "#/$defs/disposition"},
-      "description": "One entry per proposal id."
+      "description": "One entry per objection id."
     }
   },
   "$defs": {
@@ -57,35 +57,35 @@
       "pattern": "^(sha256:[0-9a-f]{64}|[0-9a-f]{40})$",
       "description": "Content-addressed revision of the document: sha256: followed by the hex digest of its bytes, or the 40-hex object id of the same content. Written with no surrounding whitespace — git hash-object ends its output with a newline, which the pattern above does not catch and the checker refuses."
     },
-    "proposal": {
+    "objection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "lens", "target_ac", "hole", "proposed_ac", "red_test_sketch"],
+      "required": ["id", "lens", "target_ac", "ground", "hole", "red_test_sketch"],
       "properties": {
         "id": {
           "type": "string",
           "pattern": "\\S",
-          "description": "Identifies this proposal to its disposition. Assigned when the lens reports are unioned, and distinct within the round: dropping a malformed proposal renumbers positions, so a disposition keyed on position would adjudicate a different proposal after the edit."
+          "description": "Identifies this objection to its disposition. Assigned when the lens reports are unioned, and distinct within the round: dropping a malformed objection renumbers positions, so a disposition keyed on position would adjudicate a different objection after the edit."
         },
         "lens": {
           "type": "string",
           "pattern": "\\S",
-          "description": "The attack lens that produced this proposal."
+          "description": "The attack lens that produced this objection."
         },
         "target_ac": {
           "type": "string",
           "pattern": "\\S",
           "description": "Identifier of the criterion attacked, or \"none\" when no criterion covers the ground at all."
         },
+        "ground": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "The rule of the acceptance-criteria standard that the criteria as written break."
+        },
         "hole": {
           "type": "string",
           "pattern": "\\S",
           "description": "What the criteria as written let through."
-        },
-        "proposed_ac": {
-          "type": "string",
-          "pattern": "\\S",
-          "description": "The criterion proposed to close the hole, stated as an observable claim."
         },
         "red_test_sketch": {
           "type": "object",
@@ -96,7 +96,7 @@
             "when": {"type": "string", "pattern": "\\S"},
             "expect": {"type": "string", "pattern": "\\S"}
           },
-          "description": "The failing test the proposed criterion makes writable. All three parts are required and non-blank: an item that cannot name a starting state, an action, and an observable outcome is a concern rather than a testable claim, and is not a proposal."
+          "description": "The scenario that shows the objection. All three parts are required and non-blank: an item that cannot name a starting state, an action, and an observable outcome is a concern rather than a testable claim, and is not an objection."
         }
       }
     },
@@ -108,7 +108,7 @@
         "id": {
           "type": "string",
           "pattern": "\\S",
-          "description": "Id of the proposal this adjudicates."
+          "description": "Id of the objection this adjudicates."
         },
         "disposition": {"enum": ["accepted", "rejected"]},
         "rationale": {
@@ -118,12 +118,12 @@
         },
         "revision": {
           "$ref": "#/$defs/revision",
-          "description": "Revision of the document that carries an accepted proposal. Required on an acceptance, different from the revision attacked, and the same on every acceptance in the record: the document reached one state once all of them were in it, so per-acceptance revisions name states it was never in and the check refuses the round."
+          "description": "Revision of the document that carries an accepted objection. Required on an acceptance, different from the revision attacked, and the same on every acceptance in the record: the document reached one state once all of them were in it, so per-acceptance revisions name states it was never in and the check refuses the round."
         },
         "covering_ac": {
           "type": "string",
           "pattern": "\\S",
-          "description": "Identifier of the criterion in that revision which carries it. Required on an acceptance."
+          "description": "Identifier of the criterion in that revision which answers the objection, written by the document's author. Required on an acceptance."
         }
       },
       "allOf": [
@@ -136,7 +136,7 @@
           "then": {"required": ["rationale"]}
         }
       ],
-      "description": "Each verdict carries the fields that make it an adjudication: an acceptance the revision and criterion that now carry the proposal, a rejection the reason it was not taken."
+      "description": "Each verdict carries the fields that make it an adjudication: an acceptance the revision and criterion that now carry the objection, a rejection the reason it was not taken."
     }
   }
 }
