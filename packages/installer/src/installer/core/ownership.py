@@ -38,7 +38,7 @@ def entry_for(item: StagedItem, *, tool: str, dest_root: Path, home: Path) -> Re
     if not is_prunable(item):
         return None
     return ReceiptEntry(
-        path=(dest_root / item.dest_relpath).relative_to(home),
+        path=(dest_root / namespaces.deployed_relpath(tool, item.dest_relpath)).relative_to(home),
         owner=tool,
         root=dest_root.relative_to(home),
         kind=("dir" if item.kind == FileKind.DIR else "file"),

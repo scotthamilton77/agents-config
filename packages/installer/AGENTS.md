@@ -56,8 +56,10 @@ but the full gate must pass before push.
   per-concern views (`TOOL_SCOPED`, `SHARED`, `SHARED_CARRIER`,
   `PLUGIN_TOOL_SCOPED`, `PRUNE`, `BACKUP`). Adding a namespace means adding it
   there *and* to each view it belongs in; a namespace carrying `.md` files also
-  needs the merge registry. `scripts/install.sh` holds no namespace logic —
-  it is a thin stub.
+  needs the merge registry. The same module holds `RELOCATED`, the one table of
+  namespaces a tool reads from somewhere other than `<tool root>/<namespace>/`,
+  and the two functions that map a plan key to its on-disk path and back.
+  `scripts/install.sh` holds no namespace logic — it is a thin stub.
 
 ## Tests
 

@@ -11,6 +11,8 @@ call sites consume the canonical object rather than re-declaring their own list.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from installer.core import namespaces
 
 
@@ -130,3 +132,19 @@ def test_ownership_prune_namespaces_consumes_canonical_prune() -> None:
     from installer.core import ownership
 
     assert ownership.PRUNE_NAMESPACES is namespaces.PRUNE
+
+
+def test_only_gemini_skills_deploy_outside_their_namespace_dir() -> None:
+    # Antigravity CLI, which reuses ~/.gemini, discovers global skills only under
+    # ~/.gemini/config/skills/. No other tool or namespace moves.
+    assert dict(namespaces.RELOCATED) == {("gemini", "skills"): Path("config/skills")}
+
+
+def test_deployed_and_staged_relpaths_invert_each_other() -> None:
+    skill = Path("skills/foo/SKILL.md")
+    assert namespaces.deployed_relpath("gemini", skill) == Path("config/skills/foo/SKILL.md")
+    assert namespaces.staged_relpath("gemini", Path("config/skills/foo/SKILL.md")) == skill
+    unmoved = (("claude", skill), ("gemini", Path("rules/r.md")), ("gemini", Path("GEMINI.md")))
+    for tool, path in unmoved:
+        assert namespaces.deployed_relpath(tool, path) == path
+        assert namespaces.staged_relpath(tool, path) == path

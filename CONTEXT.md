@@ -26,6 +26,8 @@ and the per-slice citation requirement are mechanically enforced; a slice
 discharges a criterion or one of the spec's own decisions, and cites whichever
 it discharges.
 
+The deployed standard for writing and judging criteria is the
+`acceptance-criteria` skill: `src/user/.agents/skills/acceptance-criteria/SKILL.md`.
 Quality design: `docs/specs/2026-09-18-acceptance-criteria-quality.md`.
 Structural lint: `packages/installer/src/installer/core/spec_lint.py`, run as
 `make spec-lint` over `docs/specs/`.

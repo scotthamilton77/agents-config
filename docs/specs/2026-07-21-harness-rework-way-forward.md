@@ -38,9 +38,12 @@ spec author's deliverable — a spec is not ready until it is decomposed.
 
 **D3 — AC-attack review at the readiness gate.** A foreign (non-Anthropic)
 model attacks the AC set before implementation: "name behaviors that satisfy
-these ACs while still being wrong." Findings must arrive as proposed ACs
-(testable claims about inputs/states), never as concerns. Each proposal is
-accepted into the AC set or rejected as out-of-scope; the round terminates.
+these ACs while still being wrong." Findings arrive as objections: the AC
+concerned, the rule it breaks, and a failing scenario stated as a testable
+claim about inputs/states, never as a bare concern. The attacker holds less
+context than the author, so the author answers each accepted objection with an
+AC of their own; each objection is accepted or rejected as out-of-scope, and
+the round terminates.
 Enforcement of D1–D3 is author-side (the brainstorming replacement's output
 contract; the goals-only escape is deleted) plus a mechanical lint at the gate
 (AC-section presence and per-slice AC coverage).

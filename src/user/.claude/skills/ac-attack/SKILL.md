@@ -3,17 +3,19 @@ name: ac-attack
 description: Attack a document's acceptance criteria with a panel of adversarial lenses, then check that the resulting record closes the round. Use when criteria have been drafted or revised and work is about to be claimed against them.
 admission:
   prevents: Criteria that read complete and are not, because the failure modes nobody named stay unnamed until the code exists — and by then a review can only audit coverage of the cases the criteria already list, so the missing case ships.
-  cost: A document's criteria cannot go to implementation until an attacker has run per lens over the whole document and every proposal they return carries a written disposition committed beside it.
-  remove_when: Attack rounds stop producing accepted proposals across a run of documents, or the criteria-drafting step starts producing criteria that survive an attack unchanged.
+  cost: A document's criteria cannot go to implementation until an attacker has run per lens over the whole document and every objection they return carries a written disposition committed beside it.
+  remove_when: Attack rounds stop producing accepted objections across a run of documents, or the criteria-drafting step starts producing criteria that survive an attack unchanged.
 ---
 
 Criteria that read complete rarely are. This skill attacks them: a panel of adversarial lenses
-reads the document, each naming behaviours its criteria let through, and every proposal comes back
-adjudicated into the criteria or rejected on the record.
+reads the document, each objecting to what its criteria let through on a named ground, and every
+objection comes back adjudicated on the record. An accepted one is answered by a criterion the
+author writes, since the author holds the context an attacker lacks.
 
 Running before the work starts is the point: once code exists, a review can check the tests cover
 the failure cases the criteria name, but cannot invent the ones nobody thought of. Those get
-invented here.
+invented here. Attack before use, and again after amendment: an attack on one version of the
+criteria says nothing about the next.
 
 Both scripts below run via `uv run`. If `uv` is not installed, run them with plain `python3`
 instead — `emit_prompts.py` has no dependency beyond the standard library; `check_record.py`
@@ -21,10 +23,16 @@ additionally needs `jsonschema` installed first.
 
 ## Attack lenses
 
+Every lens judges against the `acceptance-criteria` standard. Each prompt carries that skill's
+body, read live from where it is installed beside this one, and the emitter refuses a round when
+it is missing or empty.
+
 | Lens | What it attacks |
 | --- | --- |
+| `behavioural-outcome` | Criteria that pin an artifact where the document promises a behaviour, bundle separable obligations, cannot fail, or have no feasible check. |
 | `criteria-holes` | Behaviours that satisfy every stated criterion and are still wrong. |
-| `edge-cases` | The taxonomy walk — inverse, empty and boundary, dependency failure, repeated and concurrent invocation, idempotency — naming cases no criterion tests. |
+| `set-consistency` | Criteria that cannot hold together, and wording that admits materially different outcomes. |
+| `edge-cases` | The standard's edge-case taxonomy, walked per criterion, naming cases no criterion tests. |
 | `absent-requirements` | Obligations the document takes on that no criterion covers. |
 
 Mandates are data in `lenses.json`, each lens's `tier` naming the model capability it needs and
@@ -61,7 +69,7 @@ truncate whatever wears them in the directory it ran from. A directory the round
 owner-only and it creates no parent along the way; one already there keeps the permissions its
 owner gave it. Every file written is owner-only, since a prompt carries the whole document.
 
-Proposals and the record they are written into are described in `record.md`: the shape an attacker
+Objections and the record they are written into are described in `record.md`: the shape an attacker
 returns, the `id` a disposition names, and the record committed beside the document as
 `<document>-ac-attack.json`, the document's name without its extension — `ledger.md` gets
 `ledger-ac-attack.json`, and the check holds the record to that name rather than trusting it, so a
@@ -76,11 +84,11 @@ uv run check_record.py /path/to/document-ac-attack.json [--spec <path>] [--imple
 
 Stdout is
 `{"clean": …, "complete": …, "errors": [{"code", "id"?, "message"}], "document"?, "revision"?}`,
-keys and errors sorted. `complete` says the round is closed: every lens reported, every proposal
+keys and errors sorted. `complete` says the round is closed: every lens reported, every objection
 adjudicated, and every acceptance carried into a revision the document still hashes to — or, in a
 round that accepted nothing, the revision attacked. The edits an acceptance drives never
 invalidate the round that drove them; an unrelated later edit does, having faced no attacker. `clean`
-adds that nothing was proposed. `document` and `revision` name the file the verdict was decided
+adds that no lens objected. `document` and `revision` name the file the verdict was decided
 against and what it hashes to. Exit 0 complete, 1 not, 2 on unusable input. Every code the check
 can return, and what each one means, is in `errors.md`.
 
@@ -92,7 +100,7 @@ it, while retiring one leaves the rounds it ran in closed, holding coverage they
 
 The record **attests** that the round happened as written; the checker does not verify that it did.
 It can see the document is at the revision an acceptance names, never that the criterion is in it —
-a hash names content without describing it — so an edit carrying none of the accepted proposals
+a hash names content without describing it — so an edit carrying none of the accepted objections
 closes the round as well as one carrying all of them, and a lens entry claims a report nothing
 shows was made. For the same reason it reads the document as it now stands: what that
 document held when the attackers read it is gone, so a refusal only the attacked revision could

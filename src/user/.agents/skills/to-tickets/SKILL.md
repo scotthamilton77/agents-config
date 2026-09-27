@@ -104,7 +104,7 @@ The facade carries most of the structure as fields, so the body only holds what 
 
 - The **parent** is the `--parent` edge, not a section of prose.
 - The **blocking edges** are `work dep` edges, not a "Blocked by" list.
-- The **acceptance criteria** are `--acceptance`, one criterion per line.
+- The **acceptance criteria** are `--acceptance`, one criterion per line, each meeting the `acceptance-criteria` standard.
 
 That leaves `--description` to carry one thing: **the end-to-end behaviour this ticket makes work, from the user's perspective** — not a layer-by-layer implementation list.
 

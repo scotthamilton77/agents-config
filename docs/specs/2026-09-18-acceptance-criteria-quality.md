@@ -201,15 +201,21 @@ grilling, spec synthesis, ticketing, briefing, attack, and review-panel skills
 cite it at their criteria step. The glossary points to the same standard.
 
 Use the existing attack process. Its criteria-holes, absent-requirements, and
-edge-cases mandates retain their work. The proposed behavioral-outcome lens
-addresses criterion formulation, granularity, and checkability before those
-lenses judge the set. The attack must assess consistency and material
-ambiguity across the set as well as individual criteria. This does not create
-a second panel or make the tracker classify criterion quality.
+edge-cases mandates retain their work. A behavioral-outcome lens addresses
+criterion formulation, granularity, and checkability. A set-consistency lens
+addresses contradiction and material ambiguity across the set. Every lens
+judges against the standard, which each attack prompt carries. This does not
+create a second panel or make the tracker classify criterion quality.
 
-Each finding supplies a concrete failing scenario and a proposed criterion or
-replacement. Duplicate findings can be rejected against existing coverage.
-Every proposal receives a disposition under the existing round contract.
+Each finding is an objection. It names the criterion it concerns, or none, the
+rule of this standard that the criteria break, and a concrete failing scenario.
+An attacker reads the document with less context than its author, so the
+author writes any new or replacement criterion an accepted objection needs.
+An attacker that drafts criteria substitutes its narrower reading for the
+author's. Attacking a spec-authoring item, for example, it demands criteria for
+the implementation the spec only describes. Duplicate findings can be rejected
+against existing coverage. Every objection receives a disposition under the
+existing round contract.
 Mechanical validation can check the record and references; it cannot prove
 that a model found every semantic defect.
 
@@ -222,7 +228,7 @@ organization and its other requirements. The behavioral-outcome work,
 Use the existing skill evaluations and attack prompt/report boundary. Pair
 each deliberately defective example with a corrected control. The quality
 assessment child spec defines how a result demonstrates detection of the
-intended defect; matching its criterion ID and proposal shape alone is
+intended defect; matching its criterion ID and objection shape alone is
 insufficient. It assigns cases to the responsible lenses and identifies any
 cases requiring the full panel.
 
@@ -262,7 +268,7 @@ this documentation change does not claim to have run them.
   outcomes for the same input and state, the review identifies the conflicting
   criteria and circumstance; a consistent control receives no conflict finding.
 - **ACQ-A7** Given an agreed material outcome absent from the criterion set,
-  the review proposes coverage with a failing scenario; an explicitly
+  the review objects that it is uncovered, with a failing scenario; an explicitly
   excluded capability receives no missing-requirement finding.
 - **ACQ-A8** Given a relevant dependency failure omitted from a criterion's
   taxonomy walk, the review identifies the uncovered outcome; a justified
@@ -270,11 +276,10 @@ this documentation change does not claim to have run them.
 - **ACQ-A9** Given a commitment without a feasible verification contract,
   the review identifies what is missing; a defined human measurement or
   judgment check is accepted, while naming a human observer alone is not.
-- **ACQ-A10** Given a proposed criterion that duplicates existing coverage
-  without excluding another in-scope failure, the review identifies the
-  existing coverage rather than requiring an additional obligation; a
-  criterion excluding a distinct in-scope failure receives no duplicate
-  finding.
+- **ACQ-A10** Given a criterion that duplicates existing coverage without
+  excluding another in-scope failure, the review objects on restraint and
+  names the existing coverage; a criterion excluding a distinct in-scope
+  failure receives no duplicate finding.
 - **ACQ-A11** In staging for every supported tool, the criteria definition and
   taxonomy have one deployed source, and each applicable authoring or review
   skill's criteria step directs its reader to that source. Authoring and
@@ -302,14 +307,21 @@ this documentation change does not claim to have run them.
   the review identifies the missing answer assessment; an evidence-supported
   answer, or a justified inconclusive result permitted by the contract,
   receives no finding merely because it delivers knowledge rather than code.
+  A spec whose criteria assess its content receives no finding demanding
+  criteria for the implementation it describes.
 - **ACQ-A19** Given an obligation grounded in an agreed decision or preservation
   guarantee, the review accepts that scope basis without demanding a parent AC;
   a proposed capability outside the agreed scope requires authorization.
+- **ACQ-A20** Every attack finding names the criterion it concerns or none,
+  the rule of this standard that the criteria break, and a failing scenario;
+  the finding carries no drafted criterion, and an accepted finding is
+  answered by a criterion the author writes.
 
 ### Edge-case taxonomy
 
 The paired controls in ACQ-A1 through ACQ-A10 and ACQ-A14 through ACQ-A19 cover
-the inverse of each finding. ACQ-A12 covers the empty set; ACQ-A4 covers one
+the inverse of each finding. ACQ-A20's inverse is a finding lacking a ground or
+scenario, which the record refuses as malformed. ACQ-A12 covers the empty set; ACQ-A4 covers one
 obligation with several observations. Dependency failures are explicit in
 ACQ-A8 and in the attack rule that a missing lens report leaves a round open.
 
@@ -330,9 +342,9 @@ product state.
   points to that standard. This slice changes the deployed normative source.
 - **S2: Quality assessment** (ACQ-A1, ACQ-A2, ACQ-A3, ACQ-A4, ACQ-A5, ACQ-A6,
   ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14, ACQ-A15, ACQ-A16, ACQ-A17,
-  ACQ-A18, ACQ-A19). First settle the assessment and evaluation contract in its
-  child spec. Then integrate the standard into the existing attack mandates
-  and their evaluations. Implementation depends on S1.
+  ACQ-A18, ACQ-A19, ACQ-A20). First settle the assessment and evaluation
+  contract in its child spec. Then integrate the standard into the existing
+  attack mandates and their evaluations. Implementation depends on S1.
 - **S3: Brief fidelity and evidence** (ACQ-A12, ACQ-A13). Align the briefing
   skill and its generated-output evaluations with the standard. This slice
   depends on S1 and can land independently of S2.
@@ -348,7 +360,7 @@ criteria; their evidence remains open until implementation supplies it.
 - feat: AC quality standard adoption — AC: ACQ-A11
 - feat: AC quality assessment and evaluation contract — AC: ACQ-A1, ACQ-A2,
   ACQ-A3, ACQ-A4, ACQ-A5, ACQ-A6, ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14,
-  ACQ-A15, ACQ-A16, ACQ-A17, ACQ-A18, ACQ-A19
+  ACQ-A15, ACQ-A16, ACQ-A17, ACQ-A18, ACQ-A19, ACQ-A20
 - feat: AC brief fidelity and evidence mapping — AC: ACQ-A12, ACQ-A13
 
 ## Out of scope
@@ -383,3 +395,4 @@ remains open until that work supplies the agreed verification results.
 - ACQ-A17 | open
 - ACQ-A18 | open
 - ACQ-A19 | open
+- ACQ-A20 | open

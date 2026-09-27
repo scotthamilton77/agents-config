@@ -39,9 +39,10 @@ agent's, what is off-limits, and what to do at the boundary (stop and report, no
 Name the verification gate and how to read it: run it standalone and report its exit
 status, never inferred from partial output.
 
-**4. Acceptance criteria.** The checks that make "done" mechanical: tests that pass (and
-failed first, for a fix), gates that exit zero, artifacts that exist. Criteria are
-*conditions*, not steps — "a test reproduces the mangling and passes after the fix," not
+**4. Acceptance criteria.** What must be observably true when the work is done, each with
+the check that decides it: a test that passes (and failed first, for a fix), a gate that
+exits zero. Hold them to the `acceptance-criteria` standard: an artifact existing proves a
+behaviour only when the check observes that behaviour. Criteria are *conditions*, not steps — "a test reproduces the mangling and passes after the fix," not
 "step 4: add a test." An agent given steps performs them; an agent given criteria
 verifies them.
 

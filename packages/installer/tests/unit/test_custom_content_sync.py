@@ -14,6 +14,7 @@ so a test controls the dest root via ``home``.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,7 @@ from installer.core.custom_content import HEADING, CustomContentConflictError
 from installer.core.io_port import IOPort, ScriptedIO
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.run import install_pipeline
-from installer.core.sync import sync_plan
+from installer.core.sync import InstructionFileOverrunError, sync_plan
 
 _FIXED_TS = "20260613-120000"
 
@@ -250,3 +251,50 @@ def test_a_file_without_the_heading_is_installed_exactly_as_before(tmp_path: Pat
     )
 
     assert (home / "notes.md").read_bytes() == b"new\n"
+
+
+@pytest.mark.parametrize(("size", "refused"), [(24_000, False), (24_001, True)])
+def test_a_gemini_file_the_user_s_tail_carries_past_the_byte_limit_is_refused(
+    tmp_path: Path, size: int, refused: bool
+) -> None:
+    """
+    Given a Gemini instruction file whose managed part is small but whose user
+    tail below the heading brings the file to ``size`` bytes
+    When the install pipeline runs
+    Then a file over the 24,000-byte limit refuses the run before any write,
+    because the runtime truncates the file as it lands on disk, tail included.
+    """
+    home = tmp_path / "home"
+    dest = home / "GEMINI.md"
+    head = _MANAGED + _stamped(_MANAGED)
+    dest.parent.mkdir(parents=True)
+    dest.write_text(head + "x" * (size - len(head)), encoding="utf-8")
+    before = dest.read_bytes()
+    item = _plan(Tool.GEMINI).items[_INSTRUCTION]
+    plan = StagingPlan(
+        items={Path("GEMINI.md"): replace(item, dest_relpath=Path("GEMINI.md"))},
+        tool=Tool.GEMINI,
+    )
+    io = ScriptedIO()
+
+    if refused:
+        with pytest.raises(InstructionFileOverrunError):
+            install_pipeline(
+                [_IdentityAdapter(name="gemini")],
+                plans={Tool.GEMINI: plan},
+                home=home,
+                io=io,
+                auto_yes=True,
+            )
+        assert "24000-byte limit" in "".join(
+            entry.message for entry in io.transcript if entry.channel == "err"
+        )
+    else:
+        install_pipeline(
+            [_IdentityAdapter(name="gemini")],
+            plans={Tool.GEMINI: plan},
+            home=home,
+            io=io,
+            auto_yes=True,
+        )
+    assert dest.read_bytes() == before

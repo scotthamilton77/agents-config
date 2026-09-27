@@ -37,8 +37,12 @@ The cap follows the artifact: one skill carries one ceiling on every target,
 because the declaration prices the shape its author committed to. The catalog
 charge follows the target: the tools differ on whether a user-invoked
 declaration reaches their loader, so one skill is charged on a tool that
-publishes its description and free on a tool that hides it. Where a tool's skill
-loading is not modelled at all, it contributes to neither number.
+publishes its description and free on a tool that hides it.
+
+One cap is a vendor's rather than this project's. A runtime that truncates its
+instruction file past a fixed size (``INSTRUCTION_FILE_BYTE_LIMITS``) has that
+size enforced here, in bytes. The truncated tail is lost silently at runtime, so
+failing the deploy is the only place the loss can be reported.
 
 And one measurement with no ceiling: a skill's **reference payload**, the files
 that deploy beside its entry (``measure_skill_payload``). Reported, never
@@ -77,6 +81,18 @@ ALWAYS_ON_TOKEN_CAP = 10_000
 USER_CORE_TOKEN_CAP = 800
 SKILL_BODY_TOKEN_CAP = 2_000
 USER_INVOKED_SKILL_BODY_TOKEN_CAP = 5_000
+
+#: Per-file byte limits a tool's runtime imposes on its instruction file, keyed
+#: by ``Tool.value``. The Gemini target is loaded by Antigravity CLI, which caps
+#: each rule file at 24,000 bytes after expanding its includes and truncates on a
+#: line boundary past that. The installer expands its own includes before
+#: staging, so the staged bytes are already the expanded file.
+#:
+#: The core cap sits well below this limit today, and the check stays separate
+#: anyway. The core cap is this project's policy and moves when the policy does.
+#: The vendor limit is a fact about the runtime that no policy change relaxes. A
+#: tool with no entry has no per-file limit that this project enforces.
+INSTRUCTION_FILE_BYTE_LIMITS: dict[str, int] = {"gemini": 24_000}
 
 #: Payload suffixes an agent reads into its context as prose. Everything else a
 #: skill ships is executed or indexed, and is reported apart at no cost.
@@ -240,6 +256,24 @@ def user_core_violations(*, tool: str, instruction: bytes | None) -> list[str]:
             f"{tool}: always-on core is {tokens} tokens, over the {USER_CORE_TOKEN_CAP}-token cap"
         ]
     return []
+
+
+def instruction_file_violations(*, tool: str, instruction: bytes | None) -> list[str]:
+    """Violation messages if a tool's deployed instruction file exceeds the byte
+    limit its runtime truncates at. Returns at most one message.
+
+    The admission gate passes the installer-managed bytes, because it runs before
+    any home is read. The install passes the file again with the user's own text
+    below the custom-content heading merged in, so that text cannot carry the file
+    on disk past the limit either.
+    """
+    limit = INSTRUCTION_FILE_BYTE_LIMITS.get(tool)
+    if limit is None or instruction is None or len(instruction) <= limit:
+        return []
+    return [
+        f"{tool}: instruction file is {len(instruction)} bytes, over the {limit}-byte "
+        "limit its runtime truncates at"
+    ]
 
 
 def measure_skill_payload(*, label: str, files: Mapping[Path, bytes]) -> SkillPayloadMeasure:

@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from installer.core import namespaces
 from installer.core.model import FileKind, InstallOutcome, Outcome, StagingPlan
 from installer.core.ownership import PRUNE_NAMESPACES, entry_for, route_entry_for
 from installer.core.receipt import CliReceiptEntry, Receipt, ReceiptEntry, dir_content_digest
@@ -37,7 +38,7 @@ def entries_from_outcomes(
     for o in outcomes:
         if o.outcome is Outcome.DECLINED:
             continue
-        rel = o.dest.relative_to(dest_root)
+        rel = namespaces.staged_relpath(tool, o.dest.relative_to(dest_root))
         if not rel.parts or rel.parts[0] not in PRUNE_NAMESPACES:
             continue
         if rel.name == FileKind.SETTINGS_JSON.value:

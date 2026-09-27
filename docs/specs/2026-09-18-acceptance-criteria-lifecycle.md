@@ -120,9 +120,9 @@ spec owns the marker's encoding.
 
 The verb refuses without writing a marker if the record is unreadable or
 unparseable, is not the canonical record beside the item's document, has an
-undispositioned proposal, names inconsistent accepted revisions, or does not
+undispositioned objection, names inconsistent accepted revisions, or does not
 close at the document's current digest. A tracker-born file must also equal
-a fresh rendering. With no accepted proposals, the closing revision is the
+a fresh rendering. With no accepted objections, the closing revision is the
 attacked revision. Repeating or concurrently requesting the same attestation
 leaves one marker.
 
@@ -134,7 +134,7 @@ rendering rather than trusting the committed snapshot. A malformed marker
 does not count; an unreadable marker source causes a named refusal.
 
 This attestation records an account of a review. It cannot prove that a model
-performed the review or that accepted proposals were implemented honestly.
+performed the review or that accepted objections were implemented honestly.
 Hand-authored marker notes and deletion of records after attestation remain
 outside this trust boundary. The branch diff and review account expose them;
 this design does not introduce tamper-proof evidence.
@@ -314,7 +314,7 @@ leave significant product decisions to implementation.
 | Criteria | Inverse and boundary cases | Dependency failure | Repetition and concurrency |
 | --- | --- | --- | --- |
 | LIFE-A1 to LIFE-A5, LIFE-A23 | Empty entries, comma-separated citations, mixed fields, duplicate and generated IDs, description headings | Missing or unreadable spec | Equal input renders equally; later edits are new input |
-| LIFE-A6 to LIFE-A10 | Empty proposal list, rejected-only round, malformed marker, unchanged content after rename | Unreadable record, document, or markers | Same attestation is idempotent; content amendments invalidate by the state each operation reads |
+| LIFE-A6 to LIFE-A10 | Empty objection list, rejected-only round, malformed marker, unchanged content after rename | Unreadable record, document, or markers | Same attestation is idempotent; content amendments invalidate by the state each operation reads |
 | LIFE-A11 to LIFE-A15 | Attested and unattested nouns, trivial leaves, structural roles, already-in-progress claim | Rendering or marker lookup fails | In-progress claim stays a no-op; later boundaries recheck current state |
 | LIFE-A16 to LIFE-A17 | Empty input, matching old input after amendment, no-item target | Facade cannot return a rendering | Amendment between judgment and posting refuses the post |
 | LIFE-A18 to LIFE-A20 | Valid, invalid, absent, ignored and untracked records | Checker or enumeration unavailable | Repeated checks over the same tree have equal results; checks write nothing |
