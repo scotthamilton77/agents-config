@@ -2,7 +2,11 @@
 
 A target whose immediate parent is one of the prune-managed namespaces is
 copied to a sibling ``<namespace>-backup/`` dir under the grandparent; any
-other target gets an in-place ``<name>.backup-<ts>`` sibling. Handles both
+other target gets an in-place ``<name>.backup-<ts>`` sibling. A target inside a
+relocated namespace directory (``namespaces.RELOCATED``) backs up to
+``<namespace>-backup/`` at the tool root that directory hangs from, so the
+backup lands neither where the tool discovers the namespace nor in a directory
+of the tool's own state that the relocated path passes through. Handles both
 files (``shutil.copy2``) and directories (``shutil.copytree``).
 
 The ``timestamp`` is interpolated raw into the backup path, so callers MUST
@@ -55,11 +59,23 @@ def valid_timestamp(timestamp: str) -> bool:
 def _backup_path_for(target: Path, timestamp: str) -> Path:
     """Resolve the backup destination for ``target`` (no I/O).
 
-    A target whose parent is a backup-routed namespace (``namespaces.BACKUP``)
-    routes to ``<grandparent>/<namespace>-backup/<name>.backup-<ts>``; any other
-    target gets an in-place ``<name>.backup-<ts>`` sibling.
+    A target whose parent is a relocated namespace directory routes to
+    ``<tool root>/<namespace>-backup/<name>.backup-<ts>``. A target whose parent
+    is a backup-routed namespace (``namespaces.BACKUP``) routes to
+    ``<grandparent>/<namespace>-backup/<name>.backup-<ts>``; any other target
+    gets an in-place ``<name>.backup-<ts>`` sibling.
+
+    The relocated match is by the parent's trailing path segments, just as the
+    backup-routed match is by the parent's name: the grandparent of a relocated
+    Gemini skill is ``~/.gemini/config``, which belongs to Antigravity, so the
+    grandparent rule alone would write the backup into it.
     """
     parent = target.parent
+    for (_tool, namespace), prefix in namespaces.RELOCATED.items():
+        depth = len(prefix.parts)
+        if parent.parts[-depth:] == prefix.parts:
+            backup_dir = parent.parents[depth - 1] / f"{namespace}-backup"
+            return backup_dir / f"{target.name}.backup-{timestamp}"
     if parent.name in namespaces.BACKUP:
         backup_dir = parent.parent / f"{parent.name}-backup"
         return backup_dir / f"{target.name}.backup-{timestamp}"

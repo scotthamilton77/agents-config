@@ -34,6 +34,7 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from installer.core import namespaces
 from installer.core.backup import back_up, new_timestamp, valid_timestamp
 from installer.core.consent import require_consent
 from installer.core.custom_content import (
@@ -200,7 +201,7 @@ def custom_content_conflicts(adapter: ToolAdapter, plan: StagingPlan, *, home: P
             continue
         if not has_custom_content_heading(item.content):
             continue
-        dest = dest_dir / item.dest_relpath
+        dest = dest_dir / namespaces.deployed_relpath(adapter.name, item.dest_relpath)
         if dest.is_file() and heading_conflicts(dest.read_bytes()):
             conflicts.append(dest)
     return conflicts
@@ -286,7 +287,7 @@ def sync_plan(
     for item in plan.items.values():
         if not is_safe_relpath(item.dest_relpath):
             raise ValueError(f"dest_relpath escapes the dest tree: {item.dest_relpath}")  # noqa: TRY003  # single call-site; subclass not justified
-        dest = dest_dir / item.dest_relpath
+        dest = dest_dir / namespaces.deployed_relpath(adapter.name, item.dest_relpath)
         content = item.content
         if content is None:
             _install_dir(
