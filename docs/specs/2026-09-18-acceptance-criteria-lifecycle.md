@@ -306,17 +306,17 @@ leave significant product decisions to implementation.
 - **LIFE-A19** The CI gate refuses to report success when its checker is
   unavailable or its tracked-record inventory cannot be enumerated.
 - **LIFE-A20** The CI gate ignores records outside the current tracked checkout
-  and succeeds when the resulting inventory is empty.
+  and succeeds when the resulting inventory is empty and its checker is
+  available.
 - **LIFE-A21** A consumer requiring a new facade verb refuses an insufficient
   or unestablished installed version before calling that verb and names the
   required version or version-read failure. A sufficient installed version
-  proceeds to call the verb.
+  proceeds to call the verb. The version check itself changes no item state.
 - **LIFE-A22** A tracker-born attack workflow renders the item to
   `.work/attacks/<item-id>.md`, attacks it, and commits that rendering with its
   record at `.work/attacks/<item-id>-ac-attack.json` only after the checker
   reports the record complete. It then attests, so the item's next gated
-  transition finds a current attestation. A second invocation with unchanged
-  files and current evidence reuses them without a new attack round.
+  transition finds a current attestation.
 - **LIFE-A23** A work item created by spec delivery stores its assigned IDs as
   citations, not as copied text.
 - **LIFE-A24** Claim and delivery never refuse nonempty, resolvable, currently
@@ -327,7 +327,8 @@ leave significant product decisions to implementation.
 - **LIFE-A27** Editing a cited spec entry changes the rendering of every item
   citing it, with no edit to those items.
 - **LIFE-A28** The workcli renderer and spec-lint parse the shared round-trip
-  fixture to the same entries.
+  fixture, which exercises every resolution rule in LIFE-D1, to the same
+  entries.
 - **LIFE-A29** An item with any full-text acceptance line is attacked as its
   rendering, even when other lines cite its spec. An item whose every nonblank
   line is a citation is attacked as its whole spec.
@@ -341,6 +342,15 @@ leave significant product decisions to implementation.
 - **LIFE-A33** Claim and delivery refusals name their cause: `work acceptance
   set` for empty criteria, the failing ID or path for unresolvable criteria,
   and the attack step for a missing attestation.
+- **LIFE-A34** A second invocation of the tracker-born attack workflow, with
+  unchanged files and current evidence, reuses them without a new attack round.
+- **LIFE-A35** Review emission for a target naming no work item keeps the
+  existing supplied-file path.
+- **LIFE-A36** Two runs of the CI gate over an unchanged checkout report the same
+  result, and neither run writes to the checkout.
+- **LIFE-A37** An attack or checker failure in the tracker-born workflow leaves
+  no committed rendering or record and no attestation, and the next invocation
+  runs the round again.
 
 ### What-if questions
 
@@ -349,10 +359,10 @@ leave significant product decisions to implementation.
 | LIFE-A1 to LIFE-A5, LIFE-A23, LIFE-A27, LIFE-A28 | Empty entries, comma-separated citations, mixed fields, duplicate and generated IDs, description headings | Missing or unreadable spec | Equal input renders equally; later edits are new input |
 | LIFE-A6 to LIFE-A10, LIFE-A31 | Empty objection list, rejected-only round, malformed marker, unchanged content after rename | Unreadable record, document, or markers | Same attestation is idempotent; content amendments invalidate by the state each operation reads |
 | LIFE-A11 to LIFE-A15, LIFE-A24 to LIFE-A26, LIFE-A33 | Attested and unattested nouns, trivial leaves, structural roles, already-in-progress claim | Rendering or marker lookup fails | In-progress claim stays a no-op; later boundaries recheck current state |
-| LIFE-A16, LIFE-A17, LIFE-A32 | Empty input, matching old input after amendment, no-item target | Facade cannot return a rendering | Amendment between judgment and posting refuses the post |
-| LIFE-A18 to LIFE-A20 | Valid, invalid, absent, ignored and untracked records | Checker or enumeration unavailable | Repeated checks over the same tree have equal results; checks write nothing |
+| LIFE-A16, LIFE-A17, LIFE-A32, LIFE-A35 | Empty input, matching old input after amendment, no-item target | Facade cannot return a rendering | Amendment between judgment and posting refuses the post |
+| LIFE-A18 to LIFE-A20, LIFE-A36 | Valid, invalid, absent, ignored and untracked records | Checker or enumeration unavailable | Repeated checks over the same tree have equal results; checks write nothing |
 | LIFE-A21 | Shipping version, earlier version and prerelease, later version | Missing or malformed version response | Version checks are reads and change no item state |
-| LIFE-A22, LIFE-A29, LIFE-A30 | Current files, stale rendering, open record | Attack or checker fails before attestation | Unchanged current files and marker are reused; competing changes require a fresh state check |
+| LIFE-A22, LIFE-A29, LIFE-A30, LIFE-A34, LIFE-A37 | Current files, stale rendering, open record | Attack or checker fails before attestation | Unchanged current files and marker are reused; competing changes require a fresh state check |
 
 ## Ordered slice list
 
@@ -362,15 +372,16 @@ leave significant product decisions to implementation.
 - **S2: Attestation and invalidation** (LIFE-A6, LIFE-A7, LIFE-A8, LIFE-A9,
   LIFE-A10, LIFE-A31). Specify and implement the facade's content binding after S1.
 - **S3: Attack workflow and compatibility** (LIFE-A21, LIFE-A22, LIFE-A29,
-  LIFE-A30). Specify the
+  LIFE-A30, LIFE-A34, LIFE-A37). Specify the
   version-check interface and tracker-born path after S2. Introduce the tracked
   directory and its doc-lint exemption together. Later consumers reuse the check.
 - **S4: Claim and delivery** (LIFE-A11, LIFE-A12, LIFE-A13, LIFE-A14, LIFE-A15,
   LIFE-A24, LIFE-A25, LIFE-A26, LIFE-A33).
   Enable the facade transitions after the attack path is available.
-- **S5: Repository record gate** (LIFE-A18, LIFE-A19, LIFE-A20). Add the CI gate
-  and required-record migration after S3. It can land independently of S4.
-- **S6: Review consumers** (LIFE-A16, LIFE-A17, LIFE-A32). Specify and implement emission
+- **S5: Repository record gate** (LIFE-A18, LIFE-A19, LIFE-A20, LIFE-A36). Add
+  the CI gate and required-record migration after S3. It can land independently
+  of S4.
+- **S6: Review consumers** (LIFE-A16, LIFE-A17, LIFE-A32, LIFE-A35). Specify and implement emission
   and posting against the rendered criteria and attestation after S3. Include
   the before-use amendment instruction in the briefing and review paths.
 
@@ -388,11 +399,13 @@ criteria or change their open evidence rows.
 - feat: AC lifecycle attestation and invalidation — AC: LIFE-A6, LIFE-A7,
   LIFE-A8, LIFE-A9, LIFE-A10, LIFE-A31
 - feat: AC lifecycle attack workflow and compatibility — AC: LIFE-A21, LIFE-A22,
-  LIFE-A29, LIFE-A30
+  LIFE-A29, LIFE-A30, LIFE-A34, LIFE-A37
 - feat: AC lifecycle claim and delivery gates — AC: LIFE-A11, LIFE-A12,
   LIFE-A13, LIFE-A14, LIFE-A15, LIFE-A24, LIFE-A25, LIFE-A26, LIFE-A33
-- feat: AC lifecycle repository record gate — AC: LIFE-A18, LIFE-A19, LIFE-A20
-- feat: AC lifecycle review consumers — AC: LIFE-A16, LIFE-A17, LIFE-A32
+- feat: AC lifecycle repository record gate — AC: LIFE-A18, LIFE-A19, LIFE-A20,
+  LIFE-A36
+- feat: AC lifecycle review consumers — AC: LIFE-A16, LIFE-A17, LIFE-A32,
+  LIFE-A35
 
 ## Out of scope
 
@@ -443,3 +456,7 @@ pending human acceptance check.
 - LIFE-A31 | open
 - LIFE-A32 | open
 - LIFE-A33 | open
+- LIFE-A34 | open
+- LIFE-A35 | open
+- LIFE-A36 | open
+- LIFE-A37 | open

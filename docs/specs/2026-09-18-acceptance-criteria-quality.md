@@ -298,17 +298,17 @@ this documentation change does not claim to have run them.
   what-if answers, the review identifies the uncovered outcome; a justified
   inapplicable dimension requires no invented criterion.
 - **ACQ-A9** Given a commitment without a feasible verification contract,
-  the review identifies what is missing; a defined human measurement or
-  judgment check is accepted, while naming a human observer alone is not.
+  the review identifies what is missing; a defined human measurement, or a
+  defined judgment check on a property automation cannot establish, is
+  accepted, while naming a human observer alone is not.
 - **ACQ-A10** Given a criterion that duplicates existing coverage without
   excluding another in-scope failure, the review objects on restraint and
   names the existing coverage; a criterion excluding a distinct in-scope
   failure receives no duplicate finding.
 - **ACQ-A11** In staging for every supported tool, the criteria definition and
   what-if questions have one deployed source, and each applicable authoring or review
-  skill's criteria step directs its reader to that source. Every rule in that
-  source carries the ID its decision above lists, and the glossary points to it.
-  Authoring and completion instructions contain no contradictory private
+  skill's criteria step directs its reader to that source, as does the
+  glossary. Authoring and completion instructions contain no contradictory private
   quality rule.
 - **ACQ-A12** Given an assigned criterion set, the generated brief preserves
   exactly those criterion IDs and texts; zero assigned criteria produces a
@@ -343,26 +343,41 @@ this documentation change does not claim to have run them.
   a proposed capability outside the agreed scope requires authorization.
 - **ACQ-A20** Every attack finding names the criterion it concerns or none,
   the rule of this standard that the criteria break, and a failing scenario;
-  the finding carries no drafted criterion.
+  the finding carries no drafted criterion. The record refuses a finding whose
+  ground cites a rule its lens does not enforce.
 - **ACQ-A21** Given a spec-authoring item whose criteria assess the spec's
   content, the review raises no finding demanding criteria for the
   implementation the spec describes.
-- **ACQ-A22** The attack runs the four lenses of ACQ-D6. Each lens's prompt
-  carries exactly the standard rules that lens names, and a lens naming a rule
-  the standard does not hold is refused before any prompt is emitted.
+- **ACQ-A22** The attack runs exactly the four lenses of ACQ-D6, no more and no
+  fewer.
 - **ACQ-A23** Each lens's prompt consists of that lens's own instructions and
-  the shared template's four contracts: the fenced document, the rules the lens
-  enforces, the output shape, and the explicit empty result. A lens that finds
-  nothing returns a valid empty report.
+  all four of the shared template's contracts, and nothing else: the fenced
+  document, the rules the lens enforces, the output shape, and the explicit
+  empty result.
 - **ACQ-A24** For every rule ID in the standard, the quality assessment's
-  evaluation set holds at least one defective document the review must object
-  to on that rule, and a corrected control it must pass without that objection.
+  evaluation set holds at least one defective document and a corrected control.
+  The review objects to the defective document on that rule, and passes the
+  control without that objection. The cases include each of the five what-if
+  questions, a decision document as well as a research answer, a parent closed
+  before its verification evidence, an unsupported implementation prescription,
+  a stochastic evaluation whose threshold is chosen after its results, and an
+  incomplete observation window.
+- **ACQ-A25** Every rule in the deployed standard carries the ID its decision
+  above lists.
+- **ACQ-A26** Each lens's prompt carries exactly the standard rules that lens
+  names, and a lens naming a rule the standard does not hold is refused before
+  any prompt is emitted.
+- **ACQ-A27** Given a control document with no defect within a lens's rules,
+  that lens returns a valid empty report.
+- **ACQ-A28** The record check refuses an obligation-reduction report whose
+  inventory is missing or malformed, and one whose undischarged obligation part
+  has no objection naming it.
 
 ### What-if questions
 
 Every review case in this set shares three answers, so they are stated once
 here and not repeated per row. These cases are ACQ-A1 to ACQ-A10, ACQ-A14 to
-ACQ-A19, and ACQ-A21.
+ACQ-A19, ACQ-A21 and ACQ-A27.
 
 - **Something missing:** a lens that returns no report leaves the round open,
   under the existing attack contract.
@@ -387,7 +402,7 @@ does not apply to it.
 | ACQ-A8 | A justified inapplicable question needs no criterion | Shared answers |
 | ACQ-A9 | Defined human checks are accepted | Shared answers |
 | ACQ-A10 | A criterion excluding a distinct failure gets no finding | Shared answers |
-| ACQ-A11 | A skill carrying a private copy, a rule without its ID, or a glossary without the pointer fails staging | Empty: does not apply. Missing: staging without the standard leaves the citing skills pointing at no source, which fails this criterion's single-source check. Twice and nothing changed: rerunning staging leaves one source, which is the installer's own guarantee. |
+| ACQ-A11 | A skill carrying a private copy, or a glossary without the pointer, fails staging | Empty: does not apply. Missing: staging without the standard leaves the citing skills pointing at no source, which fails this criterion's single-source check. Twice and nothing changed: rerunning staging leaves one source, which is the installer's own guarantee. |
 | ACQ-A12 | A brief that rewords, drops or invents a criterion fails | Empty: zero criteria refuses. Missing: an unretrievable criterion refuses by name. Twice: each generation is checked separately. Nothing changed: does not apply, because a brief changes nothing. |
 | ACQ-A13 | A criterion without a feasible planned check is reported unready | Empty: zero criteria refuses under ACQ-A12. Missing: with no planned checks, every criterion is unready. Twice and nothing changed: as ACQ-A12. |
 | ACQ-A14 | The control consistent with the evidence | Shared answers |
@@ -396,21 +411,26 @@ does not apply to it.
 | ACQ-A17 | Human checks on properties automation cannot establish get no finding | Shared answers |
 | ACQ-A18 | An assessed answer, or a permitted inconclusive result, gets no finding | Shared answers |
 | ACQ-A19 | A capability outside the agreed scope requires authorization | Shared answers |
-| ACQ-A20 | The record refuses a finding lacking a ground or scenario as malformed | Empty: a lens finding nothing reports empty, under ACQ-A23. Missing, twice, nothing changed: the existing attack contract. |
+| ACQ-A20 | The record refuses a finding lacking a ground or scenario, or citing a rule its lens does not enforce | Empty: a lens finding nothing reports empty, under ACQ-A23. Missing, twice, nothing changed: the existing attack contract. |
 | ACQ-A21 | A spec whose criteria only check that it exists receives the document-deliverable finding under ACQ-A18's rule | Shared answers |
-| ACQ-A22 | A missing lens, or a prompt carrying another lens's rule, fails | Missing: a rule the standard lacks is refused at emission. Twice and nothing changed: emission is deterministic. Empty: does not apply. |
-| ACQ-A23 | A prompt carrying any passage outside the four contracts fails | Empty: the empty report is itself the case. Twice and nothing changed: emission is deterministic. Missing: does not apply. |
-| ACQ-A24 | A rule with no defective case fails | Empty: a rule with only a control fails. Missing: a rule added to the standard without cases fails. Twice and nothing changed: does not apply, because this checks an inventory. |
+| ACQ-A22 | A missing lens fails | At a limit: a fifth lens fails. Twice and nothing changed: emission is deterministic. Missing: a missing lens is the failure case. |
+| ACQ-A23 | A prompt carrying a passage outside the four contracts fails | Missing: a prompt lacking one of the four contracts fails. Twice and nothing changed: emission is deterministic. Empty: does not apply. |
+| ACQ-A24 | A rule with no defective case, or a defective case the review misses, fails | Empty: a rule with only a control fails. Missing: a rule added to the standard without cases fails. Twice: the S2 scoring contract. Nothing changed: does not apply, because evaluation changes nothing. |
+| ACQ-A25 | A rule without its ID fails | Empty: does not apply. Missing: a decision listing an ID the standard lacks fails. Twice and nothing changed: staging reads the source unchanged. |
+| ACQ-A26 | A prompt carrying another lens's rule fails | Missing: a rule the standard lacks is refused at emission. Twice and nothing changed: emission is deterministic. Empty: a lens naming no rule is refused. |
+| ACQ-A27 | A lens objecting to a defect-free control fails | Shared answers |
+| ACQ-A28 | A report whose inventory is missing, malformed, or has an undischarged part without an objection is refused | Empty: an inventory with no undischarged part needs no objection. Twice and nothing changed: the check is a read. Missing: a missing inventory is the failure case. |
 
 ## Ordered slice list
 
-- **S1: Standard adoption** (ACQ-A11). Admit the shared standard, replace
+- **S1: Standard adoption** (ACQ-A11, ACQ-A25). Admit the shared standard, replace
   private definitions with citations, and reconcile authoring and completion
   instructions with preservation and planned human acceptance. The glossary
   points to that standard. This slice changes the deployed normative source.
 - **S2: Quality assessment** (ACQ-A1, ACQ-A2, ACQ-A3, ACQ-A4, ACQ-A5, ACQ-A6,
   ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14, ACQ-A15, ACQ-A16, ACQ-A17,
-  ACQ-A18, ACQ-A19, ACQ-A20, ACQ-A21, ACQ-A22, ACQ-A23, ACQ-A24). First
+  ACQ-A18, ACQ-A19, ACQ-A20, ACQ-A21, ACQ-A22, ACQ-A23, ACQ-A24, ACQ-A26,
+  ACQ-A27, ACQ-A28). First
   settle the assessment and evaluation contract in its child spec. Then
   integrate the standard into the existing attack mandates and their
   evaluations. Each lens owns its prompt, and the
@@ -431,11 +451,11 @@ placeholder. Its child spec carries the implementation manifest and the
 dependencies above. Completing a design child does not discharge the parent
 criteria; their evidence remains open until implementation supplies it.
 
-- feat: AC quality standard adoption — AC: ACQ-A11
+- feat: AC quality standard adoption — AC: ACQ-A11, ACQ-A25
 - feat: AC quality assessment and evaluation contract — AC: ACQ-A1, ACQ-A2,
   ACQ-A3, ACQ-A4, ACQ-A5, ACQ-A6, ACQ-A7, ACQ-A8, ACQ-A9, ACQ-A10, ACQ-A14,
   ACQ-A15, ACQ-A16, ACQ-A17, ACQ-A18, ACQ-A19, ACQ-A20, ACQ-A21, ACQ-A22,
-  ACQ-A23, ACQ-A24
+  ACQ-A23, ACQ-A24, ACQ-A26, ACQ-A27, ACQ-A28
 - feat: AC brief fidelity and evidence mapping — AC: ACQ-A12, ACQ-A13
 
 ## Out of scope
@@ -475,3 +495,7 @@ remains open until that work supplies the agreed verification results.
 - ACQ-A22 | open
 - ACQ-A23 | open
 - ACQ-A24 | open
+- ACQ-A25 | open
+- ACQ-A26 | open
+- ACQ-A27 | open
+- ACQ-A28 | open

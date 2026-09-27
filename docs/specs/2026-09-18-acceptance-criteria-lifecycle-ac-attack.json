@@ -1,7 +1,7 @@
 {
  "schema_version": "1",
  "spec_path": "2026-09-18-acceptance-criteria-lifecycle.md",
- "spec_revision": "sha256:780ad4142aacdf4947c029f97720d955a8939ec0882cd6f1655d4c65b2bf4910",
+ "spec_revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
  "lenses": [
   {
    "lens": "behavioural-outcome",
@@ -15,43 +15,74 @@
      {
       "id": "O1",
       "kind": "result",
-      "statement": "Rendering provides the single authoritative contract and separates contextual description from criteria.",
-      "source": "“The canonical contract is the field's selection after resolution. There is no separate editable review copy.” The renderer emits the description under its own heading and resolved criteria under an acceptance-criteria heading.",
+      "statement": "The facade produces the canonical, deterministic rendering selected by the work item's acceptance field and resolves citations according to the stated grammar.",
+      "source": "LIFE-D1: \"The field selects; the renderer resolves,\" including the rendering, resolution, generated-ID, refusal, repository-root, and grammar-compatibility rules.",
       "parts": [
        {
         "id": "O1.1",
-        "statement": "The acceptance field and named spec determine the authoritative contract, and review consumes that fresh rendering rather than an editable copy.",
+        "statement": "The acceptance field's resolved selection is canonical, with no separate editable review copy, and cited spec edits flow through without copying text.",
         "discharged_by": [
-         "LIFE-A1",
-         "LIFE-A2",
-         "LIFE-A16",
-         "LIFE-A23"
+         "LIFE-A23",
+         "LIFE-A27"
         ]
        },
        {
         "id": "O1.2",
-        "statement": "The Markdown rendering includes the description under its own heading and the criteria under an acceptance-criteria heading.",
-        "discharged_by": []
+        "statement": "Citations resolve to complete entries in field order under the stated citation syntax, independently of working directory and for pre-existing items.",
+        "discharged_by": [
+         "LIFE-A1"
+        ]
        },
        {
         "id": "O1.3",
-        "statement": "Description text remains context and cannot be recovered as criteria.",
+        "statement": "Text and mixed fields receive stable, unique IDs in the consumer grammar, while explicit IDs survive unchanged.",
+        "discharged_by": [
+         "LIFE-A2"
+        ]
+       },
+       {
+        "id": "O1.4",
+        "statement": "Each generated ID is derived from the item ID and the source line's nonblank position.",
+        "discharged_by": []
+       },
+       {
+        "id": "O1.5",
+        "statement": "Invalid references, spec failures, duplicate IDs, and collisions are refused with the offending ID or path and cause.",
+        "discharged_by": [
+         "LIFE-A3"
+        ]
+       },
+       {
+        "id": "O1.6",
+        "statement": "The description is separately headed and cannot be parsed as criteria by existing consumers.",
         "discharged_by": [
          "LIFE-A4"
         ]
        },
        {
-        "id": "O1.4",
+        "id": "O1.7",
         "statement": "Only the description, acceptance field, and named spec affect rendered bytes.",
         "discharged_by": [
          "LIFE-A5"
         ]
        },
        {
-        "id": "O1.5",
-        "statement": "Changing the working directory does not change resolution.",
+        "id": "O1.8",
+        "statement": "Empty cited entries contribute no criterion.",
         "discharged_by": [
          "LIFE-A1"
+        ]
+       },
+       {
+        "id": "O1.9",
+        "statement": "The workcli and spec-lint grammars remain explicitly marked counterparts.",
+        "discharged_by": []
+       },
+       {
+        "id": "O1.10",
+        "statement": "Both grammars parse the shared round-trip fixture to the same entries.",
+        "discharged_by": [
+         "LIFE-A28"
         ]
        }
       ]
@@ -59,134 +90,97 @@
      {
       "id": "O2",
       "kind": "result",
-      "statement": "Reference resolution and ID generation follow the defined grammar and compatibility rules.",
-      "source": "LIFE-D1's resolution rules, generated-ID rules, refusal rules, and marked-counterpart compatibility obligation.",
+      "statement": "Each item is classified into the correct attack-document lifecycle, with canonical storage and reusable closed evidence.",
+      "source": "LIFE-D2: \"One document is attacked for each item,\" including spec-born and tracker-born classification, storage paths, workflow, reuse, and generated-directory rules.",
       "parts": [
        {
         "id": "O2.1",
-        "statement": "Citations resolve in field order, support comma-separated and separate-line forms, preserve complete entries and continuations, resolve once, omit empty cited entries, and work for preexisting items.",
+        "statement": "Citation-only items attack the whole named spec, while any full-text line makes the item tracker-born and attacks its rendering.",
         "discharged_by": [
-         "LIFE-A1"
+         "LIFE-A29"
         ]
        },
        {
         "id": "O2.2",
-        "statement": "Whitespace surrounding citation IDs is ignored.",
+        "statement": "The quality review of a spec-born item judges its criterion selection, work-item coverage, and slice assignment.",
         "discharged_by": []
        },
        {
         "id": "O2.3",
-        "statement": "Without a named spec every line is text, and mixed text and citations render correctly.",
-        "discharged_by": [
-         "LIFE-A2"
-        ]
-       },
-       {
-        "id": "O2.4",
-        "statement": "Output uses the existing criteria bullet grammar.",
-        "discharged_by": [
-         "LIFE-A2"
-        ]
-       },
-       {
-        "id": "O2.5",
-        "statement": "Explicit IDs survive rendering unchanged.",
-        "discharged_by": []
-       },
-       {
-        "id": "O2.6",
-        "statement": "Generated IDs are stable, unique, and valid under the consumer grammar.",
-        "discharged_by": [
-         "LIFE-A2"
-        ]
-       },
-       {
-        "id": "O2.7",
-        "statement": "Generated IDs are deterministically derived from the item ID and the text criterion's nonblank position.",
-        "discharged_by": []
-       },
-       {
-        "id": "O2.8",
-        "statement": "Invalid references, duplicate or colliding IDs, and missing, unreadable, or unparseable specs are refused with the offending ID or path and cause.",
-        "discharged_by": [
-         "LIFE-A3"
-        ]
-       },
-       {
-        "id": "O2.9",
-        "statement": "Editing cited spec text updates the item's rendering without copying text into the item.",
-        "discharged_by": [
-         "LIFE-A23"
-        ]
-       },
-       {
-        "id": "O2.10",
-        "statement": "Workcli and spec-lint retain marked counterpart grammars with a common round-trip fixture.",
-        "discharged_by": []
-       }
-      ]
-     },
-     {
-      "id": "O3",
-      "kind": "result",
-      "statement": "Each item is classified correctly and uses the required attackable document, record placement, and attack workflow.",
-      "source": "LIFE-D2 defines spec-born and tracker-born items, their attackable documents and paths, reuse of the existing attack process, the generated directory, and the tracker-born workflow.",
-      "parts": [
-       {
-        "id": "O3.1",
-        "statement": "A pure-citation item is spec-born, attacks the whole spec, and becomes stale when any attacked spec content changes.",
-        "discharged_by": [
-         "LIFE-A9",
-         "LIFE-A23"
-        ]
-       },
-       {
-        "id": "O3.2",
-        "statement": "Any item containing a full-text line, including a mixed item, is tracker-born and attacks its rendering.",
-        "discharged_by": []
-       },
-       {
-        "id": "O3.3",
-        "statement": "The spec quality review judges a spec-born item's selection and slice assignment.",
-        "discharged_by": []
-       },
-       {
-        "id": "O3.4",
-        "statement": "An empty selection remains unclaimable even when its spec has been attacked.",
+        "statement": "An empty spec-born selection remains unclaimable.",
         "discharged_by": [
          "LIFE-A11"
         ]
        },
        {
-        "id": "O3.5",
-        "statement": "Tracker-born documents and records use the specified `.work/attacks/` paths, spec-born records use the existing naming convention, and both reuse the existing attack process.",
+        "id": "O2.4",
+        "statement": "The tracker-born workflow renders to the canonical path, attacks, checks, commits both files, attests, and reuses unchanged valid evidence.",
+        "discharged_by": [
+         "LIFE-A22"
+        ]
+       },
+       {
+        "id": "O2.5",
+        "statement": "The generated attack directory exists in fresh checkouts and is exempt from authored-prose doc-lint.",
+        "discharged_by": [
+         "LIFE-A30"
+        ]
+       },
+       {
+        "id": "O2.6",
+        "statement": "A manually edited tracker-born snapshot cannot replace a fresh rendering or count as an amendment.",
+        "discharged_by": [
+         "LIFE-A7",
+         "LIFE-A8"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "O3",
+      "kind": "guarantee",
+      "statement": "Attestation binds an item to one closed attack record for the current attacked bytes and fails safely for invalid evidence.",
+      "source": "LIFE-D3: \"Attestation binds to the attacked content,\" including marker contents, refusal conditions, idempotency, fresh rendering, and malformed-marker behavior.",
+      "parts": [
+       {
+        "id": "O3.1",
+        "statement": "The marker contains a parseable timestamp.",
         "discharged_by": []
+       },
+       {
+        "id": "O3.2",
+        "statement": "The marker binds the attacked byte digest, excludes paths from that digest, and permits a coordinated content-preserving rename.",
+        "discharged_by": [
+         "LIFE-A6",
+         "LIFE-A10"
+        ]
+       },
+       {
+        "id": "O3.3",
+        "statement": "Every stated binding or closure violation is refused without writing a marker.",
+        "discharged_by": [
+         "LIFE-A7"
+        ]
+       },
+       {
+        "id": "O3.4",
+        "statement": "Repeated or concurrent requests for the same valid attestation leave one marker.",
+        "discharged_by": [
+         "LIFE-A6"
+        ]
+       },
+       {
+        "id": "O3.5",
+        "statement": "The attack path attests only after the checker succeeds.",
+        "discharged_by": [
+         "LIFE-A22"
+        ]
        },
        {
         "id": "O3.6",
-        "statement": "The tracker-born workflow commits current rendering and record files before attestation and reuses current evidence without a redundant model round.",
+        "statement": "Consumers ignore malformed markers and name unreadable marker sources.",
         "discharged_by": [
-         "LIFE-A22"
-        ]
-       },
-       {
-        "id": "O3.7",
-        "statement": "The generated directory is tracked, has a tracked placeholder, and is exempt from authored-prose doc-lint.",
-        "discharged_by": []
-       },
-       {
-        "id": "O3.8",
-        "statement": "Consumers compare tracker-born evidence with a fresh rendering, so editing the generated snapshot does not amend the contract.",
-        "discharged_by": [
-         "LIFE-A8",
-         "LIFE-A22"
-        ]
-       },
-       {
-        "id": "O3.9",
-        "statement": "The attack workflow invokes attestation only after the existing checker succeeds.",
-        "discharged_by": [
-         "LIFE-A22"
+         "LIFE-A31"
         ]
        }
       ]
@@ -194,378 +188,270 @@
      {
       "id": "O4",
       "kind": "guarantee",
-      "statement": "Attestation binds one item marker to the closed attack record for the current document bytes.",
-      "source": "LIFE-D3 defines marker contents, refusal conditions, idempotence, checker responsibilities, and consuming-boundary freshness.",
+      "statement": "Amendments invalidate old evidence before reuse and require renewed attack and attestation for the changed contract.",
+      "source": "LIFE-D4: \"Amendments invalidate evidence before reuse,\" including byte-change rules, the amendment trail, full re-attack, concurrency, and briefing instructions.",
       "parts": [
        {
         "id": "O4.1",
-        "statement": "The attestation marker contains a parseable timestamp.",
-        "discharged_by": []
-       },
-       {
-        "id": "O4.2",
-        "statement": "The marker binds the attacked document's byte digest, excludes paths from that digest, and survives a coordinated content-preserving rename.",
+        "statement": "Tracker-born rendering changes, spec byte changes, and spec-born description-only changes have the stated invalidation effects.",
         "discharged_by": [
-         "LIFE-A6",
-         "LIFE-A10"
+         "LIFE-A8",
+         "LIFE-A9"
         ]
        },
        {
+        "id": "O4.2",
+        "statement": "A field amendment uses the existing `work acceptance set --why` trail.",
+        "discharged_by": []
+       },
+       {
         "id": "O4.3",
-        "statement": "Every binding and closure violation listed in LIFE-D3 is refused without writing a marker.",
+        "statement": "Any attacked-document byte change requires a full new round and renewed attestation before use.",
         "discharged_by": [
-         "LIFE-A7"
+         "LIFE-A8",
+         "LIFE-A9",
+         "LIFE-A22"
         ]
        },
        {
         "id": "O4.4",
-        "statement": "Repeated or concurrent requests for the same attestation leave one marker.",
+        "statement": "Dispatch briefs and post-halt instructions cite the quality standard and before-use re-attack rule.",
         "discharged_by": [
-         "LIFE-A6"
+         "LIFE-A32"
         ]
        },
        {
         "id": "O4.5",
-        "statement": "The facade accepts a valid checker-closed record without imposing separate semantic or lens judgments.",
-        "discharged_by": [
-         "LIFE-A6"
-        ]
-       },
-       {
-        "id": "O4.6",
-        "statement": "Consuming boundaries compute the current attacked revision, using a fresh rendering for tracker-born items.",
+        "statement": "A later concurrent amendment is detected by the next consuming boundary.",
         "discharged_by": [
          "LIFE-A8",
-         "LIFE-A9",
-         "LIFE-A12",
          "LIFE-A14",
          "LIFE-A16",
          "LIFE-A17"
         ]
-       },
-       {
-        "id": "O4.7",
-        "statement": "Malformed markers do not count, and an unreadable marker source causes a named refusal.",
-        "discharged_by": []
        }
       ]
      },
      {
       "id": "O5",
-      "kind": "guarantee",
-      "statement": "Amendments invalidate old evidence before the amended contract is reused.",
-      "source": "LIFE-D4 defines invalidating and non-invalidating changes, the amendment trail, required rerender and attack actions, briefing use, and concurrency behavior.",
+      "kind": "failure",
+      "statement": "Claim, delivery, review, and posting enforce the noun, criteria, triviality, attestation, role, and diagnostic rules in LIFE-D5.",
+      "source": "LIFE-D5: the transition table and the paragraphs governing open versus in-progress claims, existing items, diagnostics, semantic neutrality, structural roles, placeholders, and unknown types.",
       "parts": [
        {
         "id": "O5.1",
-        "statement": "A tracker-born description or acceptance amendment invalidates the prior attestation when rendered bytes change.",
+        "statement": "An open noun-bearing leaf with empty or unresolvable criteria is refused, while an already-in-progress claim is a no-op.",
         "discharged_by": [
-         "LIFE-A8"
+         "LIFE-A11"
         ]
        },
        {
         "id": "O5.2",
-        "statement": "Any attacked spec-content change invalidates its record and all citing spec-born attestations.",
+        "statement": "Every open-to-in-progress verb applies the exact noun and triviality attestation rules.",
         "discharged_by": [
-         "LIFE-A9"
+         "LIFE-A12"
         ]
        },
        {
         "id": "O5.3",
-        "statement": "Changing only a spec-born item's description does not invalidate its attestation.",
-        "discharged_by": []
+        "statement": "PR delivery enforces resolvable criteria and current attestation under the stated triviality rule.",
+        "discharged_by": [
+         "LIFE-A13",
+         "LIFE-A14"
+        ]
        },
        {
         "id": "O5.4",
-        "statement": "Acceptance-field amendments retain the existing `work acceptance set --why` trail.",
+        "statement": "Installing the facade does not rewrite existing work items.",
         "discharged_by": []
        },
        {
         "id": "O5.5",
-        "statement": "An amended document is rerendered where needed, attacked, committed, and re-attested before use.",
+        "statement": "Review emission and verdict posting apply their LIFE-D5 rows.",
         "discharged_by": [
-         "LIFE-A8",
-         "LIFE-A9",
          "LIFE-A16",
-         "LIFE-A17",
-         "LIFE-A22"
+         "LIFE-A17"
         ]
        },
        {
         "id": "O5.6",
-        "statement": "Dispatch briefs and recovery from criteria-indicting review halts apply the before-use and after-amendment doctrine.",
-        "discharged_by": []
+        "statement": "No gate classifies or refuses otherwise valid criteria because of their wording.",
+        "discharged_by": [
+         "LIFE-A16",
+         "LIFE-A17",
+         "LIFE-A24"
+        ]
        },
        {
         "id": "O5.7",
-        "statement": "Every attacked-byte change, including editorial or unrelated-spec changes, requires a full new attack round.",
+        "statement": "Design children bypass claim and delivery gates, implementation placeholders remain unclaimable, and unknown item types are refused.",
         "discharged_by": [
-         "LIFE-A9"
+         "LIFE-A15",
+         "LIFE-A25",
+         "LIFE-A26"
         ]
        },
        {
         "id": "O5.8",
-        "statement": "Each operation checks the state it reads, and a later concurrent amendment is caught at the next consuming boundary.",
+        "statement": "Claim and delivery refusals name the prescribed remedy or failing reference.",
         "discharged_by": [
-         "LIFE-A12",
-         "LIFE-A14",
-         "LIFE-A16",
-         "LIFE-A17"
+         "LIFE-A33"
+        ]
+       },
+       {
+        "id": "O5.9",
+        "statement": "A design child's present spec record remains subject to the repository record gate.",
+        "discharged_by": [
+         "LIFE-A18"
         ]
        }
       ]
      },
      {
       "id": "O6",
-      "kind": "failure",
-      "statement": "Claim, delivery, review, and posting gates enforce the LIFE-D5 matrix and provide the specified boundary behavior.",
-      "source": "LIFE-D5's transition table and following paragraphs define eligibility, diagnostics, transition coverage, structural roles, and preservation behavior.",
+      "kind": "guarantee",
+      "statement": "Review emission and verdict posting use the exact current rendered contract and never validate a stale verdict through re-attestation alone.",
+      "source": "LIFE-D6: \"Review and posting use the rendered contract,\" including freshness, recorded bytes, section extraction, failure behavior, and the no-item path.",
       "parts": [
        {
         "id": "O6.1",
-        "statement": "Claim refuses a noun-bearing leaf with empty or unresolvable criteria.",
+        "statement": "Item-linked review input equals a fresh rendering and is recorded with the emitted round.",
         "discharged_by": [
-         "LIFE-A11"
+         "LIFE-A16"
         ]
        },
        {
         "id": "O6.2",
-        "statement": "Open-leaf claim applies the exact noun and triviality attestation rules without judging criterion prose.",
+        "statement": "Posting requires equality with both the judged bytes and a fresh rendering, including after re-attacked amendments.",
         "discharged_by": [
-         "LIFE-A12"
+         "LIFE-A17"
         ]
        },
        {
         "id": "O6.3",
-        "statement": "Every verb capable of moving an item from open to in progress applies the claim gate.",
-        "discharged_by": []
-       },
-       {
-        "id": "O6.4",
-        "statement": "Claiming an already-in-progress item remains a no-op.",
-        "discharged_by": [
-         "LIFE-A12"
-        ]
-       },
-       {
-        "id": "O6.5",
-        "statement": "Installing the facade does not rewrite existing items.",
-        "discharged_by": []
-       },
-       {
-        "id": "O6.6",
-        "statement": "PR delivery requires nonempty, resolvable criteria even for trivial or already-in-progress leaves.",
-        "discharged_by": [
-         "LIFE-A13"
-        ]
-       },
-       {
-        "id": "O6.7",
-        "statement": "PR delivery requires current attestation for every nontrivial leaf.",
-        "discharged_by": [
-         "LIFE-A14"
-        ]
-       },
-       {
-        "id": "O6.8",
-        "statement": "Review emission applies the rendering and attestation rules in the LIFE-D5 matrix.",
-        "discharged_by": [
-         "LIFE-A16"
-        ]
-       },
-       {
-        "id": "O6.9",
-        "statement": "Verdict posting applies the rendering and attestation rules in the LIFE-D5 matrix.",
-        "discharged_by": [
-         "LIFE-A17"
-        ]
-       },
-       {
-        "id": "O6.10",
-        "statement": "Claim names the empty-criteria remedy or the resolution failure.",
-        "discharged_by": [
-         "LIFE-A11"
-        ]
-       },
-       {
-        "id": "O6.11",
-        "statement": "At non-claim boundaries, rendering failures name their cause and empty criteria name `work acceptance set` as the remedy.",
-        "discharged_by": []
-       },
-       {
-        "id": "O6.12",
-        "statement": "A missing-attestation refusal names the attack step.",
-        "discharged_by": []
-       },
-       {
-        "id": "O6.13",
-        "statement": "Delivery, review, and posting do not classify criterion prose.",
-        "discharged_by": []
-       },
-       {
-        "id": "O6.14",
-        "statement": "Structural and unrecognized items receive their defined role-specific behavior, and a present structural record remains subject to the record gate.",
-        "discharged_by": [
-         "LIFE-A15",
-         "LIFE-A18"
-        ]
-       },
-       {
-        "id": "O6.15",
-        "statement": "An implementation placeholder is retired when the spec manifest expands.",
-        "discharged_by": []
-       }
-      ]
-     },
-     {
-      "id": "O7",
-      "kind": "guarantee",
-      "statement": "Review emission and verdict posting use exactly the current rendered contract.",
-      "source": "LIFE-D6 defines fresh-render equality, recording, dual-match posting, refusal behavior, criteria extraction, and no-item targets.",
-      "parts": [
-       {
-        "id": "O7.1",
-        "statement": "Review emission requires an eligible fresh rendering and records exactly those judged bytes.",
-        "discharged_by": [
-         "LIFE-A16"
-        ]
-       },
-       {
-        "id": "O7.2",
-        "statement": "Posting requires equality with both the round's input and the current eligible rendering, so a re-attacked amendment still requires a new review.",
-        "discharged_by": [
-         "LIFE-A17"
-        ]
-       },
-       {
-        "id": "O7.3",
-        "statement": "Both consumers refuse empty rendering, missing required attestation, and rendering failure without falling back to an unchecked file.",
+        "statement": "Both consumers refuse empty criteria, missing required attestation, and rendering failure without falling back to an unchecked file.",
         "discharged_by": [
          "LIFE-A16",
          "LIFE-A17"
         ]
        },
        {
-        "id": "O7.4",
+        "id": "O6.4",
         "statement": "The poster extracts criteria only from the acceptance-criteria section.",
         "discharged_by": [
          "LIFE-A4"
         ]
        },
        {
-        "id": "O7.5",
-        "statement": "A target with no work item retains the supplied-file path.",
-        "discharged_by": [
-         "LIFE-A16",
-         "LIFE-A17"
-        ]
+        "id": "O6.5",
+        "statement": "A review target with no work item retains the existing supplied-file path.",
+        "discharged_by": []
        }
       ]
      },
      {
-      "id": "O8",
+      "id": "O7",
       "kind": "failure",
-      "statement": "The whole-repository CI gate validates every tracked attack record and fails safely when validation cannot run.",
-      "source": "LIFE-D7 defines checker invocation, invalid-record categories, inventory boundaries, live-edit behavior, and required-lens migration.",
+      "statement": "The whole-repository CI gate checks every tracked attack record, fails safely when checking is unavailable, and respects its defined inventory boundary.",
+      "source": "LIFE-D7 and its what-if row: tracked-record enumeration, invalid categories, missing dependencies, inventory exclusions, repeated-check behavior, and required-lens migration.",
       "parts": [
        {
-        "id": "O8.1",
-        "statement": "The gate invokes the source-tree attack checker with `--implementation-started` for every tracked attack record.",
-        "discharged_by": []
-       },
-       {
-        "id": "O8.2",
-        "statement": "One run reports every invalid tracked record and its cause, including open rounds, missing lenses, stale revisions, malformed records, and missing documents.",
+        "id": "O7.1",
+        "statement": "One run reports every invalid tracked record and cause, including paths for a missing attacked document.",
         "discharged_by": [
          "LIFE-A18"
         ]
        },
        {
-        "id": "O8.3",
+        "id": "O7.2",
         "statement": "Missing checker or failed tracked-record enumeration prevents success.",
         "discharged_by": [
          "LIFE-A19"
         ]
        },
        {
-        "id": "O8.4",
-        "statement": "Ignored files, untracked records, and sibling worktrees are excluded, and an empty tracked inventory passes.",
+        "id": "O7.3",
+        "statement": "Ignored, untracked, and other-checkout records are excluded, and an empty inventory passes.",
         "discharged_by": [
          "LIFE-A20"
         ]
        },
        {
-        "id": "O8.5",
-        "statement": "Live transition checks catch uncommitted amendments that CI cannot see.",
-        "discharged_by": [
-         "LIFE-A8",
-         "LIFE-A12",
-         "LIFE-A13",
-         "LIFE-A14",
-         "LIFE-A16",
-         "LIFE-A17"
-        ]
-       },
-       {
-        "id": "O8.6",
-        "statement": "After a changed attacked document is committed, CI remains red until its record closes at the new revision.",
-        "discharged_by": [
-         "LIFE-A18"
-        ]
-       },
-       {
-        "id": "O8.7",
-        "statement": "The checker uses the current required-lens registry, and existing committed records are migrated before a new lens requirement reaches the default branch.",
+        "id": "O7.4",
+        "statement": "Repeated checks of the same tree have equal results and write nothing.",
         "discharged_by": []
+       },
+       {
+        "id": "O7.5",
+        "statement": "Existing committed records are migrated before a newly required lens is enforced on the default branch.",
+        "discharged_by": []
+       }
+      ]
+     },
+     {
+      "id": "O8",
+      "kind": "guarantee",
+      "statement": "Consumers adopt new facade verbs through safe version checks, and unsupported tools hand Claude-only rounds through the existing workflow.",
+      "source": "LIFE-D8 and its what-if row: installed-version checks, semantic-version precedence, delivery completion, user-controlled installation, Claude-only rounds, handoff, and non-mutating reads.",
+      "parts": [
+       {
+        "id": "O8.1",
+        "statement": "A consumer refuses an insufficient or unestablished facade version by name and calls the new verb only after a sufficient semantic version is established.",
+        "discharged_by": [
+         "LIFE-A21"
+        ]
+       },
+       {
+        "id": "O8.2",
+        "statement": "Facade delivery is incomplete until the installed command reports the shipping version.",
+        "discharged_by": []
+       },
+       {
+        "id": "O8.3",
+        "statement": "Non-Claude tools hand attack and review rounds to a Claude Code session through the existing delivery workflow.",
+        "discharged_by": []
+       },
+       {
+        "id": "O8.4",
+        "statement": "Version checks are read-only and do not change item state.",
+        "discharged_by": []
+       },
+       {
+        "id": "O8.5",
+        "statement": "Briefs cite the shared quality standard and the before-use amendment rule.",
+        "discharged_by": [
+         "LIFE-A32"
+        ]
        }
       ]
      },
      {
       "id": "O9",
       "kind": "guarantee",
-      "statement": "Adoption preserves component ownership, version compatibility, tool routing, and briefing content.",
-      "source": "LIFE-D8 assigns changes to workcli and Claude-only skills, defines installed-version checks and completion, and requires briefing references.",
+      "statement": "Lifecycle testing is isolated from deployed configuration and the user's real tracker.",
+      "source": "Testing decisions: \"Use the workcli fake backend\" and \"No test deploys configuration or rewrites the user's tracker.\"",
       "parts": [
        {
         "id": "O9.1",
-        "statement": "Render, attest, claim, and delivery changes belong to workcli; attack, review, and posting changes remain in their assigned consumers.",
-        "discharged_by": []
-       },
-       {
-        "id": "O9.2",
-        "statement": "A consumer refuses an absent, failed, malformed, or semantically insufficient installed facade version before invoking a new verb and names the requirement or read failure.",
-        "discharged_by": [
-         "LIFE-A21"
-        ]
-       },
-       {
-        "id": "O9.3",
-        "statement": "Facade delivery is complete only when the installed command reports the shipping version.",
-        "discharged_by": [
-         "LIFE-A21"
-        ]
-       },
-       {
-        "id": "O9.4",
-        "statement": "Attack and review remain Claude-only, and other tools hand those rounds to Claude Code through the existing delivery workflow.",
-        "discharged_by": []
-       },
-       {
-        "id": "O9.5",
-        "statement": "Briefs cite the quality standard and the before-use amendment rule.",
+        "statement": "No lifecycle test deploys configuration or rewrites the user's tracker.",
         "discharged_by": []
        }
       ]
      },
      {
       "id": "O10",
-      "kind": "guarantee",
-      "statement": "Verification uses the specified safe and public test seams.",
-      "source": "Testing decisions require the workcli fake backend, public renderer verb, existing consumers, controlled revisions, temporary git repositories, and prohibit configuration deployment or user-tracker rewrites.",
+      "kind": "result",
+      "statement": "Component child specs fix their contracts before implementation and preserve the parent contract.",
+      "source": "Testing decisions: \"Component child specs define wire formats and fixtures before scaffolding. They retain these public contracts and may not weaken parent invariants or leave significant product decisions to implementation.\"",
       "parts": [
        {
         "id": "O10.1",
-        "statement": "Tests use the fake backend and public interfaces, exercise freshness with controlled revisions and CI in temporary repositories, and never deploy configuration or rewrite the user's tracker.",
+        "statement": "Component child specs define wire formats and fixtures before scaffolding.",
+        "discharged_by": []
+       },
+       {
+        "id": "O10.2",
+        "statement": "Component child specs preserve parent public contracts and invariants and close significant product decisions before implementation.",
         "discharged_by": []
        }
       ]
@@ -573,12 +459,40 @@
      {
       "id": "O11",
       "kind": "guarantee",
-      "statement": "Component child specs preserve the parent contract and supply the required implementation scaffolding and evidence topology.",
-      "source": "Testing decisions and Continuations require wire formats and fixtures before scaffolding, prohibit weakened invariants and deferred product decisions, require manifests, dependencies, and spanning verification children, and state that design delivery does not discharge parent criteria.",
+      "statement": "The ordered slice and continuation workflow preserves dependency order, tracker topology, cross-slice verification, and open parent evidence.",
+      "source": "Ordered slice list and Continuations: the explicit after-S2/after-S3 dependencies, `work promote`, design child, blocked placeholder, manifests, verification children, and parent-evidence rule.",
       "parts": [
        {
         "id": "O11.1",
-        "statement": "Each child spec defines wire formats and fixtures before scaffolding, retains every parent invariant, leaves no significant product decision to implementation, supplies its implementation manifest and dependencies, adds verification children for outcomes spanning slices, and does not close parent evidence merely by delivering design.",
+        "statement": "Slices are specified, implemented, and enabled in the stated dependency order.",
+        "discharged_by": []
+       },
+       {
+        "id": "O11.2",
+        "statement": "Each feature is promoted before implementation and has the required design child and blocked implementation placeholder.",
+        "discharged_by": []
+       },
+       {
+        "id": "O11.3",
+        "statement": "Each child spec supplies its implementation manifest and dependencies and names a verification child for parent outcomes spanning slices.",
+        "discharged_by": []
+       },
+       {
+        "id": "O11.4",
+        "statement": "Delivering a design child does not discharge parent criteria or change their open evidence rows.",
+        "discharged_by": []
+       }
+      ]
+     },
+     {
+      "id": "O12",
+      "kind": "guarantee",
+      "statement": "Lifecycle bookkeeping does not substitute for implementation evidence or pending human acceptance.",
+      "source": "Evidence: \"A valid ledger, closed attack record, or passing lifecycle gate does not establish implementation success or discharge a pending human acceptance check.\"",
+      "parts": [
+       {
+        "id": "O12.1",
+        "statement": "A ledger, attack record, or lifecycle gate alone cannot establish implementation success or discharge pending human acceptance.",
         "discharged_by": []
        }
       ]
@@ -607,7 +521,17 @@
      "LIFE-A20",
      "LIFE-A21",
      "LIFE-A22",
-     "LIFE-A23"
+     "LIFE-A23",
+     "LIFE-A24",
+     "LIFE-A25",
+     "LIFE-A26",
+     "LIFE-A27",
+     "LIFE-A28",
+     "LIFE-A29",
+     "LIFE-A30",
+     "LIFE-A31",
+     "LIFE-A32",
+     "LIFE-A33"
     ]
    }
   },
@@ -624,81 +548,65 @@
   {
    "id": "bo1",
    "lens": "behavioural-outcome",
-   "target_ac": "LIFE-A21",
+   "target_ac": "LIFE-A28",
    "ground": {
-    "reason": "LIFE-D8 requires consumers to invoke new verbs when the installed facade version is sufficient. LIFE-A21 checks only that insufficient or unestablished versions are refused before invocation. Although the what-if table mentions shipping and later versions, it gives no required result for them. The criterion therefore cannot distinguish correct version gating from a consumer that always refuses.",
-    "rule": "verification-contract"
+    "reason": "LIFE-D1 calls parser compatibility across repositories an obligation, but LIFE-A28 checks agreement only on one shared fixture. Both parsers can mishandle the same unrepresented grammar case while passing that check.",
+    "rule": "observable-obligation"
    },
-   "objection": "A consumer can satisfy LIFE-A21 by refusing every request and naming the required version, without ever invoking the verb for a sufficient installed version.",
-   "obligation": "A sufficient installed facade version permits the consumer to invoke the required verb.",
+   "objection": "The criterion lets fixture agreement stand in for compatibility across the supported grammar.",
+   "obligation": "The workcli renderer and spec-lint remain compatible for valid criterion entries.",
    "scenario": {
-    "given": "A consumer that reports the required version in every refusal and an installed facade whose valid version is newer than that requirement.",
-    "when": "The consumer performs its version check.",
-    "expect": "The consumer still refuses and never calls the new facade verb, so adoption cannot succeed even though LIFE-A21's specified refusal cases pass."
+    "given": "Both parsers produce identical entries for the shared fixture but interpret an unrepresented continuation or criterion-shaped line differently.",
+    "when": "LIFE-A28's shared-fixture comparison runs.",
+    "expect": "The fixture comparison passes while the parsers disagree on another valid entry shape, so cross-repository compatibility is absent."
    }
   },
   {
    "id": "bo2",
    "lens": "behavioural-outcome",
-   "target_ac": "LIFE-A22",
+   "target_ac": "LIFE-A32",
    "ground": {
-    "reason": "LIFE-D2 promises that the tracker-born path renders, attacks, checks the closed record, commits both files, and attests. LIFE-A22 checks the produced committed files and their reuse, but does not require the workflow to run the attack, obtain checker success, or complete attestation. LIFE-A6 and LIFE-A7 test the attestation verb separately, not this orchestration.",
+    "reason": "LIFE-D4 says amended criteria must be attacked again before use. LIFE-A32 checks only that two instruction artifacts cite that rule and the quality standard. Text can contain those citations without the workflow enforcing them.",
     "rule": "observable-obligation"
    },
-   "objection": "Committed current-looking rendering and record artifacts can satisfy LIFE-A22 while the promised attack-and-attest workflow never occurs.",
-   "obligation": "The tracker-born workflow completes the attack, closure check, commit, and attestation sequence before a gated transition uses the contract.",
+   "objection": "The criterion lets instructional text substitute for the promised prevention of using amended criteria before another attack.",
+   "obligation": "Dispatch and post-halt workflows do not use amended criteria until those criteria have been attacked again.",
    "scenario": {
-    "given": "A workflow that writes and commits a rendering and record file, then reuses those unchanged files on its second invocation.",
-    "when": "LIFE-A22 checks only the committed files, their apparent currency, and second-invocation reuse.",
-    "expect": "The file and reuse checks pass, while no attack is run, no checker success is obtained, and no attestation is created."
+    "given": "The dispatch brief and review-halt instructions contain the required citations, but their workflow continues after an amendment without checking for a new closed attack.",
+    "when": "LIFE-A32 is checked by inspecting the two instruction artifacts.",
+    "expect": "The citation check passes while the amended criteria are used without another attack."
    }
   },
   {
    "id": "bo3",
    "lens": "behavioural-outcome",
-   "target_ac": "LIFE-A12",
+   "target_ac": "LIFE-A22",
    "ground": {
-    "reason": "LIFE-A12 combines enforcement of the noun-and-triviality matrix from LIFE-D5 with the separate prohibition on judging criterion prose. Either behavior can be implemented and accepted independently of the other.",
+    "reason": "LIFE-A22 combines independently deliverable first-run orchestration, commit ordering, attestation readiness, and unchanged-state reuse. The initial workflow can work while reuse still launches another attack round.",
     "rule": "one-obligation"
    },
-   "objection": "The transition matrix and the semantic non-classification guarantee cannot receive independent acceptance decisions.",
-   "obligation": "Claim gates enforce lifecycle state rules without classifying the meaning or quality of criterion prose.",
+   "objection": "The criterion has no separate acceptance result for the reuse behavior, so successful first-run orchestration can conceal an independently failing idempotency obligation.",
+   "obligation": "An unchanged second invocation reuses current files and evidence without starting another attack round.",
    "scenario": {
-    "given": "A claim implementation that exactly follows the LIFE-D5 matrix but also applies an unauthorized prose-quality classifier.",
-    "when": "The matrix portion of the bundled criterion is verified.",
-    "expect": "All noun and triviality cases pass their transition checks, while valid criteria are still rejected because a gate judges their prose."
+    "given": "The workflow renders, attacks, commits, and attests correctly on its first invocation, but always starts a new model round on a second unchanged invocation.",
+    "when": "The criterion is evaluated through the successful first-run workflow.",
+    "expect": "The first-run workflow check passes while the promised unchanged-state reuse is absent."
    }
   },
   {
    "id": "bo4",
    "lens": "behavioural-outcome",
-   "target_ac": "LIFE-A15",
+   "target_ac": "none",
    "ground": {
-    "reason": "LIFE-A15 combines several independently deliverable behaviors from LIFE-D5: design-child treatment, implementation-placeholder treatment, unrecognized-type refusal, and both claim and delivery boundaries.",
-    "rule": "one-obligation"
+    "reason": "The Testing decisions section names broad techniques, while component specs are deferred to define wire formats and fixtures. The Evidence section leaves every criterion open. No criterion-level contract fixes required setups, evidence, acceptance authority, or the completion that waits on the result.",
+    "rule": "verification-contract"
    },
-   "objection": "Correct handling of one structural role or boundary cannot be accepted independently from unrelated role and boundary behavior.",
-   "obligation": "Each structural role and an unrecognized item type receives its specified claim and delivery behavior.",
+   "objection": "The set permits implementer-selected checks to be treated as acceptance evidence even when they do not distinguish a promised behavior from a plausible partial implementation.",
+   "obligation": "Each LIFE-A criterion has a binding public-interface check with specified setup, observation, pass/fail rule, evidence, authority, and dependent completion.",
    "scenario": {
-    "given": "An implementation with correct unrecognized-type handling but incorrect structural-design-child handling.",
-    "when": "The unrecognized-item portion of LIFE-A15 is checked.",
-    "expect": "Unknown items are correctly refused by type, while a design child is incorrectly subjected to a claim gate."
-   }
-  },
-  {
-   "id": "bo5",
-   "lens": "behavioural-outcome",
-   "target_ac": "LIFE-A23",
-   "ground": {
-    "reason": "LIFE-A23 combines the stored representation created by spec delivery with the downstream renderer's response to later spec edits. Citation storage can be delivered and judged independently from dynamic resolution.",
-    "rule": "one-obligation"
-   },
-   "objection": "The criterion prevents separate acceptance of citation storage and propagation of cited-spec changes.",
-   "obligation": "Spec delivery stores assigned IDs as citations, and rendering subsequently resolves those citations against the current spec.",
-   "scenario": {
-    "given": "A spec-delivery implementation that stores citations correctly but a renderer that caches the original resolved text.",
-    "when": "The storage portion of LIFE-A23 is checked and the cited spec entry is later edited.",
-    "expect": "Inspection confirms that the item stores only assigned IDs, while editing a cited entry leaves the rendered text stale."
+    "given": "An implementation passes chosen happy-path fixtures but fails a required boundary such as legacy-item rendering or a concurrent attestation request.",
+    "when": "Acceptance is attempted using only the document's generic testing guidance.",
+    "expect": "The selected checks pass and the work can be presented for acceptance while an untested promised case remains absent."
    }
   },
   {
@@ -706,15 +614,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "No criterion requires the renderer to emit the description under its own heading. LIFE-A4 checks only criteria extraction.",
+    "reason": "LIFE-A2 checks stability, uniqueness, grammar, and preservation of explicit IDs, but it does not require generated IDs to derive from both the item ID and the text line's nonblank position. The source passage says: \"text without an ID receives a deterministic positional ID derived from the item ID and its nonblank position.\"",
     "rule": "coverage"
    },
-   "objection": "A renderer may omit the description or place it outside the required document structure while satisfying every criterion.",
-   "obligation": "O1.2",
+   "objection": "The renderer may generate stable unique IDs from the text alone and still pass every criterion, despite violating the required positional derivation.",
+   "obligation": "O1.4",
    "scenario": {
-    "given": "An implementation passes LIFE-A1 through LIFE-A23.",
-    "when": "A caller renders an item with a nonempty description.",
-    "expect": "The output contains a valid acceptance-criteria section but omits the description heading or description."
+    "given": "An implementation passes LIFE-A1 through LIFE-A33 and generates stable unique IDs by hashing criterion text.",
+    "when": "Two items render identical unlabelled criterion text at different positions.",
+    "expect": "The generated ID is unrelated to the item ID or nonblank position."
    }
   },
   {
@@ -722,15 +630,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "No criterion observes whitespace surrounding cited IDs.",
+    "reason": "LIFE-A28 checks the shared fixture's parsed result, but no criterion observes whether the workcli and spec-lint grammars remain explicitly marked as counterparts. The source passage says: \"The workcli and spec-lint grammars remain marked counterparts with a common round-trip fixture.\"",
     "rule": "coverage"
    },
-   "objection": "The renderer may reject or misinterpret otherwise valid citations containing surrounding whitespace.",
-   "obligation": "O2.2",
+   "objection": "The counterpart markers may be removed while the current shared fixture continues to pass.",
+   "obligation": "O1.9",
    "scenario": {
-    "given": "An implementation passes every criterion and an item names a spec containing criterion A1.",
-    "when": "The acceptance field contains `  A1  `.",
-    "expect": "Rendering refuses the citation or treats it as text."
+    "given": "Both parsers produce the same entries for the current round-trip fixture and all criteria pass.",
+    "when": "The counterpart annotations are deleted.",
+    "expect": "Neither grammar identifies the other as its compatibility counterpart."
    }
   },
   {
@@ -738,15 +646,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "LIFE-A2 requires stable and unique IDs but does not require an explicit input ID to survive unchanged.",
-    "rule": "sufficiency"
+    "reason": "LIFE-A23 checks that assigned IDs are stored as citations, and LIFE-A29 checks that a spec-born item attacks the whole spec. Neither checks that the quality review judges the item's selection and slice assignment. The source passage says: \"Selection and work-item coverage are judged by the quality review of the spec and its slice assignments.\"",
+    "rule": "coverage"
    },
-   "objection": "Explicit criterion IDs may be replaced with generated IDs while all stated checks pass.",
-   "obligation": "O2.5",
+   "objection": "A spec-born item may cite a valid but incomplete or wrongly assigned criterion set without any lifecycle criterion requiring that assignment to be judged.",
+   "obligation": "O2.2",
    "scenario": {
-    "given": "An implementation passes every criterion and the acceptance text contains an explicit ID.",
-    "when": "The item is rendered.",
-    "expect": "The output contains a stable, unique, grammar-valid replacement ID instead of the explicit ID."
+    "given": "The whole spec has a closed attack record, the item stores valid citations, and all lifecycle criteria pass.",
+    "when": "The item's cited selection is not examined for coverage of its assigned slice.",
+    "expect": "The item reaches gated use even though its slice assignment omits an outcome allocated to that item."
    }
   },
   {
@@ -754,15 +662,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "LIFE-A2 does not observe whether generated IDs derive from the item ID and nonblank position.",
-    "rule": "sufficiency"
+    "reason": "LIFE-A6 observes one content-revision attestation, but no criterion requires the marker to contain a parseable timestamp. The source passage says: \"The marker contains a parseable timestamp and the digest of the attacked document's bytes.\"",
+    "rule": "coverage"
    },
-   "objection": "A different deterministic ID scheme may pass even though it violates the required positional derivation.",
-   "obligation": "O2.7",
+   "objection": "An attestation marker with no timestamp, or with an unparsable timestamp, may satisfy every criterion.",
+   "obligation": "O3.1",
    "scenario": {
-    "given": "An implementation generates stable, unique, grammar-valid IDs and passes every criterion.",
-    "when": "It renders unidentified text criteria.",
-    "expect": "It derives IDs from criterion text rather than the item ID and nonblank position."
+    "given": "The marker is unique, current, and accepted by all checks.",
+    "when": "A valid closed record is attested.",
+    "expect": "The marker binds the correct digest but has no parseable timestamp."
    }
   },
   {
@@ -770,15 +678,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "No criterion checks the required marked-counterpart relationship or common round-trip fixture.",
+    "reason": "The amendment criteria cover invalidation and renewed attack, but none observes the required audit trail. The source passage says: \"An amendment uses the existing `work acceptance set --why` trail where the field changes.\"",
     "rule": "coverage"
    },
-   "objection": "The workcli and spec-lint grammars may drift despite all acceptance criteria passing.",
-   "obligation": "O2.10",
+   "objection": "Acceptance text may be amended through an untracked write that invalidates and renews evidence correctly but records no reason.",
+   "obligation": "O4.2",
    "scenario": {
-    "given": "Both components pass the behavioral scenarios listed by LIFE-A1 through LIFE-A23.",
-    "when": "Their grammars are maintained independently without the common fixture.",
-    "expect": "A grammar case outside the listed scenarios round-trips differently between components."
+    "given": "The amendment is rerendered, attacked, committed, re-attested, and passes every criterion.",
+    "when": "The acceptance field is changed without using `work acceptance set --why`.",
+    "expect": "The amended field has no `--why` trail."
    }
   },
   {
@@ -786,15 +694,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "No criterion checks that any full-text line, including one in a mixed field, causes tracker-born classification.",
+    "reason": "LIFE-A1 checks that pre-existing items render correctly, but no criterion observes installation for unintended tracker writes. The source passage says: \"Installing the facade does not rewrite existing items.\"",
     "rule": "coverage"
    },
-   "objection": "Mixed citation-and-text items may follow the spec-born attack path.",
-   "obligation": "O3.2",
+   "objection": "Installation may rewrite existing items while preserving values well enough for all later rendering and gate checks to pass.",
+   "obligation": "O5.4",
    "scenario": {
-    "given": "An item names a spec and contains one citation line and one full-text line.",
-    "when": "An implementation that passes every criterion chooses its attackable document.",
-    "expect": "It classifies the item as spec-born and attacks the whole spec instead of the rendering."
+    "given": "Their effective descriptions and acceptance fields remain unchanged, so every behavioral criterion passes.",
+    "when": "The facade is installed over a repository containing existing items.",
+    "expect": "Existing tracker records are rewritten during installation."
    }
   },
   {
@@ -802,15 +710,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "LIFE-A9 observes whole-spec invalidation but no criterion observes review of the selected criteria and slice assignments.",
+    "reason": "LIFE-A16 concerns review emission for an item, and LIFE-A17 checks item-linked posting. Neither preserves the non-item workflow. The source passage says: \"A target with no work item keeps the existing supplied-file path.\"",
     "rule": "coverage"
    },
-   "objection": "A spec-born item may attest an attacked spec whose slice assignment was never judged.",
-   "obligation": "O3.3",
+   "objection": "The supplied-file review path may be removed without failing any item-linked review or posting criterion.",
+   "obligation": "O6.5",
    "scenario": {
-    "given": "A spec has a closed attack record but assigns the wrong criteria to a work item.",
-    "when": "The item is attested and used under an implementation passing every criterion.",
-    "expect": "The item proceeds without any check having judged its selection or slice assignment."
+    "given": "All item-linked emission and posting checks pass.",
+    "when": "A caller emits a review round without naming a work item.",
+    "expect": "A review target with no work item cannot use the existing supplied criteria file."
    }
   },
   {
@@ -818,15 +726,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "No criterion fixes the tracker-born document and record paths or requires reuse of the existing attack process.",
+    "reason": "LIFE-A18 through LIFE-A20 constrain which records are reported and how dependency failures behave, but they do not require repeated checks to be deterministic or non-mutating. The what-if passage says: \"Repeated checks over the same tree have equal results; checks write nothing.\"",
     "rule": "coverage"
    },
-   "objection": "An alternative storage location or attack mechanism may satisfy all behavioral criteria.",
-   "obligation": "O3.5",
+   "objection": "The CI check may alter records or return different results on an unchanged checkout while still satisfying its inventory and reporting criteria on the tested invocation.",
+   "obligation": "O7.4",
    "scenario": {
-    "given": "A tracker-born workflow produces equivalent current files and a valid attestation.",
-    "when": "It stores them outside `.work/attacks/` and bypasses the existing attack process.",
-    "expect": "Every acceptance criterion passes despite the lifecycle design being violated."
+    "given": "Each individual invocation reports the required invalid records and causes.",
+    "when": "The gate is run twice against the same tracked checkout.",
+    "expect": "The first CI invocation writes state, causing a different result on the second unchanged invocation."
    }
   },
   {
@@ -834,15 +742,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "LIFE-A22 requires committed files but does not require the generated directory's exemption and tracked placeholder.",
+    "reason": "LIFE-A18 requires invalid records to be reported, but no criterion requires the migration ordering promised for a newly required lens. The source passage says: \"A change adding a lens must update existing committed records before the new requirement is enforced on the default branch.\"",
     "rule": "coverage"
    },
-   "objection": "The directory may be absent initially or subjected to authored-prose doc-lint.",
-   "obligation": "O3.7",
+   "objection": "A new required lens may be enforced before existing records are migrated, making the default branch red while every steady-state CI criterion remains satisfiable.",
+   "obligation": "O7.5",
    "scenario": {
-    "given": "The attack workflow passes LIFE-A22 once a record exists.",
-    "when": "The repository has no tracked placeholder and doc-lint treats generated attacks as authored prose.",
-    "expect": "All acceptance criteria pass while the promised directory lifecycle and exemption are missing."
+    "given": "The checker correctly uses the new registry and reports all now-invalid records.",
+    "when": "The required-lens registry is changed before existing records are updated.",
+    "expect": "Existing committed records become invalid on the default branch before their migration lands."
    }
   },
   {
@@ -850,15 +758,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "No criterion observes a parseable timestamp in the attestation marker.",
+    "reason": "LIFE-A21 checks consumer behavior for sufficient and insufficient versions, but no criterion makes the installed command's reported version a completion condition for facade delivery. The source passage says: \"Facade delivery is complete only when the installed command reports that version.\"",
     "rule": "coverage"
    },
-   "objection": "An attestation may bind the content digest correctly while omitting or corrupting its timestamp.",
-   "obligation": "O4.1",
+   "objection": "Facade delivery may be declared complete while the installed command still reports an older version.",
+   "obligation": "O8.2",
    "scenario": {
-    "given": "A valid closed record produces one digest-bound marker and passes LIFE-A6.",
-    "when": "The marker is written without a timestamp or with an unparseable timestamp.",
-    "expect": "All acceptance criteria still pass."
+    "given": "Unit and integration checks for LIFE-A21 pass using controlled version responses.",
+    "when": "The new facade build is delivered without the user installing it.",
+    "expect": "Delivery is recorded as complete although the installed facade lacks the shipping version."
    }
   },
   {
@@ -866,15 +774,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "LIFE-A7 covers refusal while attesting a record, but no criterion covers malformed or unreadable marker sources at consuming boundaries or the required named error.",
+    "reason": "No criterion checks the required cross-tool handoff. The source passage says: \"Other tools hand those rounds to a Claude Code session through the existing delivery workflow.\"",
     "rule": "coverage"
    },
-   "objection": "A consumer may accept a malformed marker or fail anonymously when marker notes cannot be read.",
-   "obligation": "O4.7",
+   "objection": "A non-Claude tool may fail locally or skip the attack or review instead of handing the round to Claude Code.",
+   "obligation": "O8.3",
    "scenario": {
-    "given": "An item has a malformed marker or an unreadable marker-note source.",
-    "when": "A claim, delivery, review, or posting boundary reads the item.",
-    "expect": "The boundary accepts the marker or returns an unnamed generic failure while every criterion passes."
+    "given": "The Claude-only attack and review implementations and all listed criteria pass.",
+    "when": "A supported non-Claude tool reaches an attack or review round.",
+    "expect": "No Claude Code handoff occurs and the required round is not run."
    }
   },
   {
@@ -882,15 +790,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "No criterion preserves a spec-born attestation when only the work-item description changes.",
+    "reason": "LIFE-A21 determines whether a verb is called after a version check, but it does not require the version check itself to preserve item state. The what-if passage says: \"Version checks are reads and change no item state.\"",
     "rule": "coverage"
    },
-   "objection": "An implementation may invalidate spec-born evidence for an irrelevant description edit.",
-   "obligation": "O5.3",
+   "objection": "Reading the installed version may mutate the work item before the consumer makes its version decision.",
+   "obligation": "O8.4",
    "scenario": {
-    "given": "A spec-born item has a current attestation and its spec is unchanged.",
-    "when": "Only the item's description changes.",
-    "expect": "The implementation marks the attestation stale while satisfying every criterion."
+    "given": "The returned version and subsequent refuse-or-call behavior satisfy LIFE-A21.",
+    "when": "A consumer performs its prerequisite version check.",
+    "expect": "The item's notes or metadata change as a side effect of obtaining the version."
    }
   },
   {
@@ -898,15 +806,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "No criterion requires acceptance-field changes to retain the `work acceptance set --why` trail.",
+    "reason": "No criterion observes the test-safety guarantee. The source passage says: \"No test deploys configuration or rewrites the user's tracker.\"",
     "rule": "coverage"
    },
-   "objection": "Acceptance text may be amended without recording why.",
-   "obligation": "O5.4",
+   "objection": "The test suite may pass while deploying configuration or modifying the user's real tracker.",
+   "obligation": "O9.1",
    "scenario": {
-    "given": "A tracker-born item is amended, rerendered, attacked, and re-attested successfully.",
-    "when": "The field is changed without the required `--why` trail.",
-    "expect": "Every acceptance criterion passes despite the missing amendment account."
+    "given": "All functional assertions required by LIFE-A1 through LIFE-A33 pass.",
+    "when": "The lifecycle test suite is executed in a user's checkout.",
+    "expect": "A passing test run changes deployed configuration or real tracker state."
    }
   },
   {
@@ -914,15 +822,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "No criterion checks that dispatch briefs and criteria-indicting review halts apply the before-use amendment doctrine.",
+    "reason": "No criterion observes whether component child specs define their wire formats and fixtures before scaffolding. The source passage says: \"Component child specs define wire formats and fixtures before scaffolding.\"",
     "rule": "coverage"
    },
-   "objection": "Dispatch or review-recovery instructions may permit amended criteria to be used before a new attack.",
-   "obligation": "O5.6",
+   "objection": "Implementation may be scaffolded before the component contracts and fixtures are fixed.",
+   "obligation": "O10.1",
    "scenario": {
-    "given": "The implemented gates pass all acceptance criteria.",
-    "when": "A dispatch brief or review halt instructs an agent to continue with amended criteria before re-attacking them.",
-    "expect": "The incorrect instruction remains undetected."
+    "given": "The completed implementation later passes every parent acceptance criterion.",
+    "when": "A component slice begins implementation.",
+    "expect": "The implementation exists before its child spec defines the wire format and fixtures."
    }
   },
   {
@@ -930,15 +838,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "LIFE-A12 checks a claim operation but does not establish that every verb capable of moving an item to in-progress applies the gate.",
-    "rule": "sufficiency"
+    "reason": "Passing the parent behavior does not inspect the content or decision closure of component child specs. The source passage says: \"They retain these public contracts and may not weaken parent invariants or leave significant product decisions to implementation.\"",
+    "rule": "coverage"
    },
-   "objection": "An alternate transition verb may bypass the claim gate.",
-   "obligation": "O6.3",
+   "objection": "A child spec may weaken a parent invariant or delegate a significant product decision to implementation even if the resulting implementation happens to pass the parent criteria.",
+   "obligation": "O10.2",
    "scenario": {
-    "given": "The ordinary claim command satisfies LIFE-A11 and LIFE-A12.",
-    "when": "Another facade verb moves an unattested feature from open to in progress.",
-    "expect": "The transition succeeds without the required criteria and attestation checks."
+    "given": "The chosen implementation passes all LIFE criteria.",
+    "when": "The component child spec is reviewed as a deliverable.",
+    "expect": "The child spec contains a weaker contract or leaves a significant observable choice unresolved."
    }
   },
   {
@@ -946,15 +854,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "No criterion observes installation behavior.",
+    "reason": "The ordered slice section imposes sequencing dependencies, but no criterion observes the order in which slices are specified, implemented, or enabled. The relevant passages include: \"after S2,\" \"after the attack path is available,\" and \"after S3.\"",
     "rule": "coverage"
    },
-   "objection": "Installing the facade may rewrite existing work items.",
-   "obligation": "O6.5",
+   "objection": "Slices may be implemented or enabled out of the required order while the final combined behavior passes every criterion.",
+   "obligation": "O11.1",
    "scenario": {
-    "given": "All runtime transition criteria pass.",
-    "when": "The facade is installed over a tracker containing existing items.",
-    "expect": "Existing items are rewritten even though the design promises no migration rewrite."
+    "given": "All slices eventually produce behavior satisfying LIFE-A1 through LIFE-A33.",
+    "when": "S4 or S6 is enabled before the S3 attack path is available.",
+    "expect": "A dependent slice is enabled before its required predecessor."
    }
   },
   {
@@ -962,15 +870,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "Only LIFE-A11 requires a remedy or named resolution failure. Delivery, review, and posting criteria require refusal without checking the required diagnostic.",
+    "reason": "No criterion observes the required promotion and work-item topology. The source passage says: \"Use `work promote` on each resulting feature before implementation. Its spec container holds a design child and blocked implementation placeholder.\"",
     "rule": "coverage"
    },
-   "objection": "Non-claim boundaries may return generic errors for empty or unresolvable criteria.",
-   "obligation": "O6.11",
+   "objection": "Implementation may begin without promotion, a design child, or a blocked implementation placeholder.",
+   "obligation": "O11.2",
    "scenario": {
-    "given": "A leaf has empty or unresolvable criteria.",
-    "when": "Delivery, review emission, or verdict posting evaluates it.",
-    "expect": "The boundary refuses generically without naming the cause or `work acceptance set` remedy."
+    "given": "The eventual implementation passes every lifecycle criterion.",
+    "when": "A resulting feature proceeds directly to implementation.",
+    "expect": "The feature lacks the required promoted container structure when implementation starts."
    }
   },
   {
@@ -978,15 +886,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "The criteria require refusal for absent evidence but never require the failure to name the attack step.",
+    "reason": "No criterion checks the required child-spec manifest, dependency declarations, or verification child. The source passage says: \"The child spec supplies the implementation manifest and dependencies above. It names a verification child for any parent outcome spanning slices.\"",
     "rule": "coverage"
    },
-   "objection": "A missing-attestation failure may give no actionable remedy.",
-   "obligation": "O6.12",
+   "objection": "A child spec may omit its implementation manifest, dependencies, or cross-slice verification child.",
+   "obligation": "O11.3",
    "scenario": {
-    "given": "A nontrivial item has resolvable criteria but no current attestation.",
-    "when": "Any gated boundary evaluates it.",
-    "expect": "The operation refuses with a generic message that does not name the attack step."
+    "given": "Each implementation slice individually passes its allocated LIFE criteria.",
+    "when": "The child spec and tracker structure are finalized.",
+    "expect": "The tracker contains no verification child for a parent outcome that spans slices."
    }
   },
   {
@@ -994,15 +902,15 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "LIFE-A12 prohibits prose classification only at claim. No corresponding criterion protects delivery, review, or posting.",
+    "reason": "No criterion preserves the evidence state when design work is delivered. The source passage says: \"Delivering the design does not discharge parent criteria or change their open evidence rows.\"",
     "rule": "coverage"
    },
-   "objection": "A later gate may classify criterion meaning or prose quality.",
-   "obligation": "O6.13",
+   "objection": "Delivering a design child may close parent criteria or alter their evidence rows before implementation evidence exists.",
+   "obligation": "O11.4",
    "scenario": {
-    "given": "A nontrivial item has nonempty, resolvable, attested criteria written in unusual prose.",
-    "when": "Delivery, review emission, or posting evaluates it.",
-    "expect": "The boundary refuses because it semantically judges the criterion prose."
+    "given": "The design child is complete and all lifecycle behavior criteria remain independently satisfiable.",
+    "when": "The design child is delivered.",
+    "expect": "Parent criteria are marked discharged or their evidence rows cease to be open."
    }
   },
   {
@@ -1010,172 +918,90 @@
    "lens": "obligation-reduction",
    "target_ac": "none",
    "ground": {
-    "reason": "LIFE-A15 checks role-specific gating but no criterion checks retirement when a manifest expands.",
+    "reason": "No criterion enforces the evidence limitation stated by the document. The source passage says: \"A valid ledger, closed attack record, or passing lifecycle gate does not establish implementation success or discharge a pending human acceptance check.\"",
     "rule": "coverage"
    },
-   "objection": "Implementation placeholders may remain live after their spec manifest has expanded.",
-   "obligation": "O6.15",
+   "objection": "The workflow may treat lifecycle bookkeeping as implementation evidence and close a pending human acceptance check.",
+   "obligation": "O12.1",
    "scenario": {
-    "given": "A spec container has an implementation placeholder and later gains its implementation manifest.",
-    "when": "The expansion completes under an implementation passing every criterion.",
-    "expect": "The placeholder remains instead of being retired."
-   }
-  },
-  {
-   "id": "or21",
-   "lens": "obligation-reduction",
-   "target_ac": "none",
-   "ground": {
-    "reason": "LIFE-A18 observes reported invalid records but does not require invocation of the source-tree checker with `--implementation-started`.",
-    "rule": "sufficiency"
-   },
-   "objection": "A replacement validator may reproduce tested outcomes while bypassing the required checker mode.",
-   "obligation": "O8.1",
-   "scenario": {
-    "given": "A CI implementation reports all invalid fixtures required by LIFE-A18.",
-    "when": "The gate runs.",
-    "expect": "It uses a separate validator and never invokes the source-tree attack checker with `--implementation-started`."
-   }
-  },
-  {
-   "id": "or22",
-   "lens": "obligation-reduction",
-   "target_ac": "none",
-   "ground": {
-    "reason": "No criterion checks the current required-lens registry or the migration-before-enforcement rule.",
-    "rule": "coverage"
-   },
-   "objection": "A new required lens may make the default branch red before existing records are migrated.",
-   "obligation": "O8.7",
-   "scenario": {
-    "given": "Existing committed attack records lack a newly added required lens.",
-    "when": "The new registry requirement is enforced on the default branch without migration.",
-    "expect": "CI rejects all existing records although every listed acceptance criterion can still pass in its own fixtures."
-   }
-  },
-  {
-   "id": "or23",
-   "lens": "obligation-reduction",
-   "target_ac": "none",
-   "ground": {
-    "reason": "No criterion observes which repository or component owns the facade and consumer changes.",
-    "rule": "coverage"
-   },
-   "objection": "The behavior may be implemented in the wrong component and create architectural drift.",
-   "obligation": "O9.1",
-   "scenario": {
-    "given": "All externally visible behavior satisfies LIFE-A1 through LIFE-A23.",
-    "when": "Render, attest, claim, or delivery logic is implemented in configuration skills instead of workcli.",
-    "expect": "The criteria remain green despite violating component ownership."
-   }
-  },
-  {
-   "id": "or24",
-   "lens": "obligation-reduction",
-   "target_ac": "none",
-   "ground": {
-    "reason": "No criterion preserves Claude-only attack and review rounds or checks handoff from other tools through the existing delivery workflow.",
-    "rule": "coverage"
-   },
-   "objection": "Other tools may run the rounds directly or fail to hand them to Claude Code.",
-   "obligation": "O9.4",
-   "scenario": {
-    "given": "Version checks and lifecycle behavior pass all criteria.",
-    "when": "A non-Claude tool reaches an attack or review round.",
-    "expect": "It runs an unsupported local round or stops without the required Claude Code handoff."
-   }
-  },
-  {
-   "id": "or25",
-   "lens": "obligation-reduction",
-   "target_ac": "none",
-   "ground": {
-    "reason": "No criterion inspects briefing content.",
-    "rule": "coverage"
-   },
-   "objection": "Briefs may omit the quality standard or the before-use amendment rule.",
-   "obligation": "O9.5",
-   "scenario": {
-    "given": "All commands and transitions satisfy their behavioral criteria.",
-    "when": "The attack or review workflow emits its brief.",
-    "expect": "The brief lacks one or both required references."
-   }
-  },
-  {
-   "id": "or26",
-   "lens": "obligation-reduction",
-   "target_ac": "none",
-   "ground": {
-    "reason": "The criteria state product behavior but do not require the specified fake-backend, public-interface, temporary-repository, and no-deployment test discipline.",
-    "rule": "coverage"
-   },
-   "objection": "The suite may pass by testing private seams or mutating real user state.",
-   "obligation": "O10.1",
-   "scenario": {
-    "given": "Tests demonstrate every LIFE-A criterion.",
-    "when": "They deploy configuration, rewrite the user's tracker, bypass public verbs, or run CI fixtures in the working repository.",
-    "expect": "The acceptance suite passes despite violating the testing decisions."
-   }
-  },
-  {
-   "id": "or27",
-   "lens": "obligation-reduction",
-   "target_ac": "none",
-   "ground": {
-    "reason": "No criterion inspects the required child-spec artifacts, sequencing, inheritance of parent invariants, or evidence-row behavior.",
-    "rule": "coverage"
-   },
-   "objection": "Child specs may omit wire formats, weaken the parent contract, leave major decisions to implementation, omit verification children, or prematurely discharge parent evidence.",
-   "obligation": "O11.1",
-   "scenario": {
-    "given": "The eventual implementation passes all LIFE-A criteria.",
-    "when": "A component child spec is scaffolded without the required formats, fixtures, manifest, dependencies, or spanning verification child.",
-    "expect": "The deficient planning artifacts and prematurely closed parent evidence are not detected by any criterion."
+    "given": "The ledger is valid, the attack record is closed, and the lifecycle gate passes.",
+    "when": "Completion is evaluated using those artifacts alone.",
+    "expect": "A pending human acceptance check is marked discharged without being performed."
    }
   },
   {
    "id": "sc1",
    "lens": "set-consistency",
-   "target_ac": "LIFE-A11",
+   "target_ac": "LIFE-A20",
    "ground": {
-    "reason": "LIFE-A11 states that claiming a noun-bearing leaf with empty or unresolvable criteria 'refuses the transition', while LIFE-D5 states an already-in-progress claim 'remains a no-op'. The criteria do not say whether A11's refusal applies when the claim is a no-op re-claim of an item that entered in-progress before the gates existed (D5: 'Installing the facade does not rewrite existing items'). One reading refuses the re-claim; the other lets it succeed silently. The wording leaves open which outcome is required, and the two readings produce different observable results for the same circumstance.",
-    "rule": "decision-closure"
+    "reason": "LIFE-A19 refuses to report success when the checker is unavailable, while LIFE-A20 succeeds whenever the tracked-record inventory is empty; both conditions can hold at once, and the criteria then demand opposite verdicts. LIFE-D7 carries the same tension ('Missing checker or failed enumeration is an error' alongside 'An empty inventory passes') without resolving which wins.",
+    "rule": "consistency"
    },
-   "objection": "A reviewer cannot decide whether a no-op re-claim of a legacy in-progress item with empty criteria must refuse (A11 read literally) or must succeed as a no-op (D5's no-op rule read as overriding); both verdicts are defensible from the criteria as written.",
+   "objection": "The criteria admit both a red and a green CI gate for the same tree: a checkout with no tracked attack records and a missing checker satisfies LIFE-A20's success condition and LIFE-A19's refusal condition simultaneously, so an implementer can pass or fail the gate by choosing which criterion to read.",
    "scenario": {
-    "given": "A noun-bearing feat leaf that was claimed and moved to in-progress before the facade gates shipped, so it holds empty criteria and no attestation.",
-    "when": "An agent invokes the claim verb on that already-in-progress item.",
-    "expect": "Under the literal reading of LIFE-A11 the claim is refused naming 'work acceptance set' as the remedy; under LIFE-D5's no-op rule the claim succeeds with no transition and no refusal."
-   }
-  },
-  {
-   "id": "sc2",
-   "lens": "set-consistency",
-   "target_ac": "LIFE-A16",
-   "ground": {
-    "reason": "LIFE-A16 and LIFE-A17 gate emission and posting on the item's 'current eligible rendering', but no criterion or decision defines 'eligible'. LIFE-D6 lists refusal conditions (empty rendering, missing required attestation, failure to obtain the rendering), and LIFE-D5 exempts trivial rounds from the attestation requirement, so one reading makes eligibility attestation-dependent and another makes it attestation-independent for trivial rounds. The decision left open is whether an unattested rendering is 'eligible' for a --trivial review round, and each reading produces a different accept/refuse outcome.",
-    "rule": "decision-closure"
-   },
-   "objection": "The undefined term 'eligible' admits two materially different emission behaviors for a trivial round on an unattested item: accepted because attestation is not required, or refused because the rendering is not 'eligible'.",
-   "scenario": {
-    "given": "An open feat leaf with resolvable nonempty criteria, no attestation, claimed with --trivial.",
-    "when": "A review round is emitted naming that item with input equal to its fresh rendering, also under --trivial.",
-    "expect": "Under the attestation-independent reading of 'eligible' the emission succeeds and records the criteria; under the attestation-dependent reading the emission is refused for a missing attestation."
+    "given": "A tracked checkout containing zero attack records under .work/attacks/ (enumeration over tracked files succeeds and returns an empty inventory), with the source-tree attack checker binary absent or non-executable.",
+    "when": "The CI gate runs its whole-repo record check.",
+    "expect": "LIFE-A19 requires the gate to refuse success (checker unavailable); LIFE-A20 requires the gate to succeed (inventory empty). The two verdicts conflict and no criterion states the precedence."
    }
   },
   {
    "id": "wi1",
    "lens": "what-if",
-   "target_ac": "none",
+   "target_ac": "LIFE-A22",
    "ground": {
-    "reason": "LIFE-D2 assigns the attackable document by classifying the item as tracker-born or spec-born from its current acceptance field, and LIFE-D7 keeps CI red until every tracked record closes at its document's current revision. No criterion tests an amendment that moves an item across that classification boundary, and no decision says what retires the old tracker-born rendering and record. What-if question: what if the input changes so the thing it relies on (its attackable document) is a different document?",
+    "reason": "The attack-workflow criteria cover only the success path. The what-if table lists 'Attack or checker fails before attestation' as the dependency-failure answer for LIFE-A22, but no criterion states the resulting state: whether the rendering or record is committed, whether an attestation exists, and what the next invocation or gate observes.",
     "rule": "what-if-questions"
    },
-   "objection": "The criteria let through an implementation where reclassifying an item from tracker-born to spec-born (or the reverse) strands the old committed attack files: the orphaned record can never close at a new revision because nothing attacks that document anymore, so the LIFE-D7 gate stays red permanently with no described remedy, and no criterion forces the workflow to define one.",
+   "objection": "A failed or interrupted tracker-born attack can leave an unspecified partial state — a rendered file or record committed without attestation, or vice versa — and no criterion pins what the system must look like afterward or what the next attack invocation must do with the leftover files.",
    "scenario": {
-    "given": "A tracker-born item with a committed rendering at .work/attacks/<item-id>.md and a closed, committed record beside it, both tracked and passing the CI gate",
-    "when": "The item's acceptance field is amended (work acceptance set --why) to consist solely of citations into a named spec, making the item spec-born, and the item is re-attacked against the spec and attested",
-    "expect": "The stale tracker-born rendering and record remain tracked in the checkout; the next CI run inventories them, finds the record's revision stale against the committed rendering (or the rendering stale against a fresh render), and reports the run invalid forever, because no workflow step attacks or removes those files and no criterion requires one"
+    "given": "a tracker-born item with valid criteria and no committed attack artifacts",
+    "when": "the attack workflow renders the item and the checker then fails (or the process is interrupted after one file is committed)",
+    "expect": "a defined end state — no attestation written, a named disposition for the partially written rendering and record, and a re-invocation that recovers deterministically — which no criterion checks"
+   }
+  },
+  {
+   "id": "wi2",
+   "lens": "what-if",
+   "target_ac": "LIFE-A17",
+   "ground": {
+    "reason": "Nothing-changed repetition is unasked for verdict posting. LIFE-A17 pins only refusal conditions; the what-if row for LIFE-A16/A17 answers amendment-between-judgment-and-posting but never the case of posting the same verdict twice with nothing changed.",
+    "rule": "what-if-questions"
+   },
+   "objection": "The criteria leave double-posting of a verdict unspecified: a second identical post with unchanged criteria and current attestation meets every LIFE-A17 precondition, so both 'accepted silently' and 'refused as duplicate' conform.",
+   "scenario": {
+    "given": "a verdict whose criteria match the round's recorded input and a fresh rendering, with current attestation, already posted once",
+    "when": "the poster is invoked again with the identical verdict and unchanged item state",
+    "expect": "a defined outcome — idempotent no-op, second post recorded, or named refusal — which no criterion checks"
+   }
+  },
+  {
+   "id": "wi3",
+   "lens": "what-if",
+   "target_ac": "LIFE-A18",
+   "ground": {
+    "reason": "The repetition answer for the CI gate ('repeated checks over the same tree have equal results; checks write nothing') appears only in the what-if table. No acceptance criterion states that the gate is read-only or deterministic over an unchanged tree, so an implementation that writes or whose verdict flips between identical runs violates nothing testable.",
+    "rule": "what-if-questions"
+   },
+   "objection": "The CI gate's claimed read-only, deterministic behavior is asserted in the document but untestable: LIFE-A18 to LIFE-A20 specify reporting for single runs and never bind two runs over the same tree to the same result or forbid writes.",
+   "scenario": {
+    "given": "a checkout whose tracked attack records are fixed",
+    "when": "the CI gate runs twice in succession with no intervening change",
+    "expect": "identical reports and no modification to the checkout, which no criterion checks"
+   }
+  },
+  {
+   "id": "wi4",
+   "lens": "what-if",
+   "target_ac": "LIFE-A9",
+   "ground": {
+    "reason": "The nothing-changed question for a newly created spec-born item is unanswered. LIFE-A9 covers spec changes and LIFE-A6 covers attesting generically, but no criterion establishes that an item created after its spec's attack closed can attest against that existing record without a new attack round — LIFE-D2 says only that an empty selection stays unclaimable even when the spec was attacked.",
+    "rule": "what-if-questions"
+   },
+   "objection": "It is unspecified whether a spec-born item minted after its spec's record closed may attest directly against that record or must trigger a fresh attack, so both a cheap attestation path and a mandatory new round conform to the criteria.",
+   "scenario": {
+    "given": "a spec whose attack record is closed at its current revision, and a new spec-born work item citing that spec's criteria",
+    "when": "the item reaches a transition requiring attestation",
+    "expect": "a defined path — attestation against the existing closed record, or a required new attack — which no criterion checks"
    }
   }
  ],
@@ -1183,199 +1009,155 @@
   {
    "id": "bo1",
    "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A21"
+   "revision": "sha256:0e0d4588db096ae929955344dfe2a781f823cf797a772c38e44a5bfd90f4856e",
+   "covering_ac": "LIFE-A28"
   },
   {
    "id": "bo2",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A22"
+   "disposition": "rejected",
+   "rationale": "The gates enforce use before re-attack: LIFE-A8, A9, A14, A16 and A17 refuse stale or unattested criteria. LIFE-A32 pins only what the instruction text must say."
   },
   {
    "id": "bo3",
    "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A24"
+   "revision": "sha256:0e0d4588db096ae929955344dfe2a781f823cf797a772c38e44a5bfd90f4856e",
+   "covering_ac": "LIFE-A34"
   },
   {
    "id": "bo4",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A25"
-  },
-  {
-   "id": "bo5",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A27"
+   "disposition": "rejected",
+   "rationale": "By LIFE-D1 and the testing decisions, component child specs fix each check's setup, fixtures and wire format before scaffolding. The parent names each check's public interface, and its evidence rows name the completion that waits."
   },
   {
    "id": "or1",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A4"
+   "disposition": "rejected",
+   "rationale": "Round 1 rejected this ground. LIFE-A2 holds the observable constraints: stable, unique and grammar-valid IDs. The derivation inputs are the spelling LIFE-D1 leaves to the component spec."
   },
   {
    "id": "or2",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A1"
+   "disposition": "rejected",
+   "rationale": "The counterpart markers are a maintenance device. LIFE-A28 observes the compatibility they protect."
   },
   {
    "id": "or3",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A2"
+   "disposition": "rejected",
+   "rationale": "Round 1 rejected this ground. The attack on the whole spec judges its slice assignments, and LIFE-A9 ties each spec-born attestation to that attack."
   },
   {
    "id": "or4",
    "disposition": "rejected",
-   "rationale": "LIFE-A2 holds the observable constraints: stable, unique and grammar-valid IDs. The derivation inputs are the spelling LIFE-D1 leaves to the component spec."
+   "rationale": "Round 1 rejected this ground. Nothing in this spec reads the marker's timestamp, and LIFE-D3 leaves the marker encoding to the facade component spec."
   },
   {
    "id": "or5",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A28"
+   "disposition": "rejected",
+   "rationale": "Round 1 rejected this ground. The --why trail is existing `work acceptance set` behaviour, and nothing in this spec changes it."
   },
   {
    "id": "or6",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A29"
+   "disposition": "rejected",
+   "rationale": "Round 1 rejected this ground. No slice includes a migration, so no implementation step could rewrite existing items."
   },
   {
    "id": "or7",
-   "disposition": "rejected",
-   "rationale": "The attack on the whole spec judges its slice assignments, and LIFE-A9 ties each spec-born attestation to that attack."
+   "disposition": "accepted",
+   "revision": "sha256:0e0d4588db096ae929955344dfe2a781f823cf797a772c38e44a5bfd90f4856e",
+   "covering_ac": "LIFE-A35"
   },
   {
    "id": "or8",
    "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A22"
+   "revision": "sha256:0e0d4588db096ae929955344dfe2a781f823cf797a772c38e44a5bfd90f4856e",
+   "covering_ac": "LIFE-A36"
   },
   {
    "id": "or9",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A30"
+   "disposition": "rejected",
+   "rationale": "Round 1 rejected this ground. This is the procedure for a future lens change, and no slice here builds it."
   },
   {
    "id": "or10",
    "disposition": "rejected",
-   "rationale": "Nothing in this spec reads the marker's timestamp, and LIFE-D3 leaves the marker encoding to the facade component spec."
+   "rationale": "Installation is the user's action. The facade delivery item carries this as its own completion condition; it is not behaviour of any component this spec builds."
   },
   {
    "id": "or11",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A31"
+   "disposition": "rejected",
+   "rationale": "Round 1 rejected this ground. Claude-only rounds and their handoff are existing behaviour, unchanged here."
   },
   {
    "id": "or12",
    "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A9"
+   "revision": "sha256:0e0d4588db096ae929955344dfe2a781f823cf797a772c38e44a5bfd90f4856e",
+   "covering_ac": "LIFE-A21"
   },
   {
    "id": "or13",
    "disposition": "rejected",
-   "rationale": "The --why trail is existing `work acceptance set` behaviour, and nothing in this spec changes it."
+   "rationale": "Round 1 rejected this ground. The testing decisions govern how the implementation is tested, and PR review judges them."
   },
   {
    "id": "or14",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A32"
+   "disposition": "rejected",
+   "rationale": "Round 1 rejected this ground. The lifecycle's own gates and each child spec's attack round enforce these on the child specs."
   },
   {
    "id": "or15",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A12"
+   "disposition": "rejected",
+   "rationale": "Round 1 rejected this ground. The lifecycle's own gates and each child spec's attack round enforce these on the child specs."
   },
   {
    "id": "or16",
    "disposition": "rejected",
-   "rationale": "No slice includes a migration, so no implementation step could rewrite existing items."
+   "rationale": "Slice order is enforced by tracker dependencies, not by an acceptance criterion."
   },
   {
    "id": "or17",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A33"
+   "disposition": "rejected",
+   "rationale": "Continuation structure is planning, not product behaviour, and the claim gates in LIFE-D5 enforce it on each promoted feature."
   },
   {
    "id": "or18",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A33"
+   "disposition": "rejected",
+   "rationale": "Round 1 rejected this ground. The lifecycle's own gates and each child spec's attack round enforce these on the child specs."
   },
   {
    "id": "or19",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A24"
+   "disposition": "rejected",
+   "rationale": "Evidence rows live in the spec document, which no delivery verb edits, so delivering a design child cannot change them."
   },
   {
    "id": "or20",
    "disposition": "rejected",
-   "rationale": "Placeholder retirement is existing facade behaviour (`work deliver --spec` reconciles a design child's placeholder), and this spec does not change it."
-  },
-  {
-   "id": "or21",
-   "disposition": "rejected",
-   "rationale": "LIFE-A18's fixtures observe the outcome. Which checker binary produces it is implementation."
-  },
-  {
-   "id": "or22",
-   "disposition": "rejected",
-   "rationale": "This is the procedure for a future lens change, and no slice here builds it."
-  },
-  {
-   "id": "or23",
-   "disposition": "rejected",
-   "rationale": "Component placement is judged in PR review. It is not behaviour an acceptance check can observe."
-  },
-  {
-   "id": "or24",
-   "disposition": "rejected",
-   "rationale": "Claude-only rounds and their handoff are existing behaviour, unchanged here."
-  },
-  {
-   "id": "or25",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A32"
-  },
-  {
-   "id": "or26",
-   "disposition": "rejected",
-   "rationale": "The testing decisions govern how the implementation is tested, and PR review judges them."
-  },
-  {
-   "id": "or27",
-   "disposition": "rejected",
-   "rationale": "The lifecycle's own gates and each child spec's attack round enforce these on the child specs."
+   "rationale": "This is a reading rule for evidence. No slice builds a consumer that could discharge a human check from lifecycle bookkeeping."
   },
   {
    "id": "sc1",
    "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A11"
-  },
-  {
-   "id": "sc2",
-   "disposition": "accepted",
-   "revision": "sha256:f1dec4f43398be76fb238f833dca500fef692f4ff94fdd0f9c197268d4c314fe",
-   "covering_ac": "LIFE-A16"
+   "revision": "sha256:0e0d4588db096ae929955344dfe2a781f823cf797a772c38e44a5bfd90f4856e",
+   "covering_ac": "LIFE-A20"
   },
   {
    "id": "wi1",
+   "disposition": "accepted",
+   "revision": "sha256:0e0d4588db096ae929955344dfe2a781f823cf797a772c38e44a5bfd90f4856e",
+   "covering_ac": "LIFE-A37"
+  },
+  {
+   "id": "wi2",
    "disposition": "rejected",
-   "rationale": "The CI gate checks each committed record against its committed document. A reclassified item's old rendering and record are unchanged, so that pair still closes and CI stays green; the claimed permanent red does not occur. The leftover pair is inert."
+   "rationale": "Verdict posting mechanics, including a repeated post, are existing poster behaviour. This spec adds only the criteria-freshness refusal, and a second post of unchanged criteria passes it as the first did."
+  },
+  {
+   "id": "wi3",
+   "disposition": "accepted",
+   "revision": "sha256:0e0d4588db096ae929955344dfe2a781f823cf797a772c38e44a5bfd90f4856e",
+   "covering_ac": "LIFE-A36"
+  },
+  {
+   "id": "wi4",
+   "disposition": "rejected",
+   "rationale": "LIFE-A6 covers it: attestation requires a valid closed record for the item's current document, whenever the item was created. LIFE-D2 reuses an unchanged record without a new round."
   }
  ]
 }
