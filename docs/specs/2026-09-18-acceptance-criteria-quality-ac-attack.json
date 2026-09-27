@@ -1,0 +1,1126 @@
+{
+ "schema_version": "1",
+ "spec_path": "2026-09-18-acceptance-criteria-quality.md",
+ "spec_revision": "sha256:988d25a5d86714f71eeec720669d3d8a54243760d2d1e80c153278d433d743a9",
+ "lenses": [
+  {
+   "lens": "behavioural-outcome",
+   "report": "objections"
+  },
+  {
+   "lens": "obligation-reduction",
+   "report": "objections",
+   "workings": {
+    "obligations": [
+     {
+      "id": "O1",
+      "kind": "result",
+      "statement": "The standard must define a ready criterion set that covers scope, is internally consistent, closes material decisions, is sufficient against incorrect implementations, and leaves ordinary implementation choices open.",
+      "source": "Solution and scope: “A set is ready when it covers the material outcomes and preservation requirements ... has a consistent interpretation, and leaves no significant product decision unresolved.” ACQ-D4 defines coverage, consistency, decision closure, sufficiency, and restraint.",
+      "parts": [
+       {
+        "id": "O1.1",
+        "statement": "Material outcomes, preservation guarantees, and relevant failure and boundary behavior are covered.",
+        "discharged_by": [
+         "ACQ-A7",
+         "ACQ-A8"
+        ]
+       },
+       {
+        "id": "O1.2",
+        "statement": "The criteria can all hold together for the same circumstances.",
+        "discharged_by": [
+         "ACQ-A6"
+        ]
+       },
+       {
+        "id": "O1.3",
+        "statement": "Material ambiguities and success-changing unknown premises are resolved before readiness.",
+        "discharged_by": [
+         "ACQ-A2",
+         "ACQ-A3",
+         "ACQ-A14"
+        ]
+       },
+       {
+        "id": "O1.4",
+        "statement": "A plausible implementation cannot pass the set while violating an in-scope obligation.",
+        "discharged_by": [
+         "ACQ-A7"
+        ]
+       },
+       {
+        "id": "O1.5",
+        "statement": "Scope expansion requires authorization.",
+        "discharged_by": [
+         "ACQ-A19"
+        ]
+       },
+       {
+        "id": "O1.6",
+        "statement": "Internal implementation choices remain open when they preserve the contract.",
+        "discharged_by": [
+         "ACQ-A3"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "O2",
+      "kind": "result",
+      "statement": "Each criterion must distinguish its observable obligation from the evidence used to verify it, and non-code deliverables must be assessed for their promised content.",
+      "source": "ACQ-D1: “An observable obligation and its evidence are distinct.” It requires starting conditions, action or state, expected result, a distinguishing check, and content assessment for research and decision deliverables.",
+      "parts": [
+       {
+        "id": "O2.1",
+        "statement": "A criterion states observable conditions, action or state, and expected result.",
+        "discharged_by": [
+         "ACQ-A1",
+         "ACQ-A2"
+        ]
+       },
+       {
+        "id": "O2.2",
+        "statement": "Artifact checks establish behavior only when the artifact property is itself the required interface or deliverable.",
+        "discharged_by": [
+         "ACQ-A1"
+        ]
+       },
+       {
+        "id": "O2.3",
+        "statement": "Research deliverables are assessed for their answer and evidence, with inconclusive results accepted only when authorized beforehand.",
+        "discharged_by": [
+         "ACQ-A18"
+        ]
+       },
+       {
+        "id": "O2.4",
+        "statement": "Decision deliverables are assessed as reasoned choices against stated constraints rather than by document existence or headings.",
+        "discharged_by": []
+       },
+       {
+        "id": "O2.5",
+        "statement": "Every obligation has a basis, without requiring a parent criterion.",
+        "discharged_by": [
+         "ACQ-A19"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "O3",
+      "kind": "guarantee",
+      "statement": "Criterion granularity must follow independently assessable obligations, including outcomes that span slices.",
+      "source": "ACQ-D2: “Each criterion states one independently assessable obligation.” It also requires a verification child for spanning outcomes and says implementation-child closure does not discharge the parent.",
+      "parts": [
+       {
+        "id": "O3.1",
+        "statement": "Independently deliverable obligations are split, while observations needed for one guarantee remain together.",
+        "discharged_by": [
+         "ACQ-A4"
+        ]
+       },
+       {
+        "id": "O3.2",
+        "statement": "A spanning parent outcome has explicit verification ownership and may reuse sufficient existing checks.",
+        "discharged_by": [
+         "ACQ-A16"
+        ]
+       },
+       {
+        "id": "O3.3",
+        "statement": "The spanning parent stays open until evidence establishes it; closing implementation children alone is insufficient.",
+        "discharged_by": []
+       }
+      ]
+     },
+     {
+      "id": "O4",
+      "kind": "guarantee",
+      "statement": "Checks must be falsifiable, preserve existing guarantees, and rest on verified premises.",
+      "source": "ACQ-D3: “A criterion is falsifiable when a violating implementation can make its check fail.” Preservation criteria may already pass, and factual premises must be verified.",
+      "parts": [
+       {
+        "id": "O4.1",
+        "statement": "A violating implementation can make the check fail.",
+        "discharged_by": [
+         "ACQ-A5",
+         "ACQ-A9"
+        ]
+       },
+       {
+        "id": "O4.2",
+        "statement": "An already-passing preservation check remains valid when violations would fail it.",
+        "discharged_by": [
+         "ACQ-A5"
+        ]
+       },
+       {
+        "id": "O4.3",
+        "statement": "Repository or observational premises that change success are verified before readiness.",
+        "discharged_by": [
+         "ACQ-A14"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "O5",
+      "kind": "result",
+      "statement": "The set must exercise restraint and record applicable what-if cases or justified inapplicability.",
+      "source": "ACQ-D4 requires restraint and says to ask about failure, empty or limit input, missing dependencies, repeated or concurrent execution, and unchanged reruns.",
+      "parts": [
+       {
+        "id": "O5.1",
+        "statement": "Duplicate obligations that exclude no additional in-scope failure are rejected.",
+        "discharged_by": [
+         "ACQ-A10"
+        ]
+       },
+       {
+        "id": "O5.2",
+        "statement": "Unsupported implementation prescriptions that exclude no in-scope failure do not earn criteria.",
+        "discharged_by": []
+       },
+       {
+        "id": "O5.3",
+        "statement": "Applicable dependency-failure behavior is recorded, while justified inapplicability does not require an invented criterion.",
+        "discharged_by": [
+         "ACQ-A8"
+        ]
+       },
+       {
+        "id": "O5.4",
+        "statement": "Applicable empty, limit, repeated, concurrent, and unchanged-state cases are recorded for each criterion, or their inapplicability is justified.",
+        "discharged_by": []
+       }
+      ]
+     },
+     {
+      "id": "O6",
+      "kind": "guarantee",
+      "statement": "Every material commitment must have a feasible verification contract and must block its declared completion boundary until that contract is satisfied.",
+      "source": "ACQ-D5 requires setup, observation, pass/fail rule, evidence, acceptance authority, and completion boundary. It makes mechanical verification the default and keeps ordinary advisory findings non-blocking.",
+      "parts": [
+       {
+        "id": "O6.1",
+        "statement": "The check states setup, observation, pass/fail rule, evidence, acceptance authority, and completion boundary.",
+        "discharged_by": [
+         "ACQ-A9",
+         "ACQ-A13",
+         "ACQ-A17"
+        ]
+       },
+       {
+        "id": "O6.2",
+        "statement": "Human measurement and judgment checks define their protocol or assessment standard and authorized evaluator.",
+        "discharged_by": [
+         "ACQ-A9",
+         "ACQ-A17"
+        ]
+       },
+       {
+        "id": "O6.3",
+        "statement": "Material commitments cannot be discharged by advisory findings.",
+        "discharged_by": [
+         "ACQ-A17"
+        ]
+       },
+       {
+        "id": "O6.4",
+        "statement": "An infeasible check is resolved or the scope is explicitly amended before readiness.",
+        "discharged_by": [
+         "ACQ-A9",
+         "ACQ-A19"
+        ]
+       },
+       {
+        "id": "O6.5",
+        "statement": "Verification is automated where feasible, and human judgment is used where automation cannot establish the property.",
+        "discharged_by": []
+       },
+       {
+        "id": "O6.6",
+        "statement": "Ordinary advisory review findings remain non-blocking.",
+        "discharged_by": []
+       }
+      ]
+     },
+     {
+      "id": "O7",
+      "kind": "failure",
+      "statement": "Stochastic evaluations, live windows, and observation records must have bounded evidence semantics.",
+      "source": "ACQ-D5 specifies controlled stochastic evaluations, live-window protocols, incomplete-window behavior, scope limits, and the meaning of ledger observations.",
+      "parts": [
+       {
+        "id": "O7.1",
+        "statement": "Controlled stochastic evaluations fix scenarios, inputs, run count, and threshold before evaluation.",
+        "discharged_by": []
+       },
+       {
+        "id": "O7.2",
+        "statement": "Live windows define population, collection, window, missing-data treatment, threshold, baseline when needed, and completion boundary.",
+        "discharged_by": [
+         "ACQ-A15"
+        ]
+       },
+       {
+        "id": "O7.3",
+        "statement": "An incomplete window remains pending, and examples or window results do not establish reliability beyond their stated scope.",
+        "discharged_by": []
+       },
+       {
+        "id": "O7.4",
+        "statement": "A ledger row does not prove an outcome without its referenced protocol or assessment, evidence, and result.",
+        "discharged_by": []
+       },
+       {
+        "id": "O7.5",
+        "statement": "Existing observation records retain their meaning, and spec-lint validates structure rather than evidence sufficiency.",
+        "discharged_by": []
+       }
+      ]
+     },
+     {
+      "id": "O8",
+      "kind": "result",
+      "statement": "One admitted shared standard must become the deployed normative source for authoring, review, and glossary references.",
+      "source": "ACQ-D6 says the shared standard is the deployed home, each rule carries its listed ID, named skills cite it, and the glossary points to it. S1 repeats these adoption outcomes.",
+      "parts": [
+       {
+        "id": "O8.1",
+        "statement": "The criteria definition and what-if questions have one deployed source with no contradictory private quality rules.",
+        "discharged_by": [
+         "ACQ-A11"
+        ]
+       },
+       {
+        "id": "O8.2",
+        "statement": "Every rule in the standard carries the ID listed by its governing decision.",
+        "discharged_by": []
+       },
+       {
+        "id": "O8.3",
+        "statement": "Each applicable authoring and review skill directs its criteria step to the shared source.",
+        "discharged_by": [
+         "ACQ-A11"
+        ]
+       },
+       {
+        "id": "O8.4",
+        "statement": "The glossary points to the shared standard.",
+        "discharged_by": []
+       },
+       {
+        "id": "O8.5",
+        "statement": "Adoption reconciles preservation and planned human acceptance with prior mechanical-only wording.",
+        "discharged_by": [
+         "ACQ-A11",
+         "ACQ-A17"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "O9",
+      "kind": "guarantee",
+      "statement": "The existing attack process must use the specified lens architecture and finding contract without creating a second review framework.",
+      "source": "ACQ-D6 specifies four lenses, assigns their responsibilities, restricts each prompt to its rules, defines finding content and author response, and preserves the existing round contract.",
+      "parts": [
+       {
+        "id": "O9.1",
+        "statement": "The attack uses four named lenses with the stated responsibilities, and each prompt carries exactly its assigned rules.",
+        "discharged_by": []
+       },
+       {
+        "id": "O9.2",
+        "statement": "An objection cites a rule enforced by its lens.",
+        "discharged_by": []
+       },
+       {
+        "id": "O9.3",
+        "statement": "Each finding names its criterion or none, rule, and scenario, carries no drafted criterion, and an accepted finding is answered by the author.",
+        "discharged_by": [
+         "ACQ-A20"
+        ]
+       },
+       {
+        "id": "O9.4",
+        "statement": "The change does not create a second panel or make the tracker classify criterion quality.",
+        "discharged_by": []
+       },
+       {
+        "id": "O9.5",
+        "statement": "Attackers do not demand implementation criteria from a specification whose own deliverable is assessed.",
+        "discharged_by": [
+         "ACQ-A18"
+        ]
+       },
+       {
+        "id": "O9.6",
+        "statement": "Every objection receives a disposition under the existing round contract.",
+        "discharged_by": []
+       },
+       {
+        "id": "O9.7",
+        "statement": "The attack boundary supports an explicit empty result.",
+        "discharged_by": []
+       }
+      ]
+     },
+     {
+      "id": "O10",
+      "kind": "result",
+      "statement": "Future quality evaluations must demonstrate semantic defect detection through calibrated, routed defective examples and corrected controls.",
+      "source": "Testing decisions require paired defective and corrected examples, semantic detection beyond ID and shape, lens assignment, full-panel identification, and a preimplementation evaluation contract based on baseline observations.",
+      "parts": [
+       {
+        "id": "O10.1",
+        "statement": "Deliberately defective examples are paired with corrected controls.",
+        "discharged_by": [
+         "ACQ-A1",
+         "ACQ-A2",
+         "ACQ-A3",
+         "ACQ-A4",
+         "ACQ-A5",
+         "ACQ-A6",
+         "ACQ-A7",
+         "ACQ-A8",
+         "ACQ-A9",
+         "ACQ-A10",
+         "ACQ-A14",
+         "ACQ-A15",
+         "ACQ-A16",
+         "ACQ-A17",
+         "ACQ-A18",
+         "ACQ-A19",
+         "ACQ-A20"
+        ]
+       },
+       {
+        "id": "O10.2",
+        "statement": "The child evaluation demonstrates detection of the intended defect beyond matching an ID or schema, assigns cases to responsible lenses, and identifies full-panel cases.",
+        "discharged_by": []
+       },
+       {
+        "id": "O10.3",
+        "statement": "Before implementation, the child spec fixes model configuration, repetition policy, budget, thresholds from baselines, and the limits of human or model scoring judgment.",
+        "discharged_by": []
+       },
+       {
+        "id": "O10.4",
+        "statement": "Briefing checks observe generated output at the consumer boundary, and staging checks inspect sources and citations without deployment.",
+        "discharged_by": [
+         "ACQ-A11",
+         "ACQ-A12",
+         "ACQ-A13"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "O11",
+      "kind": "result",
+      "statement": "Generated briefs must preserve assigned criteria and map their planned evidence separately.",
+      "source": "S3 is “Brief fidelity and evidence”; testing decisions require checks at the generated brief's consumer boundary.",
+      "parts": [
+       {
+        "id": "O11.1",
+        "statement": "The brief preserves assigned criterion IDs and texts, and refuses an empty assignment.",
+        "discharged_by": [
+         "ACQ-A12"
+        ]
+       },
+       {
+        "id": "O11.2",
+        "statement": "The brief maps evidence to each criterion separately and reports infeasible planned checks as unready.",
+        "discharged_by": [
+         "ACQ-A13"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "O12",
+      "kind": "guarantee",
+      "statement": "Repeated, concurrent, and rerun evaluations must preserve fixed and isolated operational semantics.",
+      "source": "What-if questions: repeated evaluation uses the same fixed scenario and scoring contract; concurrent evaluations use separate records; rerunning staging creates no duplicate standard or citation change.",
+      "parts": [
+       {
+        "id": "O12.1",
+        "statement": "Repeated evaluations keep one scenario and scoring contract, concurrent runs use separate records, and staging reruns are idempotent.",
+        "discharged_by": []
+       }
+      ]
+     },
+     {
+      "id": "O13",
+      "kind": "guarantee",
+      "statement": "Slice integration must respect the shared-template boundary and declared dependencies.",
+      "source": "S2 limits the shared attack template and requires evaluation evidence for additions. The ordered slice list says S2 and S3 depend on S1.",
+      "parts": [
+       {
+        "id": "O13.1",
+        "statement": "The shared template contains only the standard reference, output shape, explicit empty result, and fenced document; additions require evidence for every reached lens.",
+        "discharged_by": []
+       },
+       {
+        "id": "O13.2",
+        "statement": "S2 and S3 do not implement before S1.",
+        "discharged_by": []
+       }
+      ]
+     },
+     {
+      "id": "O14",
+      "kind": "guarantee",
+      "statement": "Each continuation feature must be promoted into the required design and implementation structure before implementation begins.",
+      "source": "Continuations: “Before implementation, use `work promote` on each resulting feature to create its design child and blocked implementation placeholder. Its child spec carries the implementation manifest and the dependencies above.”",
+      "parts": [
+       {
+        "id": "O14.1",
+        "statement": "Each feature is promoted before implementation and receives its design child, blocked implementation placeholder, manifest, and dependencies.",
+        "discharged_by": []
+       }
+      ]
+     }
+    ],
+    "criteria": [
+     "ACQ-A1",
+     "ACQ-A2",
+     "ACQ-A3",
+     "ACQ-A4",
+     "ACQ-A5",
+     "ACQ-A6",
+     "ACQ-A7",
+     "ACQ-A8",
+     "ACQ-A9",
+     "ACQ-A10",
+     "ACQ-A11",
+     "ACQ-A12",
+     "ACQ-A13",
+     "ACQ-A14",
+     "ACQ-A15",
+     "ACQ-A16",
+     "ACQ-A17",
+     "ACQ-A18",
+     "ACQ-A19",
+     "ACQ-A20"
+    ]
+   }
+  },
+  {
+   "lens": "set-consistency",
+   "report": "objections"
+  },
+  {
+   "lens": "what-if",
+   "report": "objections"
+  }
+ ],
+ "objections": [
+  {
+   "id": "bo1",
+   "lens": "behavioural-outcome",
+   "target_ac": "ACQ-A11",
+   "ground": {
+    "reason": "ACQ-D6 promises that one standard feeds the existing authoring and review paths. ACQ-A11 and its named staging check inspect only the deployed source, citations, and absence of contradictory private rules. They do not observe whether an authoring path applies the standard or produces criteria that conform to it.",
+    "rule": "observable-obligation"
+   },
+   "objection": "A deployment can contain one correctly cited standard and pass staging while an applicable authoring skill still produces criteria that violate that standard.",
+   "obligation": "The shared standard changes the results produced by each applicable authoring path.",
+   "scenario": {
+    "given": "A staged configuration with one deployed standard, correct citations from every named skill, and no contradictory private rule",
+    "when": "The staging inspection runs and the cited authoring skill is then used",
+    "expect": "Staging passes, but an applicable authoring skill generates a criterion supported only by an artifact-presence check."
+   }
+  },
+  {
+   "id": "bo2",
+   "lens": "behavioural-outcome",
+   "target_ac": "ACQ-A18",
+   "ground": {
+    "reason": "The research-deliverable cases assess whether review distinguishes document existence from an assessed answer. The final spec-authoring case separately requires review not to demand implementation criteria from a content-assessed design spec. Either behavior can be delivered or rejected without the other.",
+    "rule": "one-obligation"
+   },
+   "objection": "ACQ-A18 combines research-answer assessment with restraint when reviewing a spec-authoring item, leaving two independently assessable review behaviors under one completion condition.",
+   "obligation": "Review research deliverables by their answer quality, and separately avoid demanding implementation criteria from a spec whose deliverable is its content.",
+   "scenario": {
+    "given": "A review implementation that correctly rejects existence-only research evidence and accepts assessed answers",
+    "when": "ACQ-A18's research cases and its spec-authoring case are evaluated independently",
+    "expect": "The research cases pass while the same review still raises an improper missing-implementation-criteria finding against the content-assessed spec."
+   }
+  },
+  {
+   "id": "bo3",
+   "lens": "behavioural-outcome",
+   "target_ac": "ACQ-A20",
+   "ground": {
+    "reason": "The finding's required fields and prohibition on drafted criteria govern the attack output. Requiring the author to answer an accepted finding governs a later disposition and amendment step. Those results occur at different interfaces and can be delivered independently.",
+    "rule": "one-obligation"
+   },
+   "objection": "ACQ-A20 bundles finding-record behavior with the later authorship of a replacement criterion.",
+   "obligation": "Produce a valid attack finding without drafting a criterion, and separately require the author to supply any criterion needed to resolve an accepted finding.",
+   "scenario": {
+    "given": "An attack implementation that emits the required target, rule, and scenario fields and omits a drafted criterion",
+    "when": "The finding is accepted and the separate response workflow runs",
+    "expect": "The attack output passes its finding-shape checks while an accepted finding is later answered by an attacker-drafted criterion rather than one written by the author."
+   }
+  },
+  {
+   "id": "or1",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion tests whether a decision deliverable is assessed as a reasoned choice against its stated constraints.",
+    "rule": "coverage"
+   },
+   "objection": "The work can accept a decision document based on its existence or structure without assessing the decision or reasoning.",
+   "obligation": "O2.4",
+   "scenario": {
+    "given": "A decision item produces a correctly headed document containing an unsupported choice.",
+    "when": "The implementation passes every stated acceptance check.",
+    "expect": "The decision is rejected because its reasoning is not assessed against the stated constraints."
+   }
+  },
+  {
+   "id": "or2",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "ACQ-A16 checks verification ownership but does not check that the parent remains open until evidence exists or that implementation-child closure cannot discharge it.",
+    "rule": "coverage"
+   },
+   "objection": "A parent outcome can be closed when its implementation children close even though its verification child has supplied no evidence.",
+   "obligation": "O3.3",
+   "scenario": {
+    "given": "A spanning parent has an explicit verification child and all implementation children are closed.",
+    "when": "The parent is closed before the verification child supplies evidence.",
+    "expect": "The parent remains pending until evidence establishes its outcome."
+   }
+  },
+  {
+   "id": "or3",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "ACQ-A10 covers duplicate obligations but no criterion detects a novel, unsupported implementation prescription that excludes no in-scope failure.",
+    "rule": "coverage"
+   },
+   "objection": "The contract can prescribe an implementation detail that has no basis in an outcome or explicit constraint.",
+   "obligation": "O5.2",
+   "scenario": {
+    "given": "A nonduplicate criterion mandates a specific library although every allowed library preserves the contract.",
+    "when": "The quality review runs.",
+    "expect": "The review raises a restraint or basis objection."
+   }
+  },
+  {
+   "id": "or4",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "Only dependency failure is directly exercised as a missing what-if answer. No criterion checks the general empty, limit, repeat, concurrency, or unchanged-state recording obligation.",
+    "rule": "coverage"
+   },
+   "objection": "Criteria can omit applicable boundary and repeated-execution analyses without causing any acceptance check to fail.",
+   "obligation": "O5.4",
+   "scenario": {
+    "given": "A criterion behaves incorrectly at its limit and when run twice, but its what-if record discusses only dependency failure.",
+    "when": "All stated acceptance scenarios are evaluated.",
+    "expect": "The review identifies each applicable omitted case or the absence of a justified inapplicability record."
+   }
+  },
+  {
+   "id": "or5",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion enforces the stated preference for mechanical verification where feasible or limits human judgment to properties automation cannot establish.",
+    "rule": "coverage"
+   },
+   "objection": "A readily automatable obligation can be assigned only a human judgment check.",
+   "obligation": "O6.5",
+   "scenario": {
+    "given": "An exact output-schema requirement is assigned to an evaluator's subjective approval.",
+    "when": "The verification contract is reviewed.",
+    "expect": "The contract requires the feasible mechanical check or justifies why human judgment is necessary."
+   }
+  },
+  {
+   "id": "or6",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion preserves the rule that ordinary advisory review findings remain non-blocking.",
+    "rule": "coverage"
+   },
+   "objection": "The implementation can convert ordinary advisory findings into mandatory completion gates.",
+   "obligation": "O6.6",
+   "scenario": {
+    "given": "A work item has a complete verification contract and an unrelated advisory review finding.",
+    "when": "The implementation evaluates completion.",
+    "expect": "Only declared acceptance checks block completion; ordinary advisory findings remain non-blocking."
+   }
+  },
+  {
+   "id": "or7",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "ACQ-A15 addresses live windows, while no criterion specifically exercises the required scenarios, inputs, run count, and threshold for controlled stochastic evaluations.",
+    "rule": "coverage"
+   },
+   "objection": "A stochastic evaluation can use an unspecified or post hoc run count and threshold.",
+   "obligation": "O7.1",
+   "scenario": {
+    "given": "A stochastic behavior criterion defines an outcome but lets the evaluator choose the number of runs and threshold after seeing results.",
+    "when": "The quality review runs.",
+    "expect": "The review rejects the evaluation until its scenarios, inputs, run count, and threshold are fixed in advance."
+   }
+  },
+  {
+   "id": "or8",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "ACQ-A15 checks whether a window is specified but does not check that an incomplete window remains pending or that its result is not extrapolated beyond its stated scope.",
+    "rule": "coverage"
+   },
+   "objection": "Partial window data can complete a criterion or be claimed as evidence of broader reliability.",
+   "obligation": "O7.3",
+   "scenario": {
+    "given": "A valid observation protocol has collected only half its window.",
+    "when": "The implementation marks the criterion complete and claims general reliability.",
+    "expect": "The criterion remains pending and the result is limited to the defined population and window."
+   }
+  },
+  {
+   "id": "or9",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion tests the ledger rule that an observed row is only a reference and does not itself prove an outcome.",
+    "rule": "coverage"
+   },
+   "objection": "A bare ledger row can be treated as sufficient evidence without the referenced protocol, evidence, and result.",
+   "obligation": "O7.4",
+   "scenario": {
+    "given": "The ledger contains an attributed observed row with no supporting account.",
+    "when": "Completion is evaluated.",
+    "expect": "Acceptance remains pending because the referenced account is missing."
+   }
+  },
+  {
+   "id": "or10",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion preserves existing ledger-record meaning or confines spec-lint to structural validation.",
+    "rule": "coverage"
+   },
+   "objection": "Adoption can reinterpret historical observations or make spec-lint claim semantic evidence sufficiency.",
+   "obligation": "O7.5",
+   "scenario": {
+    "given": "Historical observed rows exist under the previous semantics.",
+    "when": "Adoption changes their interpretation and extends spec-lint to declare their evidence sufficient.",
+    "expect": "Existing records retain their meaning and spec-lint reports only structural validity."
+   }
+  },
+  {
+   "id": "or11",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "ACQ-A11 checks a single deployed source, but no criterion verifies that every rule carries the stable ID named by its decision.",
+    "rule": "coverage"
+   },
+   "objection": "The deployed standard can omit or misassign rule IDs while its source and citations remain unique.",
+   "obligation": "O8.2",
+   "scenario": {
+    "given": "The standard is deployed once, but the decision-closure rule has no ID.",
+    "when": "Staging and the stated finding-format evaluations run.",
+    "expect": "Staging fails because every listed rule must expose its specified ID."
+   }
+  },
+  {
+   "id": "or12",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "ACQ-A11 covers authoring and review skills but does not inspect the glossary pointer promised by the design and S1.",
+    "rule": "coverage"
+   },
+   "objection": "The glossary can continue pointing to an obsolete or private definition.",
+   "obligation": "O8.4",
+   "scenario": {
+    "given": "All applicable skills cite the shared source and contain no contradictory rule.",
+    "when": "The glossary retains its old definition.",
+    "expect": "Staging fails because the glossary does not point to the shared standard."
+   }
+  },
+  {
+   "id": "or13",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion verifies the required four-lens topology, responsibility assignment, or exact per-lens rule set.",
+    "rule": "coverage"
+   },
+   "objection": "The attack process can omit a lens, route a case to the wrong lens, or load a lens with unrelated rules.",
+   "obligation": "O9.1",
+   "scenario": {
+    "given": "An aggregate reviewer passes all supplied examples but uses three lenses and gives each the full rulebook.",
+    "when": "The attack configuration is accepted.",
+    "expect": "The configuration is rejected because it does not contain the four specified lenses with their assigned rules."
+   }
+  },
+  {
+   "id": "or14",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion preserves the existing attack process by preventing a second panel or a tracker-side criterion-quality classification.",
+    "rule": "coverage"
+   },
+   "objection": "The implementation can introduce the expressly disclaimed second review framework or tracker classification.",
+   "obligation": "O9.4",
+   "scenario": {
+    "given": "The existing attack outputs still satisfy ACQ-A20.",
+    "when": "The implementation adds a parallel criterion-quality panel and tracker field.",
+    "expect": "The change is rejected because it creates a second panel and tracker quality state."
+   }
+  },
+  {
+   "id": "or15",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "ACQ-A20 covers accepted findings but does not require a disposition for every objection.",
+    "rule": "coverage"
+   },
+   "objection": "Rejected, duplicate, or otherwise unaccepted objections can be left without dispositions.",
+   "obligation": "O9.6",
+   "scenario": {
+    "given": "An attack produces one accepted finding and one duplicate finding.",
+    "when": "The author answers only the accepted finding.",
+    "expect": "The round remains incomplete until every objection has a recorded disposition."
+   }
+  },
+  {
+   "id": "or16",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion checks that the shared attack template supports the explicit empty result.",
+    "rule": "coverage"
+   },
+   "objection": "A clean attack can return nothing or a malformed record instead of the required explicit empty result.",
+   "obligation": "O9.7",
+   "scenario": {
+    "given": "A document produces no objections.",
+    "when": "The shared attack template runs.",
+    "expect": "The attack returns a valid empty report."
+   }
+  },
+  {
+   "id": "or17",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion checks that the child evaluation contract demonstrates semantic detection rather than merely matching a criterion ID and output shape, or that it routes cases to responsible lenses and the full panel where needed.",
+    "rule": "coverage"
+   },
+   "objection": "The evaluation can score syntactic output as success without proving detection of the intended defect or correct lens ownership.",
+   "obligation": "O10.2",
+   "scenario": {
+    "given": "A model emits a correctly shaped objection with the expected ID for the wrong semantic reason.",
+    "when": "The child evaluator scores only the ID and schema.",
+    "expect": "The evaluation fails because it does not establish that the intended defect was detected by the responsible lens."
+   }
+  },
+  {
+   "id": "or18",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion checks that model configuration, repetition policy, budget, thresholds, baseline observations, and judgment limits are settled before implementation.",
+    "rule": "coverage"
+   },
+   "objection": "The evaluation design can choose its configuration or threshold after observing results.",
+   "obligation": "O10.3",
+   "scenario": {
+    "given": "The quality child starts evaluations without a fixed model, repetition policy, budget, or threshold.",
+    "when": "The evaluator selects favorable settings after inspecting outputs.",
+    "expect": "Implementation remains blocked until the evaluation contract is fixed from baseline observations."
+   }
+  },
+  {
+   "id": "or19",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion observes the required fixed scenario and scoring contract across repetitions, isolated records for concurrent runs, or idempotent staging behavior.",
+    "rule": "coverage"
+   },
+   "objection": "Operational evaluation semantics can drift across runs, share state concurrently, or duplicate deployed content.",
+   "obligation": "O12.1",
+   "scenario": {
+    "given": "An implementation passes each one-shot acceptance example.",
+    "when": "It changes scoring on a repeat, shares a round record concurrently, and duplicates the standard on a staging rerun.",
+    "expect": "Repeated runs retain one scenario and scoring contract, concurrent runs remain isolated, and rerun staging leaves one unchanged source."
+   }
+  },
+  {
+   "id": "or20",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion checks the shared-template content boundary or requires evaluation evidence before adding content that reaches multiple lenses.",
+    "rule": "coverage"
+   },
+   "objection": "The shared attack template can accumulate lens-specific instructions without evidence that they improve every affected lens.",
+   "obligation": "O13.1",
+   "scenario": {
+    "given": "The template already contains the reference, output shape, empty result, and fenced document.",
+    "when": "An implementer adds a behavioral-outcome rule directly to the shared template without evaluation.",
+    "expect": "The addition is rejected until evaluation evidence establishes its effect on every reached lens."
+   }
+  },
+  {
+   "id": "or21",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "The slice ordering states that S2 and S3 depend on S1, but no criterion observes that ordering.",
+    "rule": "coverage"
+   },
+   "objection": "Assessment or briefing integration can land before the shared standard it is required to consume.",
+   "obligation": "O13.2",
+   "scenario": {
+    "given": "The standard-adoption slice is incomplete.",
+    "when": "The assessment or briefing slice is implemented first and the complete end state later passes all criteria.",
+    "expect": "S2 and S3 remain blocked until S1 has landed."
+   }
+  },
+  {
+   "id": "or22",
+   "lens": "obligation-reduction",
+   "target_ac": "none",
+   "ground": {
+    "reason": "No criterion checks the Continuations instruction to promote each feature, create its design child and blocked implementation placeholder, and place the manifest and dependencies in the child spec before implementation.",
+    "rule": "coverage"
+   },
+   "objection": "Implementation can begin without the required continuation structure or child specification.",
+   "obligation": "O14.1",
+   "scenario": {
+    "given": "A continuation feature has no design child, blocked implementation placeholder, or child-spec manifest.",
+    "when": "Implementation proceeds and later satisfies the product-facing criteria.",
+    "expect": "Implementation remains blocked until the feature is promoted and its required child records exist."
+   }
+  },
+  {
+   "id": "sc1",
+   "lens": "set-consistency",
+   "target_ac": "ACQ-A17",
+   "ground": {
+    "reason": "ACQ-D5 states 'Mechanical verification is the default' without saying whether that default is a rule that a feasible automated check must be used, while ACQ-A17's control states a set using only well-defined human acceptance checks receives no automation-quota finding. Read together, the set leaves open whether choosing a human check where automation is feasible is a defect: one reading (D5's default is binding) requires a finding, the other (A17's control) forbids it. The criterion set never names the decision — when may a human check substitute for feasible automation — so the same set gets opposite verdicts depending on which text the reviewer weights.",
+    "rule": "decision-closure"
+   },
+   "objection": "The set permits both 'human-only verification contracts are always acceptable' and 'feasible automation is mandatory because mechanical is the default', so a reviewer can either accept or object to the same all-human-check set with both readings grounded in the criteria.",
+   "scenario": {
+    "given": "A criterion set in which every material commitment carries a well-defined human judgment check (named evaluator, agreed assessment standard, recorded decision), and for at least one commitment a mechanical check at the public interface is feasible but the author chose the human check anyway.",
+    "when": "The set is judged against ACQ-D5's 'Mechanical verification is the default' and ACQ-A17's control 'a set using only well-defined human acceptance checks receives no automation-quota finding'.",
+    "expect": "One reviewer objects that the feasible mechanical check was not used, citing the mechanical-default rule; another accepts the set, citing ACQ-A17's control. The criteria support both verdicts and do not name the decision that resolves them."
+   }
+  },
+  {
+   "id": "wi1",
+   "lens": "what-if",
+   "target_ac": "ACQ-A12",
+   "ground": {
+    "reason": "Asked of ACQ-A12: what if something it relies on is missing? The criterion's dependency is the source of criterion texts. ACQ-A12 answers only two states of that dependency: all texts retrievable (preserve exactly) and an empty assigned set (refuse). A non-empty set in which one assigned ID's text cannot be retrieved is neither covered nor ruled out — the what-if section claims only that 'ACQ-A12 covers the empty set', which is a different case.",
+    "rule": "what-if-questions"
+   },
+   "objection": "The criteria let a generated brief silently drop an assigned criterion or fabricate its text when the text source partially fails. The brief would then present an incomplete or invented contract as the assigned one, which is the exact failure class S3 exists to prevent, yet no criterion distinguishes this from the all-present and zero-set cases ACQ-A12 pins.",
+   "scenario": {
+    "given": "an assigned set of several criterion IDs, one of whose text cannot be retrieved from the source",
+    "when": "the brief is generated",
+    "expect": "a refusal or an explicit unready report naming the unresolvable criterion, rather than a brief that omits that criterion or carries invented text"
+   }
+  },
+  {
+   "id": "wi2",
+   "lens": "what-if",
+   "target_ac": "none",
+   "ground": {
+    "reason": "Asked of the attack round the criteria govern: what if something it relies on errors? The document's own what-if section answers the dependency question for a missing lens report ('a missing lens report leaves a round open') and S2 defines an explicit empty result, but a lens report that is present yet malformed (fails the report schema) is neither covered nor ruled out. 'Mechanical validation can check the record and references' states a capability, and no criterion ACQ-A1 through ACQ-A20 tests the round's behavior on a shape-violating report.",
+    "rule": "what-if-questions"
+   },
+   "objection": "The criteria permit round assembly to treat an unparseable lens report as a clean empty result. A round could then record 'no objections' for a lens that actually failed, declaring a defective criterion set reviewed when one of the four lenses never examined it — the missing-report safeguard does not fire because a report exists.",
+   "scenario": {
+    "given": "an attack round in which one lens emits output that fails the report schema",
+    "when": "the round assembles the lens reports",
+    "expect": "the round stays open or records the lens as failed, mirroring the missing-report rule, instead of recording an empty result"
+   }
+  }
+ ],
+ "dispositions": [
+  {
+   "id": "bo1",
+   "disposition": "rejected",
+   "rationale": "ACQ-A11 pins the adoption interface, which is S1's deliverable. The quality of criteria an authoring path produces is judged per document by the criteria attack itself, which is the design's mechanism for it."
+  },
+  {
+   "id": "bo2",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A21"
+  },
+  {
+   "id": "bo3",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A20"
+  },
+  {
+   "id": "or1",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A24"
+  },
+  {
+   "id": "or2",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A24"
+  },
+  {
+   "id": "or3",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A24"
+  },
+  {
+   "id": "or4",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A24"
+  },
+  {
+   "id": "or5",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A17"
+  },
+  {
+   "id": "or6",
+   "disposition": "rejected",
+   "rationale": "This preserves charter D8 behaviour, and no slice in this spec touches the verdict path that could break it."
+  },
+  {
+   "id": "or7",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A24"
+  },
+  {
+   "id": "or8",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A24"
+  },
+  {
+   "id": "or9",
+   "disposition": "rejected",
+   "rationale": "No slice builds anything that reads ledger rows, so no implementation could violate this."
+  },
+  {
+   "id": "or10",
+   "disposition": "rejected",
+   "rationale": "No slice changes spec-lint or rewrites existing ledger records."
+  },
+  {
+   "id": "or11",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A11"
+  },
+  {
+   "id": "or12",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A11"
+  },
+  {
+   "id": "or13",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A22"
+  },
+  {
+   "id": "or14",
+   "disposition": "rejected",
+   "rationale": "This forbids building something no slice builds, so there is nothing to observe."
+  },
+  {
+   "id": "or15",
+   "disposition": "rejected",
+   "rationale": "The existing attack checker refuses an undispositioned objection, and this spec leaves that checker unchanged."
+  },
+  {
+   "id": "or16",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A23"
+  },
+  {
+   "id": "or17",
+   "disposition": "rejected",
+   "rationale": "The testing decisions assign the evaluation contract to the S2 child spec, which carries its own criteria for it."
+  },
+  {
+   "id": "or18",
+   "disposition": "rejected",
+   "rationale": "The testing decisions assign the evaluation configuration to the S2 child spec, which carries its own criteria for it."
+  },
+  {
+   "id": "or19",
+   "disposition": "rejected",
+   "rationale": "The what-if section records answers, not further obligations. The repeated-evaluation scoring contract belongs to the S2 child spec, concurrent rounds keep separate records under the existing attack contract, and staging idempotency is the installer's own guarantee."
+  },
+  {
+   "id": "or20",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A23"
+  },
+  {
+   "id": "or21",
+   "disposition": "rejected",
+   "rationale": "Slice order is enforced by tracker dependencies, not by an acceptance criterion."
+  },
+  {
+   "id": "or22",
+   "disposition": "rejected",
+   "rationale": "Continuation structure is planning, not product behaviour, and the lifecycle's claim gates enforce it on each promoted feature."
+  },
+  {
+   "id": "sc1",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A17"
+  },
+  {
+   "id": "wi1",
+   "disposition": "accepted",
+   "revision": "sha256:a6f5a69877aaf91583c2e6eb9b954802ac7809155ff2ff913c8ad69b80ce6f03",
+   "covering_ac": "ACQ-A12"
+  },
+  {
+   "id": "wi2",
+   "disposition": "rejected",
+   "rationale": "The existing attack checker refuses a malformed record and a lens entry with no valid report, and this spec does not change that checker."
+  }
+ ]
+}
