@@ -53,6 +53,7 @@ from installer.core.run import (
     record_receipt,
 )
 from installer.core.summary import render_summary
+from installer.core.sync import InstructionFileOverrunError
 from installer.core.templates import substitute_home
 from installer.plugins.registry import discover
 from installer.tools.registry import UnknownToolError, get_adapter, known_tools
@@ -481,13 +482,18 @@ def _run(
                             auto_yes=config.auto_yes,
                         )
                         _merge_into(counters, cli_outcome.counters)
-                except (ConsentRequiredError, CustomContentConflictError):
-                    # Two up-front guards raise before any write: a non-interactive
+                except (
+                    ConsentRequiredError,
+                    CustomContentConflictError,
+                    InstructionFileOverrunError,
+                ):
+                    # Three up-front guards raise before any write: a non-interactive
                     # run lacking --yes/--dry-run cannot answer the per-file overwrite
-                    # prompt, and an instruction file whose managed part was hand-edited
-                    # must not be overwritten. Both already reported themselves, so
-                    # surface the CLI's exit 1 (the prune flow uses the same convention)
-                    # rather than an uncaught traceback.
+                    # prompt, an instruction file whose managed part was hand-edited
+                    # must not be overwritten, and an instruction file must not land
+                    # past the size its runtime truncates at. All three already
+                    # reported themselves, so surface the CLI's exit 1 (the prune flow
+                    # uses the same convention) rather than an uncaught traceback.
                     return 1
 
             if (args.prune or args.prune_only) and not receipt_corrupt:
@@ -791,7 +797,11 @@ def _run_project(
                             outcomes_by_plugin=plugin_outcomes,
                         ),
                     )
-                except (ConsentRequiredError, CustomContentConflictError):
+                except (
+                    ConsentRequiredError,
+                    CustomContentConflictError,
+                    InstructionFileOverrunError,
+                ):
                     return 1
 
             if (args.prune or args.prune_only) and not receipt_corrupt:

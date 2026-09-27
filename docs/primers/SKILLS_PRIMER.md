@@ -23,7 +23,7 @@ Skills exist because some workflows (debugging, TDD, brainstorming, code review)
 | Antigravity CLI (`agy`, loads `~/.gemini`) | Progressive disclosure: each skill's name and description are injected at session start, and the model or the user activates a skill to load its body |
 | Copilot CLI | `skill` tool |
 
-The four tools this repository installs into are Claude Code, Codex CLI, Gemini (whose `~/.gemini` home is now read by Antigravity CLI) and OpenCode; a shared skill is staged into all four. Copilot CLI appears above as a format reference, not as an install target. The invocation mechanism for Codex and OpenCode is not recorded here. Confirm both against their own tools rather than inferring from this table.
+The four tools this repository installs into are Claude Code, Codex CLI, Gemini (whose `~/.gemini` home is read by Antigravity CLI) and OpenCode; a shared skill is staged into all four. Copilot CLI appears above as a format reference, not as an install target. The invocation mechanism for Codex and OpenCode is not recorded here. Confirm both against their own tools rather than inferring from this table.
 
 Agents do not use the Read tool on SKILL.md files; the Skill tool is the interface.
 

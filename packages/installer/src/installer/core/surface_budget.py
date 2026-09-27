@@ -262,9 +262,10 @@ def instruction_file_violations(*, tool: str, instruction: bytes | None) -> list
     """Violation messages if a tool's deployed instruction file exceeds the byte
     limit its runtime truncates at. Returns at most one message.
 
-    Only the installer-managed bytes are weighed. The user's own text below the
-    custom-content heading is merged in at write time, after this check runs, so
-    that text can still carry the file on disk past the limit.
+    The admission gate passes the installer-managed bytes, because it runs before
+    any home is read. The install passes the file again with the user's own text
+    below the custom-content heading merged in, so that text cannot carry the file
+    on disk past the limit either.
     """
     limit = INSTRUCTION_FILE_BYTE_LIMITS.get(tool)
     if limit is None or instruction is None or len(instruction) <= limit:
