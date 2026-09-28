@@ -78,7 +78,8 @@ Resolution follows these rules:
   named spec. Errors name the ID or path and cause. An empty cited entry
   contributes no criterion.
 - Resolve relative spec paths from the repository root. A working-directory
-  change does not change the result.
+  change does not change the result. Refuse a named spec whose path is
+  absolute or leads outside the repository root, naming the path and cause.
 
 The workcli and spec-lint grammars remain marked counterparts with a common
 round-trip fixture. This is a compatibility obligation across repositories.
@@ -146,7 +147,10 @@ Changing tracker-born acceptance text or description changes the rendering
 and invalidates its attestation when the bytes change. Changing a spec's bytes
 invalidates the spec's record and every spec-born item's attestation against
 that revision. Changing a spec-born item's description does not invalidate
-its attack because that description is not the attacked document.
+its attack because that description is not the attacked document. A
+tracker-born item's attestation depends on its spec only through its
+rendering. A spec change that leaves that rendering unchanged leaves the
+attestation current.
 
 An amendment uses the existing `work acceptance set --why` trail where the
 field changes. The agent rerenders when needed, attacks the amended document,
@@ -185,8 +189,9 @@ missing attestation names the attack step. No gate classifies criterion prose.
 Structural children of a spec container have no noun. A design child remains
 outside claim and delivery gates; its spec is checked by the record gate when
 its record is present. An implementation placeholder remains unclaimable and
-is retired when the spec manifest expands. An item with neither a recognized
-noun nor a recognized structural role is refused by type.
+is retired when the spec manifest expands. PR delivery refuses it as well.
+Delivering its design child with `--spec` still reconciles it. An item with
+neither a recognized noun nor a recognized structural role is refused by type.
 
 ### LIFE-D6: Review and posting use the rendered contract
 
@@ -292,20 +297,25 @@ leave significant product decisions to implementation.
   a no-op, with no refusal.
 - **LIFE-A12** Every verb that moves an open leaf to in progress applies exactly
   the noun and triviality attestation rules in LIFE-D5.
-- **LIFE-A13** PR delivery refuses a leaf with empty or unresolvable criteria,
-  including a trivial or already-in-progress leaf.
-- **LIFE-A14** PR delivery refuses every nontrivial leaf without current
-  attestation and accepts that requirement after a valid attestation.
+- **LIFE-A13** PR delivery refuses a noun-bearing leaf with empty or
+  unresolvable criteria, including a trivial or already-in-progress leaf.
+- **LIFE-A14** PR delivery refuses every nontrivial noun-bearing leaf without
+  current attestation and accepts that requirement after a valid attestation.
 - **LIFE-A15** A design child passes claim and delivery without the criteria
   and attestation gates.
-- **LIFE-A16** Review emission for an item refuses exactly when its input
-  differs from a fresh rendering, or when LIFE-D5's review row does not admit
-  that rendering, and the refusal names its cause. Otherwise the input becomes
-  the round's recorded criteria.
-- **LIFE-A17** For a round with recorded judged input, posting refuses exactly
-  when the verdict's criteria differ from that input or from a fresh rendering,
-  or when LIFE-D5's posting row does not admit that rendering, and the refusal
-  names its cause. The comparison reads content, not amendment history.
+- **LIFE-A16** Review emission for an item refuses exactly when it cannot
+  obtain a fresh rendering, when its input differs from that rendering, or
+  when LIFE-D5's review row does not admit that rendering, and the refusal
+  names its cause. A refused facade version check is one way of failing to
+  obtain the rendering. Otherwise the input becomes the round's recorded
+  criteria.
+- **LIFE-A17** For a verdict naming a work item whose round has recorded
+  judged input, posting refuses exactly when it cannot obtain a fresh
+  rendering, when the verdict's criteria differ from that input or from that
+  rendering, or when LIFE-D5's posting row does not admit that rendering, and
+  the refusal names its cause. A refused facade version check is one way of
+  failing to obtain the rendering. The comparison reads content, not amendment
+  history.
   Criteria restored to exactly the judged bytes after an amendment, with their
   attack record closed at those bytes, are therefore not refused for having
   been amended.
@@ -360,7 +370,9 @@ leave significant product decisions to implementation.
 - **LIFE-A35** Review emission for a target naming no work item keeps the
   existing supplied-file path.
 - **LIFE-A36** Two runs of the CI gate over an unchanged checkout report the same
-  result.
+  result. That result is the gate's exit status together with the set of
+  invalid records it reports, each with its cause. The order in which the gate
+  lists those records is not part of the result.
 - **LIFE-A37** An attack or checker failure in the tracker-born workflow leaves
   no committed rendering or record and no attestation, and the next invocation
   runs the round again.
@@ -385,15 +397,36 @@ leave significant product decisions to implementation.
   reported complete by the checker and closed at that rendering, but no
   current attestation, attests from that record without a new attack round.
   The item's next gated transition then finds a current attestation.
+- **LIFE-A45** A rendering whose named spec path is absolute, or is relative
+  and leads outside the repository root, is refused with that path and cause.
+  The refusal holds even when a readable, parseable spec exists at that
+  location.
+- **LIFE-A46** When the only change is an edit to a tracker-born item's named
+  spec that alters none of the entries the item cites, the item's fresh
+  rendering stays byte-equal to its attested rendering. Its next consuming
+  boundary therefore finds its attestation current, with no new attack round.
+- **LIFE-A47** PR delivery refuses an implementation placeholder, and the
+  refusal names the placeholder role as its cause.
+- **LIFE-A48** Delivering a design child with `work deliver --spec` reconciles
+  its sibling implementation placeholder against the manifest of the spec that
+  `--spec` names. The reconciled item no longer holds the placeholder role.
+  The placeholder refusals at claim and at PR delivery do not block this
+  reconciliation.
+- **LIFE-A49** A review emission refused for an item's empty criteria names
+  `work acceptance set` as the remedy. One refused for a missing required
+  attestation names the attack step as the remedy.
+- **LIFE-A50** A verdict post refused for an item's empty criteria names
+  `work acceptance set` as the remedy. One refused for a missing required
+  attestation names the attack step as the remedy.
 
 ### What-if questions
 
 | Criteria | Inverse and boundary cases | Dependency failure | Repetition and concurrency |
 | --- | --- | --- | --- |
-| LIFE-A1 to LIFE-A5, LIFE-A23, LIFE-A27, LIFE-A28, LIFE-A39, LIFE-A42 | Empty entries, comma-separated citations, mixed fields, duplicate and generated IDs, description headings | Missing or unreadable spec | Equal input renders equally; later edits are new input |
-| LIFE-A6 to LIFE-A10, LIFE-A31 | Empty objection list, rejected-only round, malformed marker, unchanged content after rename | Unreadable record, document, or markers | Same attestation is idempotent; content amendments invalidate by the state each operation reads |
-| LIFE-A11 to LIFE-A15, LIFE-A24 to LIFE-A26, LIFE-A33 | Attested and unattested nouns, trivial leaves, structural roles, already-in-progress claim | Rendering or marker lookup fails | In-progress claim stays a no-op; later boundaries recheck current state |
-| LIFE-A16, LIFE-A17, LIFE-A32, LIFE-A35, LIFE-A38, LIFE-A40, LIFE-A43 | Empty input, old input restored after amendment, round with no recorded input, criteria no finding cites, no-item target | Facade cannot return a rendering | A criteria change between judgment and posting refuses the post; restored judged bytes post |
+| LIFE-A1 to LIFE-A5, LIFE-A23, LIFE-A27, LIFE-A28, LIFE-A39, LIFE-A42, LIFE-A45 | Empty entries, comma-separated citations, mixed fields, duplicate and generated IDs, description headings, absolute or out-of-repository spec paths | Missing or unreadable spec | Equal input renders equally; later edits are new input |
+| LIFE-A6 to LIFE-A10, LIFE-A31, LIFE-A46 | Empty objection list, rejected-only round, malformed marker, unchanged content after rename, spec edits outside cited entries | Unreadable record, document, or markers | Same attestation is idempotent; content amendments invalidate by the state each operation reads |
+| LIFE-A11 to LIFE-A15, LIFE-A24 to LIFE-A26, LIFE-A33, LIFE-A47, LIFE-A48 | Attested and unattested nouns, trivial leaves, structural roles, already-in-progress claim, placeholder delivery and reconciliation | Rendering or marker lookup fails | In-progress claim stays a no-op; later boundaries recheck current state |
+| LIFE-A16, LIFE-A17, LIFE-A32, LIFE-A35, LIFE-A38, LIFE-A40, LIFE-A43, LIFE-A49, LIFE-A50 | Empty input, old input restored after amendment, round with no recorded input, criteria no finding cites, no-item target | Facade cannot return a rendering, or its version check refuses | A criteria change between judgment and posting refuses the post; restored judged bytes post |
 | LIFE-A18 to LIFE-A20, LIFE-A36, LIFE-A41 | Valid, invalid, absent, ignored and untracked records | Checker or enumeration unavailable | Repeated checks over the same tree have equal results; checks write nothing |
 | LIFE-A21 | Shipping version, earlier version and prerelease, later version | Missing or malformed version response | Version checks are reads and change no item state |
 | LIFE-A22, LIFE-A29, LIFE-A30, LIFE-A34, LIFE-A37, LIFE-A44 | Current files, stale rendering, open record, committed files without attestation | Attack or checker fails before commit; attestation fails after commit | Unchanged current files and marker are reused; competing changes require a fresh state check |
@@ -401,25 +434,26 @@ leave significant product decisions to implementation.
 ## Ordered slice list
 
 - **S1: Render and references** (LIFE-A1, LIFE-A2, LIFE-A3, LIFE-A4, LIFE-A5,
-  LIFE-A23, LIFE-A27, LIFE-A28, LIFE-A39, LIFE-A42). Specify and implement the
-  facade renderer, work-item citations, and criteria-section parsing in the
-  existing consumers.
+  LIFE-A23, LIFE-A27, LIFE-A28, LIFE-A39, LIFE-A42, LIFE-A45). Specify and
+  implement the facade renderer, work-item citations, and criteria-section
+  parsing in the existing consumers.
 - **S2: Attestation and invalidation** (LIFE-A6, LIFE-A7, LIFE-A8, LIFE-A9,
-  LIFE-A10, LIFE-A31). Specify and implement the facade's content binding after S1.
+  LIFE-A10, LIFE-A31, LIFE-A46). Specify and implement the facade's content
+  binding after S1.
 - **S3: Attack workflow and compatibility** (LIFE-A21, LIFE-A22, LIFE-A29,
   LIFE-A30, LIFE-A34, LIFE-A37, LIFE-A44). Specify the
   version-check interface and tracker-born path after S2. Introduce the tracked
   directory and its doc-lint exemption together. Later consumers reuse the check.
 - **S4: Claim and delivery** (LIFE-A11, LIFE-A12, LIFE-A13, LIFE-A14, LIFE-A15,
-  LIFE-A24, LIFE-A25, LIFE-A26, LIFE-A33).
+  LIFE-A24, LIFE-A25, LIFE-A26, LIFE-A33, LIFE-A47, LIFE-A48).
   Enable the facade transitions after the attack path is available.
 - **S5: Repository record gate** (LIFE-A18, LIFE-A19, LIFE-A20, LIFE-A36,
   LIFE-A41). Add the CI gate and required-record migration after S3. It can
   land independently of S4.
 - **S6: Review consumers** (LIFE-A16, LIFE-A17, LIFE-A32, LIFE-A35, LIFE-A38,
-  LIFE-A40, LIFE-A43). Specify and implement emission and posting against the
-  rendered criteria and attestation after S3. Include the before-use amendment
-  instruction in the briefing and review paths.
+  LIFE-A40, LIFE-A43, LIFE-A49, LIFE-A50). Specify and implement emission and
+  posting against the rendered criteria and attestation after S3. Include the
+  before-use amendment instruction in the briefing and review paths.
 
 ## Continuations
 
@@ -431,17 +465,19 @@ quality contract requires. Delivering the design does not discharge parent
 criteria or change their open evidence rows.
 
 - feat: AC lifecycle rendering and references — AC: LIFE-A1, LIFE-A2, LIFE-A3,
-  LIFE-A4, LIFE-A5, LIFE-A23, LIFE-A27, LIFE-A28, LIFE-A39, LIFE-A42
+  LIFE-A4, LIFE-A5, LIFE-A23, LIFE-A27, LIFE-A28, LIFE-A39, LIFE-A42,
+  LIFE-A45
 - feat: AC lifecycle attestation and invalidation — AC: LIFE-A6, LIFE-A7,
-  LIFE-A8, LIFE-A9, LIFE-A10, LIFE-A31
+  LIFE-A8, LIFE-A9, LIFE-A10, LIFE-A31, LIFE-A46
 - feat: AC lifecycle attack workflow and compatibility — AC: LIFE-A21, LIFE-A22,
   LIFE-A29, LIFE-A30, LIFE-A34, LIFE-A37, LIFE-A44
 - feat: AC lifecycle claim and delivery gates — AC: LIFE-A11, LIFE-A12,
-  LIFE-A13, LIFE-A14, LIFE-A15, LIFE-A24, LIFE-A25, LIFE-A26, LIFE-A33
+  LIFE-A13, LIFE-A14, LIFE-A15, LIFE-A24, LIFE-A25, LIFE-A26, LIFE-A33,
+  LIFE-A47, LIFE-A48
 - feat: AC lifecycle repository record gate — AC: LIFE-A18, LIFE-A19, LIFE-A20,
   LIFE-A36, LIFE-A41
 - feat: AC lifecycle review consumers — AC: LIFE-A16, LIFE-A17, LIFE-A32,
-  LIFE-A35, LIFE-A38, LIFE-A40, LIFE-A43
+  LIFE-A35, LIFE-A38, LIFE-A40, LIFE-A43, LIFE-A49, LIFE-A50
 
 ## Out of scope
 
@@ -503,3 +539,9 @@ pending human acceptance check.
 - LIFE-A42 | open
 - LIFE-A43 | open
 - LIFE-A44 | open
+- LIFE-A45 | open
+- LIFE-A46 | open
+- LIFE-A47 | open
+- LIFE-A48 | open
+- LIFE-A49 | open
+- LIFE-A50 | open
