@@ -433,8 +433,21 @@ def _is_process_file(path: PurePosixPath) -> bool:
 
 
 def _folded_links(links: Mapping[PurePosixPath, str]) -> dict[str, str]:
-    """Key every link by its folded path, with its target lexically normalized as extraction writes it, then folded."""
+    """Key every link by its folded path, with its target normalized as _extraction_filter writes it, then folded."""
     return {_fold(str(path)): _fold(posixpath.normpath(target)) for path, target in links.items()}
+
+
+def _extraction_filter(member: tarfile.TarInfo, path: str) -> tarfile.TarInfo | None:
+    """Admit one archive member as tarfile's data filter does, with a symlink's target lexically normalized first.
+
+    The link walk resolves normalized targets, so every link must land on disk
+    that way. Python's own data filter normalizes a target only from 3.12.11 and
+    3.13.4 on. An earlier release writes foo/../x verbatim, and the kernel then
+    resolves it through whatever foo links to, a directory the walk never checked.
+    """
+    if member.issym():
+        member = member.replace(linkname=posixpath.normpath(member.linkname), deep=False)
+    return tarfile.data_filter(member, path)
 
 
 def _resolve(path: str, links: Mapping[str, str]) -> tuple[str | None, list[str]]:
@@ -591,7 +604,7 @@ def _build_snapshot(
         if collisions:
             raise _Refused("; ".join(collisions) + ". Rename or remove the committed file before running a lens.")
         try:
-            archive.extractall(snapshot, filter="data")
+            archive.extractall(snapshot, filter=_extraction_filter)
         except tarfile.FilterError as refused:
             # The extraction filter judges a link against the links extracted before
             # it, so it can refuse one the check above accepts. Its refusal is still

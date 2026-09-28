@@ -994,25 +994,36 @@ def test_b2_the_snapshot_holds_the_archive_with_the_change_s_instruction_files_r
     assert (snapshot / ".agents" / "agents" / "agy-lens" / "agent.md").read_text() == AGENT_MD
 
 
+# What the original name holds at spawn: nothing for AGENTS.md, and for .agents
+# only the lens agent definition the launcher writes after the renames.
+LAUNCHER_AGENT = ["agents", "agents/agy-lens", "agents/agy-lens/agent.md"]
 B2_LINKS = {
     # A common layout: AGENTS.md is a link to CLAUDE.md, and the change edits CLAUDE.md.
-    "file-link": ({"CLAUDE.md": "accepted\n"}, {"AGENTS.md": "CLAUDE.md"}, "CLAUDE.md", "AGENTS.md"),
-    "directory-link": ({"cfg/rules/x.md": "accepted\n"}, {".agents": "cfg"}, "cfg/rules/x.md", ".agents"),
+    "file-link": ({"CLAUDE.md": "accepted\n"}, {"AGENTS.md": "CLAUDE.md"}, "CLAUDE.md", "AGENTS.md", None),
+    "directory-link": (
+        {"cfg/rules/x.md": "accepted\n"}, {".agents": "cfg"}, "cfg/rules/x.md", ".agents", LAUNCHER_AGENT,
+    ),
 }
 
 
 @pytest.mark.parametrize("case", B2_LINKS)
 def test_b2_a_link_that_reaches_the_change_is_renamed_with_its_target_kept(rig, tmp_path, case):
-    files, links, edited, link = B2_LINKS[case]
+    files, links, edited, link, left = B2_LINKS[case]
     repo = new_repo(tmp_path / "linked")
     base = commit_through_index(repo, files, links)
     rev = commit_through_index(repo, {edited: "under review\n"})
     seen: dict = {}
 
     def look(call):
-        renamed = call.cwd / f"{link}.under-review"
+        original, renamed = call.cwd / link, call.cwd / f"{link}.under-review"
+        # A regular file, a link or a directory left under the original name all
+        # count as something left there, whatever its content.
+        if original.is_dir() and not original.is_symlink():
+            left_there = listing(original)
+        else:
+            left_there = "something" if os.path.lexists(original) else None
         seen.update(
-            original_is_link=(call.cwd / link).is_symlink(),
+            left=left_there,
             renamed=os.readlink(renamed) if renamed.is_symlink() else None,
             edited=(call.cwd / edited).read_text(),
             prompt=call.argv[8],
@@ -1021,10 +1032,36 @@ def test_b2_a_link_that_reaches_the_change_is_renamed_with_its_target_kept(rig, 
     rig.fake.on_spawn = look
     r = rig.launch(rig.argv("lens", Repo(repo, base, rev), rev=rev))
     assert r.code == 0, r.err
-    assert seen["original_is_link"] is False
+    assert seen["left"] == left
     assert seen["renamed"] == links[link]
     assert seen["edited"] == "under review\n"
     assert f"  {link} -> {link}.under-review\n" in seen["prompt"]
+
+
+def test_b2_link_targets_land_normalized_where_the_extraction_filter_keeps_them_verbatim(rig, tmp_path, monkeypatch):
+    # Python's data filter writes a link target lexically normalized only from
+    # 3.12.11 and 3.13.4 on. This stand-in for an earlier release checks each
+    # member as the real filter does, then writes the target as the archive holds it.
+    real = tarfile.data_filter
+
+    def verbatim(member, path):
+        return real(member, path).replace(linkname=member.linkname, deep=False)
+
+    monkeypatch.setattr(tarfile, "data_filter", verbatim)
+    monkeypatch.setitem(tarfile._NAMED_FILTERS, "data", verbatim)
+    repo = new_repo(tmp_path / "verbatim")
+    # Normalized, .agents leads to cfg, which launches nothing. Resolved through
+    # the directory link foo instead, it leads to a/cfg and its hooks.json.
+    files = {"a/cfg/hooks.json": "{}\n", "a/b/x.md": "x\n", "cfg/README.md": "config\n"}
+    base = commit_through_index(repo, files, {"foo": "a/b", ".agents": "foo/../cfg"})
+    rev = commit_through_index(repo, {"src/app.py": "print(1)\n"})
+    seen: dict = {}
+    rig.fake.on_spawn = lambda call: seen.update(
+        target=os.readlink(call.cwd / ".agents"), hooks=(call.cwd / ".agents" / "hooks.json").exists()
+    )
+    r = rig.launch(rig.argv("lens", Repo(repo, base, rev), rev=rev))
+    assert r.code == 0, r.err
+    assert seen == {"target": "cfg", "hooks": False}
 
 
 def test_b2_a_changed_path_the_archive_omits_is_absent_and_renames_nothing(rig, tmp_path):
