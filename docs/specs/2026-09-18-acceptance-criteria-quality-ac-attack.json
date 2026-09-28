@@ -1058,25 +1058,25 @@
   {
    "id": "bo2",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A25"
   },
   {
    "id": "bo3",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A26"
   },
   {
    "id": "bo4",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A27"
   },
   {
    "id": "or1",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A24"
   },
   {
@@ -1087,7 +1087,7 @@
   {
    "id": "or3",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A24"
   },
   {
@@ -1103,25 +1103,25 @@
   {
    "id": "or6",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A24"
   },
   {
    "id": "or7",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A24"
   },
   {
    "id": "or8",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A24"
   },
   {
    "id": "or9",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A24"
   },
   {
@@ -1132,19 +1132,19 @@
   {
    "id": "or11",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A24"
   },
   {
    "id": "or12",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A24"
   },
   {
    "id": "or13",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A24"
   },
   {
@@ -1165,7 +1165,7 @@
   {
    "id": "or17",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A28"
   },
   {
@@ -1206,25 +1206,25 @@
   {
    "id": "sc1",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A9"
   },
   {
    "id": "wi1",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
-   "covering_ac": "ACQ-A20"
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
+   "covering_ac": "ACQ-A29"
   },
   {
    "id": "wi2",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A23"
   },
   {
    "id": "wi3",
    "disposition": "accepted",
-   "revision": "sha256:f28ec21949959bf7ed4a3e913c660322890774f5f5b69c011e14f293cd73ffab",
+   "revision": "sha256:cb8fe3feec239f44b5c9926c5ed543ece6901bcf02d0c13f9331264c04993c91",
    "covering_ac": "ACQ-A22"
   }
  ]
