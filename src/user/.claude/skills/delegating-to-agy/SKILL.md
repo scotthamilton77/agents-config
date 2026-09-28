@@ -85,9 +85,12 @@ instruction file is one named `AGENTS.md` or `GEMINI.md`, or any file under a
 directory named `.agents`, `.agent`, `_agents` or `_agent`. Every `hooks.json`
 and `mcp_config.json` directly under one of those directories is renamed too,
 changed or not, so the lens launches no process. All of these names match in
-any letter case, because agy on macOS loads `agents.md` as it loads `AGENTS.md`. For
-the same reason, the launcher refuses a revision that holds two paths differing
-only by letter case. Unchanged instruction files
+any letter case or Unicode form, because agy on macOS loads `agents.md` as it
+loads `AGENTS.md`. For the same reason, the launcher refuses a revision that
+holds two paths differing only in those ways. A link at an instruction file's
+path is renamed too when what it reaches is under review, so a changed
+`CLAUDE.md` behind an `AGENTS.md` link stays out. A revision holding a link that
+leads outside the snapshot is refused. Unchanged instruction files
 load as the project's accepted rules. The lens can read, search and list files
 in the snapshot and do nothing else, so never ask it to run a command, a test
 or git.

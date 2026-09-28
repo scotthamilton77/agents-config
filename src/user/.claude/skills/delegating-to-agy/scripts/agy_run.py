@@ -18,8 +18,9 @@ A lens runs agy read-only over a snapshot of one revision, under a temporary hom
 that holds only an empty .gemini directory and a link to the real Keychains. In
 the snapshot, the instruction files the change adds or modifies are renamed with
 the suffix .under-review, and so is every hook or MCP configuration under a
-customization root, so nothing under review instructs the reviewer and nothing
-launches a process. The change's diff sits beside them in .review/change.diff.
+customization root and every link at an instruction file's path that reaches
+either, so nothing under review instructs the reviewer and nothing launches a
+process. The change's diff sits beside them in .review/change.diff.
 
 -p must be the last launcher flag. The single argument after it is the prompt,
 taken verbatim whatever its text.
@@ -43,6 +44,7 @@ import argparse
 import io
 import json
 import os
+import posixpath
 import queue
 import re
 import shlex
@@ -54,6 +56,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import unicodedata
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path, PurePosixPath
 from typing import IO, NamedTuple, NoReturn
@@ -67,10 +70,10 @@ LENS_AGENT = "agy-lens"
 LENS_TOOLS = ("view_file", "grep_search", "find_by_name", "list_dir")
 LENS_TIMEOUT_DEFAULT_S = 600
 RENAME_SUFFIX = ".under-review"
-# The names the snapshot rules cover are held in folded case, and a path is folded
-# before it is compared with them. macOS's default filesystem is case-insensitive,
-# so agy loads agents.md or .Agents/rules/x.md exactly as it loads AGENTS.md or
-# .agents/rules/x.md, and a rule that matched only one case would let the other through.
+# The names the snapshot rules cover are held in folded form, and a path is folded
+# before it is compared with them. macOS's default filesystem ignores letter case and
+# Unicode form, so agy loads agents.md or .Agents/rules/x.md exactly as it loads
+# AGENTS.md or .agents/rules/x.md, and a rule that matched one spelling would let another through.
 CUSTOMIZATION_ROOTS = (".agents", ".agent", "_agents", "_agent")
 PROCESS_FILES = ("hooks.json", "mcp_config.json")
 DIFF_PATH = PurePosixPath(".review/change.diff")
@@ -82,6 +85,9 @@ AGY_SETTINGS = Path("~/.gemini/antigravity-cli/settings.json")
 _PROG = "agy_run.py"
 _INSTRUCTION_FILES = ("agents.md", "gemini.md")
 _BYPASS_FLAGS = ("--skip-permissions", "--dangerously-skip-permissions", "--sandbox")
+
+# A walk that passes more links than this is a loop. POSIX systems give up at a similar depth.
+_MAX_LINK_HOPS = 40
 
 # How long the run loop waits for a line from agy before it reads the clock again.
 # It bounds how late the watchdog and a signal are noticed, not how fast output flows.
@@ -385,29 +391,103 @@ def changed_paths(
     return [(fields[i].decode(), PurePosixPath(os.fsdecode(fields[i + 1]))) for i in range(0, len(fields), 2)]
 
 
+def _fold(name: str) -> str:
+    """Return the key under which macOS's default filesystem treats names as one: letter case and Unicode form ignored."""
+    return unicodedata.normalize("NFD", unicodedata.normalize("NFD", name).casefold())
+
+
 def _is_instruction_file(path: PurePosixPath) -> bool:
-    folded = PurePosixPath(str(path).casefold())
+    folded = PurePosixPath(_fold(str(path)))
     return folded.name in _INSTRUCTION_FILES or any(part in CUSTOMIZATION_ROOTS for part in folded.parts)
 
 
 def _is_process_file(path: PurePosixPath) -> bool:
-    folded = PurePosixPath(str(path).casefold())
+    folded = PurePosixPath(_fold(str(path)))
     return folded.name in PROCESS_FILES and folded.parent.name in CUSTOMIZATION_ROOTS
 
 
+def _folded_links(links: Mapping[PurePosixPath, str]) -> dict[str, str]:
+    """Key every link by its folded path, with its target lexically normalized as extraction writes it, then folded."""
+    return {_fold(str(path)): _fold(posixpath.normpath(target)) for path, target in links.items()}
+
+
+def _resolve(path: str, links: Mapping[str, str]) -> tuple[str | None, list[str]]:
+    """Follow every link along a folded snapshot path, and return where the walk ends and the links it passed.
+
+    A .. steps out of the directory the walk has actually reached, as the kernel
+    resolves it. The end is None when the walk leaves the snapshot, through an
+    absolute target or a .. above its root, or passes more than _MAX_LINK_HOPS
+    links, which only a loop does. The end is "" when the walk ends at the root.
+    """
+    pending, reached, passed = path.split("/"), [], []
+    while pending:
+        part = pending.pop(0)
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if not reached:
+                return None, passed
+            reached.pop()
+            continue
+        here = "/".join([*reached, part])
+        if here not in links:
+            reached.append(part)
+            continue
+        passed.append(here)
+        if links[here].startswith("/") or len(passed) > _MAX_LINK_HOPS:
+            return None, passed
+        pending = links[here].split("/") + pending
+    return "/".join(reached), passed
+
+
 def neutralized_names(
-    archived: Iterable[PurePosixPath], changed: Iterable[tuple[str, PurePosixPath]]
+    archived: Iterable[PurePosixPath],
+    changed: Iterable[tuple[str, PurePosixPath]],
+    links: Mapping[PurePosixPath, str] | None = None,
 ) -> list[tuple[PurePosixPath, PurePosixPath]]:
     """Pair every path the snapshot must rename with its new name, sorted by path.
 
-    Two classes are renamed. An instruction file the change adds, modifies or
-    retypes is renamed so that it cannot instruct the lens that reviews it; an
-    unchanged one is accepted and stays. A hook or MCP configuration directly
-    under a customization root is renamed whether the change touches it or not,
-    because it launches processes and a lens launches nothing.
+    archived lists every path the archive holds apart from directories, and links
+    maps each of those that is a symlink to its target. Three classes are renamed.
+    An instruction file the change adds, modifies or retypes is renamed so that it
+    cannot instruct the lens that reviews it; an unchanged one is accepted and
+    stays. A hook or MCP configuration directly under a customization root is
+    renamed whether the change touches it or not, because it launches processes
+    and a lens launches nothing. A link at an instruction file's path is renamed
+    when agy, following it, would load either of those: content under review, or
+    a process file through a link named as a customization root.
+
+    A changed path the archive omits, as an export-ignore attribute makes it,
+    has nothing on disk that could instruct the lens, so it is not renamed.
     """
-    targets = {path for status, path in changed if status in ("A", "M", "T") and _is_instruction_file(path)}
-    targets |= {p for p in archived if _is_process_file(p)}
+    archived = list(archived)
+    links = links or {}
+    folded_links = _folded_links(links)
+    present = {_fold(str(path)) for path in archived}
+    under_review = present & {_fold(str(path)) for status, path in changed if status in ("A", "M", "T")}
+    process_dirs = {PurePosixPath(path).parent for path in present if PurePosixPath(path).name in PROCESS_FILES}
+
+    def exposes(link: PurePosixPath) -> bool:
+        end, passed = _resolve(_fold(str(link)), folded_links)
+        if end is not None and _fold(link.name) in CUSTOMIZATION_ROOTS and PurePosixPath(end) in process_dirs:
+            return True
+        # A directory link exposes everything beneath its target, including what
+        # further links beneath it reach, so the walk visits each of those too.
+        pending, seen = [(end, passed)], set()
+        while pending:
+            end, passed = pending.pop()
+            if end is None or end in seen:
+                continue
+            seen.add(end)
+            inside = f"{end}/" if end else ""
+            if under_review & {end, *passed} or any(path.startswith(inside) for path in under_review):
+                return True
+            pending += [_resolve(path, folded_links) for path in folded_links if path.startswith(inside)]
+        return False
+
+    targets = {path for path in archived if _fold(str(path)) in under_review and _is_instruction_file(path)}
+    targets |= {path for path in archived if _is_process_file(path)}
+    targets |= {link for link in links if _is_instruction_file(link) and exposes(link)}
     return [(path, path.with_name(path.name + RENAME_SUFFIX)) for path in sorted(targets, key=str)]
 
 
@@ -439,15 +519,17 @@ def _build_snapshot(
     agent definition, and the change's diff. Every refusal is raised before the
     first rename, so a refused snapshot is never half-neutralized.
 
-    Paths are compared in folded case throughout, because a case-insensitive
-    filesystem extracts two paths that differ only by case as one path. Its name
-    and bytes then depend on extraction order, so such a revision is refused.
+    Paths are compared in folded form throughout, because a filesystem that
+    ignores letter case and Unicode form extracts two paths that differ only in
+    those as one path. Its name and bytes then depend on extraction order, so
+    such a revision is refused. So is a link that leads outside the snapshot or
+    loops, since no rename can say what agy would load through it.
     """
     snapshot = _own(tempfile.mkdtemp(prefix="agy-lens-snapshot-", dir=parent))
     review_root = DIFF_PATH.parts[0]
     with tarfile.open(fileobj=io.BytesIO(_git(run, "-C", str(repo), "archive", "--format=tar", rev))) as archive:
         members = archive.getmembers()
-        taken = [m.name for m in members if PurePosixPath(m.name.casefold()).parts[:1] == (review_root,)]
+        taken = [m.name for m in members if PurePosixPath(_fold(m.name)).parts[:1] == (review_root,)]
         if taken:
             raise _Refused(
                 f"{rev} already holds {taken[0]}, and {review_root} is where the launcher writes the change's diff. "
@@ -456,19 +538,37 @@ def _build_snapshot(
         present: dict[str, str] = {}
         collisions = []
         for member in members:
-            first = present.setdefault(member.name.casefold(), member.name)
+            first = present.setdefault(_fold(member.name), member.name)
             if first != member.name:
-                collisions.append(f"{first} and {member.name} in {rev} differ only by case and extract as one path")
-        archived = [PurePosixPath(m.name) for m in members if not m.isdir()]
-        renamed = neutralized_names(archived, changed_paths(repo, base, rev, run))
+                collisions.append(
+                    f"{first} and {member.name} in {rev} differ only by letter case or Unicode form "
+                    "and extract as one path"
+                )
+        links = {PurePosixPath(m.name): m.linkname for m in members if m.issym()}
+        folded_links = _folded_links(links)
         collisions += [
-            f"{present[str(target).casefold()]} already exists in {rev}, so {original} cannot be renamed to {target}"
+            f"{link} in {rev} is a link to {target} that leads outside the snapshot or loops"
+            for link, target in links.items()
+            if _resolve(_fold(str(link)), folded_links)[0] is None
+        ]
+        archived = [PurePosixPath(m.name) for m in members if not m.isdir()]
+        renamed = neutralized_names(archived, changed_paths(repo, base, rev, run), links)
+        collisions += [
+            f"{present[_fold(str(target))]} already exists in {rev}, so {original} cannot be renamed to {target}"
             for original, target in renamed
-            if str(target).casefold() in present
+            if _fold(str(target)) in present
         ]
         if collisions:
             raise _Refused("; ".join(collisions) + ". Rename or remove the committed file before running a lens.")
-        archive.extractall(snapshot, filter="data")
+        try:
+            archive.extractall(snapshot, filter="data")
+        except tarfile.FilterError as refused:
+            # The extraction filter judges a link against the links extracted before
+            # it, so it can refuse one the check above accepts. Its refusal is still
+            # a revision the launcher cannot snapshot, not a launcher defect.
+            raise _Refused(
+                f"{rev} cannot be extracted safely: {refused}. Remove that path before running a lens."
+            ) from None
     for original, target in renamed:
         (snapshot / original).rename(snapshot / target)
     _git(run, "init", "--quiet", str(snapshot))

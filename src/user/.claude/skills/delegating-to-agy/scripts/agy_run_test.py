@@ -23,7 +23,9 @@ import re
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
@@ -366,18 +368,28 @@ def commit(repo: Path, files: dict[str, str | None]) -> str:
     return git(repo, "rev-parse", "HEAD").decode().strip()
 
 
-def commit_through_index(repo: Path, files: dict[str, str]) -> str:
-    """Commit the files on top of HEAD without writing them to the working tree, and return the commit.
+def commit_through_index(repo: Path, files: dict[str, str], links: dict[str, str] | None = None) -> str:
+    """Commit files and symlinks on top of HEAD without writing them to the working tree, and return the commit.
 
-    Two paths that differ only by case stay two paths this way, even on a
-    case-insensitive filesystem where the working tree could hold only one.
+    Two paths that differ only by case or Unicode form stay two paths this way,
+    even on a filesystem where the working tree could hold only one. The paths
+    travel on stdin, because git on macOS recomposes Unicode in its arguments.
     """
-    for rel, text in files.items():
+    entries = [("100644", rel, text) for rel, text in files.items()]
+    entries += [("120000", rel, target) for rel, target in (links or {}).items()]
+    lines = []
+    for mode, rel, content in entries:
         argv = ["git", "-C", str(repo), "hash-object", "-w", "--stdin"]
-        blob = subprocess.run(argv, input=text.encode(), check=True, capture_output=True).stdout.decode().strip()
-        git(repo, "update-index", "--add", "--cacheinfo", f"100644,{blob},{rel}")
+        blob = subprocess.run(argv, input=content.encode(), check=True, capture_output=True).stdout.decode().strip()
+        lines.append(f"{mode} blob {blob}\t{rel}\n")
+    index_info = ["git", "-C", str(repo), "update-index", "--add", "--index-info"]
+    subprocess.run(index_info, input="".join(lines).encode(), check=True, capture_output=True)
     tree = git(repo, "write-tree").decode().strip()
-    return git(repo, "commit-tree", tree, "-p", "HEAD", "-m", "fixture").decode().strip()
+    has_head = subprocess.run(["git", "-C", str(repo), "rev-parse", "-q", "--verify", "HEAD"], capture_output=True)
+    parent = ["-p", "HEAD"] if has_head.returncode == 0 else []
+    made = git(repo, "commit-tree", tree, *parent, "-m", "fixture").decode().strip()
+    git(repo, "update-ref", "HEAD", made)
+    return made
 
 
 @pytest.fixture
@@ -944,6 +956,52 @@ def test_b2_the_snapshot_holds_the_archive_with_the_change_s_instruction_files_r
     assert (snapshot / ".agents" / "agents" / "agy-lens" / "agent.md").read_text() == AGENT_MD
 
 
+B2_LINKS = {
+    # A common layout: AGENTS.md is a link to CLAUDE.md, and the change edits CLAUDE.md.
+    "file-link": ({"CLAUDE.md": "accepted\n"}, {"AGENTS.md": "CLAUDE.md"}, "CLAUDE.md", "AGENTS.md"),
+    "directory-link": ({"cfg/rules/x.md": "accepted\n"}, {".agents": "cfg"}, "cfg/rules/x.md", ".agents"),
+}
+
+
+@pytest.mark.parametrize("case", B2_LINKS)
+def test_b2_a_link_that_reaches_the_change_is_renamed_with_its_target_kept(rig, tmp_path, case):
+    files, links, edited, link = B2_LINKS[case]
+    repo = new_repo(tmp_path / "linked")
+    base = commit_through_index(repo, files, links)
+    rev = commit_through_index(repo, {edited: "under review\n"})
+    seen: dict = {}
+
+    def look(call):
+        renamed = call.cwd / f"{link}.under-review"
+        seen.update(
+            original_is_link=(call.cwd / link).is_symlink(),
+            renamed=os.readlink(renamed) if renamed.is_symlink() else None,
+            edited=(call.cwd / edited).read_text(),
+            prompt=call.argv[8],
+        )
+
+    rig.fake.on_spawn = look
+    r = rig.launch(rig.argv("lens", Repo(repo, base, rev), rev=rev))
+    assert r.code == 0, r.err
+    assert seen["original_is_link"] is False
+    assert seen["renamed"] == links[link]
+    assert seen["edited"] == "under review\n"
+    assert f"  {link} -> {link}.under-review\n" in seen["prompt"]
+
+
+def test_b2_a_changed_path_the_archive_omits_is_absent_and_renames_nothing(rig, tmp_path):
+    repo = new_repo(tmp_path / "ignored")
+    base = commit(repo, {"AGENTS.md": "accepted\n", "docs/AGENTS.md": "v1\n"})
+    rev = commit(repo, {".gitattributes": "docs/AGENTS.md export-ignore\n", "docs/AGENTS.md": "v2\n"})
+    seen: dict = {}
+    rig.fake.on_spawn = lambda call: seen.update(files=listing(call.cwd), prompt=call.argv[8])
+    r = rig.launch(rig.argv("lens", Repo(repo, base, rev), rev=rev))
+    assert r.code == 0, r.err
+    assert [f for f in seen["files"] if f.startswith("docs/AGENTS.md")] == []
+    assert "AGENTS.md" in seen["files"]
+    assert "No file was renamed in the snapshot.\n" in seen["prompt"]
+
+
 def test_b3_neutralized_names_renames_the_change_s_instruction_files_and_every_process_file():
     archived = [
         P(p)
@@ -974,6 +1032,9 @@ def test_b3_neutralized_names_renames_the_change_s_instruction_files_and_every_p
         ("T", P("_agents/rules/r.md")),
         ("M", P("deep/.agents/skills/s/SKILL.md")),
         ("M", P(".agents/hooks.json")),
+        # An export-ignore attribute leaves a changed path out of the archive,
+        # so there is nothing on disk to rename.
+        ("M", P("ignored/AGENTS.md")),
     ]
     expected = [
         P(".agent/mcp_config.json"),
@@ -1002,6 +1063,48 @@ def test_b3_neutralized_names_matches_every_covered_name_in_any_case():
     assert agy.neutralized_names(archived, changed) == [(p, P(f"{p}.under-review")) for p in expected]
 
 
+NFC_CAFE = unicodedata.normalize("NFC", "café")
+NFD_CAFE = unicodedata.normalize("NFD", "café")
+
+
+def test_b3_neutralized_names_renames_every_instruction_link_that_reaches_the_change():
+    files = [
+        "CLAUDE.md", "notes/b.md", "n.md", "cfg/rules/x.md", "shared/r.md", "lib/s/SKILL.md",
+        "tools/mcp_config.json", "lib2/s/SKILL.md", f"{NFC_CAFE}.md", "README.md",
+    ]  # fmt: skip
+    links = {
+        P("AGENTS.md"): "CLAUDE.md",  # a file link to a changed file
+        P("GEMINI.md"): "a/../hop",  # a chain, whose target the extraction normalizes to hop
+        P("hop"): "notes/b.md",
+        P("x/AGENTS.md"): "../m",  # a chain through a link the change retargets
+        P("m"): "n.md",
+        P(".agents"): "cfg",  # a customization root linked to a directory holding a change
+        P(".agent/rules"): "../shared",  # a directory link beneath a customization root
+        P("_agents"): "cfg2",  # a change reached through a second link beneath the first
+        P("cfg2/skills"): "../lib",
+        P("_agent"): "tools",  # a customization root linked to a directory holding a process file
+        P("y/GEMINI.md"): f"../{NFD_CAFE}.md",  # a target in the other Unicode form of a changed file
+        P("docs/guide.md"): "../CLAUDE.md",  # not an instruction path, so it stays
+        P("z/.agents/skills"): "../../lib2",  # nothing beneath it is changed, so it stays
+        P("z/AGENTS.md"): "../README.md",  # its target is unchanged, so it stays
+    }
+    changed = [
+        ("M", P("CLAUDE.md")),
+        ("M", P("notes/b.md")),
+        ("M", P("m")),
+        ("M", P("cfg/rules/x.md")),
+        ("A", P("shared/r.md")),
+        ("M", P("lib/s/SKILL.md")),
+        ("M", P(f"{NFC_CAFE}.md")),
+    ]
+    archived = [P(p) for p in files] + list(links)
+    expected = [
+        P(".agent/rules"), P(".agents"), P("AGENTS.md"), P("GEMINI.md"), P("_agent"), P("_agents"),
+        P("x/AGENTS.md"), P("y/GEMINI.md"),
+    ]  # fmt: skip
+    assert agy.neutralized_names(archived, changed, links) == [(p, P(f"{p}.under-review")) for p in expected]
+
+
 @pytest.mark.parametrize("committed", ["AGENTS.md.under-review", "agents.md.UNDER-REVIEW"])
 def test_b4_an_existing_rename_target_is_refused_before_renaming_or_spawning(rig, tmp_path, committed):
     repo = new_repo(tmp_path / "collide")
@@ -1014,16 +1117,47 @@ def test_b4_an_existing_rename_target_is_refused_before_renaming_or_spawning(rig
 
 @pytest.mark.parametrize(
     "accepted, added",
-    [("AGENTS.md", "agents.md"), (".agents/hooks.json", ".AGENTS/hooks.json")],
-    ids=["instruction-file", "process-file"],
+    [
+        ("AGENTS.md", "agents.md"),
+        (".agents/hooks.json", ".AGENTS/hooks.json"),
+        (f"{NFC_CAFE}/AGENTS.md", f"{NFD_CAFE}/AGENTS.md"),
+    ],
+    ids=["instruction-file", "process-file", "unicode-form"],
 )
-def test_b4_two_paths_that_differ_only_by_case_are_refused_before_anything_spawns(rig, tmp_path, accepted, added):
+def test_b4_two_paths_that_differ_only_by_case_or_unicode_form_are_refused_before_anything_spawns(
+    rig, tmp_path, accepted, added
+):
     repo = new_repo(tmp_path / "clash")
-    base = commit(repo, {accepted: "accepted\n"})
+    base = commit_through_index(repo, {accepted: "accepted\n"})
     rev = commit_through_index(repo, {added: "under review\n"})
-    assert git(repo, "ls-tree", "-r", "--name-only", rev).decode().split() == sorted([accepted, added])
+    assert git(repo, "ls-tree", "-r", "-z", "--name-only", rev).decode().split("\0")[:-1] == sorted([accepted, added])
     r = rig.launch(rig.argv("lens", Repo(repo, base, rev), rev=rev))
     assert_refused(r, rig, accepted, added)
+
+
+B4_LINKS = {
+    "outside": {"AGENTS.md": "../outside.md"},
+    "absolute": {"docs/passwd": "/etc/passwd"},
+    "loop": {"loop-one": "loop-two", "loop-two": "loop-one"},
+}
+
+
+@pytest.mark.parametrize("case", B4_LINKS)
+def test_b4_a_link_that_leads_outside_the_snapshot_or_loops_is_refused_before_anything_spawns(rig, tmp_path, case):
+    repo = new_repo(tmp_path / "links")
+    base = commit_through_index(repo, {"README.md": "readme\n"})
+    rev = commit_through_index(repo, {}, B4_LINKS[case])
+    r = rig.launch(rig.argv("lens", Repo(repo, base, rev), rev=rev))
+    assert_refused(r, rig, *B4_LINKS[case])
+
+
+def test_b4_a_member_the_extraction_filter_refuses_is_refused_before_anything_spawns(rig, repo, monkeypatch):
+    def refuse(self, path, *args, **kwargs):
+        raise tarfile.LinkOutsideDestinationError(self.getmember("src/app.py"), "/elsewhere")
+
+    monkeypatch.setattr(tarfile.TarFile, "extractall", refuse)
+    r = rig.launch(rig.argv("lens", repo, rev=repo.head))
+    assert_refused(r, rig, "src/app.py", "/elsewhere")
 
 
 def test_b5_the_temporary_home_holds_only_an_empty_gemini_and_the_keychains_link(rig, repo):
