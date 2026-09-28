@@ -366,6 +366,20 @@ def commit(repo: Path, files: dict[str, str | None]) -> str:
     return git(repo, "rev-parse", "HEAD").decode().strip()
 
 
+def commit_through_index(repo: Path, files: dict[str, str]) -> str:
+    """Commit the files on top of HEAD without writing them to the working tree, and return the commit.
+
+    Two paths that differ only by case stay two paths this way, even on a
+    case-insensitive filesystem where the working tree could hold only one.
+    """
+    for rel, text in files.items():
+        argv = ["git", "-C", str(repo), "hash-object", "-w", "--stdin"]
+        blob = subprocess.run(argv, input=text.encode(), check=True, capture_output=True).stdout.decode().strip()
+        git(repo, "update-index", "--add", "--cacheinfo", f"100644,{blob},{rel}")
+    tree = git(repo, "write-tree").decode().strip()
+    return git(repo, "commit-tree", tree, "-p", "HEAD", "-m", "fixture").decode().strip()
+
+
 @pytest.fixture
 def repo(tmp_path) -> Repo:
     """Two commits: the change modifies the root AGENTS.md; a hooks file sits unchanged."""
@@ -516,21 +530,22 @@ def test_a4_a_clean_run_exits_0_with_the_response_alone_on_stdout(rig):
 
 
 A5_CASES = {
-    "empty": (result(response=""), "empty", False),
-    "denied": (result(denied=["WriteToFile"]), "denied", True),
-    "denied-and-empty": (result(response="", denied=["WriteToFile"]), "denied", True),
+    "empty": (result(response=""), "empty", ""),
+    "denied": (result(denied=["WriteToFile"]), "denied", "WriteToFile"),
+    "denied-and-empty": (result(response="", denied=["WriteToFile"]), "denied", "WriteToFile"),
+    "two-denied": (result(denied=["WriteToFile", "RunCommand"]), "denied", "WriteToFile,RunCommand"),
 }
 
 
 @pytest.mark.parametrize("case", A5_CASES, ids=list(A5_CASES))
 def test_a5_an_unusable_run_exits_70_with_its_reason(rig, case):
-    event, reason, names_the_action = A5_CASES[case]
+    event, reason, denied = A5_CASES[case]
     rig.fake.behave(stdout=stream(init(), event))
     r = rig.launch(rig.argv("worker"))
     assert r.code == 70
     assert r.reasons == [f"[agy-run] reason={reason}"]
     [status] = [line for line in r.ledger if line.startswith("[agy-run] status=")]
-    assert status.endswith("denied=WriteToFile") is names_the_action
+    assert status.split(" denied=")[1] == denied
     assert r.out == ""
 
 
@@ -882,6 +897,7 @@ def test_b2_the_snapshot_holds_the_archive_with_the_change_s_instruction_files_r
             "new/AGENTS.md": "rules that move unchanged\n",
             ".agents/rules/changed.md": "rule v2\n",
             "dir with space é/AGENTS.md": "quoted rules v2\n",
+            "docs/agents.md": "lowercase rules the change adds\n",
             "src/app.py": "print(2)\n",
         },
     )
@@ -903,6 +919,7 @@ def test_b2_the_snapshot_holds_the_archive_with_the_change_s_instruction_files_r
         ".agents/rules/changed.md",
         ".agents/hooks.json",
         "dir with space é/AGENTS.md",
+        "docs/agents.md",
     }
     archived = git(repo, "ls-tree", "-r", "-z", "--name-only", rev).decode().split("\0")[:-1]
     for path in archived:
@@ -970,13 +987,43 @@ def test_b3_neutralized_names_renames_the_change_s_instruction_files_and_every_p
     assert agy.neutralized_names(archived, changed) == [(p, P(f"{p}.under-review")) for p in expected]
 
 
-def test_b4_an_existing_rename_target_is_refused_before_renaming_or_spawning(rig, tmp_path):
+def test_b3_neutralized_names_matches_every_covered_name_in_any_case():
+    # macOS's default filesystem is case-insensitive, so agy loads each of these
+    # exactly as it loads the name in its usual case.
+    names = ("agents.md", "Gemini.md", ".Agents/rules/x.md", ".AGENTS/Hooks.json", "Agents.md.template")
+    archived = [P(p) for p in names]
+    changed = [
+        ("A", P("agents.md")),
+        ("M", P("Gemini.md")),
+        ("M", P(".Agents/rules/x.md")),
+        ("M", P("Agents.md.template")),
+    ]
+    expected = [P(".AGENTS/Hooks.json"), P(".Agents/rules/x.md"), P("Gemini.md"), P("agents.md")]
+    assert agy.neutralized_names(archived, changed) == [(p, P(f"{p}.under-review")) for p in expected]
+
+
+@pytest.mark.parametrize("committed", ["AGENTS.md.under-review", "agents.md.UNDER-REVIEW"])
+def test_b4_an_existing_rename_target_is_refused_before_renaming_or_spawning(rig, tmp_path, committed):
     repo = new_repo(tmp_path / "collide")
     base = commit(repo, {"AGENTS.md": "v1\n"})
-    rev = commit(repo, {"AGENTS.md": "v2\n", "AGENTS.md.under-review": "committed on purpose\n"})
+    rev = commit(repo, {"AGENTS.md": "v2\n", committed: "committed on purpose\n"})
     r = rig.launch(rig.argv("lens", Repo(repo, base, rev), rev=rev))
-    assert_refused(r, rig, "AGENTS.md.under-review")
+    assert_refused(r, rig, committed)
     assert re.search(r"(?<![\w.])AGENTS\.md(?!\.under-review)", r.err)
+
+
+@pytest.mark.parametrize(
+    "accepted, added",
+    [("AGENTS.md", "agents.md"), (".agents/hooks.json", ".AGENTS/hooks.json")],
+    ids=["instruction-file", "process-file"],
+)
+def test_b4_two_paths_that_differ_only_by_case_are_refused_before_anything_spawns(rig, tmp_path, accepted, added):
+    repo = new_repo(tmp_path / "clash")
+    base = commit(repo, {accepted: "accepted\n"})
+    rev = commit_through_index(repo, {added: "under review\n"})
+    assert git(repo, "ls-tree", "-r", "--name-only", rev).decode().split() == sorted([accepted, added])
+    r = rig.launch(rig.argv("lens", Repo(repo, base, rev), rev=rev))
+    assert_refused(r, rig, accepted, added)
 
 
 def test_b5_the_temporary_home_holds_only_an_empty_gemini_and_the_keychains_link(rig, repo):
@@ -1220,7 +1267,10 @@ def test_b11_the_lens_timeout_defaults_to_600_and_the_watchdog_arms_30_later(
 
 
 INJECTED = b"fatal: injected failure for the test\n"
-B12_CASES = ["not-a-repository", "unknown-base", "unknown-rev", "review-path", "init-fails", "name-status-fails", "diff-fails"]
+B12_CASES = [
+    "not-a-repository", "unknown-base", "unknown-rev", "review-path", "review-path-in-another-case",
+    "init-fails", "name-status-fails", "diff-fails",
+]  # fmt: skip
 
 
 @pytest.mark.parametrize("case", B12_CASES)
@@ -1237,6 +1287,9 @@ def test_b12_a_git_failure_is_refused_with_git_s_own_stderr(rig, repo, tmp_path,
     elif case == "review-path":
         rev = commit(repo.path, {".review/notes.md": "a reviewer's notes\n"})
         names = [".review"]
+    elif case == "review-path-in-another-case":
+        rev = commit(repo.path, {".REVIEW/notes.md": "a reviewer's notes\n"})
+        names = [".REVIEW"]
     else:
         marker = {"init-fails": "init", "name-status-fails": "--name-status", "diff-fails": "--unified=10"}[case]
         names = [marker, INJECTED.decode().strip()]

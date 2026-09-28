@@ -67,6 +67,10 @@ LENS_AGENT = "agy-lens"
 LENS_TOOLS = ("view_file", "grep_search", "find_by_name", "list_dir")
 LENS_TIMEOUT_DEFAULT_S = 600
 RENAME_SUFFIX = ".under-review"
+# The names the snapshot rules cover are held in folded case, and a path is folded
+# before it is compared with them. macOS's default filesystem is case-insensitive,
+# so agy loads agents.md or .Agents/rules/x.md exactly as it loads AGENTS.md or
+# .agents/rules/x.md, and a rule that matched only one case would let the other through.
 CUSTOMIZATION_ROOTS = (".agents", ".agent", "_agents", "_agent")
 PROCESS_FILES = ("hooks.json", "mcp_config.json")
 DIFF_PATH = PurePosixPath(".review/change.diff")
@@ -76,7 +80,7 @@ KILL_GRACE_S = 10
 AGY_SETTINGS = Path("~/.gemini/antigravity-cli/settings.json")
 
 _PROG = "agy_run.py"
-_INSTRUCTION_FILES = ("AGENTS.md", "GEMINI.md")
+_INSTRUCTION_FILES = ("agents.md", "gemini.md")
 _BYPASS_FLAGS = ("--skip-permissions", "--dangerously-skip-permissions", "--sandbox")
 
 # How long the run loop waits for a line from agy before it reads the clock again.
@@ -382,7 +386,13 @@ def changed_paths(
 
 
 def _is_instruction_file(path: PurePosixPath) -> bool:
-    return path.name in _INSTRUCTION_FILES or any(part in CUSTOMIZATION_ROOTS for part in path.parts)
+    folded = PurePosixPath(str(path).casefold())
+    return folded.name in _INSTRUCTION_FILES or any(part in CUSTOMIZATION_ROOTS for part in folded.parts)
+
+
+def _is_process_file(path: PurePosixPath) -> bool:
+    folded = PurePosixPath(str(path).casefold())
+    return folded.name in PROCESS_FILES and folded.parent.name in CUSTOMIZATION_ROOTS
 
 
 def neutralized_names(
@@ -397,7 +407,7 @@ def neutralized_names(
     because it launches processes and a lens launches nothing.
     """
     targets = {path for status, path in changed if status in ("A", "M", "T") and _is_instruction_file(path)}
-    targets |= {p for p in archived if p.name in PROCESS_FILES and p.parent.name in CUSTOMIZATION_ROOTS}
+    targets |= {p for p in archived if _is_process_file(p)}
     return [(path, path.with_name(path.name + RENAME_SUFFIX)) for path in sorted(targets, key=str)]
 
 
@@ -428,24 +438,33 @@ def _build_snapshot(
     repository so agy's search for a repository root stops inside it, the lens
     agent definition, and the change's diff. Every refusal is raised before the
     first rename, so a refused snapshot is never half-neutralized.
+
+    Paths are compared in folded case throughout, because a case-insensitive
+    filesystem extracts two paths that differ only by case as one path. Its name
+    and bytes then depend on extraction order, so such a revision is refused.
     """
     snapshot = _own(tempfile.mkdtemp(prefix="agy-lens-snapshot-", dir=parent))
     review_root = DIFF_PATH.parts[0]
     with tarfile.open(fileobj=io.BytesIO(_git(run, "-C", str(repo), "archive", "--format=tar", rev))) as archive:
         members = archive.getmembers()
-        taken = [m.name for m in members if PurePosixPath(m.name).parts[:1] == (review_root,)]
+        taken = [m.name for m in members if PurePosixPath(m.name.casefold()).parts[:1] == (review_root,)]
         if taken:
             raise _Refused(
                 f"{rev} already holds {taken[0]}, and {review_root} is where the launcher writes the change's diff. "
-                f"Review a revision without a {review_root} directory."
+                f"Review a revision without a {review_root} directory in any letter case."
             )
+        present: dict[str, str] = {}
+        collisions = []
+        for member in members:
+            first = present.setdefault(member.name.casefold(), member.name)
+            if first != member.name:
+                collisions.append(f"{first} and {member.name} in {rev} differ only by case and extract as one path")
         archived = [PurePosixPath(m.name) for m in members if not m.isdir()]
         renamed = neutralized_names(archived, changed_paths(repo, base, rev, run))
-        present = set(archived)
-        collisions = [
-            f"{target} already exists in {rev}, so {original} cannot be renamed to it"
+        collisions += [
+            f"{present[str(target).casefold()]} already exists in {rev}, so {original} cannot be renamed to {target}"
             for original, target in renamed
-            if target in present
+            if str(target).casefold() in present
         ]
         if collisions:
             raise _Refused("; ".join(collisions) + ". Rename or remove the committed file before running a lens.")
