@@ -54,6 +54,7 @@ AGY_ERROR = (
     '"error_code": 14, "code_kind": "server", "retryable": true, "error_id": "e-1"}\n'
 )
 REMEDY = "add this directory or an ancestor of it to trustedWorkspaces"
+RELATIVE_ENTRY = "a relative entry trusts nothing"
 
 # The lens agent definition, written out rather than read back from the launcher,
 # so a drifted definition fails here instead of agreeing with itself.
@@ -145,6 +146,8 @@ TOOL_LEDGER = [
     "[agy-run] tool=list_dir /snapshot/src",
 ]
 STATUS_LINE = "[agy-run] status=SUCCESS turns=1 tokens=1234 denied="
+# One file read, which a lens needs before its answer counts as a review.
+READ = tool(1, "view_file", AbsolutePath="/snapshot/.review/change.diff")
 
 
 # --- the fake agy, the fake clock and the rig that wires them in ----------------
@@ -190,7 +193,7 @@ class FakeAgy:
         self.calls: list[Call] = []
         self.procs: list[subprocess.Popen] = []
         self.on_spawn = None
-        self.behave(stdout=stream(init(), result()))
+        self.behave(stdout=stream(init(), READ, result()))
 
     def behave(self, stdout="", stderr="", exit=0, sleep=False, ignore_term=False) -> None:
         self.spec.write_text(
@@ -541,6 +544,19 @@ def test_a4_a_clean_run_exits_0_with_the_response_alone_on_stdout(rig):
     assert r.reasons == []
 
 
+@pytest.mark.parametrize("mode, code, out, reasons", [
+    ("lens", 70, "", ["[agy-run] reason=unread"]),
+    ("worker", 0, "The answer is 42.\n", []),
+])  # fmt: skip
+def test_a4_a_run_without_a_tool_step_is_unread_in_a_lens_and_usable_in_a_worker(rig, repo, mode, code, out, reasons):
+    rig.fake.behave(stdout=stream(init(), reply(1, "No need to look."), result()))
+    r = rig.launch(rig.argv(mode, repo))
+    assert r.code == code
+    assert r.out == out
+    assert r.reasons == reasons
+    assert [line for line in r.ledger if line.startswith("[agy-run] status=")] == [STATUS_LINE]
+
+
 A5_CASES = {
     "empty": (result(response=""), "empty", ""),
     "denied": (result(denied=["WriteToFile"]), "denied", "WriteToFile"),
@@ -678,7 +694,7 @@ def test_a9_a_worker_outside_every_trusted_workspace_is_refused(rig, monkeypatch
     here.mkdir(exist_ok=True)
     monkeypatch.chdir(here)
     r = rig.launch(rig.argv("worker"))
-    assert_refused(r, rig, str(here.resolve()), str(rig.settings), REMEDY)
+    assert_refused(r, rig, str(here.resolve()), str(rig.settings), REMEDY, RELATIVE_ENTRY)
 
 
 def test_a9_lens_mode_performs_no_trusted_workspace_check(rig, repo, monkeypatch, tmp_path):
@@ -852,6 +868,28 @@ def test_a12_the_highest_ranked_cause_decides_the_exit_and_reason(rig, row):
         assert behaviour["stderr"] in r.err
 
 
+# The same rows in a lens whose stream holds no tool step. Reading nothing ranks
+# below every other cause, so it decides only a run that would otherwise succeed.
+A12_LENS_ROWS = {
+    "no-tool-step-beside-a-usable-success": (dict(stdout=stream(init(), result())), 70, "unread"),
+    "no-tool-step-beside-an-empty-success": (dict(stdout=stream(init(), result(response=""))), 70, "empty"),
+    "no-tool-step-beside-a-denied-success": (dict(stdout=stream(init(), result(denied=["WriteToFile"]))), 70, "denied"),
+    "no-tool-step-and-no-result": (dict(stdout=stream(init())), 75, "no-result"),
+    "no-tool-step-beside-exit-1": (dict(stdout=stream(init(), result()), exit=1), 75, "error"),
+    "no-tool-step-under-the-notice": (dict(stdout=stream(init(), result()), stderr=NOTICE), 75, "timeout"),
+}
+
+
+@pytest.mark.parametrize("row", A12_LENS_ROWS, ids=list(A12_LENS_ROWS))
+def test_a12_in_a_lens_reading_nothing_ranks_below_every_other_cause(rig, repo, row):
+    behaviour, code, reason = A12_LENS_ROWS[row]
+    rig.fake.behave(**behaviour)
+    r = rig.launch(rig.argv("lens", repo))
+    assert r.code == code
+    assert r.reasons == [f"[agy-run] reason={reason}"]
+    assert r.out == ""
+
+
 # --- slice B: lens mode ------------------------------------------------------------
 
 
@@ -871,7 +909,7 @@ def test_b1_lens_spawns_the_exact_argv_in_the_snapshot_with_only_home_changed(ri
     assert at_spawn["diff"]
     assert call.cwd == snapshot
     assert call.cwd != home
-    prompt = agy.lens_preamble(repo.path, repo.base, repo.head, snapshot, REPO_RENAMED) + "Review it."
+    prompt = agy.lens_preamble(repo.path, repo.base, repo.head, snapshot, REPO_RENAMED, repo.base) + "Review it."
     assert call.argv == [
         "agy", "--agent", "agy-lens", "--mode", "plan", "--model", MODEL, "-p", prompt,
         "--output-format", "stream-json", "--print-timeout", "90s",
@@ -1251,7 +1289,7 @@ def test_b7_the_preamble_precedes_the_prompt_and_names_what_the_lens_needs(rig, 
     assert rig.launch(rig.argv("lens", repo, rev=repo.head, prompt=prompt)).code == 0
     [call] = rig.fake.calls
     snapshot = call.cwd
-    preamble = agy.lens_preamble(repo.path, repo.base, repo.head, snapshot, REPO_RENAMED)
+    preamble = agy.lens_preamble(repo.path, repo.base, repo.head, snapshot, REPO_RENAMED, repo.base)
     assert call.argv[8] == preamble + prompt
     for needle in (
         str(snapshot),
@@ -1369,6 +1407,27 @@ def test_b10_the_diff_file_is_git_s_diff_output_byte_for_byte(rig, repo):
     assert seen["diff"] == done.stdout
 
 
+def test_b10_the_change_starts_at_the_merge_base_so_commits_base_gained_later_stay_out(rig, tmp_path):
+    repo = new_repo(tmp_path / "moved")
+    fork = commit(repo, {"AGENTS.md": "accepted rules\n", "src/app.py": "print(1)\n"})
+    git(repo, "checkout", "-q", "-b", "feature")
+    feature = commit(repo, {"src/app.py": "print(2)\n"})
+    git(repo, "checkout", "-q", "-")
+    # The base branch moves on after the feature branched: it edits an
+    # instruction file the feature never touched.
+    moved = commit(repo, {"AGENTS.md": "rules the base branch added later\n", "docs/later.md": "later\n"})
+    seen: dict = {}
+    rig.fake.on_spawn = lambda call: seen.update(
+        files=listing(call.cwd), diff=(call.cwd / ".review" / "change.diff").read_bytes(), prompt=call.argv[8]
+    )
+    r = rig.launch(rig.argv("lens", Repo(repo, moved, feature), rev=feature))
+    assert r.code == 0, r.err
+    assert seen["diff"] == git(repo, *diff_argv(repo, fork, feature)[3:])
+    assert "AGENTS.md" in seen["files"]
+    assert "AGENTS.md.under-review" not in seen["files"]
+    assert f"goes from {fork}, the merge base of {moved} and {feature}, to {feature}." in seen["prompt"]
+
+
 def test_b10_base_equal_to_rev_gives_an_empty_diff_and_only_the_process_file_renames(rig, repo):
     seen: dict = {}
     rig.fake.on_spawn = lambda call: seen.update(
@@ -1403,7 +1462,7 @@ def test_b11_the_lens_timeout_defaults_to_600_and_the_watchdog_arms_30_later(
 INJECTED = b"fatal: injected failure for the test\n"
 B12_CASES = [
     "not-a-repository", "unknown-base", "unknown-rev", "review-path", "review-path-in-another-case",
-    "init-fails", "name-status-fails", "diff-fails",
+    "no-merge-base", "init-fails", "name-status-fails", "diff-fails",
 ]  # fmt: skip
 
 
@@ -1424,6 +1483,10 @@ def test_b12_a_git_failure_is_refused_with_git_s_own_stderr(rig, repo, tmp_path,
     elif case == "review-path-in-another-case":
         rev = commit(repo.path, {".REVIEW/notes.md": "a reviewer's notes\n"})
         names = [".REVIEW"]
+    elif case == "no-merge-base":
+        # A commit with no parent shares no history with the base.
+        rev = git(repo.path, "commit-tree", f"{repo.base}^{{tree}}", "-m", "unrelated").decode().strip()
+        names = [repo.base, rev, "share no history"]
     else:
         marker = {"init-fails": "init", "name-status-fails": "--name-status", "diff-fails": "--unified=10"}[case]
         names = [marker, INJECTED.decode().strip()]
@@ -1456,7 +1519,7 @@ def test_b12_an_absent_git_binary_is_no_route(rig, repo):
 
 @pytest.mark.parametrize("code", [0, 75])
 def test_b13_a_cleanup_failure_keeps_the_run_s_exit_and_reports_each_leak(rig, repo, code):
-    rig.fake.behave(stdout=stream(init(), result()), exit=0 if code == 0 else 1)
+    rig.fake.behave(stdout=stream(init(), READ, result()), exit=0 if code == 0 else 1)
     held: list[Path] = []
 
     def lock_the_temp_root(call: Call) -> None:

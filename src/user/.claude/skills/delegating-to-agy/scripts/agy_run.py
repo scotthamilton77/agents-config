@@ -20,7 +20,8 @@ the snapshot, the instruction files the change adds or modifies are renamed with
 the suffix .under-review, and so is every hook or MCP configuration under a
 customization root and every link at an instruction file's path that reaches
 either, so nothing under review instructs the reviewer and nothing launches a
-process. The change's diff sits beside them in .review/change.diff.
+process. The change runs from the merge base of BASE and REV to REV, as git diff
+BASE...REV shows it, and its diff sits beside them in .review/change.diff.
 
 -p must be the last launcher flag. The single argument after it is the prompt,
 taken verbatim whatever its text.
@@ -30,8 +31,8 @@ launcher's [agy-run] ledger lines and agy's own stderr as it arrives.
 
 Exit codes:
   0   agy succeeded with a non-empty response and no denied action.
-  70  agy finished but the output is unusable (reason=empty or reason=denied).
-      Re-brief, or move to another route.
+  70  agy finished but the output is unusable (reason=empty, reason=denied, or
+      reason=unread for a lens that called no tool). Re-brief, or move to another route.
   75  the route did not serve the run (reason=error, no-route, timeout, signal,
       home-unproven or no-result). Fail over to the next route or model.
   78  the launcher refused the invocation. Fix it; do not fail over.
@@ -112,7 +113,8 @@ class Outcome(NamedTuple):
     """How a run ended: the launcher's exit code, its reason word, agy's response and the ledger lines printed."""
 
     exit_code: int
-    reason: str | None  # error | no-route | timeout | signal | home-unproven | no-result | empty | denied | None
+    # error | no-route | timeout | signal | home-unproven | no-result | empty | denied | unread | None
+    reason: str | None
     response: str
     ledger: list[str]
 
@@ -164,7 +166,7 @@ def _parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     lens.add_argument("--repo", required=True, type=Path, help="the repository under review")
-    lens.add_argument("--base", required=True, help="the revision the change is diffed against")
+    lens.add_argument("--base", required=True, help="the revision the change is compared with, from its merge base")
     lens.add_argument("--rev", default="HEAD", help="the revision to snapshot (default HEAD)")
     lens.add_argument("--model", required=True, help="the full agy model id, which also carries the effort")
     lens.add_argument(
@@ -219,7 +221,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def refuse_model(model: str) -> str | None:
     """Return why a model id is refused, or None when agy may be asked to run it."""
     if model.startswith("claude-"):
-        return f"--model {model} is refused: a Claude model runs natively in the harness that launched this run."
+        return (
+            f"--model {model} is refused: a Claude model runs natively in the harness that launched this run. "
+            "Run it there, or pass an agy model id such as gemini-3.8-flash-high."
+        )
     return None
 
 
@@ -337,7 +342,12 @@ Answer the request directly. Do not write a plan document.
 
 
 def lens_preamble(
-    repo: Path, base: str, rev: str, snapshot: Path, renamed: list[tuple[PurePosixPath, PurePosixPath]]
+    repo: Path,
+    base: str,
+    rev: str,
+    snapshot: Path,
+    renamed: list[tuple[PurePosixPath, PurePosixPath]],
+    merge_base: str,
 ) -> str:
     """Return the text a lens prompt starts with: where the snapshot is, what changed, and what was renamed."""
     if renamed:
@@ -350,7 +360,7 @@ def lens_preamble(
     return (
         f"You are reviewing a snapshot of the repository {repo.resolve().name} at revision {rev}. "
         f"The snapshot is the directory {snapshot}, and it has no history.\n"
-        f"The change under review goes from {base} to {rev}. "
+        f"The change under review goes from {merge_base}, the merge base of {base} and {rev}, to {rev}. "
         f"Its unified diff, with original paths, is {DIFF_PATH} in the snapshot.\n"
         "A file the change deletes is absent from the snapshot and appears only in the diff.\n"
         f"{renames}"
@@ -359,12 +369,15 @@ def lens_preamble(
     )
 
 
-def _git(run: Callable[..., subprocess.CompletedProcess], *args: str) -> bytes:
+def _git(
+    run: Callable[..., subprocess.CompletedProcess], *args: str, meaning: Mapping[int, str] | None = None
+) -> bytes:
     """Run one git command through the run seam and return its stdout.
 
     A failure refuses the invocation and carries git's own stderr, since the
     repository, the revision or the base named on the command line is the
-    likely cause.
+    likely cause. meaning explains an exit code whose cause git's stderr does
+    not state.
     """
     argv = ["git", *args]
     try:
@@ -373,8 +386,21 @@ def _git(run: Callable[..., subprocess.CompletedProcess], *args: str) -> bytes:
         raise _NoRoute("git is not on PATH, and a lens needs it to snapshot the repository.") from None
     if done.returncode != 0:
         detail = done.stderr.decode("utf-8", errors="replace").strip()
-        raise _Refused(f"`{shlex.join(argv)}` exited {done.returncode}: {detail}")
+        why = (meaning or {}).get(done.returncode, "")
+        raise _Refused(f"`{shlex.join(argv)}` exited {done.returncode}: {why}{detail}")
     return done.stdout
+
+
+def _merge_base(repo: Path, base: str, rev: str, run: Callable[..., subprocess.CompletedProcess]) -> str:
+    """Return the commit where rev's history meets base's, which is where the change under review starts.
+
+    Diffing from it, as git diff BASE...REV does, keeps out every commit base
+    gained after rev branched from it. Diffing from base itself would show those
+    commits reversed, as if the change had undone them.
+    """
+    no_history = {1: f"{base} and {rev} share no history, so no merge base marks where the change starts. "
+                     "Pass a --base that shares history with --rev."}  # fmt: skip
+    return _git(run, "-C", str(repo), "merge-base", base, rev, meaning=no_history).decode().strip()
 
 
 def changed_paths(
@@ -511,8 +537,11 @@ def make_snapshot(
 
 def _build_snapshot(
     repo: Path, base: str, rev: str, parent: Path, run: Callable[..., subprocess.CompletedProcess]
-) -> tuple[Path, list[tuple[PurePosixPath, PurePosixPath]]]:
-    """Build a lens snapshot and also return the renames it made, which the lens preamble lists.
+) -> tuple[Path, list[tuple[PurePosixPath, PurePosixPath]], str]:
+    """Build a lens snapshot and also return the renames it made and the merge base the change starts at.
+
+    The lens preamble lists both. The change is the one from the merge base of
+    base and rev to rev, which is what the renames and the diff file describe.
 
     The snapshot is the archive of rev, extracted fresh, with its own empty git
     repository so agy's search for a repository root stops inside it, the lens
@@ -552,7 +581,8 @@ def _build_snapshot(
             if _resolve(_fold(str(link)), folded_links)[0] is None
         ]
         archived = [PurePosixPath(m.name) for m in members if not m.isdir()]
-        renamed = neutralized_names(archived, changed_paths(repo, base, rev, run), links)
+        start = _merge_base(repo, base, rev, run)
+        renamed = neutralized_names(archived, changed_paths(repo, start, rev, run), links)
         collisions += [
             f"{present[_fold(str(target))]} already exists in {rev}, so {original} cannot be renamed to {target}"
             for original, target in renamed
@@ -577,8 +607,8 @@ def _build_snapshot(
     agent.write_text(lens_agent_definition(), encoding="utf-8")
     diff = snapshot / DIFF_PATH
     diff.parent.mkdir(parents=True, exist_ok=True)
-    diff.write_bytes(change_diff(repo, base, rev, run))
-    return snapshot, renamed
+    diff.write_bytes(change_diff(repo, start, rev, run))
+    return snapshot, renamed, start
 
 
 def _ledger_line(event: dict) -> str | None:
@@ -791,7 +821,8 @@ def _worker(
         raise _Refused(
             f"{cwd} is not at or beneath a path in trustedWorkspaces of {settings}, or that file is missing or "
             "unreadable, so agy would deny every edit this worker makes. "
-            f"Remedy: add this directory or an ancestor of it to trustedWorkspaces in {settings}."
+            f"Remedy: add this directory or an ancestor of it to trustedWorkspaces in {settings}. "
+            "Use an absolute path, because a relative entry trusts nothing."
         )
     argv = build_worker_argv(args.model, args.timeout, args.prompt)
     return run_agy(argv, cwd, os.environ, args.timeout, spawn, clock)
@@ -805,13 +836,19 @@ def _lens(
     real_home: Path,
 ) -> tuple[Outcome, Path]:
     parent = Path(tempfile.gettempdir())
-    snapshot, renamed = _build_snapshot(args.repo, args.base, args.rev, parent, run)
+    snapshot, renamed, start = _build_snapshot(args.repo, args.base, args.rev, parent, run)
     home = make_lens_home(parent, real_home)
     env = lens_env(os.environ, home)
     outcome = prove_home(home, real_home, args.repo, env)
     if outcome is None:
-        prompt = lens_preamble(args.repo, args.base, args.rev, snapshot, renamed) + args.prompt
+        prompt = lens_preamble(args.repo, args.base, args.rev, snapshot, renamed, start) + args.prompt
         outcome = run_agy(build_lens_argv(args.model, args.timeout, prompt), snapshot, env, args.timeout, spawn, clock)
+    # A lens that answered without a single tool call read nothing, not even the
+    # diff, so its answer is not a review. The check applies only to a run that
+    # would otherwise succeed, which ranks it below every other cause. A worker
+    # may answer without a tool, so it is not checked.
+    if outcome.exit_code == EXIT_OK and not any(line.startswith("[agy-run] tool=") for line in outcome.ledger):
+        outcome = Outcome(EXIT_UNUSABLE, "unread", "", outcome.ledger)
     return outcome, snapshot
 
 
