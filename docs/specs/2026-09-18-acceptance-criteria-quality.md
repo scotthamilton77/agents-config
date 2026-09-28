@@ -354,13 +354,15 @@ this documentation change does not claim to have run them.
   document, the rules the lens enforces, the output shape, and the explicit
   empty result.
 - **ACQ-A24** For every rule ID in the standard, the quality assessment's
-  evaluation set holds at least one defective document and a corrected control.
-  The review objects to the defective document on that rule, and passes the
-  control without that objection. The cases include each of the five what-if
-  questions, a decision document as well as a research answer, a parent closed
-  before its verification evidence, an unsupported implementation prescription,
-  a stochastic evaluation whose threshold is chosen after its results, and an
-  incomplete observation window.
+  evaluation set holds at least one defective document and its corrected
+  control. Each defective document carries exactly one defect, which breaks the
+  rule the document is a case for. Its control is the same document with that
+  defect corrected. The review objects to each defective document citing its
+  rule, and passes its control without that objection. The cases include each
+  of the five what-if questions, a decision document as well as a research
+  answer, a parent closed before its verification evidence, an unsupported
+  implementation prescription, a stochastic evaluation whose threshold is
+  chosen after its results, and an incomplete observation window.
 - **ACQ-A25** Every rule in the deployed standard carries the ID its decision
   above lists.
 - **ACQ-A26** Each lens's prompt carries exactly the standard rules that lens
@@ -416,7 +418,7 @@ does not apply to it.
 | ACQ-A21 | A spec whose criteria only check that it exists receives the document-deliverable finding under ACQ-A18's rule | Shared answers |
 | ACQ-A22 | A missing lens fails | At a limit: a fifth lens fails. Twice and nothing changed: emission is deterministic. Missing: a missing lens is the failure case. |
 | ACQ-A23 | A prompt carrying a passage outside the four contracts fails | Missing: a prompt lacking one of the four contracts fails. Twice and nothing changed: emission is deterministic. Empty: does not apply. |
-| ACQ-A24 | A rule with no defective case, or a defective case the review misses, fails | Empty: a rule with only a control fails. Missing: a rule added to the standard without cases fails. Twice: the S2 scoring contract. Nothing changed: does not apply, because evaluation changes nothing. |
+| ACQ-A24 | A rule with no defective case, a defective document carrying more than one defect, or a defective case the review misses, fails | Empty: a rule with only a control fails. Missing: a rule added to the standard without cases fails. Twice: the S2 scoring contract. Nothing changed: does not apply, because evaluation changes nothing. |
 | ACQ-A25 | A rule without its ID fails | Empty: does not apply. Missing: a decision listing an ID the standard lacks fails. Twice and nothing changed: staging reads the source unchanged. |
 | ACQ-A26 | A prompt carrying another lens's rule fails | Missing: a rule the standard lacks is refused at emission. Twice and nothing changed: emission is deterministic. Empty: a lens naming no rule is refused. |
 | ACQ-A27 | A lens objecting to a defect-free control fails | Shared answers |
