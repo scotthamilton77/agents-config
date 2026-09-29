@@ -374,6 +374,25 @@ def test_a6_a_report_carrying_an_undeclared_rawoutput_key_is_read_as_a_report(at
         ("what-if", "dropped the undeclared report key 'rawOutput'")}
 
 
+def test_a6_output_holding_two_different_reports_is_refused_naming_the_lens(attack):
+    # Keeping either report would silently discard the other's objections.
+    attack.output("what-if", json.dumps(report("what-if")) + "\n"
+                  + json.dumps(report("what-if", objection("what-if"))))
+    status, result = attack.union()
+    assert status == 2
+    assert [(e["code"], e["lens"]) for e in result["errors"]] == [
+        ("unrepairable-drift", "what-if")]
+    assert not attack.union_path.exists()
+
+
+def test_a6_output_repeating_one_report_verbatim_is_read_once(attack):
+    body = json.dumps(report("what-if", objection("what-if")))
+    attack.output("what-if", body + "\n" + body)
+    code, result = attack.union()
+    assert code == 0, result
+    assert result["objections"] == 1
+
+
 def test_a6_a_key_repeated_in_one_object_is_refused_naming_the_lens(attack):
     # Two members of one name parse as the last alone, so the first one's objections would vanish.
     body = json.dumps(report("what-if", objection("what-if", "second")))

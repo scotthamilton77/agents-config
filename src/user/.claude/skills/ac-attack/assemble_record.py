@@ -171,27 +171,35 @@ def report_text(lens: str, path: Path | None) -> str:
 
 
 def parse_report(lens: str, text: str) -> dict[str, Any]:
-    """The first JSON object in a lens's output that reads as a report.
+    """The one JSON object in a lens's output that reads as a report.
 
     Models wrap the object in prose or a Markdown fence, so every opening brace is tried in turn
-    and the first object carrying `report` or `objections` is the report. An objection or an
-    inventory nested inside a truncated report carries neither key, so it is never mistaken for one.
-    An object naming a key twice is refused rather than read: the parse keeps only the last, so
-    whatever the first held would vanish without a trace.
+    and an object carrying `report` or `objections` is a report. An objection or an inventory
+    nested inside a truncated report carries neither key, so it is never mistaken for one. Two
+    different reports are refused, since keeping either would discard the other's objections; the
+    same report repeated verbatim is read once. An object naming a key twice is refused rather
+    than read: the parse keeps only the last, so whatever the first held would vanish.
     """
     decoder = json.JSONDecoder(object_pairs_hook=unique_keys)
-    repeated = None
+    found, repeated = None, None
     start = text.find("{")
     while start != -1:
         try:
-            value, _ = decoder.raw_decode(text, start)
+            value, end = decoder.raw_decode(text, start)
         except RepeatedKey as exc:
             value, repeated = None, repeated or str(exc)
         except ValueError:
             value = None
         if isinstance(value, dict) and ("report" in value or "objections" in value):
-            return value
+            if found is not None and value != found:
+                raise drift(lens, "holds two different reports")
+            found = value
+            # Resume after this report, so the objects nested inside it are not tried again.
+            start = text.find("{", end)
+            continue
         start = text.find("{", start + 1)
+    if found is not None:
+        return found
     if repeated is not None:
         raise drift(lens, repeated)
     raise Refusal("unparseable-lens-output", f"the {lens!r} lens's output holds no JSON report; "

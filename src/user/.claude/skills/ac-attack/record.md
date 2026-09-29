@@ -53,8 +53,8 @@ your report to the user discloses both, since the record keeps no trace of them.
 `{"assembled": false, "errors": [{"code", "message", "lens"?}]}`, exit 2, and writes nothing. Every
 code is in `errors.md`.
 
-The union step reads each lens's raw output and keeps the first JSON object carrying
-`report` or `objections`. The output may be that object alone, the object fenced in prose, or a
+The union step reads each lens's raw output for the JSON object carrying `report` or
+`objections`, and reads one repeated verbatim once. The output may be that object alone, the object fenced in prose, or a
 Codex envelope whose `rawOutput` holds it. Each objection it keeps is numbered `<lens>-<n>`, counting
 only that lens's kept objections in the order the lens returned them, so the same outputs always
 yield the same ids. A rerun lens can renumber its objections, which is why every skeleton entry
@@ -79,9 +79,9 @@ An objection whose scenario leaves `given`, `when` or `expect` blank is dropped 
 attacker meant: a rule outside a lens enforcing several, a blank `target_ac`, `objection` or ground
 field, a scenario part or `obligation` that is not text, an objection attributed to another lens, a
 report whose `report` is neither `objections` nor `empty` or disagrees with its list, an object
-naming one key twice, and workings that are missing, break the schema beside the lens's prompt,
-discharge a part by a criterion they do not list, or leave a part or criterion unaccounted for with
-no objection naming it. A refused lens is run again.
+naming one key twice, two different reports in one output, and workings that are missing, break
+the schema beside the lens's prompt, discharge a part by a criterion they do not list, or leave a
+part or criterion unaccounted for with no objection naming it. A refused lens is run again.
 
 `assemble_record.py assemble` joins the union with the filled skeleton. Each entry sets
 `disposition` to `accepted` with a `covering_ac`, or to `rejected` with a `rationale`. An acceptance's
