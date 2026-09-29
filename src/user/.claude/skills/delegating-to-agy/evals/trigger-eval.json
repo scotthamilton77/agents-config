@@ -17,6 +17,5 @@
   {"query": "how do i install antigravity cli on my other mac and get it authenticated", "should_trigger": false},
   {"query": "review PR #788 for me before i merge it", "should_trigger": false},
   {"query": "whats the actual difference between gemini 3.8 flash high and gemini 3.1 pro high? just curious, dont run anything", "should_trigger": false},
-  {"query": "find someone to poke holes in this migration plan, i dont care which model", "should_trigger": false},
-  {"query": "update the review-panel contracts.json so its gemini seats route through agy first", "should_trigger": false}
+  {"query": "find someone to poke holes in this migration plan, i dont care which model", "should_trigger": false}
 ]
