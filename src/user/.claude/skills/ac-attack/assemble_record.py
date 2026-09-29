@@ -177,8 +177,9 @@ def parse_report(lens: str, text: str) -> dict[str, Any]:
     and an object carrying `report` or `objections` is a report. An objection or an inventory
     nested inside a truncated report carries neither key, so it is never mistaken for one. Two
     different reports are refused, since keeping either would discard the other's objections; the
-    same report repeated verbatim is read once. An object naming a key twice is refused rather
-    than read: the parse keeps only the last, so whatever the first held would vanish.
+    same report repeated verbatim is read once. An object naming a key twice anywhere in the output
+    is refused rather than read: the parse keeps only the last, so whatever the first held would
+    vanish.
     """
     decoder = json.JSONDecoder(object_pairs_hook=unique_keys)
     found, repeated = None, None
@@ -198,10 +199,11 @@ def parse_report(lens: str, text: str) -> dict[str, Any]:
             start = text.find("{", end)
             continue
         start = text.find("{", start + 1)
-    if found is not None:
-        return found
+    # An object that failed on a repeated key may be a second report, so it refuses even beside one.
     if repeated is not None:
         raise drift(lens, repeated)
+    if found is not None:
+        return found
     raise Refusal("unparseable-lens-output", f"the {lens!r} lens's output holds no JSON report; "
                   f"{RERUN}", lens)
 

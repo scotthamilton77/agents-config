@@ -374,10 +374,19 @@ def test_a6_a_report_carrying_an_undeclared_rawoutput_key_is_read_as_a_report(at
         ("what-if", "dropped the undeclared report key 'rawOutput'")}
 
 
-def test_a6_output_holding_two_different_reports_is_refused_naming_the_lens(attack):
+VALID = json.dumps(report("what-if"))
+# A report whose objections list is named twice, which no parse can read without losing one.
+REPEATED = json.dumps(report("what-if", objection("what-if")))[:-1] + ', "objections": []}'
+
+
+@pytest.mark.parametrize("text", [
+    VALID + "\n" + json.dumps(report("what-if", objection("what-if"))),
+    VALID + "\n" + REPEATED,
+    REPEATED + "\n" + VALID,
+], ids=["two-reports", "report-then-repeated-key", "repeated-key-then-report"])
+def test_a6_output_holding_two_different_reports_is_refused_naming_the_lens(attack, text):
     # Keeping either report would silently discard the other's objections.
-    attack.output("what-if", json.dumps(report("what-if")) + "\n"
-                  + json.dumps(report("what-if", objection("what-if"))))
+    attack.output("what-if", text)
     status, result = attack.union()
     assert status == 2
     assert [(e["code"], e["lens"]) for e in result["errors"]] == [
