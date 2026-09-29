@@ -65,7 +65,6 @@ docs/
 ├── architecture/                   # Evergreen HLD artifacts (C4, sequence, state machines) per subsystem
 ├── primers/                        # Prose explainers for the discipline-layer primitives
 ├── specs/                          # Dated, point-in-time design proposals
-├── adr/                            # Architecture decision records
 └── …                               # Plus reference material and prototypes
 src/
 ├── user/
