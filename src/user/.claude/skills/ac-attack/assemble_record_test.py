@@ -394,6 +394,17 @@ def test_a6_output_holding_two_different_reports_is_refused_naming_the_lens(atta
     assert not attack.union_path.exists()
 
 
+def test_a6_an_envelope_naming_rawoutput_twice_is_refused_naming_the_lens(attack):
+    first, second = (json.dumps(json.dumps(report("what-if", *items)))
+                      for items in ((objection("what-if"),), ()))
+    attack.output("what-if", f'{{"status": 0, "rawOutput": {first}, "rawOutput": {second}}}')
+    status, result = attack.union()
+    assert status == 2
+    assert [(e["code"], e["lens"]) for e in result["errors"]] == [
+        ("unrepairable-drift", "what-if")]
+    assert "'rawOutput'" in result["errors"][0]["message"]
+
+
 def test_a6_output_repeating_one_report_verbatim_is_read_once(attack):
     body = json.dumps(report("what-if", objection("what-if")))
     attack.output("what-if", body + "\n" + body)

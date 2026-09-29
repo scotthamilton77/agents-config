@@ -158,7 +158,9 @@ def report_text(lens: str, path: Path | None) -> str:
     # `rawOutput` is empty is a run that returned nothing, whatever the envelope's own status says.
     # An object carrying `report` or `objections` is the report itself, whatever else it carries.
     try:
-        envelope = json.loads(text)
+        envelope = json.loads(text, object_pairs_hook=unique_keys)
+    except RepeatedKey as exc:
+        raise drift(lens, str(exc)) from exc
     except ValueError:
         envelope = None
     if (isinstance(envelope, dict) and "rawOutput" in envelope
