@@ -67,7 +67,8 @@ changed:
 
 - A key the output shape does not declare is dropped, at any level of the report or an objection.
 - A blank optional `obligation` is dropped.
-- A missing `lens` is set to the lens whose output it came from.
+- A missing `lens`, on the report or an objection, is set to the lens whose output it came from.
+- A missing `objections` is set to an empty list.
 - A ground rule the lens does not enforce is replaced by the one rule it does, when it enforces
   exactly one. The prompt carried only that rule, so the objection can only have meant it.
 - Workings from a lens whose front matter does not require them are dropped.
@@ -75,10 +76,11 @@ changed:
 An objection whose scenario leaves `given`, `when` or `expect` blank is dropped and listed under
 `dropped`. Any other drift refuses the lens, since repairing it would mean guessing what the
 attacker meant: a rule outside a lens enforcing several, a blank `target_ac`, `objection` or ground
-field, an objection attributed to another lens, a report that does not say `objections` or
-`empty` or says one while carrying the other, an object naming one key twice, and workings that are
-missing, break the schema beside the lens's prompt, or leave a part or criterion unaccounted for
-with no objection naming it. A refused lens is run again.
+field, a scenario part or `obligation` that is not text, an objection attributed to another lens, a
+report that does not say `objections` or `empty` or says one while carrying the other, an object
+naming one key twice, and workings that are missing, break the schema beside the lens's prompt,
+discharge a part by a criterion they do not list, or leave a part or criterion unaccounted for with
+no objection naming it. A refused lens is run again.
 
 `assemble_record.py assemble` joins the union with the filled skeleton. Each entry sets
 `disposition` to `accepted` with a `covering_ac`, or to `rejected` with a `rationale`. An acceptance's

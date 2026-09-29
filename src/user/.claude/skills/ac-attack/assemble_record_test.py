@@ -257,6 +257,7 @@ def test_a_disposition_written_against_another_objection_under_the_same_id_is_re
     (None, True, "missing-lens-output"),
     ("", False, "empty-lens-output"),
     (json.dumps({"status": 0, "threadId": "t", "rawOutput": ""}), False, "empty-lens-output"),
+    (json.dumps({"status": 0, "threadId": "t", "rawOutput": None}), False, "empty-lens-output"),
     ("I could not finish the review.", False, "unparseable-lens-output"),
 ])
 def test_a5_a_lens_without_a_usable_output_is_refused_naming_it_and_nothing_is_written(
@@ -298,6 +299,44 @@ def test_a6_an_undeclared_key_is_dropped_and_the_repair_is_listed(attack):
                        ("what-if", "what-if-1", "dropped the undeclared key 'ground.source'"),
                        ("what-if", "what-if-1", "dropped the undeclared key 'severity'"),
                        ("what-if", None, "dropped the undeclared report key 'confidence'")}
+
+
+def test_a6_a_report_missing_its_lens_or_its_empty_objections_is_repaired_and_listed(attack):
+    attack.output("what-if", {"report": "empty"})
+    code, result = attack.union()
+    assert code == 0, result
+    assert {(r["lens"], r["change"]) for r in result["repairs"]} == {
+        ("what-if", "set the missing report 'lens' to 'what-if'"),
+        ("what-if", "set the missing 'objections' to an empty list")}
+
+
+def test_a6_undeclared_keys_in_workings_are_dropped_and_listed(attack):
+    workings = copy.deepcopy(WORKINGS)
+    workings["confidence"] = "high"
+    workings["obligations"][0]["parts"][0]["note"] = "checked twice"
+    attack.output("obligation-reduction", {**report("obligation-reduction"), "workings": workings})
+    code, result = attack.union()
+    assert code == 0, result
+    [entry] = [e for e in json.loads(attack.union_path.read_text("utf-8"))["lenses"]
+               if e["lens"] == "obligation-reduction"]
+    assert entry["workings"] == WORKINGS
+    assert {(r["lens"], r["change"]) for r in result["repairs"]} == {
+        ("obligation-reduction", "dropped the undeclared key 'workings.confidence'"),
+        ("obligation-reduction",
+         "dropped the undeclared key 'workings.obligations[0].parts[0].note'")}
+
+
+@pytest.mark.parametrize("item", [
+    objection("what-if", given=123),
+    {**objection("what-if"), "obligation": 123},
+])
+def test_a6_a_field_that_is_not_text_is_refused_rather_than_dropped(attack, item):
+    attack.output("what-if", report("what-if", item, objection("what-if", "a well-formed one")))
+    status, result = attack.union()
+    assert status == 2
+    assert [(e["code"], e["lens"]) for e in result["errors"]] == [
+        ("unrepairable-drift", "what-if")]
+    assert not attack.union_path.exists()
 
 
 def test_a6_a_key_repeated_in_one_object_is_refused_naming_the_lens(attack):
@@ -351,6 +390,7 @@ def test_a6_an_undischarged_inventory_part_with_no_objection_is_refused_naming_t
 
 @pytest.mark.parametrize("edit", [
     lambda workings: workings["obligations"][0].pop("source"),
+    lambda workings: workings["obligations"][0]["parts"][0]["discharged_by"].append("A9"),
     lambda workings: workings["obligations"][0]["parts"].append(
         dict(workings["obligations"][0]["parts"][0])),
 ])

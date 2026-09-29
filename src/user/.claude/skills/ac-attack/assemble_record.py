@@ -211,8 +211,13 @@ def normalise(lens: str, position: int, item: Any, enforces: list[str] | None,
     """
     if not isinstance(item, dict) or not isinstance(item.get("ground"), dict):
         raise drift(lens, f"holds objection {position} without the objection shape")
-    scenario = item.get("scenario")
-    if not isinstance(scenario, dict) or any(blank(scenario.get(key)) for key in SCENARIO_KEYS):
+    # A blank part is a concern the lens failed to make testable; a part that is not text at all is
+    # a shape nothing here can read a meaning from.
+    scenario = item.get("scenario", {})
+    if not isinstance(scenario, dict) or any(not isinstance(scenario.get(key, ""), str)
+                                             for key in SCENARIO_KEYS):
+        raise drift(lens, f"holds objection {position} with a scenario that is not text")
+    if any(blank(scenario.get(key)) for key in SCENARIO_KEYS):
         return None
     changes = []
     for key in sorted(set(item) - set(OBJECTION_KEYS)):
@@ -231,6 +236,8 @@ def normalise(lens: str, position: int, item: Any, enforces: list[str] | None,
     elif item["lens"] != lens:
         raise drift(lens, f"attributes objection {position} to the {item['lens']!r} lens")
     objection["lens"] = lens
+    if "obligation" in item and not isinstance(item["obligation"], str):
+        raise drift(lens, f"gives objection {position} an obligation that is not text")
     if "obligation" in item and blank(item["obligation"]):
         del objection["obligation"]
         changes.append("dropped the blank optional 'obligation'")
@@ -254,6 +261,23 @@ def normalise(lens: str, position: int, item: Any, enforces: list[str] | None,
     return objection
 
 
+def drop_undeclared(root: dict[str, Any], schema: dict[str, Any], value: Any, path: str,
+                    changes: list[str]) -> None:
+    """Drop, in place, every key of `value` the workings schema does not declare, naming each."""
+    if "$ref" in schema:
+        schema = root["$defs"][schema["$ref"].rpartition("/")[2]]
+    if isinstance(value, dict) and "properties" in schema:
+        for key in sorted(set(value) - set(schema["properties"])):
+            del value[key]
+            changes.append(f"dropped the undeclared key '{path}.{key}'")
+        for key, declared in schema["properties"].items():
+            if key in value:
+                drop_undeclared(root, declared, value[key], f"{path}.{key}", changes)
+    elif isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for index, item in enumerate(value):
+            drop_undeclared(root, schema["items"], item, f"{path}[{index}]", changes)
+
+
 def workings_fault(schema: dict[str, Any], workings: Any) -> str | None:
     """The first way the workings break the schema beside the lens's prompt, or None.
 
@@ -261,10 +285,17 @@ def workings_fault(schema: dict[str, Any], workings: Any) -> str | None:
     """
     for error in Draft202012Validator(schema).iter_errors(workings):
         return f"{'/'.join(map(str, error.absolute_path)) or 'the inventory'}: {error.message}"
-    parts = [part["id"] for obligation in workings["obligations"] for part in obligation["parts"]]
-    for name in dict.fromkeys(parts):
-        if parts.count(name) > 1:
+    parts = [part for obligation in workings["obligations"] for part in obligation["parts"]]
+    ids = [part["id"] for part in parts]
+    for name in dict.fromkeys(ids):
+        if ids.count(name) > 1:
             return f"names the part {name!r} more than once"
+    # A part discharged by a criterion the inventory does not list may be discharged by nothing,
+    # and its hole would then leave the round without an objection.
+    for part in parts:
+        for name in part["discharged_by"]:
+            if name not in workings["criteria"]:
+                return f"discharges the part {part['id']!r} by {name!r}, which it does not list"
     return None
 
 
@@ -289,8 +320,11 @@ def lens_entry(lens: str, report: dict[str, Any], declared: dict[str, Any] | Non
     if requires_workings:
         if "workings" not in report:
             raise drift(lens, "carries no workings, which its lens requires")
-        if fault := workings_fault(declared["workings_schema"], report["workings"]):
+        schema, changes = declared["workings_schema"], []
+        drop_undeclared(schema, schema, report["workings"], "workings", changes)
+        if fault := workings_fault(schema, report["workings"]):
             raise drift(lens, f"returns workings outside its lens's schema ({fault})")
+        repairs += [{"lens": lens, "change": change} for change in changes]
         residue = unreported_residue(report["workings"], objections)
         if residue:
             raise drift(lens, f"leaves {', '.join(residue)} in its workings with no objection "
@@ -315,6 +349,10 @@ def union_lens(lens: str, text: str, declared: dict[str, Any] | None,
         raise drift(lens, f"reports {report['report']!r} and carries {len(items)} objection(s)")
     repairs += [{"lens": lens, "change": f"dropped the undeclared report key {key!r}"}
                 for key in sorted(set(report) - set(REPORT_KEYS))]
+    if "lens" not in report:
+        repairs.append({"lens": lens, "change": f"set the missing report 'lens' to {lens!r}"})
+    if "objections" not in report:
+        repairs.append({"lens": lens, "change": "set the missing 'objections' to an empty list"})
     enforces = declared.get("enforces") if declared else None
     objections, own_repairs = [], []
     for position, item in enumerate(items, 1):
