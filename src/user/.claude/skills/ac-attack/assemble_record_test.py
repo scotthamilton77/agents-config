@@ -165,9 +165,9 @@ def test_a1_union_writes_each_objection_once_with_distinct_ids_and_a_skeleton_na
 
 def test_a1_union_run_twice_over_the_same_inputs_yields_the_same_ids(attack):
     attack.output("what-if", report("what-if", objection("what-if", "a"), objection("what-if", "b")))
-    attack.union()
+    assert attack.union()[0] == 0
     first = [item["id"] for item in json.loads(attack.union_path.read_text("utf-8"))["objections"]]
-    attack.union()
+    assert attack.union()[0] == 0
     second = [item["id"] for item in json.loads(attack.union_path.read_text("utf-8"))["objections"]]
     assert first == second == ["what-if-1", "what-if-2"]
 
@@ -237,6 +237,20 @@ def test_a4_dispositions_not_one_per_id_are_refused_and_no_record_is_written_or_
     status, result = attack.assemble(edit(fill(attack.skeleton())))
     assert (status, codes(result)) == (2, [code])
     assert attack.record.read_text("utf-8") == "earlier record\n"
+
+
+def test_a4_a_disposition_repeating_a_key_is_refused_and_no_record_is_written(attack):
+    # A plain parse keeps the last of two members, so a stale revision or a second verdict for one
+    # id would vanish behind the other instead of being refused.
+    attack.output("what-if", report("what-if", objection("what-if")))
+    attack.union()
+    entry = json.dumps(fill(attack.skeleton(), {"what-if-1": "A1"})[0])
+    path = attack.root / "dispositions.json"
+    path.write_text("[" + entry[:-1] + ', "revision": "sha256:stale", "revision": ""}]', "utf-8")
+    status, result = run("assemble", "--union", str(attack.union_path), "--dispositions",
+                         str(path), "--spec", str(attack.document))
+    assert (status, codes(result)) == (2, ["bad-dispositions"])
+    assert not attack.record.exists()
 
 
 def test_a_disposition_written_against_another_objection_under_the_same_id_is_refused(attack):
@@ -337,6 +351,27 @@ def test_a6_a_field_that_is_not_text_is_refused_rather_than_dropped(attack, item
     assert [(e["code"], e["lens"]) for e in result["errors"]] == [
         ("unrepairable-drift", "what-if")]
     assert not attack.union_path.exists()
+
+
+def test_a6_a_report_missing_its_verdict_takes_it_from_its_objections_and_lists_it(attack):
+    attack.output("what-if", {"lens": "what-if", "objections": [objection("what-if")]})
+    attack.output("set-consistency", {"lens": "set-consistency", "objections": []})
+    code, result = attack.union()
+    assert code == 0, result
+    union = json.loads(attack.union_path.read_text("utf-8"))
+    assert {e["lens"]: e["report"] for e in union["lenses"]}["what-if"] == "objections"
+    assert {(r["lens"], r["change"]) for r in result["repairs"]} == {
+        ("what-if", "set the missing 'report' to 'objections'"),
+        ("set-consistency", "set the missing 'report' to 'empty'")}
+
+
+def test_a6_a_report_carrying_an_undeclared_rawoutput_key_is_read_as_a_report(attack):
+    attack.output("what-if", {**report("what-if", objection("what-if")), "rawOutput": ""})
+    code, result = attack.union()
+    assert code == 0, result
+    assert result["objections"] == 1
+    assert {(r["lens"], r["change"]) for r in result["repairs"]} == {
+        ("what-if", "dropped the undeclared report key 'rawOutput'")}
 
 
 def test_a6_a_key_repeated_in_one_object_is_refused_naming_the_lens(attack):

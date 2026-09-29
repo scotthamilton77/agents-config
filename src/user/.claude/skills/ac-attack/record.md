@@ -68,7 +68,8 @@ changed:
 - A key the output shape does not declare is dropped, at any level of the report or an objection.
 - A blank optional `obligation` is dropped.
 - A missing `lens`, on the report or an objection, is set to the lens whose output it came from.
-- A missing `objections` is set to an empty list.
+- A missing `objections` is set to an empty list, and a missing `report` to `objections` when the
+  list holds any and `empty` when it does not.
 - A ground rule the lens does not enforce is replaced by the one rule it does, when it enforces
   exactly one. The prompt carried only that rule, so the objection can only have meant it.
 - Workings from a lens whose front matter does not require them are dropped.
@@ -77,7 +78,7 @@ An objection whose scenario leaves `given`, `when` or `expect` blank is dropped 
 `dropped`. Any other drift refuses the lens, since repairing it would mean guessing what the
 attacker meant: a rule outside a lens enforcing several, a blank `target_ac`, `objection` or ground
 field, a scenario part or `obligation` that is not text, an objection attributed to another lens, a
-report that does not say `objections` or `empty` or says one while carrying the other, an object
+report whose `report` is neither `objections` nor `empty` or disagrees with its list, an object
 naming one key twice, and workings that are missing, break the schema beside the lens's prompt,
 discharge a part by a criterion they do not list, or leave a part or criterion unaccounted for with
 no objection naming it. A refused lens is run again.

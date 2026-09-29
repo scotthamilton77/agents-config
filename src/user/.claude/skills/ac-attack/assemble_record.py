@@ -72,7 +72,7 @@ class RepeatedKey(ValueError):
 def unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     keys = [key for key, _ in pairs]
     if repeated := [key for key in dict.fromkeys(keys) if keys.count(key) > 1]:
-        raise RepeatedKey(repeated[0])
+        raise RepeatedKey(f"names the key {repeated[0]!r} twice in one object")
     return dict(pairs)
 
 
@@ -110,7 +110,7 @@ def registry() -> dict[str, dict[str, Any]]:
 def read_json(path: Path, code: str, what: str) -> Any:
     """The JSON a file holds, or a refusal under `code` naming what the file was meant to be."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_keys)
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise Refusal(code, f"cannot read {what} {path}: {exc}") from exc
 
@@ -156,11 +156,13 @@ def report_text(lens: str, path: Path | None) -> str:
                       f"{exc}; {RERUN}", lens) from exc
     # A Codex run saved as its envelope carries the model's text in `rawOutput`. An envelope whose
     # `rawOutput` is empty is a run that returned nothing, whatever the envelope's own status says.
+    # An object carrying `report` or `objections` is the report itself, whatever else it carries.
     try:
         envelope = json.loads(text)
     except ValueError:
         envelope = None
-    if isinstance(envelope, dict) and "rawOutput" in envelope:
+    if (isinstance(envelope, dict) and "rawOutput" in envelope
+            and not {"report", "objections"} & envelope.keys()):
         text = envelope["rawOutput"] if isinstance(envelope["rawOutput"], str) else ""
     if not text.strip():
         raise Refusal("empty-lens-output", f"the {lens!r} lens's output {path} is empty; {RERUN}",
@@ -184,14 +186,14 @@ def parse_report(lens: str, text: str) -> dict[str, Any]:
         try:
             value, _ = decoder.raw_decode(text, start)
         except RepeatedKey as exc:
-            value, repeated = None, repeated or exc.args[0]
+            value, repeated = None, repeated or str(exc)
         except ValueError:
             value = None
         if isinstance(value, dict) and ("report" in value or "objections" in value):
             return value
         start = text.find("{", start + 1)
     if repeated is not None:
-        raise drift(lens, f"names the key {repeated!r} twice in one object")
+        raise drift(lens, repeated)
     raise Refusal("unparseable-lens-output", f"the {lens!r} lens's output holds no JSON report; "
                   f"{RERUN}", lens)
 
@@ -343,16 +345,20 @@ def union_lens(lens: str, text: str, declared: dict[str, Any] | None,
     if "lens" in report and report["lens"] != lens:
         raise drift(lens, f"names itself the {report['lens']!r} lens")
     items = report.get("objections", [])
-    if report.get("report") not in ("objections", "empty") or not isinstance(items, list):
+    # A missing verdict is read off the objections list; one the report states must agree with it.
+    verdict = report.get("report", "objections" if items else "empty")
+    if verdict not in ("objections", "empty") or not isinstance(items, list):
         raise drift(lens, "does not say whether it reports objections or reports empty")
-    if (report["report"] == "empty") != (not items):
-        raise drift(lens, f"reports {report['report']!r} and carries {len(items)} objection(s)")
+    if (verdict == "empty") != (not items):
+        raise drift(lens, f"reports {verdict!r} and carries {len(items)} objection(s)")
     repairs += [{"lens": lens, "change": f"dropped the undeclared report key {key!r}"}
                 for key in sorted(set(report) - set(REPORT_KEYS))]
     if "lens" not in report:
         repairs.append({"lens": lens, "change": f"set the missing report 'lens' to {lens!r}"})
     if "objections" not in report:
         repairs.append({"lens": lens, "change": "set the missing 'objections' to an empty list"})
+    if "report" not in report:
+        repairs.append({"lens": lens, "change": f"set the missing 'report' to {verdict!r}"})
     enforces = declared.get("enforces") if declared else None
     objections, own_repairs = [], []
     for position, item in enumerate(items, 1):
