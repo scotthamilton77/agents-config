@@ -17,13 +17,12 @@ the failure cases the criteria name, but cannot invent the ones nobody thought o
 invented here. Attack before use, and again after amendment: an attack on one version of the
 criteria says nothing about the next.
 
-Both scripts below run via `uv run`. If `uv` is not installed, run them with plain `python3`
-instead — `emit_prompts.py` has no dependency beyond the standard library; `check_record.py`
-additionally needs `jsonschema` installed first.
+The scripts below run via `uv run`. If `uv` is not installed, run them with plain `python3`
+instead; only `check_record.py` needs a dependency, `jsonschema`, installed first.
 
 ## Attack lenses
 
-The lenses are the directories under `lenses/`, and both scripts read that registry live. Each
+The lenses are the directories under `lenses/`, and each script reads that registry live. Each
 lens owns `lenses/<lens>/prompt.md`: its body is the lens's instructions, and its front matter
 gives its `tier`, its `transport`, and the `acceptance-criteria` rule IDs it `enforces`. Its prompt
 carries exactly those rules, read live from that skill installed beside this one, and every
@@ -80,6 +79,16 @@ returns, the `id` a disposition names, and the record committed beside the docum
 `ledger-ac-attack.json`, and the check holds the record to that name rather than trusting it, so a
 record copied onto a second document closes nothing. Its machine-readable form is
 `attack-record.schema.json`.
+
+## Assembling the record
+
+```bash
+uv run assemble_record.py union --round <dir>/round.json --report <lens>=<raw-output> …
+uv run assemble_record.py assemble --union <dir>/union.json --dispositions <file> --spec <document>
+```
+
+Between the two, fill in the skeleton the union writes and make every accepted edit. Disclose the
+repairs and drops stdout lists. `record.md` describes both steps.
 
 ## Checking the round
 
