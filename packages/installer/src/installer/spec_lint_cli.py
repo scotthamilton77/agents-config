@@ -53,7 +53,7 @@ def _init_evidence(specs_dir: Path) -> int:
     written = 0
     for path in discover_spec_files(specs_dir):
         sidecar = evidence_path(path)
-        if sidecar.exists():
+        if sidecar.is_file():
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -63,6 +63,12 @@ def _init_evidence(specs_dir: Path) -> int:
         generated = init_evidence(text)
         if generated is None:
             continue
+        # The lint reads only a regular file as a sidecar. Writing over a
+        # directory fails, and writing through a dangling link creates its
+        # target wherever the link points.
+        if sidecar.exists() or sidecar.is_symlink():
+            sys.stderr.write(f"spec-lint: {sidecar} is not a regular file; no sidecar written\n")
+            return 1
         sidecar.write_text(generated, encoding="utf-8")
         sys.stdout.write(f"spec-lint: wrote an all-open evidence sidecar {sidecar}\n")
         written += 1

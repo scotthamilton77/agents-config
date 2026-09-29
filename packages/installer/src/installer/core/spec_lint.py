@@ -112,10 +112,10 @@ not unforgeable, but callable in.
 **The kind rule.** A criterion whose own text says it is verified "in a
 browser" cannot be discharged by ``test:``; it needs ``probe:`` or
 ``observed:``. This is the check's whole reason to exist. Counting evidence is
-not enough on its own: a slice once closed with three named, passing tests
-citing the criteria for a page control that shipped absent — the tests pinned
-the wire protocol underneath it. No grep over test names can tell those apart,
-and the criterion's own prose can.
+not enough on its own: three named, passing tests can cite the criteria for a
+page control that is absent, because they pin the wire protocol underneath it.
+No grep over test names can tell those apart, and the criterion's own prose
+can.
 
 What it does not catch, stated so nobody reads more into a green ledger: a
 ``test:`` row whose test is real, passing, and exercising the wrong surface
@@ -577,6 +577,23 @@ def _lint_evidence_row(
     ]
 
 
+def _lint_inline_ledger(path: Path, headings: list[_Heading]) -> list[Violation]:
+    """An inline ledger is refused in any spec, because the ledger has one
+    home."""
+    if not _has_heading(headings, _EVIDENCE_HEADING_KEYWORD):
+        return []
+    return [
+        Violation(
+            file=path,
+            reason=(
+                f"spec carries an inline '{_EVIDENCE_HEADING}' ledger — the ledger "
+                f"belongs in {evidence_path(path).name} beside the spec, so move its "
+                f"rows there and delete the section"
+            ),
+        )
+    ]
+
+
 def _lint_evidence(
     path: Path,
     headings: list[_Heading],
@@ -587,41 +604,23 @@ def _lint_evidence(
     """The AC-evidence ledger check over one spec and its sidecar text, which
     is ``None`` when the spec has no sidecar.
 
-    An inline ledger is refused in any spec, because the ledger has one home.
     Only a spec with a Continuations manifest owes a ledger: a spec that slices
     nothing has no criterion anybody is about to claim."""
     sidecar = evidence_path(path)
-    violations: list[Violation] = []
-    inline = _has_heading(headings, _EVIDENCE_HEADING_KEYWORD)
-    if inline:
-        violations.append(
+    if not _has_heading(headings, _CONTINUATIONS_HEADING_KEYWORD):
+        return []
+    if evidence is None:
+        return [
             Violation(
                 file=path,
                 reason=(
-                    f"spec carries an inline '{_EVIDENCE_HEADING}' ledger — the ledger "
-                    f"belongs in {sidecar.name} beside the spec, so move its rows there "
-                    f"and delete the section"
+                    f"spec mints work but has no evidence sidecar {sidecar.name} — "
+                    f"run `python -m installer.spec_lint_cli --init-evidence` to "
+                    f"emit an all-open one"
                 ),
             )
-        )
-    if not _has_heading(headings, _CONTINUATIONS_HEADING_KEYWORD):
-        return violations
-    if evidence is None:
-        # An inline ledger already has a finding naming the sidecar, and its
-        # remedy is to move the rows. Suggesting the generator as well would
-        # point the author at an all-open file that discards those rows.
-        if not inline:
-            violations.append(
-                Violation(
-                    file=path,
-                    reason=(
-                        f"spec mints work but has no evidence sidecar {sidecar.name} — "
-                        f"run `python -m installer.spec_lint_cli --init-evidence` to "
-                        f"emit an all-open one"
-                    ),
-                )
-            )
-        return violations
+        ]
+    violations: list[Violation] = []
     covered: set[str] = set()
     for ac_id, state in _evidence_rows(evidence):
         ac_text = defined_acs.get(ac_id)
@@ -688,9 +687,10 @@ def lint_spec_text(
     fenced = fence_mask(lines)
     headings = _headings(lines, fenced)
 
+    inline = _lint_inline_ledger(path, headings)
     ac_headings = [h for h in headings if _AC_HEADING_KEYWORD in h[2].lower()]
     if not ac_headings:
-        return [Violation(file=path, reason="no 'Acceptance criteria' heading found")]
+        return [Violation(file=path, reason="no 'Acceptance criteria' heading found"), *inline]
 
     defined_acs = _defined_acs(lines, headings, fenced)
     defined_ids = set(defined_acs)
@@ -702,7 +702,8 @@ def lint_spec_text(
                     "'Acceptance criteria' heading present but no structured AC "
                     "definition entry (- **ID** text) found under it"
                 ),
-            )
+            ),
+            *inline,
         ]
 
     # Check 2 is satisfied by AC entries alone — a spec with decisions and no
@@ -710,7 +711,10 @@ def lint_spec_text(
     # widen only what a slice may cite to discharge itself.
     citation_re = _citation_re(defined_ids | _defined_decision_ids(lines, fenced))
 
-    violations: list[Violation] = _lint_evidence(path, headings, defined_acs, evidence, repo_root)
+    violations: list[Violation] = [
+        *inline,
+        *_lint_evidence(path, headings, defined_acs, evidence, repo_root),
+    ]
     for idx, (line_idx, level, heading_text) in enumerate(headings):
         if _SLICE_HEADING_KEYWORD not in _strip_parens(heading_text).lower():
             continue

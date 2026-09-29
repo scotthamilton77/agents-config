@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from installer.core.spec_lint import (
     GATE_START_DATE,
     Violation,
@@ -1196,10 +1198,23 @@ def test_a3_an_inline_ledger_is_refused_naming_its_sidecar(tmp_path: Path) -> No
     inline = f"{_SPEC_HEAD}\n## Evidence\n\n- AC1 | open\n- AC2 | open\n"
     spec = _specs_tree(tmp_path, inline)
     violations = lint_specs(tmp_path / "docs" / "specs", tmp_path)
-    assert len(violations) == 1
-    assert violations[0].file == spec
-    assert "inline" in violations[0].reason
-    assert "2026-07-25-example-evidence.md" in violations[0].reason
+    inline_findings = [v for v in violations if "inline" in v.reason]
+    assert len(inline_findings) == 1
+    assert inline_findings[0].file == spec
+    assert "2026-07-25-example-evidence.md" in inline_findings[0].reason
+
+
+def test_a2_a_spec_with_an_inline_ledger_and_no_sidecar_still_names_the_remedy(
+    tmp_path: Path,
+) -> None:
+    """The spec owes a ledger and has no sidecar, so the missing-sidecar finding
+    stands beside the inline one."""
+    spec = _specs_tree(tmp_path, f"{_SPEC_HEAD}\n## Evidence\n\n- AC1 | open\n- AC2 | open\n")
+    violations = lint_specs(tmp_path / "docs" / "specs", tmp_path)
+    remedies = [v for v in violations if "--init-evidence" in v.reason]
+    assert len(remedies) == 1
+    assert remedies[0].file == spec
+    assert "2026-07-25-example-evidence.md" in remedies[0].reason
 
 
 def test_a3_an_inline_ledger_is_refused_even_beside_a_valid_sidecar(tmp_path: Path) -> None:
@@ -1219,3 +1234,25 @@ def test_a3_an_inline_ledger_is_refused_in_a_spec_that_mints_no_work(tmp_path: P
     assert len(violations) == 1
     assert violations[0].file == spec
     assert "2026-07-25-example-evidence.md" in violations[0].reason
+
+
+@pytest.mark.parametrize(
+    "head",
+    [
+        "# A spec\n\nNo criteria heading.\n",
+        "# A spec\n\n## Acceptance criteria\n\nProse, no structured entry.\n",
+    ],
+    ids=["no-criteria-heading", "no-structured-criterion"],
+)
+def test_a3_an_inline_ledger_is_refused_in_a_spec_without_usable_criteria(
+    tmp_path: Path, head: str
+) -> None:
+    """The criteria checks stop early on such a spec, and the inline ledger is
+    still named, so the author learns both what is missing and where the
+    ledger belongs."""
+    spec = _specs_tree(tmp_path, f"{head}\n## Evidence\n\n- AC1 | open\n")
+    violations = lint_specs(tmp_path / "docs" / "specs", tmp_path)
+    inline_findings = [v for v in violations if "inline" in v.reason]
+    assert len(inline_findings) == 1
+    assert inline_findings[0].file == spec
+    assert "2026-07-25-example-evidence.md" in inline_findings[0].reason

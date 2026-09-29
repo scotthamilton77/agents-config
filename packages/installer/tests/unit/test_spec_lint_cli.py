@@ -111,3 +111,51 @@ def test_a4_init_evidence_leaves_an_existing_sidecar_byte_identical(tmp_path: Pa
     assert main([str(tmp_path), "--init-evidence"]) == 0
     assert sidecar.read_bytes() == filled
     assert spec.read_text(encoding="utf-8") == _OWES_A_LEDGER
+
+
+def test_a1_a_sidecar_violation_prints_the_sidecar_and_the_row(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The author reads the finding on the command line, so the printed line
+    names the sidecar to edit and quotes the row at fault."""
+    specs_dir = tmp_path / "docs" / "specs"
+    specs_dir.mkdir(parents=True)
+    (specs_dir / "2026-07-25-owes.md").write_text(_OWES_A_LEDGER, encoding="utf-8")
+    (specs_dir / "2026-07-25-owes-evidence.md").write_text("- AC1 | done\n", encoding="utf-8")
+
+    assert main([str(tmp_path)]) == 1
+    line = next(line for line in capsys.readouterr().err.splitlines() if "'AC1 | done'" in line)
+    assert "2026-07-25-owes-evidence.md" in line
+
+
+def test_a4_init_evidence_writes_a_sidecar_for_every_spec_that_owes_one(tmp_path: Path) -> None:
+    specs_dir = tmp_path / "docs" / "specs"
+    specs_dir.mkdir(parents=True)
+    for name in ("2026-07-25-first", "2026-07-26-second"):
+        (specs_dir / f"{name}.md").write_text(_OWES_A_LEDGER, encoding="utf-8")
+
+    assert main([str(tmp_path), "--init-evidence"]) == 0
+    for name in ("2026-07-25-first", "2026-07-26-second"):
+        assert "- AC1 | open" in (specs_dir / f"{name}-evidence.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("occupant", ["directory", "dangling-symlink"])
+def test_a4_init_evidence_refuses_a_sidecar_name_held_by_something_else(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], occupant: str
+) -> None:
+    """The lint reads only a regular file as a sidecar. A directory or a
+    dangling link holding the name is reported, never skipped as present, and
+    a link is never followed to create its target."""
+    specs_dir = tmp_path / "docs" / "specs"
+    specs_dir.mkdir(parents=True)
+    (specs_dir / "2026-07-25-owes.md").write_text(_OWES_A_LEDGER, encoding="utf-8")
+    sidecar = specs_dir / "2026-07-25-owes-evidence.md"
+    target = tmp_path / "outside.md"
+    if occupant == "directory":
+        sidecar.mkdir()
+    else:
+        sidecar.symlink_to(target)
+
+    assert main([str(tmp_path), "--init-evidence"]) == 1
+    assert "2026-07-25-owes-evidence.md" in capsys.readouterr().err
+    assert not target.exists()
