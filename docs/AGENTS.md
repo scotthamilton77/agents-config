@@ -9,10 +9,13 @@ What each subtree is, and how staleness is judged there.
   implementation is expected — a spec that describes code nobody has written
   yet is working as designed, not a defect to file or annotate. The dated
   filename is what puts a file in `spec-lint`'s scope, and the lint has no
-  allowlist by design — so a companion record that is not a spec (a rationale
-  or evidence file beside one) stays undated on purpose; dating it demands
-  acceptance criteria it cannot honestly carry. Under an acceptance-criteria
-  heading the lint wants at least one `- **<ID>** text` entry whose ID matches
+  allowlist by design. An evidence sidecar, `<spec-stem>-evidence.md`, is
+  dated because it is named for its spec. The lint reads it as that spec's
+  ledger only when the spec sits beside it, so the file's place in the tree
+  is what exempts it. Any other companion record, such as a rationale, stays
+  undated, because dating it demands acceptance criteria it cannot honestly
+  carry. Under an acceptance-criteria heading the lint wants at least one
+  `- **<ID>** text` entry whose ID matches
   `[A-Z0-9]+-[A-Z]\d+` or `AC\d+` — a letter before the digits (`S6-A1`,
   not `AUTH-1`).
 - `architecture/` — evergreen HLD artifacts (C4 levels, sequence diagrams,
