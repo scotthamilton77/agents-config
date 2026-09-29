@@ -11,11 +11,13 @@ What each subtree is, and how staleness is judged there.
   filename is what puts a file in `spec-lint`'s scope, and the lint has no
   allowlist by design — so a companion record that is not a spec (a rationale
   or evidence file beside one) stays undated on purpose; dating it demands
-  acceptance criteria it cannot honestly carry. A spec dated before the lint's
-  start date is exempt by its date alone. Under an acceptance-criteria
-  heading the lint wants at least one `- **<ID>** text` entry whose ID matches
-  `[A-Z0-9]+-[A-Z]\d+` or `AC\d+` — a letter before the digits (`S6-A1`,
-  not `AUTH-1`).
+  acceptance criteria it cannot honestly carry. The lint reads a spec whose
+  filename begins `YYYY-MM-DD-` with a date of 2026-07-24 or later. It also
+  always reads the harness-rework charter,
+  `specs/2026-07-21-harness-rework-way-forward.md`, whatever its date. Under
+  an acceptance-criteria heading the lint wants at least one `- **<ID>** text`
+  entry whose ID matches `[A-Z0-9]+-[A-Z]\d+` or `AC\d+` — a letter before
+  the digits (`S6-A1`, not `AUTH-1`).
 - `architecture/` — evergreen HLD artifacts (C4 levels, sequence diagrams,
   state machines, data-flow views), grouped per subsystem. A subsystem folder
   opens with an `index.md` orientation file, or with a `CONTEXT.md` glossary
