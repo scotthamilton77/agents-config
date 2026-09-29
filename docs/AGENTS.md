@@ -7,14 +7,13 @@ What each subtree is, and how staleness is judged there.
 - `specs/` — dated point-in-time design proposals; status varies from draft
   through implemented. A spec describes its full intent, and partial per-PR
   implementation is expected — a spec that describes code nobody has written
-  yet is working as designed, not a defect to file or annotate. The dated
-  filename is what puts a file in `spec-lint`'s scope, and the lint has no
-  allowlist by design — so a companion record that is not a spec (a rationale
-  or evidence file beside one) stays undated on purpose; dating it demands
-  acceptance criteria it cannot honestly carry. The lint reads a spec whose
-  filename begins `YYYY-MM-DD-` with a date of 2026-07-24 or later. It also
-  always reads the harness-rework charter,
-  `specs/2026-07-21-harness-rework-way-forward.md`, whatever its date. Under
+  yet is working as designed, not a defect to file or annotate. `spec-lint`
+  reads a spec whose filename begins `YYYY-MM-DD-` with a date of 2026-07-24
+  or later, and it always reads the harness-rework charter,
+  `specs/2026-07-21-harness-rework-way-forward.md`, whatever its date. The
+  lint has no allowlist by design, so a companion record that is not a spec
+  (a rationale or evidence file beside one) stays undated on purpose; dating
+  it demands acceptance criteria it cannot honestly carry. Under
   an acceptance-criteria heading the lint wants at least one `- **<ID>** text`
   entry whose ID matches `[A-Z0-9]+-[A-Z]\d+` or `AC\d+` — a letter before
   the digits (`S6-A1`, not `AUTH-1`).
