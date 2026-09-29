@@ -16,6 +16,7 @@ from installer.core.spec_lint import (
     GATE_START_DATE,
     Violation,
     discover_spec_files,
+    evidence_path,
     format_violation,
     init_evidence,
     lint_spec_text,
@@ -886,17 +887,17 @@ _SPEC_HEAD = """# A spec
 """
 
 
-def _with_ledger(*rows: str) -> str:
-    """``_SPEC_HEAD`` plus an Evidence section carrying ``rows``."""
+def _ledger(*rows: str) -> str:
+    """The text of an evidence sidecar carrying ``rows``."""
     body = "\n".join(f"- {row}" for row in rows)
-    return f"{_SPEC_HEAD}\n## Evidence\n\n{body}\n"
+    return f"# Evidence\n\n{body}\n"
 
 
 def test_an_all_open_ledger_passes() -> None:
     """`open` is a legal state, so a spec whose work has not started is not
     red — the ledger is a map of the AC universe, not a completion claim."""
     path = Path("docs/specs/2026-07-25-example.md")
-    assert lint_spec_text(path, _with_ledger("AC1 | open", "AC2 | open")) == []
+    assert lint_spec_text(path, _SPEC_HEAD, evidence=_ledger("AC1 | open", "AC2 | open")) == []
 
 
 def test_an_ac_absent_from_the_ledger_is_refused_by_name() -> None:
@@ -904,7 +905,7 @@ def test_an_ac_absent_from_the_ledger_is_refused_by_name() -> None:
     row is a criterion nobody decided anything about, and the finding has to
     name it or the author cannot act on it."""
     path = Path("docs/specs/2026-07-25-example.md")
-    violations = lint_spec_text(path, _with_ledger("AC1 | open"))
+    violations = lint_spec_text(path, _SPEC_HEAD, evidence=_ledger("AC1 | open"))
     assert len(violations) == 1
     assert "AC2" in violations[0].reason
 
@@ -915,7 +916,7 @@ def test_a_spec_that_mints_work_and_carries_no_ledger_is_refused_once() -> None:
     path = Path("docs/specs/2026-07-25-example.md")
     violations = lint_spec_text(path, _SPEC_HEAD)
     assert len(violations) == 1
-    assert "Evidence" in violations[0].reason
+    assert "evidence sidecar" in violations[0].reason
 
 
 def test_a_browser_marked_ac_cannot_be_discharged_by_a_test_row() -> None:
@@ -925,7 +926,7 @@ def test_a_browser_marked_ac_cannot_be_discharged_by_a_test_row() -> None:
     browser is not dischargeable by a test that never opens one."""
     path = Path("docs/specs/2026-07-25-example.md")
     violations = lint_spec_text(
-        path, _with_ledger("AC1 | open", "AC2 | test: tests/test_x.py::test_thing")
+        path, _SPEC_HEAD, evidence=_ledger("AC1 | open", "AC2 | test: tests/test_x.py::test_thing")
     )
     assert len(violations) == 1
     assert "AC2" in violations[0].reason
@@ -938,7 +939,9 @@ def test_a_browser_marked_ac_is_dischargeable_by_probe_or_observed() -> None:
     path = Path("docs/specs/2026-07-25-example.md")
     assert (
         lint_spec_text(
-            path, _with_ledger("AC1 | open", "AC2 | observed: #614 2026-08-22 scotthamilton77")
+            path,
+            _SPEC_HEAD,
+            evidence=_ledger("AC1 | open", "AC2 | observed: #614 2026-08-22 scotthamilton77"),
         )
         == []
     )
@@ -950,7 +953,8 @@ def test_a_symbol_row_naming_nothing_in_the_tree_is_refused(tmp_path: Path) -> N
     path = Path("docs/specs/2026-07-25-example.md")
     violations = lint_spec_text(
         path,
-        _with_ledger("AC1 | test: tests/test_x.py::test_missing", "AC2 | open"),
+        _SPEC_HEAD,
+        evidence=_ledger("AC1 | test: tests/test_x.py::test_missing", "AC2 | open"),
         repo_root=tmp_path,
     )
     assert len(violations) == 1
@@ -966,7 +970,8 @@ def test_a_symbol_row_whose_file_exists_without_the_symbol_is_refused(tmp_path: 
     (tmp_path / "tests" / "test_x.py").write_text("def test_other() -> None: ...\n")
     violations = lint_spec_text(
         path,
-        _with_ledger("AC1 | test: tests/test_x.py::test_missing", "AC2 | open"),
+        _SPEC_HEAD,
+        evidence=_ledger("AC1 | test: tests/test_x.py::test_missing", "AC2 | open"),
         repo_root=tmp_path,
     )
     assert len(violations) == 1
@@ -983,7 +988,8 @@ def test_a_symbol_row_that_resolves_passes(tmp_path: Path) -> None:
     assert (
         lint_spec_text(
             path,
-            _with_ledger(
+            _SPEC_HEAD,
+            evidence=_ledger(
                 "AC1 | test: tests/test_x.py::test_thing",
                 "AC2 | probe: probe.md::probe_ac2",
             ),
@@ -999,7 +1005,10 @@ def test_a_symbol_row_escaping_the_repo_does_not_resolve(tmp_path: Path) -> None
     evidence about this repository."""
     path = Path("docs/specs/2026-07-25-example.md")
     violations = lint_spec_text(
-        path, _with_ledger("AC1 | test: ../elsewhere.py::test_thing", "AC2 | open"), tmp_path
+        path,
+        _SPEC_HEAD,
+        evidence=_ledger("AC1 | test: ../elsewhere.py::test_thing", "AC2 | open"),
+        repo_root=tmp_path,
     )
     assert len(violations) == 1
     assert "../elsewhere.py" in violations[0].reason
@@ -1009,7 +1018,7 @@ def test_an_unknown_evidence_state_is_refused_by_name() -> None:
     """The state set is closed. An open vocabulary is no vocabulary: `done`,
     `verified`, `n/a` would all pass and none of them names a proof."""
     path = Path("docs/specs/2026-07-25-example.md")
-    violations = lint_spec_text(path, _with_ledger("AC1 | done", "AC2 | open"))
+    violations = lint_spec_text(path, _SPEC_HEAD, evidence=_ledger("AC1 | done", "AC2 | open"))
     assert len(violations) == 1
     assert "done" in violations[0].reason
     assert "AC1" in violations[0].reason
@@ -1019,7 +1028,9 @@ def test_a_malformed_observed_row_is_refused() -> None:
     """`observed:` is an attestation, and its value is being dated and
     attributed. A row missing either is an anonymous claim."""
     path = Path("docs/specs/2026-07-25-example.md")
-    violations = lint_spec_text(path, _with_ledger("AC1 | observed: #614", "AC2 | open"))
+    violations = lint_spec_text(
+        path, _SPEC_HEAD, evidence=_ledger("AC1 | observed: #614", "AC2 | open")
+    )
     assert len(violations) == 1
     assert "observed: #614" in violations[0].reason
 
@@ -1029,27 +1040,30 @@ def test_an_observed_row_with_trailing_tokens_is_refused() -> None:
     second claim riding a row that holds one."""
     path = Path("docs/specs/2026-07-25-example.md")
     row = "AC1 | observed: #614 2026-08-22 scotthamilton77 extra"
-    violations = lint_spec_text(path, _with_ledger(row, "AC2 | open"))
+    violations = lint_spec_text(path, _SPEC_HEAD, evidence=_ledger(row, "AC2 | open"))
     assert len(violations) == 1
     assert "observed: #614" in violations[0].reason
 
 
-def test_only_an_exact_level_two_evidence_heading_is_the_ledger() -> None:
-    """`### Evidence` or `## Evidence of need` is some other section; rows under
-    it discharge nothing, so the ledger is reported missing."""
+def test_only_an_exact_level_two_evidence_heading_is_an_inline_ledger() -> None:
+    """`### Evidence` or `## Evidence of need` is some other section. It is not
+    refused as an inline ledger, and its rows discharge nothing, so the spec is
+    reported as lacking its sidecar."""
     path = Path("docs/specs/2026-07-25-example.md")
     for heading in ("### Evidence", "## Evidence of need"):
         text = f"{_SPEC_HEAD}\n{heading}\n\n- AC1 | open\n- AC2 | open\n"
         violations = lint_spec_text(path, text)
-        assert violations, heading
-        assert all("Evidence" in v.reason for v in violations), heading
+        assert len(violations) == 1, heading
+        assert "no evidence sidecar" in violations[0].reason, heading
 
 
 def test_a_ledger_row_naming_an_undefined_ac_is_refused_by_name() -> None:
     """A row for an ID the spec never stated is bookkeeping against nothing —
     usually a criterion that was renamed or deleted, leaving its row behind."""
     path = Path("docs/specs/2026-07-25-example.md")
-    violations = lint_spec_text(path, _with_ledger("AC1 | open", "AC2 | open", "AC9 | open"))
+    violations = lint_spec_text(
+        path, _SPEC_HEAD, evidence=_ledger("AC1 | open", "AC2 | open", "AC9 | open")
+    )
     assert len(violations) == 1
     assert "AC9" in violations[0].reason
 
@@ -1068,7 +1082,7 @@ def test_a_spec_defining_no_ac_ids_is_untouched_by_the_ledger_rule() -> None:
     text = _HEADING_NO_ENTRIES + "\n## Continuations\n\n- feat: Do the thing — AC: none.\n"
     violations = lint_spec_text(path, text)
     assert len(violations) == 1
-    assert "Evidence" not in violations[0].reason
+    assert "evidence" not in violations[0].reason
     assert init_evidence(text) is None
 
 
@@ -1076,29 +1090,132 @@ def test_a_fenced_ledger_row_is_not_a_row() -> None:
     """An illustration of the row grammar inside a code fence is documentation,
     not a discharge — the same gaming case every other check here refuses."""
     path = Path("docs/specs/2026-07-25-example.md")
-    text = f"{_SPEC_HEAD}\n## Evidence\n\n```\n- AC1 | open\n- AC2 | open\n```\n"
-    violations = lint_spec_text(path, text)
-    assert len(violations) == 1
-    assert "Evidence" in violations[0].reason
+    sidecar = "# Evidence\n\n```\n- AC1 | open\n- AC2 | open\n```\n"
+    violations = lint_spec_text(path, _SPEC_HEAD, evidence=sidecar)
+    assert sorted(v.reason for v in violations) == [
+        "AC1 has no row in the evidence ledger",
+        "AC2 has no row in the evidence ledger",
+    ]
 
 
-def test_the_generator_emits_an_all_open_ledger() -> None:
+def test_the_generator_emits_an_all_open_sidecar() -> None:
     """Backfill is mechanical — the AC parser already knows the universe — so it
     is code, not hand work over 62 criteria."""
     generated = init_evidence(_SPEC_HEAD)
     assert generated is not None
-    assert lint_spec_text(Path("docs/specs/2026-07-25-example.md"), generated) == []
-    assert generated.startswith(_SPEC_HEAD)
-
-
-def test_the_generator_is_idempotent() -> None:
-    """Running it over a spec that already has a ledger returns nothing to
-    write, so it cannot clobber rows an author filled in."""
-    generated = init_evidence(_SPEC_HEAD)
-    assert generated is not None
-    assert init_evidence(generated) is None
+    assert "- AC1 | open\n- AC2 | open\n" in generated
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _SPEC_HEAD, evidence=generated) == []
 
 
 def test_the_generator_declines_a_spec_outside_the_rule() -> None:
     """No Continuations manifest, no obligation, so nothing to emit."""
     assert init_evidence(_CLEAN_NO_SLICES) is None
+
+
+# --- Where the ledger lives --------------------------------------------------
+
+
+def _specs_tree(tmp_path: Path, spec_text: str, sidecar_text: str | None = None) -> Path:
+    """A ``docs/specs`` tree holding one in-scope spec and, when given, the
+    evidence sidecar beside it. Returns the spec's path."""
+    specs_dir = tmp_path / "docs" / "specs"
+    specs_dir.mkdir(parents=True)
+    spec = specs_dir / "2026-07-25-example.md"
+    spec.write_text(spec_text, encoding="utf-8")
+    if sidecar_text is not None:
+        (specs_dir / "2026-07-25-example-evidence.md").write_text(sidecar_text, encoding="utf-8")
+    return spec
+
+
+def test_a1_the_sidecar_is_named_for_the_spec_without_its_last_extension() -> None:
+    """The attack record beside a spec drops only the last extension, and the
+    sidecar is named the same way so the two read as one family."""
+    assert evidence_path(Path("docs/specs/2026-07-25-a.b.md")) == Path(
+        "docs/specs/2026-07-25-a.b-evidence.md"
+    )
+
+
+def test_a1_a_spec_whose_sidecar_accounts_for_every_criterion_passes(tmp_path: Path) -> None:
+    """The ledger is read from the sidecar beside the spec, and the sidecar is
+    not itself linted as a spec even though its name carries the spec's date."""
+    _specs_tree(tmp_path, _SPEC_HEAD, _ledger("AC1 | open", "AC2 | open"))
+    violations = lint_specs(tmp_path / "docs" / "specs", tmp_path)
+    assert violations == [], [format_violation(v) for v in violations]
+
+
+def test_a1_a_violation_in_the_sidecar_names_the_sidecar_and_the_row(tmp_path: Path) -> None:
+    """The finding points at the file the author has to edit, which is the
+    sidecar rather than the spec, and quotes the row at fault."""
+    spec = _specs_tree(
+        tmp_path, _SPEC_HEAD, _ledger("AC1 | done", "AC2 | test: tests/test_x.py::test_thing")
+    )
+    violations = lint_specs(tmp_path / "docs" / "specs", tmp_path)
+    assert {v.file for v in violations} == {evidence_path(spec)}
+    reasons = sorted(v.reason for v in violations)
+    assert len(reasons) == 2
+    assert "'AC1 | done'" in reasons[0]
+    assert "'AC2 | test: tests/test_x.py::test_thing'" in reasons[1]
+    assert "in a browser" in reasons[1]
+
+
+def test_a1_a_sidecar_row_for_an_undefined_criterion_names_the_row(tmp_path: Path) -> None:
+    spec = _specs_tree(tmp_path, _SPEC_HEAD, _ledger("AC1 | open", "AC2 | open", "AC9 | open"))
+    violations = lint_specs(tmp_path / "docs" / "specs", tmp_path)
+    assert len(violations) == 1
+    assert violations[0].file == evidence_path(spec)
+    assert "'AC9 | open'" in violations[0].reason
+
+
+def test_a1_an_evidence_named_file_with_no_spec_beside_it_is_linted_as_a_spec(
+    tmp_path: Path,
+) -> None:
+    """The suffix alone does not make a sidecar, or naming a spec that way
+    would take it out of the gate."""
+    specs_dir = tmp_path / "docs" / "specs"
+    specs_dir.mkdir(parents=True)
+    orphan = specs_dir / "2026-07-25-orphan-evidence.md"
+    orphan.write_text(_HEADING_ONLY, encoding="utf-8")
+    assert discover_spec_files(specs_dir) == [orphan]
+
+
+def test_a2_a_spec_owing_a_ledger_with_no_sidecar_names_the_sidecar_and_remedy(
+    tmp_path: Path,
+) -> None:
+    spec = _specs_tree(tmp_path, _SPEC_HEAD)
+    violations = lint_specs(tmp_path / "docs" / "specs", tmp_path)
+    assert len(violations) == 1
+    assert violations[0].file == spec
+    assert "2026-07-25-example-evidence.md" in violations[0].reason
+    assert "--init-evidence" in violations[0].reason
+
+
+def test_a3_an_inline_ledger_is_refused_naming_its_sidecar(tmp_path: Path) -> None:
+    """A spec holding its own ledger is refused even when that ledger is
+    complete and valid, because the ledger has one home."""
+    inline = f"{_SPEC_HEAD}\n## Evidence\n\n- AC1 | open\n- AC2 | open\n"
+    spec = _specs_tree(tmp_path, inline)
+    violations = lint_specs(tmp_path / "docs" / "specs", tmp_path)
+    assert len(violations) == 1
+    assert violations[0].file == spec
+    assert "inline" in violations[0].reason
+    assert "2026-07-25-example-evidence.md" in violations[0].reason
+
+
+def test_a3_an_inline_ledger_is_refused_even_beside_a_valid_sidecar(tmp_path: Path) -> None:
+    inline = f"{_SPEC_HEAD}\n## Evidence\n\n- AC1 | open\n- AC2 | open\n"
+    spec = _specs_tree(tmp_path, inline, _ledger("AC1 | open", "AC2 | open"))
+    violations = lint_specs(tmp_path / "docs" / "specs", tmp_path)
+    assert len(violations) == 1
+    assert violations[0].file == spec
+    assert "2026-07-25-example-evidence.md" in violations[0].reason
+
+
+def test_a3_an_inline_ledger_is_refused_in_a_spec_that_mints_no_work(tmp_path: Path) -> None:
+    """The one-location rule does not depend on whether the spec owes a
+    ledger."""
+    spec = _specs_tree(tmp_path, f"{_CLEAN_NO_SLICES}\n## Evidence\n\n- AC1 | open\n")
+    violations = lint_specs(tmp_path / "docs" / "specs", tmp_path)
+    assert len(violations) == 1
+    assert violations[0].file == spec
+    assert "2026-07-25-example-evidence.md" in violations[0].reason
