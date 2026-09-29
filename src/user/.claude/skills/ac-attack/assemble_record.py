@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = []
+# dependencies = ["jsonschema>=4"]
 # ///
 """Assemble an attack round's record from the lens reports and the author's dispositions.
 
@@ -25,12 +25,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator
+
 HERE = Path(__file__).resolve().parent
 # The lens registry the other two scripts read: each lens's prompt front matter names the rules it
-# enforces and whether it returns workings. The scripts deploy standalone and cannot import each
-# other, so the few lines that read it are repeated here.
+# enforces and whether it returns workings, and a lens returning workings keeps their schema beside
+# its prompt. The scripts deploy standalone and cannot import each other, so the few lines that
+# read it are repeated here.
 LENSES_DIR = HERE / "lenses"
 FRONT_MATTER_KEYS = ("enforces", "workings")
+WORKINGS_SCHEMA = "workings.schema.json"
 RECORD_SUFFIX = "-ac-attack.json"
 UNION_NAME = "union.json"
 SKELETON_NAME = "dispositions.skeleton.json"
@@ -40,6 +44,7 @@ EXIT_REFUSED = 2
 
 # The keys the lens output contract declares, at each level of an objection. Anything else is
 # dropped, since the record's schema admits nothing else and no reader of the record consults it.
+REPORT_KEYS = ("lens", "report", "objections", "workings")
 OBJECTION_KEYS = ("lens", "target_ac", "ground", "objection", "obligation", "scenario")
 GROUND_KEYS = ("rule", "reason")
 SCENARIO_KEYS = ("given", "when", "expect")
@@ -58,6 +63,17 @@ class Refusal(Exception):
     def as_dict(self) -> dict[str, str]:
         return {"code": self.code, "message": self.message,
                 **({"lens": self.lens} if self.lens is not None else {})}
+
+
+class RepeatedKey(ValueError):
+    """A JSON object naming one key twice, which a plain parse would collapse to the last."""
+
+
+def unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    keys = [key for key, _ in pairs]
+    if repeated := [key for key in dict.fromkeys(keys) if keys.count(key) > 1]:
+        raise RepeatedKey(repeated[0])
+    return dict(pairs)
 
 
 class Refusals(Exception):
@@ -85,6 +101,8 @@ def registry() -> dict[str, dict[str, Any]]:
             if key in FRONT_MATTER_KEYS:
                 lens[key] = ([item.strip() for item in value[1:-1].split(",") if item.strip()]
                              if value.startswith("[") and value.endswith("]") else value)
+        if (schema := path.with_name(WORKINGS_SCHEMA)).exists():
+            lens["workings_schema"] = json.loads(schema.read_text(encoding="utf-8"))
         lenses[path.parent.name] = lens
     return lenses
 
@@ -156,17 +174,24 @@ def parse_report(lens: str, text: str) -> dict[str, Any]:
     Models wrap the object in prose or a Markdown fence, so every opening brace is tried in turn
     and the first object carrying `report` or `objections` is the report. An objection or an
     inventory nested inside a truncated report carries neither key, so it is never mistaken for one.
+    An object naming a key twice is refused rather than read: the parse keeps only the last, so
+    whatever the first held would vanish without a trace.
     """
-    decoder = json.JSONDecoder()
+    decoder = json.JSONDecoder(object_pairs_hook=unique_keys)
+    repeated = None
     start = text.find("{")
     while start != -1:
         try:
             value, _ = decoder.raw_decode(text, start)
+        except RepeatedKey as exc:
+            value, repeated = None, repeated or exc.args[0]
         except ValueError:
             value = None
         if isinstance(value, dict) and ("report" in value or "objections" in value):
             return value
         start = text.find("{", start + 1)
+    if repeated is not None:
+        raise drift(lens, f"names the key {repeated!r} twice in one object")
     raise Refusal("unparseable-lens-output", f"the {lens!r} lens's output holds no JSON report; "
                   f"{RERUN}", lens)
 
@@ -229,15 +254,26 @@ def normalise(lens: str, position: int, item: Any, enforces: list[str] | None,
     return objection
 
 
-def unreported_residue(lens: str, workings: Any, objections: list[dict[str, Any]]) -> list[str]:
+def workings_fault(schema: dict[str, Any], workings: Any) -> str | None:
+    """The first way the workings break the schema beside the lens's prompt, or None.
+
+    Part ids are unique across the inventory, which the schema cannot say and the checker enforces.
+    """
+    for error in Draft202012Validator(schema).iter_errors(workings):
+        return f"{'/'.join(map(str, error.absolute_path)) or 'the inventory'}: {error.message}"
+    parts = [part["id"] for obligation in workings["obligations"] for part in obligation["parts"]]
+    for name in dict.fromkeys(parts):
+        if parts.count(name) > 1:
+            return f"names the part {name!r} more than once"
+    return None
+
+
+def unreported_residue(workings: dict[str, Any], objections: list[dict[str, Any]]) -> list[str]:
     """Each part the inventory leaves undischarged, or criterion discharging nothing, unobjected."""
-    try:
-        parts = [part for obligation in workings["obligations"] for part in obligation["parts"]]
-        discharging = {name for part in parts for name in part["discharged_by"]}
-        residue = [("obligation", part["id"]) for part in parts if not part["discharged_by"]]
-        residue += [("target_ac", name) for name in workings["criteria"] if name not in discharging]
-    except (KeyError, TypeError) as exc:
-        raise drift(lens, f"returns workings without the inventory shape ({exc!r} is missing)") from exc
+    parts = [part for obligation in workings["obligations"] for part in obligation["parts"]]
+    discharging = {name for part in parts for name in part["discharged_by"]}
+    residue = [("obligation", part["id"]) for part in parts if not part["discharged_by"]]
+    residue += [("target_ac", name) for name in workings["criteria"] if name not in discharging]
     return [f"{field} {name!r}" for field, name in residue
             if not any(item.get(field) == name for item in objections)]
 
@@ -251,9 +287,11 @@ def lens_entry(lens: str, report: dict[str, Any], declared: dict[str, Any] | Non
     entry: dict[str, Any] = {"lens": lens, "report": "objections" if objections else "empty"}
     requires_workings = declared is not None and declared.get("workings") == "required"
     if requires_workings:
-        if not isinstance(report.get("workings"), dict):
+        if "workings" not in report:
             raise drift(lens, "carries no workings, which its lens requires")
-        residue = unreported_residue(lens, report["workings"], objections)
+        if fault := workings_fault(declared["workings_schema"], report["workings"]):
+            raise drift(lens, f"returns workings outside its lens's schema ({fault})")
+        residue = unreported_residue(report["workings"], objections)
         if residue:
             raise drift(lens, f"leaves {', '.join(residue)} in its workings with no objection "
                         "naming it")
@@ -275,6 +313,8 @@ def union_lens(lens: str, text: str, declared: dict[str, Any] | None,
         raise drift(lens, "does not say whether it reports objections or reports empty")
     if (report["report"] == "empty") != (not items):
         raise drift(lens, f"reports {report['report']!r} and carries {len(items)} objection(s)")
+    repairs += [{"lens": lens, "change": f"dropped the undeclared report key {key!r}"}
+                for key in sorted(set(report) - set(REPORT_KEYS))]
     enforces = declared.get("enforces") if declared else None
     objections, own_repairs = [], []
     for position, item in enumerate(items, 1):
@@ -352,8 +392,8 @@ def read_union(path: Path) -> dict[str, Any]:
     return union_
 
 
-def disposition_of(entry: Any, objections: dict[str, dict[str, Any]], revisions: set[str],
-                   revision: str) -> dict[str, Any]:
+def disposition_of(entry: Any, objections: dict[str, dict[str, Any]], revision: str
+                   ) -> dict[str, Any]:
     """One filled skeleton entry as the record's disposition, refused where it adjudicates nothing.
 
     The revision an acceptance names is the document's current one, computed here: an author who
@@ -377,7 +417,7 @@ def disposition_of(entry: Any, objections: dict[str, dict[str, Any]], revisions:
                       + (f", and carries the unknown key(s) {', '.join(map(repr, stray))}"
                          if stray else ""))
     supplied = entry.get("revision")
-    if not blank(supplied) and supplied not in revisions:
+    if supplied not in (None, "", revision):
         raise Refusal("revision-mismatch", f"the disposition for {identifier!r} names the "
                       f"revision {supplied!r}, and the document is at {revision}; leave the "
                       "revision out, since it is computed from the document")
@@ -406,8 +446,6 @@ def assemble(args: argparse.Namespace) -> dict[str, Any]:
     except OSError as exc:
         raise Refusal("no-spec", f"cannot read the --spec document {spec}: {exc}") from exc
     revision = sha256_revision(data)
-    # The same bytes named in the other notation a record may use are the same revision.
-    revisions = {revision, hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()}
     entries = read_json(Path(args.dispositions), "bad-dispositions", "the dispositions")
     if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
         raise Refusal("bad-dispositions", f"{args.dispositions} is not a list of dispositions in "
@@ -428,7 +466,7 @@ def assemble(args: argparse.Namespace) -> dict[str, Any]:
             continue
         seen.add(identifier)
         try:
-            dispositions[identifier] = disposition_of(entry, objections, revisions, revision)
+            dispositions[identifier] = disposition_of(entry, objections, revision)
         except Refusal as exc:
             refusals.append(exc)
     refusals += [Refusal("missing-disposition", f"{identifier!r} has no disposition; every "

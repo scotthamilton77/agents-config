@@ -61,10 +61,11 @@ yield the same ids. A rerun lens can renumber its objections, which is why every
 repeats the objection's text: the assemble step refuses an entry whose text is not the one the union
 holds under that id, so a verdict never lands on an objection it was not written against.
 
-The union step changes an objection only where the change cannot alter what it claims, and lists
-each change on stdout under `repairs`, naming the lens, the id and what changed:
+The union step changes a report only where the change cannot alter what it claims, and lists
+each change on stdout under `repairs`, naming the lens, the id of any objection changed, and what
+changed:
 
-- A key the output shape does not declare is dropped, at any level of the objection.
+- A key the output shape does not declare is dropped, at any level of the report or an objection.
 - A blank optional `obligation` is dropped.
 - A missing `lens` is set to the lens whose output it came from.
 - A ground rule the lens does not enforce is replaced by the one rule it does, when it enforces
@@ -75,14 +76,15 @@ An objection whose scenario leaves `given`, `when` or `expect` blank is dropped 
 `dropped`. Any other drift refuses the lens, since repairing it would mean guessing what the
 attacker meant: a rule outside a lens enforcing several, a blank `target_ac`, `objection` or ground
 field, an objection attributed to another lens, a report that does not say `objections` or
-`empty` or says one while carrying the other, and workings that are missing or leave a part or criterion unaccounted for with no
-objection naming it. A refused lens is run again.
+`empty` or says one while carrying the other, an object naming one key twice, and workings that are
+missing, break the schema beside the lens's prompt, or leave a part or criterion unaccounted for
+with no objection naming it. A refused lens is run again.
 
 `assemble_record.py assemble` joins the union with the filled skeleton. Each entry sets
 `disposition` to `accepted` with a `covering_ac`, or to `rejected` with a `rationale`. An acceptance's
 `revision` is the digest of the document's bytes when the step runs, in the `sha256:` notation the
-emitter stamps. An entry may leave `revision` out. One it supplies must name the document's current
-bytes in either notation, or the entry is refused.
+emitter stamps. An entry may leave `revision` out. One it supplies must be that digest, or the
+entry is refused.
 
 ## The record
 

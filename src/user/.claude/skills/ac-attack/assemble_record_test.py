@@ -204,12 +204,18 @@ def test_a3_acceptance_revision_is_computed_from_the_current_bytes_in_the_emitte
     assert current == "sha256:" + hashlib.sha256(REVISED.encode()).hexdigest()
 
 
-def test_a3_a_supplied_revision_other_than_the_current_bytes_is_refused(attack):
+@pytest.mark.parametrize("supplied", [
+    "sha256:" + hashlib.sha256(DOCUMENT.encode()).hexdigest(),
+    123,
+    # The current bytes in another notation: the author never types a revision, in any notation.
+    hashlib.sha1(b"blob %d\0" % len(REVISED.encode()) + REVISED.encode()).hexdigest(),
+])
+def test_a3_a_supplied_revision_other_than_the_current_sha256_is_refused(attack, supplied):
     attack.output("what-if", report("what-if", objection("what-if")))
     attack.union()
     attack.document.write_text(REVISED, encoding="utf-8")
     filled = fill(attack.skeleton(), {"what-if-1": "A2"})
-    filled[0]["revision"] = "sha256:" + hashlib.sha256(DOCUMENT.encode()).hexdigest()
+    filled[0]["revision"] = supplied
     code, result = attack.assemble(filled)
     assert (code, codes(result)) == (2, ["revision-mismatch"])
     assert not attack.record.exists()
@@ -277,17 +283,34 @@ def test_a5_a_report_path_that_does_not_exist_is_refused_as_missing(attack):
 
 
 def test_a6_an_undeclared_key_is_dropped_and_the_repair_is_listed(attack):
-    attack.output("what-if", report("what-if", {**objection("what-if", then="the run fails"),
-                                                "severity": "high"}))
+    item = {**objection("what-if", then="the run fails"), "severity": "high"}
+    item["ground"]["source"] = "the standard"
+    attack.output("what-if", {**report("what-if", item), "confidence": "high"})
     code, result = attack.union()
     assert code == 0, result
     item = json.loads(attack.union_path.read_text("utf-8"))["objections"][0]
     assert set(item["scenario"]) == {"given", "when", "expect"} and "severity" not in item
+    assert set(item["ground"]) == {"rule", "reason"}
     assert not list(Draft202012Validator(
         {**SCHEMA["$defs"]["objection"], "$defs": SCHEMA["$defs"]}).iter_errors(item))
-    changes = {(r["lens"], r["id"], r["change"]) for r in result["repairs"]}
+    changes = {(r["lens"], r.get("id"), r["change"]) for r in result["repairs"]}
     assert changes == {("what-if", "what-if-1", "dropped the undeclared key 'scenario.then'"),
-                       ("what-if", "what-if-1", "dropped the undeclared key 'severity'")}
+                       ("what-if", "what-if-1", "dropped the undeclared key 'ground.source'"),
+                       ("what-if", "what-if-1", "dropped the undeclared key 'severity'"),
+                       ("what-if", None, "dropped the undeclared report key 'confidence'")}
+
+
+def test_a6_a_key_repeated_in_one_object_is_refused_naming_the_lens(attack):
+    # Two members of one name parse as the last alone, so the first one's objections would vanish.
+    body = json.dumps(report("what-if", objection("what-if", "second")))
+    first = json.dumps([objection("what-if", "first")])
+    attack.output("what-if", body[:-1] + ', "objections": ' + first + "}")
+    status, result = attack.union()
+    assert status == 2
+    assert [(e["code"], e["lens"]) for e in result["errors"]] == [
+        ("unrepairable-drift", "what-if")]
+    assert "'objections'" in result["errors"][0]["message"]
+    assert not attack.union_path.exists()
 
 
 def test_a6_a_foreign_rule_from_a_one_rule_lens_is_replaced_and_listed(attack):
@@ -326,12 +349,29 @@ def test_a6_an_undischarged_inventory_part_with_no_objection_is_refused_naming_t
     assert "'O1.2'" in result["errors"][0]["message"]
 
 
+@pytest.mark.parametrize("edit", [
+    lambda workings: workings["obligations"][0].pop("source"),
+    lambda workings: workings["obligations"][0]["parts"].append(
+        dict(workings["obligations"][0]["parts"][0])),
+])
+def test_a6_workings_outside_the_lens_schema_are_refused_naming_the_lens(attack, edit):
+    workings = copy.deepcopy(WORKINGS)
+    edit(workings)
+    attack.output("obligation-reduction", {**report("obligation-reduction"), "workings": workings})
+    status, result = attack.union()
+    assert status == 2
+    assert [(e["code"], e["lens"]) for e in result["errors"]] == [
+        ("unrepairable-drift", "obligation-reduction")]
+    assert not attack.union_path.exists()
+
+
 # --- a malformed objection is dropped unnumbered; a lens with nothing left is refused -------
 
 
-def test_a7_a_malformed_objection_is_dropped_not_numbered_and_the_drop_is_listed(attack):
+@pytest.mark.parametrize("part", ["given", "when", "expect"])
+def test_a7_a_malformed_objection_is_dropped_not_numbered_and_the_drop_is_listed(attack, part):
     attack.output("what-if", report("what-if", objection("what-if", "kept first"),
-                                    objection("what-if", "malformed", when="  "),
+                                    objection("what-if", "malformed", **{part: "  "}),
                                     objection("what-if", "kept second")))
     code, result = attack.union()
     assert code == 0, result

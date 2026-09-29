@@ -18,7 +18,7 @@ invented here. Attack before use, and again after amendment: an attack on one ve
 criteria says nothing about the next.
 
 The scripts below run via `uv run`. If `uv` is not installed, run them with plain `python3`
-instead; only `check_record.py` needs a dependency, `jsonschema`, installed first.
+instead; `check_record.py` and `assemble_record.py` need `jsonschema` installed first.
 
 ## Attack lenses
 

@@ -48,7 +48,7 @@ run names every lens to rerun and every disposition to fix.
 | `unknown-disposition-id` | An entry names an id the union does not hold. |
 | `duplicate-disposition` | An id carries more than one entry. |
 | `stale-disposition` | An entry's `objection` text is not the text the union holds under its id. The entry was written against another objection, typically before a lens was rerun. |
-| `revision-mismatch` | An entry supplies a `revision` that does not name the document's current bytes. Leave it out; the step computes it. |
+| `revision-mismatch` | An entry supplies a `revision` other than the `sha256:` digest of the document's current bytes. Leave it out; the step computes it. |
 | `assembler-failure` | Anything else that escaped, reported rather than raised so stdout stays a contract. |
 
 ## `check_record.py`
