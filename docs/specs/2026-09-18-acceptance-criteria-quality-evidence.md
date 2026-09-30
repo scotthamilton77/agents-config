@@ -32,3 +32,5 @@ remains open until that work supplies the agreed verification results.
 - ACQ-A27 | open
 - ACQ-A28 | open
 - ACQ-A29 | open
+- ACQ-A30 | open
+- ACQ-A31 | open

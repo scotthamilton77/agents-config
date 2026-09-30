@@ -58,7 +58,13 @@ separate editable review copy.
 its own heading and the resolved criteria under an acceptance-criteria
 heading. Description text is context and is never parsed as criteria. The
 rendering depends only on the description, acceptance field, and named spec.
-Notes, titles, and other item metadata do not affect it.
+An item names its spec through a named-spec marker in its notes. Facade verbs
+write that marker, and `work acceptance set --spec` is one of them. The marker
+lives in a note because the acceptance field would make the item tracker-born
+under LIFE-D2, the description is not the attacked document under LIFE-D4, and
+this design adds no tracker field. The facade component spec owns the marker's
+encoding. No note other than the named-spec marker affects the rendering, and
+neither do titles or other item metadata.
 
 Resolution follows these rules:
 
@@ -267,8 +273,10 @@ leave significant product decisions to implementation.
 - **LIFE-A1** A caller rendering cited criteria receives each nonempty cited
   entry complete, in field order, independent of the working directory.
   Comma-separated IDs, the same IDs on separate lines, and IDs with surrounding
-  whitespace produce identical criteria output, including for work items
-  created before the renderer ships.
+  whitespace produce identical criteria output. A work item created before the
+  renderer ships renders identically to a new item with the same description,
+  acceptance field, and named spec once one `work acceptance set --spec` call
+  names its spec, with no other change to the item.
 - **LIFE-A2** A caller rendering text or mixed text and citations receives
   stable, unique criterion IDs in the existing consumer grammar, and every ID
   that a text line states explicitly survives unchanged.
@@ -278,7 +286,8 @@ leave significant product decisions to implementation.
   criterion-shaped text in it, under its own heading and out of the
   acceptance-criteria section.
 - **LIFE-A5** Repeated renders with unchanged description, criteria, and named
-  spec are byte-equal despite changes to notes, title, or other metadata.
+  spec are byte-equal despite changes to title, other metadata, or any note
+  other than the named-spec marker.
 - **LIFE-A6** A valid closed record for the current document produces one
   attestation for its content revision, including after repeated or concurrent
   requests to attest that same record.
