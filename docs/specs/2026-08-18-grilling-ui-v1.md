@@ -255,11 +255,16 @@ choice as the `transfer` key.
 
 The second is *Proceed with expert* (GUI-U33). It dispatches the expert on a thread as it
 stands. With no text typed, the gesture is a human `thread-turn` whose payload carries
-`proceed: true` and `transfer: true` and no turn. It is the one human thread event that
-may carry no text (GUI-D20). It is a payload key on an existing kind because the kind
-vocabulary of §8.3 is closed. With text typed, the gesture writes the entry that selecting
-*expert* and sending writes, and that entry carries no `proceed` key. The log then has one
-way to say one thing. Text that is only whitespace counts as no text.
+`proceed: true` and no turn. It is the one human thread event that may carry no text
+(GUI-D20). It is a payload key on an existing kind because the kind vocabulary of §8.3 is
+closed. The expert takes the turn that answers it because the gesture names the expert,
+whatever the channel's mode is. The page also puts `transfer: true` on the entry when the
+channel is not already in expert mode, exactly as it does on a turn sent after *expert* is
+selected. The channel is therefore in expert mode after a proceed pressed on the page. The
+key is absent where the channel was already there, so a channel the policy moved keeps the
+policy's attribution (GUI-D35). With text typed, the gesture writes the entry that
+selecting *expert* and sending writes, and that entry carries no `proceed` key. The log
+then has one way to say one thing. Text that is only whitespace counts as no text.
 
 The expert's dispatch for a text-less proceed carries the accumulated thread. It also says
 that the human asked the expert to proceed without adding a turn. Without that sentence the
@@ -2119,21 +2124,24 @@ its command and its exit status are recorded on the pull request. The acceptance
 is those exit statuses. No criterion in this set needs a human's judgement. Delivery of the
 implementing work item waits on all twelve.
 
-- **GUI-A112** On a thread whose latest turn is the assistant's and on which no reply is
-  outstanding, the human presses *Proceed with expert* with the say box empty. The log
-  gains one human `thread-turn` on that thread carrying `proceed: true` and
-  `transfer: true` and no turn. The expert takes the next turn on that thread. Its recorded
-  dispatch contains every earlier turn of the thread and a statement that the human asked it
-  to proceed without adding a turn. Its reply carries `followed_transfer` and no
-  `transfer_source`. In a browser, before the reply lands the thread shows a line saying the
-  human asked the expert to proceed, with the outstanding-reply wait beneath it. From the
-  press onward the seat toggle marks *expert*. The human has typed nothing throughout. A say
-  box holding only whitespace behaves as an empty one.
+- **GUI-A112** On an open thread that has a turn, has no reply outstanding and whose
+  latest turn is not the expert's, the human presses *Proceed with expert* with the say box
+  empty. The log gains one human `thread-turn` on that thread carrying `proceed: true` and
+  no turn. The expert takes the next turn on that thread. Its recorded dispatch contains
+  every earlier turn of the thread and a statement that the human asked it to proceed
+  without adding a turn. In a browser, before the reply lands the thread shows a line
+  saying the human asked the expert to proceed, with the outstanding-reply wait beneath it.
+  From the press onward the seat toggle marks *expert*. The human has typed nothing
+  throughout. A say box holding only whitespace behaves as an empty one.
+  Where the channel was on the fast tier, the entry also carries `transfer: true`, and the
+  reply carries `followed_transfer` and no `transfer_source`. Where the policy had already
+  moved the channel under `autonomous`, the entry carries no `transfer` key, and the reply
+  carries `transfer_source: "policy"` as GUI-A73 states.
 - **GUI-A113** With text in a thread's say box, pressing *Proceed with expert* appends the
   entry that selecting *expert* on the seat toggle and pressing send appends for the same
   text. The kind is the same: `thread-turn` on an existing thread and `thread-created` on a
-  draft. The payload is the same: it carries the text and `transfer: true`, and no `proceed`
-  key. The two entries are equal once `seq`, `timestamp`, `idempotency_key` and any minted
+  draft. The payload is the same: it carries the text, it carries `transfer: true` where the
+  channel was not already in expert mode, and it carries no `proceed` key. The two entries are equal once `seq`, `timestamp`, `idempotency_key` and any minted
   thread id are set aside. The say box empties, the expert takes that turn, and from the
   press onward the seat toggle marks *expert*. In a browser the thread renders that turn as
   it renders the same turn sent with the toggle, with no line saying the human asked the
@@ -2149,13 +2157,15 @@ implementing work item waits on all twelve.
   Twice: two text-less proceeds posted in one batch, or posted at once from two windows, leave exactly one accepted
   proceed entry and one expert turn. Unchanged: a second press after the expert has
   replied, with nothing said since, is refused. After the session has ended the page offers
-  the action on no thread. Inverse: after an agent turn that failed, the press is accepted
-  and dispatches the expert. That holds when the failed turn was the assistant's, which
+  the action on no thread. The map renders no such action, and a text-less proceed posted
+  on the map channel is refused as every thread gesture on the map is. Inverse: after an
+  agent turn that failed, the press is accepted and everything GUI-A112 states follows. That holds when the failed turn was the assistant's, which
   leaves the human's turn as the thread's latest, and when it was the expert's own.
 - **GUI-A115** Only the human's own gesture engages the expert on a thread, under either
   policy.
   Under `gated`: after an assistant reply that carried a read request, nothing engages the
-  expert on that thread until a human entry carrying `transfer: true` arrives on it. Until
+  expert on that thread until a human entry carrying `transfer: true` or `proceed: true`
+  arrives on it. Until
   then the lane records no `composing` entry naming the heavy tier on that thread, no
   dispatch to the expert seat is recorded, and no `transferred` entry is written. A human
   turn sent meanwhile with the toggle marking *assistant* is taken by the assistant. With
