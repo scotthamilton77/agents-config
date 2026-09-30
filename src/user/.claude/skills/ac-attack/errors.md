@@ -1,6 +1,6 @@
 # Error codes
 
-Every code either script emits. Both write one JSON object to stdout and never a traceback, so a
+Every code each script emits. Each writes one JSON object to stdout and never a traceback, so a
 caller parses the same shape on success and on failure. `--help` is neither, and prints usage the
 way every command does — exiting 0, which for a run that checked something means complete. A caller
 reading either stdout or the exit status should not pass it.
@@ -22,6 +22,34 @@ Refusals print `{"emitted": false, "errors": [{"code", "message"}]}` and exit 2.
 | `unsafe-output-path` | The out-dir is a symbolic link, or an output name is held by a link of either kind or by something that is not a plain file — writing would take the whole document somewhere the round never named. Also when the `--spec` document is itself the file standing at an output name: a plain file there is overwritten as ordinary re-emission, so a round pointed at the directory the document sits in would destroy the artifact under attack and report itself emitted. Name an out-dir that does not hold the document. Also when the out-dir cannot be listed, or holds a Markdown file this round does not write — a prompt for a lens since retired, or one over another document, which a caller dispatching the directory rather than the round file sends, and whose report is then recorded as coverage of this round. Only Markdown names are held to that, since nothing else is dispatched as a prompt; the round deletes nothing and names every file at fault at once. |
 | `bad-arguments` | The command line could not be parsed. |
 | `emitter-failure` | Anything else that escaped, reported rather than raised so stdout stays a contract. Every refusal above is decided before any file is written, and every prompt is rendered before any is written, so a refused round leaves nothing behind. A write that fails partway — the disk filling, say — is the one case that can, and `round.json` is written last, so a directory without it holds no round. Read the exit status rather than the directory. |
+
+## `assemble_record.py`
+
+Refusals print `{"assembled": false, "errors": [{"code", "message", "lens"?}]}` and exit 2. Every
+refusal is decided before anything is written, so a refused step leaves no union, skeleton or
+record behind, and never overwrites one already there. A step reports every refusal it finds, so one
+run names every lens to rerun and every disposition to fix.
+
+| Code | Condition |
+| --- | --- |
+| `bad-arguments` | The command line could not be parsed, a `--report` is not `<lens>=<path>`, one lens is named twice, or a lens is named that the round does not name. |
+| `bad-round` | The round file is unreadable, or does not name the document, the revision attacked, and each lens exactly once. |
+| `missing-lens-output` | A lens the round names has no `--report`, or its output cannot be read. Run that lens again. |
+| `empty-lens-output` | A lens's output is blank, or is a Codex envelope whose `rawOutput` is blank. Run that lens again. |
+| `unparseable-lens-output` | A lens's output holds no JSON object carrying `report` or `objections`. Run that lens again. |
+| `unusable-lens-output` | Every objection a lens returned is malformed. That is not a report that found nothing, so it is not recorded as one. Run that lens again. |
+| `unrepairable-drift` | A lens's report departs from the output shape in a way no repair can make without guessing what the attacker meant. `record.md` lists these cases. Run that lens again. |
+| `bad-union` | The union is unreadable, or is not one the union step wrote. |
+| `no-spec` | The `--spec` document cannot be read. |
+| `spec-mismatch` | The `--spec` document's name is not the one the round attacked. The record is named from the document and goes beside it. |
+| `bad-dispositions` | The dispositions file is unreadable, names one key twice in an object, or is not a list of objects in the skeleton's shape. |
+| `malformed-disposition` | An entry's id is not a string, its `disposition` is not `accepted` or `rejected`, it carries a key other than the skeleton's and `revision`, or it lacks the field its verdict needs: `covering_ac` on an acceptance, `rationale` on a rejection. |
+| `missing-disposition` | An objection in the union has no entry. |
+| `unknown-disposition-id` | An entry names an id the union does not hold. |
+| `duplicate-disposition` | An id carries more than one entry. |
+| `stale-disposition` | An entry's `objection` text is not the text the union holds under its id. The entry was written against another objection, typically before a lens was rerun. |
+| `revision-mismatch` | An entry supplies a `revision` other than the `sha256:` digest of the document's current bytes. Leave it out; the step computes it. |
+| `assembler-failure` | Anything else that escaped, reported rather than raised so stdout stays a contract. |
 
 ## `check_record.py`
 
