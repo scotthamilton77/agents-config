@@ -88,7 +88,7 @@ One line per entry; the detail lives in each directory's own `AGENTS.md`, loaded
 
 - `scripts/` — installer entry points and maintenance scripts. See `scripts/AGENTS.md`.
 - `src/` — **the deployed configuration surface**: every rule, skill, command, hook and instruction template the installer deploys is authored here (the CLIs it puts on PATH are built from `packages/`) — shared content under `src/user/.agents/`, per-tool content under `src/user/.claude/` (and `.codex/`, `.gemini/`, `.opencode/`), plugin content under `src/plugins/`. See `src/AGENTS.md` for the layout and the two gates that read the tree.
-- `docs/` — guides, dated specs, evergreen architecture, primers, research, ADRs. See `docs/AGENTS.md` for what each subtree is and how staleness is judged there.
+- `docs/` — guides, dated specs, evergreen architecture, primers, research. See `docs/AGENTS.md` for what each subtree is and how staleness is judged there.
 - `packages/` — standalone uv projects with mandatory quality gates; **not** part of the installed config surface. See `packages/AGENTS.md` for the roster, the PATH-install registry, and the packages that live elsewhere; each package's own `AGENTS.md` scopes its workflow.
 - `project-config.toml` — project-level configuration. **A commented-out key is future work nothing reads**, not a live setting; uncomment one only in the change that deploys its reader. `.critical-paths` follows the same convention and currently selects nothing.
 - `.work/config.toml` — the `work` facade's vocabulary for this repo (tracks, thresholds, nouns, park and discovery words). Owned wholesale by `work init`; edit it only through that verb or by hand as a deliberate config change.
