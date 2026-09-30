@@ -426,6 +426,43 @@ def test_a6_a_key_repeated_in_one_object_is_refused_naming_the_lens(attack):
     assert not attack.union_path.exists()
 
 
+def test_a6_a_target_ac_nested_in_the_scenario_is_moved_onto_the_objection_and_listed(attack):
+    attack.output("what-if", report("what-if", objection("what-if")))
+    assert attack.union()[0] == 0
+    expected = json.loads(attack.union_path.read_text("utf-8"))["objections"]
+    item = objection("what-if")
+    item["scenario"]["target_ac"] = item.pop("target_ac")
+    attack.output("what-if", report("what-if", item))
+    code, result = attack.union()
+    assert code == 0, result
+    assert json.loads(attack.union_path.read_text("utf-8"))["objections"] == expected
+    assert [(r["lens"], r["id"], r["change"]) for r in result["repairs"]] == [
+        ("what-if", "what-if-1", "moved 'target_ac' out of the scenario onto the objection")]
+
+
+def test_a6_a_target_ac_in_both_places_that_agree_drops_the_scenario_copy(attack):
+    item = objection("what-if")
+    item["scenario"]["target_ac"] = item["target_ac"]
+    attack.output("what-if", report("what-if", item))
+    code, result = attack.union()
+    assert code == 0, result
+    assert json.loads(attack.union_path.read_text("utf-8"))["objections"][0]["target_ac"] == "A1"
+    assert [r["change"] for r in result["repairs"]] == [
+        "dropped the undeclared key 'scenario.target_ac'"]
+
+
+def test_a6_a_target_ac_in_both_places_that_disagree_is_refused_naming_both(attack):
+    item = objection("what-if")
+    item["scenario"]["target_ac"] = "A2"
+    attack.output("what-if", report("what-if", item))
+    status, result = attack.union()
+    assert status == 2
+    [error] = result["errors"]
+    assert (error["code"], error["lens"]) == ("unrepairable-drift", "what-if")
+    assert "'A1'" in error["message"] and "'A2'" in error["message"]
+    assert not attack.union_path.exists()
+
+
 def test_a6_a_foreign_rule_from_a_one_rule_lens_is_replaced_and_listed(attack):
     item = objection("what-if")
     item["ground"]["rule"] = "what-if-it-fails"

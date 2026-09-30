@@ -66,6 +66,9 @@ each change on stdout under `repairs`, naming the lens, the id of any objection 
 changed:
 
 - A key the output shape does not declare is dropped, at any level of the report or an objection.
+- A `target_ac` written inside the scenario, on an objection carrying none of its own, is moved
+  onto the objection. The output shape sorts keys, so the field follows the scenario's closing
+  brace and a lens sometimes writes it one brace too deep.
 - A blank optional `obligation` is dropped.
 - A missing `lens`, on the report or an objection, is set to the lens whose output it came from.
 - A missing `objections` is set to an empty list, and a missing `report` to `objections` when the
@@ -77,7 +80,8 @@ changed:
 An objection whose scenario leaves `given`, `when` or `expect` blank is dropped and listed under
 `dropped`. Any other drift refuses the lens, since repairing it would mean guessing what the
 attacker meant: an objection that is not an object or whose `ground` is not one, a rule outside a
-lens enforcing several, a blank `target_ac`, `objection` or ground field, a scenario part or
+lens enforcing several, a blank `target_ac`, `objection` or ground field, a `target_ac` on the
+objection that differs from one inside its scenario, a scenario part or
 `obligation` that is not text, a report or objection attributed to another lens, a report whose
 `objections` is not a list or whose `report` is neither `objections` nor `empty` or disagrees with
 its list, an object naming one key twice, two different reports in one output, and workings that
