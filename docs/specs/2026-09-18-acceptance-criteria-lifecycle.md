@@ -59,11 +59,12 @@ its own heading and the resolved criteria under an acceptance-criteria
 heading. Description text is context and is never parsed as criteria. The
 rendering depends only on the description, acceptance field, and named spec.
 An item names its spec through a named-spec marker in its notes. Facade verbs
-write that marker, and `work acceptance set --spec` is one of them. The marker
+write that marker, and `work acceptance set --spec` is one of them. When an
+item's notes hold several such markers, the last one names its spec. The marker
 lives in a note because the acceptance field would make the item tracker-born
 under LIFE-D2, the description is not the attacked document under LIFE-D4, and
 this design adds no tracker field. The facade component spec owns the marker's
-encoding. No note other than the named-spec marker affects the rendering, and
+encoding. No note other than a named-spec marker affects the rendering, and
 neither do titles or other item metadata.
 
 Resolution follows these rules:
@@ -176,7 +177,9 @@ transaction spanning tracker changes, git, review emission, and posting.
 ### LIFE-D5: Gates act at defined transitions
 
 Creation and discovery may hold rough or empty criteria. The following table
-defines leaf behavior. All rendering refusals name their cause.
+defines leaf behavior. A leaf is any item the facade does not declare a
+container. Having children does not make an item a container, and the facade
+already refuses to claim one. All rendering refusals name their cause.
 
 | Boundary | Nonempty, resolvable criteria | Current attestation |
 | --- | --- | --- |
@@ -273,10 +276,9 @@ leave significant product decisions to implementation.
 - **LIFE-A1** A caller rendering cited criteria receives each nonempty cited
   entry complete, in field order, independent of the working directory.
   Comma-separated IDs, the same IDs on separate lines, and IDs with surrounding
-  whitespace produce identical criteria output. A work item created before the
-  renderer ships renders identically to a new item with the same description,
-  acceptance field, and named spec once one `work acceptance set --spec` call
-  names its spec, with no other change to the item.
+  whitespace produce identical criteria output. These results hold for a work
+  item created before the renderer ships once one `work acceptance set --spec`
+  call names its spec, with no other change to the item.
 - **LIFE-A2** A caller rendering text or mixed text and citations receives
   stable, unique criterion IDs in the existing consumer grammar, and every ID
   that a text line states explicitly survives unchanged.
@@ -287,7 +289,8 @@ leave significant product decisions to implementation.
   acceptance-criteria section.
 - **LIFE-A5** Repeated renders with unchanged description, criteria, and named
   spec are byte-equal despite changes to title, other metadata, or any note
-  other than the named-spec marker.
+  other than a named-spec marker. When an item's notes hold several named-spec
+  markers, the last one names its spec.
 - **LIFE-A6** A valid closed record for the current document produces one
   attestation for its content revision, including after repeated or concurrent
   requests to attest that same record.
