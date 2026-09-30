@@ -156,3 +156,9 @@ opens one proves something else.
 - GUI-A111 | test: packages/grillui/tests/unit/test_page.py::test_only_a_settled_decision_offers_the_way_back_to_open
 - GUI-A111 | test: packages/grillui/tests/unit/test_update_kinds.py::test_the_human_reopening_a_decision_folds_as_an_applied_unsettle_does
 - GUI-A111 | test: packages/grillui/tests/e2e/test_board.py::test_the_human_reopens_a_decision_they_settled
+- GUI-A112 | open
+- GUI-A113 | open
+- GUI-A114 | open
+- GUI-A115 | open
+- GUI-A116 | open
+- GUI-A117 | open

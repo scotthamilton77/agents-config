@@ -213,10 +213,18 @@ human has rejected a reframing of the question, or says the trade-off itself is 
 cannot resolve; three or more decisions must be weighed at once. Asking a sharpening
 question back is the ordinary move and is not an escalation.
 
+A fourth condition, the **read request**, is read off the reply and applies on a thread
+only. The assistant declares in its reply's `needs_to_read` key what it would have to read
+to answer and was not given. This is not a self-assessment. The thread's assistant holds no
+tool, as a fact of how it is seated, so whether it lacks an input is decidable without
+asking its opinion. The condition is read from that key and never from the reply's prose.
+Under `autonomous` it moves a channel at most once in a session, because a seat that could
+raise it every turn would buy itself an expert turn every turn.
+
 **GUI-D35 — Whether a met condition needs the human's gesture is session configuration, and
 it defaults to needing it.** The escalation policy sits beside the model ids and the heavy
 tier's effort, and takes one of two values. Under `gated`, the default, a met condition
-highlights the transfer control and nothing moves until the human activates it. Under
+highlights the way to the expert (GUI-U11) and nothing moves until the human takes it. Under
 `autonomous`, the backend itself puts that channel into expert mode the moment a fast reply
 meets a condition, so the next turn on that channel goes to the heavy tier carrying the
 accumulated thread — the same channel mode the human's own transfer produces, reached
@@ -236,6 +244,45 @@ are fields on what the log already records rather than a new event kind, because
 transfer is a property of how a turn came to be taken and the kind vocabulary of §8.3 is
 closed. Per channel, as GUI-D11's transfers already are: an autonomous escalation on one
 thread leaves every other channel where it was.
+
+**GUI-D49 — The human names the seat a send goes to, and can send the expert in without
+speaking.** Two human gestures reach the expert on a thread, and both are the human's own
+under either escalation policy.
+
+The first is the seat toggle (GUI-U11). It names the seat the next send on a channel goes
+to. Selecting a seat writes nothing to the log. The turn the human sends next carries the
+choice as the `transfer` key.
+
+The second is *Proceed with expert* (GUI-U33). It dispatches the expert on a thread as it
+stands. With no text typed, the gesture is a human `thread-turn` whose payload carries
+`proceed: true` and `transfer: true` and no turn. It is the one human thread event that
+may carry no text (GUI-D20). It is a payload key on an existing kind because the kind
+vocabulary of §8.3 is closed. With text typed, the gesture writes the entry that selecting
+*expert* and sending writes, and that entry carries no `proceed` key. The log then has one
+way to say one thing. Text that is only whitespace counts as no text.
+
+The expert's dispatch for a text-less proceed carries the accumulated thread. It also says
+that the human asked the expert to proceed without adding a turn. Without that sentence the
+expert receives a thread whose last turn is another seat's and no question to answer.
+
+The backend refuses a text-less proceed that has nothing to proceed on. There are four
+such states: the thread has no turn, an agent's reply is outstanding on the thread, the
+thread's latest turn is the expert's, or the thread is parked or closed. The refusal is decided under the append lock, as
+every refusal is. This one rule covers a double press, two windows pressing at once, and a
+press repeated with nothing changed. The first accepted proceed leaves a reply outstanding,
+and the expert's reply is then the latest turn. A proceed whose expert turn failed may be
+pressed again, because a failed turn leaves no reply outstanding and adds no expert turn.
+
+Only an entry whose actor is the human dispatches on `proceed`. The escalation policy never
+writes one. Under `gated` a met condition therefore still moves nothing and engages nobody
+until the human acts (GUI-D35). Under `autonomous` the policy still only moves the channel,
+and the expert's turn waits for the human's next send or proceed.
+
+Two designs are refused. The first is a single transfer button. A press on it moves the
+channel and engages nobody, so a control lit by a recommendation appears to do nothing, and
+the expert answers only after the human types a further turn they had no reason to write.
+The second is a separate control for returning to the assistant. The toggle already states
+the seat and changes it, and a second control for the same state can disagree with it.
 
 **GUI-D13 — The status lane is mechanical and structurally cannot wait on a model.** The
 instant a human turn is accepted, and inside the same lock as the append, the backend
@@ -416,7 +463,8 @@ Confirming what landed is not an update kind: it is the state read of GUI-D18.
 **GUI-D20 — Thread events speak the page's shape.** `thread-created` and `thread-turn`
 both carry their content in a `turns[]` array of who/text pairs; `thread-created`
 additionally carries its kind, its title and whether it requires action. Backend-authored
-replies may carry bare text. One reader handles both shapes, shared by the accept path,
+replies may carry bare text. A human's thread event carries at least one turn with text,
+with one exception: the text-less proceed of GUI-D49 carries none. One reader handles both shapes, shared by the accept path,
 the projector and the driver — a backend written against only one of them passes a scripted
 check and rejects the real page.
 
@@ -682,8 +730,8 @@ the Codex transport, because the map's author rules where a thread's discusses; 
 expert seat is one shared configuration for every channel — the configured Claude model at
 the configured effort. Each is a default, and a session may seat any of them
 differently. The seat occupies the fast rung, so the rung stays what every other surface
-keys on: the lane names `fast` and `heavy`, the map's transfer control reads *Transfer to
-expert* at first paint like every other channel's (GUI-U22), the turn's attribution carries
+keys on: the lane names `fast` and `heavy`, the map's seat toggle marks *assistant* at
+first paint like every other channel's (GUI-U22), the turn's attribution carries
 its tier beside the seat's model and effort, and the recorded dispatch carries the same
 bytes on every transport.
 
@@ -779,12 +827,12 @@ condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note
    dismissing a first-rung seat's proposal, and a hand-up. At the second, GUI-D35's own
    policy decides what the count buys: under `autonomous` the backend writes a policy
    `transferred` status entry on the map channel — such an entry only ever moves a channel
-   up, and the way back down is the human's transfer control — while under `gated`, the
+   up, and the way back down is the human's seat toggle — while under `gated`, the
    default, it writes a recommendation status entry on that channel — backend-authored,
    because a dismissal produces no agent reply for a recommendation to ride, where a met
    transcript condition's advice rides its own reply's attribution — held sticky for the
-   session rather than riding one reply, and nothing moves until the human activates the
-   transfer control. One signal writes nothing, because one is noise; a third writes nothing
+   session rather than riding one reply, and nothing moves until the human selects *expert*
+   on the seat toggle. One signal writes nothing, because one is noise; a third writes nothing
    new, because the count is already spent.
 
 Two is a threshold nobody has defended under fire, and the observation that lowers the
@@ -938,18 +986,23 @@ follows, and changes nothing else.
   the board teaches the human to stop looking at it. Agent framing about a particular
   decision renders on that decision rather than as a notification. The inbox remains the
   lane for items the human must act on.
-- **GUI-U11 — Transfer to expert is a control on every channel**, the map's and each
-  thread's, and it is always active. It is visually highlighted when the agent's reply
-  metadata recommends escalation (GUI-D11), and under the `gated` policy the human's
-  activation is what moves the channel (GUI-D35). Activating it forces the
-  next turn on that channel to the heavy tier, carrying the accumulated thread. While the
-  heavy tier is driving that channel, activating it sends the next turn on that channel to
-  the fast tier instead;
-  what the control reads in either position is GUI-U22's.
-  A thread pane carries the control from its first paint, before anything has been said in
+- **GUI-U11 — A seat toggle is a control on every channel**, the map's and each
+  thread's, and it is always active. It names the seat the next send on that channel goes
+  to, and what it shows is GUI-U22's. Selecting *expert* forces the next turn on that
+  channel to the heavy tier, carrying the accumulated thread. Selecting *assistant* sends
+  the next turn on that channel to the fast tier instead, and the toggle is the only
+  control that does so. Selecting a seat writes nothing to the log: the turn the human
+  sends next carries the choice (GUI-D49). Under the `gated` policy the human's own
+  gesture is what moves the channel (GUI-D35).
+  When the agent's reply metadata recommends escalation (GUI-D11), the page highlights the
+  way to the expert. On a thread that is the *Proceed with expert* action (GUI-U33). On the
+  map it is the toggle's *expert* option, because the map has no such action.
+  On a thread the toggle sits beside the say box, where the send it governs is made. On the
+  map it sits in the board's header, because the map has no say box.
+  A thread pane carries the toggle from its first paint, before anything has been said in
   it and whether or not the thread exists yet — the human decides who they are asking
   before they ask, and a control that arrives with the first reply arrives one turn after
-  the turn it was wanted for. On a thread nothing has created, the mode is carried onto the
+  the turn it was wanted for. On a thread nothing has created, the choice is carried onto the
   thread the first turn opens, whose name the draft never had. Park, close and fold are not
   offered there: a thread gesture naming no thread is refused, and the pane's own dismissal
   is what closing a draft means.
@@ -959,22 +1012,47 @@ follows, and changes nothing else.
   mode is never the source: reading the mode would relabel every turn taken before a
   transfer as the tier that came after it, and the transcript is the human's only evidence
   that the transfer changed anything.
-- **GUI-U22 — The transfer control names the action it performs, not a state.** Its label
-  is *Transfer to expert* while the channel is on the fast tier and *Return to assistant*
-  while the heavy tier drives it, styled identically in both positions and carrying no state
-  colouring in either — the channel's tier is already legible from the per-turn labels of
-  GUI-U21. Rendering it as a state indicator instead — the label naming the tier the channel
-  would move to, coloured like a mandate — is refused: a coloured state word on a control
-  reads as *where the channel is now*, so the human infers the opposite of what activating
-  it does.
+- **GUI-U22 — The seat toggle shows both seats and marks the one the next send goes to.**
+  It reads *assistant* and *expert*, the names GUI-U21 gives the turns, under a caption
+  that says what it decides: *Next send goes to*. Exactly one of the two is marked.
+  Two other renderings are refused. The first is one button whose label names an action,
+  *Transfer to expert* or *Return to assistant*. A press on it only changes who takes the
+  next turn, so the human presses a control that promises the expert and sees nothing
+  happen. The second is a single word naming one tier. A lone state word on a control can
+  mean where the channel is now or where a press would take it, and the human cannot tell
+  which. Showing both seats with one marked removes that ambiguity. The caption says the
+  choice applies to the next send, so nothing about the toggle promises that a seat engages
+  when it is pressed. Engaging the expert without speaking is a separate action (GUI-U33).
 - **GUI-U24 — A channel the policy moved says so where it moved, and nowhere else.** Under
   `autonomous` (GUI-D35) the policy move appears on that channel's status lane, naming the
-  condition that fired, and the transfer control flips to *Return to assistant* (GUI-U22)
-  with the human having pressed nothing — the control's position follows the channel's mode
+  condition that fired, and the seat toggle marks *expert* (GUI-U22)
+  with the human having pressed nothing — the toggle follows the channel's mode
   as the lane states it, never the human's own last click, which after a policy move
   names the tier the channel has left. No notification is raised: the move is board state
-  and the lane already carries it (GUI-U10, GUI-U15). The control stays active throughout,
+  and the lane already carries it (GUI-U10, GUI-U15). The toggle stays active throughout,
   so returning the channel to the fast tier is the same gesture it always was.
+- **GUI-U33 — *Proceed with expert* sends the expert in on a thread as it stands.** Each
+  thread's say box carries the action beside its send control. With the say box empty,
+  pressing it records the human's gesture on the thread, and the expert takes the next turn
+  over the conversation so far. The human types nothing. With text in the say box, pressing
+  it sends that text as a turn the expert takes, which is what selecting *expert* on the
+  seat toggle and pressing send does. Either way the toggle marks *expert* afterwards, and
+  the toggle is the way back (GUI-U11).
+  The press is visible at once. The thread shows a line saying the human asked the expert
+  to proceed, and the wait of GUI-U28 appears under it.
+  The action is offered only when the expert has something it has not answered. With the
+  say box empty it is inactive, and says why, in three states: the thread has no turn, an
+  agent's reply is outstanding on the thread, or the thread's latest turn is the expert's
+  own. A parked or closed thread does not carry the action at all, because speaking in it is
+  what reopens it (GUI-D29). After the session has ended it is offered nowhere, as no send
+  is.
+  The map carries no such action. Every map turn answers a gesture on a decision, and the
+  map doctor is already the way to ask the expert about the map unprompted.
+  A reply in which the assistant asked to read something it was not given carries a hint
+  beneath it for as long as it is the thread's latest turn. The hint names *Proceed with
+  expert* as the next step. The page draws the hint from the reply's recommendation
+  metadata. It is not left to the assistant's prose, because a sentence in a prompt does
+  not make a model say something every time.
 - **GUI-U23 — A live converged answer renders beneath the turn that made it, with one
   control.**
   The agent's turn is followed by what it proposes — the option it builds on, the answer
@@ -1434,6 +1512,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D46 | GMR-A5, GMR-A11 |
 | GUI-D47 | GMR-A6, GMR-A7 |
 | GUI-D48 | GMR-A9, GMR-A10 |
+| GUI-D49 | GUI-A112, GUI-A113, GUI-A114, GUI-A115, GUI-A117 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -1466,6 +1545,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U30 | GUI-A105 |
 | GUI-U31 | GUI-A110 |
 | GUI-U32 | GUI-A111 |
+| GUI-U33 | GUI-A112, GUI-A113, GUI-A114, GUI-A116 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1582,14 +1662,17 @@ Each criterion is mechanically checkable and convertible to a red test.
   prior context — produces a complete terminal result.
 - **GUI-A33** A fast-tier reply that meets a GUI-D12 condition carries escalation
   recommendation metadata that reaches the page, and the page highlights that channel's
-  transfer-to-expert control; a reply meeting none carries no such metadata and leaves the
-  control unhighlighted.
-- **GUI-A34** Activating transfer-to-expert forces the next turn on that channel to the
-  heavy tier, and the heavy dispatch contains the channel's accumulated thread rather than
-  only the last message; the log attributes the turn to the heavy tier.
-- **GUI-A35** While a channel is in expert mode, activating the control returns the next
-  turn on that channel to the fast tier — verified in a browser. The control is present and
-  active on the map channel and every open thread channel, idle ones included.
+  way to the expert: the *Proceed with expert* action on a thread, and the seat toggle's
+  *expert* option on the map; a reply meeting none carries no such metadata and leaves
+  both unhighlighted.
+- **GUI-A34** Selecting *expert* on a channel's seat toggle forces the next turn on that
+  channel to the heavy tier, and the heavy dispatch contains the channel's accumulated
+  thread rather than only the last message; the log attributes the turn to the heavy tier;
+  and the selection itself appends no entry.
+- **GUI-A35** While a channel is in expert mode, selecting *assistant* on its seat toggle
+  returns the next turn on that channel to the fast tier — verified in a browser. The
+  toggle is present and active on the map channel and every open thread channel, idle ones
+  included.
 - **GUI-A36** Two thread channels take turns concurrently while the map channel is also in
   flight; each thread agent's dispatch contains its own thread's turns and no other
   thread's; escalating one thread leaves the others on the fast tier; and the grill-master's
@@ -1691,10 +1774,13 @@ Each criterion is mechanically checkable and convertible to a red test.
   with the channel in each mode. A page joining that session after both turns renders the
   same labels, which is what the projected turn's `tier` (§8.5) is for. Verified in a
   browser.
-- **GUI-A63** The transfer control reads *Transfer to expert* on a channel driven by the
-  fast tier and *Return to assistant* on one driven by the heavy tier, with the same
-  styling in both positions and no state colouring in either — verified in a browser and
-  against the shipped stylesheet.
+- **GUI-A63** Every channel's seat toggle shows both *assistant* and *expert* under the
+  caption *Next send goes to* and marks exactly one of them: *assistant* on a channel
+  driven by the fast tier and *expert* on one driven by the heavy tier. The page renders
+  neither *Transfer to expert* nor *Return to assistant* anywhere. On a thread and on a
+  draft the toggle renders inside the container that holds the say box and its send
+  control, and on the map it renders in the board's header. Verified in a browser and
+  against the shipped page source.
 - **GUI-A64** Every shipped thread-agent prompt states the no-fishing rule and the two cases
   a question is allowed in, asserted against the prompt the driver actually composes rather
   than against a constant read out of the source; and over one live session's thread turns,
@@ -1758,8 +1844,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   no `transfer_source` and its `followed_transfer` flag is unchanged in shape, an agent
   reply asserting a transfer under either policy moves no channel, and the move appends no
   notification-bearing entry.
-- **GUI-A74** After an autonomous escalation the human's control still governs: activating
-  it returns the next turn on that channel to the fast tier, and a later reply meeting a
+- **GUI-A74** After an autonomous escalation the human's seat toggle still governs:
+  selecting *assistant* returns the next turn on that channel to the fast tier, and a later reply meeting a
   condition escalates that channel again.
 - **GUI-A75** A thread reopened after a set-aside gesture is dispatched with a catch-up exactly
   when at least one entry in the interval between that gesture and the reopening turn changes
@@ -1826,11 +1912,11 @@ Each criterion is mechanically checkable and convertible to a red test.
   decision the line is the whole of the turn; on a thread anchored to another decision what
   the agent said stands ahead of it. Neither entry carries the offer.
 - **GUI-A86** A thread pane opened before the human has said anything in it carries the
-  transfer-to-expert control wholly inside the viewport at first paint, on a thread an agent
+  seat toggle wholly inside the viewport at first paint, on a thread an agent
   opened and on a draft nothing has created alike, in the slide-out and in a popped-out
   window. Measured as a bounding box against the window, so a control rendered below the
   fold of the pane fails the same way one never rendered does. Verified in a browser.
-- **GUI-A87** Transfer activated on a draft is the tier that draft's first turn is taken on:
+- **GUI-A87** The seat selected on a draft is the tier that draft's first turn is taken on:
   the mode recorded under the draft's channel reaches the thread the turn opens, whose name
   the draft never had, and the backend reads it back off that thread's channel and off no
   other.
@@ -1954,7 +2040,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   on the Codex transport by `gpt-5.6-luna` at `medium` effort and a thread's by the
   OpenRouter seat `google/gemini-3.5-flash-lite` at no effort; the lane names the `fast`
   tier on both; each turn's attribution carries that seat's model and its effort where it
-  has one, beside the tier; and the map's transfer control reads *Transfer to expert* at
+  has one, beside the tier; and the map's seat toggle marks *assistant* at
   first paint. Seating the map channel on the threads' seat makes its first turn take that
   transport and model and changes nothing else about the channel.
 - **GMR-A6** Every composed thread-agent prompt carries the board legend, on both tiers.
@@ -1977,8 +2063,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   exactly one policy `transferred` entry on the map channel and every map turn after it is
   the expert seat's, while under `gated`, the default, it writes exactly one recommendation
   status entry on the map channel and the next map turn is still the first-rung seat's
-  until the human's transfer control moves it; a third signal writes no further entry under
-  either policy; and the human's transfer control returns a transferred channel to its
+  until the human's seat toggle moves it; a third signal writes no further entry under
+  either policy; and the human's seat toggle returns a transferred channel to its
   first-rung seat.
 - **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
   the `thread.started` event, then resumes that thread on every later turn on the channel as
@@ -1997,6 +2083,73 @@ Each criterion is mechanically checkable and convertible to a red test.
   applied proposal leaves. The end-to-end suite drives the whole path against a running
   backend: a decision answered, its block opened again and the control pressed leaves that
   decision reading as a question again.
+
+GUI-A112 to GUI-A117 share one verification contract. Each is checked by a named test in
+the package's unit suite or its end-to-end suite, and the evidence ledger beside this spec
+names that test. The end-to-end suite drives a real browser against a running backend whose
+seats are scripted. A criterion that says *in a browser* is discharged only by an
+end-to-end test or a browser probe. GUI-A112, GUI-A113, GUI-A114 and GUI-A116 state
+changes: each one's test fails against the code before the change and passes after it.
+GUI-A115 and GUI-A117 state guarantees the change must keep: each one's test passes after
+the change and fails against an implementation that breaks the guarantee. The pass rule for
+the set is that every named test passes and that `make ci-grillui` and `make e2e-grillui`
+each exit 0 from the root of the tree under test. The acceptance authority is those gates'
+exit status. No criterion in this group needs a human's judgement. Delivery of the
+implementing work item waits on all six.
+
+- **GUI-A112** On a thread whose latest turn is the assistant's and on which no reply is
+  outstanding, the human presses *Proceed with expert* with the say box empty. The log
+  gains one human `thread-turn` on that thread carrying `proceed: true` and
+  `transfer: true` and no turn. The expert takes the next turn on that thread. Its recorded
+  dispatch contains every earlier turn of the thread and a statement that the human asked it
+  to proceed without adding a turn. Its reply carries `followed_transfer` and no
+  `transfer_source`. In a browser, before the reply lands the thread shows a line saying the
+  human asked the expert to proceed, with the outstanding-reply wait beneath it. After the
+  reply lands the seat toggle marks *expert*. The human has typed nothing throughout. A say
+  box holding only whitespace behaves as an empty one.
+- **GUI-A113** With text in a thread's say box, pressing *Proceed with expert* appends the
+  entry that selecting *expert* on the seat toggle and pressing send appends for the same
+  text. The kind is the same: `thread-turn` on an existing thread and `thread-created` on a
+  draft. The payload is the same: it carries the text and `transfer: true`, and no `proceed`
+  key. The two entries are equal once `seq`, `timestamp`, `idempotency_key` and any minted
+  thread id are set aside. The say box empties, the expert takes that turn, and the seat
+  toggle marks *expert*.
+- **GUI-A114** A text-less proceed is refused, appends no turn and dispatches nobody in each
+  of four states: the thread has no turn, an agent's reply is outstanding on the thread,
+  the thread's latest turn is the expert's, or the thread is parked or closed. In each of
+  the first three states the page renders the action inactive and shows the reason, and on
+  a parked or closed thread it renders no such action, verified in a browser. In all four
+  the backend rejects the same entry posted directly with a receipt that names the reason. Twice: two text-less proceeds
+  posted in one batch, or posted at once from two windows, leave exactly one accepted
+  proceed entry and one expert turn. Unchanged: a second press after the expert has
+  replied, with nothing said since, is refused. After the session has ended the page offers
+  the action on no thread. Inverse: after an expert turn that failed, the same press is
+  accepted and dispatches the expert again.
+- **GUI-A115** Under `gated`, after an assistant reply that asked to read, the log gains no
+  agent turn and no `transferred` entry on that thread until a human entry arrives on it. A
+  `thread-turn` carrying `proceed: true` whose actor is not the human dispatches no turn and
+  moves no channel, under either policy. Under `autonomous`, the policy's `transferred`
+  entry dispatches no turn: the expert's turn on that thread follows the human's next send
+  or proceed and nothing earlier.
+- **GUI-A116** An assistant reply on a thread whose recommendation names the read-request
+  condition renders a hint beneath that reply, naming *Proceed with expert*, for as long as
+  the reply is the thread's latest turn. The hint's text is the page's own and is the same
+  whatever the reply's prose says. No hint renders beneath a reply with no recommendation,
+  beneath a reply whose recommendation names another condition, or beneath a read-request
+  reply that is no longer the thread's latest turn. Verified in a browser.
+- **GUI-A117** A text-less proceed never reads as an empty turn. The thread projection
+  (§8.8), the terminal result (§8.7) and the dispatch any later turn on that thread receives
+  each list the thread's spoken turns and the expert's reply, and none lists a turn with no
+  text. The capture of a session whose log holds a text-less proceed, run from the session
+  directory alone, exits 0 and lists that thread.
+
+The what-if questions, asked of the six together. A failed expert turn after a proceed is
+GUI-A114's inverse; making a failed seat visible on the board is the separate defect
+`agents-config-9k9.309` and is not promised here. An empty thread, an empty say box and a
+whitespace-only say box are GUI-A112's and GUI-A114's. A missing dependency is the expert
+seat failing, which is the first answer again. A double press, two windows and a repeat
+with nothing changed are GUI-A114's. The expert seat's ability to read the project once it
+is engaged is `agents-config-9k9.370`'s, and no criterion here depends on it.
 
 ## 10. Open questions for the implementing work
 
@@ -2045,7 +2198,7 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: Pending-queue consistency, supersede handling and the map doctor — AC: GUI-D26, GUI-U12,
   GUI-A38, GUI-A39, GUI-A40.
 - feat: The channel state model and its diagnostic surface — AC: GUI-D27, GUI-A41.
-- feat: The transfer-to-expert control across the map and thread channels — AC: GUI-U11, GUI-A33,
+- feat: The seat toggle across the map and thread channels — AC: GUI-U11, GUI-A33,
   GUI-A34, GUI-A35.
 - feat: Thread lifecycle: the park and close gestures, their board behaviour, and the
   terminal result's loose-end distinction — AC: GUI-D29, GUI-A55.
@@ -2058,7 +2211,7 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: The sticky decision header over a decision taller than its pane — AC: GUI-U20,
   GUI-A61.
 - feat: Per-turn tier labelling on threads and on the map channel — AC: GUI-U21, GUI-A62.
-- feat: The transfer control's action labelling — AC: GUI-U22, GUI-A63.
+- feat: The seat toggle's labelling — AC: GUI-U22, GUI-A63.
 - feat: The thread agent's questioning rule — AC: GUI-D30, GUI-A64.
 - feat: The converged-answer proposal on a thread turn: the reply-document key, its
   projection onto the turn, the liveness rule, and the thread-agent prompt that reaches one
@@ -2069,6 +2222,11 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: Autonomous escalation as a session policy: the configured default, the backend-driven
   transfer on a met condition, its attribution, and the control that still returns the
   channel — AC: GUI-D35, GUI-U24, GUI-A71, GUI-A72, GUI-A73, GUI-A74.
+- feat: The seat toggle beside the say box and the proceed-with-expert action: the toggle
+  that names the next send's seat, the human gesture that sends the expert in without a
+  typed turn, its refusals, and the hint beneath a reply that asked to read — AC: GUI-D49,
+  GUI-U11, GUI-U22, GUI-U33, GUI-A33, GUI-A34, GUI-A35, GUI-A63, GUI-A86, GUI-A87, GUI-A112,
+  GUI-A113, GUI-A114, GUI-A115, GUI-A116, GUI-A117.
 - feat: Catching up a reopened thread: the interval's catch-up in its first dispatch, and the
   heavy-tier chain that is opened cold rather than resumed — AC: GUI-D36, GUI-A75, GUI-A76,
   GUI-A77, GUI-A78.
