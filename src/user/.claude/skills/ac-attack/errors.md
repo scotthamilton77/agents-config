@@ -43,7 +43,7 @@ run names every lens to rerun and every disposition to fix.
 | `no-spec` | The `--spec` document cannot be read. |
 | `spec-mismatch` | The `--spec` document's name is not the one the round attacked. The record is named from the document and goes beside it. |
 | `bad-dispositions` | The dispositions file is unreadable, names one key twice in an object, or is not a list of objects in the skeleton's shape. |
-| `malformed-disposition` | An entry's id is not a string, its `disposition` is not `accepted` or `rejected`, it carries a key the skeleton does not, or it lacks the field its verdict needs: `covering_ac` on an acceptance, `rationale` on a rejection. |
+| `malformed-disposition` | An entry's id is not a string, its `disposition` is not `accepted` or `rejected`, it carries a key other than the skeleton's and `revision`, or it lacks the field its verdict needs: `covering_ac` on an acceptance, `rationale` on a rejection. |
 | `missing-disposition` | An objection in the union has no entry. |
 | `unknown-disposition-id` | An entry names an id the union does not hold. |
 | `duplicate-disposition` | An id carries more than one entry. |

@@ -76,17 +76,19 @@ changed:
 
 An objection whose scenario leaves `given`, `when` or `expect` blank is dropped and listed under
 `dropped`. Any other drift refuses the lens, since repairing it would mean guessing what the
-attacker meant: a rule outside a lens enforcing several, a blank `target_ac`, `objection` or ground
-field, a scenario part or `obligation` that is not text, an objection attributed to another lens, a
-report whose `report` is neither `objections` nor `empty` or disagrees with its list, an object
-naming one key twice, two different reports in one output, and workings that are missing, break
-the schema beside the lens's prompt, discharge a part by a criterion they do not list, or leave a
-part or criterion unaccounted for with no objection naming it. A refused lens is run again.
+attacker meant: an objection that is not an object or whose `ground` is not one, a rule outside a
+lens enforcing several, a blank `target_ac`, `objection` or ground field, a scenario part or
+`obligation` that is not text, a report or objection attributed to another lens, a report whose
+`objections` is not a list or whose `report` is neither `objections` nor `empty` or disagrees with
+its list, an object naming one key twice, two different reports in one output, and workings that
+are missing, break the schema beside the lens's prompt, name one part twice, discharge a part by a
+criterion they do not list, or leave a part or criterion unaccounted for with no objection naming
+it. A refused lens is run again.
 
 `assemble_record.py assemble` joins the union with the filled skeleton. Each entry sets
 `disposition` to `accepted` with a `covering_ac`, or to `rejected` with a `rationale`. An acceptance's
 `revision` is the digest of the document's bytes when the step runs, in the `sha256:` notation the
-emitter stamps. An entry may leave `revision` out. One it supplies must be that digest, or the
+emitter, `emit_prompts.py`, stamps. An entry may leave `revision` out. One it supplies must be that digest, or the
 entry is refused.
 
 ## The record
