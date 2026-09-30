@@ -116,6 +116,7 @@ from grillui.schemas import (
     THREAD_FOLD_KIND,
     TIER_KEY,
     DispatchContext,
+    is_proceed,
 )
 
 if TYPE_CHECKING:
@@ -296,6 +297,9 @@ class Turn(NamedTuple):
     for. A conflict turn is also where the recursion stops: it does not look for
     conflicts of its own, so handing one back can never chain into a second.
 
+    `proceed` is the human asking the expert to take a thread up as it stands,
+    which names the seat whatever the channel's mode is.
+
     `mootness` is what the gesture this turn was scheduled for owes the rest of
     the board, read when it was scheduled and carried here rather than derived
     again when the turn runs. The board is mutable and the turn runs later: an
@@ -309,13 +313,14 @@ class Turn(NamedTuple):
     conflict: SupersedeConflict | None = None
     reassess: bool = False
     mootness: MootnessObligation | None = None
+    proceed: bool = False
 
 
 def turn_of(event: EventSubmission) -> Turn:
     """Which agent owes this gesture a turn."""
     if event.kind == THREAD_FOLD_KIND:
         return Turn(MAP_CHANNEL, concluding=event.channel)
-    return Turn(event.channel)
+    return Turn(event.channel, proceed=is_proceed(event))
 
 
 def is_answerable(event: EventSubmission) -> bool:
@@ -420,7 +425,8 @@ class Lane:
 
     def tier_for(self, channel: str, driver: TurnDriver, gesture: Turn | None = None) -> TurnDriver:
         """The tier this channel's next turn goes to: the expert one when the
-        human has transferred this channel or the gesture's own class names it,
+        human has transferred this channel, asked the expert to proceed, or the
+        gesture's own class names it,
         and this channel's own first-rung seat otherwise.
 
         Named before the `composing` entry is written rather than after, so the
@@ -436,7 +442,7 @@ class Lane:
             return seated
         if in_expert_mode(self.log.entries(), channel):
             return self.expert
-        if gesture is not None and self._judgment(gesture) is not None:
+        if gesture is not None and (gesture.proceed or self._judgment(gesture) is not None):
             return self.expert
         return seated
 

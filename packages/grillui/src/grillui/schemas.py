@@ -93,6 +93,12 @@ REASON_UNKNOWN_OPTION = "option the decision does not offer"
 # settled decision whose own thread is still open.
 REASON_FOREIGN_THREAD = "thread anchored to another decision"
 
+# The human asking the expert to proceed without saying anything, on a thread
+# where it has nothing to take up: a reply is already on its way, the expert
+# spoke last, or the thread is set aside. The entry is well-formed and names a
+# thread that exists, so none of the reasons above says why it is refused.
+REASON_NOTHING_TO_PROCEED = "nothing to proceed on"
+
 REJECTION_REASONS = frozenset(
     {
         REASON_MISSING_KEY,
@@ -107,6 +113,7 @@ REJECTION_REASONS = frozenset(
         REASON_UNKNOWN_THREAD,
         REASON_FOREIGN_THREAD,
         REASON_UNKNOWN_OPTION,
+        REASON_NOTHING_TO_PROCEED,
     }
 )
 
@@ -385,6 +392,11 @@ FOLLOWED_TRANSFER_KEY = "followed_transfer"
 TRANSFER_FLAG = "transfer"
 TRANSFER_SOURCE_KEY = "transfer_source"
 TRANSFER_SOURCE_POLICY = "policy"
+# The human sending the expert in on a thread as it stands. A payload key on a
+# `thread-turn` rather than a kind of its own, because the kind vocabulary is
+# closed; the entry carrying it with no text is the one human thread event that
+# says nothing, and the gesture itself is what it records.
+PROCEED_FLAG = "proceed"
 
 # How a response withdraws notices it sent earlier: a list of pending ids the
 # response replaces. A payload key rather than a kind of its own, because
@@ -1610,6 +1622,20 @@ def rejection_reason(
             f"{submission.channel!r}",
         )
 
+    if is_proceed(submission):
+        # Judged as the thread gestures above are, because it is one: it says
+        # nothing, and names its thread by the channel it arrives on. Whether
+        # that thread has anything to proceed on is the appender's to decide.
+        if submission.channel == MAP_CHANNEL:
+            return _map_channel_thread_gesture(submission)
+        if submission.channel not in known_threads:
+            return (
+                REASON_UNKNOWN_THREAD,
+                f"a proceed names its thread by its channel, and no thread has been "
+                f"created on channel {submission.channel!r}",
+            )
+        return None
+
     if submission.kind in THREAD_KINDS:
         return _thread_turn_problem(submission)
 
@@ -1703,6 +1729,23 @@ def read_turns(payload: Mapping[str, Any], actor: Actor, timestamp: str) -> list
     if isinstance(text, str) and text:
         return [_turn(actor, text, timestamp, tier)]
     return []
+
+
+def is_proceed(event: EventSubmission | LogEntry) -> bool:
+    """Whether this is the human asking the expert to proceed without a turn.
+
+    Three things make it one: the human sent it, it carries the flag, and it
+    says nothing. The flag on a turn that says something is an ordinary turn,
+    because the page sends typed text as the same entry a send makes. From any
+    other actor the flag is open payload surface, and a key that dispatched
+    whoever wrote it would let a seat buy itself an expert turn.
+    """
+    return (
+        event.kind == "thread-turn"
+        and event.actor == "human"
+        and event.payload.get(PROCEED_FLAG) is True
+        and not read_turns(event.payload, event.actor, "")
+    )
 
 
 def reads_asked(payload: Mapping[str, Any]) -> list[str]:

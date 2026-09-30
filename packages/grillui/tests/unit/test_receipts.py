@@ -22,6 +22,7 @@ from grillui.schemas import (
     REASON_EPOCH_MISMATCH,
     REASON_FOREIGN_THREAD,
     REASON_MISSING_KEY,
+    REASON_NOTHING_TO_PROCEED,
     REASON_PENDING_CONFLICT,
     REASON_THREAD_MAP_MUTATION,
     REASON_THREAD_WITHOUT_TURN,
@@ -218,6 +219,30 @@ def _refuse_foreign_thread(client: TestClient, log: SessionLog) -> dict[str, Any
     )[0]
 
 
+def _park_a_thread(client: TestClient, log: SessionLog) -> None:
+    """A thread with something said in it, set aside by the human."""
+    post(
+        client,
+        log.epoch,
+        event(
+            "thread-created",
+            actor="human",
+            channel="t-aside",
+            key="opened",
+            turns=[{"who": "human", "text": "Say more about compaction."}],
+        ),
+        event("thread-park", actor="human", channel="t-aside", key="parked"),
+    )
+
+
+def _refuse_nothing_to_proceed(client: TestClient, log: SessionLog) -> dict[str, Any]:
+    return post(
+        client,
+        log.epoch,
+        event("thread-turn", actor="human", channel="t-aside", key="k1", proceed=True),
+    )[0]
+
+
 def _refuse_unknown_pending(client: TestClient, log: SessionLog) -> dict[str, Any]:
     return queue_gesture(client, log.epoch, APPLY_KIND, "no-such-proposal#0", key="k1")
 
@@ -249,6 +274,7 @@ def _refuse_pending_conflict(client: TestClient, log: SessionLog) -> dict[str, A
 SETUPS: dict[str, Callable[[TestClient, SessionLog], None]] = {
     REASON_PENDING_CONFLICT: _leave_a_conflicted_proposal,
     REASON_FOREIGN_THREAD: _open_a_thread_on_another_decision,
+    REASON_NOTHING_TO_PROCEED: _park_a_thread,
 }
 
 
@@ -265,6 +291,7 @@ REFUSALS: dict[str, Callable[[TestClient, SessionLog], dict[str, Any]]] = {
     REASON_UNKNOWN_THREAD: _refuse_unknown_thread,
     REASON_FOREIGN_THREAD: _refuse_foreign_thread,
     REASON_PENDING_CONFLICT: _refuse_pending_conflict,
+    REASON_NOTHING_TO_PROCEED: _refuse_nothing_to_proceed,
 }
 
 

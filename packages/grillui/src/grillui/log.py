@@ -35,17 +35,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from grillui.lane import unclosed_turns
 from grillui.projector import Proposed, node_from_payload, queue, replay
 from grillui.schemas import (
     ANSWER_KINDS,
     APPLY_KIND,
     DISMISS_KIND,
     FOLD_SHAPED,
+    HEAVY_TIER,
     MAP_CHANNEL,
     PROPOSABLE_KINDS,
     QUEUE_GESTURE_KINDS,
     REASON_EPOCH_MISMATCH,
     REASON_MISSING_KEY,
+    REASON_NOTHING_TO_PROCEED,
     REASON_PENDING_CONFLICT,
     REASON_UNKNOWN_PENDING,
     SESSION_START_KIND,
@@ -60,6 +63,7 @@ from grillui.schemas import (
     RejectedReceipt,
     batch_payload_problem,
     fold_outcomes,
+    is_proceed,
     mint_targets,
     pending_ids,
     rejection_reason,
@@ -313,6 +317,8 @@ class SessionLog:
         waiting = self._waiting() if event.kind == DISMISS_KIND else frozenset()
         if problem is None and event.kind in QUEUE_GESTURE_KINDS:
             problem = _queue_gesture_problem(event, queued, waiting)
+        if problem is None and is_proceed(event):
+            problem = _proceed_problem(self.epoch, self._entries, event.channel)
         if problem is not None:
             reason, detail = problem
             return RejectedReceipt(
@@ -578,6 +584,38 @@ def _queue_gesture_problem(
                 f"since; it stays queued rather than overwriting that change",
             )
     return None
+
+
+def _proceed_problem(
+    epoch: str, entries: Sequence[LogEntry], channel: str
+) -> tuple[str, str] | None:
+    """Why the thread has nothing for the expert to proceed on, or None.
+
+    Decided here, under the append lock, because every answer is a reading of
+    the thread as it stands at the moment the entry would land. One rule then
+    covers a double press, two windows pressing at once and a press repeated
+    with nothing changed: the first accepted proceed leaves a reply
+    outstanding, and the expert's reply is then the latest turn. A failed turn
+    leaves neither behind, so the press works again after one.
+
+    Whether a reply is outstanding is the lane's own pairing rule, read off the
+    log rather than off the latest speaker: a turn that failed leaves the human
+    speaking last with nothing on its way, and that thread is one to proceed on.
+    The ceiling is one replay per proceed, which is a human-paced act over a log
+    bounded by one grilling.
+    """
+    thread = next((one for one in replay(epoch, entries).threads if one.id == channel), None)
+    if thread is None:
+        return None
+    if thread.state in {"parked", "closed"}:
+        state = f"the thread is {thread.state}"
+    elif channel in unclosed_turns(entries):
+        state = "an agent's reply is outstanding on the thread"
+    elif thread.turns and thread.turns[-1].tier == HEAVY_TIER:
+        state = "the thread's latest turn is the expert's"
+    else:
+        return None
+    return (REASON_NOTHING_TO_PROCEED, f"a proceed with no text has nothing to proceed on: {state}")
 
 
 def _resolve(

@@ -1301,7 +1301,7 @@ class CodexDriver:
     but a wrong one.
 
     It sits on the first rung, not a third one: a channel seated here still
-    names the `fast` tier, still offers *Transfer to expert*, and hands a turn
+    names the `fast` tier, still has its seat toggle mark *assistant*, and hands a turn
     it could not take up to the same expert every other channel has.
     """
 
