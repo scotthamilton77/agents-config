@@ -1927,10 +1927,10 @@ Each criterion is mechanically checkable and convertible to a red test.
   opened and on a draft nothing has created alike, in the slide-out and in a popped-out
   window. Measured as a bounding box against the window, so a control rendered below the
   fold of the pane fails the same way one never rendered does. Verified in a browser.
-- **GUI-A87** The seat selected on a draft is the tier that draft's first turn is taken on:
-  the mode recorded under the draft's channel reaches the thread the turn opens, whose name
-  the draft never had, and the backend reads it back off that thread's channel and off no
-  other.
+- **GUI-A87** The seat selected on a draft is the tier that draft's first turn is taken on.
+  The selection is held by the page and appends nothing. The page carries it on the
+  `thread-created` entry that opens the thread, whose name the draft never had, and the
+  backend reads it off that thread's channel and off no other.
 - **GUI-A92** In a thread's box and in that same thread popped into its own window: Enter
   posts the turn, Shift+Enter leaves the box holding a newline and posts nothing, a
   backslash before Enter leaves a newline with the backslash gone, and Cmd/Ctrl+Enter
@@ -2143,18 +2143,21 @@ implementing work item waits on all twelve.
   the action on no thread. Inverse: after an agent turn that failed, the press is accepted
   and dispatches the expert. That holds when the failed turn was the assistant's, which
   leaves the human's turn as the thread's latest, and when it was the expert's own.
-- **GUI-A115** Under `gated`, after an assistant reply that carried a read request, nothing
-  engages the expert on that thread until a human entry carrying `transfer: true` arrives
-  on it. Until then the lane records no `composing` entry naming the heavy tier on that
-  thread, no dispatch to the expert seat is recorded, and no `transferred` entry is written.
-  A human turn sent meanwhile with the toggle marking *assistant* is taken by the assistant.
-  With no input from the human after that reply, the log gains no entry on that thread at
-  all: the page emits a proceed, and puts `transfer: true` on a turn, only on the human's
-  own press or selection.
-  A `thread-turn` carrying `proceed: true` whose actor is not the human dispatches no turn
-  and moves no channel, under either policy. Under `autonomous`, the policy's `transferred`
+- **GUI-A115** Only the human's own gesture engages the expert on a thread, under either
+  policy.
+  Under `gated`: after an assistant reply that carried a read request, nothing engages the
+  expert on that thread until a human entry carrying `transfer: true` arrives on it. Until
+  then the lane records no `composing` entry naming the heavy tier on that thread, no
+  dispatch to the expert seat is recorded, and no `transferred` entry is written. A human
+  turn sent meanwhile with the toggle marking *assistant* is taken by the assistant. With
+  no input from the human after that reply, the log gains no entry on that thread at all:
+  the page emits a proceed, and puts `transfer: true` on a turn, only on the human's own
+  press or selection.
+  Under `autonomous`: the policy writes its `transferred` entry as GUI-A73 states, and that
   entry is followed by no `composing` entry and no dispatch on that thread until the human's
   next send or proceed arrives.
+  Under both: a `thread-turn` carrying `proceed: true` whose actor is not the human
+  dispatches no turn and moves no channel.
 - **GUI-A116** An assistant reply on a thread that carries a read request, a non-empty
   `needs_to_read`, renders a hint beneath that reply naming *Proceed with expert*, for as
   long as the reply is the thread's latest turn. The hint renders whichever condition the
@@ -2175,7 +2178,13 @@ whitespace-only say box are GUI-A112's and GUI-A114's. A missing dependency is t
 seat failing, which is the first answer again. A double press, two windows and a repeat
 with nothing changed are GUI-A114's. A proceed pressed with text is a send (GUI-A113), so
 pressing it twice, or from two windows holding the same text, is two sends and behaves as
-two presses of send do; this set changes nothing there. The expert seat's ability to read
+two presses of send do; this set changes nothing there. The seat toggle has its own
+answers. A send that is refused has carried nothing, so the selection still waits and the
+toggle still marks it (GUI-A63). A channel with no turn is the draft (GUI-A86, GUI-A87).
+The toggle relies on nothing outside the page. Selecting one seat and then the other leaves
+the channel as it was and appends nothing, and two windows each hold their own selection
+until a turn carries one to the log, after which both follow the log (GUI-A34, GUI-A63).
+Selecting the seat already marked changes nothing and appends nothing (GUI-A34). The expert seat's ability to read
 the project once it is engaged is `agents-config-9k9.370`'s, and no criterion here depends on it.
 
 ## 10. Open questions for the implementing work
