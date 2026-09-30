@@ -151,10 +151,10 @@
   .free .sends { display: flex; flex-direction: column; gap: 4px; align-self: flex-end; }
   /* A proceed with nothing typed has nothing to take up in the states the
      reason names. Typed text makes it a send, which those states still take, so
-     the box itself decides and nothing has to redraw on every key. */
-  .free:has(textarea:placeholder-shown) .proceed[data-blocked] { opacity: .45; pointer-events: none; }
+     the box's own blank mark decides and nothing has to redraw on every key. */
+  .free:has(textarea[data-blank]) .proceed[data-blocked] { opacity: .45; pointer-events: none; }
   .proceedwhy { display: none; font-size: 11.5px; color: var(--ink-dim); margin-top: 4px; }
-  .free:has(textarea:placeholder-shown) + .proceedwhy { display: block; }
+  .free:has(textarea[data-blank]) + .proceedwhy { display: block; }
   .prior { font-size: 12.5px; color: var(--ink-dim); border-left: 3px solid var(--line); padding-left: 10px; margin: 6px 0; }
   /* What a turn offered, set apart from what it said: the answer is the
      human's to give, so the offer never reads as part of the prose. */

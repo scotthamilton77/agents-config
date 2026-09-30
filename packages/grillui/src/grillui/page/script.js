@@ -2502,7 +2502,7 @@ function closeControl(tid) {
 // in a set-aside one is what opens it again.
 function sayBox(sayId, tid) {
   var t = thread(tid), open = t && t.state === "open";
-  return '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
+  return '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-blank data-tid="' + esc(tid) +
     '" placeholder="…say something"></textarea><span class="hint">↵ send<br>⇧↵ newline</span>' +
     '<span class="sends"><button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button>' +
     (open ? proceedControl(tid) : "") + "</span>" + transferControl(tid) + "</div>" +
@@ -2558,7 +2558,7 @@ function threadBody(tid, forPop, chrome) {
       // one turn after the one turn it was wanted for. Park, close and fold are
       // not offered beside it — the backend refuses a thread gesture naming no
       // thread, and the head's ✕ is what closing a draft already means.
-      '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
+      '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-blank data-id="' + esc(anchor || "") +
         '" placeholder="…say something"></textarea><span class="hint">↵ send<br>⇧↵ newline</span>' +
         '<span class="sends"><button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button>' +
         proceedControl(tid) + "</span>" + transferControl(tid) + "</div>" + proceedWhy(tid) +
@@ -3067,6 +3067,7 @@ function render() {
   document.querySelectorAll("textarea[data-draft]").forEach(function (ta) {
     var d = UI.drafts[ta.dataset.draft];
     if (d) ta.value = d;
+    markBlank(ta);
   });
   var map2 = document.getElementById("mapscroll"), col2 = document.getElementById("column");
   if (map2) { map2.scrollLeft = keep.mx; map2.scrollTop = keep.my; }
@@ -3208,7 +3209,8 @@ function popOut(tid) {
     "var bot=!tb||tb.scrollHeight-tb.scrollTop-tb.clientHeight<=40;" +
     "document.getElementById('t').innerHTML=html;" +
     "var tb2=document.querySelector('.tbody');if(tb2)tb2.scrollTop=bot?tb2.scrollHeight:ty;" +
-    "var t2=document.getElementById('pop-say');if(t2){t2.value=v;if(had)t2.focus({preventScroll:true});}}" +
+    "var t2=document.getElementById('pop-say');if(t2){t2.value=v;t2.toggleAttribute('data-blank',!v.trim());if(had)t2.focus({preventScroll:true});}}" +
+    "document.addEventListener('input',function(e){if(e.target.id==='pop-say')e.target.toggleAttribute('data-blank',!e.target.value.trim());});" +
     // The ending is the opener's to declare and this window's to wear. It is
     // applied on the tick rather than inside draw(), because draw() does
     // nothing at all when the pane's html has not changed -- and a session
@@ -3274,10 +3276,16 @@ document.addEventListener("input", function (e) {
   if (!e.target.dataset || !e.target.dataset.draft) return;
   var id = e.target.dataset.draft;
   UI.drafts[id] = e.target.value;
+  markBlank(e.target);
   // Provenance goes with the draft it filled: a box emptied by hand has no
   // proposal left in it, so the next answer is the human's alone.
   if (!e.target.value.trim() && UI.armed[id]) { delete UI.armed[id]; render(); }
 });
+// Whether a box holds nothing but whitespace, marked on the box itself. A box of
+// spaces is an empty one to every send, and the stylesheet reads this mark to
+// show a proceed with nothing to proceed on as inactive, where a check on the
+// raw value would take the spaces for text.
+function markBlank(ta) { ta.toggleAttribute("data-blank", !ta.value.trim()); }
 function sendFrom(ta) {
   if (!ta || !ta.value.trim()) return;
   // This is the one gesture that empties the box it was typed in, and a held

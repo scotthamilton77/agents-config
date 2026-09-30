@@ -314,6 +314,14 @@ def inactive(page: Page, session: Session, channel: str, why: str) -> None:
     assert len(session.entries()) == before, (
         f"a press on {channel} wrote {session.entries()[before:]}"
     )
+    # A box holding only spaces is an empty one, so it renders the same way.
+    page.fill("#ft-say", "   ")
+    reason = page.locator(f'.proceedwhy[data-channel="{channel}"]')
+    assert reason.is_visible(), f"the reason is hidden on {channel} with only spaces typed"
+    assert action.evaluate("el => getComputedStyle(el).pointerEvents") == "none", (
+        f"the action looks active on {channel} with only spaces typed"
+    )
+    page.fill("#ft-say", "")
 
 
 def test_gui_a114_a_set_aside_thread_the_map_and_an_ended_session_offer_no_action(
