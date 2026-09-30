@@ -100,6 +100,33 @@ PROMPT_END_RE = re.compile(
 # alternation is the schema itself and never a review.
 TEMPLATE_ALTERNATIONS = frozenset({"clean|findings", "mechanical|advisory"})
 
+CODEX_TRANSPORT = "codex"
+CLEAN_VERDICT = "clean"
+
+# A clean report asserts the reviewer read the target and found nothing. The attempt's own
+# output is the model's final text on both transports and records no tool use at all, so
+# the transport's stderr is the only place that evidence exists.
+
+# The openrouter launcher's proxy prints one line per API turn. A nested run that calls no
+# tool forwards a single request and every tool call adds a turn, so anything above one
+# forward is a read.
+OPENROUTER_FORWARD_RE = re.compile(r"^.*decision=forward.*$", re.MULTILINE)
+OPENROUTER_FORWARDS_WITHOUT_TOOLS = 1
+
+# Codex is reached two ways and each records a tool call differently, so both count. The
+# plugin job runner prefixes every progress line with its own tag; the command-line tool
+# opens each call with a bare "exec" line and reports the result beneath it.
+CODEX_ACTIVITY_RES = (
+    re.compile(r"^\[codex\] (Running command|Command \w+|Running tool|Calling )", re.MULTILINE),
+    re.compile(r"^exec[ \t]*\r?$", re.MULTILINE),
+    re.compile(r"^ (succeeded|failed|exited) in \d+ms", re.MULTILINE),
+)
+CODEX_SHAPES = (
+    'a "[codex] Running command:" line (or "Command completed:", "Running tool:", '
+    '"Calling ") from the plugin job runner, or a bare "exec" line with its '
+    '" succeeded in <n>ms" result from the command-line tool'
+)
+
 HALT_GUIDANCE = (
     "Every route this lens ran on died in transport. The round is over: abandon every dispatch "
     "not yet made, write the verdict halted with these routes and their errors verbatim in the "
@@ -183,6 +210,16 @@ def output_path_for(out_dir: str, lens: str, attempt: int) -> Path:
     a stale report that reads as this attempt's.
     """
     return Path(out_dir).resolve() / f"{lens}.attempt-{attempt}.out"
+
+
+def stderr_path_for(out_dir: str, lens: str, attempt: int) -> Path:
+    """Where this attempt's transport stderr is retained — the sibling of its output path.
+
+    Whether the reviewer opened anything is recorded only on the transport's stderr, and
+    the invoking shell is what redirects it. So the claim hands the runner this path
+    alongside the output path, rather than a naming rule the runner has to apply.
+    """
+    return output_path_for(out_dir, lens, attempt).with_suffix(".err")
 
 
 def backoff_for(attempt: int) -> int:
@@ -519,10 +556,17 @@ def claim(args: argparse.Namespace) -> dict[str, Any]:
         "cwd": str(Path.cwd()),
         "reason": reason,
         "output_path": str(output_path_for(args.out_dir, lens, attempt)),
+        "stderr_path": str(stderr_path_for(args.out_dir, lens, attempt)),
         "timestamp": now(),
     }
     if evidence:
         record["evidence"] = evidence
+    if args.target_inline:
+        # Declared here because it is a fact about the dispatch the invoker knows before
+        # making it: the prompt carries the whole target and the run is granted no tools.
+        # Taken after the fact, it would let a disappointing report argue it needed no
+        # evidence.
+        record["target_inline"] = True
     if attempt > 1:
         record["backoff_seconds"] = backoff_for(attempt)
     append_record(path, record)
@@ -617,6 +661,80 @@ def parse_report(body: str) -> tuple[dict, str]:
     )
 
 
+def evidence_after_prompt(text: str) -> str:
+    """The part of a retained capture that the reviewer's own run wrote.
+
+    Both transports echo the prompt, and the target under review sits inside it, so a
+    target quoting these patterns would otherwise supply the very evidence it is quoted
+    in. Only what follows the prompt's last closing marker counts. A capture holding no
+    marker echoed no prompt and counts whole.
+    """
+    markers = list(PROMPT_END_RE.finditer(text))
+    return text[markers[-1].end():] if markers else text
+
+
+def reads_recorded(transport: str, text: str) -> int | None:
+    """How many tool calls this transport's stderr records, or None when no rule covers it.
+
+    A transport this gate cannot count is reported rather than judged: refusing every
+    clean report on an unrecognized transport would end rounds the evidence never spoke to.
+    """
+    body = evidence_after_prompt(text)
+    if transport == OPENROUTER_TRANSPORT:
+        forwards = len(OPENROUTER_FORWARD_RE.findall(body))
+        return max(forwards - OPENROUTER_FORWARDS_WITHOUT_TOOLS, 0)
+    if transport == CODEX_TRANSPORT:
+        return sum(len(pattern.findall(body)) for pattern in CODEX_ACTIVITY_RES)
+    return None
+
+
+def check_read_evidence(claimed: dict, report: dict) -> None:
+    """Refuse a clean report that nothing shows the reviewer read the target for.
+
+    A findings report is never refused here: it names what it found, and what it found is
+    itself the evidence. Only the verdict that asserts an absence needs one.
+    """
+    if report.get("verdict") != CLEAN_VERDICT:
+        return
+    if claimed.get("target_inline"):
+        return
+    transport = str(claimed.get("transport") or "")
+    lens = claimed.get("lens")
+    stderr = Path(str(claimed.get("stderr_path") or ""))
+    if not stderr.is_file():
+        raise Refusal(
+            "no-stderr-capture",
+            f"the clean report from {lens} has no retained transport stderr at {stderr}, so "
+            "nothing shows the reviewer opened the target. The dispatch redirects stderr to "
+            "that path; re-dispatch this lens with the redirect in place, or claim with "
+            "--target-inline when the prompt carries the whole target and the run has no "
+            "tools to read with",
+        )
+    try:
+        text = stderr.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise Refusal(
+            "no-stderr-capture",
+            f"cannot read the retained stderr {stderr} for the clean report from {lens}: {exc}",
+        ) from exc
+    reads = reads_recorded(transport, text)
+    if reads is None or reads > 0:
+        return
+    counted = (
+        f"more than the {OPENROUTER_FORWARDS_WITHOUT_TOOLS} forwarded request a run calling no "
+        "tool makes"
+        if transport == OPENROUTER_TRANSPORT
+        else CODEX_SHAPES
+    )
+    raise Refusal(
+        "no-read-evidence",
+        f"the clean report from {lens} records no tool use in its retained stderr {stderr}: on "
+        f"{transport} that means {counted}. A reviewer that answered clean without opening the "
+        "target is not a clean lens — re-dispatch it, or claim with --target-inline when the "
+        "prompt carried the whole target and the run had no tools to read with",
+    )
+
+
 def _resolved(path: Path) -> str:
     try:
         return str(path.resolve())
@@ -696,6 +814,11 @@ def ingest(args: argparse.Namespace) -> dict[str, Any]:
     except Refusal:
         append_record(path, outcome_record(claimed, "unparseable", output))
         raise
+    try:
+        check_read_evidence(claimed, report)
+    except Refusal as exc:
+        append_record(path, outcome_record(claimed, "unread", output, code=exc.code))
+        raise
     append_record(path, outcome_record(claimed, "parsed", output, recovery=recovery))
     return {
         "ingested": True,
@@ -723,6 +846,12 @@ def build_parser() -> argparse.ArgumentParser:
     claim_parser.add_argument("--model")
     claim_parser.add_argument("--reason")
     claim_parser.add_argument("--evidence")
+    claim_parser.add_argument(
+        "--target-inline",
+        action="store_true",
+        help="the prompt carries the whole target and the run has no tools to read with, "
+        "so a clean report from it needs no recorded read",
+    )
     claim_parser.set_defaults(run=claim)
 
     ingest_parser = verbs.add_parser("ingest", help="read one lens's raw output")
