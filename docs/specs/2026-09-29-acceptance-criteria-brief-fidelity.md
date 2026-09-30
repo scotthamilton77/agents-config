@@ -230,26 +230,3 @@ each fixture is fixed, so empty applies only where F3 and F7 test it.
 The render verb itself (`agents-config-9k9.405.4`). LIFE-A32's citation of the
 re-attack rule in briefs (`agents-config-9k9.405.9`). Judging whether a planned
 check is feasible in code. Criterion quality, which the attack judges.
-
-## Evidence
-
-- BRF-A1 | open
-- BRF-A2 | open
-- BRF-A3 | open
-- BRF-A4 | open
-- BRF-A5 | open
-- BRF-A6 | open
-- BRF-A7 | open
-- BRF-A8 | open
-- BRF-A9 | open
-- BRF-A10 | open
-- BRF-A11 | open
-- BRF-A12 | open
-- BRF-A13 | open
-- BRF-A14 | open
-- BRF-A15 | open
-- BRF-A16 | open
-- BRF-A17 | open
-- BRF-A18 | open
-- BRF-A19 | open
-- BRF-A20 | open
