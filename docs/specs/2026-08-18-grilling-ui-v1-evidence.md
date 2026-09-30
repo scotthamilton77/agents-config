@@ -171,6 +171,7 @@ opens one proves something else.
 - GUI-A113 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a113_proceed_with_text_on_a_draft_writes_the_entry_the_toggle_and_send_write
 - GUI-A114 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a114_the_action_is_inactive_and_says_why_where_there_is_nothing_to_proceed_on
 - GUI-A114 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a114_a_set_aside_thread_the_map_and_an_ended_session_offer_no_action
+- GUI-A114 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a114_the_backend_refuses_a_textless_proceed_posted_directly_in_each_state
 - GUI-A115 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a115_under_gated_a_read_request_engages_nobody_until_the_human_acts
 - GUI-A115 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a115_under_autonomous_the_policy_move_buys_no_turn_until_the_human_acts
 - GUI-A115 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a115_a_proceed_from_anyone_but_the_human_moves_nothing

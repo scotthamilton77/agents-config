@@ -12,8 +12,10 @@ the other.
 from __future__ import annotations
 
 import json
+import time
 from typing import TYPE_CHECKING, Any
 
+import httpx
 from conftest import BOARD_TIMEOUT, decision, document, handoff, turn
 from test_reading import (
     ANSWERED,
@@ -48,7 +50,7 @@ PROCEED_LINE = (
 PROCEED_MARK = "You asked the expert to proceed with the thread as it stands."
 HINT = (
     "The assistant asked to read something it was not given. "
-    "Proceed with expert hands this thread to the expert, who can read it."
+    "The next step is Proceed with expert, which hands this thread to the expert."
 )
 # Long enough that the scenario reads the page while the expert is still on it.
 SLOW = 4
@@ -322,6 +324,85 @@ def inactive(page: Page, session: Session, channel: str, why: str) -> None:
         f"the action looks active on {channel} with only spaces typed"
     )
     page.fill("#ft-say", "")
+
+
+def posted(session: Session, channel: str) -> dict[str, Any]:
+    """A text-less proceed posted straight to the backend, as any client could,
+    and the receipt it gets back."""
+    epoch = httpx.get(session.url + "status").json()["epoch"]
+    event = {
+        "kind": "thread-turn",
+        "actor": "human",
+        "channel": channel,
+        "idempotency_key": f"direct-{len(session.entries())}-{channel}",
+        "payload": {"proceed": True, "transfer": True},
+    }
+    receipts = httpx.post(session.url + "events", json={"epoch": epoch, "events": [event]}).json()
+    receipt: dict[str, Any] = receipts[0]
+    return receipt
+
+
+def refused(session: Session, channel: str, reason: str, state: str) -> None:
+    """The backend refuses the posted proceed with this reason, naming the state
+    where it has one to name, and nobody is dispatched."""
+    before = (len(session.entries()), len(session.claude_calls()))
+    receipt = posted(session, channel)
+    assert receipt["status"] == "rejected", receipt
+    assert receipt["reason"] == reason, receipt
+    assert state in receipt["detail"], receipt
+    assert (len(session.entries()), len(session.claude_calls())) == before, receipt
+
+
+def test_gui_a114_the_backend_refuses_a_textless_proceed_posted_directly_in_each_state(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given a session driven from the page into each state with nothing to
+          proceed on
+    When a text-less proceed is posted straight to the backend in each one
+    Then it is refused every time and appends nothing: naming no thread on a
+         thread nothing created, and *nothing to proceed on* with the state in
+         its detail while a reply is outstanding, after the expert spoke last,
+         and on a parked and on a closed thread.
+
+    Posted rather than pressed, because the page will not send a press it has
+    already rendered inactive, so only a direct post reaches the refusal.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_codex(turn(document("Noted.")))
+    session.script_claude(turn(EXPERT_SAID, delay=SLOW))
+    session.stub.script(ANSWERED, ANSWERED)
+    page = board(session)
+
+    refused(session, "t-nobody-opened", "unknown thread id", "no thread has been created")
+
+    start_thread(page, "d2", ASKED)
+    session.settled()
+    channel = thread_id(session)
+    choose(page, channel, "heavy")
+    say(page, TYPED)
+    # Read off the log rather than the page, so the post lands after the expert's
+    # turn was announced and before it replied.
+    deadline = time.monotonic() + SLOW
+    while composings(session, channel) != ["fast", "heavy"] and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert composings(session, channel) == ["fast", "heavy"], composings(session, channel)
+    refused(session, channel, "nothing to proceed on", "outstanding")
+    session.settled()
+    refused(session, channel, "nothing to proceed on", "the thread's latest turn is the expert's")
+
+    page.click(f'[data-act="park"][data-tid="{channel}"]')
+    session.settled()
+    refused(session, channel, "nothing to proceed on", "the thread is parked")
+
+    if page.locator('[data-act="closepanel"]').count():
+        page.click('[data-act="closepanel"]')
+    start_thread(page, "d1", ASKED)
+    session.settled()
+    other = [one.channel for one in session.entries() if one.kind == "thread-created"][-1]
+    page.click(f'[data-act="closethread"][data-tid="{other}"]')
+    session.settled()
+    refused(session, other, "nothing to proceed on", "the thread is closed")
 
 
 def test_gui_a114_a_set_aside_thread_the_map_and_an_ended_session_offer_no_action(

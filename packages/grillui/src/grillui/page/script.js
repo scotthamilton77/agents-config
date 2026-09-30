@@ -2397,7 +2397,7 @@ function readHint(t, turn) {
     var wanted = e.payload[NEEDS_TO_READ_KEY];
     if (AGENT_ACTORS.indexOf(e.actor) < 0 || e.payload[TIER_KEY] !== FAST_TIER || !Array.isArray(wanted) || !wanted.length) return "";
     return '<div class="readhint" data-channel="' + esc(t.id) + '">The assistant asked to read something it was not given. ' +
-      "Proceed with expert hands this thread to the expert, who can read it.</div>";
+      "The next step is Proceed with expert, which hands this thread to the expert.</div>";
   }
   return "";
 }
