@@ -446,8 +446,8 @@ does not apply to it.
   settle the assessment and evaluation contract in its child spec. Then
   integrate the standard into the existing attack mandates and their
   evaluations. Each lens owns its prompt, and the
-  shared attack template holds only the standard reference, the output shape,
-  the explicit empty result, and the fenced document. This evaluation contract
+  shared attack template holds only the fenced document, the rules the lens
+  enforces, the output shape, and the explicit empty result. This evaluation contract
   governs any addition to that shared template: an addition ships only with
   evaluation evidence that it improves the lenses it reaches. Implementation
   depends on S1.
