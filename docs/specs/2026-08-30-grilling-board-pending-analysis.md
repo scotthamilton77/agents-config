@@ -187,29 +187,3 @@ the implementation placeholder against the children already filed under
 PND-D4 rests on an n=1 bake-off; a second session's replay is the cheap check on it. A
 first-rung seat on a free-text answer produces empty revises (`agents-config-9k9.310`):
 that seat doing the expert's job in the wrong vocabulary, which PND-D2 and PND-D4 remove.
-
-## Evidence
-
-How each criterion above is discharged. States: `open`;
-`test: <file>::<test_fn>`; `probe: <file>::<name>`;
-`observed: #<PR> <YYYY-MM-DD> <name>`. A criterion whose own text says it is
-verified in a browser is dischargeable by `test:` only where the test drives a
-real browser over the real launch path — the end-to-end suite (`make e2e-grillui`)
-qualifies; a unit test that never renders the page proves something else, and a
-hand probe stays `probe:`.
-
-- PND-A1 | open
-- PND-A2 | open
-- PND-A3 | open
-- PND-A4 | open
-- PND-A5 | open
-- PND-A6 | open
-- PND-A7 | open
-- PND-A8 | open
-- PND-A9 | open
-- PND-A10 | open
-- PND-A11 | open
-- PND-A12 | open
-- PND-A13 | open
-- PND-A14 | open
-- PND-A15 | open
