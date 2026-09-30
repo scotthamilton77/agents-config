@@ -267,8 +267,14 @@ expert receives a thread whose last turn is another seat's and no question to an
 
 The backend refuses a text-less proceed that has nothing to proceed on. There are four
 such states: the thread has no turn, an agent's reply is outstanding on the thread, the
-thread's latest turn is the expert's, or the thread is parked or closed. The refusal is decided under the append lock, as
-every refusal is. This one rule covers a double press, two windows pressing at once, and a
+thread's latest turn is the expert's, or the thread is parked or closed. A thread with no
+turn is a thread nothing has created, so a proceed naming it is refused as every thread
+gesture naming no thread is. The other three are refused with a rejection reason of their
+own, *nothing to proceed on*, whose detail names the state. That reason joins the closed
+set GUI-D16 lists, because none of the existing reasons says it: the entry is well-formed,
+its thread exists, and it is refused for what the thread's conversation currently is. The
+refusal is decided under the append lock, as every refusal is.
+This one rule covers a double press, two windows pressing at once, and a
 press repeated with nothing changed. The first accepted proceed leaves a reply outstanding,
 and the expert's reply is then the latest turn. A proceed whose expert turn failed may be
 pressed again, because a failed turn leaves no reply outstanding and adds no expert turn.
@@ -428,6 +434,7 @@ anti-pattern, and it is what lets an agent tell a human something is on the boar
 is not. Rejection reasons v1 must distinguish: missing idempotency key, epoch mismatch,
 unknown event kind, unknown node id, an answer carrying neither an option nor text, a
 thread event carrying no turn, and a map mutation authored by a thread agent (GUI-D25).
+A text-less proceed with nothing to proceed on is one more, and GUI-D49 states it.
 
 **GUI-D17 — A rejected human action is visible on the page.** The page raises a banner
 naming the reason and stating plainly that the message was not recorded and no agent will
@@ -1053,8 +1060,8 @@ follows, and changes nothing else.
   The map carries no such action. Every map turn answers a gesture on a decision, and the
   map doctor is already the way to ask the expert about the map unprompted.
   A reply in which the assistant asked to read something it was not given carries a hint
-  beneath it for as long as it is the thread's latest turn. The hint names *Proceed with
-  expert* as the next step. The page draws the hint from the read request the reply
+  beneath it for as long as it is the latest turn of an open thread. The hint names
+  *Proceed with expert* as the next step. The page draws the hint from the read request the reply
   recorded, whichever condition its recommendation names. An expert's reply carries no such
   hint. It is not left to the assistant's prose, because a sentence in a prompt does
   not make a model say something every time.
@@ -2136,7 +2143,9 @@ implementing work item waits on all twelve.
   the thread's latest turn is the expert's, or the thread is parked or closed. In each of
   the first three states the page renders the action inactive and shows the reason, and on
   a parked or closed thread it renders no such action, verified in a browser. In all four
-  the backend rejects the same entry posted directly with a receipt that names the reason.
+  the backend rejects the same entry posted directly. On a thread nothing has created the
+  receipt carries the reason every thread gesture naming no thread gets. In the other three
+  it carries the reason *nothing to proceed on* and a detail naming the state.
   Twice: two text-less proceeds posted in one batch, or posted at once from two windows, leave exactly one accepted
   proceed entry and one expert turn. Unchanged: a second press after the expert has
   replied, with nothing said since, is refused. After the session has ended the page offers
@@ -2158,13 +2167,14 @@ implementing work item waits on all twelve.
   next send or proceed arrives.
   Under both: a `thread-turn` carrying `proceed: true` whose actor is not the human
   dispatches no turn and moves no channel.
-- **GUI-A116** An assistant reply on a thread that carries a read request, a non-empty
-  `needs_to_read`, renders a hint beneath that reply naming *Proceed with expert*, for as
-  long as the reply is the thread's latest turn. The hint renders whichever condition the
+- **GUI-A116** An assistant reply on an open thread that carries a read request, a
+  non-empty `needs_to_read`, renders a hint beneath that reply naming *Proceed with
+  expert*, for as long as the reply is the thread's latest turn and the thread stays open. The hint renders whichever condition the
   reply's recommendation names. Its text is the page's own and is the same whatever the
   reply's prose says. No hint renders beneath a reply with no read request, beneath an
-  expert's reply that carries one, or beneath a read-request reply that is no longer the
-  thread's latest turn. Verified in a browser.
+  expert's reply that carries one, beneath a read-request reply that is no longer the
+  thread's latest turn, or on a parked or closed thread, which carries no such action to
+  name. Verified in a browser.
 - **GUI-A117** A text-less proceed never reads as an empty turn. The thread projection
   (§8.8) and the dispatch any later turn on that thread receives each list the thread's
   spoken turns and the expert's reply, and neither lists a turn with no text. The capture
