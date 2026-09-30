@@ -274,7 +274,9 @@ and the expert's reply is then the latest turn. A proceed whose expert turn fail
 pressed again, because a failed turn leaves no reply outstanding and adds no expert turn.
 
 Only an entry whose actor is the human dispatches on `proceed`. The escalation policy never
-writes one. Under `gated` a met condition therefore still moves nothing and engages nobody
+writes one, and the page writes one only when the human presses the action. The page
+likewise puts `transfer: true` on a turn only after the human selected *expert* or pressed
+the action. A recommendation arriving, a policy move and a redraw cause neither. Under `gated` a met condition therefore still moves nothing and engages nobody
 until the human acts (GUI-D35). Under `autonomous` the policy still only moves the channel,
 and the expert's turn waits for the human's next send or proceed.
 
@@ -1032,14 +1034,16 @@ follows, and changes nothing else.
   and the lane already carries it (GUI-U10, GUI-U15). The toggle stays active throughout,
   so returning the channel to the fast tier is the same gesture it always was.
 - **GUI-U33 — *Proceed with expert* sends the expert in on a thread as it stands.** Each
-  thread's say box carries the action beside its send control. With the say box empty,
+  open thread's say box, and each draft's, carries the action beside its send control. With the say box empty,
   pressing it records the human's gesture on the thread, and the expert takes the next turn
   over the conversation so far. The human types nothing. With text in the say box, pressing
   it sends that text as a turn the expert takes, which is what selecting *expert* on the
   seat toggle and pressing send does. Either way the toggle marks *expert* afterwards, and
   the toggle is the way back (GUI-U11).
-  The press is visible at once. The thread shows a line saying the human asked the expert
-  to proceed, and the wait of GUI-U28 appears under it.
+  The press is visible at once. After a press with the say box empty, the thread shows a
+  line saying the human asked the expert to proceed, and the wait of GUI-U28 appears under
+  it. After a press with text, the thread shows that text as it shows any turn the human
+  sends, and no such line.
   The action is offered only when the expert has something it has not answered. With the
   say box empty it is inactive, and says why, in three states: the thread has no turn, an
   agent's reply is outstanding on the thread, or the thread's latest turn is the expert's
@@ -1663,9 +1667,10 @@ Each criterion is mechanically checkable and convertible to a red test.
   prior context — produces a complete terminal result.
 - **GUI-A33** A fast-tier reply that meets a GUI-D12 condition carries escalation
   recommendation metadata that reaches the page, and the page highlights that channel's
-  way to the expert: the *Proceed with expert* action on a thread, and the seat toggle's
-  *expert* option on the map; a reply meeting none carries no such metadata and leaves
-  both unhighlighted.
+  way to the expert: the *Proceed with expert* action on an open thread, and the seat
+  toggle's *expert* option on the map; a reply meeting none carries no such metadata and
+  leaves both unhighlighted. A parked or closed thread renders no such action (GUI-U33),
+  so a reply that lands on one highlights nothing.
 - **GUI-A34** Selecting *expert* on a channel's seat toggle forces the next turn on that
   channel to the heavy tier, and the heavy dispatch contains the channel's accumulated
   thread rather than only the last message; the log attributes the turn to the heavy tier;
@@ -1783,8 +1788,9 @@ Each criterion is mechanically checkable and convertible to a red test.
   heavy tier. The toggle's *assistant* option is the only control on the page that returns
   a channel to the fast tier. The page renders neither *Transfer to expert* nor *Return to
   assistant*, and the page source holds exactly one site that sets a channel's next seat to
-  the assistant. On a thread and on a draft the toggle renders inside the container that
-  holds the say box and its send control, and on the map it renders in the board's header.
+  the assistant. On a thread and on a draft the toggle renders in the say box's own row of
+  controls: measured in a browser at the end-to-end suite's window size, its bounding box
+  overlaps the send control's vertically. On the map it renders in the board's header.
   Verified in a browser and against the shipped page source.
 - **GUI-A64** Every shipped thread-agent prompt states the no-fishing rule and the two cases
   a question is allowed in, asserted against the prompt the driver actually composes rather
@@ -2122,23 +2128,29 @@ implementing work item waits on all twelve.
   draft. The payload is the same: it carries the text and `transfer: true`, and no `proceed`
   key. The two entries are equal once `seq`, `timestamp`, `idempotency_key` and any minted
   thread id are set aside. The say box empties, the expert takes that turn, and from the
-  press onward the seat toggle marks *expert*.
+  press onward the seat toggle marks *expert*. In a browser the thread renders that turn as
+  it renders the same turn sent with the toggle, with no line saying the human asked the
+  expert to proceed.
 - **GUI-A114** A text-less proceed is refused, appends no turn and dispatches nobody in each
   of four states: the thread has no turn, an agent's reply is outstanding on the thread,
   the thread's latest turn is the expert's, or the thread is parked or closed. In each of
   the first three states the page renders the action inactive and shows the reason, and on
   a parked or closed thread it renders no such action, verified in a browser. In all four
-  the backend rejects the same entry posted directly with a receipt that names the reason. Twice: two text-less proceeds
-  posted in one batch, or posted at once from two windows, leave exactly one accepted
+  the backend rejects the same entry posted directly with a receipt that names the reason.
+  Twice: two text-less proceeds posted in one batch, or posted at once from two windows, leave exactly one accepted
   proceed entry and one expert turn. Unchanged: a second press after the expert has
   replied, with nothing said since, is refused. After the session has ended the page offers
-  the action on no thread. Inverse: after an expert turn that failed, the same press is
-  accepted and dispatches the expert again.
+  the action on no thread. Inverse: after an agent turn that failed, the press is accepted
+  and dispatches the expert. That holds when the failed turn was the assistant's, which
+  leaves the human's turn as the thread's latest, and when it was the expert's own.
 - **GUI-A115** Under `gated`, after an assistant reply that carried a read request, nothing
   engages the expert on that thread until a human entry carrying `transfer: true` arrives
   on it. Until then the lane records no `composing` entry naming the heavy tier on that
   thread, no dispatch to the expert seat is recorded, and no `transferred` entry is written.
   A human turn sent meanwhile with the toggle marking *assistant* is taken by the assistant.
+  With no input from the human after that reply, the log gains no entry on that thread at
+  all: the page emits a proceed, and puts `transfer: true` on a turn, only on the human's
+  own press or selection.
   A `thread-turn` carrying `proceed: true` whose actor is not the human dispatches no turn
   and moves no channel, under either policy. Under `autonomous`, the policy's `transferred`
   entry is followed by no `composing` entry and no dispatch on that thread until the human's
@@ -2151,18 +2163,20 @@ implementing work item waits on all twelve.
   expert's reply that carries one, or beneath a read-request reply that is no longer the
   thread's latest turn. Verified in a browser.
 - **GUI-A117** A text-less proceed never reads as an empty turn. The thread projection
-  (§8.8), the terminal result (§8.7) and the dispatch any later turn on that thread receives
-  each list the thread's spoken turns and the expert's reply, and none lists a turn with no
-  text. The capture of a session whose log holds a text-less proceed, run from the session
-  directory alone, exits 0 and lists that thread.
+  (§8.8) and the dispatch any later turn on that thread receives each list the thread's
+  spoken turns and the expert's reply, and neither lists a turn with no text. The capture
+  of a session whose log holds a text-less proceed, run from the session directory alone,
+  exits 0, and its terminal result (§8.7) lists that thread.
 
-The what-if questions, asked of the six together. A failed expert turn after a proceed is
+The what-if questions, asked of the set together. A failed expert turn after a proceed is
 GUI-A114's inverse; making a failed seat visible on the board is the separate defect
 `agents-config-9k9.309` and is not promised here. An empty thread, an empty say box and a
 whitespace-only say box are GUI-A112's and GUI-A114's. A missing dependency is the expert
 seat failing, which is the first answer again. A double press, two windows and a repeat
-with nothing changed are GUI-A114's. The expert seat's ability to read the project once it
-is engaged is `agents-config-9k9.370`'s, and no criterion here depends on it.
+with nothing changed are GUI-A114's. A proceed pressed with text is a send (GUI-A113), so
+pressing it twice, or from two windows holding the same text, is two sends and behaves as
+two presses of send do; this set changes nothing there. The expert seat's ability to read
+the project once it is engaged is `agents-config-9k9.370`'s, and no criterion here depends on it.
 
 ## 10. Open questions for the implementing work
 
