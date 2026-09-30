@@ -561,8 +561,8 @@ its own persistence.** GUI-D35's policy and GUI-D12's conditions reach every cha
 map's included, through the note riding an answer: the note is a human turn, so a note
 meeting a condition fires, and under `autonomous` writes its own `transferred` entry. That
 is the map's only human-text route, and it is thin — the human's other gestures there, an
-apply and a dismiss, carry no text for a condition to read, and nobody presses *Transfer to
-expert* at an agent they never talk to. The three triggers below are what a transcript
+apply and a dismiss, carry no text for a condition to read, and nobody selects *expert*
+on a seat toggle for an agent they never talk to. The three triggers below are what a transcript
 condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note.
 
 1. **Hand-up** (the lane's "press"), per gesture. A reply leaving a named decision unruled,

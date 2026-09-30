@@ -439,7 +439,9 @@ anti-pattern, and it is what lets an agent tell a human something is on the boar
 is not. Rejection reasons v1 must distinguish: missing idempotency key, epoch mismatch,
 unknown event kind, unknown node id, an answer carrying neither an option nor text, a
 thread event carrying no turn, and a map mutation authored by a thread agent (GUI-D25).
-A text-less proceed with nothing to proceed on is one more, and GUI-D49 states it.
+The text-less proceed of GUI-D49 is the one thread event that carries no turn and is not
+refused for it. A text-less proceed with nothing to proceed on is one more reason, and
+GUI-D49 states it.
 
 **GUI-D17 — A rejected human action is visible on the page.** The page raises a banner
 naming the reason and stating plainly that the message was not recorded and no agent will
@@ -811,8 +813,8 @@ text — a hand-up, a judgment class and a policy move — each with its own per
 map's included, through the note riding an answer: the note is a human turn, so a note
 meeting a condition fires, and under `autonomous` writes its own `transferred` entry. That
 is the map's only human-text route, and it is thin — the human's other gestures there, an
-apply and a dismiss, carry no text for a condition to read, and nobody presses *Transfer to
-expert* at an agent they never talk to. The three triggers below are what a transcript
+apply and a dismiss, carry no text for a condition to read, and nobody selects *expert*
+on a seat toggle for an agent they never talk to. The three triggers below are what a transcript
 condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note.
 
 1. **Hand-up** (the lane's *press*), per gesture. A reply leaving a named decision unruled, or a
@@ -1006,7 +1008,8 @@ follows, and changes nothing else.
   channel to the heavy tier, carrying the accumulated thread. Selecting *assistant* sends
   the next turn on that channel to the fast tier instead, and the toggle is the only
   control that does so. Selecting a seat writes nothing to the log: the turn the human
-  sends next carries the choice (GUI-D49). Under the `gated` policy the human's own
+  sends next carries the choice (GUI-D49). On the map the human's send is an answer, so the
+  next answer carries it; an apply or a dismiss carries no seat. Under the `gated` policy the human's own
   gesture is what moves the channel (GUI-D35).
   When the agent's reply metadata recommends escalation (GUI-D11), the page highlights the
   way to the expert. On a thread that is the *Proceed with expert* action (GUI-U33). On the
