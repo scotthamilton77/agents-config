@@ -54,8 +54,8 @@ your report to the user discloses both, since the record keeps no trace of them.
 code is in `errors.md`.
 
 The union step reads each lens's raw output for the JSON object carrying `report` or
-`objections`, and reads one repeated verbatim once. The output may be that object alone, the object fenced in prose, or a
-Codex envelope whose `rawOutput` holds it. Each objection it keeps is numbered `<lens>-<n>`, counting
+`objections`, and reads a report repeated verbatim once. The output may be that object alone, the
+object fenced in prose, or a Codex envelope whose `rawOutput` holds it. Each objection it keeps is numbered `<lens>-<n>`, counting
 only that lens's kept objections in the order the lens returned them, so the same outputs always
 yield the same ids. A rerun lens can renumber its objections, which is why every skeleton entry
 repeats the objection's text: the assemble step refuses an entry whose text is not the one the union
