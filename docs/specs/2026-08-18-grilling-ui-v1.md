@@ -173,9 +173,12 @@ and nothing else, and it never needs the process that ran the session.
 
 **GUI-D28 — The launch path.** The backend serves loopback only, on a default port with a
 per-session override, taking the next free port when the default is occupied.
-The backend prints the resulting URL; `grill-with-ui` hands that URL to the human, and
-nothing opens a browser at it unless the launch was asked to with `--open` — a launch is
-usually driven by an agent on the human's behalf, and a tab nobody asked for is noise.
+The backend prints the resulting URL, and opens a browser at it only when the launch was
+asked to with `--open`. `grill-with-ui` launches with `--open`, because a human who asked
+for a board session asked for the tab. It also hands the URL to the human in its reply,
+which is the way in when the browser did not open. A launch without `--open` opens
+nothing: that launch is a test or an agent driving the backend directly, and a tab nobody
+asked for is noise.
 
 ## 3. Agent drive
 
@@ -1638,8 +1641,9 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A50** The shipped page contains no dark-theme styles and renders the single light
   palette, verified by inspection of the shipped stylesheet and in a browser.
 - **GUI-A51** The backend refuses non-loopback connections, takes the next free port when
-  the default is occupied, and reports the resulting URL; `grill-with-ui` opens that URL
-  and prints it.
+  the default is occupied, and reports the resulting URL, opening a browser at it only when
+  launched with `--open`; `grill-with-ui` launches with `--open` and gives the human that
+  URL in its reply.
 - **GUI-A52** A backend launched against a handoff with no page attached starts the
   session and folds its images; a page arriving late renders the full board from the state
   read; a page that leaves while an agent turn is in flight stops nothing — the reply
