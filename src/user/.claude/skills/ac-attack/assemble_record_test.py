@@ -451,6 +451,18 @@ def test_a6_a_target_ac_in_both_places_that_agree_drops_the_scenario_copy(attack
         "dropped the undeclared key 'scenario.target_ac'"]
 
 
+def test_a6_a_disagreeing_target_ac_on_an_objection_with_a_blank_scenario_part_still_refuses(attack):
+    item = objection("what-if", given="")
+    item["scenario"]["target_ac"] = "A2"
+    attack.output("what-if", report("what-if", item, objection("what-if")))
+    status, result = attack.union()
+    assert status == 2
+    [error] = result["errors"]
+    assert (error["code"], error["lens"]) == ("unrepairable-drift", "what-if")
+    assert "'A1'" in error["message"] and "'A2'" in error["message"]
+    assert not attack.union_path.exists()
+
+
 def test_a6_a_target_ac_in_both_places_that_disagree_is_refused_naming_both(attack):
     item = objection("what-if")
     item["scenario"]["target_ac"] = "A2"
