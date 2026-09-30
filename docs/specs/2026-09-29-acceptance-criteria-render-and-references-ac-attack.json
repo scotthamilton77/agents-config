@@ -4,146 +4,123 @@
       "covering_ac": "ACR-A24",
       "disposition": "accepted",
       "id": "behavioural-outcome-1",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
     },
     {
       "disposition": "rejected",
       "id": "behavioural-outcome-2",
-      "rationale": "The round trip is decided by a chain the spec already pins: ACR-A23 requires the workcli rendering to equal each golden byte for byte, ACR-A27 requires each golden to parse to its entries in both consumers, and ACR-A25 holds both repositories to the same golden bytes. ACR-A26 then exercises the live installed path end to end. ACR-A25 alone is not claimed to prove the round trip."
-    },
-    {
-      "covering_ac": "ACR-A16",
-      "disposition": "accepted",
-      "id": "behavioural-outcome-3",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A18",
-      "disposition": "accepted",
-      "id": "behavioural-outcome-4",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A2",
-      "disposition": "accepted",
-      "id": "behavioural-outcome-5",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A35",
-      "disposition": "accepted",
-      "id": "behavioural-outcome-6",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A36",
-      "disposition": "accepted",
-      "id": "behavioural-outcome-7",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A37",
-      "disposition": "accepted",
-      "id": "obligation-reduction-1",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A37",
-      "disposition": "accepted",
-      "id": "obligation-reduction-2",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A37",
-      "disposition": "accepted",
-      "id": "obligation-reduction-3",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A5",
-      "disposition": "accepted",
-      "id": "obligation-reduction-4",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A35",
-      "disposition": "accepted",
-      "id": "obligation-reduction-5",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A13",
-      "disposition": "accepted",
-      "id": "obligation-reduction-6",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A6",
-      "disposition": "accepted",
-      "id": "obligation-reduction-7",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A24",
-      "disposition": "accepted",
-      "id": "obligation-reduction-8",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "disposition": "rejected",
-      "id": "obligation-reduction-9",
-      "rationale": "The reciprocal source references are a maintenance device. ACR-A21, ACR-A22 and ACR-A25 observe the compatibility they protect; the parent rejected the same ground (its counterpart-marker objection) on the same basis."
-    },
-    {
-      "covering_ac": "ACR-A36",
-      "disposition": "accepted",
-      "id": "obligation-reduction-10",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A24",
-      "disposition": "accepted",
-      "id": "obligation-reduction-11",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "disposition": "rejected",
-      "id": "obligation-reduction-12",
-      "rationale": "Which source files a slice changes is placement, judged in PR review. It is not behaviour an acceptance check can observe; ACR-A27 observes the behaviour ACR-D7 protects."
-    },
-    {
-      "disposition": "rejected",
-      "id": "obligation-reduction-13",
-      "rationale": "The fixture's internal topology is implementation. ACR-D9 names both paths so ACR-A25 can compare them, and a fixture reshaped with its suites still delivers every behaviour the criteria observe."
-    },
-    {
-      "covering_ac": "ACR-A3",
-      "disposition": "accepted",
-      "id": "set-consistency-1",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
-    },
-    {
-      "covering_ac": "ACR-A30",
-      "disposition": "accepted",
-      "id": "set-consistency-2",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
+      "rationale": "ACR-A25 claims only what it observes: the fixture is one set of bytes in both repositories at the release commits. The behaviour is observed elsewhere. ACR-A23 drives the production entry point, main(), over every fixture case, and ACR-A26 renders through the installed binary and parses the result. A production path that bypasses the parser fails one of those two."
     },
     {
       "covering_ac": "ACR-A29",
       "disposition": "accepted",
-      "id": "set-consistency-3",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
+      "id": "behavioural-outcome-3",
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
     },
     {
       "disposition": "rejected",
-      "id": "what-if-1",
-      "rationale": "A second marker naming the same path changes no rendering, because the last marker wins (ACR-D1). The parent promises no transaction across concurrent tracker operations (LIFE-D4, and Out of scope: cross-system transactions); ACR-A19 pins sequential replays, which is the promise made."
+      "id": "behavioural-outcome-4",
+      "rationale": "The cross-reference is a maintenance aid stated in ACR-D5. The failure it guards against is the two copies drifting apart, and ACR-A21, ACR-A22 and ACR-A25 exclude that failure by holding both copies to one fixture. A criterion that inspects source text for a path would pin an artifact where the obligation is the shared reading."
+    },
+    {
+      "disposition": "rejected",
+      "id": "behavioural-outcome-5",
+      "rationale": "ACR-D7 is a scope boundary on the change, and no behaviour depends on it. A change to prgroom's source cannot land unseen: the repository's version guard fails a prgroom source change that neither bumps the release nor marks it partial, and the change is visible in the diff under review."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-1",
+      "rationale": "No finite check establishes that no other verb ever writes the marker. ACR-D1 fixes the writers at two, and the marker's `[work]` prefix is the facade's reserved namespace. A third writer would be a new decision amending ACR-D1, and the attack would then face it."
+    },
+    {
+      "covering_ac": "ACR-A5",
+      "disposition": "accepted",
+      "id": "obligation-reduction-2",
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
+    },
+    {
+      "covering_ac": "ACR-A5",
+      "disposition": "accepted",
+      "id": "obligation-reduction-3",
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
+    },
+    {
+      "covering_ac": "ACR-A14",
+      "disposition": "accepted",
+      "id": "obligation-reduction-4",
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
+    },
+    {
+      "covering_ac": "ACR-A13",
+      "disposition": "accepted",
+      "id": "obligation-reduction-5",
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-6",
+      "rationale": "This spec ships no consumer that writes a rendering. ACR-D3's sentence states the contract that the later slices' consumers inherit, and their own specs carry the criteria for it. The one consumer path in scope, parsing the live rendering, is ACR-A26."
+    },
+    {
+      "covering_ac": "ACR-A24",
+      "disposition": "accepted",
+      "id": "obligation-reduction-7",
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-8",
+      "rationale": "The same hole as behavioural-outcome-4, rejected on the same ground: the drift the cross-reference guards against is excluded by ACR-A21, ACR-A22 and ACR-A25."
+    },
+    {
+      "covering_ac": "ACR-A23",
+      "disposition": "accepted",
+      "id": "obligation-reduction-9",
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-10",
+      "rationale": "The same hole as behavioural-outcome-5, rejected on the same ground: ACR-D7 is a scope boundary, and a consumer source change is visible in the diff and to the version guard."
     },
     {
       "covering_ac": "ACR-A38",
       "disposition": "accepted",
+      "id": "obligation-reduction-11",
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-12",
+      "rationale": "ACR-A38 states without qualification that an item whose last marker names another path keeps its notes, so a repoint through any option fails it. An option the interface does not have needs no criterion of its own."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-13",
+      "rationale": "No check that runs inside one repository can observe the other. ACR-A25 fixes the point at which the release is judged, which is what a verification child is for. A later edit to either copy is a new change that the fixture suites of ACR-A21 to ACR-A23 still gate in its own repository."
+    },
+    {
+      "covering_ac": "ACR-A31",
+      "disposition": "accepted",
+      "id": "set-consistency-1",
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
+    },
+    {
+      "covering_ac": "ACR-A7",
+      "disposition": "accepted",
+      "id": "set-consistency-2",
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
+    },
+    {
+      "disposition": "rejected",
+      "id": "what-if-1",
+      "rationale": "Verified in workcli: deliver reads its manifest from PATH before it reconciles, and its reader answers any unreadable path with a usage error. An empty PATH is unreadable, so deliver already refuses it before writing anything, and no marker can be recorded."
+    },
+    {
+      "covering_ac": "ACR-A11",
+      "disposition": "accepted",
       "id": "what-if-2",
-      "revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
+      "revision": "sha256:513acec11192b303e5ec5ba51c6b645f3be63855a06992dc7e8d39884cf685ac"
     }
   ],
   "lenses": [
@@ -187,7 +164,13 @@
           "ACR-A29",
           "ACR-A30",
           "ACR-A31",
-          "ACR-A32"
+          "ACR-A32",
+          "ACR-A33",
+          "ACR-A34",
+          "ACR-A35",
+          "ACR-A36",
+          "ACR-A37",
+          "ACR-A38"
         ],
         "obligations": [
           {
@@ -195,63 +178,52 @@
             "kind": "result",
             "parts": [
               {
-                "discharged_by": [],
+                "discharged_by": [
+                  "ACR-A1",
+                  "ACR-A37"
+                ],
                 "id": "O1.1",
-                "statement": "`work acceptance set` writes the exact `[work] acceptance spec: <path>` marker."
+                "statement": "The exact marker names the spec; the last marker wins; absence of the marker means no named spec."
               },
               {
                 "discharged_by": [
-                  "ACR-A1",
-                  "ACR-A4",
                   "ACR-A15"
                 ],
                 "id": "O1.2",
-                "statement": "The last marker wins, absence means no named spec, and unrelated notes do not affect rendering."
+                "statement": "Non-marker notes and unrelated tracker metadata do not affect rendering."
+              },
+              {
+                "discharged_by": [],
+                "id": "O1.3",
+                "statement": "Only `work acceptance set` and `work deliver --spec` write the named-spec marker."
               },
               {
                 "discharged_by": [
                   "ACR-A1",
-                  "ACR-A2"
+                  "ACR-A37"
                 ],
-                "id": "O1.3",
-                "statement": "For an in-root path, acceptance set resolves PATH from the invoking directory, records the root-relative reference, and can repoint it without changing text."
-              },
-              {
-                "discharged_by": [],
                 "id": "O1.4",
-                "statement": "Both writing verbs record an outside-root path in root-relative form beginning with `..` rather than refusing it during the write."
-              },
-              {
-                "discharged_by": [],
-                "id": "O1.5",
-                "statement": "An empty PATH records the repository root and later renders as `spec-unreadable`."
+                "statement": "Acceptance set resolves PATH from the working directory, records it relative to the repository root, permits outside paths in `..` form, and rejects an empty PATH without writing."
               },
               {
                 "discharged_by": [
                   "ACR-A2"
+                ],
+                "id": "O1.5",
+                "statement": "Changing only the named spec is an amendment subject to the started-work gate and trail; repeating unchanged text and path writes nothing."
+              },
+              {
+                "discharged_by": [
+                  "ACR-A1",
+                  "ACR-A17",
+                  "ACR-A20"
                 ],
                 "id": "O1.6",
-                "statement": "A named-spec change follows the amendment gate and trail rules, while a set changing neither text nor path writes nothing."
-              },
-              {
-                "discharged_by": [
-                  "ACR-A18",
-                  "ACR-A19"
-                ],
-                "id": "O1.7",
-                "statement": "Delivery writes the marker with a root-relative path on the required placeholder and children."
-              },
-              {
-                "discharged_by": [
-                  "ACR-A1",
-                  "ACR-A4"
-                ],
-                "id": "O1.8",
-                "statement": "A legacy item can acquire a named spec without changing its acceptance text."
+                "statement": "Changing the spec path changes resolution, byte-identical repointing preserves output, and later spec-text edits appear without a tracker write."
               }
             ],
-            "source": "ACR-D1: “The named spec is therefore a note marker, `[work] acceptance spec: <path>`”; “Two verbs write the marker”; paths are read from the working directory and recorded relative to the repository root.",
-            "statement": "Items name specs through an append-only facade marker, and the two writing verbs normalize and amend that reference as specified."
+            "source": "ACR-D1: “The named spec is therefore a note marker, `[work] acceptance spec: <path>`... The payload of the item's last such marker is its named spec... Two verbs write the marker... No other note affects a rendering.”",
+            "statement": "Items name specs through one append-only facade marker, and acceptance-set amendments preserve the specified marker and gate semantics."
           },
           {
             "id": "O2",
@@ -259,93 +231,92 @@
             "parts": [
               {
                 "discharged_by": [
-                  "ACR-A5",
-                  "ACR-A31"
+                  "ACR-A5"
                 ],
                 "id": "O2.1",
-                "statement": "A conventional checkout yields the same root-relative resolution from its root and subdirectories."
+                "statement": "Direct root and subdirectory renders use the checkout root, and a linked worktree whose `.git` is a file uses its own root."
               },
               {
                 "discharged_by": [],
                 "id": "O2.2",
-                "statement": "A linked worktree uses that worktree's root."
+                "statement": "Repository discovery resolves a symlinked working directory before searching its ancestors."
+              },
+              {
+                "discharged_by": [],
+                "id": "O2.3",
+                "statement": "When multiple `.git` ancestors exist, repository discovery chooses the nearest one."
               },
               {
                 "discharged_by": [
                   "ACR-A31"
                 ],
-                "id": "O2.3",
-                "statement": "Absolute and lexically escaping recorded paths are refused, while lexically internal relative paths render."
+                "id": "O2.4",
+                "statement": "Absolute and lexically escaping paths are refused; lexically internal paths proceed."
               },
               {
                 "discharged_by": [
                   "ACR-A32"
                 ],
-                "id": "O2.4",
-                "statement": "Resolved symlinks may stay inside the root but may not escape it."
+                "id": "O2.5",
+                "statement": "A symlink escaping the resolved root is refused, while an internal symlink is followed."
               },
               {
                 "discharged_by": [
-                  "ACR-A12"
+                  "ACR-A12",
+                  "ACR-A35"
                 ],
-                "id": "O2.5",
-                "statement": "A spec-naming item rendered outside a repository is refused."
-              },
-              {
-                "discharged_by": [],
                 "id": "O2.6",
-                "statement": "An item naming no spec renders without a repository root."
+                "statement": "A spec-naming item without a repository root is refused, while an item naming no spec needs no root."
               }
             ],
-            "source": "ACR-D2 defines the nearest resolved ancestor holding `.git` as the root, says a linked worktree uses its own root, lists absolute, lexical and symlink escape refusals, and permits an unnamed item to render without a root.",
-            "statement": "Spec resolution is bounded by the correct repository root, including lexical and resolved-symlink confinement."
+            "source": "ACR-D2: “The repository root is the nearest ancestor of the resolved working directory holding a `.git` entry... In a linked worktree it is that worktree's root... A symlink whose target stays inside the root is followed. A symlink whose target lies outside is refused.”",
+            "statement": "Named specs resolve reproducibly within the current repository root, including linked-worktree and symlink boundaries."
           },
           {
             "id": "O3",
             "kind": "result",
             "parts": [
               {
-                "discharged_by": [],
-                "id": "O3.1",
-                "statement": "The successful facade envelope has data exactly containing the requested ID and markdown M."
-              },
-              {
                 "discharged_by": [
-                  "ACR-A3",
                   "ACR-A13",
-                  "ACR-A14"
+                  "ACR-A23"
                 ],
-                "id": "O3.2",
-                "statement": "M uses the specified headings, quoting, bullets, LF joining, terminal LF, and empty-section layout."
+                "id": "O3.1",
+                "statement": "The envelope data is exactly `{id, markdown}`, and markdown has the specified headings, blank lines, quoted description, criterion bullets, LF endings, and no extra material."
               },
               {
                 "discharged_by": [
                   "ACR-A14",
                   "ACR-A27"
                 ],
+                "id": "O3.2",
+                "statement": "Descriptions containing criterion-shaped text, headings, fences, blank lines, and CRLF breaks round-trip as quoted description rather than criteria."
+              },
+              {
+                "discharged_by": [],
                 "id": "O3.3",
-                "statement": "All description lines remain quoted and round-trip through Python splitlines behavior."
+                "statement": "Description lines follow the complete line-boundary behavior of Python's `str.splitlines`, not only LF and CRLF."
               },
               {
-                "discharged_by": [
-                  "ACR-A15",
-                  "ACR-A17"
-                ],
+                "discharged_by": [],
                 "id": "O3.4",
-                "statement": "Title, item metadata, unrelated notes, spec path, and time do not enter M."
+                "statement": "Non-ASCII markdown content is preserved in its UTF-8 representation."
+              },
+              {
+                "discharged_by": [],
+                "id": "O3.5",
+                "statement": "A rendering consumer writes M's UTF-8 bytes verbatim."
               },
               {
                 "discharged_by": [
-                  "ACR-A23",
-                  "ACR-A25",
-                  "ACR-A26"
+                  "ACR-A15"
                 ],
-                "id": "O3.5",
-                "statement": "Consumers receive or write the rendering bytes without transformation."
+                "id": "O3.6",
+                "statement": "Title, labels, priority, status, and unrelated notes do not enter the rendering."
               }
             ],
-            "source": "ACR-D3: “`work acceptance render ID` answers in the facade's JSON envelope, whose `data` is `{\"id\": ID, \"markdown\": M}`”; it then defines every line of M and what M excludes.",
-            "statement": "The render verb returns the exact facade success value and exact UTF-8 Markdown representation defined by ACR-D3."
+            "source": "ACR-D3: “`work acceptance render ID` answers in the facade's JSON envelope... The rendering is the UTF-8 encoding of M, and a consumer writes those bytes verbatim... Lines split as Python's `str.splitlines` splits them... M holds nothing else.”",
+            "statement": "Successful rendering has the exact JSON payload, markdown layout, line handling, and byte representation specified by ACR-D3."
           },
           {
             "id": "O4",
@@ -355,51 +326,43 @@
                 "discharged_by": [
                   "ACR-A3",
                   "ACR-A4",
-                  "ACR-A8",
                   "ACR-A23"
                 ],
                 "id": "O4.1",
-                "statement": "Blank lines are ignored and complete citation lines resolve in order only when the item names a spec."
+                "statement": "Blank field lines are ignored, equivalent citation layouts resolve equally, and citations retain field order."
               },
               {
                 "discharged_by": [
-                  "ACR-A7",
                   "ACR-A8"
                 ],
                 "id": "O4.2",
-                "statement": "Non-citation lines remain text, including ID-like prose and all lines on an item naming no spec."
+                "statement": "Only a whole citation line on an item naming a spec is a citation; all other lines, including lines on unnamed items, are text."
               },
               {
                 "discharged_by": [
-                  "ACR-A6",
-                  "ACR-A23"
+                  "ACR-A7"
                 ],
                 "id": "O4.3",
-                "statement": "Ordinary generated IDs use the normalized item-ID prefix and nonblank-line position."
+                "statement": "An explicit criterion line preserves its valid ID and text."
               },
               {
-                "discharged_by": [],
+                "discharged_by": [
+                  "ACR-A6"
+                ],
                 "id": "O4.4",
-                "statement": "Generated-ID normalization removes every non-ASCII alphanumeric character and uses `ITEM` when no ASCII alphanumeric character remains."
+                "statement": "Other text lines receive the exact normalized P-Tn ID and stripped text, including the `ITEM` fallback."
               },
               {
                 "discharged_by": [
                   "ACR-A3",
-                  "ACR-A6"
+                  "ACR-A30"
                 ],
                 "id": "O4.5",
-                "statement": "Cited text is not recursively treated as citations, and wrapped field lines remain separate units."
-              },
-              {
-                "discharged_by": [
-                  "ACR-A10"
-                ],
-                "id": "O4.6",
-                "statement": "Any two units yielding the same ID are refused."
+                "statement": "Resolved criterion text is not reinterpreted as citations, and an empty cited entry contributes no bullet."
               }
             ],
-            "source": "ACR-D4 defines blank lines, citation recognition, text lines, explicit entry lines, generated `P-Tn` IDs, the `ITEM` fallback, and line-based wrapping.",
-            "statement": "Acceptance-field lines are classified as citations or text, and each resulting criterion receives the required explicit or generated ID."
+            "source": "ACR-D4: “Each nonblank line of the field is one unit... On an item naming a spec, a citation line matches... On an item naming no spec, every line is a text line... Any other text line renders as `- **P-Tn**`...”",
+            "statement": "The acceptance field is classified line by line into citations and text, with stable explicit or generated IDs."
           },
           {
             "id": "O5",
@@ -409,61 +372,49 @@
                 "discharged_by": [
                   "ACR-A21",
                   "ACR-A22",
+                  "ACR-A27",
                   "ACR-A28"
                 ],
                 "id": "O5.1",
-                "statement": "Both parsers return the fixture's entries in document order, including represented continuation, fence, empty and repeated-entry cases."
+                "statement": "The fixture-represented heading scope, continuation, entry-opening, fence, empty-entry, and ordering rules produce the expected entries in both parsers."
               },
               {
                 "discharged_by": [],
                 "id": "O5.2",
-                "statement": "Both parsers recognize acceptance-criteria headings case-insensitively and stop at the next same-or-shallower heading."
+                "statement": "A heading is in scope when its text contains the phrase `acceptance criteria`, even when other heading text surrounds that phrase."
+              },
+              {
+                "discharged_by": [
+                  "ACR-A21",
+                  "ACR-A28"
+                ],
+                "id": "O5.3",
+                "statement": "Spec-lint returns empty and repeated entries in document order."
               },
               {
                 "discharged_by": [
                   "ACR-A29"
                 ],
-                "id": "O5.3",
-                "statement": "Spec-lint's existing checks continue counting only entries with text and retain their existing results."
-              },
-              {
-                "discharged_by": [
-                  "ACR-A9"
-                ],
                 "id": "O5.4",
-                "statement": "A citation resolves only when exactly one entry defines its ID; unresolved and ambiguous IDs are refused."
+                "statement": "Empty entries define no criterion, need no evidence, and do not change existing lint results for text-bearing entries."
               },
               {
                 "discharged_by": [
-                  "ACR-A28",
-                  "ACR-A29",
+                  "ACR-A3",
+                  "ACR-A9",
                   "ACR-A30"
                 ],
                 "id": "O5.5",
-                "statement": "An empty entry contributes no rendered criterion, while other criteria keep field order."
+                "statement": "A citation resolves only to one defining entry; missing and repeated definitions are refused, while one empty definition contributes nothing."
               },
               {
                 "discharged_by": [],
                 "id": "O5.6",
-                "statement": "Each parser copy's source names the other copy's path."
-              },
-              {
-                "discharged_by": [
-                  "ACR-A20"
-                ],
-                "id": "O5.7",
-                "statement": "Changes to cited spec text appear on the next render without a tracker write."
-              },
-              {
-                "discharged_by": [
-                  "ACR-A11"
-                ],
-                "id": "O5.8",
-                "statement": "A non-UTF-8 spec is unparseable and refused."
+                "statement": "Each parser module's source names the path of its counterpart."
               }
             ],
-            "source": "ACR-D5 defines the heading scope, entry and continuation grammar, empty and repeated entries, two parser copies, reciprocal source references, citation resolution, and UTF-8 requirement.",
-            "statement": "Spec-lint and workcli implement the same widened criteria-entry grammar and resolution behavior."
+            "source": "ACR-D5: “Its scope is every heading whose text contains `acceptance criteria`, case-insensitively... Each following line joins the entry... Spec-lint exposes `parse_criteria_entries(text)`... Workcli carries a counterpart module. Each copy's source names the other's path.”",
+            "statement": "Spec-lint and workcli share the widened entry grammar and agree on ordered entries, empty entries, repetition, and citation resolution."
           },
           {
             "id": "O6",
@@ -472,44 +423,45 @@
               {
                 "discharged_by": [
                   "ACR-A9",
-                  "ACR-A10",
                   "ACR-A11",
                   "ACR-A12",
-                  "ACR-A23",
                   "ACR-A31",
-                  "ACR-A32"
+                  "ACR-A32",
+                  "ACR-A36"
                 ],
                 "id": "O6.1",
-                "statement": "Each listed render failure returns `E_RENDER` with its required cause and applicable ID or path."
-              },
-              {
-                "discharged_by": [],
-                "id": "O6.2",
-                "statement": "An unknown item retains the existing `E_NOT_FOUND` behavior."
-              },
-              {
-                "discharged_by": [],
-                "id": "O6.3",
-                "statement": "When failures from different rows coexist, checks run in the table's order and report the first one."
+                "statement": "Missing, unreadable, non-UTF-8, unresolved, ambiguous, path, notes, and root failures return their specified E_RENDER cause and details; unknown items retain E_NOT_FOUND."
               },
               {
                 "discharged_by": [
-                  "ACR-A10",
-                  "ACR-A23"
+                  "ACR-A10"
                 ],
-                "id": "O6.4",
-                "statement": "Resolution and duplicate failures are deterministic in field order."
+                "id": "O6.2",
+                "statement": "Every duplicate pairing, repeated citation, and empty-entry duplicate is refused with duplicate-id and the offending ID."
+              },
+              {
+                "discharged_by": [
+                  "ACR-A23",
+                  "ACR-A24"
+                ],
+                "id": "O6.3",
+                "statement": "When several failures apply, path, file, and field-unit checks select the first failure in the specified order."
               },
               {
                 "discharged_by": [
                   "ACR-A16"
                 ],
+                "id": "O6.4",
+                "statement": "Successful and refused renders make no mutating backend call and write no file."
+              },
+              {
+                "discharged_by": [],
                 "id": "O6.5",
-                "statement": "Successful and refused rendering performs no backend mutation or file write."
+                "statement": "Repeated renders of equal refused input return the same complete refusal."
               }
             ],
-            "source": "ACR-D6 defines `E_RENDER`, detail fields, `E_NOT_FOUND`, the cause table, table-order evaluation, field-order unit checks, first-failure reporting, and no writes.",
-            "statement": "Refused rendering uses the closed ACR-D6 error vocabulary, payloads, ordering and no-write behavior while preserving unknown-item handling."
+            "source": "ACR-D6: “A refused rendering returns error code `E_RENDER`... `detail.cause` comes from a closed vocabulary... Checks run in the table's order... The first failure is the one reported, so equal input always gets the same refusal... Rendering never writes.”",
+            "statement": "Rendering failures use the closed E_RENDER cause vocabulary, report the appropriate offending fields, choose failures deterministically, and never mutate state."
           },
           {
             "id": "O7",
@@ -520,16 +472,16 @@
                   "ACR-A27"
                 ],
                 "id": "O7.1",
-                "statement": "Spec-lint and prgroom recover the required entries from every golden rendering, including hostile description shapes."
+                "statement": "Spec-lint and prgroom recover exactly the rendered acceptance entries even when quoted descriptions contain parser-shaped text."
               },
               {
                 "discharged_by": [],
                 "id": "O7.2",
-                "statement": "Prgroom, review-panel and ac-attack sources remain unchanged, avoiding a prgroom release and reinstall."
+                "statement": "Prgroom remains unchanged, and review-panel and ac-attack do not gain entry-parsing logic; only spec-lint's existing grammar changes."
               }
             ],
-            "source": "ACR-D7: “Only spec-lint's grammar changes. The verdict poster is unchanged”; it also states that review-panel and ac-attack parse no entries.",
-            "statement": "Existing consumers retain their parser behavior and only spec-lint's grammar source changes in this slice."
+            "source": "ACR-D7: “Only spec-lint's grammar changes. The verdict poster is unchanged... The review-panel and ac-attack emitters parse no entries.”",
+            "statement": "Existing consumers retain their parser boundaries while remaining compatible with rendered output."
           },
           {
             "id": "O8",
@@ -540,27 +492,50 @@
                   "ACR-A18"
                 ],
                 "id": "O8.1",
-                "statement": "Every reconciled or minted item keeps its manifest text and receives the root-relative named spec, including subdirectory invocation."
-              },
-              {
-                "discharged_by": [
-                  "ACR-A8",
-                  "ACR-A18",
-                  "ACR-A23"
-                ],
-                "id": "O8.2",
-                "statement": "An ID-list manifest AC becomes citations while punctuation or prose remains text."
+                "statement": "Delivery marks each reconciled or minted unmarked item with the root-relative path, including outside-root paths and invocations from subdirectories."
               },
               {
                 "discharged_by": [
                   "ACR-A19"
                 ],
+                "id": "O8.2",
+                "statement": "Replays write at most one marker per item, repair a mint-to-marker interruption, and leave completed reconciliations unchanged."
+              },
+              {
+                "discharged_by": [
+                  "ACR-A38"
+                ],
                 "id": "O8.3",
-                "statement": "Interrupted replay adds missing markers exactly once, while completed trees, including older ones, gain none."
+                "statement": "An item already naming another spec is not repointed and is identified in the reply."
+              },
+              {
+                "discharged_by": [],
+                "id": "O8.4",
+                "statement": "When several items name other specs, the reply lists every one of them."
+              },
+              {
+                "discharged_by": [],
+                "id": "O8.5",
+                "statement": "`work deliver --spec` does not accept a `--why` option."
+              },
+              {
+                "discharged_by": [
+                  "ACR-A33"
+                ],
+                "id": "O8.6",
+                "statement": "Every delivered item's acceptance field retains its manifest AC text byte for byte."
+              },
+              {
+                "discharged_by": [
+                  "ACR-A8",
+                  "ACR-A34"
+                ],
+                "id": "O8.7",
+                "statement": "Manifest ID lists become citations, while trailing punctuation and prose remain text."
               }
             ],
-            "source": "ACR-D8 requires the marker on reconciled placeholders and every manifest child, preserves manifest AC text, skips an already matching last marker, and preserves the completed-reconciliation short circuit.",
-            "statement": "Spec delivery propagates the named-spec marker without replacing manifest text and converges correctly across interruption and replay."
+            "source": "ACR-D8: “Reconciling a placeholder, `work deliver --spec PATH` writes the ACR-D1 marker... it also marks every manifest child... Deliver never repoints... its reply lists each item whose last marker names another path. Deliver takes no `--why`... Each item keeps its manifest AC text.”",
+            "statement": "Spec delivery marks every applicable placeholder and child without repointing, preserves manifest text, recovers interrupted work, and reports conflicts."
           },
           {
             "id": "O9",
@@ -568,93 +543,43 @@
             "parts": [
               {
                 "discharged_by": [
-                  "ACR-A24"
-                ],
-                "id": "O9.1",
-                "statement": "Every F1 through F13 rule has at least one case, and the agents-config harness detects a missing case."
-              },
-              {
-                "discharged_by": [
                   "ACR-A21",
                   "ACR-A22",
                   "ACR-A23",
                   "ACR-A27"
                 ],
+                "id": "O9.1",
+                "statement": "Both parser implementations and the renderer produce the fixture's expected entries, golden bytes, and refusals."
+              },
+              {
+                "discharged_by": [
+                  "ACR-A24"
+                ],
                 "id": "O9.2",
-                "statement": "Parser and renderer results over the fixture equal `entries.json`, golden bytes and listed refusals."
+                "statement": "For every fixture rule F1 through F14, a deliberately violating parser or renderer variant is caught by a case tagged with that rule."
               },
               {
                 "discharged_by": [
                   "ACR-A25"
                 ],
                 "id": "O9.3",
-                "statement": "The two delivered fixture copies are byte-identical and both suites pass over them."
+                "statement": "At the commits delivering Slices A through C, the fixture copies are byte-identical and both suites pass."
               },
               {
                 "discharged_by": [],
                 "id": "O9.4",
-                "statement": "The fixture lives at the two specified paths and retains the specified directory and file schema."
+                "statement": "The agents-config fixture and workcli's vendored copy remain byte-identical in the delivered state, not only at the Slice A-to-C checkpoints."
               },
               {
                 "discharged_by": [
                   "ACR-A26"
                 ],
                 "id": "O9.5",
-                "statement": "After human installation, live work output round-trips through spec-lint to the cited nonempty entries in field order."
+                "statement": "After human installation, the live work command renders an item citing this spec and spec-lint recovers the cited nonempty entries in order."
               }
             ],
-            "source": "ACR-D9 fixes both fixture paths, the `repo/` and `outside/` directories, the JSON and golden-file schema, and rules F1 through F13.",
-            "statement": "Both repositories share a byte-identical round-trip fixture with the prescribed topology, cases and expected results."
-          },
-          {
-            "id": "O10",
-            "kind": "guarantee",
-            "parts": [
-              {
-                "discharged_by": [
-                  "ACR-A1",
-                  "ACR-A2",
-                  "ACR-A3",
-                  "ACR-A4",
-                  "ACR-A5",
-                  "ACR-A6",
-                  "ACR-A7",
-                  "ACR-A8",
-                  "ACR-A9",
-                  "ACR-A10",
-                  "ACR-A11",
-                  "ACR-A12",
-                  "ACR-A13",
-                  "ACR-A14",
-                  "ACR-A15",
-                  "ACR-A16",
-                  "ACR-A17",
-                  "ACR-A18",
-                  "ACR-A19",
-                  "ACR-A20",
-                  "ACR-A22",
-                  "ACR-A23",
-                  "ACR-A30",
-                  "ACR-A31",
-                  "ACR-A32"
-                ],
-                "id": "O10.1",
-                "statement": "Workcli render, set and delivery checks use the fake backend and injected working directories."
-              },
-              {
-                "discharged_by": [
-                  "ACR-A21",
-                  "ACR-A24",
-                  "ACR-A27",
-                  "ACR-A28",
-                  "ACR-A29"
-                ],
-                "id": "O10.2",
-                "statement": "Agents-config checks exercise spec-lint and prgroom over fixture files without invoking the tracker."
-              }
-            ],
-            "source": "Testing decisions require workcli tests to drive `main()` with a fake backend and injected working directory, materialize real symlinks and modes in a temporary directory, and avoid the tracker CLI and user's tracker.",
-            "statement": "Verification uses isolated mechanical harnesses rather than the real tracker or user files."
+            "source": "ACR-D9: “The fixture lives in agents-config... Workcli vendors a byte-identical copy... `cases.json` lists each case... `entries.json` lists the entries expected... The rules are F1–F14.” Also: “Slice E: cross-repository verification.”",
+            "statement": "The two repositories share a fixture that exercises F1 through F14, detects violations, and proves parser and installed-renderer interoperability."
           }
         ]
       }
@@ -671,401 +596,354 @@
   "objections": [
     {
       "ground": {
-        "reason": "ACR-D9 promises cases for the rules exercised. ACR-A24 requires only a rule label and at least one case carrying it. Its check names parser equality and unchanged lint results, neither of which establishes that a labeled case exercises the rule.",
-        "rule": "observable-obligation"
+        "reason": "ACR-A24 promises that each fixture rule detects a renderer or parser variant violating that rule. Its check requires only that each variant fail a case tagged with the rule. It does not require an isolated mutation or establish that the tagged rule caused the failure, so an unrelated crash can satisfy the check.",
+        "rule": "verification-contract"
       },
       "id": "behavioural-outcome-1",
       "lens": "behavioural-outcome",
-      "objection": "A fixture can claim coverage through labels while omitting the inputs and observations needed to exercise the labeled behavior.",
-      "obligation": "Each fixture rule F1 through F13 is exercised by a case that distinguishes its required behavior from failure.",
+      "objection": "The mutation check can credit a fixture rule for a failure caused by an unrelated defect.",
+      "obligation": "Each fixture rule must distinguish an implementation that violates that rule from one that preserves it.",
       "scenario": {
-        "expect": "The coverage check passes because F12 has a labeled case, while no case creates a symlink and the escaping-symlink behavior remains untested.",
-        "given": "A fixture case is tagged F12 but contains no symlink setup.",
-        "when": "The ACR-A24 harness and its named parser and lint checks run."
+        "expect": "The tagged case fails and ACR-A24 passes, while the fixture has not demonstrated that it detects the targeted rule violation.",
+        "given": "A variant violates F12 but also introduces an import-time error, and its listed F12-tagged case fails before exercising symlink handling.",
+        "when": "The Workcli suite runs the ACR-A24 check."
       },
       "target_ac": "ACR-A24"
     },
     {
       "ground": {
-        "reason": "The traceability table makes ACR-A25 a verification child for cross-repository rendering and parsing outcomes. ACR-A25 and its check require only byte-identical fixture copies and passing suites. Those artifacts can agree while the public behaviors remain wrong or unexercised.",
+        "reason": "The traceability table says ACR-A25 verifies the parent rendering and parser outcomes, but ACR-A25 and its check observe only byte-identical fixture files and green suites. Byte identity is valid for the fixture deliverable, but suite success is evidence rather than the promised runtime behaviour.",
         "rule": "observable-obligation"
       },
       "id": "behavioural-outcome-2",
       "lens": "behavioural-outcome",
-      "objection": "Identical fixtures and green suites can be accepted as proof of cross-repository behavior without establishing the promised round trip.",
-      "obligation": "The delivered workcli renderer and agents-config consumers agree on the specified rendering and parsing behavior.",
+      "objection": "Identical fixtures and passing suites can discharge cross-repository behavioural obligations without directly observing those obligations.",
+      "obligation": "The delivered implementations in both repositories must exhibit the parent rendering, parsing and empty-entry behaviours.",
       "scenario": {
-        "expect": "The fixture digests match and both suites pass, while an actual workcli rendering does not round-trip through the agents-config parser.",
-        "given": "Both repositories contain the same fixture and both suites omit the public integration path or share the same incorrect oracle.",
-        "when": "The ACR-A25 digest and suite checks run."
+        "expect": "Fixture digests match and both suites pass, so ACR-A25 passes, while a production parser path still violates a parent behaviour that the suites do not exercise.",
+        "given": "Both repositories contain identical fixtures and their selected fixture tests pass, but one production entry point bypasses the parser exercised by those tests.",
+        "when": "The ACR-A25 verification row compares digests and records the two suite results."
       },
       "target_ac": "ACR-A25"
     },
     {
       "ground": {
-        "reason": "ACR-A16 promises that both successful and refused renderings make no mutation. Its check setup names only one rendered item and does not require one successful case and one refused case.",
+        "reason": "ACR-A29 combines entry parsing, document-level definition, slice-reference failure and evidence-row exemption. Its named check observes parsed entries, the slice failure and unchanged corpus lint results, but it never sets up an otherwise-valid empty entry without an evidence row and asserts that no evidence error occurs.",
         "rule": "verification-contract"
       },
       "id": "behavioural-outcome-3",
       "lens": "behavioural-outcome",
-      "objection": "Mutation on the refusal path can escape the named check.",
-      "obligation": "Every rendering path, including refusal paths, leaves the backend and filesystem unchanged.",
+      "objection": "The evidence-row exemption can be absent while every observation named for ACR-A29 passes.",
+      "obligation": "An empty criterion entry must not require an evidence row.",
       "scenario": {
-        "expect": "The successful-render snapshot and backend-log check pass, while a refused rendering writes a diagnostic file or mutates backend state.",
-        "given": "A renderer is pure on success but mutates state immediately before returning E_RENDER.",
-        "when": "The ACR-A16 check runs only its single successful rendering."
-      },
-      "target_ac": "ACR-A16"
-    },
-    {
-      "ground": {
-        "reason": "ACR-A18 combines three independently deliverable results: preserving manifest AC text, recording the root-relative spec path, and producing resolved rendering. Its check observes marker count and rendered entries but does not inspect preservation of the stored text or explicitly exercise subdirectory path recording.",
-        "rule": "one-obligation"
-      },
-      "id": "behavioural-outcome-4",
-      "lens": "behavioural-outcome",
-      "objection": "Delivery can rewrite the manifest AC field and still pass the marker and rendering observations.",
-      "obligation": "Manifest-text preservation, root-relative marker recording, and downstream citation rendering require independently decidable criteria.",
-      "scenario": {
-        "expect": "The check sees one marker and the expected rendered entries, while the item no longer keeps its original manifest AC text.",
-        "given": "Delivery replaces each manifest AC with a canonical citation line and writes a usable marker.",
-        "when": "The ACR-A18 fake-backend delivery and rendering check runs."
-      },
-      "target_ac": "ACR-A18"
-    },
-    {
-      "ground": {
-        "reason": "ACR-D1 says a named-spec amendment passes the started-work gate when the required --why is supplied. ACR-A2 and its check establish only refusal without --why; they name no successful amendment with --why.",
-        "rule": "verification-contract"
-      },
-      "id": "behavioural-outcome-5",
-      "lens": "behavioural-outcome",
-      "objection": "An implementation may refuse every named-spec amendment after work starts, including properly justified amendments.",
-      "obligation": "A started item accepts a named-spec change when the caller supplies the required justification.",
-      "scenario": {
-        "expect": "The refusal-without-why and repeat-no-write checks pass, while the same amendment with --why is also refused.",
-        "given": "The started-work gate rejects all named-spec changes regardless of whether --why is present.",
-        "when": "The ACR-A2 check exercises only the missing-why refusal and unchanged repeat."
-      },
-      "target_ac": "ACR-A2"
-    },
-    {
-      "ground": {
-        "reason": "ACR-D2 promises that an item naming no spec renders without a repository root. ACR-A12 covers only a spec-naming item outside a repository, and no criterion or check exercises the no-spec case outside a repository.",
-        "rule": "verification-contract"
-      },
-      "id": "behavioural-outcome-6",
-      "lens": "behavioural-outcome",
-      "objection": "The renderer can incorrectly require a repository root for every item without failing any named check.",
-      "obligation": "An item with no named spec renders successfully when invoked outside a Git repository.",
-      "scenario": {
-        "expect": "All specified checks pass, while the no-spec item is incorrectly refused with no-repository-root.",
-        "given": "The renderer looks up a repository root before checking whether the item names a spec.",
-        "when": "A no-spec item is rendered outside any Git repository."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "ACR-D6 preserves E_NOT_FOUND for an unknown item, but no acceptance criterion or check invokes rendering with an unknown item ID or decides that result.",
-        "rule": "verification-contract"
-      },
-      "id": "behavioural-outcome-7",
-      "lens": "behavioural-outcome",
-      "objection": "The new renderer may replace the established unknown-item result with E_RENDER or another error while every listed criterion passes.",
-      "obligation": "Rendering an unknown item preserves the existing E_NOT_FOUND response.",
-      "scenario": {
-        "expect": "The listed checks pass, while the unknown item returns E_RENDER instead of E_NOT_FOUND.",
-        "given": "The render verb maps every backend lookup failure to its new rendering error.",
-        "when": "A caller runs work acceptance render with an unknown item ID."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "No check observes whether acceptance set persists the named spec using the required marker spelling. Rendering can use different storage and still pass every check.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-1",
-      "lens": "obligation-reduction",
-      "objection": "The implementation may omit the required `[work] acceptance spec: <path>` note written by `work acceptance set`.",
-      "obligation": "O1.1",
-      "scenario": {
-        "expect": "The item contains the exact `[work] acceptance spec: <path>` marker.",
-        "given": "An item has no named-spec marker.",
-        "when": "`work acceptance set ID TEXT --spec PATH` stores the path in an alternative backend location and rendering resolves it correctly."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "The path-refusal criteria start with an already recorded path. No check exercises either writing verb with an outside-root path and observes the required root-relative `..` form.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-2",
-      "lens": "obligation-reduction",
-      "objection": "A writing verb may reject an outside-root path immediately or record it in another form, even though the design requires recording it and deferring refusal to rendering.",
-      "obligation": "O1.4",
-      "scenario": {
-        "expect": "The verb records a root-relative path beginning with `..`; a later rendering refuses it.",
-        "given": "A readable spec lies outside the repository.",
-        "when": "`work acceptance set --spec` or `work deliver --spec` is invoked with that path and instead rejects it or stores an absolute path."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "The what-if table commits empty PATH to a specific normalization and refusal, but no stated fixture rule or check requires that case.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-3",
-      "lens": "obligation-reduction",
-      "objection": "An empty `--spec` value may receive arbitrary handling while all listed checks pass.",
-      "obligation": "O1.5",
-      "scenario": {
-        "expect": "The repository root is recorded and rendering returns `E_RENDER` with cause `spec-unreadable`.",
-        "given": "The command is run inside a repository with an empty PATH.",
-        "when": "`work acceptance set ID TEXT --spec ''` rejects the argument or records a different path."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "The root and subdirectory checks cover a conventional checkout, but no check runs from a linked worktree and distinguishes its root from the main checkout or common Git directory.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-4",
-      "lens": "obligation-reduction",
-      "objection": "Root discovery may choose the wrong checkout in a linked worktree.",
-      "obligation": "O2.2",
-      "scenario": {
-        "expect": "The linked worktree's own root bounds path resolution.",
-        "given": "The item is rendered in a linked worktree whose `.git` entry points elsewhere.",
-        "when": "The implementation treats the main checkout or Git common directory as the repository root."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "ACR-A12 checks only the spec-naming case outside a repository. No check observes the promised behavior of an item that names no spec.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-5",
-      "lens": "obligation-reduction",
-      "objection": "The renderer may unnecessarily require a repository root for tracker-only criteria.",
-      "obligation": "O2.6",
-      "scenario": {
-        "expect": "The item renders without looking for a repository root.",
-        "given": "An item names no spec and the working directory has no `.git` ancestor.",
-        "when": "The renderer returns `no-repository-root`."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "The successful-render checks compare markdown bytes or parsed entries. None observes the complete success envelope, including the returned item ID and the absence of extra data members.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-6",
-      "lens": "obligation-reduction",
-      "objection": "A successful render may return the right markdown in the wrong facade envelope.",
-      "obligation": "O3.1",
-      "scenario": {
-        "expect": "The success data is exactly `{\"id\": ID, \"markdown\": M}`.",
-        "given": "The generated markdown equals every golden file.",
-        "when": "The command returns data without `id`, with the wrong `id`, or with additional success fields."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "ACR-A6 is checked through fixed fixture cases, while ACR-A24 requires only one F6 case. No required scenario exercises an item ID containing no ASCII letters or digits.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-7",
-      "lens": "obligation-reduction",
-      "objection": "Generated IDs may fail to use the `ITEM` fallback for punctuation-only or non-ASCII item IDs.",
-      "obligation": "O4.4",
-      "scenario": {
-        "expect": "The generated criterion ID starts with `ITEM-T` and matches the criterion-ID pattern.",
-        "given": "The item ID is `---` and its field contains one ordinary text line.",
-        "when": "The renderer derives an empty prefix or retains disallowed characters."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "The fixture rules do not require cases for case-insensitive heading recognition or termination at the next same-or-shallower heading. Parser equality on an unconstrained fixture does not cover those branches.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-8",
-      "lens": "obligation-reduction",
-      "objection": "Either parser may use a narrower or wider section scope than ACR-D5 while satisfying every fixture check.",
-      "obligation": "O5.2",
-      "scenario": {
-        "expect": "Entries under the mixed-case acceptance heading are returned, while the bullet after the following peer heading is excluded.",
-        "given": "A document contains `## Acceptance Criteria`, an entry, then `## Notes` and another criterion-shaped bullet.",
-        "when": "The workcli counterpart parser is case-sensitive or continues parsing through `## Notes`."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "Behavioral parser checks do not inspect the two source files for the required reciprocal path references.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-9",
-      "lens": "obligation-reduction",
-      "objection": "The two grammar copies may omit the source-level cross-reference that the design requires.",
-      "obligation": "O5.6",
-      "scenario": {
-        "expect": "Each grammar source names the path of its counterpart.",
-        "given": "Both parsers produce every expected fixture entry.",
-        "when": "Their source files contain no reference to one another."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "The refusal criteria enumerate rendering failures for known items, but none invokes the verb with an unknown item and checks preservation of `E_NOT_FOUND`.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-10",
-      "lens": "obligation-reduction",
-      "objection": "An unknown item may be converted to `E_RENDER` or another error.",
-      "obligation": "O6.2",
-      "scenario": {
-        "expect": "The existing `E_NOT_FOUND` response is returned.",
-        "given": "The requested item ID does not exist.",
-        "when": "`work acceptance render` reports `E_RENDER` instead."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "F7 requires first-failure behavior only for unresolved, ambiguous, and duplicate IDs. No check fixes precedence across the earlier path and file causes and later unit failures.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-11",
-      "lens": "obligation-reduction",
-      "objection": "The implementation may report failures in an order different from ACR-D6 when failures from different cause classes coexist.",
-      "obligation": "O6.3",
-      "scenario": {
-        "expect": "The missing-spec failure is reported because file checks precede unit-ID checks.",
-        "given": "An item names a missing spec and its field also contains two explicit units yielding the same ID.",
-        "when": "The renderer checks units first and reports `duplicate-id`."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "ACR-A27 preserves observed parser results, but no check observes the source-change boundary stated by ACR-D7 or whether a prgroom release and reinstall were introduced.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-12",
-      "lens": "obligation-reduction",
-      "objection": "The slice may modify prgroom, review-panel, or ac-attack despite the decision that only spec-lint's grammar changes.",
-      "obligation": "O7.2",
-      "scenario": {
-        "expect": "Prgroom, review-panel, and ac-attack sources remain unchanged and no prgroom release is required.",
-        "given": "All golden renderings still parse to the expected entries.",
-        "when": "The implementation rewrites prgroom's parser without changing its fixture-visible behavior."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "The checks consume a fixture and compare its two copies, but none fixes the required repository locations or the declared `repo/`, `outside/`, `cases.json`, `entries.json`, and `expected/` topology.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-13",
-      "lens": "obligation-reduction",
-      "objection": "The fixture may be moved or reshaped while adapted suites and byte-identical copies continue to pass.",
-      "obligation": "O9.4",
-      "scenario": {
-        "expect": "Both repositories contain the fixture at the specified paths with the specified directory and JSON structure.",
-        "given": "The fixture data and results are equivalent in both repositories.",
-        "when": "The author moves it elsewhere or replaces its declared topology and updates the suites accordingly."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "ACR-A3 requires one rendered bullet per citation of a nonempty entry, while ACR-A10 (with ACR-D6's duplicate-id cause) explicitly refuses 'one ID cited twice'. The same circumstance is required to render and required to refuse.",
-        "rule": "consistency"
-      },
-      "id": "set-consistency-1",
-      "lens": "set-consistency",
-      "objection": "An item that cites the same nonempty ID twice cannot satisfy both ACR-A3 (two bullets, one per citation, in field order) and ACR-A10 (refusal with duplicate-id), so the rendering behaviour for a repeated citation is undecidable against the set.",
-      "scenario": {
-        "expect": "ACR-A3 expects two bullets holding AC1's text; ACR-A10 expects E_RENDER with cause duplicate-id and no rendering",
-        "given": "An item names a spec that defines entry AC1 once, and its acceptance field holds two lines each citing AC1",
-        "when": "the item is rendered"
-      },
-      "target_ac": "ACR-A10"
-    },
-    {
-      "ground": {
-        "reason": "ACR-A30 states a rendering citing an empty entry 'is not refused', unqualified, while ACR-A10 and ACR-D6 refuse two units yielding one ID 'whether or not the cited entry is empty'. A repeated citation of an empty entry meets both conditions.",
-        "rule": "consistency"
-      },
-      "id": "set-consistency-2",
-      "lens": "set-consistency",
-      "objection": "The criteria give no consistent verdict for an item that cites the same empty entry twice: ACR-A30 lets it render with no bullet, ACR-A10 refuses it as duplicate-id.",
-      "scenario": {
-        "expect": "ACR-A30 expects a successful rendering with no bullet for AC2; ACR-A10 expects refusal with E_RENDER, cause duplicate-id, ID AC2",
-        "given": "An item names a spec holding an empty entry AC2, and its acceptance field cites AC2 on two lines",
-        "when": "the item is rendered"
-      },
-      "target_ac": "ACR-A30"
-    },
-    {
-      "ground": {
-        "reason": "ACR-A29 says 'a slice citing only an empty entry is still reported' without naming what is reported, leaving the lint verdict open: reported as a lint failure (citing an undefined criterion) or reported as informational while the lint passes.",
-        "rule": "decision-closure"
-      },
-      "id": "set-consistency-3",
-      "lens": "set-consistency",
-      "objection": "The wording leaves open whether spec-lint passes or fails a spec whose slice cites only an empty entry, and each reading produces a different lint result over the same document.",
-      "scenario": {
-        "expect": "One reading of 'still reported' yields a failing lint (citation of an ID that defines nothing); the other yields a passing lint with the citation merely noted",
-        "given": "A spec whose acceptance-criteria section holds only the empty entry '- **AC1**' and a slice heading citing only AC1",
-        "when": "spec-lint runs over the spec"
+        "expect": "The named ACR-A29 observations pass, while spec-lint still reports a missing-evidence error for the empty entry.",
+        "given": "The parser returns empty text correctly and a slice citing only that entry fails as required, but the evidence validator treats the empty entry as requiring a row.",
+        "when": "The suites run the checks listed for ACR-A21 and ACR-A27 through ACR-A29."
       },
       "target_ac": "ACR-A29"
     },
     {
       "ground": {
-        "reason": "ACR-A19 pins exactly-once marker writing only across sequential replays ('A replay after an interruption...', 'A replay of a completed reconciliation...'), and the document's own what-if table answers the twice/nothing-changed questions for delivery with replays, but no criterion covers two deliver processes running at the same time, where each can observe the pre-marker state before either writes.",
+        "reason": "ACR-D5 promises that each grammar copy's source names the other copy's path. No acceptance criterion or check inspects either source for that cross-reference.",
+        "rule": "verification-contract"
+      },
+      "id": "behavioural-outcome-4",
+      "lens": "behavioural-outcome",
+      "objection": "Both grammar implementations can pass every parser and fixture check while omitting the required maintenance cross-reference.",
+      "obligation": "Each counterpart grammar source must name the other source path.",
+      "scenario": {
+        "expect": "All named checks pass, while neither source names its counterpart.",
+        "given": "The two grammar implementations return every expected fixture entry but contain no reference to one another.",
+        "when": "The acceptance checks run."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ACR-D7 promises that prgroom's verdict poster and source remain unchanged. The document checks prgroom output on golden renderings and says its existing tests pass unchanged, but names no source-diff check. Equivalent or compensating source changes can satisfy both observations.",
+        "rule": "verification-contract"
+      },
+      "id": "behavioural-outcome-5",
+      "lens": "behavioural-outcome",
+      "objection": "The implementation can modify prgroom despite the explicit no-change decision and still pass every named check.",
+      "obligation": "The change must not modify prgroom's source or require its release and reinstall.",
+      "scenario": {
+        "expect": "Golden-rendering comparisons and existing tests pass, while the promised unchanged prgroom source is absent.",
+        "given": "Prgroom's parser is modified without changing its observed golden-rendering results.",
+        "when": "The agents-config suites run the checks named for ACR-A27."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The checks exercise marker writes through acceptance set and deliver, but none observes whether another verb can write the reserved marker.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-1",
+      "lens": "obligation-reduction",
+      "objection": "A third verb may write or alter the named-spec marker while every criterion still passes.",
+      "obligation": "O1.3",
+      "scenario": {
+        "expect": "Every listed check passes, but the unrelated verb appends a named-spec marker and changes the spec used by later renders.",
+        "given": "An implementation in which an unrelated update verb also writes `[work] acceptance spec:` notes",
+        "when": "The listed checks run without invoking that update verb"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The root checks use direct root and subdirectory paths. They do not enter the checkout through a symlinked working directory.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-2",
+      "lens": "obligation-reduction",
+      "objection": "Repository discovery may inspect the lexical working-directory path instead of resolving it first.",
+      "obligation": "O2.2",
+      "scenario": {
+        "expect": "Every listed check passes, but rendering is refused with `no-repository-root` instead of using the checkout reached through the symlink.",
+        "given": "A symlink outside the checkout that points to a directory inside it, and an implementation that searches the symlink's lexical ancestors",
+        "when": "A spec-naming item is rendered with that symlinked directory as the working directory"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No check places the working directory beneath two repository roots and observes which `.git` ancestor wins.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-3",
+      "lens": "obligation-reduction",
+      "objection": "Repository discovery may select an outer repository instead of the nearest repository ancestor.",
+      "obligation": "O2.3",
+      "scenario": {
+        "expect": "Every listed check passes, but the spec is resolved against the outer repository rather than the nearest nested repository.",
+        "given": "A checkout nested inside another checkout and an implementation that selects the outermost `.git` ancestor",
+        "when": "A relative named spec is rendered from the nested checkout"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The description check covers CRLF and several syntactic shapes, but not the other line boundaries recognized by Python's `str.splitlines`.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-4",
+      "lens": "obligation-reduction",
+      "objection": "Description rendering may implement only CR, LF, and CRLF splitting while violating the specified `str.splitlines` semantics.",
+      "obligation": "O3.3",
+      "scenario": {
+        "expect": "Every listed check passes, but the two logical description lines appear as one quoted line.",
+        "given": "A passing renderer that splits descriptions only on CR and LF, and a description containing a Unicode line separator",
+        "when": "The item is rendered"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No named fixture rule or check requires non-ASCII description or criterion text to be emitted as its UTF-8 bytes.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-5",
+      "lens": "obligation-reduction",
+      "objection": "The renderer may mishandle non-ASCII text while passing all ASCII fixture cases.",
+      "obligation": "O3.4",
+      "scenario": {
+        "expect": "Every listed check passes, but the rendered markdown escapes, replaces, or mis-encodes the non-ASCII characters instead of preserving their UTF-8 representation.",
+        "given": "A renderer that passes the listed fixtures but applies an ASCII-only output conversion",
+        "when": "An item containing non-ASCII description or criterion text is rendered"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The checks compare the renderer's envelope and exercise parsers, but none observes a consumer writing the returned markdown bytes.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-6",
+      "lens": "obligation-reduction",
+      "objection": "A consumer may normalize or decorate the markdown instead of writing the rendering verbatim.",
+      "obligation": "O3.5",
+      "scenario": {
+        "expect": "Every renderer and parser check passes, but the consumer-produced artifact has changed line endings or added surrounding text.",
+        "given": "A conforming renderer and a consumer that rewrites its markdown before saving it",
+        "when": "The consumer writes a successful rendering"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Fixture rule F14 checks heading case and the closing heading level, but no stated scenario uses a heading whose text contains additional words around `acceptance criteria`.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-7",
+      "lens": "obligation-reduction",
+      "objection": "The parsers may require the heading text to equal `Acceptance criteria` instead of merely containing that phrase.",
+      "obligation": "O5.2",
+      "scenario": {
+        "expect": "Every listed check passes, but the parser returns no entries from that section.",
+        "given": "A parser that accepts only an exact case-insensitive heading and a document headed `## Draft acceptance criteria for S1`",
+        "when": "The document is passed to either criteria parser"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The parser checks observe returned entries. They do not inspect either module's source for the required reference to its counterpart.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-8",
+      "lens": "obligation-reduction",
+      "objection": "The two parser copies may omit the required source-level cross-reference while remaining behaviorally identical.",
+      "obligation": "O5.6",
+      "scenario": {
+        "expect": "Every parser and fixture check passes, but neither source file names the other file's path.",
+        "given": "Two behaviorally conforming parser modules with the counterpart-path references removed",
+        "when": "The full acceptance suite runs"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Refusal cases are checked individually, but no check renders the same refused input twice and compares the complete refusal envelopes.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-9",
+      "lens": "obligation-reduction",
+      "objection": "Equal refused inputs may produce different first failures on successive renders.",
+      "obligation": "O6.5",
+      "scenario": {
+        "expect": "Every listed check passes, but two renders of the same invalid item return different causes or offending fields.",
+        "given": "An implementation that alternates between two applicable refusal causes while remaining non-mutating",
+        "when": "The same invalid item is rendered twice without any intervening change"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The compatibility check observes parser output, but no criterion checks that prgroom, review-panel, and ac-attack source remain outside the grammar change.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-10",
+      "lens": "obligation-reduction",
+      "objection": "Existing consumer source may be changed even though the design promises that only spec-lint's grammar changes.",
+      "obligation": "O7.2",
+      "scenario": {
+        "expect": "Every behavior and fixture check passes, but prgroom or an emitter now contains new entry-parsing logic.",
+        "given": "A change that modifies existing consumer parsers while preserving their tested outputs",
+        "when": "The acceptance suites and source-independent checks run"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The delivery setup contains one item naming another spec. It does not check a reconciliation containing two or more differently named items.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-11",
+      "lens": "obligation-reduction",
+      "objection": "Delivery may report only the first item it refuses to repoint instead of listing every such item.",
+      "obligation": "O8.4",
+      "scenario": {
+        "expect": "Every listed check passes, but the reply lists only one of the two mismatched item IDs.",
+        "given": "A manifest reconciliation with two children whose last markers name different specs, and an implementation that stops collecting IDs after the first",
+        "when": "The placeholder is reconciled with `work deliver --spec PATH`"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No check invokes deliver with `--why` and requires the option to be rejected.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-12",
+      "lens": "obligation-reduction",
+      "objection": "`work deliver --spec` may accept `--why`, contrary to the specified interface and its amendment-gate rationale.",
+      "obligation": "O8.5",
+      "scenario": {
+        "expect": "Every listed check passes, but deliver accepts `--why` and repoints the item.",
+        "given": "An implementation that adds a `--why` option to deliver and uses it to permit repointing",
+        "when": "A user reconciles an already named item with `work deliver --spec OTHER --why reason`"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The digest check is tied to the commits delivering Slices A through C. No criterion requires the copies to remain identical in the final state or after Slice D.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-13",
+      "lens": "obligation-reduction",
+      "objection": "The vendored fixture may diverge after its historical equality evidence is recorded.",
+      "obligation": "O9.4",
+      "scenario": {
+        "expect": "All criteria, including the historical ACR-A25 evidence, remain satisfied, but the two repositories finish with different fixture bytes.",
+        "given": "Matching fixtures at the Slice A-to-C verification commits followed by a Slice D change to only workcli's vendored fixture",
+        "when": "The final delivered state is evaluated"
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ACR-A31's closing sentence grants a render to any relative path whose lexical normalization stays inside the root, while ACR-A32 refuses a path that resolves through a symlink to outside the root. A lexically-inside path containing an escaping symlink satisfies both, and the two criteria demand opposite verdicts for the same rendering.",
+        "rule": "consistency"
+      },
+      "id": "set-consistency-1",
+      "lens": "set-consistency",
+      "objection": "The criteria let an implementation pass ACR-A31 by rendering a lexically-inside path while failing ACR-A32's symlink refusal, or pass ACR-A32 by refusing while failing ACR-A31's unconditional 'renders'. ACR-A31 needs to carve out the symlink case (render only when the resolved path also stays inside the root).",
+      "scenario": {
+        "expect": "ACR-A31 requires a successful render because the lexical normalization of 'link/spec.md' stays inside the root; ACR-A32 requires refusal with E_RENDER and cause spec-path-escapes because the path resolves through a symlink outside the resolved root",
+        "given": "An item whose recorded spec path is 'link/spec.md', where 'link' is a symlink inside the repository root pointing to a directory outside the root that holds a readable, valid UTF-8 spec file",
+        "when": "work acceptance render runs on that item from inside the checkout"
+      },
+      "target_ac": "ACR-A31"
+    },
+    {
+      "ground": {
+        "reason": "ACR-A7 says an explicit-ID text line renders with 'that text unchanged', while ACR-D4 specifies whitespace stripping only for generated-ID lines and never states whether the text portion of an explicit-ID line is stripped. The decision the wording leaves open is whether leading and trailing whitespace around the text of a '- **ID** text' line survives into the rendering, and each reading produces different bytes.",
+        "rule": "decision-closure"
+      },
+      "id": "set-consistency-2",
+      "lens": "set-consistency",
+      "objection": "The criteria admit two renderers that disagree byte for byte on explicit-ID lines carrying extra whitespace: one preserving the text exactly as written after the ID, one stripping it like generated-ID lines. ACR-A13's byte-for-byte requirement then pins different golden outputs depending on which reading the fixture author took.",
+      "scenario": {
+        "expect": "Under ACR-A7's 'unchanged' reading the bullet is '- **AC1**   the system shall render   ' with the original spacing; under the stripped reading the bullet is '- **AC1** the system shall render', and the criteria do not say which is correct",
+        "given": "An item naming no spec whose acceptance field holds the line '- **AC1**   the system shall render   ' with multiple inner leading spaces and trailing spaces after the text",
+        "when": "work acceptance render produces the criterion bullet for that line"
+      },
+      "target_ac": "ACR-A7"
+    },
+    {
+      "ground": {
+        "reason": "ACR-D1 names the empty-PATH usage error for `acceptance set` only, and ACR-A37 pins it only for that verb, while `work deliver --spec PATH` takes the same PATH argument under the same decision. No criterion states deliver's behavior on an empty PATH, so the criteria admit an implementation that records an empty marker or silently resolves the empty string to the working directory.",
         "rule": "what-if-questions"
       },
       "id": "what-if-1",
       "lens": "what-if",
-      "objection": "The criteria let through a delivery that writes the named-spec marker twice for the same manifest child (violating ACR-A19's 'exactly once') when two `work deliver --spec PATH` runs interleave, because both interleaved reads see no marker before either appends one.",
+      "objection": "An empty PATH passed to `work deliver --spec` has no specified outcome: no refusal, no usage error, and no defined marker payload, even though the sibling verb's identical input is pinned as a usage error naming `--spec` that writes nothing.",
       "scenario": {
-        "expect": "The document implies each child ends with its marker written exactly once (ACR-A19); no criterion tests the interleaved case, so a double write passes every check",
-        "given": "A manifest whose expansion is in progress, with a child minted but not yet marked",
-        "when": "Two `work deliver --spec PATH` processes run concurrently against the same placeholder"
+        "expect": "A usage error naming `--spec`, with no marker written and no reconciliation performed, matching the set verb's empty-PATH rule",
+        "given": "A manifest placeholder ready to reconcile, on the fake backend",
+        "when": "`work deliver --spec \"\"` runs"
       },
-      "target_ac": "ACR-A19"
+      "target_ac": "ACR-A18"
     },
     {
       "ground": {
-        "reason": "ACR-D8 says deliver writes the marker on every manifest child and skips only an item whose last marker already names that same path; it is silent on a child whose last marker names a different spec. ACR-D1 makes a named-spec change an amendment that passes the started-work gate and needs --why, but that gate is stated for `set`, and no criterion tests whether deliver's marker write repointing an already-marked child is gated, refused, or silently applied.",
+        "reason": "Notes are append-only user-visible text, so a note matching the marker prefix with an empty or whitespace-only payload can exist on an item. ACR-D1 makes the last such marker the named spec, ACR-D6's closed cause vocabulary has no cause for an empty recorded path, and ACR-A37 refuses empty PATH only at set time. Render's behavior for this state is neither covered nor ruled out.",
         "rule": "what-if-questions"
       },
       "id": "what-if-2",
       "lens": "what-if",
-      "objection": "The criteria let through a silent repointing of a manifest child's named spec by `work deliver --spec`, bypassing the started-work gate and --why trail that ACR-D1/ACR-A2 require for the identical change made through `work acceptance set`.",
+      "objection": "An item whose last `[work] acceptance spec:` marker carries an empty or whitespace-only payload has no defined rendering outcome: the refusal table has no cause for it, and the criteria say nothing about whether render refuses, renders without a spec, or errors differently.",
       "scenario": {
-        "expect": "The document implies deliver writes a new marker naming B (D8 skips only a matching path); whether this amendment is gated or refused is untested by ACR-A18/ACR-A19, and any behaviour ships",
-        "given": "A manifest child whose last named-spec marker names spec A (set by a human or by an earlier deliver of another manifest), with work started on the item",
-        "when": "`work deliver --spec B` reconciles the same placeholder tree"
+        "expect": "A defined outcome, presumably an `E_RENDER` refusal with a named cause, since the item names a spec whose path cannot be resolved",
+        "given": "An item whose notes contain `[work] acceptance spec:` followed by no path, appended by hand or by a tool other than the two marker-writing verbs",
+        "when": "`work acceptance render ID` runs"
       },
-      "target_ac": "ACR-A18"
+      "target_ac": "none"
     }
   ],
   "schema_version": "1",
   "spec_path": "2026-09-29-acceptance-criteria-render-and-references.md",
-  "spec_revision": "sha256:77d708a93e4f6cda2f1c1d4efaded5b6f18488346b5384149b1ef3f4363635a9"
+  "spec_revision": "sha256:5cd6d6be54875dd183fcaeb2eaf48ac95ec4f61f50c44a266adb1eccd21b7c6c"
 }

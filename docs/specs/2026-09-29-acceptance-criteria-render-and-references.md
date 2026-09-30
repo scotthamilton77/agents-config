@@ -1,7 +1,7 @@
 # Acceptance-criteria rendering and references
 
 **Date:** 2026-09-29
-**Status:** Draft child spec. Amended after its first attack round.
+**Status:** Draft child spec.
 **Work item:** `agents-config-9k9.405.4.1`, the design child of `agents-config-9k9.405.4`
 (AC lifecycle rendering and references).
 **Parent:** `docs/specs/2026-09-18-acceptance-criteria-lifecycle.md`, slice S1. Its decisions
@@ -28,7 +28,8 @@ poster reads bullets from the whole file and ignores fenced blocks.
 
 The tracker has no field for a named spec, and the parent rules out adding one. The named
 spec is therefore a note marker, `[work] acceptance spec: <path>`. The payload of the item's
-last such marker is its named spec. An item without one names no spec. The last marker wins
+last such marker, with surrounding whitespace removed, is its named spec. An empty payload names
+the root directory. An item without a marker names no spec. The last marker wins
 because notes are append-only, and a rename under LIFE-D3 must be able to move the reference.
 
 Two verbs write the marker. `work acceptance set ID TEXT --spec PATH` records or changes it,
@@ -92,8 +93,10 @@ criterion-ID pattern `[A-Z0-9]+-[A-Z]\d+|AC\d+`. It cites its IDs in order. Ever
 nonblank line is a text line. On an item naming no spec, every line is a text line. Cited text
 is never read again as citations.
 
-A text line matching spec-lint's entry form `- **ID** text` states its ID explicitly, and it
-renders with that ID and text. Any other text line renders as `- **P-Tn** ` followed by the
+A text line matching spec-lint's entry form `- **ID** text` states its ID explicitly. It
+renders with that ID and its text, surrounding whitespace removed and interior whitespace kept.
+Spec-lint's parser strips entry text, so keeping outer whitespace would break the round trip.
+Any other text line renders as `- **P-Tn** ` followed by the
 line with surrounding whitespace removed. P is the item ID's ASCII letters and digits,
 uppercased, with every other character dropped; an item ID holding neither gives `ITEM`. The
 letter T marks text. The number n is the line's 1-based position among the field's nonblank
@@ -131,7 +134,7 @@ never writes, whether it succeeds or is refused.
 | `notes-unreadable` | The backend cannot answer the item's notes |
 | `no-repository-root` | A spec is named and no root exists |
 | `spec-path-absolute`, then `spec-path-escapes` | ACR-D2's absolute rule, then its lexical or symlink rule |
-| `spec-missing`, `spec-unreadable`, `spec-not-utf8` | The file is absent, unreadable, or not UTF-8 |
+| `spec-missing`, `spec-unreadable`, `spec-not-utf8` | The file is absent, unreadable or a directory, or not UTF-8 |
 | `unresolved-id`, `ambiguous-id` | ACR-D5's resolution |
 | `duplicate-id` | Two units yield one ID, whether or not the cited entry is empty |
 
@@ -171,16 +174,20 @@ spec and each golden rendering. The rules are:
 - F3: other lines are text, and an item naming no spec has only text lines and needs no root.
 - F4: entries keep their continuation, criterion-shaped lines open entries, fences are inert.
 - F5: citations resolve once, in field order.
-- F6: explicit IDs survive, and generated IDs follow ACR-D4, including the `ITEM` prefix.
+- F6: explicit IDs survive with their text's outer whitespace removed, and generated IDs follow
+  ACR-D4, including the `ITEM` prefix.
 - F7: unresolved, ambiguous and duplicate IDs are refused. The first failure in ACR-D6's order
   wins, across path, file and unit causes.
-- F8: a missing, unreadable or non-UTF-8 spec is refused.
+- F8: a missing, unreadable or non-UTF-8 spec is refused, and so is a recorded path naming a
+  directory, including the root that an empty marker payload names.
 - F9: an empty cited entry contributes nothing.
-- F10: relative paths resolve from the working tree's own root, from any directory in it.
+- F10: relative paths resolve from the working tree's own root, from any directory in it, from
+  a symlink outside it that leads into it, and from a checkout nested inside another.
 - F11: absolute and lexically escaping paths are refused, readable or not.
 - F12: an escaping symlink is refused, and an internal one is followed.
 - F13: the description is quoted whole, criterion-shaped text included.
-- F14: section scope ignores heading case and ends at the next same-or-shallower heading.
+- F14: section scope takes any heading whose text contains "acceptance criteria" among other
+  words, ignores heading case, and ends at the next same-or-shallower heading.
 
 ## Acceptance criteria
 
@@ -196,14 +203,17 @@ spec and each golden rendering. The rules are:
 - **ACR-A4** Items whose fields differ only in writing the same citations comma-separated, one
   per line, or with extra whitespace around IDs render byte-identical output. This includes an
   item whose field was stored before its spec was named.
-- **ACR-A5** An item rendered from the repository root and from a subdirectory of the same
-  checkout yields byte-identical output. Rendered from a linked worktree, whose `.git` is a
-  file, it resolves its spec path against that worktree's own root.
+- **ACR-A5** An item rendered from the repository root, from a subdirectory of the same
+  checkout, and through a symlink outside the checkout that leads to that subdirectory yields
+  byte-identical output. Rendered from a linked worktree, whose `.git` is a file, or from a
+  checkout nested inside another, it resolves its spec path against the nearest root, which is
+  that worktree's or that nested checkout's own.
 - **ACR-A6** A text line without an explicit ID renders as `- **P-Tn** ` and the stripped
   line, with P and n as ACR-D4 defines them, and every such ID matches spec-lint's
   criterion-ID pattern. An item ID holding no ASCII letter or digit yields the prefix `ITEM`.
 - **ACR-A7** A text line in the form `- **ID** text`, where ID matches spec-lint's pattern,
-  renders with that ID and that text unchanged.
+  renders with that ID and that text, its surrounding whitespace removed and its interior
+  whitespace kept.
 - **ACR-A8** Only a whole citation line on an item naming a spec resolves. An ID-only line on
   an item naming no spec, and a line mixing an ID with other words, render as text criteria.
 - **ACR-A9** A citation of an ID that the named spec defines in no entry, or in two, is
@@ -212,15 +222,20 @@ spec and each golden rendering. The rules are:
   `duplicate-id`, for every pairing of citation, explicit ID and generated ID, and for one ID
   cited twice, whether or not its entry is empty.
 - **ACR-A11** A missing, unreadable or non-UTF-8 named spec is refused with `E_RENDER`, its
-  path, and the matching `spec-` cause, and never renders as a spec without criteria.
+  path, and the matching `spec-` cause, and never renders as a spec without criteria. A recorded
+  path naming a directory, including the root that an empty or whitespace-only marker payload
+  names, is refused with cause `spec-unreadable`.
 - **ACR-A12** A rendering whose named spec cannot be established is refused with `E_RENDER`:
   cause `notes-unreadable` when the backend cannot answer the item's notes, and
   `no-repository-root` when a spec-naming item is rendered outside any git repository.
 - **ACR-A13** A successful render's `data` is exactly `{id, markdown}` with the requested ID,
-  and markdown is ACR-D3's layout byte for byte, also for an empty description and field.
+  and markdown is ACR-D3's layout byte for byte, also for an empty description and field. For
+  non-ASCII description and criterion text, the decoded markdown carries those characters
+  unchanged.
 - **ACR-A14** Removing the quote prefix from each line of a rendering's description section
   yields the item's description lines in order, when the description holds criterion-shaped
-  bullets, an acceptance-criteria heading, a fence opener, blank lines and CRLF breaks.
+  bullets, an acceptance-criteria heading, a fence opener, blank lines, CRLF breaks, and a line
+  boundary that `str.splitlines` recognises other than CR and LF, such as U+2028.
 - **ACR-A15** Two renders of an item are byte-identical when its title, labels, priority and
   status change between them and a note other than a named-spec marker is appended.
 - **ACR-A16** A rendering, refused or not, makes no mutating backend call and writes no file.
@@ -239,9 +254,12 @@ spec and each golden rendering. The rules are:
 - **ACR-A22** Workcli's counterpart grammar, applied to each fixture spec, returns the entries
   `entries.json` lists for that file.
 - **ACR-A23** For every fixture case, `work acceptance render` returns the golden rendering
-  byte for byte, or the listed refusal with its cause and its ID or path.
+  byte for byte, or the listed refusal with its cause and its ID or path. A second run of each
+  case with nothing changed returns the same answer, refusals included.
 - **ACR-A24** For each fixture rule F1 to F14, a deliberately broken variant of the renderer or
-  parser that violates that rule fails at least one fixture case tagged with that rule.
+  parser that violates that rule fails at least one fixture case tagged with that rule, by
+  returning a rendering, entries or a refusal that differs from the case's expectation. A
+  variant that raises an error instead of answering earns no credit for the rule.
 - **ACR-A25** At the commits delivering Slices A to C, the fixture files are byte-identical
   across the two repositories, and both repositories' suites pass over them.
 - **ACR-A26** The installed `work` renders a tracker item that cites this spec, and spec-lint's
@@ -258,8 +276,9 @@ spec and each golden rendering. The rules are:
   criteria in field order, and is not refused on that entry's account.
 - **ACR-A31** A recorded spec path that is absolute, or whose lexical normalization begins with
   `..`, is refused with `E_RENDER`, the path, and cause `spec-path-absolute` or
-  `spec-path-escapes`, even when a readable spec exists there. A relative path whose
-  normalization stays inside the root renders.
+  `spec-path-escapes`, even when a readable spec exists there. A relative path renders when
+  both its lexical normalization and its symlink-resolved location stay inside the root.
+  ACR-A32 decides the symlink-resolved location.
 - **ACR-A32** A spec path resolving through a symlink outside the resolved root is refused with
   the path and cause `spec-path-escapes`. One resolving inside renders its target's bytes.
 - **ACR-A33** After `work deliver --spec PATH` expands a manifest, each item it reconciled or
@@ -273,8 +292,8 @@ spec and each golden rendering. The rules are:
   directory of the checkout, the item's last note is `[work] acceptance spec: ` followed by
   PATH relative to the root. An outside PATH is recorded that way, beginning with `..`, and is
   not refused. An empty PATH is a usage error naming `--spec`, and the item gains no note.
-- **ACR-A38** When `work deliver --spec PATH` reconciles an item whose last named-spec marker
-  names another path, that item's notes stay unchanged and the reply lists its ID.
+- **ACR-A38** When `work deliver --spec PATH` reconciles items whose last named-spec marker
+  names another path, every such item's notes stay unchanged and the reply lists every such ID.
 
 ### Checks and what-if questions
 
@@ -288,12 +307,12 @@ suite's pass or fail, and the delivery of the slice owning the criterion waits o
 | Criteria | Setup | Observation and pass rule | What if it fails, meets an empty or missing input, or runs twice |
 | --- | --- | --- | --- |
 | ACR-A1, ACR-A2, ACR-A37 | Fake backend and fixture root; open and in-progress items; sets run from the root and a subdirectory, including an outside-root and an empty PATH | Render resolves against the named file. The last note is the root-relative marker, in `..` form for the outside path. Notes and the write log show one trail marker per change, a refusal without `--why` once started, the change applied with `--why`, no write on a repeat, and a usage error with no write for the empty PATH | Empty PATH: refused at set time by ACR-A37. Unreadable notes: ACR-A12. A repeated set writes nothing: ACR-A2 |
-| ACR-A3 to ACR-A14, ACR-A30 to ACR-A32, ACR-A35, ACR-A36 | Fixture cases tagged with the rule each criterion names, with ACR-A35 run from `outside/`, which has no git ancestor; description round-trips over ACR-A14's shapes; for ACR-A36, an ID the fake backend lacks | Envelope `data` holds exactly `id`, equal to the requested ID, and `markdown`, equal to the golden bytes. Otherwise the envelope equals the listed refusal, or the existing `E_NOT_FOUND` for ACR-A36. Unquoted description lines equal the input's `splitlines` | Several failures report the first: ACR-D6, fixture rule F7. A null field or empty description: ACR-A13. An empty entry: ACR-A30. Spec absent: ACR-A11. No root: ACR-A12, or ACR-A35 for an item naming no spec. No item: ACR-A36. Refusals write nothing: ACR-A16. Equal input gives equal bytes: ACR-A15 |
+| ACR-A3 to ACR-A14, ACR-A30 to ACR-A32, ACR-A35, ACR-A36 | Fixture cases tagged with the rule each criterion names, with ACR-A35 run from `outside/`, which has no git ancestor; description round-trips over ACR-A14's shapes; a case with non-ASCII description and criterion text; for ACR-A36, an ID the fake backend lacks | Envelope `data` holds exactly `id`, equal to the requested ID, and `markdown`, equal to the golden bytes. Otherwise the envelope equals the listed refusal, or the existing `E_NOT_FOUND` for ACR-A36. Unquoted description lines equal the input's `splitlines` | Several failures report the first: ACR-D6, fixture rule F7. A null field or empty description: ACR-A13. An empty entry: ACR-A30. Spec absent: ACR-A11. No root: ACR-A12, or ACR-A35 for an item naming no spec. No item: ACR-A36. Refusals write nothing: ACR-A16. Equal input gives equal bytes: ACR-A15 |
 | ACR-A15, ACR-A17, ACR-A20 | One item rendered, the named change applied, rendered again | Byte equality, or the new text for ACR-A20 | A missing dependency does not apply, because the rendering is a function of its inputs. Equal input gives equal bytes: ACR-A15 |
 | ACR-A16 | One successful render, and one refused render per row of ACR-D6's cause table | After each, the fake backend log shows no mutating call, and snapshots of the root and home directories are unchanged | Every refusal, a missing dependency included, is in its setup. A repeat writes nothing, as the first did |
-| ACR-A18, ACR-A19, ACR-A33, ACR-A34, ACR-A38 | Single-unit and multi-unit deliveries from the root and a subdirectory on the fake backend: a fault injected after a child mint, an outside-root PATH, and a child already naming another spec | Each item that named no spec gains one root-relative marker. Each acceptance field equals its manifest AC text byte for byte. ID-list items render the cited entries. The child naming another spec keeps its notes and is listed in the reply. Completed trees gain nothing | An out-of-root `--spec` is recorded, then refused at render by ACR-A31. A child naming another spec: ACR-A38. Interrupted mint and replays: ACR-A19 |
-| ACR-A21, ACR-A27 to ACR-A29 | Agents-config suites over the fixture and the spec-lint corpus | Parsed entries equal `entries.json`. A slice citing only an empty entry fails naming the slice. Lint results over the corpus and `docs/specs/` are unchanged | An empty entry: ACR-A28, ACR-A29. Suites over fixed files are repeatable |
-| ACR-A22 to ACR-A24 | Workcli suite over its vendored copy; for ACR-A24, one broken variant of the renderer or counterpart grammar per rule | Parsed entries and renderings equal the fixture's expectations. Each broken variant fails a case tagged with its rule, and the variant list with each one's failing case is the evidence | A rule that no tagged case catches fails ACR-A24. Suites over fixed files are repeatable |
+| ACR-A18, ACR-A19, ACR-A33, ACR-A34, ACR-A38 | Single-unit and multi-unit deliveries from the root and a subdirectory on the fake backend: a fault injected after a child mint, an outside-root PATH, and two children already naming other specs | Each item that named no spec gains one root-relative marker. Each acceptance field equals its manifest AC text byte for byte. ID-list items render the cited entries. Both children naming other specs keep their notes, and the reply lists both IDs. Completed trees gain nothing | An out-of-root `--spec` is recorded, then refused at render by ACR-A31. Children naming other specs: ACR-A38. Interrupted mint and replays: ACR-A19 |
+| ACR-A21, ACR-A27 to ACR-A29 | Agents-config suites over the fixture and the spec-lint corpus | Parsed entries equal `entries.json`. A slice citing only an empty entry fails naming the slice. A spec holding an empty entry with no evidence row for it draws no evidence finding from spec-lint. Lint results over the corpus and `docs/specs/` are unchanged | An empty entry: ACR-A28, ACR-A29. Suites over fixed files are repeatable |
+| ACR-A22 to ACR-A24 | Workcli suite over its vendored copy; for ACR-A24, one broken variant of the renderer or counterpart grammar per rule | Parsed entries and renderings equal the fixture's expectations. Each case runs twice, and the second answer equals the first, refusals included. Each broken variant fails a case tagged with its rule by returning a rendering, entries or a refusal that differs from the case's expectation, and the variant list with each one's failing case and differing answer is the evidence. A variant that raises an error earns no credit | A rule that no tagged case catches fails ACR-A24. A repeated run: ACR-A23 |
 | ACR-A25, ACR-A26 | The delivered commits; the installed `work` once the human installs it | Fixture digests match and both suites pass; the live rendering parses to the cited entries. Evidence is the transcript on the verification item | An uninstalled `work` leaves ACR-A26 pending |
 
 ### Traceability
