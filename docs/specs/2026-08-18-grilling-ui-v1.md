@@ -1050,8 +1050,9 @@ follows, and changes nothing else.
   map doctor is already the way to ask the expert about the map unprompted.
   A reply in which the assistant asked to read something it was not given carries a hint
   beneath it for as long as it is the thread's latest turn. The hint names *Proceed with
-  expert* as the next step. The page draws the hint from the reply's recommendation
-  metadata. It is not left to the assistant's prose, because a sentence in a prompt does
+  expert* as the next step. The page draws the hint from the read request the reply
+  recorded, whichever condition its recommendation names. An expert's reply carries no such
+  hint. It is not left to the assistant's prose, because a sentence in a prompt does
   not make a model say something every time.
 - **GUI-U23 — A live converged answer renders beneath the turn that made it, with one
   control.**
@@ -1775,12 +1776,16 @@ Each criterion is mechanically checkable and convertible to a red test.
   same labels, which is what the projected turn's `tier` (§8.5) is for. Verified in a
   browser.
 - **GUI-A63** Every channel's seat toggle shows both *assistant* and *expert* under the
-  caption *Next send goes to* and marks exactly one of them: *assistant* on a channel
-  driven by the fast tier and *expert* on one driven by the heavy tier. The page renders
-  neither *Transfer to expert* nor *Return to assistant* anywhere. On a thread and on a
-  draft the toggle renders inside the container that holds the say box and its send
-  control, and on the map it renders in the board's header. Verified in a browser and
-  against the shipped page source.
+  caption *Next send goes to* and marks exactly one of them: the seat the next send on that
+  channel goes to. That is the seat the human last selected, from the moment they select
+  it and before any entry reaches the log. Where no selection is waiting to be carried, it
+  is *assistant* on a channel driven by the fast tier and *expert* on one driven by the
+  heavy tier. The toggle's *assistant* option is the only control on the page that returns
+  a channel to the fast tier. The page renders neither *Transfer to expert* nor *Return to
+  assistant*, and the page source holds exactly one site that sets a channel's next seat to
+  the assistant. On a thread and on a draft the toggle renders inside the container that
+  holds the say box and its send control, and on the map it renders in the board's header.
+  Verified in a browser and against the shipped page source.
 - **GUI-A64** Every shipped thread-agent prompt states the no-fishing rule and the two cases
   a question is allowed in, asserted against the prompt the driver actually composes rather
   than against a constant read out of the source; and over one live session's thread turns,
@@ -2084,18 +2089,22 @@ Each criterion is mechanically checkable and convertible to a red test.
   backend: a decision answered, its block opened again and the control pressed leaves that
   decision reading as a question again.
 
-GUI-A112 to GUI-A117 share one verification contract. Each is checked by a named test in
-the package's unit suite or its end-to-end suite, and the evidence ledger beside this spec
-names that test. The end-to-end suite drives a real browser against a running backend whose
-seats are scripted. A criterion that says *in a browser* is discharged only by an
-end-to-end test or a browser probe. GUI-A112, GUI-A113, GUI-A114 and GUI-A116 state
-changes: each one's test fails against the code before the change and passes after it.
-GUI-A115 and GUI-A117 state guarantees the change must keep: each one's test passes after
-the change and fails against an implementation that breaks the guarantee. The pass rule for
-the set is that every named test passes and that `make ci-grillui` and `make e2e-grillui`
-each exit 0 from the root of the tree under test. The acceptance authority is those gates'
-exit status. No criterion in this group needs a human's judgement. Delivery of the
-implementing work item waits on all six.
+GUI-A112 to GUI-A117, together with GUI-A33, GUI-A34, GUI-A35, GUI-A63, GUI-A86 and GUI-A87
+as amended, are the contract of one implementing work item and share one verification
+contract. Each is checked by a named test in the package's unit suite or its end-to-end
+suite, or by a named browser probe, and the evidence ledger beside this spec names it. The
+end-to-end suite drives a real browser against a running backend whose seats are scripted.
+A criterion that says *in a browser* is discharged only by an end-to-end test or a browser
+probe. GUI-A112, GUI-A113, GUI-A114, GUI-A116, GUI-A33 and GUI-A63 state changes: each
+one's check fails against the code before the change and passes after it. GUI-A115,
+GUI-A117, GUI-A34, GUI-A35, GUI-A86 and GUI-A87 state guarantees the change must keep: each
+one's check passes after the change and fails against an implementation that breaks the
+guarantee. The pass rule for the set has three parts. Every named test passes.
+`make ci-grillui` and `make e2e-grillui` each exit 0 from the root of the tree under test.
+Every named probe exits 0 when run against that tree. A probe runs outside both gates, so
+its command and its exit status are recorded on the pull request. The acceptance authority
+is those exit statuses. No criterion in this set needs a human's judgement. Delivery of the
+implementing work item waits on all twelve.
 
 - **GUI-A112** On a thread whose latest turn is the assistant's and on which no reply is
   outstanding, the human presses *Proceed with expert* with the say box empty. The log
@@ -2104,16 +2113,16 @@ implementing work item waits on all six.
   dispatch contains every earlier turn of the thread and a statement that the human asked it
   to proceed without adding a turn. Its reply carries `followed_transfer` and no
   `transfer_source`. In a browser, before the reply lands the thread shows a line saying the
-  human asked the expert to proceed, with the outstanding-reply wait beneath it. After the
-  reply lands the seat toggle marks *expert*. The human has typed nothing throughout. A say
+  human asked the expert to proceed, with the outstanding-reply wait beneath it. From the
+  press onward the seat toggle marks *expert*. The human has typed nothing throughout. A say
   box holding only whitespace behaves as an empty one.
 - **GUI-A113** With text in a thread's say box, pressing *Proceed with expert* appends the
   entry that selecting *expert* on the seat toggle and pressing send appends for the same
   text. The kind is the same: `thread-turn` on an existing thread and `thread-created` on a
   draft. The payload is the same: it carries the text and `transfer: true`, and no `proceed`
   key. The two entries are equal once `seq`, `timestamp`, `idempotency_key` and any minted
-  thread id are set aside. The say box empties, the expert takes that turn, and the seat
-  toggle marks *expert*.
+  thread id are set aside. The say box empties, the expert takes that turn, and from the
+  press onward the seat toggle marks *expert*.
 - **GUI-A114** A text-less proceed is refused, appends no turn and dispatches nobody in each
   of four states: the thread has no turn, an agent's reply is outstanding on the thread,
   the thread's latest turn is the expert's, or the thread is parked or closed. In each of
@@ -2125,18 +2134,22 @@ implementing work item waits on all six.
   replied, with nothing said since, is refused. After the session has ended the page offers
   the action on no thread. Inverse: after an expert turn that failed, the same press is
   accepted and dispatches the expert again.
-- **GUI-A115** Under `gated`, after an assistant reply that asked to read, the log gains no
-  agent turn and no `transferred` entry on that thread until a human entry arrives on it. A
-  `thread-turn` carrying `proceed: true` whose actor is not the human dispatches no turn and
-  moves no channel, under either policy. Under `autonomous`, the policy's `transferred`
-  entry dispatches no turn: the expert's turn on that thread follows the human's next send
-  or proceed and nothing earlier.
-- **GUI-A116** An assistant reply on a thread whose recommendation names the read-request
-  condition renders a hint beneath that reply, naming *Proceed with expert*, for as long as
-  the reply is the thread's latest turn. The hint's text is the page's own and is the same
-  whatever the reply's prose says. No hint renders beneath a reply with no recommendation,
-  beneath a reply whose recommendation names another condition, or beneath a read-request
-  reply that is no longer the thread's latest turn. Verified in a browser.
+- **GUI-A115** Under `gated`, after an assistant reply that carried a read request, nothing
+  engages the expert on that thread until a human entry carrying `transfer: true` arrives
+  on it. Until then the lane records no `composing` entry naming the heavy tier on that
+  thread, no dispatch to the expert seat is recorded, and no `transferred` entry is written.
+  A human turn sent meanwhile with the toggle marking *assistant* is taken by the assistant.
+  A `thread-turn` carrying `proceed: true` whose actor is not the human dispatches no turn
+  and moves no channel, under either policy. Under `autonomous`, the policy's `transferred`
+  entry is followed by no `composing` entry and no dispatch on that thread until the human's
+  next send or proceed arrives.
+- **GUI-A116** An assistant reply on a thread that carries a read request, a non-empty
+  `needs_to_read`, renders a hint beneath that reply naming *Proceed with expert*, for as
+  long as the reply is the thread's latest turn. The hint renders whichever condition the
+  reply's recommendation names. Its text is the page's own and is the same whatever the
+  reply's prose says. No hint renders beneath a reply with no read request, beneath an
+  expert's reply that carries one, or beneath a read-request reply that is no longer the
+  thread's latest turn. Verified in a browser.
 - **GUI-A117** A text-less proceed never reads as an empty turn. The thread projection
   (§8.8), the terminal result (§8.7) and the dispatch any later turn on that thread receives
   each list the thread's spoken turns and the expert's reply, and none lists a turn with no
