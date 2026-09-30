@@ -429,13 +429,13 @@ def test_a6_a_key_repeated_in_one_object_is_refused_naming_the_lens(attack):
 def test_a6_a_target_ac_nested_in_the_scenario_is_moved_onto_the_objection_and_listed(attack):
     attack.output("what-if", report("what-if", objection("what-if")))
     assert attack.union()[0] == 0
-    expected = json.loads(attack.union_path.read_text("utf-8"))["objections"]
+    expected = json.loads(attack.union_path.read_text("utf-8"))
     item = objection("what-if")
     item["scenario"]["target_ac"] = item.pop("target_ac")
     attack.output("what-if", report("what-if", item))
     code, result = attack.union()
     assert code == 0, result
-    assert json.loads(attack.union_path.read_text("utf-8"))["objections"] == expected
+    assert json.loads(attack.union_path.read_text("utf-8")) == expected
     assert [(r["lens"], r["id"], r["change"]) for r in result["repairs"]] == [
         ("what-if", "what-if-1", "moved 'target_ac' out of the scenario onto the objection")]
 
