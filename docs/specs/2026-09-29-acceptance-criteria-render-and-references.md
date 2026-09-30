@@ -96,13 +96,16 @@ is never read again as citations.
 A text line matching spec-lint's entry form `- **ID** text` states its ID explicitly. It
 renders with that ID and its text, surrounding whitespace removed and interior whitespace kept.
 Spec-lint's parser strips entry text, so keeping outer whitespace would break the round trip.
-Any other text line renders as `- **P-Tn** ` followed by the
-line with surrounding whitespace removed. P is the item ID's ASCII letters and digits,
-uppercased, with every other character dropped; an item ID holding neither gives `ITEM`. The
-letter T marks text. The number n is the line's 1-based position among the field's nonblank
-lines. Item `agents-config-9k9.405.4`'s third nonblank line therefore gets
-`AGENTSCONFIG9K94054-T3`. A criterion wrapped over two field lines renders as two criteria.
-That follows LIFE-D1's line rule, and `work acceptance set` is the remedy.
+A text line holding only `- **ID**`, with nothing after the ID, is an empty entry. It emits no
+bullet, and it is not refused on its own account, as a cited empty entry is not. Any other
+text line renders as `- **P-Tn** ` followed by the line with surrounding whitespace removed.
+P is the item ID's ASCII letters and digits, uppercased, with every other character dropped;
+an item ID holding neither gives `ITEM`. The letter T marks text. The number n is the line's
+1-based position among the field's text lines, empty entries included. Citation lines and
+blank lines are not counted, so writing the same citations on one line or on several never
+changes a generated ID, which ACR-A4 requires. Item `agents-config-9k9.405.4`'s third text
+line gets `AGENTSCONFIG9K94054-T3`. A criterion wrapped over two field lines renders as two
+criteria. That follows LIFE-D1's line rule, and `work acceptance set` is the remedy.
 
 ### ACR-D5: One entry grammar, in two marked copies
 
@@ -134,7 +137,7 @@ never writes, whether it succeeds or is refused.
 | `notes-unreadable` | The backend cannot answer the item's notes |
 | `no-repository-root` | A spec is named and no root exists |
 | `spec-path-absolute`, then `spec-path-escapes` | ACR-D2's absolute rule, then its lexical or symlink rule |
-| `spec-missing`, `spec-unreadable`, `spec-not-utf8` | The file is absent, unreadable or a directory, or not UTF-8 |
+| `spec-missing`, `spec-unreadable`, `spec-not-utf8` | The file is absent; it is unreadable, a directory, or behind symlinks that cannot be resolved, such as a loop; or it is not UTF-8 |
 | `unresolved-id`, `ambiguous-id` | ACR-D5's resolution |
 | `duplicate-id` | Two units yield one ID, whether or not the cited entry is empty |
 
@@ -173,16 +176,24 @@ spec and each golden rendering. The rules are:
 - F2: comma-separated and one-per-line citations are equal, whitespace around IDs ignored.
 - F3: other lines are text, and an item naming no spec has only text lines and needs no root.
 - F4: entries keep their continuation, criterion-shaped lines open entries, fences are inert.
+  A blank line, a bullet that opens no entry, a heading and a fence line each end an entry,
+  with a case for each.
 - F5: citations resolve once, in field order.
 - F6: explicit IDs survive with their text's outer whitespace removed, and generated IDs follow
   ACR-D4, including the `ITEM` prefix.
-- F7: unresolved, ambiguous and duplicate IDs are refused. The first failure in ACR-D6's order
-  wins, across path, file and unit causes.
+- F7: unresolved, ambiguous and duplicate IDs are refused. A duplicate case exists for each
+  pairing: two citations of one ID, a citation and an explicit ID, a citation and a generated
+  ID, two explicit IDs, and an explicit and a generated ID. Two generated IDs cannot collide,
+  because their numbers differ. The first failure in ACR-D6's order wins, across path, file and
+  unit causes.
 - F8: a missing, unreadable or non-UTF-8 spec is refused, and so is a recorded path naming a
-  directory, including the root that an empty marker payload names.
-- F9: an empty cited entry contributes nothing.
+  directory, including the root that an empty marker payload names. A recorded path whose
+  symlinks cannot be resolved, such as a loop, is refused too.
+- F9: an empty entry contributes nothing, also when every unit is one or the field holds only
+  blank lines.
 - F10: relative paths resolve from the working tree's own root, from any directory in it, from
-  a symlink outside it that leads into it, and from a checkout nested inside another.
+  a symlink outside it that leads into it, and from a checkout nested inside another. A marker
+  payload's surrounding whitespace is ignored.
 - F11: absolute and lexically escaping paths are refused, readable or not.
 - F12: an escaping symlink is refused, and an internal one is followed.
 - F13: the description is quoted whole, criterion-shaped text included.
@@ -193,7 +204,9 @@ spec and each golden rendering. The rules are:
 
 - **ACR-A1** After `work acceptance set ID TEXT --spec PATH`, run from any directory of the
   checkout, rendering resolves the item's citations against the file PATH names from there. A
-  later set naming another path moves resolution to that file, even when TEXT is unchanged.
+  later set naming another path moves resolution to that file, even when TEXT is unchanged. A
+  last marker whose nonempty payload carries surrounding whitespace resolves as the same path
+  without that whitespace.
 - **ACR-A2** A set changing only an item's named spec appends one trail marker. Once work has
   started, that set is refused without `--why` and writes nothing, and with `--why` it is
   applied and trailed. A set repeating both text and path writes nothing.
@@ -211,6 +224,8 @@ spec and each golden rendering. The rules are:
 - **ACR-A6** A text line without an explicit ID renders as `- **P-Tn** ` and the stripped
   line, with P and n as ACR-D4 defines them, and every such ID matches spec-lint's
   criterion-ID pattern. An item ID holding no ASCII letter or digit yields the prefix `ITEM`.
+  Two fields holding the same citations, comma-separated in one and one per line in the other,
+  above one text line render that line with the same generated ID.
 - **ACR-A7** A text line in the form `- **ID** text`, where ID matches spec-lint's pattern,
   renders with that ID and that text, its surrounding whitespace removed and its interior
   whitespace kept.
@@ -219,12 +234,14 @@ spec and each golden rendering. The rules are:
 - **ACR-A9** A citation of an ID that the named spec defines in no entry, or in two, is
   refused with `E_RENDER`, the ID, the spec path, and cause `unresolved-id` or `ambiguous-id`.
 - **ACR-A10** Two units yielding one ID are refused with `E_RENDER`, that ID, and cause
-  `duplicate-id`, for every pairing of citation, explicit ID and generated ID, and for one ID
-  cited twice, whether or not its entry is empty.
+  `duplicate-id`. This holds for two citations of one ID, a citation and an explicit ID, a
+  citation and a generated ID, two explicit IDs, and an explicit and a generated ID, whether or
+  not a cited entry is empty.
 - **ACR-A11** A missing, unreadable or non-UTF-8 named spec is refused with `E_RENDER`, its
   path, and the matching `spec-` cause, and never renders as a spec without criteria. A recorded
   path naming a directory, including the root that an empty or whitespace-only marker payload
-  names, is refused with cause `spec-unreadable`.
+  names, is refused with cause `spec-unreadable`. So is a recorded path whose symlinks cannot
+  be resolved, such as a symlink loop.
 - **ACR-A12** A rendering whose named spec cannot be established is refused with `E_RENDER`:
   cause `notes-unreadable` when the backend cannot answer the item's notes, and
   `no-repository-root` when a spec-naming item is rendered outside any git repository.
@@ -272,8 +289,11 @@ spec and each golden rendering. The rules are:
 - **ACR-A29** Spec-lint treats an empty entry as defining nothing. A spec whose criteria
   sections hold only empty entries is reported as defining none. A slice citing only an empty
   entry fails spec-lint, naming that slice. An empty entry needs no evidence row.
-- **ACR-A30** A rendering citing an empty entry once emits no bullet for it, emits its other
-  criteria in field order, and is not refused on that entry's account.
+- **ACR-A30** A rendering citing an empty entry once, or holding a text line `- **ID**` with
+  nothing after the ID, emits no bullet for it, emits its other criteria in field order, and is
+  not refused on that entry's account. A field whose every unit is such an empty entry, or
+  that holds only blank lines, renders successfully with the acceptance-criteria heading and
+  no bullet.
 - **ACR-A31** A recorded spec path that is absolute, or whose lexical normalization begins with
   `..`, is refused with `E_RENDER`, the path, and cause `spec-path-absolute` or
   `spec-path-escapes`, even when a readable spec exists there. A relative path renders when
@@ -283,8 +303,10 @@ spec and each golden rendering. The rules are:
   the path and cause `spec-path-escapes`. One resolving inside renders its target's bytes.
 - **ACR-A33** After `work deliver --spec PATH` expands a manifest, each item it reconciled or
   minted holds its manifest AC text byte for byte in its acceptance field.
-- **ACR-A34** After `work deliver --spec PATH` expands a manifest, each item it marked whose
-  manifest AC is an ID list renders the entries that list cites from the spec at PATH.
+- **ACR-A34** After `work deliver --spec PATH` expands a manifest with PATH inside the root,
+  each item it marked whose manifest AC is an ID list renders the entries that list cites from
+  the spec at PATH. An outside-root PATH is recorded under ACR-A18, and its rendering is
+  refused under ACR-A31.
 - **ACR-A35** An item naming no spec renders successfully when `work acceptance render` runs
   from a directory with no git repository ancestor.
 - **ACR-A36** Rendering an unknown item returns the existing `E_NOT_FOUND`, never `E_RENDER`.
