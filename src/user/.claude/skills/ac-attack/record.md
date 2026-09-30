@@ -65,10 +65,11 @@ The union step changes a report only where the change cannot alter what it claim
 each change on stdout under `repairs`, naming the lens, the id of any objection changed, and what
 changed:
 
-- A key the output shape does not declare is dropped, at any level of the report or an objection.
 - A `target_ac` written inside the scenario, on an objection carrying none of its own, is moved
   onto the objection. The output shape sorts keys, so the field follows the scenario's closing
   brace and a lens sometimes writes it one brace too deep.
+- Any other key the output shape does not declare is dropped, at any level of the report or an
+  objection.
 - A blank optional `obligation` is dropped.
 - A missing `lens`, on the report or an objection, is set to the lens whose output it came from.
 - A missing `objections` is set to an empty list, and a missing `report` to `objections` when the
@@ -78,7 +79,9 @@ changed:
 - Workings from a lens whose front matter does not require them are dropped.
 
 An objection whose scenario leaves `given`, `when` or `expect` blank is dropped and listed under
-`dropped`. Any other drift refuses the lens, since repairing it would mean guessing what the
+`dropped`, unless it also carries a `target_ac` that differs from one inside its scenario: two
+values for one field is drift, and the drop would settle nothing about which the lens meant. Any
+other drift refuses the lens, since repairing it would mean guessing what the
 attacker meant: an objection that is not an object or whose `ground` is not one, a rule outside a
 lens enforcing several, a blank `target_ac`, `objection` or ground field, a `target_ac` on the
 objection that differs from one inside its scenario, a scenario part or
