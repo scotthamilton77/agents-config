@@ -441,12 +441,15 @@ def test_a6_a_target_ac_nested_in_the_scenario_is_moved_onto_the_objection_and_l
 
 
 def test_a6_a_target_ac_in_both_places_that_agree_drops_the_scenario_copy(attack):
+    attack.output("what-if", report("what-if", objection("what-if")))
+    assert attack.union()[0] == 0
+    expected = json.loads(attack.union_path.read_text("utf-8"))
     item = objection("what-if")
     item["scenario"]["target_ac"] = item["target_ac"]
     attack.output("what-if", report("what-if", item))
     code, result = attack.union()
     assert code == 0, result
-    assert json.loads(attack.union_path.read_text("utf-8"))["objections"][0]["target_ac"] == "A1"
+    assert json.loads(attack.union_path.read_text("utf-8")) == expected
     assert [r["change"] for r in result["repairs"]] == [
         "dropped the undeclared key 'scenario.target_ac'"]
 
