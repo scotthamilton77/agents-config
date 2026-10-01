@@ -73,7 +73,7 @@ opens one proves something else.
 - GUI-A59 | open
 - GUI-A60 | open
 - GUI-A61 | probe: packages/grillui/tests/browser/sticky_header_probe.py::main
-- GUI-A62 | open
+- GUI-A62 | probe: packages/grillui/tests/browser/tier_label_probe.py::main
 - GUI-A63 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a63_the_toggle_marks_the_next_send_and_sits_where_that_send_is_made
 - GUI-A64 | open
 - GUI-A65 | test: packages/grillui/tests/unit/test_convergence.py::test_a_proposal_riding_a_turn_records_the_prose_and_projects_onto_that_turn

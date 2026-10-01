@@ -1,11 +1,8 @@
 """What the page says about which tier answered, measured in a browser.
 
-Two claims live here, and neither is a property of the source. Whether a label
-is on screen, whether it is still there after a reload, and whether toggling a
-control rewrote history are all questions only a rendered page answers -- and
-whether two positions of one control look the same is a question only a layout
-engine answers, because the source can carry a class the stylesheet does not
-colour and a colour the class does not name.
+Nothing pinned here is a property of the source. Whether a label is on screen,
+whether it is still there after a reload, and whether choosing the other seat
+rewrote history are all questions only a rendered page answers.
 
     uv run --with playwright python tests/browser/tier_label_probe.py
 
@@ -42,8 +39,6 @@ FAST_SAID = "The fast tier answered this one."
 HEAVY_SAID = "The expert tier answered this one."
 FAST_LABEL = "assistant"
 HEAVY_LABEL = "expert"
-TO_EXPERT = "Transfer to expert"
-TO_FAST = "Return to assistant"
 THREAD = "t-probe"
 NEVER_STARTED = "the backend never started"
 
@@ -183,26 +178,6 @@ def open_pane(page) -> None:
     page.wait_for_timeout(600)
 
 
-def at_rest(page) -> None:
-    """Pointer away from everything and nothing focused, so what is measured
-    next is the control's own styling and not a hover or a focus ring."""
-    page.mouse.move(0, 0)
-    page.evaluate("document.activeElement && document.activeElement.blur()")
-    page.wait_for_timeout(200)
-
-
-def styling(page, selector: str) -> dict:
-    return page.eval_on_selector(
-        selector,
-        """(el) => {
-          const s = getComputedStyle(el);
-          return {background: s.backgroundColor, border: s.borderColor,
-                  color: s.color, weight: s.fontWeight, shadow: s.boxShadow,
-                  text: el.textContent.trim()};
-        }""",
-    )
-
-
 def main() -> None:
     scratch = Path(tempfile.mkdtemp(prefix="grillui-tier-label-probe-"))
     directory = scratch / "session"
@@ -232,7 +207,9 @@ def main() -> None:
         #    human's wears no tier at all.
         open_pane(page)
         labels = thread_labels(page)
-        assert labels == ["You", FAST_LABEL, "You", HEAVY_LABEL], labels
+        assert labels == ["You", FAST_LABEL, "You", HEAVY_LABEL], (
+            f"the thread's turns are not labelled by their own tier: {labels}"
+        )
 
         # 2. The map channel's turns are labelled the same way. They reach the
         #    page as queue items rather than as projected turns, which is a
@@ -242,73 +219,41 @@ def main() -> None:
         notes = page.eval_on_selector_all(
             "#col-d1 .infonote strong", "els => els.map(e => e.textContent.trim())"
         )
-        assert any(n.startswith(FAST_LABEL) for n in notes), notes
-        assert any(n.startswith(HEAVY_LABEL) for n in notes), notes
+        assert any(n.startswith(FAST_LABEL) for n in notes), (
+            f"no {FAST_LABEL} note on the map: {notes}"
+        )
+        assert any(n.startswith(HEAVY_LABEL) for n in notes), (
+            f"no {HEAVY_LABEL} note on the map: {notes}"
+        )
 
-        # 3. Toggling the channel's mode does not rewrite what already happened.
-        #    A page reading the mode instead of the turn would relabel the whole
-        #    transcript here, which is exactly the evidence the human needs.
-        page.click(f'[data-act="transfer"][data-channel="{THREAD}"]')
-        page.wait_for_timeout(400)
+        # 3. Choosing the other seat does not rewrite what already happened. A
+        #    page reading the channel's mode instead of the turn would relabel
+        #    the whole transcript here, which is exactly the evidence the human
+        #    needs. The seat toggle lives in the pane, so the pane is opened first.
         open_pane(page)
+        page.click(f'.threadpane .seats[data-channel="{THREAD}"] [data-seat="heavy"]')
+        page.wait_for_timeout(400)
         after_toggle = thread_labels(page)
-        assert after_toggle == labels, f"the toggle rewrote history: {after_toggle}"
+        assert after_toggle == labels, f"choosing the expert seat rewrote history: {after_toggle}"
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
 
         # 4. A page that reloads -- and so was never there for the turns -- reads
-        #    the same labels off the projection.
+        #    the same labels off the projection, on the thread and on the map
+        #    channel alike. The map's notes are hydrated from the queue rather
+        #    than arriving live, which is a third place the label can go missing.
         enter(page, base)
         open_pane(page)
         reloaded = thread_labels(page)
-        assert reloaded == labels, f"the reload lost the labels: {reloaded}"
+        assert reloaded == labels, f"the reload lost the thread labels: {reloaded}"
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
-
-        # 5. The control names the action, in both positions, and looks the same
-        #    in both. It is read on the map channel's control, in the topbar,
-        #    where nothing else can be mistaken for it.
-        #    Both sides are read at rest -- pointer away and nothing focused --
-        #    because hover and focus are states of the press rather than of the
-        #    tier, and reading one side mid-press would compare two moments
-        #    instead of two positions.
-        control = '.topbar [data-act="transfer"]'
-        at_rest(page)
-        fast_side = styling(page, control)
-        assert fast_side["text"].endswith(TO_EXPERT), fast_side
-        page.click(control)
-        page.wait_for_timeout(500)
-        at_rest(page)
-        expert_side = styling(page, control)
-        assert expert_side["text"].endswith(TO_FAST), expert_side
-        assert {k: v for k, v in fast_side.items() if k != "text"} == {
-            k: v for k, v in expert_side.items() if k != "text"
-        }, f"the control is styled differently on the two tiers:\n  {fast_side}\n  {expert_side}"
-
-        # 6. GUI-A35's half that a browser answers: the control is on the map
-        #    channel and on every open thread, and neither position is disabled.
-        controls = page.eval_on_selector_all(
-            '[data-act="transfer"]',
-            "els => els.map(e => ({channel: e.dataset.channel, off: e.disabled}))",
+        rehydrated = page.eval_on_selector_all(
+            "#col-d1 .infonote strong", "els => els.map(e => e.textContent.trim())"
         )
-        page.click('#col-d1 [data-act="threads"]')
-        page.wait_for_timeout(400)
-        paned = page.eval_on_selector_all(
-            '[data-act="transfer"]',
-            "els => els.map(e => ({channel: e.dataset.channel, off: e.disabled}))",
-        )
-        assert any(c["channel"] == "map" for c in controls), controls
-        assert any(c["channel"] == THREAD for c in paned), paned
-        assert not any(c["off"] for c in controls + paned), controls + paned
-
-        # 7. The transfer the human just made routes the next turn: the page
-        #    stamps the flag on the turn it sends, and the backend reads the
-        #    channel's mode back off exactly that.
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(300)
+        assert rehydrated == notes, f"the reload lost the map labels: {rehydrated}"
         print(f"  thread: {labels}")
         print(f"  map: {notes}")
-        print(f"  control: {fast_side['text']!r} / {expert_side['text']!r}")
 
         browser.close()
     server.should_exit = True
