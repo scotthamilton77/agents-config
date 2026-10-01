@@ -231,9 +231,21 @@ def normalise(lens: str, position: int, item: Any, enforces: list[str] | None,
     if not isinstance(scenario, dict) or any(not isinstance(scenario.get(key, ""), str)
                                              for key in SCENARIO_KEYS):
         raise drift(lens, f"holds objection {position} with a scenario that is not text")
+    changes = []
+    # The output shape sorts keys, so `target_ac` follows the scenario's closing brace, and a lens
+    # sometimes writes it one brace too deep. Moving it up changes nothing the objection claims
+    # when the objection has none of its own; two different values is a claim nobody can settle,
+    # even on an objection dropped below for a blank scenario part.
+    if "target_ac" in scenario:
+        if "target_ac" not in item:
+            item = {**item, "target_ac": scenario["target_ac"]}
+            scenario = {key: value for key, value in scenario.items() if key != "target_ac"}
+            changes.append("moved 'target_ac' out of the scenario onto the objection")
+        elif item["target_ac"] != scenario["target_ac"]:
+            raise drift(lens, f"gives objection {position} the target_ac {item['target_ac']!r} "
+                        f"and the scenario.target_ac {scenario['target_ac']!r}")
     if any(blank(scenario.get(key)) for key in SCENARIO_KEYS):
         return None
-    changes = []
     for key in sorted(set(item) - set(OBJECTION_KEYS)):
         changes.append(f"dropped the undeclared key {key!r}")
     for key in sorted(set(item["ground"]) - set(GROUND_KEYS)):
