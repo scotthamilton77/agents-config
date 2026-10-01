@@ -48,7 +48,7 @@ aliases, still lands there. Anything outside that vocabulary is refused with an
 error explaining the alternative, including an agent type pinned to a specific
 vendor model id and a request that names no model at all. Two families are refused outright, pin or no pin:
 Claude models, which belong in the harness you are already running, and the
-large GPT tiers (`gpt-5.5*`, `gpt-5.6*`, `-mini` variants excepted), which have
+large GPT tiers (`gpt-5.5*`, `gpt-5.6*` with `-mini` variants excepted, and every `gpt-6*`), which have
 their own transport. Naming one exits `78` before anything starts, and there is
 no rerouting around it — if that transport is down, the task waits.
 

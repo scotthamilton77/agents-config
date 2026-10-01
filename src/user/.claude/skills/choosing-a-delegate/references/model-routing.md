@@ -13,11 +13,15 @@ and accepted efforts, which is machine-readable and authoritative; `agy models`
 for the agy ids; the Codex CLI's own model list for the Codex ids and their
 effort levels; each vendor's published API list price for the native and Codex
 rows. Vendors reprice and retire models without notice. Refresh the whole table
-from those sources and re-date it; never patch one row from memory.
+from those sources and re-date it; never patch one row from memory. OpenRouter's
+listed price for the Kimi and GLM rows is a routed price that moves from day to
+day, so those rows are rounded to the cent and are a guide to rank, not a quote:
+read the endpoint before any cost-sensitive dispatch.
 
 Prices are USD per million tokens, input / output. The tier column is the
 vocabulary the delegation rule and the review panel's staffing use: `top` is
-the strongest native seat and is spawned only after consulting the user,
+a vendor's strongest and most expensive seat and is spawned only after
+consulting the user,
 `frontier` is a whole-artifact judgment seat, `mid` is a walk or a delta
 re-read, `cheap` is triage and extraction.
 
@@ -30,19 +34,21 @@ re-read, `cheap` is triage and extraction.
 | `agy` | The `delegating-to-agy` skill | The Google AI Pro subscription |
 | `openrouter` | The `openrouter-claude-subagent` skill | The OpenRouter key, metered |
 
-The OpenRouter launcher refuses every Claude and GPT model outright: both
+The OpenRouter launcher refuses every Claude model and every GPT-5.5, GPT-5.6
+and GPT-6 tier outright, the `-mini` variants of 5.5 and 5.6 excepted: those
 families have a subscription route above, so one arriving there is a misroute.
 
 ## Pick by task profile
 
 | Task profile | Tier | `native` | `codex` | `agy` | `openrouter` |
 |---|---|---|---|---|---|
-| Architecture, cross-subsystem, security, whole-artifact lens, final pre-merge pass | `frontier` | `opus` | `gpt-6.1-sol` at `xhigh`; `gpt-6-astra` when the user says "best" | `gemini-3.1-pro-high` | `moonshotai/kimi-k3` |
-| Standard review, implementation, delta re-review, general default | `mid` | `sonnet` | `gpt-6.1-sol` at `medium` | `gemini-3.8-flash-high`, or `-medium` for a delta re-read | `z-ai/glm-5.3` |
+| Architecture, cross-subsystem, security, whole-artifact lens, final pre-merge pass, implementation under a real test gate | `frontier` | `opus` | `gpt-6.1-sol` at `xhigh` | `gemini-3.1-pro-high` | `moonshotai/kimi-k3` |
+| Standard review, delta re-review, general default | `mid` | `sonnet` | `gpt-6.1-sol` at `medium` | `gemini-3.8-flash-high`, or `-medium` for a delta re-read | `z-ai/glm-5.3` |
 | Triage, extraction, diff summary, cost-sensitive fan-out | `cheap` | `haiku` | `gpt-6-luna` | `gemini-3.8-flash-low` | `z-ai/glm-5.3-flash` |
 
 "Cheap" from the user moves one row down; "best" or "most capable" moves one
-row up. A Gemini seat takes the `agy` column; the `openrouter` Gemini row below
+row up. Above the `frontier` row sit `fable` and `gpt-6-astra`, and either is
+spawned only after consulting the user. A Gemini seat takes the `agy` column; the `openrouter` Gemini row below
 exists only as that column's fallback and is never a profile's pick.
 
 ## Anthropic, route `native`
@@ -61,7 +67,7 @@ or in an agent definition's front matter.
 
 | Model (`--model` value) | In / Out | Context | Efforts | Tier |
 |---|---|---|---|---|
-| `gpt-6-astra` | $10.00 / $50.00 | 272K | `low` `medium` `high` `xhigh` `max` `ultra` | `frontier`, on request only |
+| `gpt-6-astra` | $10.00 / $50.00 | 272K | `low` `medium` `high` `xhigh` `max` `ultra` | `top` |
 | `gpt-6.1-sol` | $2.00 / $10.00 | 272K | `low` `medium` `high` `xhigh` `max` `ultra` | `frontier` at `xhigh`, `mid` at `medium`; Codex's default |
 | `gpt-6-luna` | $0.20 / $1.20 | 272K | `low` `medium` `high` `xhigh` `max` | `cheap` |
 
@@ -86,9 +92,9 @@ and `-high` only. agy bills the subscription, so its rows carry no price.
 
 | Model ID (`--model` value) | In / Out | Context | Efforts | Tier |
 |---|---|---|---|---|
-| `moonshotai/kimi-k3` | $3.00 / $15.00 | 1M | `low` `high` `max` | `frontier` |
-| `z-ai/glm-5.3` | $1.40 / $4.40 | 1M | `low` `high` `max` | `mid` |
-| `moonshotai/kimi-k2.6` | $0.65 / $3.41 | 262K | none: reasoning on or off, no level | `mid`, when thinking must be off |
+| `moonshotai/kimi-k3` | $0.70 / $10.00 | 1M | `low` `high` `max` | `frontier` |
+| `z-ai/glm-5.3` | $0.22 / $4.40 | 1M | `low` `high` `max` | `mid` |
+| `moonshotai/kimi-k2.6` | $0.43 / $1.83 | 262K | none: reasoning on or off, no level | `mid`, when thinking must be off |
 | `z-ai/glm-5.3-flash` | $0.15 / $0.50 | 1M | `low` `high` `max` | `cheap` |
 | `google/gemini-3.8-flash` | $0.75 / $3.75 | 1M | `low` `medium` `high` | agy fallback only |
 
