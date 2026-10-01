@@ -64,7 +64,7 @@ Suite criteria run under `content-tests`. Scenario criteria use the protocol in 
 ### Slice A: the inventory lint
 
 - **DEL-A1** With the tree otherwise unchanged, adding a sentence that names a model id absent from the routing table to any Markdown file under `src/` outside an `evals/` directory makes `content-tests` exit non-zero, and the failure names the file and the id. Check: suite, two cases per vendor id pattern (Claude, GPT, Gemini as agy id, Gemini as OpenRouter id, Kimi, GLM): an invented id, and a listed id with its version number changed.
-- **DEL-A2** `content-tests` exits 0 on the tree the slice lands on, with every model id in `src/` Markdown present in the routing table. Check: the gate itself at the landed head.
+- **DEL-A2** `content-tests` exits 0 on the tree the slice lands on, with every model id in the `src/` Markdown the lint reads present in the routing table. Check: the gate itself at the landed head.
 - **DEL-A3** A fenced example that names an id the routing table lists passes, and removing that id's row from the table makes the same example fail. Check: suite, with a fixture table.
 - **DEL-A4** A Markdown file under an `evals/` directory beneath `src/` is not read by the lint. Check: suite, an `evals/` fixture naming an unlisted id passes.
 - **DEL-A5** A routing table that is absent, or that lists no model id, makes the lint fail and name the table, whatever the other files hold. Check: suite, one case each.
@@ -84,10 +84,11 @@ Suite criteria run under `content-tests`. Scenario criteria use the protocol in 
 
 - **DEL-C1** A reader holding only `delegating-to-codex` classifies each of three captured endings correctly: finished; still running at minute 26, after the Bash call was backgrounded; and usage limit reached. Check: scenario protocol 5.4, scenarios C1a to C1c.
 - **DEL-C2** A reader holding only `openrouter-claude-subagent` and the routing table states the timeout flags, their values and the effort to pass for an inline whole-artifact lens with no tools on the table's frontier OpenRouter row, and for a worker with tools on its mid row. Check: scenario protocol 5.4, scenarios C2a and C2b, keyed on the values DEL-D4 states and the efforts the routing table states.
-- **DEL-C3** A reader holding `harvest.md` names the right response to every failure signal the three launchers document: the claim reason `transport-error`, the claim reason `unusable-output`, "fix the invocation" for a launcher refusal, or "stop" for a run the caller itself signalled. Check: scenario protocol 5.4, one scenario per documented signal. The list of signals is read from the three skills at the head the slice starts from and is committed with the scenarios.
+- **DEL-C3** A reader holding `harvest.md` names the right response to every failure signal the three launchers document: the claim reason `transport-error`, the claim reason `unusable-output`, "fix the invocation" for a launcher refusal, or "stop" for a run the caller itself signalled. Check: scenario protocol 5.4, one scenario per documented signal. The list holds every failure signal the three skills document once slice C's own text is in them, and it includes the OpenRouter launcher's `timeout` and `idle` reasons and the Codex usage limit. It is committed with the scenarios.
 - **DEL-C4** No Markdown file under `src/` instructs a reader to launch a Codex run through the `codex` binary, and `harvest.md` and `ac-attack` name the Codex delegation skill as that route. Check: the reviewer of the slice's pull request reads every line of `src/` Markdown outside `delegating-to-codex` that matches `codex` in any letter case, and records the number of lines read and that none gives that instruction.
 - **DEL-C5** The OpenRouter skill's description and body both name `Edit(<path>)` as the grant for a mandated report file. Check: the reviewer of the slice's pull request reads both passages and records the grant form each names.
 - **DEL-C6** The lens launch command a reader holding only `delegating-to-codex` writes, run against a stub companion that records its invocation, prints a fixed report on stdout and refuses every write, leaves that report in the file the reader named, and the recorded invocation asks for a read-only run in the form the Codex plugin's runtime documents at the slice's head. Check: scenario protocol 5.4, scenario C6, keyed on the file's content and on the recorded invocation after the returned command runs against the stub.
+- **DEL-C8** A reader holding only `delegating-to-codex`, whose companion call was moved to the background before the run finished, returns the report once the run finishes. Check: scenario protocol 5.4, scenario C8: the stub companion prints nothing for a fixed delay after the reader's call returns, then writes the fixed report and the completion line; the key is the report text in the reader's answer.
 - **DEL-C7** In every file slice C changes, the text outside the passages DEL-D3 and DEL-D5 name is unchanged. Check: the reviewer of the slice's pull request reads the slice's diff and records each hunk against the passage it belongs to.
 
 ### 5.4 Scenario protocol
@@ -108,6 +109,6 @@ Use `work promote` on each resulting feature before implementation.
 
 - feat: a lint keeps the routing table the only model inventory. AC: DEL-A1, DEL-A2, DEL-A3, DEL-A4, DEL-A5, DEL-A6
 - feat: the OpenRouter launcher times and kills its own run. AC: DEL-B1, DEL-B2, DEL-B3, DEL-B4, DEL-B5, DEL-B6, DEL-B7
-- feat: the route skills answer the same four questions. AC: DEL-C1, DEL-C2, DEL-C3, DEL-C4, DEL-C5, DEL-C6, DEL-C7
+- feat: the route skills answer the same four questions. AC: DEL-C1, DEL-C2, DEL-C3, DEL-C4, DEL-C5, DEL-C6, DEL-C7, DEL-C8
 
 Slice C lands after slice B, because DEL-C2 reads the flags slice B adds. Outside this spec's criteria: `agents-config-9k9.408` is reworked under DEL-D2 once section 6 is answered, and a new item updates prgroom's chains under DEL-D7.

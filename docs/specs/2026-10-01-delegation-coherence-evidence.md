@@ -22,3 +22,4 @@ All criteria describe future implementation; their evidence is open. The audit i
 - DEL-C5 | open
 - DEL-C6 | open
 - DEL-C7 | open
+- DEL-C8 | open
