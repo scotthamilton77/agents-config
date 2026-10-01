@@ -120,7 +120,9 @@ it is the most expensive tier.
 
 Not every model accepts every level, and the routing table's effort column and
 its notes bound the choice: pick from the row's list, and keep the per-row caps
-on whole-artifact work. The flag reaches OpenRouter through its
+on whole-artifact work. Where the row does not list the level this grid names,
+pass the next listed level up, so `medium` on a row listing `low` `high` `max`
+becomes `high`. The flag reaches OpenRouter through its
 Anthropic-compatible endpoint as a thinking budget, so a level a row does not
 list still bounds the model's thinking; treat the model as the reliable control
 and the level as a hint.

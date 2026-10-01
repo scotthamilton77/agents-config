@@ -29,7 +29,10 @@ this skill's.
 A Codex run carries no explicit model by default, and the runtime keeps it that
 way unless the caller names one. Naming it is this skill's whole job, and the
 name comes from the `choosing-a-delegate` skill's model routing table: look the
-task profile up there and take its Codex row. Those rows are captured from the
+task profile up there and take its Codex row. Where that row names an effort
+level, ask for it in the dispatch as well: the runtime leaves effort unset
+unless the request states one, and one Codex model serves two profiles that
+differ only by effort. Those rows are captured from the
 Codex CLI's own model list, which is the authority for which ids exist and
 which effort levels each accepts.
 
@@ -67,6 +70,7 @@ fingerprint. Hold the companion path in a variable of another name.
 
 ## What this skill does not decide
 
-Whether a run may write, what effort it uses, and how the prompt reaches Codex
+Whether a run may write, and how the prompt and the effort level reach Codex,
 belong to the plugin runtime's own contract. Follow that contract where it
-speaks. This skill adds a model, and nothing else.
+speaks. This skill adds the model and the effort level its table row names,
+and nothing else.

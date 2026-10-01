@@ -54,7 +54,8 @@ The launcher pins the run to the one model you named, three ways:
   whatever asked.
 - **Denylist.** Claude models and the large GPT tiers are refused outright,
   pin or no pin: they are served properly elsewhere, so arriving here means
-  something misrouted. The `-mini` GPT variants are exempt. The launcher exits
+  something misrouted. The `-mini` variants of GPT-5.5 and GPT-5.6 are exempt,
+  and no GPT-6 id is. The launcher exits
   `78` before binding a listener when `--model` names one; the proxy refuses
   them too, so neither layer depends on the other.
 
