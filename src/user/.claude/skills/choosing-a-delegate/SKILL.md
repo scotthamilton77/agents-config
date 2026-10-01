@@ -3,7 +3,7 @@ name: choosing-a-delegate
 description: Use before delegating to anything beyond the native Agent tool or Workflow — another vendor, another harness — for a second opinion, an independent review, an adversarial critique, or independent judgement. Apply when you think "find someone to look at this", "get another perspective", or "poke holes in it" and a native subagent won't supply that independence. Not for writing the brief once the delegate is known, and not for vendor CLI setup.
 admission:
   provides: The decision of who does delegated work, and standing permission to reach another vendor for it unasked. An orchestrator that is not told this treats a foreign-model dispatch as something the user must request by name, and answers "get me a second opinion" with a larger model from the same vendor as the work under review.
-  cost: The vendor pointers need revisiting whenever a delegation route is added or retired.
+  cost: The vendor pointers need revisiting whenever a delegation route is added or retired, and the routing table needs a refresh whenever a vendor reprices or retires a model.
   remove_when: Sessions that were never given this reach cross-vendor on their own judgement when independence is what the task needs.
 ---
 
@@ -42,10 +42,12 @@ an agent definition's own front matter; if you need that lever, those are where 
 
 ## Where to go
 
-Each route carries its own current model table. **Open it and read the table; never
-infer a model identifier from a skill name, a file name, or memory** — names outlive the
-model generations they were named for, and a plausible-looking identifier that no longer
-exists fails at dispatch or silently routes somewhere you did not intend.
+`references/model-routing.md` beside this skill is the one model table for every route:
+each family's routes in preference order, the pick per task profile, and per row the
+price, context, accepted effort levels and tier. **Open it and read the row; never infer
+a model identifier from a skill name, a file name, or memory** — names outlive the model
+generations they were named for, and a plausible-looking identifier that no longer exists
+fails at dispatch or silently routes somewhere you did not intend.
 
 | Route | Reach it through |
 |---|---|

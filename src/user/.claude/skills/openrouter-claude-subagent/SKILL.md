@@ -84,32 +84,28 @@ cannot write its report and the verdict survives only in the run log's tail.
 
 ## Step 2 — Model selection
 
-`references/model-routing.md` is the source of truth for pricing, context
-window, effort support, and per-bucket defaults. Look the answer up. Picking
-from memory routes work to a model that may be repriced or retired, and
-re-deriving a "cheapest" pick by hand is how the bias drifts from what the
-bucket table already encodes.
+The `choosing-a-delegate` skill's model routing table is the one source for
+price, context window, accepted effort levels and the pick per task profile,
+across every route; its OpenRouter rows are the models this launcher runs.
+Look the answer up there. Picking from memory routes work to a model that may
+be repriced or retired, and re-deriving a "cheapest" pick by hand is how the
+bias drifts from what the table encodes.
 
-1. Classify the task: mechanical/triage, standard implementation, or
-   architecture/judgment-heavy.
-2. Take that bucket's **Default pick** — unless the user said "cheap" (use
-   **Step down**) or "best"/"most capable" (use **Step up**).
-3. If the user named a specific `vendor/model-id`, check it against the
-   routing table **and** the supplemental registry at
-   `~/.config/agents-config/openrouter-model-registry.json`. Listed in
-   neither means its price, context, and effort support are all unverified —
-   run the Unknown Model Workflow in `references/model-routing.md` rather
-   than assuming.
-4. State the model and a one-sentence reason (task bucket + price), and ask
+1. Classify the task by the table's task profiles.
+2. Take that profile's OpenRouter pick, unless the user said "cheap" (one
+   profile down) or "best"/"most capable" (one profile up).
+3. A Gemini row on this transport is the fallback for the `delegating-to-agy`
+   skill and is never the pick while agy is up.
+4. A user-named `vendor/model-id` absent from the table is unverified: look it
+   up in the catalog endpoint the table names, say what you found and where,
+   and ask before using it.
+5. State the model and a one-sentence reason (task profile + price), and ask
    for confirmation — unless the user waived confirmation, in which case
    state the choice and proceed.
 
 Pass the bare model id. A context-window suffix such as `[1m]` is refused by
 the run's own model pin (`403 … decision=deny-pin`); `CLAUDE_CODE_MAX_CONTEXT_TOKENS`
-is the lever when the clamp matters. For a whole-document single pass avoid
-`z-ai/glm-5.3`: it returns thinking-only turns until the request times out,
-and a log full of thinking-only warnings is a dead run to re-dispatch, not one
-to wait on.
+is the lever when the clamp matters.
 
 ## Step 3 — Effort level
 
@@ -122,18 +118,23 @@ to wait on.
 Use the user's level if they named one. `max` only on an explicit request —
 it is the most expensive tier.
 
-Not every model accepts every level. `references/model-routing.md` lists the
-levels each one takes — pick from that list, since two of the listed models
-accept no level at all, one of those cannot be capped even in principle, and
-others are missing the middle of the range. Trust the recorded value rather
-than re-verifying at dispatch.
+Not every model accepts every level, and the routing table's effort column and
+its notes bound the choice: pick from the row's list, and keep the per-row caps
+on whole-artifact work. The flag reaches OpenRouter through its
+Anthropic-compatible endpoint as a thinking budget, so a level a row does not
+list still bounds the model's thinking; treat the model as the reliable control
+and the level as a hint.
+
+The launcher pins no sampling parameter, and neither should a prompt or a
+wrapper: the Kimi rows refuse a temperature, and Google says to leave Gemini's
+at its default.
 
 ## Example
 
 ```bash
 # Read-only research on a cheap model — read-only tier, no confirmation needed
 node "${CLAUDE_SKILL_DIR}/scripts/run.js" \
-  --model "google/gemini-3.5-flash-lite" \
+  --model "z-ai/glm-5.3-flash" \
   --effort low \
   --permission-mode dontAsk \
   --allowedTools "Read" "Grep" "Glob" \

@@ -45,11 +45,13 @@ it warrants no reply — do not explain the notification or restate the report.
 - The native Agent tool and Workflow are the default substrate. Before delegating to
   anything else — another vendor, another harness — read the `choosing-a-delegate`
   skill. The user not naming a vendor is not a reason to stay native.
-- Match model to the job: implementation under a real test gate → opus at xhigh; design 
-  and spec authoring → fable at xhigh, or sol at medium when cost matters; sonnet is 
-  never the pick, and raising effort does not reliably help below xhigh. Every other 
-  task class is unmeasured — there, judgment still decides. Effort is a Workflow 
-  `agent()` knob; the Agent tool pins only the model.
+- Match model to the job by tier; the `choosing-a-delegate` skill's model routing table
+  names the model behind each tier on each route. Implementation under a real test
+  gate → the native frontier tier at xhigh; design and spec authoring → the native top
+  tier at xhigh, or Codex's default frontier tier at medium when cost matters; the
+  native mid tier is never the pick for either, and raising effort does not reliably
+  help below xhigh. Every other task class is unmeasured — there, judgment still
+  decides. Effort is a Workflow `agent()` knob; the Agent tool pins only the model.
 - When your own judgment is strained, a dispatch upward is legitimate: consult an
   advisor agent on a stronger model than your own.
 - **Never spawn a subagent with Fable as the model without first consulting the user.**
