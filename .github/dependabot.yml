@@ -1,7 +1,9 @@
 # Every uv project under packages/ carries its own lockfile, and the pip-audit
 # step in `make ci` fails the gate on any advisory against a locked version.
-# One grouped pull request moves all seven lockfiles together, so an advisory
-# wave costs one review rather than seven.
+# Only security updates run: the pull-request limit of 0 switches off the
+# weekly version pass, which would open one PR per directory, while the
+# security group spans every directory, so an advisory wave arrives as one
+# PR moving all seven lockfiles rather than seven PRs or none.
 version: 2
 updates:
   - package-ecosystem: uv
@@ -9,9 +11,8 @@ updates:
       - /packages/*
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     groups:
-      python:
-        patterns: ["*"]
       python-security:
         applies-to: security-updates
         patterns: ["*"]
