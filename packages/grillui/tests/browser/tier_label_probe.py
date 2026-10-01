@@ -229,12 +229,12 @@ def main() -> None:
         notes = map_notes(page)
         fast_note = next((n for n in notes if FAST_SAID in n[1]), None)
         heavy_note = next((n for n in notes if HEAVY_SAID in n[1]), None)
-        assert fast_note and fast_note[0].startswith(FAST_LABEL), (
-            f"the fast tier's map note is not labelled {FAST_LABEL}: {notes}"
-        )
-        assert heavy_note and heavy_note[0].startswith(HEAVY_LABEL), (
-            f"the expert tier's map note is not labelled {HEAVY_LABEL}: {notes}"
-        )
+        assert (
+            fast_note
+            and heavy_note
+            and fast_note[0].startswith(FAST_LABEL)
+            and heavy_note[0].startswith(HEAVY_LABEL)
+        ), f"the map's notes are not labelled by their own tier: {notes}"
 
         # 3. Choosing the other seat does not rewrite what already happened. A
         #    page reading the channel's mode instead of the turn would relabel
