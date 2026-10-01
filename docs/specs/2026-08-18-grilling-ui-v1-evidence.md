@@ -36,9 +36,17 @@ opens one proves something else.
 - GUI-A30 | open
 - GUI-A31 | open
 - GUI-A32 | open
-- GUI-A33 | open
-- GUI-A34 | open
-- GUI-A35 | open
+- GUI-A33 | test: packages/grillui/tests/unit/test_transfer.py::test_a_recommended_reply_carries_its_metadata_on_the_wire_the_page_reads
+- GUI-A33 | test: packages/grillui/tests/unit/test_transfer.py::test_a_reply_meeting_no_condition_carries_no_metadata_on_the_wire
+- GUI-A33 | test: packages/grillui/tests/e2e/test_reading.py::test_the_default_policy_offers_the_hand_up_and_says_what_was_asked_for
+- GUI-A33 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a33_the_recommendation_lights_the_expert_seat_on_the_map_and_nothing_else
+- GUI-A33 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a116_a_reply_that_asked_to_read_carries_the_hint_while_it_is_latest_and_open
+- GUI-A34 | test: packages/grillui/tests/unit/test_transfer.py::test_activating_transfer_takes_the_next_map_turn_to_the_heavy_tier
+- GUI-A34 | test: packages/grillui/tests/unit/test_transfer.py::test_an_escalated_thread_hands_the_heavy_tier_its_own_accumulated_turns
+- GUI-A34 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a63_the_toggle_marks_the_next_send_and_sits_where_that_send_is_made
+- GUI-A34 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a113_proceed_with_text_writes_the_entry_the_toggle_and_send_write
+- GUI-A35 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a35_every_channel_has_an_active_toggle_and_assistant_returns_the_next_turn
+- GUI-A35 | probe: packages/grillui/tests/e2e/test_reading.py::test_the_autonomous_policy_hands_the_request_to_the_expert_once
 - GUI-A36 | open
 - GUI-A37 | open
 - GUI-A38 | open
@@ -66,7 +74,7 @@ opens one proves something else.
 - GUI-A60 | open
 - GUI-A61 | probe: packages/grillui/tests/browser/sticky_header_probe.py::main
 - GUI-A62 | open
-- GUI-A63 | open
+- GUI-A63 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a63_the_toggle_marks_the_next_send_and_sits_where_that_send_is_made
 - GUI-A64 | open
 - GUI-A65 | test: packages/grillui/tests/unit/test_convergence.py::test_a_proposal_riding_a_turn_records_the_prose_and_projects_onto_that_turn
 - GUI-A66 | test: packages/grillui/tests/unit/test_convergence.py::test_each_convergence_of_the_fixture_session_is_one_proposal_recording_what_it_carried
@@ -91,6 +99,7 @@ opens one proves something else.
 - GUI-A85 | test: packages/grillui/tests/unit/test_drivers.py::test_an_offer_on_a_thread_anchoring_nothing_is_a_notice_and_not_raw_bytes
 - GUI-A86 | probe: packages/grillui/tests/browser/thread_controls_probe.py::main
 - GUI-A87 | test: packages/grillui/tests/unit/test_page.py::test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_takes
+- GUI-A87 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a113_proceed_with_text_on_a_draft_writes_the_entry_the_toggle_and_send_write
 - GUI-A92 | probe: packages/grillui/tests/browser/chord_probe.py::main
 - GUI-A88 | test: packages/grillui/tests/unit/test_tiers.py::test_the_grill_master_brief_asks_for_rulings_nowhere_but_the_obligation_section
 - GUI-A89 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_can
@@ -156,9 +165,17 @@ opens one proves something else.
 - GUI-A111 | test: packages/grillui/tests/unit/test_page.py::test_only_a_settled_decision_offers_the_way_back_to_open
 - GUI-A111 | test: packages/grillui/tests/unit/test_update_kinds.py::test_the_human_reopening_a_decision_folds_as_an_applied_unsettle_does
 - GUI-A111 | test: packages/grillui/tests/e2e/test_board.py::test_the_human_reopens_a_decision_they_settled
-- GUI-A112 | open
-- GUI-A113 | open
-- GUI-A114 | open
-- GUI-A115 | open
-- GUI-A116 | open
-- GUI-A117 | open
+- GUI-A112 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a112_proceed_with_the_box_empty_sends_the_expert_in_over_the_thread
+- GUI-A112 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a112_proceed_on_a_thread_the_policy_moved_keeps_the_policys_attribution
+- GUI-A113 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a113_proceed_with_text_writes_the_entry_the_toggle_and_send_write
+- GUI-A113 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a113_proceed_with_text_on_a_draft_writes_the_entry_the_toggle_and_send_write
+- GUI-A114 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a114_the_action_is_inactive_and_says_why_where_there_is_nothing_to_proceed_on
+- GUI-A114 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a114_a_set_aside_thread_the_map_and_an_ended_session_offer_no_action
+- GUI-A114 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a114_the_backend_refuses_a_textless_proceed_posted_directly_in_each_state
+- GUI-A115 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a115_under_gated_a_read_request_engages_nobody_until_the_human_acts
+- GUI-A115 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a115_under_autonomous_the_policy_move_buys_no_turn_until_the_human_acts
+- GUI-A115 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a115_a_proceed_from_anyone_but_the_human_moves_nothing
+- GUI-A115 | test: packages/grillui/tests/unit/test_page.py::test_gui_a115_the_page_writes_a_proceed_only_from_the_humans_press
+- GUI-A115 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a115_with_no_input_after_a_read_request_the_page_writes_nothing
+- GUI-A116 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a116_a_reply_that_asked_to_read_carries_the_hint_while_it_is_latest_and_open
+- GUI-A117 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a117_a_textless_proceed_never_reads_as_an_empty_turn

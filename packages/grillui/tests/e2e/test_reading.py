@@ -166,12 +166,12 @@ def test_the_default_policy_offers_the_hand_up_and_says_what_was_asked_for(
     Given a session on the default policy
     When the thread's seat answers with the closed key naming two things it
          would have to read
-    Then the thread's own transfer control is marked as recommended and says
-         what the seat asked to read, the seat's prose is on the board as the
-         turn, and nothing moved: no transfer entry, and the expert took no
-         turn.
+    Then the thread's own proceed-with-expert action is marked as recommended
+         and says what the seat asked to read, the seat toggle still marks the
+         assistant, the seat's prose is on the board as the turn, and nothing
+         moved: no transfer entry, and the expert took no turn.
 
-    The control is where the human meets this. A recommendation that reached the
+    The action is where the human meets this. A recommendation that reached the
     log and not the button is one they would have to go looking for, on a
     channel whose seat has just told them it is stuck.
     """
@@ -184,13 +184,15 @@ def test_the_default_policy_offers_the_hand_up_and_says_what_was_asked_for(
     session.settled()
     channel = thread_id(session)
     page.wait_for_selector(
-        f'[data-act="transfer"][data-channel="{channel}"][data-recommended="1"]',
+        f'[data-act="proceed"][data-tid="{channel}"][data-recommended="1"]',
         timeout=BOARD_TIMEOUT,
     )
 
-    control = page.locator(f'[data-act="transfer"][data-channel="{channel}"]')
-    assert control.count() == 1, f"{control.count()} transfer controls on {channel}"
-    assert control.get_attribute("data-mode") == "fast", control.get_attribute("data-mode")
+    control = page.locator(f'[data-act="proceed"][data-tid="{channel}"]')
+    assert control.count() == 1, f"{control.count()} proceed actions on {channel}"
+    toggle = page.locator(f'[data-act="transfer"][data-channel="{channel}"]')
+    assert toggle.get_attribute("data-mode") == "fast", toggle.get_attribute("data-mode")
+    assert page.locator(f'.seats[data-channel="{channel}"] [data-recommended="1"]').count() == 0
     offered = control.get_attribute("title") or ""
     for one in WANTED:
         assert one in offered, offered
@@ -245,7 +247,7 @@ def test_the_autonomous_policy_hands_the_request_to_the_expert_once(
     # The human takes the thread back down, and the same request buys nothing.
     showing(page, channel, "expert")
     control = page.locator(f'[data-act="transfer"][data-channel="{channel}"]')
-    assert control.inner_text().strip().endswith("Return to assistant"), control.inner_text()
+    assert control.inner_text().strip() == "assistant", control.inner_text()
     control.click()
     showing(page, channel, "fast")
     say(page, "Never mind, tell me what you can.")

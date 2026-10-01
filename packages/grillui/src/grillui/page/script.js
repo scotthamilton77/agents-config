@@ -13,7 +13,7 @@ var EMISSIONS = {
   "answer":         { "channel": "map",    "payload": ["target", "answer", "transfer", "from_thread"] },
   "unsettle":       { "channel": "map",    "payload": ["target"] },
   "thread-created": { "channel": "thread", "payload": ["turns", "decision", "kind", "title", "requires_action", "transfer"] },
-  "thread-turn":    { "channel": "thread", "payload": ["turns", "transfer"] },
+  "thread-turn":    { "channel": "thread", "payload": ["turns", "transfer", "proceed"] },
   "thread-fold":    { "channel": "thread", "payload": [] },
   "thread-park":    { "channel": "thread", "payload": [] },
   "thread-close":   { "channel": "thread", "payload": [] },
@@ -56,6 +56,12 @@ var TRANSFER_FLAG = "transfer";
 // the three above, so nothing validates it on the way past: a stale spelling
 // here is an answer that settles the decision and leaves its thread open.
 var FROM_THREAD_KEY = "from_thread";
+// The key a text-less turn carries when the human sends the expert in on a
+// thread as it stands, and the key a reply names what it asked to read under.
+// The first is read back to draw the line saying the human asked; the second is
+// what the hint beneath such a reply is drawn from.
+var PROCEED_FLAG = "proceed";
+var NEEDS_TO_READ_KEY = "needs_to_read";
 //---BACKEND-VOCABULARY-END---
 // Named by position rather than restated, so this page cannot hold a claim
 // state the backend has no word for.
@@ -924,7 +930,17 @@ function tierAt(seq) {
   var e = entryAt(seq);
   return (e && e.payload && e.payload[TIER_KEY]) || null;
 }
-function toggleTransfer(channel) { TRANSFER[channel] = { on: !onExpert(channel), since: LOG.length }; render(); }
+// The one place a channel's next seat is chosen, and so the one place it can be
+// set back to the assistant. Choosing the seat the log already names takes the
+// waiting choice back rather than making a new one: a choice that stood would
+// ride the next turn as a transfer the channel never needed, and on a channel
+// the policy moved that turn would lose the policy's attribution.
+function toggleTransfer(channel) {
+  var on = !onExpert(channel), meant = TRANSFER[channel];
+  if (on === loggedMode(channel).on && !(meant && meant.spent)) delete TRANSFER[channel];
+  else TRANSFER[channel] = { on: on, since: LOG.length };
+  render();
+}
 // The escalation advice on this channel's latest agent reply, or nothing. A
 // property of the last reply rather than of the session, so the next reply that
 // meets no condition is what takes the highlight away — advice about a question
@@ -1661,9 +1677,11 @@ function startThread(id, text, from) {
     : map ? MAP_THREAD : HELP_THREAD;
   // `from` is the draft's own channel, which is not the name the thread gets.
   // The tier the human put the draft on is carried onto the minted name before
-  // the turn is built, so a transfer pressed before there was anything to say is
-  // the tier that first turn is taken on rather than a press that did nothing.
-  if (from && TRANSFER[from]) TRANSFER[tid] = TRANSFER[from];
+  // the turn is built, so the seat chosen before there was anything to say is
+  // the tier that first turn is taken on rather than a choice that did nothing.
+  // The draft gives its choice up as it hands it on, so the next draft opened on
+  // the same decision starts with nothing chosen rather than with this one.
+  if (from && TRANSFER[from]) { TRANSFER[tid] = TRANSFER[from]; delete TRANSFER[from]; }
   send(ev("thread-created", tid, {
     turns: [{ who: "human", text: text.trim() }],
     decision: session ? null : id,
@@ -1987,27 +2005,72 @@ function inHand(slot, found) {
   UI[slot] = found;
   paintPreMarks();
 }
-// One control, on every channel anyone speaks on: the map's and each open
+// The seat toggle, on every channel anyone speaks on: the map's and each
 // thread's. Never disabled — the moment the human most wants an expert is the
 // moment the first rung is going badly, and a control that greys out while a turn
 // is in flight is unavailable exactly then.
 //
-// The label names the action the press performs and never the state the channel
-// is in, and the control looks the same on either tier. A state word wearing a
-// colour reads as where the channel is now, so a human on the expert tier sees
-// the way back and takes it for confirmation they arrived. Where the channel is
-// now is the per-turn tier labels' to say, and they say it on the transcript
-// the human is already reading.
+// It shows both seats and marks the one the next send goes to, under a caption
+// saying so. A single button naming an action promises the expert and then shows
+// nothing happening, because a press only chooses who takes the next turn; a
+// single state word cannot say whether it means where the channel is or where a
+// press would take it. Only the unmarked seat is a control, because choosing the
+// seat already marked changes nothing.
+//
+// The recommendation lights the expert seat on the map only. A thread has a way
+// to send the expert in at once, and that action is what a thread lights.
 function transferControl(channel) {
-  var on = onExpert(channel), rec = recommended(channel);
-  var why = rec ? "The agent recommends the expert tier — " + (rec.evidence || rec.condition)
-    : on ? "This channel's next turn goes to the expert tier. Press to return this channel to the first rung."
-    : "Send this channel's next turn to the expert tier, carrying everything said here.";
-  return '<button class="btn sm transfer' + (rec ? " rec" : "") +
-    '" data-act="transfer" data-channel="' + esc(channel) + '"' +
-    ' data-mode="' + esc(on ? "expert" : "fast") + '"' +
-    ' data-recommended="' + esc(rec ? "1" : "0") + '" title="' + esc(why) + '">' +
-    (on ? "⚡ Return to assistant" : "⚡ Transfer to expert") + "</button>";
+  var on = onExpert(channel), rec = channel === MAP ? recommended(channel) : null;
+  function seat(tier, label) {
+    var marked = (tier === HEAVY_TIER) === on, lit = rec && tier === HEAVY_TIER;
+    return '<button class="btn sm seat' + (marked ? " marked" : "") + (lit ? " rec" : "") + '"' +
+      ' data-seat="' + esc(tier) + '" aria-pressed="' + (marked ? "true" : "false") + '"' +
+      (marked ? "" : ' data-act="transfer" data-channel="' + esc(channel) + '" data-mode="' + esc(on ? "expert" : "fast") + '"') +
+      (lit ? ' data-recommended="1" title="' + esc("The agent recommends the expert — " + (rec.evidence || rec.condition)) + '"' : "") +
+      ">" + label + "</button>";
+  }
+  return '<span class="seats" data-channel="' + esc(channel) + '"><span class="cap">Next send goes to</span>' +
+    '<span class="opts">' + seat(FAST_TIER, "assistant") + seat(HEAVY_TIER, "expert") + "</span></span>";
+}
+// Why a proceed with nothing typed has nothing for the expert to take up here,
+// or nothing where it has something. The backend refuses the same states, and
+// this is the page saying so before the press rather than after it.
+function proceedBlocked(tid) {
+  var t = thread(tid), turns = (t && t.turns) || [], last = turns[turns.length - 1];
+  if (!turns.length) return "Nothing has been said here yet for the expert to take up.";
+  if (t.state !== "open") return "This thread is set aside.";
+  if (owedOn(tid)) return "A reply is still on its way here.";
+  if (last.tier === HEAVY_TIER) return "The expert's reply is the latest turn here.";
+  return "";
+}
+// Sends the expert in on a thread. With text it is the send the toggle makes
+// after *expert* is chosen, through the same functions, so the two write the
+// same entry. Without text it is the human's own text-less turn, which says
+// only that they asked. The seat is chosen first either way, so the toggle marks
+// the expert from the press onward. Returns the thread it spoke on, or nothing
+// where it declined.
+function proceedWithExpert(tid, text, anchor) {
+  var typed = (text || "").trim();
+  if (boardHeld() || (!typed && proceedBlocked(tid))) return null;
+  if (!onExpert(tid)) toggleTransfer(tid);
+  if (typed) return thread(tid) ? (sayInThread(tid, typed), tid) : startThread(anchor, typed, tid);
+  var proceed = {};
+  proceed[PROCEED_FLAG] = true;
+  send(ev("thread-turn", tid, proceed));
+  render();
+  return tid;
+}
+// The action beside a thread's send, lit when the latest reply recommends the
+// expert. With the box empty it is inactive in the states the backend refuses,
+// and the reason under the row says which; the stylesheet decides both off the
+// box itself, so the control follows what is typed without a redraw per key.
+function proceedControl(tid) {
+  var why = proceedBlocked(tid), rec = recommended(tid);
+  return '<button class="btn sm proceed' + (rec ? " rec" : "") + '" data-act="proceed" data-tid="' + esc(tid) + '"' +
+    (why ? ' data-blocked="1"' : "") + (rec ? ' data-recommended="1"' : "") + ' title="' +
+    esc(rec ? "The agent recommends the expert — " + (rec.evidence || rec.condition)
+      : "The expert takes the next turn over this thread so far, with what you typed if you typed anything.") +
+    '">Proceed with expert</button>';
 }
 function isExpanded(id) {
   var st = statusOf(id);
@@ -2274,17 +2337,69 @@ function renderColumn() {
 //
 // The control renders on an open thread only. Parking or closing hides it while
 // the offer stays live in the log, so reopening the thread shows it again.
+//
+// A proceed the human pressed with nothing typed is no turn, so the projection
+// carries nothing for it. It reads back as a line of its own at the place it was
+// pressed, which is what tells the human their press landed and why the expert
+// is answering.
 function renderTurns(t) {
   var h = "", last = t.turns.length - 1;
+  var asked = proceedsAt(t.id);
   t.turns.forEach(function (turn, i) {
+    h += proceedMarks(asked, function (at) { return at === i; });
     h += '<div class="turn ' + esc(turn.who) + '"><div class="who">' +
       (turn.who === "human" ? "You" : turn.who === "backend" ? "Backend"
         : tierLabel(turn.tier) || "Agent") +
       (turn.timestamp ? ' <span class="did">' + esc(stamp(turn.timestamp)) + "</span>" : "") + "</div>" +
       "<p>" + esc(turn.text) + "</p>" +
-      (turn.proposal ? offerBlock(t, turn.proposal, i === last && t.state === "open") : "") + "</div>";
+      (turn.proposal ? offerBlock(t, turn.proposal, i === last && t.state === "open") : "") +
+      (i === last ? readHint(t, turn) : "") + "</div>";
   });
-  return h;
+  return h + proceedMarks(asked, function (at) { return at > last; });
+}
+// How many turns a thread entry puts on the thread, counted the way the
+// projection counts them: the turns it carries with text, or its bare text.
+function spokenIn(payload) {
+  if (Array.isArray(payload.turns)) return payload.turns.filter(function (x) { return x && x.text; }).length;
+  return payload.text ? 1 : 0;
+}
+function threadEntry(e, tid) {
+  return e.channel === tid && e.payload && (e.kind === "thread-created" || e.kind === "thread-turn");
+}
+// Where each text-less proceed on a thread was pressed, as the number of turns
+// the thread held when it was.
+function proceedsAt(tid) {
+  var at = [], n = 0;
+  LOG.forEach(function (e) {
+    if (!threadEntry(e, tid)) return;
+    var said = spokenIn(e.payload);
+    if (!said && e.actor === "human" && e.payload[PROCEED_FLAG] === true) at.push(n);
+    n += said;
+  });
+  return at;
+}
+function proceedMarks(asked, here) {
+  return asked.filter(here).map(function () {
+    return '<div class="proceedmark">You asked the expert to proceed with the thread as it stands.</div>';
+  }).join("");
+}
+// The pointer beneath a reply in which the assistant asked to read something it
+// was not given, for as long as that reply is the latest turn of an open thread.
+// Drawn from the request the reply recorded and never from its prose, and in the
+// page's own words, because a sentence in a prompt does not make a model say
+// something every time. An expert's reply gets none: the expert is the seat
+// the hint points to.
+function readHint(t, turn) {
+  if (t.state !== "open" || AGENT_ACTORS.indexOf(turn.who) < 0 || turn.tier !== FAST_TIER) return "";
+  for (var i = LOG.length - 1; i >= 0; i--) {
+    var e = LOG[i];
+    if (!threadEntry(e, t.id) || !spokenIn(e.payload)) continue;
+    var wanted = e.payload[NEEDS_TO_READ_KEY];
+    if (AGENT_ACTORS.indexOf(e.actor) < 0 || e.payload[TIER_KEY] !== FAST_TIER || !Array.isArray(wanted) || !wanted.length) return "";
+    return '<div class="readhint" data-channel="' + esc(t.id) + '">The assistant asked to read something it was not given. ' +
+      "The next step is Proceed with expert, which hands this thread to the expert.</div>";
+  }
+  return "";
 }
 // The wait, said at the foot of the turns. The header's clock is above the
 // board and a human who has just sent a turn is inside the thread reading their
@@ -2379,13 +2494,26 @@ function closeControl(tid) {
   return '<button class="btn sm" data-act="closethread" data-tid="' + esc(tid) +
     '">Close it — done with it, nothing left open</button>';
 }
-// The box a turn is typed into, and the one control that sends it. One reader,
-// because an open thread and a set-aside one the human is picking back up take
-// the same turn on the same channel — two copies is how they come to differ.
+// The box a turn is typed into, the control that sends it, and the seat toggle
+// that says who that send goes to, in one row because the toggle governs that
+// send. One reader, because an open thread and a set-aside one the human is
+// picking back up take the same turn on the same channel — two copies is how
+// they come to differ. Only an open thread offers the proceed action: speaking
+// in a set-aside one is what opens it again.
 function sayBox(sayId, tid) {
-  return '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
+  var t = thread(tid), open = t && t.state === "open";
+  return '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-blank data-tid="' + esc(tid) +
     '" placeholder="…say something"></textarea><span class="hint">↵ send<br>⇧↵ newline</span>' +
-    '<button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button></div>';
+    '<span class="sends"><button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button>' +
+    (open ? proceedControl(tid) : "") + "</span>" + transferControl(tid) + "</div>" +
+    (open ? proceedWhy(tid) : "");
+}
+// The reason a proceed with nothing typed is inactive, under the row it sits in.
+// The stylesheet shows it only while the box is empty, because typed text makes
+// the action a send, which every one of these states still takes.
+function proceedWhy(tid) {
+  var why = proceedBlocked(tid);
+  return why ? '<div class="proceedwhy" data-channel="' + esc(tid) + '">' + esc(why) + "</div>" : "";
 }
 // Which decision a thread that does not exist yet would be about. One reader,
 // because the pane that renders the draft and the popped window that sends its
@@ -2424,17 +2552,17 @@ function threadBody(tid, forPop, chrome) {
           "handing that to the grill-master is what puts the changes in your inbox."
         : "Nothing exists yet. Close this and no thread is created — " +
           "the first thing you say is what opens it. It titles itself from what you say.") + "</div>",
-      '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
+      // The seat toggle belongs to a thread that has not been opened yet as
+      // much as to one that has: the human decides who they are asking before
+      // they ask, and a control that arrives only with the first reply arrives
+      // one turn after the one turn it was wanted for. Park, close and fold are
+      // not offered beside it — the backend refuses a thread gesture naming no
+      // thread, and the head's ✕ is what closing a draft already means.
+      '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-blank data-id="' + esc(anchor || "") +
         '" placeholder="…say something"></textarea><span class="hint">↵ send<br>⇧↵ newline</span>' +
-        '<button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button></div>' +
-        seedControls(anchor, null) +
-        // The tier control belongs to a thread that has not been opened yet as
-        // much as to one that has: the human decides who they are asking before
-        // they ask, and a control that arrives only with the first reply arrives
-        // one turn after the one turn it was wanted for. Park, close and fold are
-        // not offered beside it — the backend refuses a thread gesture naming no
-        // thread, and the head's ✕ is what closing a draft already means.
-        '<div class="thread-actions">' + transferControl(tid) + "</div>"
+        '<span class="sends"><button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button>' +
+        proceedControl(tid) + "</span>" + transferControl(tid) + "</div>" + proceedWhy(tid) +
+        seedControls(anchor, null)
     );
   }
   var ready = foldReady(tid);
@@ -2461,7 +2589,7 @@ function threadBody(tid, forPop, chrome) {
   var h = sayBox(sayId, tid);
   h += seedControls(t.decision, tid);
 
-  h += '<div class="thread-actions">' + transferControl(tid);
+  h += '<div class="thread-actions">';
   if (t.kind === "mandate") {
     // A mandated thread concludes, or the answer is abandoned. There is no park.
     h += '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '">Conclude — settles ' + esc(t.decision) + "</button>" +
@@ -2939,6 +3067,7 @@ function render() {
   document.querySelectorAll("textarea[data-draft]").forEach(function (ta) {
     var d = UI.drafts[ta.dataset.draft];
     if (d) ta.value = d;
+    markBlank(ta);
   });
   var map2 = document.getElementById("mapscroll"), col2 = document.getElementById("column");
   if (map2) { map2.scrollLeft = keep.mx; map2.scrollTop = keep.my; }
@@ -3026,6 +3155,7 @@ window.popAct = function (tid, anchor, act, text, field) {
   // takes and drops is a gesture the human watched themselves make.
   if (sessionOver() && WRITE_ACTS.indexOf(act) >= 0) return null;
   if (act === "transfer") toggleTransfer(tid);
+  else if (act === "proceed") return proceedWithExpert(tid, text, anchor);
   else if (act === "say") sayInThread(tid, text);
   // The first turn of a thread that does not exist yet, which is the same act
   // the pane's own Send is: it routes to the one function that opens a thread,
@@ -3079,7 +3209,8 @@ function popOut(tid) {
     "var bot=!tb||tb.scrollHeight-tb.scrollTop-tb.clientHeight<=40;" +
     "document.getElementById('t').innerHTML=html;" +
     "var tb2=document.querySelector('.tbody');if(tb2)tb2.scrollTop=bot?tb2.scrollHeight:ty;" +
-    "var t2=document.getElementById('pop-say');if(t2){t2.value=v;if(had)t2.focus({preventScroll:true});}}" +
+    "var t2=document.getElementById('pop-say');if(t2){t2.value=v;t2.toggleAttribute('data-blank',!v.trim());if(had)t2.focus({preventScroll:true});}}" +
+    "document.addEventListener('input',function(e){if(e.target.id==='pop-say')e.target.toggleAttribute('data-blank',!e.target.value.trim());});" +
     // The ending is the opener's to declare and this window's to wear. It is
     // applied on the tick rather than inside draw(), because draw() does
     // nothing at all when the pane's html has not changed -- and a session
@@ -3093,12 +3224,12 @@ function popOut(tid) {
     // the board is refusing -- and a box emptied for a turn the opener will not
     // post is emptied for nothing. An opener that has gone answers nothing and
     // posts nothing, which is held as well.
-    "var typed=el.dataset.act==='say'||el.dataset.act==='draftsay';" +
+    "var typed=el.dataset.act==='say'||el.dataset.act==='draftsay'||el.dataset.act==='proceed';" +
     "var held=true;try{held=window.opener.boardHeld();}catch(x){}if(typed&&held)return;" +
     // The thread this window is on is this window's to keep: an act that opens
     // one hands it back, and from then on this window is on that thread.
     "var made=null;try{made=window.opener.popAct(tid,anchor,el.dataset.act,ta?ta.value:'',el.dataset.field);}catch(x){}if(made)tid=made;" +
-    "if(ta&&(el.dataset.act==='say'||el.dataset.act==='draftsay'))ta.value='';setTimeout(draw,40);});" +
+    "if(ta&&typed)ta.value='';setTimeout(draw,40);});" +
     // The chord is the opener's to decide, keystroke by keystroke, so this window
     // cannot drift onto a chord of its own. Sending is still a press of this
     // window's own send control, because that is what carries the thread it is on.
@@ -3122,7 +3253,7 @@ function popOut(tid) {
 // `send`, which refuses once the session is over; this is the surface saying the
 // same thing, so an ended board offers no control whose click would be swallowed.
 var WRITE_ACTS = ["pick", "free", "say", "seed", "draftsay", "newthread", "discuss", "discussnotice",
-  "fold", "park", "closethread", "abandon", "reopen", "applyone", "applyall", "dismissone", "transfer",
+  "fold", "park", "closethread", "abandon", "reopen", "applyone", "applyall", "dismissone", "transfer", "proceed",
   "doctor", "endsession", "confirm-end"];
 // Reading stays: the board, the map, the history, the inbox, the notifications
 // and the read markers are all this window's own and go nowhere. What goes is
@@ -3145,10 +3276,16 @@ document.addEventListener("input", function (e) {
   if (!e.target.dataset || !e.target.dataset.draft) return;
   var id = e.target.dataset.draft;
   UI.drafts[id] = e.target.value;
+  markBlank(e.target);
   // Provenance goes with the draft it filled: a box emptied by hand has no
   // proposal left in it, so the next answer is the human's alone.
   if (!e.target.value.trim() && UI.armed[id]) { delete UI.armed[id]; render(); }
 });
+// Whether a box holds nothing but whitespace, marked on the box itself. A box of
+// spaces is an empty one to every send, and the stylesheet reads this mark to
+// show a proceed with nothing to proceed on as inactive, where a check on the
+// raw value would take the spaces for text.
+function markBlank(ta) { ta.toggleAttribute("data-blank", !ta.value.trim()); }
 function sendFrom(ta) {
   if (!ta || !ta.value.trim()) return;
   // This is the one gesture that empties the box it was typed in, and a held
@@ -3283,6 +3420,13 @@ document.addEventListener("click", function (e) {
     case "discuss": discussPending(uid); break;
     case "discussnotice": discussNotice(uid); break;
     case "transfer": toggleTransfer(el.dataset.channel); break;
+    // The box is read here as the Send beside it reads it, and emptied only when
+    // what was typed went out as the turn.
+    case "proceed": {
+      var box = document.getElementById("ft-say"), typed = box ? box.value : "";
+      if (proceedWithExpert(tid, typed, draftAnchor(tid)) && typed.trim()) { UI.drafts.__say = ""; render(); }
+      break;
+    }
     case "diag": UI.diag = !UI.diag; render(); break;
     case "inbox": UI.panel = { kind: "inbox" }; render(); break;
     case "notifications": UI.panel = { kind: "notifications" }; render(); break;

@@ -64,7 +64,9 @@ from grillui.schemas import (
     LIFECYCLE_KINDS,
     MAP_CHANNEL,
     MAP_MUTATION_KINDS,
+    NEEDS_TO_READ_KEY,
     NOTICE_KINDS,
+    PROCEED_FLAG,
     PROPOSABLE_KINDS,
     QUEUE_GESTURE_KINDS,
     RECOMMENDATION_KEY,
@@ -2050,19 +2052,79 @@ def test_the_control_is_on_every_channel_and_is_never_disabled() -> None:
     Always active is the decision rather than an omission: the moment a human
     most wants an expert is the moment the first rung is going badly, which is
     also the moment a control gated on the channel being idle would be greyed
-    out. The label names the switch the press makes, so the channel already on
-    the expert offers the way back.
+    out. Both seats are on it, so the channel already on the expert offers the
+    way back.
     """
     control = function_body("transferControl")
     assert "disabled" not in control
-    assert "Return to assistant" in control, "the escalated channel does not offer the way back"
-    assert "Transfer to expert" in control
+    assert 'seat(FAST_TIER, "assistant")' in control, "the escalated channel has no way back"
+    assert 'seat(HEAVY_TIER, "expert")' in control
     assert 'data-mode="' in control
     assert "transferControl(MAP)" in function_body("renderShell")
     assert "transferControl(tid)" in function_body("threadBody")
     # The popped-out thread is the same pane, so its control has to reach the
     # same handler rather than being a button that does nothing in that window.
     assert 'act === "transfer"' in page_source()
+
+
+# ------------------------------------------------ GUI-D49, GUI-U33, GUI-A112/A115
+
+
+def test_the_keys_the_page_proceeds_and_hints_by_are_the_backends_own() -> None:
+    """The proceed flag and the read request, spelled the backend's way.
+
+    Both are payload content, so nothing checks them on the way past: a stale
+    proceed flag is a press the backend reads as an empty turn and refuses, and
+    a stale read key is a hint that never appears.
+    """
+    constants = page_constants()
+    assert constants["PROCEED_FLAG"] == PROCEED_FLAG
+    assert constants["NEEDS_TO_READ_KEY"] == NEEDS_TO_READ_KEY
+
+
+def test_gui_a115_the_page_writes_a_proceed_only_from_the_humans_press() -> None:
+    """One site writes the flag, and only the human's press reaches it.
+
+    A proceed the page wrote on a recommendation, a policy move or a redraw
+    would engage the expert with nobody asking, which is the one thing the
+    gated policy promises never happens. So the flag is written in the action's
+    own function, and that function is called from the two click paths and from
+    nowhere else.
+    """
+    written = re.findall(r"\w+\[PROCEED_FLAG\] = true", page_source())
+    assert written == ["proceed[PROCEED_FLAG] = true"], written
+    assert "proceed[PROCEED_FLAG] = true" in function_body("proceedWithExpert")
+    callers = re.findall(r"[^\n]*proceedWithExpert\([^\n]*", page_source())
+    callers = [line.strip() for line in callers if "function proceedWithExpert" not in line]
+    assert len(callers) == 2, callers
+    assert any('act === "proceed"' in line for line in callers), callers
+    assert any("draftAnchor(tid)" in line for line in callers), callers
+    assert PROCEED_FLAG in emissions()["thread-turn"]["payload"]
+
+
+def test_gui_a112_the_pages_textless_proceed_is_taken_and_moves_that_thread(
+    client: TestClient, log: Any
+) -> None:
+    """The page's own proceed shape, on the wire, read back by the backend.
+
+    Built through `page_message`, so a key the page never declares could not
+    have proved it: the text-less turn is accepted on a thread with something
+    said in it, and the transfer beside it puts that thread in expert mode.
+    """
+    post(
+        client,
+        log.epoch,
+        page_message("thread-created", THREAD, turns=turns("Who am I asking?")),
+    )
+    receipts = post(
+        client,
+        log.epoch,
+        page_message("thread-turn", THREAD, proceed=True, transfer=True),
+    )
+    assert [one["status"] for one in receipts] == ["accepted"], receipts
+    assert log.entries()[-1].payload == {PROCEED_FLAG: True, TRANSFER_FLAG: True}
+    assert in_expert_mode(log.entries(), THREAD)
+    assert [turn["text"] for turn in thread_of(client, THREAD)["turns"]] == ["Who am I asking?"]
 
 
 # ------------------------------------------------------ GUI-U11, GUI-A87
@@ -2103,18 +2165,40 @@ def test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_ta
 # ------------------------------------------------------ GUI-U22, GUI-A63
 
 
-def test_the_control_names_the_action_and_never_the_state() -> None:
-    """Two labels, each naming the press rather than where the channel is.
+def test_gui_a63_the_toggle_shows_both_seats_and_one_site_returns_a_channel_to_the_assistant() -> (
+    None
+):
+    """Both seats under a caption saying what the choice decides, and no button
+    naming an action.
 
-    A label naming the tier the channel is on is the failure this pins against:
-    the human reads a state word on a control as where the channel is now, and
-    so infers the opposite of what pressing it does -- which is how a transfer
-    that did happen gets read as one that did not.
+    A button naming an action promises the expert and then shows nothing
+    happening, because a press only chooses who takes the next turn. A lone
+    state word cannot say whether it means where the channel is or where a press
+    would take it. So the page renders neither retired label, the toggle names
+    both seats, and exactly one site sets a channel's next seat: the toggle's
+    own. The proceed action reaches it only to choose the expert.
     """
     control = function_body("transferControl")
-    assert '(on ? "⚡ Return to assistant" : "⚡ Transfer to expert")' in control
+    assert '<span class="cap">Next send goes to</span>' in control
+    assert 'seat(FAST_TIER, "assistant")' in control
+    assert 'seat(HEAVY_TIER, "expert")' in control
+    for retired in ("Transfer to expert", "Return to assistant"):
+        assert retired not in page_source(), f"the page still renders {retired!r}"
     for state in ("Fast agent mode", "Expert mode", "Expert agent mode"):
         assert state not in page_source(), f"the control wears {state!r} as a state"
+
+    chosen = re.findall(r"TRANSFER\[\w+\] = \{", page_source())
+    assert chosen == ["TRANSFER[channel] = {"], chosen
+    assert "TRANSFER[channel] = { on: on" in function_body("toggleTransfer")
+    callers = re.findall(r"[^\n]*toggleTransfer\([^)]*\)[^\n]*", page_source())
+    callers = [line.strip() for line in callers if "function toggleTransfer" not in line]
+    assert sorted(callers) == sorted(
+        [
+            'case "transfer": toggleTransfer(el.dataset.channel); break;',
+            'if (act === "transfer") toggleTransfer(tid);',
+            "if (!onExpert(tid)) toggleTransfer(tid);",
+        ]
+    ), callers
 
 
 def test_the_control_carries_no_state_styling_in_either_position() -> None:
@@ -2130,7 +2214,7 @@ def test_the_control_carries_no_state_styling_in_either_position() -> None:
     # The agent's recommendation is not state colouring: it is the agent asking,
     # and GUI-U11 keeps it. A ring rather than a fill is what keeps the two
     # legible apart, so it stays pinned as a ring.
-    assert ".btn.transfer.rec { box-shadow:" in page_source()
+    assert ".btn.rec { box-shadow:" in page_source()
 
 
 # ------------------------------------------------------ GUI-U21, GUI-A62
@@ -2247,7 +2331,7 @@ def test_the_control_follows_the_log_rather_than_the_click_the_policy_overtook()
     assert "meant.since > loggedMode(channel).at" in function_body("pressed"), (
         "a stale click outranks the log"
     )
-    assert '(on ? "⚡ Return to assistant"' in function_body("transferControl")
+    assert "var on = onExpert(channel)" in function_body("transferControl")
 
 
 # ---------------------------------------------------------------- GUI-A50
