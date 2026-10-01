@@ -178,6 +178,16 @@ def open_pane(page) -> None:
     page.wait_for_timeout(600)
 
 
+def map_notes(page) -> list[list[str]]:
+    """Every note on the decision column, as `[label, text]`, so a label is
+    judged against the turn it sits on and not merely counted."""
+    return page.eval_on_selector_all(
+        "#col-d1 .infonote",
+        """els => els.map(e => [e.querySelector("strong").textContent.trim(),
+                              e.textContent])""",
+    )
+
+
 def main() -> None:
     scratch = Path(tempfile.mkdtemp(prefix="grillui-tier-label-probe-"))
     directory = scratch / "session"
@@ -216,14 +226,14 @@ def main() -> None:
         #    second read path and so a second place the label can go missing.
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
-        notes = page.eval_on_selector_all(
-            "#col-d1 .infonote strong", "els => els.map(e => e.textContent.trim())"
+        notes = map_notes(page)
+        fast_note = next((n for n in notes if FAST_SAID in n[1]), None)
+        heavy_note = next((n for n in notes if HEAVY_SAID in n[1]), None)
+        assert fast_note and fast_note[0].startswith(FAST_LABEL), (
+            f"the fast tier's map note is not labelled {FAST_LABEL}: {notes}"
         )
-        assert any(n.startswith(FAST_LABEL) for n in notes), (
-            f"no {FAST_LABEL} note on the map: {notes}"
-        )
-        assert any(n.startswith(HEAVY_LABEL) for n in notes), (
-            f"no {HEAVY_LABEL} note on the map: {notes}"
+        assert heavy_note and heavy_note[0].startswith(HEAVY_LABEL), (
+            f"the expert tier's map note is not labelled {HEAVY_LABEL}: {notes}"
         )
 
         # 3. Choosing the other seat does not rewrite what already happened. A
@@ -241,9 +251,7 @@ def main() -> None:
         #    other transcript a mode-reading page would relabel.
         page.click('.seats[data-channel="map"] [data-seat="heavy"]')
         page.wait_for_timeout(400)
-        map_after_toggle = page.eval_on_selector_all(
-            "#col-d1 .infonote strong", "els => els.map(e => e.textContent.trim())"
-        )
+        map_after_toggle = map_notes(page)
         assert map_after_toggle == notes, (
             f"choosing the map's expert seat rewrote its notes: {map_after_toggle}"
         )
@@ -258,12 +266,10 @@ def main() -> None:
         assert reloaded == labels, f"the reload lost the thread labels: {reloaded}"
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
-        rehydrated = page.eval_on_selector_all(
-            "#col-d1 .infonote strong", "els => els.map(e => e.textContent.trim())"
-        )
+        rehydrated = map_notes(page)
         assert rehydrated == notes, f"the reload lost the map labels: {rehydrated}"
         print(f"  thread: {labels}")
-        print(f"  map: {notes}")
+        print(f"  map: {[n[0] for n in notes]}")
 
         browser.close()
     server.should_exit = True
