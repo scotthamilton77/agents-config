@@ -43,3 +43,5 @@
 - ACE-A41 | open
 - ACE-A42 | open
 - ACE-A43 | open
+- ACE-A44 | open
+- ACE-A45 | open

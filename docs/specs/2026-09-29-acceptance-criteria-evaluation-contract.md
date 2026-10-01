@@ -9,12 +9,13 @@ slice S2 (quality assessment). Not yet attacked.
 
 ## Scope
 
-S2 owns twenty-five parent criteria. Six govern prompt emission and the record
-check (ACQ-A20, A22, A23, A26, A28, A29). The other nineteen are claims about
-stochastic lenses, which the parent's Testing decisions require a fixed
-evaluation contract to judge. This spec fixes it and defines how the arm
-experiments on `agents-config-9k9.441` are scored. It does not decide what a
-re-attack round sees, which stays with `agents-config-9k9.442`.
+S2 owns twenty-seven parent criteria. Six govern prompt emission and the record
+check (ACQ-A20, A22, A23, A26, A28, A29). The other twenty-one, ACQ-A30 and
+ACQ-A31 among them, are claims about stochastic lenses, which the parent's Testing decisions require a fixed
+evaluation contract to judge. This spec fixes it. The arm experiments on
+`agents-config-9k9.441` have their own spec,
+`docs/specs/2026-10-01-criteria-attack-arm-experiments.md`. This spec does not
+decide what a re-attack round sees, which stays with `agents-config-9k9.442`.
 
 ## Current state
 
@@ -75,7 +76,7 @@ hunk, and every control run then tests it.
 | C12 | ACQ-A15, an unspecified window | `stochastic-and-window` | behavioural-outcome | ACE-A36 |
 | C13 | ACQ-A16 | `one-obligation` | behavioural-outcome | ACE-A37 |
 | C14 | ACQ-A17, advisory findings only | `pending-until-performed` | behavioural-outcome | ACE-A38 |
-| C15 | ACQ-A17, a human check on a mechanically checkable property | `verification-contract` | behavioural-outcome | ACE-A38 |
+| C15 | ACQ-A31, a human check on a mechanically checkable property | `verification-contract` | behavioural-outcome | ACE-A45 |
 | C16 | ACQ-A18; research answer | `document-deliverable` | behavioural-outcome | ACE-A39 |
 | C17 | ACQ-A19 | `has-basis` | obligation-reduction | ACE-A40 |
 | C18 to C21 | what-if "fails", "empty or at a limit", "twice or at the same time", "again with nothing changed", one case each | `what-if-questions` | what-if | ACE-A42 |
@@ -85,7 +86,7 @@ hunk, and every control run then tests it.
 | C25 | stochastic threshold chosen after its results | `stochastic-and-window` | behavioural-outcome | ACE-A42 |
 | C26 | a plausible implementation passing every criterion while breaking an in-scope obligation | `sufficiency` | obligation-reduction | ACE-A42 |
 | C27 | human measurement without a protocol | `human-measurement` | behavioural-outcome | ACE-A42 |
-| C28 | ACQ-A9, a human observer named alone | `human-judgment` | behavioural-outcome | ACE-A33 |
+| C28 | ACQ-A30, a human observer named alone | `human-judgment` | behavioural-outcome | ACE-A44 |
 | C29 | incomplete observation window | `stochastic-and-window` | behavioural-outcome | ACE-A42 |
 | P1 | ACQ-A21: a spec-authoring document assessed on content, control only | none | full panel | ACE-A41 |
 
@@ -163,42 +164,9 @@ first over the same cases when no case passing in the first fails in the
 second, and at least two lenses gain a passing case. An addition to the shared
 attack template ships only with a whole-catalogue comparison reporting
 `improves` against the template without it. A gain in one lens alone belongs
-in that lens's own prompt. ACQ-A23 fixes the template at four contracts, so
-an addition also amends that criterion. A test pins the template's digest to
+in that lens's own prompt. ACQ-A23 admits an addition that carries this
+spec's evaluation evidence. A test pins the template's digest to
 a registry of comparison reports, whose baseline entry is the current template.
-
-**ACE-D10 — The authoring-process experiment.** This scores the three arms on
-`agents-config-9k9.441`: the orchestrator, the orchestrator with a self-check,
-and a subagent with a self-check. Each arm gets one document at a pinned
-revision and one fixed set of accepted objections with the author's decisions.
-Each authors three times with one model named in the run plan. The full panel
-attacks each result once in the ACE-D6 configuration. An introduced
-defect is an objection targeting a criterion the arm added or changed that the
-judge rules valid, or an accepted objection the result leaves unanswered. An
-arm ranks ahead when its three results carry at least three fewer introduced
-defects in total; a smaller difference is no difference.
-
-**ACE-D11 — The re-attack experiment is judged, not decided.** This scores the
-arms on `agents-config-9k9.441` for `agents-config-9k9.442`: (1) the document
-only; (2) the document with a ledger of earlier rejected grounds and their
-rationales; (3) the document only, with a post-filter matching new objections
-to earlier rejections before adjudication. Fixtures are re-attack rounds from
-PR 791's history, with seeded wrong rejections: valid grounds the ledger marks
-rejected. Each arm runs the full panel five times per fixture in the ACE-D6
-configuration. Per run, the scorer counts:
-
-- repeats: objections reaching adjudication that the judge matches to an
-  earlier rejected ground;
-- recall: the share of new valid objections reaching adjudication, where a
-  new valid objection is one a later round accepted and no earlier round raised;
-- overturnability: whether each seeded wrong rejection reaches adjudication;
-- effort: every objection reaching adjudication.
-
-Arm 2 or arm 3 meets the bar when its mean repeats are at most half of arm 1's,
-its mean recall is at most ten percentage points below arm 1's, and every
-seeded wrong rejection reaches adjudication in at least four of five runs. The
-report gives each arm's measures and which arms meet the bar. It selects no
-arm and presumes none. Arm 2 adds text to every prompt, so shipping it would also need ACE-D9's gate.
 
 ## Acceptance criteria
 
@@ -268,28 +236,30 @@ suites run under `make content-tests`.
 - **ACE-A30** C6 passes in the evaluation of record.
 - **ACE-A31** C7 passes in the evaluation of record.
 - **ACE-A32** C8 passes in the evaluation of record.
-- **ACE-A33** C9 and C28 pass in the evaluation of record.
+- **ACE-A33** C9 passes in the evaluation of record.
 - **ACE-A34** C10 passes in the evaluation of record.
 - **ACE-A35** C11 passes in the evaluation of record.
 - **ACE-A36** C12 passes in the evaluation of record.
 - **ACE-A37** C13 passes in the evaluation of record.
-- **ACE-A38** C14 and C15 pass in the evaluation of record.
+- **ACE-A38** C14 passes in the evaluation of record.
 - **ACE-A39** C16 passes in the evaluation of record.
 - **ACE-A40** C17 passes in the evaluation of record.
 - **ACE-A41** P1 passes in the evaluation of record.
 - **ACE-A42** C18 to C27 and C29 pass in the evaluation of record, over a
   committed catalogue the case check accepts.
 - **ACE-A43** Every lens passes ACQ-A27 in the evaluation of record.
+- **ACE-A44** C28 passes in the evaluation of record.
+- **ACE-A45** C15 passes in the evaluation of record.
 
 ### Traceability
 
 | Parent | Child criteria | Check |
 | --- | --- | --- |
-| ACQ-A1 to A10, A14 to A19, A21 | ACE-A25 to ACE-A41, as the catalogue's Child column maps | The scorer's report on the evaluation of record |
+| ACQ-A1 to A10, A14 to A19, A21, A30, A31 | ACE-A25 to ACE-A41, ACE-A44, ACE-A45, as the catalogue's Child column maps | The scorer's report on the evaluation of record |
 | ACQ-A20 | ACE-A6, ACE-A7 | Checker suite |
 | ACQ-A22 | ACE-A2 | Emitter suite |
 | ACQ-A23 | ACE-A3 | Emitter suite, existing test |
-| ACQ-A24 | ACE-A1, ACE-A11 to ACE-A21, ACE-A42, and the cases ACE-A25 to ACE-A40 score | Emitter suite, case check, scorer suite, scorer report |
+| ACQ-A24 | ACE-A1, ACE-A11 to ACE-A21, ACE-A42, and the cases ACE-A25 to ACE-A40, ACE-A44 and ACE-A45 score | Emitter suite, case check, scorer suite, scorer report |
 | ACQ-A26 | ACE-A4, ACE-A5 | Emitter suite, existing tests |
 | ACQ-A27 | ACE-A17, ACE-A43 | Scorer suite, scorer report |
 | ACQ-A28 | ACE-A8, ACE-A9 | Checker suite, existing tests |
@@ -298,7 +268,7 @@ suites run under `make content-tests`.
 
 ### What-if questions
 
-For ACE-A25 to ACE-A43, a failure names the failing case, a missing report or
+For ACE-A25 to ACE-A45, a failure names the failing case, a missing report or
 verdict leaves it pending (ACE-A19), an unchanged repeat record run is refused
 (ACE-A21), and the empty question does not apply to a fixed document pair. For
 ACE-A1 to ACE-A13, an empty registry and an absent standard are the existing
@@ -327,12 +297,12 @@ running it twice or with nothing changed answers the same way.
 - **S2.6: Lens mandates** (ACE-D1, ACE-D9). A baseline record run, then body
   revisions for the rules each lens gained, each shown by a lens-level
   comparison to regress no case. Depends on S2.3, S2.4 and S2.5.
-- **S2.7: Evaluation of record** (ACE-A25 to ACE-A43; ACE-D7). The
+- **S2.7: Evaluation of record** (ACE-A25 to ACE-A45; ACE-D7). The
   verification child for every review-outcome criterion, as ACQ-D2 requires.
   It stays open until a record run passes every case. Depends on S2.6.
 
-The ACE-D10 and ACE-D11 experiments run on `agents-config-9k9.441` with S2.3's
-scorer and judge. They are not S2 slices.
+The arm-experiments spec runs its experiments with S2.3's scorer and judge.
+They are not S2 slices.
 
 ## Continuations
 
@@ -342,7 +312,7 @@ scorer and judge. They are not S2 slices.
 - feat: AC evaluation S2.4: comparison and the template gate (ACE-D9) — AC: ACE-A22, ACE-A23, ACE-A24; make content-tests exits 0.
 - feat: AC evaluation S2.5: the catalogue (ACE-D3) — AC: the committed catalogue passes the case check; make content-tests exits 0.
 - feat: AC evaluation S2.6: lens mandates (ACE-D1, ACE-D9) — AC: a committed baseline record run, and a lens-level comparison per revised lens.
-- feat: AC evaluation S2.7: evaluation of record, the verification child (ACE-D7) — AC: ACE-A25, ACE-A26, ACE-A27, ACE-A28, ACE-A29, ACE-A30, ACE-A31, ACE-A32, ACE-A33, ACE-A34, ACE-A35, ACE-A36, ACE-A37, ACE-A38, ACE-A39, ACE-A40, ACE-A41, ACE-A42, ACE-A43.
+- feat: AC evaluation S2.7: evaluation of record, the verification child (ACE-D7) — AC: ACE-A25, ACE-A26, ACE-A27, ACE-A28, ACE-A29, ACE-A30, ACE-A31, ACE-A32, ACE-A33, ACE-A34, ACE-A35, ACE-A36, ACE-A37, ACE-A38, ACE-A39, ACE-A40, ACE-A41, ACE-A42, ACE-A43, ACE-A44, ACE-A45.
 
 ## Out of scope
 
