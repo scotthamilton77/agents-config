@@ -237,6 +237,16 @@ def main() -> None:
         assert after_toggle == labels, f"choosing the expert seat rewrote history: {after_toggle}"
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
+        #    The map channel has a seat toggle of its own, and its notes are the
+        #    other transcript a mode-reading page would relabel.
+        page.click('.seats[data-channel="map"] [data-seat="heavy"]')
+        page.wait_for_timeout(400)
+        map_after_toggle = page.eval_on_selector_all(
+            "#col-d1 .infonote strong", "els => els.map(e => e.textContent.trim())"
+        )
+        assert map_after_toggle == notes, (
+            f"choosing the map's expert seat rewrote its notes: {map_after_toggle}"
+        )
 
         # 4. A page that reloads -- and so was never there for the turns -- reads
         #    the same labels off the projection, on the thread and on the map
