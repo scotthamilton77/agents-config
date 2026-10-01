@@ -14,6 +14,7 @@ All criteria describe future implementation; their evidence is open. The audit i
 - DEL-B4 | open
 - DEL-B5 | open
 - DEL-B6 | open
+- DEL-B7 | open
 - DEL-C1 | open
 - DEL-C2 | open
 - DEL-C3 | open
