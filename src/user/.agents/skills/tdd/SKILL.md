@@ -64,9 +64,9 @@ end.
 ## A failing test comes first
 
 Write production code only to make a failing test pass, whoever wrote the test.
-A test written after the code checks what the code does. A test written first
-checks what the code should do, and only that test can catch the code being
-wrong.
+A test written after the code tends to check what the code already does,
+because the code in view shapes it. A test written first can only check what
+the code should do, and that is the check that catches the code being wrong.
 
 Wrote code before a test existed? Delete it and implement fresh from the test.
 Keeping it "as reference" or adapting it while you write the test both end the
