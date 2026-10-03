@@ -12,8 +12,7 @@ forward with a note to fix it later.
 ## Scope
 
 Applies to any artifact in a gated namespace: `rules`, `skills`, `commands`,
-`agents`. Claude `workflows/` are not gated by the installer today; that is a
-known hole.
+`agents`, `workflows`.
 
 Applies equally to a newly authored artifact and to one being reinstated after
 retirement. **There is no grandfathering.** An artifact that shipped before

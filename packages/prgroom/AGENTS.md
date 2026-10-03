@@ -47,7 +47,7 @@ but the full gate must pass before push.
 
 - `uv`-managed; Python ≥ 3.11 (`uv` auto-installs it first run).
 - Run tools via `uv run …` from inside `packages/prgroom/`, or the `make`
-  targets from the repo root.
+  targets from the root of the tree you are working in.
 - Config lives in `pyproject.toml`: ruff (line-length 100), mypy
   `strict = true`, coverage `branch = true` / `fail_under = 90`.
 
