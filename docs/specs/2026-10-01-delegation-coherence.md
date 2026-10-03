@@ -1,7 +1,7 @@
 # Delegation skills and rules as one system
 
 **Date:** 2026-10-01, revised 2026-10-03
-**Status:** Child spec of `docs/specs/2026-07-21-harness-rework-way-forward.md` (D5 foreign eyes in review seats, D16 removal conditions). Draft for review. Three criteria attacks ran, two on 2026-10-01 and one on 2026-10-03 after the table took its provider shape; its record is `docs/specs/2026-10-01-delegation-coherence-ac-attack.json`.
+**Status:** Child spec of `docs/specs/2026-07-21-harness-rework-way-forward.md` (D5 foreign eyes in review seats, D16 removal conditions). Draft for review. Three criteria attacks ran, two on 2026-10-01 and one on 2026-10-03 after the table took its provider shape; slice F and the owner decisions of 2026-10-03 were added after the third and are unattacked; its record is `docs/specs/2026-10-01-delegation-coherence-ac-attack.json`.
 **Work item:** `agents-config-9k9.458`, design child `agents-config-9k9.458.1`.
 **Related:** `agents-config-9k9.457` (the one model routing table, pull request 803), `agents-config-9k9.408` (review-seat pins, pull requests 772 to 774), `agents-config-9k9.17.29` (review-panel Gemini seats on agy).
 **Quality contract:** `docs/specs/2026-09-18-acceptance-criteria-quality.md`. **Lifecycle:** `docs/specs/2026-09-18-acceptance-criteria-lifecycle.md`.
@@ -27,7 +27,7 @@ Each finding was verified against the tree at main `c90c0001` plus pull request 
 | F1 | After pull request 803 one file under `src/` carries model prices, accepted efforts and the model per provider and tier: the routing table beside `choosing-a-delegate`. Nothing mechanical keeps it the only one. The example commands in `review-panel`'s `harvest.md` and in the OpenRouter skill name model ids, and nothing fails when such an id leaves the table. | Unguarded |
 | F2 | Pull request 772 (`agents-config-9k9.408`, open since 2026-09-17) adds review-seat pin rows to the OpenRouter skill's routing reference and to the Codex skill's table. Pull request 803 deletes the first file and removes the second table. The two changes cannot both merge as written. | Conflict |
 | F3 | `agents-config-9k9.408` pins the OpenRouter mid review seat to `google/gemini-3.8-flash`. The routing table names `z-ai/glm-5.3` in that cell and states that a Gemini model on OpenRouter is the `google` fallback and never a pick. | Contradiction |
-| F4 | `agents-config-9k9.408` settles that the OpenRouter launcher refuses every `gpt-` id with no `-mini` exemption. Pull request 803 adds a `gpt-6` prefix and keeps the exemption for the 5.5 and 5.6 prefixes. | Divergence |
+| F4 | `agents-config-9k9.408` settles that the OpenRouter launcher refuses every `gpt-` id with no `-mini` exemption. Pull request 803's launcher adds a `gpt-6` prefix, keeps the exemption for the 5.5 and 5.6 prefixes, and admits every Gemini id, while its prose says a GPT or Gemini model runs there only on the user's explicit instruction. The code enforces less than the prose states. | Divergence |
 | F5 | `agents-config-9k9.408` runs a whole-artifact read on `moonshotai/kimi-k3` at `medium`, a level that model does not list. The OpenRouter launcher skill says `low`. | Divergence |
 | F6 | `delegating-to-codex` says the raw `codex` binary "stays forbidden either way". `harvest.md` and the `ac-attack` skill both say a codex lens runs "through the codex command-line tool" and name no entry point. A reader of the second pair can take that as the raw binary the first forbids. | Ambiguity |
 | F7 | `delegating-to-codex` says how to dispatch the rescue agent. No artifact under `src/` gives the part a review lens adds, which is capturing the output and supervising the run. That procedure exists only in the owner's memory files: the caller's shell redirects the companion call's output to the claimed file because Codex's sandbox is read-only; the caller waits on the process it launched and on its own capture file; a usage-limit failure is exit 1 with `You've hit your usage limit` on stderr and means the route is down. | Missing |
@@ -56,6 +56,8 @@ Each decision states its cost and the observation that removes it.
 **DEL-D5. The OpenRouter skill's description names the grant its body requires** (F11). Cost: one sentence. Remove when: the skill is removed.
 
 **DEL-D6. The delivery protocol and the failover statements stay where they are** (F12, F13). Each restatement sits in the artifact an agent holds at the moment it needs the rule, and the copies agree. Merging them would save about ten lines and add a cross-skill read to every dispatch. This is the audit's "no convergence worth its cost" result for those two findings. Cost: none. Reconsider when two of the copies are found to disagree.
+
+**DEL-D10. The OpenRouter launcher refuses GPT and Gemini models unless the user instructed the run** (F4). The denylist refuses `claude`, every `gpt-` id and every Gemini id. A `--user-instructed` flag lifts the refusal for the GPT and Gemini families on that run alone, never for Claude, and the proxy's ledger line records it, so an audit of a bill can see which runs were instructed. The skill tells the caller to pass the flag only when the user said so for the run at hand. Cost: one flag, its tests, and one sentence in the skill. Remove when: the launcher is removed. Refuted alternatives: an absolute refusal, which leaves no way to honour the user's instruction when a subscription is spent; and the prose rule with no enforcement, which is the state F4 describes.
 
 **DEL-D7. prgroom's chains stay in code** (F14). Their ids are valid, and changing them is a package change under that package's version rule. A separate work item updates them to the GPT-6 tiers. Cost: one inventory the lint of DEL-D1 does not read. Reconsider when a chain names an id that has left the Codex model list.
 
@@ -116,16 +118,22 @@ Suite criteria run under `content-tests`. Scenario criteria use the protocol in 
 - **DEL-V6** In every file slice E changes, the text outside the renamed terms and the re-keyed reasons is unchanged. Check: the reviewer of the slice's pull request reads the slice's diff and records each hunk as a rename, a re-key, or neither; a hunk that is neither fails.
 - **DEL-V5** A verdict assembled by `assemble_verdict.py` counts distinct vendors from the provider that actually ran each lens, with `openrouter` resolved to the model's vendor prefix, so two lenses on `openai` and `openrouter` count as two only when the OpenRouter model is not an OpenAI model. Check: suite.
 
+### Slice F: the launcher honours the instruction rule
+
+- **DEL-F1** `run.js` with `--model` naming any `gpt-` id or any Gemini id, in any vendor prefix or `:variant` form, exits 78 before the proxy binds, with stderr naming the family and the flag that lifts the refusal; a Claude id exits 78 the same way with no flag named. Check: suite, one case per family and per spelling.
+- **DEL-F2** The same invocation with `--user-instructed` starts the run on that model, the proxy forwards its completion requests, and every ledger line for the run carries `user-instructed`. Check: suite, fake child and fake upstream.
+- **DEL-F3** `--user-instructed` with a Claude id still exits 78 before the proxy binds. Check: suite.
+- **DEL-F4** `--user-instructed` on a model the launcher does not refuse changes nothing: argv, environment, exit code and ledger equal the run without the flag. Check: suite.
+- **DEL-F5** The proxy refuses a completion request for a GPT or Gemini model it was not started with the flag for, pin or no pin, with `decision=deny-denylist` in its ledger. Check: suite.
+- **DEL-F6** A reader holding only `openrouter-claude-subagent` passes the flag when the scenario's user instructed the run and withholds it when the user merely asked for a cheap Gemini run. Check: scenario protocol 5.4, scenarios F6a and F6b.
+
 ### 5.4 Scenario protocol
 
 A scenario gives a fresh native subagent on the `mid` tier the named files and one captured input, and asks one question with a closed answer set. No other context is supplied. Each scenario runs three times. A criterion passes when every run of every one of its scenarios returns the keyed answer. The scenarios, their captured inputs and their keys are written before the prose they test and are committed beside the evidence sidecar. The acceptance authority is the key. A run that returns no answer is a failed run and is not retried.
 
-## 6. Open questions for the owner
+## 6. Owner decisions
 
-Two of the three settings that differed between `agents-config-9k9.408` and the routing table were settled by the table's shape on 2026-10-03: the OpenRouter mid seat is `z-ai/glm-5.3`, the mid cell of the `openrouter` column, and a whole-artifact read on `moonshotai/kimi-k3` runs at `low`, stated once in the OpenRouter launcher skill. Two questions remain. Neither blocks slices A to D.
-
-1. **The GPT denylist** (F4). Options: refuse every `gpt-` id with no exemption, as settled on 2026-09-17; or keep the `-mini` exemption for the 5.5 and 5.6 tiers. Recommended: refuse every `gpt-` id, since Codex serves every tier.
-2. **How far the provider rename reaches** (DEL-D8). Options: the full rename through the verdict schema, as slice E states; or prose and data only, leaving `transport` in the scripts and the envelope. Recommended: the full rename. Slice E is written for it, and the half measure leaves two words for one thing in the files a reader meets most.
+The settings that differed between `agents-config-9k9.408` and the routing table were settled with the owner on 2026-10-03: the OpenRouter mid seat is `z-ai/glm-5.3`; a whole-artifact read on `moonshotai/kimi-k3` runs at `low`, stated once in the OpenRouter launcher skill; the launcher refuses every GPT and every Gemini model unless the user instructed the run (DEL-D10); and the provider rename goes through the verdict schema (DEL-D8). No question is open.
 
 ## 7. Continuations
 
@@ -136,5 +144,6 @@ Use `work promote` on each resulting feature before implementation.
 - feat: the launcher skills answer the same four questions. AC: DEL-C1, DEL-C2, DEL-C3, DEL-C4, DEL-C5, DEL-C6, DEL-C7, DEL-C8
 - feat: the agy launcher composes the model id from a model and an effort. AC: DEL-G1, DEL-G2, DEL-G3, DEL-G4, DEL-G5, DEL-G6
 - feat: one word, provider, through the panel's prose, data, scripts and verdict schema. AC: DEL-V1, DEL-V2, DEL-V3, DEL-V4, DEL-V5, DEL-V6
+- feat: the OpenRouter launcher refuses GPT and Gemini models unless the user instructed the run. AC: DEL-F1, DEL-F2, DEL-F3, DEL-F4, DEL-F5, DEL-F6
 
-Slice C lands after slice B, because DEL-C2 reads the flags slice B adds, and after slice D, because the agy launch section it preserves is the two-flag one. Slice E lands last and after `agents-config-9k9.408`'s remaining pull requests, because it renames the field they edit. Outside this spec's criteria: `agents-config-9k9.408` is reworked under DEL-D2 once section 6 is answered, and a new item updates prgroom's chains under DEL-D7.
+Slice C lands after slice B, because DEL-C2 reads the flags slice B adds, and after slice D, because the agy launch section it preserves is the two-flag one. Slice E lands last and after `agents-config-9k9.408`'s remaining pull requests, because it renames the field they edit. Slice F supersedes the denylist half of pull request 772, which is reworked or closed against it. Outside this spec's criteria: `agents-config-9k9.408` is reworked under DEL-D2 once section 6 is answered, and a new item updates prgroom's chains under DEL-D7.
