@@ -1,6 +1,6 @@
 # Skill Creation Checklist (TDD-Adapted)
 
-Work this in order. Do not skip the RED phase — an untested skill is an
+Work this in order, starting with the RED phase. An untested skill is an
 untested change to how every future agent behaves.
 
 ## RED Phase — Watch It Fail
@@ -36,16 +36,17 @@ untested change to how every future agent behaves.
 
 ## Quality Checks
 
-- [ ] Register matches skill type (no MUSTs in technique skills, no soft
-      reframing in discipline skills).
+- [ ] Register matches skill type: technique skills explain the why, and
+      discipline skills state each rule plainly with its reason and name the
+      rationalizations baseline testing surfaced.
 - [ ] Small flowchart only where the decision is non-obvious.
 - [ ] Quick reference table where it helps.
 - [ ] Common mistakes section.
 - [ ] No narrative storytelling.
 - [ ] Supporting files only for tools or heavy reference.
 
-## STOP Before Moving to the Next Skill
+## Finish Each Skill Before the Next
 
-After writing ANY skill, you MUST STOP and complete this checklist before
-moving on. Do not batch multiple skills without testing each. Deploying
-untested skills is deploying untested code.
+Complete this checklist for each skill before you start the next one, and
+test each skill on its own rather than in a batch. Deploying untested skills
+is deploying untested code.
