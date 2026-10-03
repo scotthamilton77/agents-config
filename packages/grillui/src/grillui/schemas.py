@@ -1436,6 +1436,11 @@ class QueueGesturePayload(Payload):
     log, authored by the agent that wrote them, and the appender resolves them
     out of the queue -- so a page cannot apply something that was never
     proposed, and the sole-author rule survives the human's gesture.
+
+    An apply may also carry `by_preference: true`, saying the page's own switch
+    made the gesture for the human. It is an extra key like any other payload
+    content, accepted and kept on the entry, and nothing on the backend reads it:
+    the replay is the same whichever way the apply was made.
     """
 
     pending: list[str] = Field(min_length=1)

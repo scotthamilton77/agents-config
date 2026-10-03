@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from conftest import TIMEOUT, ScriptedCli, SpyDriver, document, run_turns
+from conftest import TIMEOUT, ScriptedCli, SpyDriver, document, event, post, proposed, run_turns
 
 from grillui.drivers import HeavyDriver, document_problem, read_document, record_document
 from grillui.lane import Lane
@@ -24,6 +24,8 @@ from grillui.schemas import EventSubmission, LogEntry
 from grillui.tiers import TierConfig
 
 if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
+
     from grillui.log import SessionLog
 
 MARKS_D2 = {"id": "b", "text": "Rebuild it", "puts_in_question": ["d2"]}
@@ -383,4 +385,33 @@ def test_pnd_a12_an_apply_made_by_the_preference_replays_as_the_same_board(
     ]
     assert entries[-1].payload["by_preference"] is True
     assert to_image1(replay(log.epoch, entries)) == to_image1(replay(log.epoch, stripped))
+    assert _node(log, "d3").status == "invalidated"
+
+
+def test_pnd_a12_the_api_accepts_an_apply_the_preference_made(
+    log: SessionLog, client: TestClient
+) -> None:
+    """
+    Given an agent's invalidate of d3 waiting in the queue
+    When the page posts the apply its switch makes -- the ids and
+         `by_preference: true` -- to the write route the page itself uses
+    Then the route accepts it, the entry on the log carries the marker, and
+         the invalidate lands.
+
+    Pinned at the boundary rather than left to the browser scenario, because
+    the payload shape the route validates against is where a refusal would be.
+    """
+    _seed(log)
+    post(client, log.epoch, event("invalidate", key="proposal", target="d3", why="moot"))
+    waiting = proposed(client, "d3")
+    assert len(waiting) == 1
+
+    receipts = post(
+        client,
+        log.epoch,
+        event("apply", actor="human", key="auto", pending=waiting, by_preference=True),
+    )
+
+    assert receipts[0]["status"] == "accepted", receipts
+    assert log.entries()[-1].payload["by_preference"] is True
     assert _node(log, "d3").status == "invalidated"
