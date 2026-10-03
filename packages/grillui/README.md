@@ -40,7 +40,9 @@ may be seated on any of the three transports — while the expert
 above it is one shared configuration for every channel, a Claude model driven as
 `claude -p --resume` turns. A session re-chooses the seats with
 `GRILLUI_FAST_MODEL`, `GRILLUI_MAP_TRANSPORT`, `GRILLUI_MAP_MODEL`,
-`GRILLUI_MAP_EFFORT`, `GRILLUI_HEAVY_MODEL` and `GRILLUI_HEAVY_EFFORT`; the two
+`GRILLUI_MAP_EFFORT`, `GRILLUI_HEAVY_MODEL` and `GRILLUI_HEAVY_EFFORT`. A turn
+weighing an impact task runs on the expert at `GRILLUI_TASK_EFFORT`, which
+defaults to `medium` and is independent of the heavy effort. The two
 rungs themselves are not configuration, and the log names them `fast` and
 `heavy`. A turn is one invocation that exits — nothing polls, and no agent
 process stays resident between turns. Which rung takes a turn is a property of

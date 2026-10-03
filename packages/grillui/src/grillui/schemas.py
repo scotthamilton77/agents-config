@@ -1161,6 +1161,11 @@ class MootnessObligation(Strict):
     impact tasks are keyed by that sequence and their target, so a turn reads
     which of its own tasks a later gesture superseded off the log by it, at the
     moment its reply lands.
+
+    `opened` is the part of `ids` that no option marked: the decisions an answer
+    in the human's own words opened. The turn is told which those are, because
+    a mark is the map author's prediction that a decision changes, and these
+    carry no prediction either way.
     """
 
     target: str
@@ -1168,6 +1173,7 @@ class MootnessObligation(Strict):
     ids: list[str] = Field(min_length=1)
     cause: Literal["answer", "invalidate"] = "answer"
     gesture: int | None = None
+    opened: list[str] = Field(default_factory=list)
 
 
 class Ruling(Strict):
@@ -1252,6 +1258,12 @@ class DispatchContext(Strict):
     about the tool rather than about the plan -- and it is the one dispatch for
     which the answer is worth its bytes, since every other agent here is
     grilling a design and would only be carrying it.
+
+    `tasks` names the impact tasks this turn carries. `backpressure` rides every
+    dispatch that weighs the board against a settlement -- a turn carrying a
+    task, and the doctor -- and is the paragraph its brief opens on that. It is
+    recorded here rather than only in the composed brief so a reader of the
+    dispatch record can see that the turn was told.
     """
 
     agent: str
@@ -1265,6 +1277,8 @@ class DispatchContext(Strict):
     catch_up: list[CatchUpEntry] = Field(default_factory=list)
     help_reference: str | None = None
     mootness: MootnessObligation | None = None
+    tasks: list[str] = Field(default_factory=list)
+    backpressure: str | None = None
 
 
 class DoctorState(Strict):

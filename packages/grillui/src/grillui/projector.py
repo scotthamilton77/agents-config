@@ -88,9 +88,10 @@ bytes until the human applies them -- `apply` puts them on the board as one
 gesture the human authored, `dismiss` ends them having changed nothing. Both
 name queue entries by id, so what lands is what the agent wrote.
 
-**A decision a ruling in flight may move is waiting.** A marked answer starts
-one impact task per decision it puts in question, recorded on the lane's
-status entries. While a task started by a gesture is live, or has failed
+**A decision a ruling in flight may move is waiting.** An answer starts one
+impact task per decision it puts in question, whether its option marked that
+decision or the human's own words on it opened that decision. The tasks are
+recorded on the lane's status entries. While a task started by a gesture is live, or has failed
 without a result, its target carries a `waiting` field naming the task, and
 the frontier skips it exactly as it skips a locked one. A task ends in one of
 four phases: `replied` and `superseded` are final, `error` holds the decision
