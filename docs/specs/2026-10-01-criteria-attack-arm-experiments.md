@@ -7,35 +7,50 @@
 
 ## Problem statement
 
-Two experiments compare ways of running the criteria attack. The authoring
-experiment decides whether one authoring process introduces fewer defects than
-another. The re-attack experiment measures what each way of showing a round its
-earlier rejections does to repeats, recall and overturnability. Neither decides
-whether a lens meets its parent criteria, which is the evaluation of record's
-job. Their results are therefore scored apart from it, and they change no
-case's pass or fail.
+Two experiments compare ways of running the criteria attack.
+
+- The authoring experiment decides whether one authoring process introduces
+  fewer defects than another.
+- The re-attack experiment measures what each way of showing a round its
+  earlier rejections does to repeats, recall and overturnability.
+
+Neither experiment decides whether a lens meets its parent criteria. That is
+the evaluation of record's job. The experiments' results are therefore scored
+apart from it, and they change no case's pass or fail.
 
 ## Decisions
 
 **ARM-D1 — The authoring-process experiment.** This scores the three arms on
 `agents-config-9k9.441`: the orchestrator, the orchestrator with a self-check,
-and a subagent with a self-check. Each arm gets one document at a pinned
-revision and one fixed set of accepted objections with the author's decisions.
-Each authors three times with one model named in the run plan. The full panel
-attacks each result once in the evaluation contract's ACE-D6 configuration. An
-introduced defect is an objection targeting a criterion the arm added or
-changed that the judge rules valid, or an accepted objection the result leaves
-unanswered. An arm ranks ahead when its three results carry at least three
-fewer introduced defects in total; a smaller difference is no difference.
+and a subagent with a self-check.
+
+Each arm gets one document at a pinned revision and one fixed set of accepted
+objections with the author's decisions. Each authors three times with one
+model named in the run plan. The full panel attacks each result once in the
+evaluation contract's ACE-D6 configuration.
+
+An introduced defect is either of two things:
+
+- an objection targeting a criterion the arm added or changed that the judge
+  rules valid;
+- an accepted objection the result leaves unanswered.
+
+An arm ranks ahead when its three results carry at least three fewer
+introduced defects in total. A smaller difference is no difference.
 
 **ARM-D2 — The re-attack experiment is judged, not decided.** This scores the
-arms on `agents-config-9k9.441` for `agents-config-9k9.442`: (1) the document
-only; (2) the document with a ledger of earlier rejected grounds and their
-rationales; (3) the document only, with a post-filter matching new objections
-to earlier rejections before adjudication. Fixtures are re-attack rounds from
-PR 791's history, with seeded wrong rejections: valid grounds the ledger marks
-rejected. Each arm runs the full panel five times per fixture in the evaluation
-contract's ACE-D6 configuration. Per run, the scorer counts:
+arms on `agents-config-9k9.441` for `agents-config-9k9.442`. The arms are:
+
+1. the document only;
+2. the document with a ledger of earlier rejected grounds and their
+   rationales;
+3. the document only, with a post-filter matching new objections to earlier
+   rejections before adjudication.
+
+Fixtures are re-attack rounds from PR 791's history, with seeded wrong
+rejections. A seeded wrong rejection is a valid ground the ledger marks
+rejected. Each arm runs the full panel five times per fixture in the
+evaluation contract's ACE-D6 configuration. Per run, the scorer counts:
 
 - repeats: objections reaching adjudication that the judge matches to an
   earlier rejected ground;
@@ -44,12 +59,18 @@ contract's ACE-D6 configuration. Per run, the scorer counts:
 - overturnability: whether each seeded wrong rejection reaches adjudication;
 - effort: every objection reaching adjudication.
 
-Arm 2 or arm 3 meets the bar when its mean repeats are at most half of arm 1's,
-its mean recall is at most ten percentage points below arm 1's, and every
-seeded wrong rejection reaches adjudication in at least four of five runs. The
-report gives each arm's measures and which arms meet the bar. It selects no
-arm and presumes none. Arm 2 adds text to every prompt, so shipping it would
-also need the evaluation contract's ACE-D9 gate.
+Arm 2 or arm 3 meets the bar when three conditions hold:
+
+- its mean repeats are at most half of arm 1's;
+- its mean recall is at most ten percentage points below arm 1's;
+- every seeded wrong rejection reaches adjudication in at least four of five
+  runs.
+
+The report gives each arm's measures and which arms meet the bar. It selects
+no arm and presumes none.
+
+Arm 2 adds text to every prompt, so shipping it would also need the evaluation
+contract's ACE-D9 gate.
 
 ## Acceptance criteria
 
@@ -69,7 +90,10 @@ also need the evaluation contract's ACE-D9 gate.
 
 ## Out of scope
 
-What a production re-attack round sees, which `agents-config-9k9.442` decides
-with this report as evidence. Shipping any arm. The scorer, the judge and their
-calibration records, which the evaluation contract builds. Harvesting cases for
-the catalogue, which join it in the evaluation contract's format.
+- What a production re-attack round sees, which `agents-config-9k9.442`
+  decides with this report as evidence.
+- Shipping any arm.
+- The scorer, the judge and their calibration records, which the evaluation
+  contract builds.
+- Harvesting cases for the catalogue, which join it in the evaluation
+  contract's format.

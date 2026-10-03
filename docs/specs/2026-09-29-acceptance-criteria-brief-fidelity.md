@@ -10,10 +10,12 @@ slice S3 (brief fidelity and evidence).
 ## Scope
 
 S3 owns ACQ-A12 and ACQ-A13. A dispatch brief must carry exactly the criteria
-assigned to the work, refuse when it cannot, and map each criterion to its
-planned check apart from the criterion's text. A criterion without a feasible
-planned check is reported unready. The parent's Testing decisions require the
-check at the consumer boundary, which is the generated brief itself.
+assigned to the work. It must refuse when it cannot. It must map each
+criterion to its planned check, apart from the criterion's text. A criterion
+without a feasible planned check is reported unready.
+
+The parent's Testing decisions require the check at the consumer boundary.
+That boundary is the generated brief itself.
 
 ## Current state
 
@@ -33,23 +35,35 @@ Verified at 38bda4ba.
 
 ## Decisions
 
-**BRF-D1 — A helper emits the criteria and evidence sections.** The skill ships
-`brief_criteria.py` beside its `SKILL.md`. It uses the standard library only,
-so it runs under `uv run` or `python3` on every supported tool. Its `emit`
-mode prints two Markdown sections: the assigned criteria as `- **ID** text`
-entries, then an evidence section mapping each ID to its planned check. The
-writer pastes both sections into the brief unchanged. Its `check` mode compares
-a written brief with the source, and with the plan when given `--checks`.
-Retyping criteria is where a brief drifts, so fidelity moves into code the
-writer runs and the evaluation can score.
+**BRF-D1 — A helper emits the criteria and evidence sections.** The skill
+ships `brief_criteria.py` beside its `SKILL.md`.
 
-**BRF-D2 — Three sources, one grammar.** `--spec PATH --ids ID,...` reads the
-named entries from a spec's acceptance-criteria sections. `--criteria FILE`
-reads a file holding only entries, for criteria authored for one brief.
-`--item ID` reads a work item's criteria (BRF-D7). Spec and file entries follow
-spec-lint's entry grammar, joined text included. The helper's parser is a
-marked counterpart of spec-lint's, as LIFE-D1 already binds workcli's. The
-grammar has five rules, and a criteria file follows all but the second:
+- Its `emit` mode prints two Markdown sections. The first holds the assigned
+  criteria as `- **ID** text` entries. The second is an evidence section that
+  maps each ID to its planned check. The writer pastes both sections into the
+  brief unchanged.
+- Its `check` mode compares a written brief with the source, and with the plan
+  when given `--checks`.
+
+The helper uses the standard library only, so it runs under `uv run` or
+`python3` on every supported tool.
+
+Retyping criteria is where a brief drifts. Fidelity therefore moves into code
+that the writer runs and the evaluation can score.
+
+**BRF-D2 — Three sources, one grammar.** The helper reads criteria from three
+sources.
+
+- `--spec PATH --ids ID,...` reads the named entries from a spec's
+  acceptance-criteria sections.
+- `--criteria FILE` reads a file holding only entries, for criteria authored
+  for one brief.
+- `--item ID` reads a work item's criteria (BRF-D7).
+
+Spec and file entries follow spec-lint's entry grammar, joined text included.
+The helper's parser is a marked counterpart of spec-lint's, as LIFE-D1 already
+binds workcli's. The grammar has five rules, and a criteria file follows all
+but the second:
 
 1. An entry opens on a line holding, after optional indentation, `- **ID** `
    and nonblank text, where the ID has spec-lint's criterion ID form.
@@ -62,25 +76,32 @@ grammar has five rules, and a criteria file follows all but the second:
 5. A line inside a fenced code block, its fence markers included, never opens
    or continues an entry, and it ends the current one.
 
-One fixture in the skill's `evals/`, a Markdown spec with its expected
-readings, holds a case for each rule and is read by both suites, so the two
-readings cannot drift apart unseen. A case's label proves nothing about
-coverage. A variant of the helper's parser that breaks a rule and still passes
-every case shows that rule uncovered. spec-lint's fixture test fails when the
-fixture is absent. Only the helper's test skips then, because the helper's
-suite also runs where the installer has pruned `evals/`.
+One fixture keeps the two readings from drifting apart unseen. It lives in the
+skill's `evals/`. It is a Markdown spec with its expected readings, it holds a
+case for each rule, and both suites read it.
+
+A case's label proves nothing about coverage. A variant of the helper's parser
+that breaks a rule and still passes every case shows that rule uncovered.
+
+The two suites treat an absent fixture differently. spec-lint's fixture test
+fails when the fixture is absent. Only the helper's test skips then, because
+the helper's suite also runs where the installer has pruned `evals/`.
 
 **BRF-D3 — Fidelity is the set of IDs and their words.** A brief preserves its
-criteria when its criteria section holds exactly the assigned IDs, and each ID's
-text equals its source text after runs of whitespace collapse to one space. A
-rewrap changes no word. A changed word, a dropped or added ID, or a changed ID
-is a different contract. Order is not compared, since no criterion depends on
-its position. Evidence follows the same rule against the plan. A brief
-preserves its evidence when its evidence section holds exactly the assigned
-IDs, and each ID's entry equals the entry `emit` prints for it from the same
-plan after runs of whitespace collapse to one space. An observation and a pass
-rule must therefore equal the planned ones, and an unready ID keeps its mark
-and reason.
+criteria when two things hold. Its criteria section holds exactly the assigned
+IDs. Each ID's text equals its source text after runs of whitespace collapse
+to one space.
+
+A rewrap changes no word. A changed word, a dropped or added ID, or a changed
+ID is a different contract. Order is not compared, since no criterion depends
+on its position.
+
+Evidence follows the same rule against the plan. A brief preserves its
+evidence when two things hold. Its evidence section holds exactly the assigned
+IDs. Each ID's entry equals the entry `emit` prints for it from the same plan
+after runs of whitespace collapse to one space. An observation and a pass rule
+must therefore equal the planned ones, and an unready ID keeps its mark and
+reason.
 
 **BRF-D4 — A refusal replaces the brief.** To refuse, `emit` prints nothing on
 stdout and one JSON object on stderr naming each fault, and exits 2. Nothing
@@ -97,58 +118,85 @@ pasteable exists, so no brief with an invented contract can follow. The codes:
 - `malformed-checks`: the checks file breaks the BRF-D5 shape;
 - `render-failed`: an item's rendering fails, naming the item and the cause.
 
-One refusal names every fault the helper detects in the sources it can read,
-so two absent IDs yield one refusal naming both. A criteria file whose only
-nonblank lines sit outside any entry is malformed, not empty. It refuses as
-`malformed-criteria` alone. The skill tells the writer to relay a refusal to
-its requester and dispatch nothing.
+One refusal names every fault the helper detects in the sources it can read.
+Two absent IDs therefore yield one refusal naming both. A criteria file whose
+only nonblank lines sit outside any entry is malformed, not empty. It refuses
+as `malformed-criteria` alone.
+
+The skill tells the writer to relay a refusal to its requester and dispatch
+nothing.
 
 **BRF-D5 — A planned check is an observation and a pass rule.** `--checks FILE`
 is a JSON object mapping an ID to `{"observe": …, "pass": …}`, where each field
-is a string. The file breaks that shape when it is not JSON, its top level is
-not an object, an entry is not an object, or a field is not a string. The
-shape rule covers every entry, assigned or not. A field is blank when its key
-is absent or its string holds only whitespace, so a missing key makes a
-criterion unready and never makes the file malformed. An entry keyed to an
-unassigned ID is otherwise ignored, because one checks file can serve several
-briefs that each carry part of a spec's criteria. A mistyped ID therefore
-surfaces as its intended criterion being unready. The evidence section holds
-exactly the assigned IDs. It gives each one its observation and pass rule, or
-marks it `unready` with its reason. The reasons are a closed set. `no planned
-check` means the file has no entry for the ID, and `blank observation` and
-`blank pass rule` name each blank field. Without `--checks`, every criterion
-is unready with the reason `no planned check`. When any criterion is unready,
-`emit` still prints both sections, names each unready ID on stderr, and exits
-1. The criteria section is the same whether `--checks` is absent, complete or
-leaves a criterion unready. Whether a stated check is feasible is the writer's
-judgment, which code cannot make. The evaluation measures it (BRF-D8), and the
-skill tells the writer not to dispatch a brief with an unready criterion.
+is a string.
+
+The file breaks that shape when it is not JSON, its top level is not an
+object, an entry is not an object, or a field is not a string. The shape rule
+covers every entry, assigned or not.
+
+A field is blank when its key is absent or its string holds only whitespace.
+A missing key therefore makes a criterion unready. It never makes the file
+malformed.
+
+An entry keyed to an unassigned ID is otherwise ignored, because one checks
+file can serve several briefs that each carry part of a spec's criteria. A
+mistyped ID therefore surfaces as its intended criterion being unready.
+
+The evidence section holds exactly the assigned IDs. It gives each one its
+observation and pass rule, or marks it `unready` with its reason. The reasons
+are a closed set:
+
+- `no planned check` means the file has no entry for the ID;
+- `blank observation` and `blank pass rule` name each blank field.
+
+Without `--checks`, every criterion is unready with the reason `no planned
+check`.
+
+When any criterion is unready, `emit` still prints both sections, names each
+unready ID on stderr, and exits 1. The criteria section is the same whether
+`--checks` is absent, complete or leaves a criterion unready.
+
+Whether a stated check is feasible is the writer's judgment, which code cannot
+make. The evaluation measures it (BRF-D8), and the skill tells the writer not
+to dispatch a brief with an unready criterion.
 
 **BRF-D6 — The skill routes the writer through the helper.** S3.4 rewrites the
 skill's acceptance-criteria part and skeleton. Criteria and evidence come from
 `emit`, pasted unchanged, and `check` runs before dispatch. A refusal or an
-unready criterion is reported to the requester. LIFE-A32's sentence on
-re-attack before use belongs to lifecycle S6 (`agents-config-9k9.405.9`), so
-this slice leaves it alone. Content-lint's token caps apply.
+unready criterion is reported to the requester.
+
+LIFE-A32's sentence on re-attack before use belongs to lifecycle S6
+(`agents-config-9k9.405.9`), so this slice leaves it alone.
+
+Content-lint's token caps apply.
 
 **BRF-D7 — Item criteria come only from the facade renderer.** `--item` runs
 `work acceptance render ID` and reads its acceptance-criteria section. It never
 resolves an item's acceptance field itself, since that would be a third
-resolver of LIFE-D1. Until `agents-config-9k9.405.4` ships the verb, `--item`
-refuses as `render-failed`, naming the missing verb.
+resolver of LIFE-D1.
 
-**BRF-D8 — The generated-brief evaluation.** The writer is Claude Opus through
-the native Agent tool, given the skill from the source tree by full path. For
-each fixture it briefs a subagent for a fixed task and returns its output
-instead of dispatching. Returning a brief stands for dispatching it. The output
-takes one of two forms. A brief is the prompt the writer would dispatch. A
-report is the writer's message to its requester, which holds no criteria or
-evidence section and relays what the helper printed on stderr. Each output
-opens with a line naming its form, `Form: brief` or `Form: report`, so the
-scorer reads the form mechanically. Each fixture runs five times in fresh
-contexts, so one evaluation plans 35 dispatches plus repeats. The run record
-names the writer's resolved model ID. The outputs cannot show a fresh context
-or the native Agent tool, so the operator attests both in the run record.
+Until `agents-config-9k9.405.4` ships the verb, `--item` refuses as
+`render-failed`, naming the missing verb.
+
+**BRF-D8 — The generated-brief evaluation.** The evaluation scores the output
+a writer produces for each of seven fixtures.
+
+The writer is Claude Opus through the native Agent tool, given the skill from
+the source tree by full path. For each fixture it briefs a subagent for a
+fixed task and returns its output instead of dispatching. Returning a brief
+stands for dispatching it.
+
+The output takes one of two forms. A brief is the prompt the writer would
+dispatch. A report is the writer's message to its requester, which holds no
+criteria or evidence section and relays what the helper printed on stderr.
+Each output opens with a line naming its form, `Form: brief` or
+`Form: report`, so the scorer reads the form mechanically.
+
+Each fixture runs five times in fresh contexts, so one evaluation plans 35
+dispatches plus repeats. The run record names the writer's resolved model ID.
+The outputs cannot show a fresh context or the native Agent tool, so the
+operator attests both in the run record.
+
 Fixtures live in the skill's `evals/`:
 
 | Fixture | Assignment | A run passes when |
@@ -161,17 +209,25 @@ Fixtures live in the skill's `evals/`:
 | F6 | three criteria, one whose pass rule is "a reviewer confirms it reads well" | the output names that ID as unready |
 | F7 | three criteria and no planned checks | the output is a report naming every ID as unready |
 
-F3 to F7 pass only in the report form. A brief for any of them fails the run,
-including a brief that carries `unready` marks or lacks a criteria section.
+F3 to F7 pass only in the report form. A brief for any of them fails the run.
+That includes a brief that carries `unready` marks and a brief that lacks a
+criteria section.
+
 `evals/score_briefs.py` scores the outputs mechanically, and scores F1's and
-F2's two halves separately. A run with no output is repeated at most twice,
-then left pending and never scored as failed. The repeat limit is an operator
-procedure, because no output shows a retry. F1 to F5 and F7 pass at five
-runs of five. The helper decides those outputs, so any failed run is a
-pasted-wrong or invented contract. F6 passes at four of five, because only the
-writer's judgment can find that check infeasible. A record run is committed
-under `evals/runs/<run-id>/` with its outputs and report, whatever it shows.
-That rests on the operator. Changing a run count or threshold amends this spec.
+F2's two halves separately.
+
+A run with no output is repeated at most twice. It is then left pending and
+never scored as failed. The repeat limit is an operator procedure, because no
+output shows a retry.
+
+The thresholds differ by fixture. F1 to F5 and F7 pass at five runs of five.
+The helper decides those outputs, so any failed run is a pasted-wrong or
+invented contract. F6 passes at four of five, because only the writer's
+judgment can find that check infeasible.
+
+A record run is committed under `evals/runs/<run-id>/` with its outputs and
+report, whatever it shows. That rests on the operator. Changing a run count or
+threshold amends this spec.
 
 **BRF-D9 — Verification ownership.** S3.5 is the verification child for ACQ-A12
 and ACQ-A13, as ACQ-D2 requires. The helper suites establish the mechanism.
@@ -179,13 +235,17 @@ Only the evaluation of record establishes the parents at the generated brief.
 
 ## Acceptance criteria
 
-"Refuses as X" means the BRF-D4 refusal carrying code X. "The report form" is
-BRF-D8's report. A record run is complete when every fixture has five scored
-outputs, its directory holds every output its report scores, and its record
-names the writer's resolved model ID, which is a Claude Opus model. A run with
-a pending dispatch is incomplete. "The evaluation of record" is the latest
-complete record run under BRF-D8. The helper suite and the scorer's suite
-run under `make content-tests`, and spec-lint's under `make ci`.
+- "Refuses as X" means the BRF-D4 refusal carrying code X.
+- "The report form" is BRF-D8's report.
+- "The evaluation of record" is the latest complete record run under BRF-D8.
+
+A record run is complete when three things hold. Every fixture has five scored
+outputs. Its directory holds every output its report scores. Its record names
+the writer's resolved model ID, which is a Claude Opus model. A run with a
+pending dispatch is incomplete.
+
+The helper suite and the scorer's suite run under `make content-tests`, and
+spec-lint's under `make ci`.
 
 - **BRF-A1** Given a spec and assigned IDs, `emit`'s criteria section holds
   exactly the assigned IDs, each with its entry's full text, continuation
@@ -281,16 +341,24 @@ run under `make content-tests`, and spec-lint's under `make ci`.
 
 ### What-if questions
 
-The refusal criteria BRF-A3 to BRF-A7, BRF-A12, BRF-A14, BRF-A15, BRF-A21 and
-BRF-A25 are the failure and missing-input answers for `emit` and `check`.
-Empty is BRF-A3, BRF-A11's missing `--checks`, and BRF-A15. A checks file that
-names an unassigned ID is BRF-A10. `emit` and `check` read and never write, so
-running either twice or with nothing changed prints the same result, and
-concurrent runs share nothing. BRF-A24 extends that sameness across the two
-runtimes. A limit does not apply, since neither mode bounds how many criteria
-it carries. For BRF-A16 to BRF-A20, a failure names the fixture (BRF-A27), a
-missing output leaves its fixture pending and the run incomplete (BRF-A26),
-and each fixture is fixed, so empty applies only where F3 and F7 test it.
+For `emit` and `check`:
+
+- The failure and missing-input answers are the refusal criteria BRF-A3 to
+  BRF-A7, BRF-A12, BRF-A14, BRF-A15, BRF-A21 and BRF-A25.
+- Empty is BRF-A3, BRF-A11's missing `--checks`, and BRF-A15.
+- A checks file that names an unassigned ID is BRF-A10.
+- `emit` and `check` read and never write. Running either twice or with
+  nothing changed therefore prints the same result, and concurrent runs share
+  nothing. BRF-A24 extends that sameness across the two runtimes.
+- A limit does not apply, since neither mode bounds how many criteria it
+  carries.
+
+For BRF-A16 to BRF-A20:
+
+- A failure names the fixture (BRF-A27).
+- A missing output leaves its fixture pending and the run incomplete
+  (BRF-A26).
+- Each fixture is fixed, so empty applies only where F3 and F7 test it.
 
 ## Ordered slice list
 
@@ -321,6 +389,8 @@ and each fixture is fixed, so empty applies only where F3 and F7 test it.
 
 ## Out of scope
 
-The render verb itself (`agents-config-9k9.405.4`). LIFE-A32's citation of the
-re-attack rule in briefs (`agents-config-9k9.405.9`). Judging whether a planned
-check is feasible in code. Criterion quality, which the attack judges.
+- The render verb itself (`agents-config-9k9.405.4`).
+- LIFE-A32's citation of the re-attack rule in briefs
+  (`agents-config-9k9.405.9`).
+- Judging whether a planned check is feasible in code.
+- Criterion quality, which the attack judges.

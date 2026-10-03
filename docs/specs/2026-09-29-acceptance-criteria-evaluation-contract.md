@@ -9,19 +9,26 @@ slice S2 (quality assessment). Not yet attacked.
 
 ## Scope
 
-S2 owns twenty-seven parent criteria. Six govern prompt emission and the record
-check (ACQ-A20, A22, A23, A26, A28, A29). The other twenty-one, ACQ-A30 and
-ACQ-A31 among them, are claims about stochastic lenses, which the parent's Testing decisions require a fixed
-evaluation contract to judge. This spec fixes it. The arm experiments on
+S2 owns twenty-seven parent criteria. Six of them govern prompt emission and
+the record check: ACQ-A20, A22, A23, A26, A28 and A29. The other twenty-one,
+ACQ-A30 and ACQ-A31 among them, are claims about stochastic lenses. The
+parent's Testing decisions require a fixed evaluation contract to judge them.
+This spec fixes it.
+
+Two things are decided elsewhere. The arm experiments on
 `agents-config-9k9.441` have their own spec,
-`docs/specs/2026-10-01-criteria-attack-arm-experiments.md`. This spec does not
-decide what a re-attack round sees, which stays with `agents-config-9k9.442`.
+`docs/specs/2026-10-01-criteria-attack-arm-experiments.md`. What a re-attack
+round sees stays with `agents-config-9k9.442`.
 
 ## Current state
 
-Verified at 38bda4ba. Lens front matter in `src/user/.claude/skills/ac-attack/lenses/`
-pins no model or effort. PR 791's body records the routing ACE-D6 adopts. No
-evaluation harness or case exists. The installer prunes `evals/` directories.
+Verified at 38bda4ba.
+
+- Lens front matter in `src/user/.claude/skills/ac-attack/lenses/` pins no
+  model or effort.
+- PR 791's body records the routing ACE-D6 adopts.
+- No evaluation harness or case exists.
+- The installer prunes `evals/` directories.
 
 ## Decisions
 
@@ -36,29 +43,42 @@ evaluation harness or case exists. The installer prunes `evals/` directories.
 
 Today no lens enforces `restraint`, `verified-premise` or the last four
 behavioural-outcome rules. The checker refuses a ground outside its lens, so
-ACQ-A24 cannot pass for those six rules. ACQ-D6 gives behavioural-outcome
-checkability, so the verification rules go there. A duplicate or an
-unsupported prescription discharges no obligation part of its own, which the
-obligation-reduction inventory shows. A premise contradicted by evidence
-inside the document is a contradiction, which set-consistency reads for. No
-lens reads the repository. One owner per rule gives each case one lens.
+ACQ-A24 cannot pass for those six rules.
 
-**ACE-D2 — A case is a document pair with a stated expectation.** Cases live in
-`src/user/.claude/skills/ac-attack/evals/`, so they never deploy. The manifest
-`evals/cases.json` gives each case its ID, the parent criteria it serves, its
-rule, its lens, its defect site (a criterion ID, or `none` for an absence), a
-one-sentence detection statement, and the source revision of any harvested
-document. `evals/cases/<id>/` holds `defective.md` and `control.md`. The
-control is the defective document with its one defect corrected, differing in
-one contiguous hunk. One hunk does not prove one defect, so the case's
-reviewer judges that. A control-only case has no defective document or site.
-This settles two open questions on `agents-config-9k9.441`, where cases live
-and how a case states its expectation, because the scorer reads both.
+ACQ-D6 gives behavioural-outcome checkability, so the verification rules go
+there. A duplicate or an unsupported prescription discharges no obligation
+part of its own, and the obligation-reduction inventory shows that. A premise
+contradicted by evidence inside the document is a contradiction, and
+set-consistency reads for contradictions. No lens reads the repository.
 
-**ACE-D3 — The catalogue follows the parent's own text.** A parent criterion's
-"Given" clause is its case's defect. Its no-finding clause is either the
-correction itself or a feature present in both documents outside the changed
-hunk, and every control run then tests it.
+One owner per rule gives each case one lens.
+
+**ACE-D2 — A case is a document pair with a stated expectation.** Cases
+live in `src/user/.claude/skills/ac-attack/evals/`, so they never deploy. The
+manifest `evals/cases.json` gives each case:
+
+- its ID;
+- the parent criteria it serves;
+- its rule;
+- its lens;
+- its defect site, which is a criterion ID, or `none` for an absence;
+- a one-sentence detection statement;
+- the source revision of any harvested document.
+
+The directory `evals/cases/<id>/` holds `defective.md` and `control.md`. The
+control is the defective document with its one defect corrected, and the two
+differ in one contiguous hunk. One hunk does not prove one defect, so the
+case's reviewer judges that. A control-only case has no defective document and
+no site.
+
+This settles two questions left open on `agents-config-9k9.441`: where cases
+live, and how a case states its expectation. They are settled here because the
+scorer reads both.
+
+**ACE-D3 — The catalogue follows the parent's own text.** A parent
+criterion's "Given" clause is its case's defect. Its no-finding clause is one
+of two things: the correction itself, or a feature present in both documents
+outside the changed hunk. Every control run then tests it.
 
 | Case | Serves | Rule | Lens | Child |
 | --- | --- | --- | --- | --- |
@@ -91,33 +111,41 @@ hunk, and every control run then tests it.
 | P1 | ACQ-A21: a spec-authoring document assessed on content, control only | none | full panel | ACE-A41 |
 
 **ACE-D4 — Scoring separates detection from silence.** A run is one fresh
-dispatch of one lens over one document. P1 runs all four lenses, since any of
-them could wrongly demand implementation criteria of it.
+dispatch of one lens over one document.
 
 - A defective run detects when an objection cites the case's rule and the
   judge (ACE-D5) rules that it describes the detection statement. Citing the
-  rule and the site is necessary and not sufficient.
+  rule and the site is necessary. It is not sufficient.
 - A control run is silent when no objection cites the case's rule. This is
   mechanical, and an objection on another rule does not break it.
 - A control run is empty when the lens reports `empty`, which ACQ-A27 needs.
 - A P1 run passes when the judge rules that no objection demands criteria for
-  the implementation the document describes.
-- A missing report, or one whose every objection is malformed, is repeated at
-  most twice. A run still without a usable report, or holding an objection the
-  judge has not ruled on, leaves its case pending and the evaluation
-  incomplete. A pending case is never scored as a miss.
+  the implementation the document describes. P1 runs all four lenses, since
+  any of them could wrongly demand implementation criteria of it.
+
+A missing report, or one whose every objection is malformed, is repeated at
+most twice. A run still without a usable report, or holding an objection the
+judge has not ruled on, leaves its case pending and the evaluation incomplete.
+A pending case is never scored as a miss.
 
 **ACE-D5 — A calibrated judge decides detection.** The judge is Claude Opus
-through the native Agent tool, with the prompt `evals/judge.md`. It receives
-the case's rule text, its detection statement and one objection, or for P1
-one objection alone. It never sees the lens, the model or the arm. A judgment
-task counts only after the owner, Scott Hamilton, labels twenty items for it
-and the judge agrees on eighteen. A prompt revised after a failed calibration
-is calibrated on twenty new items. The experiments' validity and
-ground-matching tasks are calibrated the same way. Eighteen of twenty bounds disagreement with
-one evaluator on one sample, and says nothing about documents unlike it. The
-run record names the judge's resolved model ID. Two runs compare only under
-one judge model ID.
+through the native Agent tool, with the prompt `evals/judge.md`.
+
+For a case it receives the case's rule text, its
+detection statement and one objection. For P1 it receives one objection alone.
+It never sees the lens, the model or the arm.
+
+A judgment task counts only after calibration. The owner, Scott Hamilton,
+labels twenty items for the task, and the judge must agree on eighteen. A
+prompt revised after a failed calibration is calibrated on twenty new items.
+The experiments' validity and ground-matching tasks are calibrated the same
+way.
+
+Eighteen of twenty bounds disagreement with
+one evaluator on one sample, and says nothing about documents unlike it.
+
+The run record names the judge's resolved model ID. Two runs compare only
+under one judge model ID.
 
 **ACE-D6 — The evaluated configuration is the production configuration.**
 
@@ -127,10 +155,13 @@ one judge model ID.
 | set-consistency, what-if | OpenRouter | `moonshotai/kimi-k3` | low | its prompt only, with no tools |
 
 Evaluating another configuration would judge a panel nobody runs. Kimi K3
-never runs at high effort. A lens able to read the repository could read this
-catalogue, so every lens reads only its prompt (charter D7). A run on a
-substituted model or effort does not count, and a down transport means the
-evaluation waits.
+never runs at high effort.
+
+A lens able to read the repository could read this catalogue, so every lens
+reads only its prompt (charter D7).
+
+A run on a substituted model or effort does not count. A down transport means
+the evaluation waits.
 
 **ACE-D7 — A case is locked on its own runs, and every run counts.** The unit
 of evaluation is the case. An attempt plans five runs of each of its documents.
@@ -146,11 +177,15 @@ of evaluation is the case. An attempt plans five runs of each of its documents.
 
 A parent criterion passes only when every case serving it is locked. Requiring
 every case to pass inside one run would fail a lens that is right nineteen
-times in twenty about three times in four, on luck alone. No rate is averaged
-across cases. The scorer also reports each lens's pooled rates, which decide
-nothing. With the retest, a lens detecting half the time passes a side with
-probability 0.20, and one detecting nine times in ten with 0.96. The thresholds
-sit above the one baseline, PR 785's control false positive, on purpose.
+times in twenty about three times in four, on luck alone.
+
+No rate is averaged across cases. The scorer also reports each lens's pooled
+rates, which decide nothing.
+
+With the retest, a lens detecting half the time passes a side with probability
+0.20, and one detecting nine times in ten passes with 0.96. The thresholds sit
+above the one baseline, PR 785's control false positive, on purpose.
+
 Locking the whole catalogue from nothing plans 310 lens dispatches, 220 on
 Codex, plus retests and ACE-D4's repeats. Any larger plan, an experiment's
 included, needs the owner's approval before dispatch. The counts are
@@ -159,30 +194,43 @@ fixed before the first lock is recorded. Changing a threshold after that
 amends this spec, and scored results keep their thresholds.
 
 **ACE-D8 — A lock is tied to what produced it.** The planner writes an
-attempt's plan before any dispatch, fixing every dispatch, the configuration,
-the thresholds and the cases. Every attempt is committed with its reports
-under `evals/runs/<run-id>/`, whatever it shows; that rests on the operator,
-since nothing sees a run nobody commits. A lock records its case's
-fingerprint: the digests of the prompts emitted for its two documents, with
-ACE-D6's model and effort. An emitted prompt holds the lens body, the shared
-template and the rules the lens enforces, so a change to any of them changes
-the fingerprint. P1's fingerprint covers all four lenses. A lock is current
-while its fingerprint matches the tree. A change voids only the locks whose
-fingerprint it alters, and only those cases run again. A change to the judge
-prompt, the judge model or the scorer dispatches no lens: the stored reports
-are rescored, and a lock stands when its case still passes. The planner
-refuses an attempt on a case whose current fingerprint has had its attempt and
-its retest. A failed case is then answered only by changing something. "The
-evaluation of record" is the set of current locks.
+attempt's plan before any dispatch. The plan fixes every dispatch, the
+configuration, the thresholds and the cases. Every attempt is committed with
+its reports under `evals/runs/<run-id>/`, whatever it shows.
+That rests on the operator, since nothing sees a run nobody commits.
 
-**ACE-D9 — Comparison and the template gate.** A change improves on its
-baseline over the same cases when every case locked under the baseline is
-locked under the change, and at least two lenses gain a locked case. An addition to the shared
+A lock records its case's fingerprint. The fingerprint is the digests of the
+prompts emitted for the case's two documents, with ACE-D6's model and effort.
+An emitted prompt holds the lens body, the shared template and the rules the
+lens enforces, so a change to any of them changes the fingerprint. P1's
+fingerprint covers all four lenses.
+
+A lock is current while its fingerprint matches the tree. A change voids only
+the locks whose fingerprint it alters, and only those cases run again.
+
+A change to the judge prompt, the judge model or the scorer dispatches no
+lens. The stored reports are rescored, and a lock stands when its case still
+passes.
+
+The planner refuses an attempt on a case whose current fingerprint has had its
+attempt and its retest. A failed case is then answered only by changing
+something.
+
+"The evaluation of record" is the set of current locks.
+
+**ACE-D9 — Comparison and the template gate.** An addition to the shared
 attack template ships only with a whole-catalogue comparison reporting
-`improves` against the template without it. A gain in one lens alone belongs
-in that lens's own prompt. ACQ-A23 admits an addition that carries this
-spec's evaluation evidence. A test pins the template's digest to
-a registry of comparison reports, whose baseline entry is the current template.
+`improves` against the template without it.
+
+A change improves on its baseline over the same cases when two things hold.
+Every case locked under the baseline is locked under the change. At least two
+lenses gain a locked case.
+
+A gain in one lens alone belongs in that lens's own prompt.
+
+ACQ-A23 admits an addition that carries this spec's evaluation evidence. A
+test pins the template's digest to a registry of comparison reports. The
+registry's baseline entry is the current template.
 
 ## Acceptance criteria
 
@@ -298,18 +346,31 @@ checker suites run under `make content-tests`.
 
 ### What-if questions
 
-For ACE-A25 to ACE-A45, a failure names the failing case, a missing report or
-verdict leaves it pending (ACE-A19), an attempt beyond a fingerprint's attempt
-and retest is refused (ACE-A21), and the empty question does not apply to a
-fixed document pair. For
-ACE-A1 to ACE-A13, an empty registry and an absent standard are the existing
-`no-lenses` and `no-standard` refusals, and an empty catalogue fails ACE-A11.
-For ACE-A14 to ACE-A20, fixture reports are fixed, so empty does not apply,
-and a missing input is ACE-A19. A case's first attempt has no predecessor
-(ACE-A21), and a tree with no lock voids none (ACE-A47). Lock sets sharing no
-case gain nothing, so the comparison names the
-missing gain, and an absent registry fails ACE-A24. Every check is a read, so
-running it twice or with nothing changed answers the same way.
+For ACE-A25 to ACE-A45:
+
+- A failure names the failing case.
+- A missing report or verdict leaves the case pending (ACE-A19).
+- An attempt beyond a fingerprint's attempt and retest is refused (ACE-A21).
+- The empty question does not apply to a fixed document pair.
+
+For ACE-A1 to ACE-A13:
+
+- An empty registry and an absent standard are the existing `no-lenses` and
+  `no-standard` refusals.
+- An empty catalogue fails ACE-A11.
+
+For ACE-A14 to ACE-A20:
+
+- Fixture reports are fixed, so empty does not apply.
+- A missing input is ACE-A19.
+
+A case's first attempt has no
+predecessor (ACE-A21). A tree with no lock voids none (ACE-A47). Lock sets
+sharing no case gain nothing, so the comparison names the missing gain. An
+absent registry fails ACE-A24.
+
+Every check is a read, so running it twice or with nothing changed answers the
+same way.
 
 ## Ordered slice list
 
@@ -348,8 +409,11 @@ They are not S2 slices.
 
 ## Out of scope
 
-What a re-attack round sees (`agents-config-9k9.442`). ACQ-A11 and ACQ-A25,
-which the parent gives to S1, with the content-lint rule `agents-config-9k9.405.3`
-suggests for ACQ-A11. A spec-lint shape rule for artifact criteria, which that
-item records as not adopted. The attack record assembler. A scheduled check
-for a model that changes under an unchanged ID, which no fingerprint sees.
+- What a re-attack round sees (`agents-config-9k9.442`).
+- ACQ-A11 and ACQ-A25, which the parent gives to S1, with the content-lint
+  rule `agents-config-9k9.405.3` suggests for ACQ-A11.
+- A spec-lint shape rule for artifact criteria, which that item records as not
+  adopted.
+- The attack record assembler.
+- A scheduled check for a model that changes under an unchanged ID, which no
+  fingerprint sees.
