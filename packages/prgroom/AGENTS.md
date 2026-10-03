@@ -33,7 +33,8 @@ membership rather than a copy here.
 
 `make mutants-prgroom` is a separate, advisory gate: it runs the suite against
 generated mutants of the modules a change touches and prints every mutant the
-tests failed to kill. It answers what the coverage floor cannot — whether a
+tests failed to kill. It fails when the survivors outnumber `max_survivors` in
+`pyproject.toml`. It answers what the coverage floor cannot — whether a
 covered line is actually asserted. It is not part of `make ci-prgroom`.
 
 Do **not** hand-pick a subset (e.g. `ruff check` alone). `ruff check` (linter)
@@ -59,7 +60,7 @@ but the full gate must pass before push.
 - **Injected I/O, pure lifecycle.** External access (GitHub, git, the state
   store, escalation sinks) is reached through Protocols — `GhClient` (`gh/`),
   `HttpTransport` (`gh/`, for App-authenticated calls the `gh` CLI's own auth
-  cannot carry), `GitClient` (`git/`), `Store` (`prsession/`), `EscalationSink`
+  cannot carry), `GitClient` (`git/`), `Store` (`prsession/`), `Sink`
   (`escalation.py`). Lifecycle functions take these as arguments and stay pure
   and testable; no module reaches a client from a global.
 - **Typed, self-diagnosing errors.** Expected failures are modeled
@@ -105,15 +106,20 @@ exists.
 - Per-file Gh fakes are the default: each test module defines its own small
   `GhClient`-level fake tailored to what it asserts (`_RecordingGh`, `FakeGh`,
   …). Do not cross-import a sibling test module's fake. `tests/fakes.py` hosts
-  exactly three shared fakes: the subprocess seam (`CommandRunner`);
-  `RecordingGh`, the reply-surface `GhClient` recorder shared by the reply
+  shared fakes for exactly three seams: the subprocess seam, where
+  `RecordedRunner`, `TimeoutRunner` and `MissingBinaryRunner` each satisfy the
+  `CommandRunner` Protocol; `RecordingGh`, the reply-surface `GhClient`
+  recorder shared by the reply
   test modules — it records every call and those tests assert exact call
   lists; and `RouteTableHttp`, the App-HTTP seam recorder, which raises on any
   route it was not given and on any request not carrying the credential that
   request should be authorized by. That credential rule is shared rather than
   per-file precisely because it has to cover call sites nobody has written yet:
   a flow that drops or swaps a token is a defect no per-call assertion catches
-  until someone remembers to write one.
+  until someone remembers to write one. At all three seams the permissive-default
+  masking risk per-file fakes guard against does not apply, which is the only
+  reason they are shared. Don't grow any of them into a general-purpose fake — a
+  `RouteTableHttp` route table stays in the test module that asserts it.
 - No test reaches the network, a real key, or `openssl`: an App test injects the
   HTTP transport and the command runner at their build seams. A new test that
   forgets either seam shells out for real, and nothing stops it — so wire both
@@ -125,10 +131,7 @@ exists.
   mistyped. Its summary reads further into the envelope and enforces nothing
   there: a field it cannot read is a line the summary leaves out, never a posting
   it prevents. Validating against a schema here would be a second opinion on a
-  document already validated where it was built, and two copies drift. In all three the permissive-default masking risk
-  per-file fakes guard against does not apply, which is the only reason they
-  are shared. Don't grow any of them into a general-purpose fake — a
-  `RouteTableHttp` route table stays in the test module that asserts it.
+  document already validated where it was built, and two copies drift.
 - Coverage floor is 90% branch (enforced by `pytest --cov`).
 
 ## Installed by the installer
@@ -194,7 +197,7 @@ must do what with it** — not by severity, not by module:
 | Channel | Job | Writers | Reader |
 |---|---|---|---|
 | `usage.jsonl` (`append_usage`) | Durable, machine-readable, **per-attempt** dispatch telemetry: what ran, how long, what outcome | the dispatcher's `usage_hook` | post-hoc analysis; cost/routing tuning (a per-**dispatch** `spend.jsonl` sibling is envisioned — `Dispatched.rung` is already shaped for it — but nothing writes it yet) |
-| `EscalationSink` (`escalation.py`) | **Human-judgment events**: something a human or external watcher must eventually act on — blocker dispositions, chain exhaustion, audit violations, lifecycle gates | `agent/fix.py`, `lifecycle/escalation.py` | operator (stderr — the only sink `_build_sink` wires today; the design doc's §5 covers the built-but-unselectable file adapter and the unbuilt bd adapter) |
+| `EscalationSink` (`escalation.py`) | **Human-judgment events**: something a human or external watcher must eventually act on — blocker dispositions, chain exhaustion, audit violations, lifecycle gates | `agent/fix.py`, `lifecycle/escalation.py` | operator (stderr — the only sink `_build_sink` wires today; the EscalationSink section of `docs/architecture/prgroom/design.md` covers the built-but-unselectable file adapter and the unbuilt bd adapter) |
 | stdlib logging → stderr | **Operational diagnostics**: noteworthy but requiring no tracked action — config-key warnings, best-effort bridge failures, partial-fallback events | module-level `getLogger(__name__)`; root config in `main()` only | whoever watches the process (human or driving agent) |
 | `warn` callbacks (`lifecycle/warn.py`) | Grandfathered injected-callable variant of the logging channel, used by lifecycle verbs as a test seam | existing lifecycle code only | same as logging |
 
