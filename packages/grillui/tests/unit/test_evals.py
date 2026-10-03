@@ -1002,12 +1002,17 @@ def test_an_informational_naming_a_decision_is_board_content_and_not_a_second_ch
     emptied = document(text="Option b of d3 holds.", updates=[targeted | {"target": ""}])
     numbered = document(text="Option b of d3 holds.", updates=[targeted | {"target": 3}])
     silent = document(updates=[targeted, {"kind": "informational", "text": "And this."}])
+    several = document(
+        text="Option b of d3 holds.",
+        updates=[targeted, targeted | {"target": "d1"}, targeted | {"target": "d2"}],
+    )
 
     assert the_turn_speaks_once(with_notice) is None
     assert the_turn_speaks_once(untargeted) is not None
     assert the_turn_speaks_once(emptied) is not None
     assert the_turn_speaks_once(numbered) is not None
     assert the_turn_speaks_once(silent) is None
+    assert the_turn_speaks_once(several) is None
 
 
 def test_the_owed_rulings_check_reads_the_seat_and_not_the_landed_entry(
