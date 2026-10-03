@@ -18,13 +18,13 @@ still applies — only the filing changes: record the same title, scope, anchor 
 priority fields as a dated entry in a backlog file (create one at the repo root if none
 exists), and say so in the completion report in place of a filed id.
 
-## Iron Law
+## Decide scope before filing or deferring
 
-**NO FILING OR DEFERMENT WITHOUT SCOPE ADJUDICATION.**
-
-Schedule pressure, a nearly-complete PR, or a request to "just create a work item"
-do not create an exception. A discovery is not a deferral channel for work already
-in scope.
+Decide a discovery's scope, with the sibling test below, before you file it or defer
+it. Filing without that decision turns discovered work into a deferral channel for
+work already in scope. Schedule pressure, a nearly-complete PR, or a request to
+"just create a work item" are the moments that bend the judgement toward deferring,
+so they are the moments the decision matters most, and none of them waives it.
 
 ## Decide the scope
 
@@ -111,7 +111,7 @@ report's manifest verbatim rather than re-describing the filing. When the envelo
 | "It has no matching epic, so an orphan is fine." | Use the milestone when one fits; an orphan is a human escalation. |
 | "I can close the new item so the board stays tidy." | Closing it can close the in-flight parent through the close walk. |
 
-## Red flags — STOP
+## Red flags
 
 - "Just make a work item."
 - "We can decide the anchor later."
@@ -119,4 +119,6 @@ report's manifest verbatim rather than re-describing the filing. When the envelo
 - "Close it before wrapping up."
 - Reaching for `work discover` before the sibling test.
 
-Every one of these requires reapplying this skill before changing tracker state.
+Each of these is a move to change tracker state before scope and placement are
+decided. Reapply this skill, starting from the sibling test, before changing tracker
+state.

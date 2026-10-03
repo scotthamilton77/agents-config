@@ -5,27 +5,35 @@ find loopholes under pressure. The techniques here apply primarily to
 discipline-type skills; technique and reference skills usually don't need
 them.
 
-## Close Every Loophole Explicitly
+## Name Each Loophole and Its Target
 
-Don't just state the rule — forbid specific workarounds:
+State the rule with its reason, then name each workaround that baseline
+testing surfaced. Pair each one with the behaviour to do instead, so the
+agent's attention lands on the target rather than on the workaround:
 
 ```markdown
-Write code before test? Delete it. Start over.
+Wrote code before its test? Delete it and start over from the test.
+The test has to come from the requirement, and code in view pulls the
+test toward what the code already does.
 
-No exceptions:
-- Don't keep it as "reference"
-- Don't "adapt" it while writing tests
-- Don't look at it
-- Delete means delete
+- Tempted to keep it as "reference"? Delete the file instead.
+- Tempted to "adapt" it while writing tests? Write new code from the
+  failing test instead.
+- Tempted to look at it? Start from the requirement and an empty file.
 ```
 
-## Address Spirit-vs-Letter Arguments
+## Answer Spirit-vs-Letter Arguments
 
-Add the foundational principle early in the skill:
+State early in the skill what the rule's letter protects. An agent that
+claims to meet the purpose another way can then see that the other way
+loses exactly that:
 
-> **Violating the letter of the rules is violating the spirit of the rules.**
+> The test comes first because a test written after the code checks what
+> the code does, not what it should do. Any route that writes the test
+> second loses that, whatever else it achieves.
 
-This cuts off the entire class of "I'm following the spirit" rationalizations.
+This answers the whole class of "I'm following the spirit" rationalizations,
+because the reason shows the letter and the spirit are the same thing.
 
 ## Build a Rationalization Table
 
@@ -43,12 +51,13 @@ the agent makes goes in the table with an explicit counter:
 Make it easy for the agent to self-check when rationalizing:
 
 ```markdown
-## Red Flags — STOP and Start Over
+## Red Flags
 
 - Code before test
 - "I already manually tested it"
 - "It's about spirit not ritual"
 - "This is different because..."
 
-All of these mean: Delete code. Start over with TDD.
+Each of these means the code came before its test: delete the code and
+start over with TDD.
 ```

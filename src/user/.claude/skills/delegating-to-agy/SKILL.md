@@ -1,9 +1,9 @@
 ---
 name: delegating-to-agy
-description: "Use when a run is being launched on Antigravity CLI (agy), Google's runtime for Gemini models: as a full worker in the current checkout, or as a fresh-context review lens over a snapshot whose instruction files stay out. Apply when the user names agy, Antigravity or a Gemini model, or when another skill sends a Gemini dispatch here. Not for deciding whether to leave Claude, not for agy setup or sign-in, and not for OpenRouter, which is this route's fallback once the subscription quota is spent."
+description: "Use when a run is being launched on Antigravity CLI (agy), Google's runtime for Gemini models: as a full worker in the current checkout, or as a fresh-context review lens over a snapshot whose instruction files stay out. Apply when the user names agy, Antigravity or a Gemini model, or when another skill sends a Gemini dispatch here. Not for deciding whether to leave Claude, not for agy setup or sign-in, and not for OpenRouter, which runs a Gemini model only on the user's explicit instruction."
 admission:
   provides: "An agy run in one of two verified shapes: a worker in the current checkout that reads the user's and the repository's instruction files like a Claude or Codex worker does, or a fresh-context lens over a snapshot of a revision, run under a temporary home that holds only a Keychain link so no user-level rule or skill loads, with the change's own instruction files renamed so nothing under review instructs the reviewer, every hook and MCP configuration under a customization root renamed so nothing launches, and the change's diff beside them. Invoking it produces the launcher command, its exit code contract, and the model id for the task profile."
-  cost: agy must be installed and signed in, and every run bills the Google AI Pro subscription; lens mode needs macOS for the Keychain link and leaves a snapshot of the reviewed revision and a temporary home on disk for the run's duration; the model table needs a refresh whenever agy's model list changes.
+  cost: agy must be installed and signed in, and every run bills the Google AI Pro subscription; lens mode needs macOS for the Keychain link and leaves a snapshot of the reviewed revision and a temporary home on disk for the run's duration; the shared model routing table's Google rows need a refresh whenever agy's model list changes.
   remove_when: The Google AI Pro subscription lapses, agy loses headless print mode, or the review tooling addresses agy natively so no launcher stands between a caller and a Gemini seat.
 ---
 
@@ -35,8 +35,11 @@ uv run "${CLAUDE_SKILL_DIR}/scripts/agy_run.py" lens \
 ```
 
 `-p` comes last, and the prompt is the one argument after it. Pass a long brief
-as `-p "$(cat brief.md)"`. Look the model id up in `references/model-routing.md`
-by task profile.
+as `-p "$(cat brief.md)"`. Take the model from the `google` column of the
+`choosing-a-delegate` skill's model routing table and the effort from that
+model's accepted list, and form the id as `<model>-<effort>`, for example
+`gemini-3.8-flash-low`: on agy the effort rides in the id, and the launcher
+takes the id whole.
 
 Set the Bash tool's timeout above the run's seconds plus 40. A lens that omits
 `--timeout` runs for 600 seconds. Alternatively, run the command in the
@@ -74,7 +77,10 @@ remove it yourself.
 ## When the subscription runs out
 
 No quota-exhaustion run has been observed yet. Whatever agy reports then
-arrives as exit `75` or `70`, and agy's own stderr says why. Fail over to the `openrouter-claude-subagent` skill and pick a
-Gemini model from that skill's own routing table. The agy ids are not valid there, so do not
-translate one by hand. Repeating the agy run against the same spent quota fails
-the same way.
+arrives as exit `75` or `70`, and agy's own stderr says why. Stop and tell the
+user: a Gemini model runs on the `openrouter-claude-subagent` launcher only on
+their explicit instruction. If they give it, dispatch there with the same
+model's `openrouter` row in the routing table, passing the effort as that
+launcher's flag; the agy ids are not valid there, so take the row's id rather
+than translating one by hand. Repeating the agy run against the same spent
+quota fails the same way.

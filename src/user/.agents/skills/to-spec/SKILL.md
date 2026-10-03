@@ -14,7 +14,7 @@ Last sync: 2026-07-24
 Drift policy: local-fork — grafted, do not re-sync
 -->
 
-This skill takes the current conversation context and codebase understanding and produces a spec (you may know this document as a PRD). Do NOT interview the user — just synthesize what you already know.
+This skill takes the current conversation context and codebase understanding and produces a spec (you may know this document as a PRD). Synthesize what you already know rather than interviewing the user; the one check-in is confirming the test seams in step 2.
 
 ## Process
 
@@ -24,7 +24,7 @@ This skill takes the current conversation context and codebase understanding and
 
 Check with the user that these seams match their expectations.
 
-3. Write the spec using the template below and save it as a dated file (`YYYY-MM-DD-<slug>.md`) in the project's spec home. Publishing work items to the issue tracker is a separate step and out of scope here.
+3. Load the `readable-prose` skill, then write the spec using the template below and save it as a dated file (`YYYY-MM-DD-<slug>.md`) in the project's spec home. Publishing work items to the issue tracker is a separate step and out of scope here.
 
 <spec-template>
 
@@ -38,7 +38,7 @@ The solution to the problem, from the user's perspective.
 
 ## User Stories
 
-A LONG, numbered list of user stories. Each in the format: `As an <actor>, I want a <feature>, so that <benefit>`. Cover all aspects of the feature.
+A numbered list of user stories, one per distinct actor and goal, covering every aspect of the feature. Each in the format: `As an <actor>, I want a <feature>, so that <benefit>`.
 
 ## Implementation Decisions
 
