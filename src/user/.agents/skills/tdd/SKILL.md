@@ -61,20 +61,23 @@ the contract.
 **No tests exist** — you own both halves, and the loop below is yours end to
 end.
 
-## The iron law
+## A failing test comes first
 
-**No production code without a failing test first** — whoever wrote the test.
+Write production code only to make a failing test pass, whoever wrote the test.
+A test written after the code checks what the code does. A test written first
+checks what the code should do, and only that test can catch the code being
+wrong.
 
 Wrote code before a test existed? Delete it and implement fresh from the test.
-Not "keep it as reference", not "adapt it while writing the test": you will
-adapt it, and that is testing after. The hours already spent are gone either
-way; what you are choosing is whether to keep code that no test has ever caught
-a bug in.
+Keeping it "as reference" or adapting it while you write the test both end the
+same way: you adapt it, and that is testing after. The hours already spent are
+gone either way. What you are choosing is whether to keep code that no test has
+ever caught a bug in.
 
 ## The loop
 
 1. **RED** — one test, one behaviour, a name that says what the behaviour is.
-2. **Verify RED** — run it. It MUST fail, and fail *because the behaviour is
+2. **Verify RED** — run it. It has to fail, and fail *because the behaviour is
    missing*, not because of a typo or a missing import. A test that passes on
    arrival is pinning something that already works; a test that errors is not
    yet a test. Fix either one only if you wrote it — a handed-over test is the
@@ -139,18 +142,25 @@ the fake-over-stub-over-spy-over-mock ordering, and skip hygiene are all in
 write a test double, when setup starts outgrowing the test, or when a test you
 just wrote could not fail.
 
-## Red flags — stop
+## Red flags
+
+Each of these means the loop has broken. Return to the step it skipped: delete
+code no failing test asked for, make a test fail for the right reason before
+trusting it, and escalate a handed-over test instead of editing it.
 
 - Production code exists that no failing test asked for
 - The test passed the first time you ran it
 - You cannot say why the test failed
 - You are editing a handed-over test to match code you wrote
-- "I already tested it by hand"
+- "I already tested it by hand" — a hand check runs once; the test reruns on
+  every change after this one
 - "Tests after achieve the same thing" — they answer *what does this do*; a
   test written first answers *what should this do*, which is the question that
   finds the edge case
-- "It is too simple to break"
-- "Just this once"
+- "It is too simple to break" — simple code breaks too, and its test is the
+  cheapest one you will write
+- "Just this once" — the exception comes under the most pressure, which is
+  where an unchecked mistake is likeliest
 
 Hard to test means hard to use: when the test is painful to write, the design
 is what the test is telling you about. Take that finding to the code.
