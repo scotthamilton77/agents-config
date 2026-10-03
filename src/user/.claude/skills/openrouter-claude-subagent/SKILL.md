@@ -85,16 +85,16 @@ cannot write its report and the verdict survives only in the run log's tail.
 ## Step 2 — Model selection
 
 The `choosing-a-delegate` skill's model routing table is the one source for
-price, context window, accepted effort levels and the pick per task profile,
-across every route; its OpenRouter rows are the models this launcher runs.
-Look the answer up there. Picking from memory routes work to a model that may
-be repriced or retired, and re-deriving a "cheapest" pick by hand is how the
-bias drifts from what the table encodes.
+the model each provider offers at each tier, and for every model's price,
+context window and accepted effort levels; its `openrouter` rows are the
+models this launcher runs. Look the answer up there. Picking from memory
+routes work to a model that may be repriced or retired, and re-deriving a
+"cheapest" pick by hand is how the bias drifts from what the table encodes.
 
-1. Classify the task by the table's task profiles.
-2. Take that profile's OpenRouter pick, unless the user said "cheap" (one
-   profile down) or "best"/"most capable" (one profile up).
-3. A Gemini row on this transport is the fallback for the `delegating-to-agy`
+1. Classify the task by the table's tiers.
+2. Take that tier's `openrouter` model, unless the user said "cheap" (one
+   tier down) or "best"/"most capable" (one tier up).
+3. A Gemini row on this launcher is the fallback for the `delegating-to-agy`
    skill and is never the pick while agy is up.
 4. A user-named `vendor/model-id` absent from the table is unverified: look it
    up in the catalog endpoint the table names, say what you found and where,
@@ -118,14 +118,23 @@ is the lever when the clamp matters.
 Use the user's level if they named one. `max` only on an explicit request —
 it is the most expensive tier.
 
-Not every model accepts every level, and the routing table's effort column and
-its notes bound the choice: pick from the row's list, and keep the per-row caps
-on whole-artifact work. Where the row does not list the level this grid names,
-pass the next listed level up, so `medium` on a row listing `low` `high` `max`
-becomes `high`. The flag reaches OpenRouter through its
-Anthropic-compatible endpoint as a thinking budget, so a level a row does not
-list still bounds the model's thinking; treat the model as the reliable control
-and the level as a hint.
+Not every model accepts every level, and the routing table's accepted-efforts
+column bounds the choice: pick from the row's list. Where the row does not
+list the level this grid names, pass the next listed level up, so `medium` on
+a row listing `low` `high` `max` becomes `high`. The flag reaches OpenRouter
+through its Anthropic-compatible endpoint as a thinking budget, so a level a
+row does not list still bounds the model's thinking; treat the model as the
+reliable control and the level as a hint.
+
+Two constraints on this launcher's rows hold today and override the grid:
+
+- A whole-artifact single-pass read on `moonshotai/kimi-k3` runs at `low`,
+  never `high` or `max`, and is granted no tools when the prompt carries the
+  text. At the higher levels its thinking outlasts the stream and the run ends
+  inside a thinking block with no report. Delta reads run `high`.
+- `z-ai/glm-5.3` returns thinking-only turns on a whole-document single pass
+  until the request times out, so it takes delta and walk work, never a
+  whole-artifact read.
 
 The launcher pins no sampling parameter, and neither should a prompt or a
 wrapper: the Kimi rows refuse a temperature, and Google says to leave Gemini's

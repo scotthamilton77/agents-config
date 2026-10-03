@@ -46,7 +46,7 @@ it warrants no reply — do not explain the notification or restate the report.
   anything else — another vendor, another harness — read the `choosing-a-delegate`
   skill. The user not naming a vendor is not a reason to stay native.
 - Match model to the job by tier; the `choosing-a-delegate` skill's model routing table
-  names the model behind each tier on each route. Implementation under a real test
+  names the model behind each tier on each provider. Implementation under a real test
   gate → the native frontier tier at xhigh; design and spec authoring → the native top
   tier at xhigh, or Codex's default frontier tier at medium when cost matters; the
   native mid tier is never the pick for either, and raising effort does not reliably

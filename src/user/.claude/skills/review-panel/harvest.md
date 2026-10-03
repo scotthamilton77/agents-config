@@ -64,12 +64,13 @@ No lens declares a model. `contracts.json` carries the lens rosters and the prof
 never a model; the model is the dispatcher's to pick, every time.
 
 Pick it by the lens's tier and transport from the `choosing-a-delegate` skill's model routing
-table, not from memory. That table is the source of truth for every route's ids, prices, context
-windows and accepted reasoning efforts, and all of them move underneath a remembered pick: vendors
-reprice and retire models without notice. Two failures follow from picking free-hand, and the second is the
+table, not from memory, and pick the effort for the lens's scope from the model's accepted list.
+That table is the source of truth for every provider's ids, prices, context windows and accepted
+reasoning efforts, and all of them move underneath a remembered pick: vendors reprice and retire
+models without notice. Two failures follow from picking free-hand, and the second is the
 expensive one — a model whose reasoning cannot be capped will strand a whole-artifact lens inside
 a thinking block and return no report at all, burning a full lens latency before the failover
-starts. The table marks which models those are; a whole-artifact lens must not be routed to one.
+starts. The OpenRouter launcher skill names which of its models those are; a whole-artifact lens must not be routed to one.
 
 The gate does not enforce any of this: it accepts and records an unlisted model on purpose, so
 that a deliberate choice is possible and is visible afterwards. The discipline is yours.

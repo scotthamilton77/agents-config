@@ -42,21 +42,22 @@ an agent definition's own front matter; if you need that lever, those are where 
 
 ## Where to go
 
-`references/model-routing.md` beside this skill is the one model table for every route:
-each family's routes in preference order, the pick per task profile, and per row the
-price, context, accepted effort levels and tier. **Open it and read the row; never infer
+`references/model-routing.md` beside this skill is the one model table for every provider:
+the model each provider offers at each tier, and per model the price, context and accepted
+effort levels. The effort, tools and scope of a run are yours to decide for the task, from
+the accepted list. **Open it and read the row; never infer
 a model identifier from a skill name, a file name, or memory** — names outlive the model
 generations they were named for, and a plausible-looking identifier that no longer exists
 fails at dispatch or silently routes somewhere you did not intend.
 
-| Route | Reach it through |
+| Provider | Reach it through |
 |---|---|
 | OpenAI models, via that vendor's own runtime | The Codex delegation skill — **present only when the Codex plugin is installed**. Check your skill list; if it is absent, that route does not exist in this session. |
 | Gemini models, via Google's own runtime on the user's subscription | The `delegating-to-agy` skill, which runs agy as a worker or as a read-only review lens. The OpenRouter subagent skill is the fallback once the subscription quota is spent. |
 | Everything else — other vendors, cheaper tiers, a specific named model | The OpenRouter subagent skill, which runs this same harness against another vendor's weights. |
 | A stronger perspective on Claude | The Agent tool, on a stronger model. Legitimate when your own judgement is strained, but it is depth, not independence. |
 
-If the route you want is absent, say so and offer the one that is present. Do not
+If the provider you want is absent, say so and offer the one that is present. Do not
 substitute a same-vendor delegate and describe it as a second opinion.
 
 ## Two things that bite

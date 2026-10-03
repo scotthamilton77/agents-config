@@ -3,9 +3,9 @@
 The model inventory and routing table this project dispatches from is the
 `choosing-a-delegate` skill's routing reference,
 `src/user/.claude/skills/choosing-a-delegate/references/model-routing.md`. It
-carries every route (native Claude, Codex, agy, OpenRouter), each family's
-routes in preference order, the pick per task profile, and per row the price,
-context window, accepted effort levels and tier, dated at its head. Nothing
+carries every provider (Anthropic, OpenAI, Google, OpenRouter), the model each
+offers at each tier, and per model the price, context window and accepted
+effort levels, dated at its head. Nothing
 else in the repository carries a model price, and a routing decision anywhere
 else cites that table rather than restating it.
 
