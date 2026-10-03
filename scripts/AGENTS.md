@@ -8,8 +8,6 @@ directory holds only thin entry points into it.
   here — it belongs in `packages/installer/`.
 - **`install.py`** — the Python entry point (`from installer.cli import main`);
   also invocable as `uv run python -m installer`.
-- **`bootstrap-installer-beads.sh`** — one-time bootstrap helper for standing up
-  the installer + beads on a fresh machine.
 
 All installer behaviour, design principles, and the mandatory quality gate are
 documented in `packages/installer/AGENTS.md`, along with the prohibition on

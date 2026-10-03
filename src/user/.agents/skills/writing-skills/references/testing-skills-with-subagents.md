@@ -10,15 +10,11 @@
 - [GREEN Phase: Write Minimal Skill (Make It Pass)](#green-phase-write-minimal-skill-make-it-pass)
 - [VERIFY GREEN: Pressure Testing](#verify-green-pressure-testing)
 - [REFACTOR Phase: Close Loopholes (Stay Green)](#refactor-phase-close-loopholes-stay-green)
-- [Red Flags - STOP](#red-flags---stop)
 - [Meta-Testing (When GREEN Isn't Working)](#meta-testing-when-green-isnt-working)
 - [When Skill is Bulletproof](#when-skill-is-bulletproof)
-- [Example: TDD Skill Bulletproofing](#example-tdd-skill-bulletproofing)
 - [Testing Checklist (TDD for Skills)](#testing-checklist-tdd-for-skills)
 - [Common Mistakes (Same as TDD)](#common-mistakes-same-as-tdd)
-- [Quick Reference (TDD Cycle)](#quick-reference-tdd-cycle)
 - [The Bottom Line](#the-bottom-line)
-- [Real-World Impact](#real-world-impact)
 
 ## Overview
 
@@ -28,7 +24,7 @@ You run scenarios without the skill (RED - watch agent fail), write skill addres
 
 **Core principle:** If you didn't watch an agent fail without the skill, you don't know if the skill prevents the right failures.
 
-**REQUIRED BACKGROUND:** You MUST understand `tdd` before using this skill. That skill defines the fundamental RED-GREEN-REFACTOR cycle. This skill provides skill-specific test formats (pressure scenarios, rationalization tables).
+**Background:** read `tdd` before using this skill. That skill defines the fundamental RED-GREEN-REFACTOR cycle, which this skill assumes. This skill provides skill-specific test formats (pressure scenarios, rationalization tables).
 
 **The trigger-eval loop**, with the eval shape it reads, is in `testing-methodology.md`.
 
@@ -62,7 +58,7 @@ Same cycle as code TDD, different test format.
 
 **Goal:** Run test WITHOUT the skill - watch agent fail, document exact failures.
 
-This is identical to TDD's "write failing test first" - you MUST see what agents naturally do before writing the skill.
+This is identical to TDD's "write failing test first" - you see what agents naturally do before writing the skill, because that behaviour is what the skill has to correct.
 
 **Process:**
 
@@ -163,7 +159,7 @@ Forces explicit choice.
 2. **Real constraints** - Specific times, actual consequences
 3. **Real file paths** - `/tmp/payment-system` not "a project"
 4. **Make agent act** - "What do you do?" not "What should you do?"
-5. **No easy outs** - Can't defer to "I'd ask your human partner" without choosing
+5. **No easy outs** - Can't defer to "I'd ask the user" without choosing
 
 ### Testing Setup
 
@@ -195,7 +191,7 @@ Agent violated rule despite having the skill? This is like a test regression - y
 
 For each new rationalization, add:
 
-### 1. Explicit Negation in Rules
+### 1. Name the Workaround and Its Target
 
 <Before>
 ```markdown
@@ -205,13 +201,14 @@ Write code before test? Delete it.
 
 <After>
 ```markdown
-Write code before test? Delete it. Start over.
+Wrote code before its test? Delete it and start over from the test.
+The test has to come from the requirement, and code in view pulls the
+test toward what the code already does.
 
-**No exceptions:**
-- Don't keep it as "reference"
-- Don't "adapt" it while writing tests
-- Don't look at it
-- Delete means delete
+- Tempted to keep it as "reference"? Delete the file instead.
+- Tempted to "adapt" it while writing tests? Write new code from the
+  failing test instead.
+- Tempted to look at it? Start from the requirement and an empty file.
 ```
 </After>
 
@@ -220,13 +217,13 @@ Write code before test? Delete it. Start over.
 ```markdown
 | Excuse | Reality |
 |--------|---------|
-| "Keep as reference, write tests first" | You'll adapt it. That's testing after. Delete means delete. |
+| "Keep as reference, write tests first" | You'll adapt it, and adapting it is testing after. Delete the file instead. |
 ```
 
 ### 3. Red Flag Entry
 
 ```markdown
-## Red Flags - STOP
+## Red Flags
 
 - "Keep as reference" or "adapt existing code"
 - "I'm following the spirit not the letter"
@@ -258,7 +255,7 @@ Agent should now:
 **After agent chooses wrong option, ask:**
 
 ```markdown
-your human partner: You read the skill and chose Option C anyway.
+the user: You read the skill and chose Option C anyway.
 
 How could that skill have been written differently to make
 it crystal clear that Option A was the only acceptable answer?
@@ -269,7 +266,7 @@ it crystal clear that Option A was the only acceptable answer?
 1. **"The skill WAS clear, I chose to ignore it"**
    - Not documentation problem
    - Need stronger foundational principle
-   - Add "Violating letter is violating spirit"
+   - State early what the rule's letter protects, so the spirit argument has nothing to stand on
 
 2. **"The skill should have said X"**
    - Documentation problem
@@ -338,8 +335,8 @@ Agents resist single pressure, break under multiple.
 ✅ Fix: Document exact rationalizations verbatim.
 
 **❌ Vague fixes (adding generic counters)**
-"Don't cheat" doesn't work. "Don't keep as reference" does.
-✅ Fix: Add explicit negations for each specific rationalization.
+"Don't cheat" doesn't work. "Tempted to keep it as reference? Delete the file instead" does.
+✅ Fix: Name each specific rationalization and pair it with the behaviour to do instead.
 
 **❌ Stopping after first pass**
 Tests pass once ≠ bulletproof.
