@@ -1195,7 +1195,11 @@ class HeavyDriver:
         entries = log.entries()
         seat = self.seat if self.seat is not None else self.config.expert_seat
         model = seat.model
-        effort = seat.effort or self.config.heavy_effort
+        # A turn carrying an impact task is a ruling the human is waiting on,
+        # so the expert takes it at the task effort. The heavy effort is what a
+        # transferred channel's expert turns run at, and it never reseats one.
+        tasked = bool(context.tasks) and self.tier == HEAVY_TIER
+        effort = self.config.task_effort if tasked else seat.effort or self.config.heavy_effort
         # A thread reopened across a board that moved opens a cold chain rather
         # than resuming one formed against the older board. The catch-up and the
         # thread's turns both cross in this dispatch, so nothing is lost; what is
