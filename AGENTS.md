@@ -4,7 +4,7 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## Project Purpose
 
-A versioned collection of skills, rules, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to every active tool — auto-detected, or explicitly selected via `--tools=`; tool-specific content goes only where it belongs.
+A versioned collection of skills, rules, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Antigravity CLI** (Google's Gemini runtime, which reads `~/.gemini`), and **OpenCode**. Shared content is installed to every active tool — auto-detected, or explicitly selected via `--tools=`; tool-specific content goes only where it belongs.
 
 ## Harness Rework (active — read this first)
 
@@ -69,7 +69,7 @@ Commitments 3 and 4 ship as the `review-panel`, `ac-attack`, and `review-verdict
 - **The `work` facade is the tracker interface** — see the Harness Rework standing implications above for the full rule and escalation path
 - **Shipped artifacts read standalone** — tracker ids, slice/decision/criterion ids and spec section numbers belong in commit messages, specs and the tracker, never in runtime docstrings, comments, CLI help, skill bodies, templates or guide prose; a test name that pins a criterion is the exception
 - **Flag confusing context** — if instructions, rules, or skills in this repo are conflicting or unclear, say so explicitly; cleaning up agent context is a first-class priority
-- **Apply backpressure** — if a requested change doesn't clearly align with "cleaning house" or "advancing the vision", push back and ask how it fits before proceeding
+- **Apply backpressure** — if a requested change doesn't clearly align with "cleaning house" or "advancing the vision", say so in a sentence or two and ask how it fits before starting. Once the user explains or reaffirms the request, that is their decision: deliver the full request without raising the concern again
 
 ## Project Architecture
 
