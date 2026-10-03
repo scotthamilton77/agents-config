@@ -1,44 +1,48 @@
 {
   "dispositions": [
     {
-      "covering_ac": "DEL-C4",
+      "covering_ac": "DEL-V1",
       "disposition": "accepted",
       "id": "behavioural-outcome-1",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     },
     {
-      "covering_ac": "DEL-A1",
-      "disposition": "accepted",
+      "disposition": "rejected",
+      "id": "behavioural-outcome-2",
+      "rationale": "The existing suite is the agy launcher's whole behavioural contract, one case per criterion of its own spec, including its stderr ledger in both modes. Passing it unchanged, with only the model argument rewritten, is the observation that nothing outside the model element changed. A stderr line on a path that suite does not exercise is a path the launcher's contract does not define, and no document obligation reaches it."
+    },
+    {
+      "disposition": "rejected",
       "id": "obligation-reduction-1",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "rationale": "DEL-A1 states its obligation for any Markdown file the lint reads and checks a nested file three directories down. A lint that skips an existing file violates DEL-A1 as stated, and DEL-A2 then observes the landed tree through that same lint. The objection needs an implementation that reads the fixtures and not the tree, which DEL-A2's reported file list exposes."
     },
     {
-      "covering_ac": "DEL-A6",
+      "covering_ac": "DEL-A7",
       "disposition": "accepted",
       "id": "obligation-reduction-2",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     },
     {
-      "covering_ac": "DEL-A4",
-      "disposition": "accepted",
+      "disposition": "rejected",
       "id": "obligation-reduction-3",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "rationale": "This spec's slices state the Kimi constraint once, in the OpenRouter skill, and DEL-C7 confines slice C's diff to the named passages. A second copy in another skill would be a later change outside this document, and DEL-D1's lint refuses the form such a copy takes when it restates the model row."
     },
     {
       "disposition": "rejected",
       "id": "obligation-reduction-4",
-      "rationale": "How the lint stores its patterns is an internal design choice that keeps the contract. DEL-D1 mentions the list to state the lint's upkeep cost, and no outcome a reader or a dispatcher observes depends on it."
+      "rationale": "No slice changes a worker instruction. DEL-C7 holds every file slice C touches unchanged outside the named passages, so the worker text that exists today survives as it is, and a wrong worker instruction would be a defect of today's skill, not of this change."
+    },
+    {
+      "covering_ac": "DEL-C1",
+      "disposition": "accepted",
+      "id": "obligation-reduction-5",
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     },
     {
       "covering_ac": "DEL-C8",
       "disposition": "accepted",
-      "id": "obligation-reduction-5",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
-    },
-    {
-      "disposition": "rejected",
       "id": "obligation-reduction-6",
-      "rationale": "DEL-C3 covers every signal the three skills document. A signal nobody has documented cannot be enumerated in advance, and harvest.md's existing test, whether the body describes the transport or is the model's own output, already tells a reader how to classify one."
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     },
     {
       "disposition": "rejected",
@@ -46,78 +50,101 @@
       "rationale": "The obligation is that a reader gives the right response to each signal, which DEL-C3 checks. Whether harvest.md presents the mapping as a table is its form, and a mapping in prose that passes every scenario fails no promised outcome."
     },
     {
-      "covering_ac": "DEL-C4",
+      "covering_ac": "DEL-B5",
       "disposition": "accepted",
       "id": "obligation-reduction-8",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     },
     {
-      "covering_ac": "DEL-C4",
+      "covering_ac": "DEL-V6",
       "disposition": "accepted",
       "id": "obligation-reduction-9",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     },
     {
-      "covering_ac": "DEL-B2",
+      "covering_ac": "DEL-V6",
       "disposition": "accepted",
       "id": "obligation-reduction-10",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     },
     {
-      "covering_ac": "DEL-B1",
+      "covering_ac": "DEL-G6",
       "disposition": "accepted",
       "id": "obligation-reduction-11",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     },
     {
-      "covering_ac": "DEL-B1",
-      "disposition": "accepted",
+      "disposition": "rejected",
       "id": "obligation-reduction-12",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "rationale": "The existing suite includes the watchdog, signal and timeout cases of the launcher's own spec, and DEL-G4 requires it to pass unchanged. A watchdog bypass on a path that suite does not exercise is a path the launcher's contract does not define."
     },
     {
-      "covering_ac": "DEL-B7",
+      "covering_ac": "DEL-V1",
       "disposition": "accepted",
       "id": "obligation-reduction-13",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     },
     {
       "disposition": "rejected",
       "id": "obligation-reduction-14",
-      "rationale": "DEL-B4 states the obligation for every input and samples three. The objection needs an implementation with a launcher branch that changes the child's environment only for inputs outside the sample, with no flag given. The slice adds no such branch, and the existing suite, which DEL-B4 also requires to pass unchanged, covers the launcher's argv and environment construction."
-    },
-    {
-      "covering_ac": "DEL-C2",
-      "disposition": "accepted",
-      "id": "obligation-reduction-15",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
-    },
-    {
-      "disposition": "rejected",
-      "id": "obligation-reduction-16",
       "rationale": "Promotion before implementation is a tracker step the work facade enforces on the items section 7 lists. It is an instruction to whoever opens those items, and no acceptance check of the delivered change can observe it."
     },
     {
       "disposition": "rejected",
-      "id": "obligation-reduction-17",
-      "rationale": "Landing order is stated in section 7 and is held by a dependency edge between the two work items. A check of the combined tree cannot observe the order two changes landed in, so no criterion of the change can carry it."
+      "id": "obligation-reduction-15",
+      "rationale": "Landing order is stated in section 7 and is held by dependency edges between the work items. A check of the combined tree cannot observe the order two changes landed in, so no criterion of the change can carry it."
     },
     {
       "disposition": "rejected",
-      "id": "obligation-reduction-18",
-      "rationale": "DEL-A2's obligation stands apart from the fixtures: the tree the slice lands on must itself conform, which means the slice also corrects any existing file that names an unlisted id. DEL-A1 and DEL-A3 to DEL-A6 establish what the lint detects, and none of them establishes that the real tree is clean."
+      "id": "obligation-reduction-16",
+      "rationale": "Landing order is stated in section 7 and is held by a dependency edge between the work items. A check of the combined tree cannot observe the order two changes landed in, so no criterion of the change can carry it."
     },
     {
-      "covering_ac": "DEL-B6",
+      "covering_ac": "DEL-A2",
       "disposition": "accepted",
-      "id": "what-if-1",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "id": "obligation-reduction-17",
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
+    },
+    {
+      "covering_ac": "DEL-A5",
+      "disposition": "accepted",
+      "id": "obligation-reduction-18",
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-19",
+      "rationale": "The existing suite is the launcher's behavioural contract, and DEL-G4 names the one edit allowed to it. A further assertion added to the suite is a change to the check, which the criterion forbids, not a way to pass it."
+    },
+    {
+      "covering_ac": "DEL-V5",
+      "disposition": "accepted",
+      "id": "obligation-reduction-20",
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
+    },
+    {
+      "covering_ac": "DEL-V3",
+      "disposition": "accepted",
+      "id": "set-consistency-1",
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     },
     {
       "covering_ac": "DEL-B1",
       "disposition": "accepted",
+      "id": "set-consistency-2",
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
+    },
+    {
+      "covering_ac": "DEL-V2",
+      "disposition": "accepted",
+      "id": "what-if-1",
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
+    },
+    {
+      "covering_ac": "DEL-V3",
+      "disposition": "accepted",
       "id": "what-if-2",
-      "revision": "sha256:406840a2a9263847145a31da63c6ad737fc06fde662a144ef97bebd8ad9a10c6"
+      "revision": "sha256:fa937d93f330350d630380b22cadc5efeff195e2ddb6a5f3014bd2971259572c"
     }
   ],
   "lenses": [
@@ -149,8 +176,18 @@
           "DEL-C4",
           "DEL-C5",
           "DEL-C6",
+          "DEL-C7",
           "DEL-C8",
-          "DEL-C7"
+          "DEL-G1",
+          "DEL-G2",
+          "DEL-G3",
+          "DEL-G4",
+          "DEL-G5",
+          "DEL-V1",
+          "DEL-V2",
+          "DEL-V3",
+          "DEL-V4",
+          "DEL-V5"
         ],
         "obligations": [
           {
@@ -158,41 +195,56 @@
             "kind": "guarantee",
             "parts": [
               {
-                "discharged_by": [
-                  "DEL-A1",
-                  "DEL-A3"
-                ],
+                "discharged_by": [],
                 "id": "O1.1",
-                "statement": "Unlisted sentence mentions in the six specified vendor-pattern classes fail with file and id diagnostics; the tested fenced mention fails after its inventory row is removed."
+                "statement": "The landed in-scope Markdown contains no second model inventory."
               },
               {
                 "discharged_by": [],
                 "id": "O1.2",
-                "statement": "Detection reaches all other eligible Markdown locations and occurrences, rather than only the specified fixtures and current scanned files."
+                "statement": "The canonical table retains the prescribed mapping and attributes without caller-specific seat rows or scope columns."
               }
             ],
-            "source": "DEL-D1: \"A content test reads every Markdown file under src/, except those under an evals/ directory, and fails when one names a model id that the routing table does not list.\"",
-            "statement": "The lint detects model ids absent from the routing table throughout eligible src/ Markdown."
+            "source": "DEL-D1: 'The routing table stays the only model inventory'; DEL-D2: 'The table carries two things: the model each provider offers at each tier, and per model the price, context and accepted efforts'; its refuted alternatives are 'seat rows' and 'a scope column'. The external review-seat rework itself is excluded.",
+            "statement": "The routing table remains the sole model inventory with its prescribed provider-tier mapping and per-model attributes."
           },
           {
             "id": "O2",
-            "kind": "guarantee",
+            "kind": "result",
             "parts": [
+              {
+                "discharged_by": [
+                  "DEL-A1",
+                  "DEL-A3"
+                ],
+                "id": "O2.1",
+                "statement": "The lint rejects unlisted identifiers represented by each current vendor naming scheme, including nested Markdown."
+              },
+              {
+                "discharged_by": [
+                  "DEL-A3",
+                  "DEL-A6"
+                ],
+                "id": "O2.2",
+                "statement": "Listed identifiers are allowed in prose and fenced examples, and become invalid when removed from the inventory."
+              },
+              {
+                "discharged_by": [
+                  "DEL-A4"
+                ],
+                "id": "O2.3",
+                "statement": "Markdown beneath an evals directory is exempt, including nested evals locations."
+              },
               {
                 "discharged_by": [
                   "DEL-A6"
                 ],
-                "id": "O2.1",
-                "statement": "The copied routing row and the listed-id row containing tier and effort fail with file and line diagnostics."
-              },
-              {
-                "discharged_by": [],
-                "id": "O2.2",
-                "statement": "Other model-bearing table structures, including rows naming unlisted ids, also fail."
+                "id": "O2.4",
+                "statement": "Model-bearing inventory table rows outside the canonical table are rejected."
               }
             ],
-            "source": "DEL-D1: \"The test also fails on a Markdown table row outside the routing table that names a model id: a model id in a table is the mark of a second inventory.\"",
-            "statement": "No Markdown table outside the routing table can become another model inventory."
+            "source": "DEL-D1: 'A content test reads every Markdown file under src/, except those under an evals/ directory, and fails when one names a model id that the routing table does not list'; it 'also fails on a Markdown table row outside the routing table that names a model id', while 'prose and fenced example commands may name a listed id'.",
+            "statement": "A content lint enforces the documented model-reference and inventory-row rules over src Markdown, exempting evals."
           },
           {
             "id": "O3",
@@ -200,63 +252,116 @@
             "parts": [
               {
                 "discharged_by": [
-                  "DEL-A3",
-                  "DEL-A6"
+                  "DEL-C2"
                 ],
                 "id": "O3.1",
-                "statement": "A listed id in a prose sentence or fenced example is permitted."
-              }
-            ],
-            "source": "DEL-D1: \"prose and fenced example commands may name a listed id.\"",
-            "statement": "Listed model ids remain permissible in prose and fenced example commands."
-          },
-          {
-            "id": "O4",
-            "kind": "guarantee",
-            "parts": [
-              {
-                "discharged_by": [
-                  "DEL-A4"
-                ],
-                "id": "O4.1",
-                "statement": "The specified evals/ fixture containing an unlisted id is exempt."
+                "statement": "The tested OpenRouter whole-artifact launch uses the required effort."
               },
               {
                 "discharged_by": [],
-                "id": "O4.2",
-                "statement": "The exemption applies at other directory depths and locations beneath src/."
+                "id": "O3.2",
+                "statement": "The constraint is stated only in its owning launcher skill."
               }
             ],
-            "source": "DEL-D1: \"except those under an evals/ directory\" and \"those files are exempt.\"",
-            "statement": "Markdown beneath any evals/ directory under src/ is exempt from the lint."
+            "source": "DEL-D2: 'A constraint on how a model behaves under one launcher, such as the Kimi K3 whole-artifact cap, lives in that launcher's skill, once'; section 6: 'a whole-artifact read on moonshotai/kimi-k3 runs at low, stated once in the OpenRouter launcher skill'.",
+            "statement": "Launcher-specific model constraints have one owning launcher skill, including the Kimi whole-artifact effort rule."
           },
           {
-            "id": "O5",
-            "kind": "guarantee",
-            "parts": [
-              {
-                "discharged_by": [],
-                "id": "O5.1",
-                "statement": "The test owns one pattern per vendor naming scheme without competing pattern inventories."
-              }
-            ],
-            "source": "DEL-D1: \"The test owns a short list of id patterns, one per vendor naming scheme.\"",
-            "statement": "Vendor recognition has one short, test-owned pattern list."
-          },
-          {
-            "id": "O6",
-            "kind": "failure",
+            "id": "O4",
+            "kind": "result",
             "parts": [
               {
                 "discharged_by": [
-                  "DEL-A5"
+                  "DEL-C6"
                 ],
-                "id": "O6.1",
-                "statement": "An absent table or a table listing no model id causes failure naming the table."
+                "id": "O4.1",
+                "statement": "The Codex skill supports the tested read-only lens launch."
+              },
+              {
+                "discharged_by": [
+                  "DEL-C2"
+                ],
+                "id": "O4.2",
+                "statement": "The OpenRouter skill supplies the tested lens and worker effort and timeout parameters."
+              },
+              {
+                "discharged_by": [
+                  "DEL-G5"
+                ],
+                "id": "O4.3",
+                "statement": "The agy skill supports the tested cheap-tier Google lens launch."
+              },
+              {
+                "discharged_by": [],
+                "id": "O4.4",
+                "statement": "The remaining mode permissions and complete worker or lens launch instructions are correct."
+              },
+              {
+                "discharged_by": [],
+                "id": "O4.5",
+                "statement": "Each skill supplies the timing and killing procedures beyond the tested parameter answers and background collection."
+              },
+              {
+                "discharged_by": [
+                  "DEL-C1",
+                  "DEL-C3"
+                ],
+                "id": "O4.6",
+                "statement": "The documented failure signals receive the required classifications and responses."
               }
             ],
-            "source": "DEL-D1: \"The routing table stays the only model inventory, and a lint enforces it.\" This implies that a missing or model-free table cannot serve as a valid authoritative inventory.",
-            "statement": "Loss of the authoritative model inventory cannot make enforcement silently succeed."
+            "source": "DEL-D3: 'The launcher skills answer the same four questions'; these are 'which modes exist (a worker that may edit, a lens that only reads), how each is launched, what each failure signal means, and how a run is timed and killed'.",
+            "statement": "Each launcher skill answers which modes exist, how they launch, what failure signals mean, and how runs are timed and killed."
+          },
+          {
+            "id": "O5",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "DEL-C6"
+                ],
+                "id": "O5.1",
+                "statement": "A read-only companion's stdout report is captured by the caller into the named file."
+              },
+              {
+                "discharged_by": [
+                  "DEL-C8"
+                ],
+                "id": "O5.2",
+                "statement": "A backgrounded run that subsequently completes yields its report to the caller."
+              },
+              {
+                "discharged_by": [
+                  "DEL-C1",
+                  "DEL-C3"
+                ],
+                "id": "O5.3",
+                "statement": "Finished, still-running backgrounded, and usage-limited endings are classified correctly."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.4",
+                "statement": "The caller supervises its launched process as well as its capture file."
+              }
+            ],
+            "source": "F7: 'the caller's shell redirects the companion call's output to the claimed file because Codex's sandbox is read-only; the caller waits on the process it launched and on its own capture file'; F8 describes abandonment of finished backgrounded reports; DEL-D3 gives Codex 'the lens launch and the long-run rule'.",
+            "statement": "The Codex skill teaches caller-owned capture and supervision, including collection after backgrounding."
+          },
+          {
+            "id": "O6",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "DEL-C4"
+                ],
+                "id": "O6.1",
+                "statement": "No src Markdown directs raw-binary launch, and both named consumers identify the delegation skill."
+              }
+            ],
+            "source": "F6: delegating-to-codex says the raw codex binary 'stays forbidden either way'; DEL-D3: 'harvest.md and ac-attack name the Codex route by its skill'.",
+            "statement": "Codex delegation uses the delegation skill and preserves the prohibition on the raw binary."
           },
           {
             "id": "O7",
@@ -264,202 +369,166 @@
             "parts": [
               {
                 "discharged_by": [
-                  "DEL-C6"
+                  "DEL-C3"
                 ],
                 "id": "O7.1",
-                "statement": "The reader produces a runtime-conforming read-only companion invocation that captures the successful stub's stdout report in the named file despite refused writes."
+                "statement": "Readers map every documented signal to the appropriate failure reason, invocation correction or caller-requested stop."
+              },
+              {
+                "discharged_by": [],
+                "id": "O7.2",
+                "statement": "Harvest contains the promised single failure-signal mapping table."
               }
             ],
-            "source": "DEL-D3: \"delegating-to-codex gains the lens launch\"; F7: \"the caller's shell redirects the companion call's output to the claimed file because Codex's sandbox is read-only.\"",
-            "statement": "The Codex skill supplies a read-only lens launch whose output the caller captures."
+            "source": "F10 describes dead-route versus failed-reviewer distinctions; DEL-D3: 'harvest.md gains one table mapping each launcher's failure signals onto its two reasons'.",
+            "statement": "Harvest supplies one table mapping launcher failure signals to the shared response categories."
           },
           {
             "id": "O8",
-            "kind": "result",
-            "parts": [
-              {
-                "discharged_by": [
-                  "DEL-C1"
-                ],
-                "id": "O8.1",
-                "statement": "The reader correctly classifies the three captured endings: finished, still running at minute 26 after backgrounding, and usage limit reached."
-              },
-              {
-                "discharged_by": [
-                  "DEL-C8"
-                ],
-                "id": "O8.2",
-                "statement": "The reader's answer contains the fixed report text used by the delayed background-run scenario."
-              },
-              {
-                "discharged_by": [],
-                "id": "O8.3",
-                "statement": "The reader supervises the actual launched process and its capture file, waits for completion, and collects the completed report rather than treating partial or unavailable output as finished."
-              }
-            ],
-            "source": "F7: \"the caller waits on the process it launched and on its own capture file\"; F8: \"The skill gives no way to collect such a run, so a finished report is abandoned\"; DEL-D3: \"delegating-to-codex gains ... the long-run rule.\"",
-            "statement": "The Codex skill teaches supervision and collection of long-running, backgrounded lens runs."
-          },
-          {
-            "id": "O9",
-            "kind": "failure",
-            "parts": [
-              {
-                "discharged_by": [
-                  "DEL-C3",
-                  "DEL-C1"
-                ],
-                "id": "O9.1",
-                "statement": "Readers select the correct response for every committed, documented failure-signal scenario, including OpenRouter timeout and idle and Codex usage limit."
-              },
-              {
-                "discharged_by": [],
-                "id": "O9.2",
-                "statement": "Every failure signal actually emitted by the launchers is included and mapped, including signals omitted from the edited skills."
-              },
-              {
-                "discharged_by": [],
-                "id": "O9.3",
-                "statement": "Harvest contains the promised single failure-mapping table."
-              }
-            ],
-            "source": "DEL-D3: \"harvest.md gains one table mapping each launcher's failure signals onto its two reasons\"; F10 distinguishes a dead route from a failed reviewer; F7 identifies Codex usage-limit failure as a down route.",
-            "statement": "Harvest provides a complete launcher-failure mapping and the appropriate response to each signal."
-          },
-          {
-            "id": "O10",
             "kind": "guarantee",
             "parts": [
               {
                 "discharged_by": [
-                  "DEL-C4"
+                  "DEL-C7"
                 ],
-                "id": "O10.1",
-                "statement": "The inspected codex-matching Markdown outside delegating-to-codex contains no instruction to launch through the raw binary."
-              },
-              {
-                "discharged_by": [],
-                "id": "O10.2",
-                "statement": "Changed passages within delegating-to-codex also preserve the raw-binary prohibition."
-              },
-              {
-                "discharged_by": [],
-                "id": "O10.3",
-                "statement": "Both harvest.md and ac-attack positively name the Codex delegation skill as the route."
+                "id": "O8.1",
+                "statement": "Every slice C diff hunk belongs to a passage named by DEL-D3 or DEL-D5."
               }
             ],
-            "source": "F6: the raw codex binary \"stays forbidden either way\"; DEL-D3: \"harvest.md and ac-attack name the Codex route by its skill.\"",
-            "statement": "Codex delegation remains unambiguous about its permitted entry point."
+            "source": "DEL-D3: 'Text outside those passages does not change'; DEL-D5 confines its correction to the OpenRouter grant description.",
+            "statement": "Slice C changes only its named passages."
           },
           {
-            "id": "O11",
-            "kind": "failure",
+            "id": "O9",
+            "kind": "result",
             "parts": [
               {
                 "discharged_by": [
                   "DEL-B1"
                 ],
-                "id": "O11.1",
-                "statement": "Injected absolute expiry ends compliant and SIGTERM-ignoring fake children, closes the proxy, emits the timeout reason and exits 75 without survivors."
+                "id": "O9.1",
+                "statement": "Total-time expiry ends the child, closes the proxy and produces exit 75 with the timeout reason, including the tested resistant-child and open-response cases."
               },
               {
                 "discharged_by": [
                   "DEL-B2"
                 ],
-                "id": "O11.2",
-                "statement": "Injected idle expiry terminates an initially silent run, while the scripted periodic-request run remains alive."
+                "id": "O9.2",
+                "statement": "Idle expiry follows forwarded completion-request activity and produces the corresponding termination and idle reason."
               },
               {
                 "discharged_by": [
                   "DEL-B3"
                 ],
-                "id": "O11.3",
-                "statement": "The five expiry and child-exit orderings preserve natural completion and choose the appropriate first-expiry reason."
+                "id": "O9.3",
+                "statement": "With both clocks, the first expiry triggers termination."
               },
               {
                 "discharged_by": [
                   "DEL-B6"
                 ],
-                "id": "O11.4",
-                "statement": "A launcher SIGTERM terminates the tested signal-ignoring child without leaving it alive."
-              },
-              {
-                "discharged_by": [],
-                "id": "O11.5",
-                "statement": "Idle expiry remains armed after activity and terminates a run when requests subsequently stop for the idle interval."
-              },
-              {
-                "discharged_by": [],
-                "id": "O11.6",
-                "statement": "Expiry completes child termination, proxy shutdown and launcher exit even with an outstanding completion response."
-              },
-              {
-                "discharged_by": [],
-                "id": "O11.7",
-                "statement": "Production elapsed time schedules the expiry behaviour established using injected clocks."
-              }
-            ],
-            "source": "DEL-D4: \"On expiry it ends the child, closes the proxy, and exits 75 with a reason line on stderr\"; \"Idle means no completion request forwarded for that long\"; \"A SIGTERM sent to the launcher ends the child even when the child ignores it.\"",
-            "statement": "The OpenRouter launcher owns elapsed and idle deadlines and reliably terminates expired or signalled runs."
-          },
-          {
-            "id": "O12",
-            "kind": "guarantee",
-            "parts": [
-              {
-                "discharged_by": [
-                  "DEL-B5"
-                ],
-                "id": "O12.1",
-                "statement": "The invalid-value classes for either flag fail before binding with exit 78 and flag diagnostics."
-              },
-              {
-                "discharged_by": [
-                  "DEL-B7"
-                ],
-                "id": "O12.2",
-                "statement": "The tested single-flag and combined-flag invocations strip those options and values from otherwise unchanged child argv."
+                "id": "O9.4",
+                "statement": "Caller SIGTERM terminates the launcher child even when it ignores the signal."
               },
               {
                 "discharged_by": [
                   "DEL-B4"
                 ],
-                "id": "O12.3",
-                "statement": "The three recorded unflagged inputs preserve pre-slice child argv and environment, and existing tests remain green."
+                "id": "O9.5",
+                "statement": "Flag-free launching remains supported with the pre-change child invocation represented by the recorded fixtures."
               },
               {
-                "discharged_by": [],
-                "id": "O12.4",
-                "statement": "Timeout settings are not passed to the child through its environment."
-              },
-              {
-                "discharged_by": [],
-                "id": "O12.5",
-                "statement": "Child invocation remains unchanged for existing valid configurations outside the recorded fixture inputs."
+                "discharged_by": [
+                  "DEL-B7"
+                ],
+                "id": "O9.6",
+                "statement": "The launcher consumes its timeout options without forwarding them or changing the otherwise equivalent child invocation."
               }
             ],
-            "source": "DEL-D4: \"run.js gains --timeout SECONDS and --idle-timeout SECONDS\"; \"A flag value that is not a positive number is refused with exit 78 before the proxy binds\"; \"The flags are the launcher's own and are never passed to the child.\" Adding launcher-owned clock options plainly implies preserving existing child invocation apart from consuming those options.",
-            "statement": "Timeout options belong to the launcher, invalid values fail before binding, and ordinary child invocation is preserved."
+            "source": "DEL-D4: run.js gains '--timeout SECONDS' and '--idle-timeout SECONDS'; expiry 'ends the child, closes the proxy, and exits 75 with a reason line on stderr'; idle means 'no completion request forwarded'; the flags 'are never passed to the child'; SIGTERM 'ends the child even when the child ignores it', including when no flag was passed.",
+            "statement": "The OpenRouter launcher owns optional total and idle clocks and terminates its child and proxy on expiry or caller cancellation."
           },
           {
-            "id": "O13",
+            "id": "O10",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "DEL-B5"
+                ],
+                "id": "O10.1",
+                "statement": "Supplied non-numeric, zero and negative values for either option are refused before binding."
+              },
+              {
+                "discharged_by": [],
+                "id": "O10.2",
+                "statement": "An option supplied without its required positive numeric value is refused before binding."
+              }
+            ],
+            "source": "DEL-D4: 'A flag value that is not a positive number is refused with exit 78 before the proxy binds'.",
+            "statement": "Invalid timeout option values are refused with exit 78 before proxy binding."
+          },
+          {
+            "id": "O11",
             "kind": "result",
             "parts": [
               {
                 "discharged_by": [
                   "DEL-C2"
                 ],
+                "id": "O11.1",
+                "statement": "Readers select the prescribed recipes for no-tool inline lenses, tool-granted repository lenses and tool-granted workers."
+              }
+            ],
+            "source": "DEL-D4: '--timeout 1200' for an inline lens with no tools, and '--idle-timeout 600 --timeout 2700' for any tool-granted lens or worker.",
+            "statement": "The OpenRouter skill teaches the prescribed timeout recipes."
+          },
+          {
+            "id": "O12",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "DEL-C5"
+                ],
+                "id": "O12.1",
+                "statement": "Both passages name Edit(<path>) for a mandated report file."
+              }
+            ],
+            "source": "F11 contrasts Write with Edit; DEL-D5: 'The OpenRouter skill's description names the grant its body requires'.",
+            "statement": "The OpenRouter description agrees with its body about the required report-file grant."
+          },
+          {
+            "id": "O13",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "DEL-C7"
+                ],
                 "id": "O13.1",
-                "statement": "Readers identify the prescribed timeout settings and routing-table effort for the frontier inline whole-artifact lens without tools and the mid worker with tools."
+                "statement": "Slice C preserves delivery-protocol passages outside its authorized changes."
               },
               {
                 "discharged_by": [],
                 "id": "O13.2",
-                "statement": "The prescribed regimes also apply to tool-using lenses and the other prompt-carried lens and worker combinations."
+                "statement": "The other slices preserve the delivery protocol and agreement among its copies."
+              },
+              {
+                "discharged_by": [
+                  "DEL-C7"
+                ],
+                "id": "O13.3",
+                "statement": "Slice C preserves failover passages outside its authorized changes."
+              },
+              {
+                "discharged_by": [],
+                "id": "O13.4",
+                "statement": "The other slices preserve the failover statements and agreement among them."
               }
             ],
-            "source": "DEL-D4: \"--timeout 1200 for a lens whose prompt carries its text and that is granted no tools\" and \"--idle-timeout 600 --timeout 2700 for any run granted tools, a lens or a worker\"; DEL-D3 requires the route skills to answer how a run is timed and killed.",
-            "statement": "The OpenRouter skill teaches the prescribed timing regime for every relevant run class."
+            "source": "DEL-D6: 'The delivery protocol and the failover statements stay where they are'; 'the copies agree'. F12 identifies explicit send and UPDATE/FINAL REPORT markers; F13 identifies provider preference, substitution recording and alternative-provider use.",
+            "statement": "The agreeing delivery-protocol and failover statements retain their locations and meaning."
           },
           {
             "id": "O14",
@@ -467,54 +536,132 @@
             "parts": [
               {
                 "discharged_by": [
-                  "DEL-C5"
+                  "DEL-G1"
                 ],
                 "id": "O14.1",
-                "statement": "The description and body both name Edit(<path>) for a mandated report file."
+                "statement": "Worker and lens launches compose every accepted Google model-effort pair correctly."
+              },
+              {
+                "discharged_by": [
+                  "DEL-G2"
+                ],
+                "id": "O14.2",
+                "statement": "Unsupported effort levels are refused before spawning."
+              },
+              {
+                "discharged_by": [
+                  "DEL-G3"
+                ],
+                "id": "O14.3",
+                "statement": "Already suffixed models and a missing effort are refused before spawning."
+              },
+              {
+                "discharged_by": [
+                  "DEL-G5"
+                ],
+                "id": "O14.4",
+                "statement": "The tested cheap-tier Google lens caller supplies the two flags without composing an identifier."
+              },
+              {
+                "discharged_by": [],
+                "id": "O14.5",
+                "statement": "No prose retains responsibility for teaching callers to compose effort suffixes."
               }
             ],
-            "source": "DEL-D5: \"The OpenRouter skill's description names the grant its body requires\"; F11 identifies that grant as Edit(<path>).",
-            "statement": "The OpenRouter skill consistently identifies the report-file grant."
+            "source": "DEL-D9: agy_run.py takes '--model <model>' and '--effort <level>', forms '<model>-<level>', refuses unsupported effort and an already suffixed model, 'so the suffix rule lives in the launcher and nowhere in prose'.",
+            "statement": "The agy launcher owns effort-suffix composition and callers supply separate model and effort flags."
           },
           {
             "id": "O15",
             "kind": "guarantee",
             "parts": [
               {
-                "discharged_by": [
-                  "DEL-C7"
-                ],
+                "discharged_by": [],
                 "id": "O15.1",
-                "statement": "Slice C's changes remain within the DEL-D3 and DEL-D5 passages, preserving the other instructions and restatements."
+                "statement": "The existing timeout, watchdog, process-group termination and timeout exit behavior still hold after composition changes."
               }
             ],
-            "source": "DEL-D3: \"Text outside those passages does not change\"; DEL-D6: \"The delivery protocol and the failover statements stay where they are\"; DEL-D3 states that agy already answers the four route questions.",
-            "statement": "Slice C preserves text outside its named corrections, including the existing route instructions and consistent delivery and failover restatements."
+            "source": "F9: the agy launcher owns '--timeout, a watchdog, a kill of the process group, and exit 75 with a reason line'; DEL-D3 says agy already answers the four questions; DEL-D9 confines its launcher change to model-and-effort composition.",
+            "statement": "The agy model-argument change preserves its existing supervision contract."
           },
           {
             "id": "O16",
-            "kind": "guarantee",
+            "kind": "result",
             "parts": [
               {
-                "discharged_by": [],
+                "discharged_by": [
+                  "DEL-V1"
+                ],
                 "id": "O16.1",
-                "statement": "Each resulting feature is promoted before implementation."
+                "statement": "The inspected src Markdown no longer uses route or transport to name the launch mechanism."
               },
               {
                 "discharged_by": [],
                 "id": "O16.2",
-                "statement": "Slice B lands before slice C."
+                "statement": "Mentions not selected by the route-or-transport scan also use provider and one of the four values."
               }
             ],
-            "source": "Section 7: \"Use work promote on each resulting feature before implementation\" and \"Slice C lands after slice B, because DEL-C2 reads the flags slice B adds.\"",
-            "statement": "Implementation and landing follow the specified prerequisites."
+            "source": "DEL-D8: 'One word, provider, with the values anthropic, openai, google and openrouter'; 'Prose under src/ says provider'.",
+            "statement": "All in-scope prose names the launch mechanism provider and uses the four canonical values."
+          },
+          {
+            "id": "O17",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "DEL-V2"
+                ],
+                "id": "O17.1",
+                "statement": "Contracts, lens front matter and prompt emission use and enforce the canonical provider representation."
+              },
+              {
+                "discharged_by": [
+                  "DEL-V3"
+                ],
+                "id": "O17.2",
+                "statement": "Claims, ledger and verdict envelope use the renamed provider fields under the documented bumped schema."
+              },
+              {
+                "discharged_by": [
+                  "DEL-V4"
+                ],
+                "id": "O17.3",
+                "statement": "Prgroom consumes the bumped verdict and renders each lens's provider."
+              }
+            ],
+            "source": "DEL-D8: the panel's and ac-attack's 'data and code say provider too, with those values'; its cost includes 'a schema field rename in the verdict envelope, with the version bump that implies, and the field's readers in the panel's scripts and in prgroom's verdict posting'.",
+            "statement": "Provider terminology reaches panel and ac-attack data, scripts, the versioned verdict envelope and its prgroom reader."
+          },
+          {
+            "id": "O18",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O18.1",
+                "statement": "Every resulting feature is promoted before its implementation begins."
+              },
+              {
+                "discharged_by": [],
+                "id": "O18.2",
+                "statement": "Slice C lands after both B and D."
+              },
+              {
+                "discharged_by": [],
+                "id": "O18.3",
+                "statement": "Slice E lands last and after the remaining external review-seat pull requests."
+              }
+            ],
+            "source": "Section 7: 'Use work promote on each resulting feature before implementation'; 'Slice C lands after slice B' and 'after slice D'; 'Slice E lands last and after agents-config-9k9.408's remaining pull requests'. External review-seat implementation and prgroom dispatcher-chain updates are excluded.",
+            "statement": "Implementation follows the specified promotion and landing dependencies."
           }
         ]
       }
     },
     {
       "lens": "set-consistency",
-      "report": "empty"
+      "report": "objections"
     },
     {
       "lens": "what-if",
@@ -524,339 +671,416 @@
   "objections": [
     {
       "ground": {
-        "reason": "DEL-D3 promises that harvest.md and ac-attack will name the Codex route by its skill, addressing F6's ambiguous 'through the codex command-line tool' wording. DEL-C4 requires those references, but its check records only the number of matching lines read and that none instructs use of the raw binary. It does not require confirming that either reference exists.",
+        "reason": "DEL-D8 requires the term \"provider\" with four specified values. DEL-V1 repeats that obligation, but its check reads only lines containing \"route\" or \"transport\". It never checks the replacement terminology or its values.",
         "rule": "verification-contract"
       },
       "id": "behavioural-outcome-1",
       "lens": "behavioural-outcome",
-      "objection": "DEL-C4's check can pass while both documents retain the ambiguity identified in F6 and omit the required delegation-skill references.",
-      "obligation": "harvest.md and ac-attack name the Codex delegation skill as the route.",
+      "objection": "DEL-V1 lets prose use an invalid provider value after all old terminology has been removed.",
+      "obligation": "Every mention of the thing a run is launched through uses \"provider\" with one of anthropic, openai, google or openrouter.",
       "scenario": {
-        "expect": "The recorded check passes, while the required route references are absent and F6's ambiguity remains.",
-        "given": "The delivered Markdown contains no explicit instruction to invoke the raw codex binary. harvest.md and ac-attack retain 'through the codex command-line tool' and do not name delegating-to-codex.",
-        "when": "The reviewer performs DEL-C4's prescribed scan and records the line count and absence of raw-binary instructions."
+        "expect": "The reviewer finds no remaining old terminology and passes the prescribed check, while the prose still uses a provider value outside the promised vocabulary.",
+        "given": "All relevant \"route\" and \"transport\" mentions have been replaced, but a Markdown launch instruction says \"provider: codex\".",
+        "when": "The reviewer performs DEL-V1's scan of lines matching \"route\" or \"transport\"."
       },
-      "target_ac": "DEL-C4"
+      "target_ac": "DEL-V1"
     },
     {
       "ground": {
-        "reason": "DEL-D1 promises a test that reads \"every Markdown file under src/, except those under an evals/ directory\". The specified cases exercise vendor patterns and fixtures, but do not establish that traversal reaches every eligible file.",
+        "reason": "DEL-G4 promises that \"Every other argv, exit code and stderr line\" remains unchanged. Its sole check is that the existing suite passes after only rewriting model arguments. The document does not establish that this suite observes every pre-existing invocation covered by that preservation promise.",
+        "rule": "verification-contract"
+      },
+      "id": "behavioural-outcome-2",
+      "lens": "behavioural-outcome",
+      "objection": "DEL-G4 lets the existing suite's coverage substitute for the launcher's full preservation obligation.",
+      "obligation": "The model-and-effort change preserves all other launcher arguments, exit codes and stderr output.",
+      "scenario": {
+        "expect": "The suite passes with no other test edits, while the affected caller receives changed stderr and the preservation promise is false.",
+        "given": "The launcher correctly composes model ids and preserves all outputs exercised by the existing suite, but adds a stderr line for a pre-existing invocation outside that suite's cases.",
+        "when": "The existing suite runs with its model arguments rewritten to the two-flag form, as DEL-G4 prescribes."
+      },
+      "target_ac": "DEL-G4"
+    },
+    {
+      "ground": {
+        "reason": "DEL-A2 observes the gate's exit status. The other inventory checks exercise fixtures. Neither observation independently establishes that the landed Markdown contains only the canonical inventory.",
         "rule": "sufficiency"
       },
       "id": "obligation-reduction-1",
       "lens": "obligation-reduction",
-      "objection": "The lint can omit eligible directories while passing its fixture cases and the landed-head gate.",
-      "obligation": "O1.2",
+      "objection": "DEL-D1 promises that the routing table 'stays the only model inventory', but an existing second inventory can remain outside the lint's effective scan.",
+      "obligation": "O1.1",
       "scenario": {
-        "expect": "The unlisted id is not reported, although every specified check passes.",
-        "given": "The lint checks its fixtures and current files but skips another eligible nested directory under src/.",
-        "when": "A Markdown file containing an unlisted id is added in that directory."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D1 prohibits any model-bearing Markdown table row outside the routing table. DEL-A6's specified fixtures cover a copied routing row and a row containing a listed id, tier and effort. They do not cover an unlisted id or other row structures.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-2",
-      "lens": "obligation-reduction",
-      "objection": "The lint can recognize only the two tested inventory row structures.",
-      "obligation": "O2.2",
-      "scenario": {
-        "expect": "The row passes even though it violates the prohibition, while the specified checks remain green.",
-        "given": "The lint rejects the two tested row structures but permits a table containing only a model column and a purpose column.",
-        "when": "A listed model id is placed in that other table structure outside the routing table."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D1 exempts files beneath any evals/ directory. DEL-A4 specifies one evals/ fixture without requiring coverage of different directory depths.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-3",
-      "lens": "obligation-reduction",
-      "objection": "The exemption can work only at the fixture's directory depth.",
-      "obligation": "O4.2",
-      "scenario": {
-        "expect": "The lint rejects an exempt file, although the specified fixture and every other check pass.",
-        "given": "The lint exempts the tested evals/ location but does not recognize an evals/ directory nested beneath another skill directory.",
-        "when": "That nested evals/ directory contains a Markdown trigger query naming an unlisted id."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D1 states, \"The test owns a short list of id patterns, one per vendor naming scheme.\" No criterion examines ownership or organization of those patterns.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-4",
-      "lens": "obligation-reduction",
-      "objection": "All checks can pass with duplicated or separately maintained pattern inventories.",
-      "obligation": "O5.1",
-      "scenario": {
-        "expect": "Every check passes, but there is no single test-owned list with one pattern per vendor naming scheme.",
-        "given": "Detection uses separate, duplicated pattern lists for prose and tables.",
-        "when": "The implementation is accepted using the specified checks."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "F7 commits to waiting on \"the process it launched and on its own capture file\". F8 and DEL-D3 require collecting a backgrounded run after completion. C1 observes classifications, and C8 keys only the report text in the answer.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-5",
-      "lens": "obligation-reduction",
-      "objection": "The reader can supply the keyed report without establishing that the launched process finished or that the capture file contains its completed output.",
-      "obligation": "O8.3",
-      "scenario": {
-        "expect": "Every keyed answer passes, but the reader returns a report while the launched process is still running.",
-        "given": "The reader returns the fixed report text in C8 immediately and correctly classifies the separate captured endings in C1.",
-        "when": "The backgrounded companion has not yet emitted its report or completion line."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D3 promises a mapping of \"each launcher's failure signals\". DEL-C3 derives its scenario population from signals the skills document after editing. That population can omit a signal the launcher actually emits.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-6",
-      "lens": "obligation-reduction",
-      "objection": "An undocumented launcher failure can have no mapped response without failing C3.",
-      "obligation": "O9.2",
-      "scenario": {
-        "expect": "The caller has no specified response to that signal, while every committed failure scenario passes.",
-        "given": "A launcher emits an upstream-access failure signal that the edited skill and committed scenario list omit.",
-        "when": "A real run encounters that failure."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D3 explicitly says, \"harvest.md gains one table mapping each launcher's failure signals onto its two reasons.\" C3 observes reader answers and does not inspect whether that table exists.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-7",
-      "lens": "obligation-reduction",
-      "objection": "The promised failure-mapping table can be absent.",
-      "obligation": "O9.3",
-      "scenario": {
-        "expect": "Every reader scenario passes, but harvest.md contains no failure-mapping table.",
-        "given": "The required responses appear in scattered prose instead of a table.",
-        "when": "C3 runs and the diff reviewer assigns those edits to the permitted failure-mapping passage."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "F6 identifies the preserved prohibition on the raw codex binary. C4's check explicitly excludes delegating-to-codex, while C6 checks one permitted lens command.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-8",
-      "lens": "obligation-reduction",
-      "objection": "A changed passage inside delegating-to-codex can authorize another launch through the raw binary.",
-      "obligation": "O10.2",
-      "scenario": {
-        "expect": "The prohibited instruction remains in the skill while every specified check passes.",
-        "given": "The lens passage supplies the correct companion command for C6 but also recommends the raw codex binary for an alternate lens invocation.",
-        "when": "C4 scans only the other Markdown files and C7 confirms that the edit belongs to the permitted lens passage."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D3 requires harvest.md and ac-attack to \"name the Codex route by its skill\". C4's check records a line count and the absence of binary-launch instructions. It does not require a positive observation of both skill references.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-9",
-      "lens": "obligation-reduction",
-      "objection": "Both explicit skill references can be missing.",
-      "obligation": "O10.3",
-      "scenario": {
-        "expect": "The reviewer records no raw-binary instruction and all checks pass, but neither passage names delegating-to-codex.",
-        "given": "The two transport passages say only to use the appropriate delegation route.",
-        "when": "C4 reads the remaining codex-matching lines and C7 assigns the edits to the permitted transport passages."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D4 defines idle as \"no completion request forwarded for that long\". B2 tests initial silence and continuing periodic requests. Neither case requires expiry after requests stop.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-10",
-      "lens": "obligation-reduction",
-      "objection": "The first forwarded request can permanently disable idle expiry.",
-      "obligation": "O11.5",
-      "scenario": {
-        "expect": "The run remains alive past the idle deadline, although initial-silence and periodic-request checks both pass.",
-        "given": "The launcher has an initial idle timer but disables it permanently after forwarding its first completion request.",
-        "when": "One request is forwarded and then no request is forwarded for M seconds."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D4 promises that expiry ends the child, closes the proxy and exits 75. The specified fixtures do not require expiry with a completion response still in flight.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-11",
-      "lens": "obligation-reduction",
-      "objection": "Proxy shutdown can wait indefinitely for an outstanding completion response.",
-      "obligation": "O11.6",
-      "scenario": {
-        "expect": "The child is ended, but the launcher never completes proxy shutdown or exits 75; every specified fixture still passes.",
-        "given": "The launcher awaits outstanding upstream responses during shutdown, and fixture requests finish promptly.",
-        "when": "Timeout expires while an upstream completion response remains open indefinitely."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D4 says the launcher \"owns its clock\" and expires runs after elapsed seconds. B1 and B2 use an injected clock, so they do not observe production timer scheduling.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-12",
-      "lens": "obligation-reduction",
-      "objection": "Expiry handling can work under clock injection while production runs never schedule expiry.",
-      "obligation": "O11.7",
-      "scenario": {
-        "expect": "The real run survives its deadline, while injected-clock checks and the signal-termination check pass.",
-        "given": "The injected clock invokes the correct expiry handlers, but the production clock does not register timers.",
-        "when": "A real launcher run with a timeout flag remains active beyond that timeout."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D4 states, \"The flags are the launcher's own and are never passed to the child.\" B7 observes argv only, and B4 compares environment only when neither flag is present.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-13",
-      "lens": "obligation-reduction",
-      "objection": "Timeout settings can be forwarded to the child through its environment.",
-      "obligation": "O12.4",
-      "scenario": {
-        "expect": "The child receives the timeout setting through an environment variable, while every argv and unflagged-environment check passes.",
-        "given": "The launcher strips timeout flags from argv but exports their values into the child's environment when the flags are present.",
-        "when": "The launcher starts a child with either timeout flag."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "The additive launcher change and launcher-owned flags preserve ordinary child invocation. B4 compares three recorded inputs, and B7 records one case per flag combination. The document does not establish that these inputs cover all existing invocation cases.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-14",
-      "lens": "obligation-reduction",
-      "objection": "Invocation preservation can fail for an existing configuration outside the recorded inputs.",
-      "obligation": "O12.5",
-      "scenario": {
-        "expect": "The child receives changed arguments or environment for that configuration, although all recorded comparisons pass.",
-        "given": "The three baseline fixtures pass, but another valid model-and-tool configuration takes a launcher branch whose child environment changed.",
-        "when": "That existing configuration is launched without either timeout flag."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-D4 prescribes timeout 1200 for every prompt-carried lens without tools and idle-timeout 600 plus timeout 2700 for any run with tools. C2 covers one frontier whole-artifact lens without tools and one mid worker with tools.",
-        "rule": "sufficiency"
-      },
-      "id": "obligation-reduction-15",
-      "lens": "obligation-reduction",
-      "objection": "The instructions can prescribe different values for a tool-using lens or another prompt-carried lens.",
-      "obligation": "O13.2",
-      "scenario": {
-        "expect": "Both C2 scenarios pass, but the reader selects the wrong timeout regime for a lens granted tools.",
-        "given": "The skill correctly specifies the two tested combinations but says that every lens uses timeout 1200, regardless of tool grants.",
-        "when": "A reader prepares a repository-reading lens with tools."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "Section 7 requires, \"Use work promote on each resulting feature before implementation.\" No criterion observes that prerequisite.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-16",
-      "lens": "obligation-reduction",
-      "objection": "A feature can be implemented without promotion.",
-      "obligation": "O16.1",
-      "scenario": {
-        "expect": "All acceptance checks pass, but the feature was not promoted before implementation.",
-        "given": "A resulting feature remains unpromoted.",
-        "when": "Its implementation is completed and the acceptance checks run."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "Section 7 requires, \"Slice C lands after slice B.\" No criterion observes landing order.",
-        "rule": "coverage"
-      },
-      "id": "obligation-reduction-17",
-      "lens": "obligation-reduction",
-      "objection": "The route instructions can land before the launcher supports the flags they teach.",
-      "obligation": "O16.2",
-      "scenario": {
-        "expect": "The final combined tree passes every check, but slice C previously landed while the launcher lacked its flags.",
-        "given": "Slice C is checked on a branch containing slice B's implementation.",
-        "when": "Slice C lands first and slice B lands afterward."
-      },
-      "target_ac": "none"
-    },
-    {
-      "ground": {
-        "reason": "DEL-A2's check observes only content-tests exiting 0 at the landed head. The prose promises inventory enforcement, not gate success as an independent deliverable. A green gate alone does not establish actual model-id membership.",
-        "rule": "has-basis"
-      },
-      "id": "obligation-reduction-18",
-      "lens": "obligation-reduction",
-      "objection": "The observed gate result discharges no inventory part. The author must identify a standalone obligation for that result or strengthen what the check observes.",
-      "scenario": {
-        "expect": "A2 passes, although no obligation depends on gate success independently of the inventory properties it is intended to establish.",
-        "given": "The lint misses an eligible file containing an unlisted id while its specified fixtures pass.",
-        "when": "A2 runs content-tests at the landed head and observes exit 0."
+        "expect": "The second inventory remains in the landed tree while every criterion's check passes.",
+        "given": "The lint rejects every tested fixture but skips an existing Markdown file containing a copied model table.",
+        "when": "The suites, landed-head gate and scenario checks run."
       },
       "target_ac": "DEL-A2"
     },
     {
       "ground": {
-        "reason": "The document defines kill behaviour only for SIGTERM (DEL-B6) and for the two timeout flags (DEL-B1 to DEL-B3). A SIGINT, the signal a runner actually sends when interrupting a foreground launch (Ctrl-C), is neither tested nor ruled out anywhere. The slice exists because unkillable OpenRouter runs are the failure it is removing (F9's 67-minute run), so an interrupt path on which the child can survive is squarely within scope.",
+        "reason": "The checks use the routing table's models and efforts but do not inspect its prescribed structure or prohibit caller-specific columns and rows inside it.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-2",
+      "lens": "obligation-reduction",
+      "objection": "DEL-D2 says the table carries provider-tier models and per-model attributes, and explicitly rejects seat rows and a scope column. Those additions can pass every check.",
+      "obligation": "O1.2",
+      "scenario": {
+        "expect": "The table contains caller-specific inventory data despite all checks passing.",
+        "given": "The correct models, prices, contexts and efforts remain, but the routing table also contains review-seat rows and a scope column.",
+        "when": "The criteria run against the expanded table."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "DEL-C2 checks returned effort and timeout values. It does not inspect where launcher constraints are recorded or how many copies exist.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-3",
+      "lens": "obligation-reduction",
+      "objection": "The launcher constraint can be duplicated outside its owning skill, contrary to DEL-D2's requirement that it lives in that skill 'once'.",
+      "obligation": "O3.2",
+      "scenario": {
+        "expect": "Two artifacts independently state the Kimi whole-artifact effort rule while every check passes.",
+        "given": "The OpenRouter skill states the correct low effort, and another dispatching skill repeats the same constraint in prose.",
+        "when": "The reader scenarios and inventory lint run."
+      },
+      "target_ac": "DEL-C2"
+    },
+    {
+      "ground": {
+        "reason": "The launch scenarios observe a Codex read-only lens command, one Google lens command, and OpenRouter parameter answers. They do not observe the remaining mode and launch instructions promised by DEL-D3.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-4",
+      "lens": "obligation-reduction",
+      "objection": "The skills can pass the selected scenarios while omitting or misstating worker editing permissions and other worker or lens launch instructions.",
+      "obligation": "O4.4",
+      "scenario": {
+        "expect": "A reader cannot launch a permitted worker correctly, although all selected launch scenarios pass.",
+        "given": "The tested lens instructions and OpenRouter timeout answers are correct, but the Codex worker instructions wrongly prohibit editing.",
+        "when": "The criteria run, followed by a reader attempting to launch a Codex worker using only its skill."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Timeout parameter answers and successful background collection do not establish that each skill explains how its runs are timed and killed.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-5",
+      "lens": "obligation-reduction",
+      "objection": "DEL-D3's fourth question, 'how a run is timed and killed', can remain unanswered for the Codex skill and for OpenRouter cancellation.",
+      "obligation": "O4.5",
+      "scenario": {
+        "expect": "The reader finds no procedure for killing the run while every criterion's check passes.",
+        "given": "The skills provide all tested launch parameters, classifications and collection procedures, but omit cancellation instructions.",
+        "when": "The criteria run, followed by a reader attempting to stop a hung run from the skill alone."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "DEL-C1 classifies captured endings, DEL-C6 observes capture and invocation, and DEL-C8 observes possession of a completion token. None observes supervision of the launched process.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-6",
+      "lens": "obligation-reduction",
+      "objection": "F7 and DEL-D3 require the caller to wait on its launched process and its capture file. A file-only collection procedure can pass the checks.",
+      "obligation": "O5.4",
+      "scenario": {
+        "expect": "The reader returns the report without establishing that its companion process has ended.",
+        "given": "The taught procedure polls the capture file for a completion marker and never checks or waits on the launched process. It succeeds against the specified stubs.",
+        "when": "A companion emits the report and completion marker but remains alive."
+      },
+      "target_ac": "DEL-C8"
+    },
+    {
+      "ground": {
+        "reason": "DEL-C3 observes readers' answers. Correct answers can come from prose without the table that DEL-D3 explicitly promises.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-7",
+      "lens": "obligation-reduction",
+      "objection": "The promised failure-signal table can be absent even though readers classify every captured signal correctly.",
+      "obligation": "O7.2",
+      "scenario": {
+        "expect": "Every scenario returns its key, but harvest.md contains no failure-signal table.",
+        "given": "Harvest.md expresses all correct signal mappings as prose paragraphs.",
+        "when": "DEL-C3's scenarios and the other checks run."
+      },
+      "target_ac": "DEL-C3"
+    },
+    {
+      "ground": {
+        "reason": "DEL-B5 names supplied non-numeric, zero and negative values. It does not specify a missing-value case for either newly added option.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-8",
+      "lens": "obligation-reduction",
+      "objection": "DEL-D4 requires refusal of a flag value that is not a positive number before the proxy binds. An option with no value can instead launch an unbounded run.",
+      "obligation": "O10.2",
+      "scenario": {
+        "expect": "The proxy binds and the child launches instead of exit 78 occurring before binding.",
+        "given": "All specified invalid supplied values are rejected, but an omitted option value is interpreted as disabling that timeout.",
+        "when": "The launcher receives --timeout with no following value."
+      },
+      "target_ac": "DEL-B5"
+    },
+    {
+      "ground": {
+        "reason": "DEL-C7 preserves unrelated passages only in slice C. No check preserves the delivery protocol through the later provider rename.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-9",
+      "lens": "obligation-reduction",
+      "objection": "DEL-D6 says the delivery protocol stays where it is and its copies agree. A later slice can remove an explicit-send requirement without failing the criteria.",
+      "obligation": "O13.2",
+      "scenario": {
+        "expect": "The delivery-protocol copies disagree while every criterion's check passes.",
+        "given": "Slice C preserves the protocol, but slice E removes the explicit-send requirement from orchestrating-teammates while completing all provider renames.",
+        "when": "The complete change is checked."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "DEL-C7 covers slice C's unrelated passages, and DEL-C3 covers failure-signal responses. Neither preserves the complete failover statements across the other slices.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-10",
+      "lens": "obligation-reduction",
+      "objection": "DEL-D6's preservation of the agreeing failover statements is uncovered outside slice C.",
+      "obligation": "O13.4",
+      "scenario": {
+        "expect": "The correct failure classifications remain, but ac-attack no longer requires recording a provider substitution.",
+        "given": "Slice C preserves the failover text. A later provider rename removes the substitution-recording requirement while retaining correct provider terminology.",
+        "when": "All criteria run against the final change."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "DEL-G5 observes one reader using the agy skill and routing table. It does not inspect other prose for instructions to compose suffixes.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-11",
+      "lens": "obligation-reduction",
+      "objection": "DEL-D9 says the suffix rule lives in the launcher 'and nowhere in prose'. Another skill can retain that rule.",
+      "obligation": "O14.5",
+      "scenario": {
+        "expect": "The Google scenario passes, but another skill still instructs callers to compose the model identifier themselves.",
+        "given": "The agy skill teaches the two flags correctly, while another dispatching skill says to append '-low' to the model name before launching.",
+        "when": "The specified reader scenario and lint run."
+      },
+      "target_ac": "DEL-G5"
+    },
+    {
+      "ground": {
+        "reason": "DEL-G4 observes an existing suite passing after a prescribed edit. Its check does not identify observations of the preserved watchdog, process-group kill and timeout exit contract.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-12",
+      "lens": "obligation-reduction",
+      "objection": "The model-and-effort change can regress the agy supervision behavior described in F9 while its existing suite remains green.",
+      "obligation": "O15.1",
+      "scenario": {
+        "expect": "The agy run survives its timeout or exits without the required exit 75 and reason line.",
+        "given": "Model composition works for every tested pair, but the change bypasses the watchdog on a path the existing suite does not exercise.",
+        "when": "All criteria run, followed by a real agy run that exceeds its timeout."
+      },
+      "target_ac": "DEL-G4"
+    },
+    {
+      "ground": {
+        "reason": "DEL-V1's review scans lines containing route or transport. A provider mention using an invalid value or another word is outside that scan.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-13",
+      "lens": "obligation-reduction",
+      "objection": "DEL-D8's requirement for one word and four values can be violated by prose that contains neither scanned word.",
+      "obligation": "O16.2",
+      "scenario": {
+        "expect": "The prose retains a fifth provider value while every provider check passes.",
+        "given": "Contracts and lens front matter use valid values, but a prose sentence says 'The delegate ran with provider codex.'",
+        "when": "DEL-V1's route-or-transport line review and the data checks run."
+      },
+      "target_ac": "DEL-V1"
+    },
+    {
+      "ground": {
+        "reason": "No criterion observes tracker promotion or its timing.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-14",
+      "lens": "obligation-reduction",
+      "objection": "Section 7 requires work promote on each resulting feature before implementation, but the features can be implemented without promotion.",
+      "obligation": "O18.1",
+      "scenario": {
+        "expect": "Every criterion passes although the resulting features were never promoted.",
+        "given": "Implementation starts directly from the unpromoted continuations and produces conforming changes.",
+        "when": "The implementation and acceptance checks finish."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The criteria observe final behavior and slice diffs, not landing order.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-15",
+      "lens": "obligation-reduction",
+      "objection": "Section 7 requires slice C to land after both B and D. Successful checks do not establish that order.",
+      "obligation": "O18.2",
+      "scenario": {
+        "expect": "Every final check passes, but slice C landed before a dependency.",
+        "given": "Slice C is tested on a branch containing B and D, then lands before one of those slices.",
+        "when": "The dependency lands later and the complete change is checked."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No criterion observes whether slice E lands last or whether the external review-seat pull requests have landed.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-16",
+      "lens": "obligation-reduction",
+      "objection": "Section 7's ordering guarantee for slice E can be violated while its provider checks pass.",
+      "obligation": "O18.3",
+      "scenario": {
+        "expect": "Every provider check passes, but slice E lands before the remaining review-seat pull requests.",
+        "given": "Slice E implements the complete rename independently of the pending external changes.",
+        "when": "Slice E lands and its acceptance checks run."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Outside the criteria, the document requires inventory content and lint behavior. It does not make an aggregate gate's zero exit status a separate deliverable.",
+        "rule": "has-basis"
+      },
+      "id": "obligation-reduction-17",
+      "lens": "obligation-reduction",
+      "objection": "DEL-A2's check observes only the landed-head gate result and therefore discharges no inventoried content or behavior part.",
+      "scenario": {
+        "expect": "The criterion depends on an aggregate exit status without observing a document obligation that independently depends on that status.",
+        "given": "The routing content and lint satisfy their obligations, but another content-tests member fails.",
+        "when": "DEL-A2 runs the aggregate gate at the landed head."
+      },
+      "target_ac": "DEL-A2"
+    },
+    {
+      "ground": {
+        "reason": "DEL-D1 specifies rejection of unlisted references and additional inventory rows. It does not specify failure on a missing or empty routing table regardless of all other content.",
+        "rule": "has-basis"
+      },
+      "id": "obligation-reduction-18",
+      "lens": "obligation-reduction",
+      "objection": "DEL-A5 adds an unconditional dependency-failure contract that no inventoried obligation states.",
+      "scenario": {
+        "expect": "The criterion demands a failure even though no scanned reference or additional inventory violates the documented lint conditions.",
+        "given": "A fixture has no model references or inventory rows, and its routing table is absent or empty.",
+        "when": "DEL-A5 runs the lint."
+      },
+      "target_ac": "DEL-A5"
+    },
+    {
+      "ground": {
+        "reason": "The document's behavioral obligations concern model composition and preserved launcher behavior. It does not separately promise an unchanged existing test suite or make that suite's success a deliverable.",
+        "rule": "has-basis"
+      },
+      "id": "obligation-reduction-19",
+      "lens": "obligation-reduction",
+      "objection": "DEL-G4's check observes suite preservation and success rather than a defined behavioral part of the inventory.",
+      "scenario": {
+        "expect": "The criterion's result depends on test-file edits and suite status without establishing a specified launcher observation.",
+        "given": "The launcher implements the required behavior, and the existing suite receives an additional assertion beyond rewriting model arguments.",
+        "when": "DEL-G4 checks that the suite passes with no other edit."
+      },
+      "target_ac": "DEL-G4"
+    },
+    {
+      "ground": {
+        "reason": "DEL-D8 specifies provider terminology, values, schema changes and readers. No passage outside the criteria specifies a distinct-vendor count or OpenRouter vendor-prefix resolution.",
+        "rule": "has-basis"
+      },
+      "id": "obligation-reduction-20",
+      "lens": "obligation-reduction",
+      "objection": "DEL-V5 checks a vendor-counting policy that has no stated obligation in this document.",
+      "scenario": {
+        "expect": "The check distinguishes vendor counts even though no inventoried obligation depends on that metric.",
+        "given": "All provider fields, values, schema changes and readers satisfy the documented rename.",
+        "when": "DEL-V5 assembles verdicts for openai and openrouter lenses and compares their vendor counts."
+      },
+      "target_ac": "DEL-V5"
+    },
+    {
+      "ground": {
+        "reason": "DEL-C3 keys the correct response to a dead route as the claim reason `transport-error`, and its key is committed with the scenarios; DEL-V3 (landing later, slice E last) renames that very reason to `provider_error` in the ledger and verdict envelope. Once slice E lands, both criteria are in force and demand different reason strings for the same judgement.",
+        "rule": "consistency"
+      },
+      "id": "set-consistency-1",
+      "lens": "set-consistency",
+      "objection": "A verdict judged against DEL-C3's committed key must answer `transport-error`, while the same behaviour judged against DEL-V3 must carry `provider_error`; no single state of harvest.md, dispatch_gate.py and the scenarios satisfies both, and nothing in slice E says it re-keys slice C's scenarios.",
+      "obligation": "Slice C criterion DEL-C3 versus slice E criterion DEL-V3",
+      "scenario": {
+        "expect": "DEL-C3's scenario run fails (the documented reason is now `provider_error`, not the keyed `transport-error`), or DEL-V3's suite fails (the old `transport_error` reason persists) — one of the two must fail however the rename is implemented.",
+        "given": "All five slices landed in the spec's order, so slice C's scenarios and keys (naming the claim reason `transport-error`) are committed, and slice E has renamed `transport_error` to `provider_error` in the ledger and verdict envelope under the bumped schema.",
+        "when": "The DEL-C3 scenario protocol is re-run against the post-slice-E tree: the reader holding harvest.md must name the response to a dead-route failure signal."
+      },
+      "target_ac": "DEL-C3"
+    },
+    {
+      "ground": {
+        "reason": "DEL-B1 unconditionally requires that a child still running N seconds after launch be ended with exit 75 and `[run] reason=timeout`; DEL-B3 requires that a child exiting on its own on the same tick as an expiry yield its own exit code with no reason line. A child that exits exactly on the timeout tick is both 'still running N seconds after launch' and 'exits on the same tick as an expiry', and the two criteria require incompatible observable results.",
+        "rule": "consistency"
+      },
+      "id": "set-consistency-2",
+      "lens": "set-consistency",
+      "objection": "The same-tick race between a natural child exit and timeout expiry passes under DEL-B3 and fails under DEL-B1 (or vice versa), because neither criterion bounds which of them governs that tick; an implementation must guess which verdict the suite will assert.",
+      "obligation": "Slice B criteria DEL-B1 and DEL-B3",
+      "scenario": {
+        "expect": "Judged against DEL-B1 the run must show exit 75 with `[run] reason=timeout` (the child was still running at the expiry instant); judged against DEL-B3 it must show the child's own exit code and no reason line — the two checks give conflicting verdicts on one observable trace.",
+        "given": "The launcher runs with `--timeout N` and a fake child scripted to exit with its own code on the same injected-clock tick on which the timeout expires.",
+        "when": "The tick fires and the suite asserts the launcher's exit code and stderr."
+      },
+      "target_ac": "DEL-B1"
+    },
+    {
+      "ground": {
+        "reason": "DEL-V2 covers a lens carrying `transport` and one carrying an unknown provider value, but never a lens whose front matter has no provider key at all — the empty-input case. The requirement that every lens carry `provider` with one of the four values implies such a lens must be refused, yet no criterion checks `emit_prompts.py` on a missing field, and the document neither covers nor rules out whether a missing key is treated as an unknown value or slips through.",
         "rule": "what-if-questions"
       },
       "id": "what-if-1",
       "lens": "what-if",
-      "objection": "The criteria let through a launcher that leaks the child on SIGINT: every kill guarantee is keyed to SIGTERM or to flag expiry, so an implementation that forwards or ignores SIGINT while the child keeps running passes DEL-B1 through DEL-B7.",
+      "objection": "The criteria let through an `emit_prompts.py` that silently accepts a lens with no provider field, breaking the one-word invariant at the exact point it is enforced.",
       "scenario": {
-        "expect": "The document implies the run must not be abandoned (the stated purpose of the launcher's clock and of DEL-B6's last-resort kill), yet no criterion checks whether the child is ended or survives",
-        "given": "The OpenRouter launcher running a child, with or without the timeout flags",
-        "when": "SIGINT (not SIGTERM) is delivered to the launcher while the child is alive"
+        "expect": "a coded refusal, as DEL-V2 requires for `transport` and unknown values — but no criterion tests the missing-field case",
+        "given": "an `ac-attack` lens whose front matter carries neither `provider` nor `transport`",
+        "when": "`emit_prompts.py` processes the lens after slice E lands"
       },
-      "target_ac": "DEL-B6"
+      "target_ac": "DEL-V2"
     },
     {
       "ground": {
-        "reason": "DEL-B1 and DEL-B6 assert only that 'no child process survives'. The decision text (DEL-D4) says the launcher 'ends the child' and borrows the agy contract, which kills the process group, but no criterion exercises a child that has spawned a further process. A launcher that kills only the direct child and leaks a grandchild passes every Slice B check, re-creating the stranded-run failure (F9) one level down.",
+        "reason": "DEL-V3 covers refusing `--transport` on new claims and refusing a verdict of the previous schema version, but the ledger is a persisted artifact: claims recorded before slice E lands hold `transport` and `transport_error` rows. The renamed `dispatch_gate.py` and `assemble_verdict.py` rely on the ledger and envelope carrying `provider`; the document neither covers nor rules out what happens when the post-rename code meets pre-rename ledger entries — the missing/mismatched-dependency case.",
         "rule": "what-if-questions"
       },
       "id": "what-if-2",
       "lens": "what-if",
-      "objection": "The criteria let through a kill that stops the direct child but leaves processes the child spawned still running, since the fake children in DEL-B1 and DEL-B6 are never specified to fork and 'no child process survives' reads as the direct child only.",
+      "objection": "The criteria let through a rename that corrupts or crashes on in-flight claims recorded under the old `transport` field when slice E lands mid-review.",
       "scenario": {
-        "expect": "By analogy with the agy contract DEL-D4 cites (kill of the process group), no descendant should survive; no criterion checks the grandchild's fate",
-        "given": "A fake child that has spawned a grandchild process before the timeout expires or before SIGTERM arrives",
-        "when": "--timeout expires (or SIGTERM is delivered to the launcher)"
+        "expect": "the old rows are migrated, tolerated, or refused with a coded error — the document implies the ledger now carries `provider` but no criterion checks the pre-existing rows",
+        "given": "a ledger holding claim rows written with `transport` and `transport_error` before slice E landed",
+        "when": "the renamed `dispatch_gate.py` or verdict assembly reads the ledger"
       },
-      "target_ac": "DEL-B1"
+      "target_ac": "DEL-V3"
     }
   ],
   "schema_version": "1",
   "spec_path": "2026-10-01-delegation-coherence.md",
-  "spec_revision": "sha256:46e60b869164f4dea237b595cc0a1bb75fb1ec4cab7fe7f4388f64caf5f1c3d1"
+  "spec_revision": "sha256:efc3db4ac7e5155732d5014ce715342a5f51e3f9564ec9ed5138f65ca45276f7"
 }
