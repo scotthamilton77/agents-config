@@ -88,6 +88,16 @@ bytes until the human applies them -- `apply` puts them on the board as one
 gesture the human authored, `dismiss` ends them having changed nothing. Both
 name queue entries by id, so what lands is what the agent wrote.
 
+**A decision a ruling in flight may move is waiting.** A marked answer starts
+one impact task per decision it puts in question, recorded on the lane's
+status entries. While a task started by a gesture is live, or has failed
+without a result, its target carries a `waiting` field naming the task, and
+the frontier skips it exactly as it skips a locked one. A task ends in one of
+four phases: `replied` and `superseded` are final, `error` holds the decision
+until a later gesture supersedes it, and `composing` is live. Reading the
+phases off the log rather than out of process memory is what lets a fresh
+backend show the same wait the dead one showed.
+
 Notices and proposals share the `pending` array, which is the queue of what the
 human has not dealt with yet. Four things take an item off it or mark it, and
 every one of them is a gesture somebody made.
@@ -124,6 +134,7 @@ from grillui.schemas import (
     DISMISS_KIND,
     FOLD_SHAPED,
     FROM_THREAD_KEY,
+    IMPACT_MODE,
     PENDING_KEY,
     PROPOSABLE_KINDS,
     PROPOSED_ANSWER_KEY,
@@ -131,7 +142,14 @@ from grillui.schemas import (
     RULINGS_KEY,
     SESSION_START_KIND,
     SET_ASIDE_KINDS,
+    STATUS_KIND,
+    STATUS_PHASE_COMPOSING,
+    STATUS_PHASE_ERROR,
+    STATUS_PHASE_REPLIED,
+    STATUS_PHASE_RULINGS_DROPPED,
+    STATUS_PHASE_SUPERSEDED,
     SUPERSEDES_KEY,
+    TASKS_KEY,
     THREAD_CLOSE_KIND,
     THREAD_FOLD_KIND,
     THREAD_GESTURE_KINDS,
@@ -147,6 +165,7 @@ from grillui.schemas import (
     Image1,
     Image2,
     LogEntry,
+    MootnessObligation,
     Option,
     PendingUpdate,
     RulingKind,
@@ -156,12 +175,49 @@ from grillui.schemas import (
     ThreadProjection,
     ThreadState,
     ThreadStub,
+    Waiting,
     pending_ids,
     read_turns,
 )
 
 _NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
 _REVISABLE_TEXT = ("short", "title", "body")
+# A task in either of these phases has ended for good. A failed task has not:
+# it still holds its decision, and a later gesture can still supersede it.
+_FINAL_PHASES = frozenset({STATUS_PHASE_REPLIED, STATUS_PHASE_SUPERSEDED})
+_HOLDING_PHASES = frozenset({STATUS_PHASE_COMPOSING, STATUS_PHASE_ERROR})
+
+
+def task_id(gesture: int, target: str) -> str:
+    """The id of the impact task a gesture started on one target.
+
+    Derived rather than minted, so a restarted backend computes the same id
+    from the same log, and a turn finds its own tasks from the gesture it owes.
+    """
+    return f"{IMPACT_MODE}-{gesture}-{target}"
+
+
+@dataclass
+class Task:
+    """One impact task, as the lane's status entries tell it.
+
+    `start` and `epoch` are the opening entry's: when the seat was announced,
+    and which process announced it. A task opened by a process that has since
+    died will never be closed by it, and the epoch is how a successor tells.
+    """
+
+    id: str
+    target: str
+    gesture: int
+    seat: str
+    start: str
+    epoch: str
+    phase: str
+
+    @property
+    def holds(self) -> bool:
+        """Whether this task keeps its target off the frontier."""
+        return self.phase in _HOLDING_PHASES
 
 
 @dataclass
@@ -193,6 +249,7 @@ class _Board:
     dealt: dict[str, tuple[PendingUpdate, int]] = field(default_factory=dict)
     touched: dict[str, int] = field(default_factory=dict)
     conflicts: list[SupersedeConflict] = field(default_factory=list)
+    tasks: dict[str, Task] = field(default_factory=dict)
 
     def node(self, payload: Mapping[str, object]) -> Decision | None:
         target = payload.get("target")
@@ -225,7 +282,94 @@ def _run(entries: Sequence[LogEntry]) -> _Board:
             _apply(board, entry, entry.kind, entry.payload, entry.idempotency_key)
         if entry.kind in {APPLY_KIND, DISMISS_KIND}:
             _clear(board, entry)
+        if entry.kind == STATUS_KIND:
+            _fold_tasks(board, entry)
     return board
+
+
+def impact_tasks(entries: Sequence[LogEntry]) -> dict[str, Task]:
+    """Every impact task the log has opened, by id, in the phase it stands in.
+
+    A pure read like the queue's, because the lane and the map-document
+    recorder both have to ask it under the append lock: which task a gesture
+    supersedes, and which of a turn's own tasks were superseded while it ran.
+    """
+    return _run(entries).tasks
+
+
+def superseded_targets(entries: Sequence[LogEntry], owed: MootnessObligation | None) -> list[str]:
+    """Which of the decisions this obligation names a later gesture has taken
+    over, read off the log as it now stands.
+
+    A turn owes a ruling only on targets whose task is still its own. Once a
+    later gesture supersedes one, that ruling belongs to the later turn, and a
+    result for it from this turn is dropped rather than folded.
+    """
+    if owed is None or owed.gesture is None:
+        return []
+    known = impact_tasks(entries)
+    return [
+        one
+        for one in owed.ids
+        if (found := known.get(task_id(owed.gesture, one))) is not None
+        and found.phase == STATUS_PHASE_SUPERSEDED
+    ]
+
+
+def _fold_tasks(board: _Board, entry: LogEntry) -> None:
+    """Open, end, or record the dropped result of each task this entry names.
+
+    Only a `composing` entry naming a task the log has not seen opens one,
+    because that is the announcement of the turn carrying it. Every other
+    mention moves a task that has not ended for good, so a superseded task
+    reads superseded thereafter whatever a later entry says about it.
+
+    A dropped result is a history line on the task's target. The result never
+    reaches the board, and the line is how a reader of that decision learns a
+    ruling arrived and was set aside rather than never made.
+    """
+    raw = entry.payload.get(TASKS_KEY)
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, Mapping):
+            continue
+        name, phase = item.get("id"), item.get("phase")
+        if not isinstance(name, str) or not isinstance(phase, str):
+            continue
+        known = board.tasks.get(name)
+        if known is None:
+            _open_task(board, entry, name, item)
+        elif entry.payload.get("phase") == STATUS_PHASE_RULINGS_DROPPED:
+            _record_drop(board, entry, known)
+        elif known.phase not in _FINAL_PHASES:
+            known.phase = phase
+
+
+def _open_task(board: _Board, entry: LogEntry, name: str, item: Mapping[str, object]) -> None:
+    target, gesture, seat = item.get("target"), item.get("gesture"), item.get("seat")
+    if (
+        entry.payload.get("phase") != STATUS_PHASE_COMPOSING
+        or not isinstance(target, str)
+        or not isinstance(gesture, int)
+        or not isinstance(seat, str)
+    ):
+        return
+    board.tasks[name] = Task(
+        name, target, gesture, seat, entry.timestamp, entry.epoch, STATUS_PHASE_COMPOSING
+    )
+
+
+def _record_drop(board: _Board, entry: LogEntry, task: Task) -> None:
+    if task.target not in board.decisions:
+        return
+    board.history.setdefault(task.target, []).append(
+        HistoryEntry(
+            seq=entry.seq,
+            timestamp=entry.timestamp,
+            kind=STATUS_KIND,
+            actor=entry.actor,
+            why=_text(entry.payload, "detail"),
+        )
+    )
 
 
 def supersede_conflicts(entries: Sequence[LogEntry]) -> list[SupersedeConflict]:
@@ -321,10 +465,25 @@ def replay(epoch: str, entries: Sequence[LogEntry]) -> Image2:
     for node_id, blocking in alerted.items():
         if blocking:
             board.decisions[node_id].locked = True
+    # A decision a ruling in flight may move is off the frontier until that
+    # ruling lands, and a failed one holds it the same way: nothing unlocks on
+    # inaction, so a seat that never answered cannot leave a decision open on
+    # structure it was about to change. At most one task holds each target,
+    # and a later one supersedes an earlier, so the last one read is the one
+    # that speaks.
+    for task in board.tasks.values():
+        held = board.decisions.get(task.target)
+        if held is not None and task.holds:
+            held.waiting = Waiting(
+                task=task.id, gesture=task.gesture, seat=task.seat, start=task.start
+            )
     frontier = [
         node.id
         for node in board.decisions.values()
-        if node.status == "open" and not node.locked and all(p in cleared_ids for p in node.prereqs)
+        if node.status == "open"
+        and not node.locked
+        and node.waiting is None
+        and all(p in cleared_ids for p in node.prereqs)
     ]
 
     return Image2(
@@ -493,7 +652,7 @@ def _set_aside_interval(entries: Sequence[LogEntry], channel: str) -> tuple[int,
 
 def _decision_state(epoch: str, entries: Sequence[LogEntry]) -> dict[str, str]:
     return {
-        node.id: node.model_dump_json(exclude={"locked"})
+        node.id: node.model_dump_json(exclude={"locked", "waiting"})
         for node in replay(epoch, entries).decisions
     }
 

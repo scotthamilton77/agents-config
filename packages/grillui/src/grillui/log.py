@@ -53,6 +53,7 @@ from grillui.schemas import (
     REASON_UNKNOWN_PENDING,
     SESSION_START_KIND,
     STATUS_KIND,
+    TASKS_KEY,
     AcceptedReceipt,
     Applied,
     Decision,
@@ -268,7 +269,13 @@ class SessionLog:
             return entry
 
     def emit_status(
-        self, phase: str, detail: str, channel: str = MAP_CHANNEL, *, tier: str | None = None
+        self,
+        phase: str,
+        detail: str,
+        channel: str = MAP_CHANNEL,
+        *,
+        tier: str | None = None,
+        tasks: list[dict[str, Any]] | None = None,
     ) -> LogEntry:
         """Append one status entry.
 
@@ -277,10 +284,15 @@ class SessionLog:
         `tier` names who is taking the turn and is absent from a phase that has
         no tier to name; a page reading the lane learns which tier it is waiting
         on from the entry itself rather than from a lookup it could get wrong.
+
+        `tasks` names the impact tasks this entry ends, each by id with the
+        phase it ended in, and is absent where the entry ends none.
         """
-        payload = {"phase": phase, "detail": detail}
+        payload: dict[str, Any] = {"phase": phase, "detail": detail}
         if tier is not None:
             payload["tier"] = tier
+        if tasks:
+            payload[TASKS_KEY] = tasks
         return self.record(STATUS_KIND, payload, channel)
 
     def _submit_one(self, event: EventSubmission, epoch: str) -> Receipt:

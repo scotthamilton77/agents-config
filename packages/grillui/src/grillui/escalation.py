@@ -643,6 +643,7 @@ def _answer_obligation(image: Image2, answered: LogEntry) -> MootnessObligation 
         target=target,
         answer=note if isinstance(note, str) and note else option.text,
         ids=standing,
+        gesture=answered.seq,
     )
 
 
@@ -673,6 +674,7 @@ def _resting_obligation(image: Image2, gesture: LogEntry) -> MootnessObligation 
         answer=str(blamed.get("why")),
         ids=standing,
         cause=INVALIDATE_KIND,
+        gesture=gesture.seq,
     )
 
 

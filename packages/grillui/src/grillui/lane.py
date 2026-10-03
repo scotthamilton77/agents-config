@@ -72,6 +72,16 @@ board of this session has.
 Nothing here writes to the map: the insistence buys another agent turn, and the
 human is told when it buys nothing.
 
+**A ruling in flight holds what it rules on, and only one holds each.** A
+marked answer starts one impact task per decision it puts in question, opened
+on its turn's `composing` entry, and the replay keeps each target off the
+frontier until its task ends. A later gesture whose own task would target a
+decision already held supersedes the holding task on its `accepted` entry, in
+the same hold of the append lock that accepts the gesture, so no batch and no
+interleaving can leave two tasks holding one target. The superseded turn runs
+on; what it owed on that target is no longer owed, and a result it sends for
+it is dropped rather than folded.
+
 The driver seam is the whole of what a tier has to implement. A turn is one
 invocation: the driver runs, says what it has to say into the log, and returns
 the sequence of the entry it appended -- which is the receipt the coverage check
@@ -91,6 +101,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 from grillui.dispatch import record_dispatch
 from grillui.escalation import (
+    ANSWER_KIND,
     INVALIDATE_KIND,
     distrust_count,
     in_expert_mode,
@@ -100,11 +111,18 @@ from grillui.escalation import (
     rulings_of,
     unruled,
 )
-from grillui.projector import replay, supersede_conflicts
+from grillui.projector import (
+    impact_tasks,
+    replay,
+    supersede_conflicts,
+    superseded_targets,
+    task_id,
+)
 from grillui.schemas import (
     ANSWERABLE_KINDS,
     APPLY_KIND,
     DISMISS_KIND,
+    IMPACT_MODE,
     MAP_CHANNEL,
     PRESSED_KEY,
     STATUS_KIND,
@@ -112,7 +130,9 @@ from grillui.schemas import (
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
     STATUS_PHASE_REPLIED,
+    STATUS_PHASE_SUPERSEDED,
     STATUS_PHASE_TRANSFERRED,
+    TASKS_KEY,
     THREAD_FOLD_KIND,
     TIER_KEY,
     DispatchContext,
@@ -300,6 +320,9 @@ class Turn(NamedTuple):
     `proceed` is the human asking the expert to take a thread up as it stands,
     which names the seat whatever the channel's mode is.
 
+    `tasks` is the ids of the impact tasks this turn's gesture started, which
+    the turn's closing entry ends.
+
     `mootness` is what the gesture this turn was scheduled for owes the rest of
     the board, read when it was scheduled and carried here rather than derived
     again when the turn runs. The board is mutable and the turn runs later: an
@@ -314,6 +337,7 @@ class Turn(NamedTuple):
     reassess: bool = False
     mootness: MootnessObligation | None = None
     proceed: bool = False
+    tasks: tuple[str, ...] = ()
 
 
 def turn_of(event: EventSubmission) -> Turn:
@@ -376,8 +400,21 @@ def close_dead_turns(log: SessionLog) -> None:
 
     Only a prior epoch's turn is closed. A turn this tenure announced is live,
     and the driver taking it will close the lane itself.
+
+    Every impact task a prior epoch left live fails with it, named on the map's
+    closing entry. A failed task still holds its decision, so the board shows
+    the same wait it showed before the restart; what changes is that nobody
+    reads it as a ruling still coming. Map turns run concurrently, so a task
+    can outlive the one announcement the pairing rule still sees open, and a
+    map left with no open turn still gets an entry ending the tasks it held.
     """
-    for channel, opened in unclosed_turns(log.entries()).items():
+    entries = log.entries()
+    dead = [
+        {"id": task.id, "phase": STATUS_PHASE_ERROR}
+        for task in impact_tasks(entries).values()
+        if task.phase == STATUS_PHASE_COMPOSING and task.epoch != log.epoch
+    ]
+    for channel, opened in unclosed_turns(entries).items():
         if opened.epoch == log.epoch:
             continue
         tier = opened.payload.get(TIER_KEY)
@@ -387,6 +424,17 @@ def close_dead_turns(log: SessionLog) -> None:
             f"{whose} died with the process holding epoch {opened.epoch!r}, "
             f"which ended before it replied",
             channel,
+            tasks=dead if channel == MAP_CHANNEL else None,
+        )
+        if channel == MAP_CHANNEL:
+            dead = []
+    if dead:
+        log.emit_status(
+            STATUS_PHASE_ERROR,
+            "impact tasks died with the process that was running them, which ended before "
+            "they replied",
+            MAP_CHANNEL,
+            tasks=dead,
         )
 
 
@@ -506,7 +554,10 @@ class Lane:
                 owed = self._owed(turn)
                 if not is_answerable(event) and not self._owes_rulings(event, owed):
                     continue
-                turn = turn._replace(mootness=owed)
+                targets = _impact_targets(receipt.seq, owed)
+                turn = turn._replace(
+                    mootness=owed, tasks=tuple(task_id(receipt.seq, one) for one in targets)
+                )
                 # The tier is the dispatched channel's, and it is read after the
                 # gesture landed: a turn carrying the human's transfer is itself
                 # the escalation, and must not be composed by the tier they just
@@ -522,15 +573,52 @@ class Lane:
                 # so it belongs on the channel that turn runs on -- the same
                 # channel its `replied` or `error` will close, and the same one
                 # whose expert mode chose the tier being named.
+                #
+                # A task already holding one of this gesture's targets is
+                # superseded here, on the `accepted` entry, before the new task
+                # opens: read and written under the one hold of the lock, so the
+                # next gesture in the batch sees this one's task as the holder.
                 self.log.emit_status(
                     STATUS_PHASE_ACCEPTED,
                     f"{event.kind} from the human accepted on channel {event.channel!r}",
                     event.channel,
+                    tasks=self._supersede(targets),
                 )
-                self._announce(driver, turn)
+                self._announce(
+                    driver,
+                    turn,
+                    opened=[
+                        {
+                            "id": task_id(receipt.seq, one),
+                            "target": one,
+                            "gesture": receipt.seq,
+                            "basis": receipt.seq,
+                            "mode": IMPACT_MODE,
+                            "seat": driver.tier,
+                            "phase": STATUS_PHASE_COMPOSING,
+                        }
+                        for one in targets
+                    ],
+                )
         return receipts, [self._schedule(driver, turn) for driver, turn in turns]
 
-    def _announce(self, driver: TurnDriver, turn: Turn, *, pressed: bool = False) -> None:
+    def _supersede(self, targets: Sequence[str]) -> list[dict[str, Any]]:
+        """End every task holding one of these targets, as the entry ending them
+        names them."""
+        return [
+            {"id": task.id, "phase": STATUS_PHASE_SUPERSEDED}
+            for task in impact_tasks(self.log.entries()).values()
+            if task.target in targets and task.holds
+        ]
+
+    def _announce(
+        self,
+        driver: TurnDriver,
+        turn: Turn,
+        *,
+        pressed: bool = False,
+        opened: list[dict[str, Any]] | None = None,
+    ) -> None:
         """Open the lane on a turn about to be taken, naming the seat taking it.
 
         Every turn is announced, including the two nobody spoke a gesture to
@@ -544,6 +632,10 @@ class Lane:
         signal off. It rides this entry rather than one of its own: the hand-up
         announces anyway, and a second entry saying the same thing is one more
         thing for a reader of the lane to pair up.
+
+        `opened` is the impact tasks this turn carries, each described whole. A
+        task opens where the seat weighing it is announced, so its start is
+        when the human began waiting on that seat.
         """
         payload: dict[str, Any] = {
             "phase": STATUS_PHASE_COMPOSING,
@@ -552,6 +644,8 @@ class Lane:
         }
         if pressed:
             payload[PRESSED_KEY] = True
+        if opened:
+            payload[TASKS_KEY] = opened
         self.log.record(STATUS_KIND, payload, turn.channel)
 
     def _owed(self, turn: Turn) -> MootnessObligation | None:
@@ -685,23 +779,34 @@ class Lane:
             took = self._press(driver, turn, dispatch, _run(driver, self.log, dispatch))
             if self._watching(turn):
                 self._hand_back(took, standing)
-            self.log.emit_status(
-                STATUS_PHASE_REPLIED, f"the {took.tier!r} tier's turn is over", turn.channel
-            )
+            self._close(turn, STATUS_PHASE_REPLIED, f"the {took.tier!r} tier's turn is over")
         except DocumentRefusedError as error:
             # Named for the seat the ladder ended on rather than the one it
             # started from: that is the seat the human is owed the name of, and
             # on a turn handed up once it is not the same seat.
-            self.log.emit_status(
-                STATUS_PHASE_ERROR, f"the {error.tier!r} tier failed: {error!r}", turn.channel
-            )
+            self._close(turn, STATUS_PHASE_ERROR, f"the {error.tier!r} tier failed: {error!r}")
         except Exception as error:
-            self.log.emit_status(
-                STATUS_PHASE_ERROR, f"the {driver.tier!r} tier failed: {error!r}", turn.channel
-            )
+            self._close(turn, STATUS_PHASE_ERROR, f"the {driver.tier!r} tier failed: {error!r}")
         finally:
             if turn.reassess:
                 self._doctor = False
+
+    def _close(self, turn: Turn, phase: str, detail: str) -> None:
+        """Close the lane on a turn, ending each of its tasks still live in the
+        same phase.
+
+        A task a later gesture superseded while this turn ran was already ended
+        by that gesture's `accepted` entry, and is left out here: it reads
+        superseded for good, never replied and never failed.
+        """
+        with self.log.appending():
+            known = impact_tasks(self.log.entries())
+            ended = [
+                {"id": one, "phase": phase}
+                for one in turn.tasks
+                if one in known and known[one].phase == STATUS_PHASE_COMPOSING
+            ]
+            self.log.emit_status(phase, detail, turn.channel, tasks=ended)
 
     def _press(self, driver: TurnDriver, turn: Turn, dispatch: Path, reply: _Pressed) -> TurnDriver:
         """Press a turn that did not answer, and say so when no seat will.
@@ -735,7 +840,7 @@ class Lane:
         standing = [] if obligation is None else list(obligation.ids)
         refusal = reply.refusal
         if refusal is None:
-            standing = self._unruled(standing, reply.spoke)
+            standing = self._unruled(standing, reply.spoke, obligation)
         if refusal is None and not standing:
             return driver
         if self.expert is not None and self.expert is not driver:
@@ -744,7 +849,7 @@ class Lane:
             if pressed is not None:
                 driver, refusal = self.expert, pressed.refusal
                 if refusal is None:
-                    standing = self._unruled(standing, pressed.spoke)
+                    standing = self._unruled(standing, pressed.spoke, obligation)
         if refusal is not None:
             self.log.record("informational", {"text": _lost(driver.tier)})
             raise DocumentRefusedError(driver.tier, refusal)
@@ -754,7 +859,9 @@ class Lane:
             self.log.record("informational", {"text": _unmet(obligation, standing)})
         return driver
 
-    def _unruled(self, owed: Sequence[str], spoke: int | None) -> list[str]:
+    def _unruled(
+        self, owed: Sequence[str], spoke: int | None, obligation: MootnessObligation | None
+    ) -> list[str]:
         """Which of these decisions the turn just taken left unruled.
 
         Read off the single entry that turn appended, which its own driver named
@@ -764,8 +871,14 @@ class Lane:
         window would then credit this turn with rulings made for another. A turn
         that appended nothing names no entry and credits nothing, which is the
         turn the ladder owes a hand-up.
+
+        A decision a later gesture's task took over is not left unruled by this
+        turn: the ruling on it is owed by the later turn now, and a press or a
+        notice here would ask twice for one ruling.
         """
-        return unruled(owed, *rulings_of(self.log.entries(), spoke))
+        entries = self.log.entries()
+        moved = set(superseded_targets(entries, obligation))
+        return [one for one in unruled(owed, *rulings_of(entries, spoke)) if one not in moved]
 
     def _hand_up(self, expert: TurnDriver, turn: Turn) -> None:
         """Announce the expert's turn on a gesture the rung below it could not
@@ -866,6 +979,20 @@ class Lane:
                 seat = self.tier_for(MAP_CHANNEL, driver, turn)
                 self._announce(seat, turn)
                 self._take_turn(seat, turn)
+
+
+def _impact_targets(gesture: int, owed: MootnessObligation | None) -> list[str]:
+    """The decisions this gesture starts an impact task on: those its own marked
+    answer put in question.
+
+    The obligation must be this gesture's own. A turn on the map can inherit an
+    earlier answer's obligation while that answer is still unreplied, and the
+    tasks for it were started by that answer; an applied invalidate owes
+    rulings on what rested on the decision it killed, but starts no task.
+    """
+    if owed is None or owed.cause != ANSWER_KIND or owed.gesture != gesture:
+        return []
+    return list(owed.ids)
 
 
 def _unmet(obligation: MootnessObligation, standing: Sequence[str]) -> str:

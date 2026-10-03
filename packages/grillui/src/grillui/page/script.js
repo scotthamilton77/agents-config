@@ -34,7 +34,7 @@ var EMISSIONS = {
 var PROPOSABLE_KINDS = ["add-node", "revise", "invalidate", "settle", "unsettle", "resolve-stale"];
 var NOTICE_KINDS = ["informational", "elicit-alert"];
 var MAP_MUTATION_KINDS = ["add-node", "invalidate", "revise", "settle", "unsettle", "resolve-stale", "elicit-alert", "fold"];
-var STATUS_PHASES = ["accepted", "composing", "replied", "error", "transferred", "rulings-dropped", "downstream-failed"];
+var STATUS_PHASES = ["accepted", "composing", "replied", "error", "transferred", "rulings-dropped", "downstream-failed", "superseded"];
 var AGENT_ACTORS = ["grill-master", "thread-agent"];
 var CLAIM_STATES = ["granted", "refused", "superseded"];
 // The three payload keys this page reads a tier off, spelled the backend's way.
@@ -1057,6 +1057,10 @@ function takesAnswer(id) {
 function holdOn(id) {
   var d = node(id);
   if (!d) return null;
+  // A ruling in flight that may move this decision holds it before anything
+  // else does: until the ruling lands, the question itself may be about to
+  // change, so no answer to it is worth taking.
+  if (d.waiting) return { kind: "task", waiting: d.waiting };
   var waiting = proposalsOn(id);
   if (waiting.length) return { kind: "pending", items: waiting };
   // An answer held against a mandated thread is a hold of its own: the pick is
@@ -1119,9 +1123,10 @@ function statusOf(id) {
   if (d.status === "settled" || d.status === "invalidated" || d.status === "fogged") return d.status;
   if (conflictOn(id)) return "conflicted";
   if (mandateHolding(id)) return "awaiting-thread";
-  // A locked decision keeps its own status and wears the lock; a decision the
-  // frontier has not reached is waiting on what it rests on.
-  if (d.locked || answerable(id)) return d.status;
+  // A locked decision keeps its own status and wears the lock, and so does one
+  // a ruling in flight is holding; a decision the frontier has not reached is
+  // waiting on what it rests on.
+  if (d.locked || d.waiting || answerable(id)) return d.status;
   return d.status === "stale" ? "stale-blocked" : "blocked";
 }
 function waitingOn(id) {
@@ -1379,7 +1384,8 @@ function armBlock(id) {
   var d = node(id);
   if (!d) return "it is not on the board";
   var lock = holdOn(id);
-  if (lock) return lock.kind === "pending" ? "a change is waiting on it"
+  if (lock) return lock.kind === "task" ? "a ruling on it is still to land"
+    : lock.kind === "pending" ? "a change is waiting on it"
     : lock.kind === "alert" ? "an alert is holding it"
     : "a thread must conclude first";
   if (mandateOpen(d)) return "its mandated thread has to conclude first";
@@ -1874,6 +1880,14 @@ function pcrIcon(o) {
     ' data-p="' + esc(p[0]) + '" data-c="' + esc(p[1] || "") + '" data-r="' + esc(p[2] || "") + '"' +
     ' data-otext="' + esc(o.text) + '">⇄</button>';
 }
+// What a decision held by a ruling in flight is waiting on: the gesture that
+// started the ruling, the seat weighing it, and since when. It stands where the
+// answer controls would, because there is nothing to answer until it lands.
+function taskNotice(w) {
+  return '<div class="task-notice" data-task="' + esc(w.task) + '">⏳ <strong>Waiting on a ruling.</strong> Your answer at #' +
+    esc(w.gesture) + " put this decision in question, and the " + esc(w.seat) +
+    " seat has been weighing it since " + esc(stamp(w.start)) + ". It cannot be answered until that ruling lands.</div>";
+}
 function stamp(iso) {
   if (!iso) return "";
   var d = new Date(iso);
@@ -2231,7 +2245,8 @@ function renderColumn() {
     h += '<div style="margin-top:5px">' + pill(st) +
       (UI.fresh.indexOf(id) >= 0 ? ' <span class="pill new">new</span>' : "") +
       (lock ? ' <span class="pill locked">🔒 locked · ' +
-        (lock.kind === "pending" ? "a change is waiting"
+        (lock.kind === "task" ? "waiting on a ruling"
+          : lock.kind === "pending" ? "a change is waiting"
           : lock.kind === "alert" ? "an alert is holding it"
           : "a thread must conclude") + "</span>" : "") + "</div>";
 
@@ -2278,7 +2293,9 @@ function renderColumn() {
           '<button class="btn sm" data-act="abandon" data-id="' + esc(id) + '">Abandon the answer</button> puts it back to open.</div></div>';
       }
       h += '<div class="q-body">' + esc(d.body) + "</div>";
-      if (st === "fogged" || st === "invalidated" || st === "blocked" || st === "stale-blocked") {
+      if (lock && lock.kind === "task") {
+        h += taskNotice(lock.waiting);
+      } else if (st === "fogged" || st === "invalidated" || st === "blocked" || st === "stale-blocked") {
         h += '<div class="muted">' + (st === "fogged" ? "Not a real question yet. It sharpens once " + esc(d.fogUntil) + " settles."
           : st === "invalidated" ? "The agent took this out of the flow. It stays on the board — relitigate it by opening a thread."
           : wait.conflict ? "Waiting on " + esc(wait.conflict) + ". Its answer is still here and still readable; it just cannot change until that disagreement is judged."

@@ -317,6 +317,12 @@ STATUS_PHASE_RULINGS_DROPPED = "rulings-dropped"
 # turn for finished: the backend's own, and the page's, which would then read
 # the channel as quiet and stop saying the human is waiting on anything.
 STATUS_PHASE_DOWNSTREAM_FAILED = "downstream-failed"
+# How an impact task ends when a later gesture starts another on the same
+# target before it returns. It names a task's end rather than a turn's, so it
+# appears only inside a status entry's `TASKS_KEY` list and closes no turn: the
+# turn carrying the superseded task runs on, and its own `replied` or `error`
+# still closes the lane.
+STATUS_PHASE_SUPERSEDED = "superseded"
 STATUS_PHASES = frozenset(
     {
         STATUS_PHASE_ACCEPTED,
@@ -326,8 +332,21 @@ STATUS_PHASES = frozenset(
         STATUS_PHASE_TRANSFERRED,
         STATUS_PHASE_RULINGS_DROPPED,
         STATUS_PHASE_DOWNSTREAM_FAILED,
+        STATUS_PHASE_SUPERSEDED,
     }
 )
+
+# The impact tasks a status entry opens or closes. A marked answer owes a
+# ruling on every decision it puts in question, and each of those rulings is
+# an impact task keyed by the decision it weighs. The task rides the lane
+# rather than a kind of its own, because the kind vocabulary is closed and a
+# task begins and ends exactly where the turn carrying it is announced,
+# accepted and closed. The `composing` entry opens each task whole -- id,
+# target, gesture, basis, mode and seat -- and every later entry names it by id
+# with the phase it ended in, so a restarted backend reads every task's state
+# back off the log alone.
+TASKS_KEY = "tasks"
+IMPACT_MODE = "impact"
 
 # What marks a `composing` entry as the backend handing a refused turn up to the
 # expert rather than seating a turn there for any of the other reasons. It rides
@@ -548,6 +567,21 @@ class Answer(Strict):
     text: str | None = None
 
 
+class Waiting(Strict):
+    """The impact task holding a decision off the frontier, as the board names it.
+
+    `task` is the task's id, `gesture` the sequence of the human's answer that
+    started it, `seat` the tier weighing it, and `start` when that tier was
+    announced. The four are what the human is owed while they wait: which
+    gesture, which seat, and since when.
+    """
+
+    task: str
+    gesture: int
+    seat: str
+    start: str
+
+
 class Decision(Strict):
     """The same node shape in the handoff and in both images; the status, answer,
     rationale and lock fields exist only in the images.
@@ -558,6 +592,9 @@ class Decision(Strict):
     leaves every field it omits. Carrying it here is what keeps an
     invalidation and its justification one item rather than two: the block and
     the reasoning for it reach the page together.
+    `waiting` is the impact task weighing this decision, where one is: the
+    ruling a marked answer bought is still to land, so the decision is off the
+    frontier until it does.
     `locked` is the queue's hold on this decision, and a locked decision is not
     answerable now. Two things in the queue take it: a change waiting to land on
     it, and the most recent elicit-alert still queued against it declaring
@@ -579,6 +616,16 @@ class Decision(Strict):
     answer: Answer | None = None
     rationale: str | None = None
     locked: bool = False
+    waiting: Waiting | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_absent_waiting(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        """A decision nothing is weighing has no `waiting` key at all, so every
+        board where no ruling is in flight keeps the bytes it always had."""
+        dumped: dict[str, object] = handler(self)
+        if dumped.get("waiting") is None:
+            dumped.pop("waiting", None)
+        return dumped
 
 
 class Mandate(Strict):
@@ -1094,12 +1141,18 @@ class MootnessObligation(Strict):
     quotes as the rationale: for an answer, the option the human took; for an
     applied invalidate, `target` is the decision that left the flow and `answer`
     the rationale it carried.
+
+    `gesture` is the log sequence of the gesture that owes it. An answer's
+    impact tasks are keyed by that sequence and their target, so a turn reads
+    which of its own tasks a later gesture superseded off the log by it, at the
+    moment its reply lands.
     """
 
     target: str
     answer: str
     ids: list[str] = Field(min_length=1)
     cause: Literal["answer", "invalidate"] = "answer"
+    gesture: int | None = None
 
 
 class Ruling(Strict):

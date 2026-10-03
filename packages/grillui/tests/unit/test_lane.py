@@ -801,31 +801,51 @@ def test_an_obligation_met_or_never_created_presses_nobody(log: SessionLog, tmp_
 # ── Two map turns at once, and whose rulings each is credited with ──
 
 
-def _seed_second_asker(log: SessionLog) -> None:
-    """A fourth decision offering the same marked option.
+# What the second asker's marked option puts in question: two decisions of its
+# own, so its obligation and d1's share no target.
+SECOND_KILLED = ["d5", "d6"]
+MARKED = {"d1": KILLED, "d4": SECOND_KILLED}
 
-    One batch can then carry two answers that each owe rulings on `d2` and `d3`,
-    which is the pair of map turns in flight the credit has to be told apart by.
+
+def _seed_second_asker(log: SessionLog) -> None:
+    """A fourth decision whose marked option names two decisions of its own.
+
+    One batch can then carry two answers that each owe rulings, which is the
+    pair of map turns in flight the credit has to be told apart by. The two
+    obligations are disjoint because two answers marking one decision are a
+    supersession instead: the later answer takes the ruling over, and the
+    earlier turn no longer owes it.
     """
-    receipt = log.submit(
-        [
-            EventSubmission(
-                kind="add-node",
-                actor="grill-master",
-                idempotency_key="seed-d4",
-                payload={
-                    "target": "d4",
-                    "short": "d4",
-                    "title": "Which d4?",
-                    "body": "Decide.",
-                    "prereqs": [],
-                    "options": [{"id": "a", "text": "Build the import"}, KILLING_OPTION],
-                },
-            )
-        ],
-        log.epoch,
-    )[0]
-    assert receipt.status == "accepted"
+    for node, options in (
+        (
+            "d4",
+            [
+                {"id": "a", "text": "Build the import"},
+                {"id": "b", "text": "Drop the import", "puts_in_question": SECOND_KILLED},
+            ],
+        ),
+        ("d5", [{"id": "a", "text": "Yes"}, {"id": "b", "text": "No"}]),
+        ("d6", [{"id": "a", "text": "Yes"}, {"id": "b", "text": "No"}]),
+    ):
+        receipt = log.submit(
+            [
+                EventSubmission(
+                    kind="add-node",
+                    actor="grill-master",
+                    idempotency_key=f"seed-{node}",
+                    payload={
+                        "target": node,
+                        "short": node,
+                        "title": f"Which {node}?",
+                        "body": "Decide.",
+                        "prereqs": [],
+                        "options": options,
+                    },
+                )
+            ],
+            log.epoch,
+        )[0]
+        assert receipt.status == "accepted"
 
 
 def _closers(log: SessionLog) -> list[str]:
@@ -924,7 +944,7 @@ def test_a_map_turn_is_credited_nothing_by_a_concurrent_turns_ruling_reply(
     log: SessionLog, silent: str
 ) -> None:
     """
-    Given two answers in one batch, each owing rulings on the same two decisions
+    Given two answers in one batch, each owing rulings on two decisions of its own
     When the turn for one of them appends nothing while the other's ruling reply
          lands before this turn's coverage is read
     Then the silent turn is credited nothing: each gesture is announced on the
@@ -966,7 +986,7 @@ def test_a_map_turn_is_credited_nothing_by_a_concurrent_turns_ruling_reply(
     assert _closers(log) == [f"the {HEAVY_TIER!r} tier's turn is over"] * 2
     said = _notices(log)
     assert len(said) == 1, said
-    assert said[0].startswith(f"The answer to {silent} put {', '.join(KILLED)} in question")
+    assert said[0].startswith(f"The answer to {silent} put {', '.join(MARKED[silent])} in question")
 
 
 def test_a_turn_handed_up_is_credited_nothing_by_a_reply_landing_after_the_hand_up(
@@ -1871,7 +1891,13 @@ class RacingLog(SessionLog):
     gate: threading.Barrier | None = None
 
     def emit_status(
-        self, phase: str, detail: str, channel: str = MAP_CHANNEL, *, tier: str | None = None
+        self,
+        phase: str,
+        detail: str,
+        channel: str = MAP_CHANNEL,
+        *,
+        tier: str | None = None,
+        tasks: list[dict[str, Any]] | None = None,
     ) -> LogEntry:
         if phase == STATUS_PHASE_TRANSFERRED and self.gate is not None:
             with suppress(threading.BrokenBarrierError):
@@ -1880,7 +1906,7 @@ class RacingLog(SessionLog):
                 # the caller waits the turn out with, so a gate nobody else
                 # reaches ends the turn rather than hanging it.
                 self.gate.wait(TIMEOUT / 2)
-        return super().emit_status(phase, detail, channel, tier=tier)
+        return super().emit_status(phase, detail, channel, tier=tier, tasks=tasks)
 
 
 def test_two_presses_racing_write_one_transfer_between_them(session_dir: Path) -> None:
