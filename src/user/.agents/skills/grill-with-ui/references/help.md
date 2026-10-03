@@ -13,7 +13,7 @@ node or an option shows a card; clicking dismisses it until the pointer leaves a
 returns.
 
 The header is the session's name. Along the top: the connection indicator, the inbox,
-notifications, transfer-to-expert, map doctor, end-session, and help.
+notifications, the map's seat toggle, map doctor, end-session, and help.
 
 ## Answering a decision
 
@@ -110,14 +110,30 @@ Every channel — the map and each thread — runs on one of two tiers, and star
 reasoning model. Above it is the **expert**, a heavier and slower agent every channel
 shares.
 
-**Transfer to expert** (⚡) sends the next turn on that one channel to the expert, carrying
-everything already said there. It lights up when what has been said on that channel meets
-the backend's own test for a question the expert should take — the test is code, and never
-a model's opinion of its own reach. Acting on it is normally yours to do; a session can be
-set up to let the backend act on the test itself, and either way the move is announced on
-that channel. Pressing the control again, now reading **Return to assistant**, puts the
-channel back on the first rung. It is per channel — moving one thread leaves the map and
-every other thread where they were.
+The **seat toggle** is on every channel: the map's in the row along the top, and each
+thread's beside its box. Under the caption *Next send goes to* it shows both seats,
+**assistant** and **expert**, and marks the one the next send on that channel goes to.
+Pressing the unmarked seat changes who takes that send and nothing else: it sends nothing
+by itself, and when the expert takes the turn it carries everything already said there.
+Pressing **assistant** puts the channel back on the first rung. The toggle is never
+disabled, and it is per channel — moving one thread leaves the map and every other thread
+where they were.
+
+**Proceed with expert** sits beside each open thread's Send. With nothing typed, it hands
+the thread as it stands to the expert, and a line in the thread says you asked. With text
+typed, it sends that text to the expert, the same as choosing **expert** and sending.
+Either way the toggle marks **expert** afterwards. With the box empty it is inactive, and
+says why underneath, in three cases: nothing has been said in the thread yet, a reply is
+still on its way, or the expert's reply is already the latest turn. A parked or closed
+thread does not offer it, because speaking there is what opens it again. The map has no
+such action; choose **expert** on the map's toggle instead.
+
+The way to the expert lights up when what has been said on a channel meets the backend's
+own test for a question the expert should take — the test is code, and never a model's
+opinion of its own reach. On the map the toggle's **expert** seat lights; on a thread
+**Proceed with expert** does. Acting on it is normally yours to do. A session can be set up
+to let the backend act on the test itself, and then the move is announced on that channel
+and its toggle marks **expert** with nobody pressing anything.
 
 Some single turns go to the expert without the channel moving: a gesture the board reads
 as needing judgement is sent there from the start, and a first-rung turn that did not do
