@@ -7,7 +7,7 @@ applies; this file adds what is specific to this package. Like the other package
 ## The quality gate is mandatory
 
 Before pushing any change under `packages/agentprobe/`, run the canonical gate from the
-repo root:
+root of the tree you are working in (the worktree root, if you are on a worktree branch):
 
 ```bash
 make ci-agentprobe

@@ -8,7 +8,8 @@ config content under `src/`.
 ## The quality gate is mandatory
 
 Before pushing any change under `packages/gitclean/`, run the canonical gate
-from the repo root:
+from the root of the tree you are working in (the worktree root, if you are on
+a worktree branch):
 
 ```bash
 make ci-gitclean
