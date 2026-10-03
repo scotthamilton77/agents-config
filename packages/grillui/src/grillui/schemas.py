@@ -352,7 +352,10 @@ STATUS_PHASES = frozenset(
 # accepted and closed. The `composing` entry opens each task whole -- id,
 # target, gesture, basis, mode and seat -- and every later entry names it by id
 # with the phase it ended in, so a restarted backend reads every task's state
-# back off the log alone.
+# back off the log alone. The entry a turn's document lands as names the tasks
+# that turn carries the same way, each by id, because what the document may
+# change without the human's apply is decided by which decisions those tasks
+# weigh -- and the replay can only read that off the entry itself.
 TASKS_KEY = "tasks"
 IMPACT_MODE = "impact"
 
@@ -950,6 +953,12 @@ class HistoryEntry(Strict):
     composing a cause out of `prereqs`. Each is absent where there is no such
     fact: a move nobody proposed carries no proposer, and one no ruling produced
     carries no verdict.
+
+    `task` is the impact task whose result landed the change without anyone's
+    apply. It is a separate fact from `proposed_by` rather than another value of
+    it: the one says an agent's change waited and a human let it in, and the
+    other says a ruling the human was waiting on changed its own decision
+    directly. A reader who saw both under one name could not tell which.
     """
 
     seq: int
@@ -959,6 +968,7 @@ class HistoryEntry(Strict):
     why: str
     proposed_by: str | None = None
     verdict: RulingKind | None = None
+    task: str | None = None
 
     @model_serializer(mode="wrap")
     def _without_absent_optionals(
@@ -968,7 +978,7 @@ class HistoryEntry(Strict):
         of the record cannot mistake "nobody proposed this" for "the proposer
         was not written down"."""
         dumped: dict[str, object] = handler(self)
-        for key in ("proposed_by", "verdict"):
+        for key in ("proposed_by", "verdict", "task"):
             if dumped.get(key) is None:
                 dumped.pop(key, None)
         return dumped
@@ -1491,6 +1501,20 @@ def _fold_payload_problem(payload: Mapping[str, Any]) -> str | None:
     return None
 
 
+# The fields a revise changes. A revise supplying none of them would change
+# nothing and still read as a change: it is queued or folded like one, and a
+# decision held while its ruling was weighed would come back claiming a new
+# shape it does not have. So the document gate refuses it, and the refusal says
+# where a disagreement with no change behind it belongs, because that is what
+# a seat sending one was trying to say.
+REVISE_FIELDS = ("short", "title", "body", "prereqs", "options")
+EMPTY_REVISE = (
+    "'revise' payload: a revise must supply at least one of "
+    + ", ".join(f"`{name}`" for name in REVISE_FIELDS)
+    + "; a `why` with no change behind it belongs in an `informational` on that decision"
+)
+
+
 def update_problem(update: Mapping[str, Any]) -> str | None:
     """Why the appender would refuse this update, or None where it would take it.
 
@@ -1507,7 +1531,8 @@ def update_problem(update: Mapping[str, Any]) -> str | None:
     and the answer an agent settles with is checked against the board there,
     which this reader does not have. It asks the smaller question a boardless
     reader can -- whether an answer is carried at all -- and leaves whether the
-    option is one the decision offers to the appender.
+    option is one the decision offers to the appender. It also refuses a revise
+    that supplies nothing to change, which the appender's shape takes.
     """
     kind = update.get("kind")
     if not isinstance(kind, str):
@@ -1517,6 +1542,8 @@ def update_problem(update: Mapping[str, Any]) -> str | None:
     problem = payload_problem(kind, update)
     if problem is not None:
         return problem
+    if kind == "revise" and all(update.get(name) is None for name in REVISE_FIELDS):
+        return EMPTY_REVISE
     if kind not in ANSWER_KINDS and "answer" not in update:
         return None
     refused = answer_problem(update.get("answer"), None)

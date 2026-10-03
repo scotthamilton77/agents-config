@@ -963,7 +963,7 @@ def test_a_ruling_whose_document_carries_no_matching_update_is_not_credited(
     assert "d2, d3" in said[0], "the uncredited ruling was taken as a ruling"
 
 
-def test_a_ruling_carrying_its_update_is_credited_and_the_change_waits_for_the_human(
+def test_a_ruling_carrying_its_update_is_credited_and_the_change_lands_on_its_target(
     log: SessionLog,
 ) -> None:
     """
@@ -971,8 +971,8 @@ def test_a_ruling_carrying_its_update_is_credited_and_the_change_waits_for_the_h
           decision with the update to match, and `stands` on the other
     When the human takes the option naming both
     Then no second turn is taken, nothing is said to the human, the invalidate
-         waits in their queue and the standing decision is on the frontier under
-         a why of its own.
+         lands on its own target with a history line naming the impact task, and
+         the standing decision is on the frontier under a why of its own.
     """
     credited = ScriptedFast(
         replies=[
@@ -1001,7 +1001,11 @@ def test_a_ruling_carrying_its_update_is_credited_and_the_change_waits_for_the_h
     assert len(credited.calls) == 1, "the classed seat was asked twice for one gesture"
     assert notices(log) == []
     board = replay(log.epoch, log.entries())
-    assert [one.target for one in board.pending if one.kind == "invalidate"] == ["d2"]
+    gesture = next(one.seq for one in log.entries() if one.kind == "answer")
+    assert next(one for one in board.decisions if one.id == "d2").status == "invalidated"
+    assert [one.task for one in board.history["d2"] if one.kind == "invalidate"] == [
+        f"impact-{gesture}-d2"
+    ]
     assert "d3" in board.frontier
 
 

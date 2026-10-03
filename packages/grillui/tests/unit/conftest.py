@@ -33,6 +33,7 @@ from grillui.schemas import (
     PROPOSABLE_KINDS,
     RULINGS_KEY,
     STOP_KEY,
+    TASKS_KEY,
     TIER_KEY,
     DispatchContext,
     EventSubmission,
@@ -338,10 +339,12 @@ def replies(log: SessionLog) -> list[dict[str, Any]]:
 # the wording of a fixture.
 SIZE_KEYS = (CONTEXT_BYTES_KEY, PROMPT_TOKENS_KEY, CONTEXT_LIMIT_KEY)
 
-# The two keys every grill-master turn carries whether or not it ruled on
-# anything. A check that pins an attribution in full is about who took the turn;
-# the rulings are their own subject and have their own checks.
-DOCUMENT_KEYS = (RULINGS_KEY, STOP_KEY)
+# The keys a grill-master turn carries about its judgement rather than about who
+# took it: the two every turn carries whether or not it ruled on anything, and
+# the impact tasks a turn carrying one names. A check that pins an attribution
+# in full is about who took the turn; the rulings and the tasks are their own
+# subjects and have their own checks.
+DOCUMENT_KEYS = (RULINGS_KEY, STOP_KEY, TASKS_KEY)
 
 
 def attributions(log: SessionLog) -> list[dict[str, Any]]:

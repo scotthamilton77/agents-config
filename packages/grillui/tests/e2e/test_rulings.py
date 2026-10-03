@@ -54,7 +54,8 @@ def test_a_verdict_counts_only_where_the_same_turn_carried_the_change(
     When the human takes the marked option
     Then the ruling backed by an update discharges its decision and the bare one
          does not: the human is told by name that the second went unruled, and
-         the board is still offering it while the first has a change waiting.
+         the board is still offering it while the first is invalidated, with a
+         history line naming the impact task that ruled it.
     """
     session = launcher(handoff=handoff(MARKED))
     session.script_claude(
@@ -79,10 +80,18 @@ def test_a_verdict_counts_only_where_the_same_turn_carried_the_change(
     assert "d3" in unmet[0], unmet[0]
     assert "d2" not in unmet[0], f"a ruling backed by its update was reported unruled: {unmet[0]}"
 
-    # The credited one has a change waiting on it; the uncredited one has
-    # nothing, which is the whole difference a verdict without an update makes.
-    waiting = {one["target"] for one in session.board()["pending"] if one["kind"] == "invalidate"}
-    assert waiting == {"d2"}, session.board()["pending"]
+    # The credited one is changed, and its own task's change lands as it
+    # arrives; the uncredited one has nothing, which is the whole difference a
+    # verdict without an update makes.
+    image = session.image2()
+    gesture = next(one.seq for one in session.entries() if one.kind == "answer")
+    status = {one["id"]: one["status"] for one in image["decisions"]}
+    assert status["d2"] == "invalidated", image["decisions"]
+    assert status["d3"] == "open", image["decisions"]
+    assert [one.get("task") for one in image["history"]["d2"] if one["kind"] == "invalidate"] == [
+        f"impact-{gesture}-d2"
+    ]
+    assert not [one for one in image["pending"] if one["kind"] == "invalidate"], image["pending"]
 
 
 def test_a_ruling_that_a_decision_stands_is_credited_and_says_so_on_that_decision(
