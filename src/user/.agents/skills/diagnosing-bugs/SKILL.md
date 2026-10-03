@@ -26,12 +26,14 @@ Last sync: 2026-08-07
 Drift policy: selective-amalgamation. This copy is authoritative and diverges
 from both upstreams by construction, so a wholesale resync would revert the
 graft. Pocock supplies the spine; the two obra patterns are lifted into Phase 3
-and Phase 5; the parallel-evidence thread structure of Phase 3 is in-house and
+and Phase 5; the independent-evidence requirement of Phase 3 is in-house and
 appears in neither upstream. Consult either upstream for pattern lifts only. To
 inspect drift, clone each at the SHA above and diff by hand.
 -->
 
 # Diagnosing Bugs
+
+**Model floor.** This skill depends on reasoning that smaller models do not sustain. Before doing anything else, check which model you are running on. If it is Claude Sonnet or Haiku, or another vendor's comparable mid or small tier, stop. Tell the user that a diagnosis from this model is likely to anchor on the first plausible cause and fix a symptom, and ask them to either switch to a stronger model or confirm that they accept the risk. Do not start the work until they answer. If another agent dispatched you and you cannot reach the user, return this message to the dispatcher instead of proceeding. Once the user has confirmed in this session, do not ask again.
 
 A discipline for hard bugs. Skip phases only when explicitly justified. Read `CONTEXT.md` if the project has one, and check ADRs in the area you're touching.
 
@@ -68,23 +70,17 @@ Run the loop. Watch it go red.
 
 Then shrink the repro to the **smallest scenario that still goes red**, cutting inputs, callers, config, data and steps **one at a time** and re-running after each cut. It shrinks Phase 3's hypothesis space and becomes Phase 5's regression test. Done when **every remaining element is load-bearing** — removing any one turns the loop green. Do not proceed until both are done.
 
-## Phase 3 — Gather evidence in parallel, then hypothesise
+## Phase 3 — Gather independent evidence, then hypothesise
 
-**No fix without parallel evidence.** One line of investigation anchors on the first plausible idea; three angles gathered independently catch what one misses.
+Before ranking anything, gather evidence along at least two lines that cannot steer each other: the change history of the affected code, and a data-flow trace from entry point to failure, with boundary instrumentation when the bug spans components. This stops the first plausible idea from anchoring the diagnosis. Then rank several competing falsifiable hypotheses, each naming the change that would make the bug disappear.
 
-- **Thread 1 — Git archaeology.** The last ~20 commits touching the affected files: what changed, who changed it, which could have introduced this. The bug arrived with a change, and finding it often reveals the cause outright.
-- **Thread 2 — Reproduction.** Already discharged: the red loop from Phases 1–2 *is* this evidence, and the captured symptom is its finding.
-- **Thread 3 — Data-flow trace.** Entry point to failure point: what values enter, how they transform, where they could become invalid. If similar working code exists, list every difference from it, however small — do not assume any cannot matter.
+If similar working code exists, the data-flow trace lists every difference from it, however small — do not assume any cannot matter.
 
-Run Threads 1 and 3 independently — in parallel if your harness can, sequentially if not. What matters is that neither steers the other, and that **both return before you rank anything**.
+**Multi-layer bugs — instrument the boundaries first.** When the bug spans components (client → gateway → worker), reading source is not enough: extend the data-flow trace with the boundary logging in `references/instrumentation.md` and run it once. This is evidence gathering, not Phase 4's prediction-testing — it establishes *which layer* fails before you hypothesise about *why*, so you do not fix the first suspicious component when the break is one boundary earlier.
 
-**Multi-layer bugs — instrument the boundaries first.** When the bug spans components (client → gateway → worker), reading source is not enough: extend Thread 3 with the boundary logging in `references/instrumentation.md` and run it once. This is evidence gathering, not Phase 4's prediction-testing — it establishes *which layer* fails before you hypothesise about *why*, so you do not fix the first suspicious component when the break is one boundary earlier.
+A hypothesis with no prediction is a vibe — discard or sharpen it.
 
-### Then hypothesise
-
-Generate **3–5 ranked hypotheses** before testing any. Each must be **falsifiable**: "if <X> is the cause, then <changing Y> makes the bug disappear." No prediction means it is a vibe — discard or sharpen it.
-
-An inconclusive thread is a finding, not a gap to fill with speculation; "no relevant changes in the last 20 commits" is an answer. If the threads diverge and no cause emerges, document what each ruled out and escalate.
+An inconclusive line of evidence is a finding, not a gap to fill with speculation; "no relevant recent changes" is an answer. If the lines diverge and no cause emerges, document what each ruled out and escalate.
 
 **Show the ranked list to the user before testing.** They often re-rank it instantly ("we just deployed a change to #3"). Don't block — proceed with your ranking if the user is AFK.
 
@@ -98,11 +94,9 @@ Each probe must map to a specific prediction from Phase 3. **Change one variable
 
 ## Phase 5 — Fix + regression test
 
-Write the regression test **before the fix** — but only if a **correct seam** exists: one where the test exercises the real bug pattern as it occurs at the call site. Too shallow a seam — a unit test that cannot replicate the chain that triggered the bug — gives false confidence.
+**No fix without a failing test first.** Write the regression test **before the fix**, at a **correct seam**: one where the test exercises the real bug pattern as it occurs at the call site. Too shallow a seam — a unit test that cannot replicate the chain that triggered the bug — gives false confidence.
 
-**If no correct seam exists, that itself is the finding** — the architecture is preventing the bug from being locked down. Note it and carry it to Phase 6.
-
-With a correct seam:
+**If no correct seam exists, that is a finding to resolve, not an exemption** — the architecture is preventing the bug from being locked down. Create the seam first, or escalate to the user with what blocks it.
 
 1. Turn the minimised repro into a failing test at that seam, and watch it fail.
 2. Apply the fix — one focused change at the root cause, nothing bundled in.
@@ -113,7 +107,7 @@ With a correct seam:
 
 Count the fixes attempted on this bug.
 
-- **Fewer than three:** return to Phase 3. The failed fix is new evidence — re-correlate the threads against it and form a new hypothesis. Do **not** stack a second fix on the first.
+- **Fewer than three:** return to Phase 3. The failed fix is new evidence — re-read the evidence against it and form a new hypothesis. Do **not** stack a second fix on the first.
 - **Three or more:** stop and question the architecture. Three failed fixes is an **architectural** signal, not a hypothesis signal — the abstraction is wrong, not the theory. The tells: each fix surfaces shared state or coupling somewhere *different*; each needs "massive refactoring" to land; each creates new symptoms elsewhere; you think "one more attempt should do it".
 
 Escalate before attempt #4 with the failed attempts, the pattern, and the architectural question they raise.
@@ -123,7 +117,7 @@ Escalate before attempt #4 with the failed attempts, the pattern, and the archit
 Before declaring done:
 
 - [ ] Original repro no longer reproduces (re-run the Phase 1 loop)
-- [ ] Regression test passes, or the absent seam is documented
+- [ ] Regression test passes
 - [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
 - [ ] Throwaway prototypes deleted, or moved somewhere marked as debug
 - [ ] The correct hypothesis is stated in the commit or PR message, so the next debugger learns
