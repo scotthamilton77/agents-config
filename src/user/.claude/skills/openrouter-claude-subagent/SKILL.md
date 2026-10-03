@@ -131,13 +131,14 @@ reliable control and the level as a hint.
 
 Two constraints on this launcher's rows hold today and override the grid:
 
-- A whole-artifact single-pass read on `moonshotai/kimi-k3` runs at `low`,
-  never `high` or `max`, and is granted no tools when the prompt carries the
-  text. At the higher levels its thinking outlasts the stream and the run ends
-  inside a thinking block with no report. Delta reads run `high`.
-- `z-ai/glm-5.3` returns thinking-only turns on a whole-document single pass
-  until the request times out, so it takes delta and walk work, never a
-  whole-artifact read.
+- A single-pass read of a whole artifact on `moonshotai/kimi-k3` runs at
+  `low`, never `high` or `max`, and is granted no tools when the prompt
+  carries the text. At the higher levels its thinking outlasts the stream and
+  the run ends inside a thinking block with no report. A read of a change
+  runs `high`.
+- `z-ai/glm-5.3` returns thinking-only turns on a single pass over a whole
+  document until the request times out, so it takes a read of a change or a
+  walk, never a whole-artifact read.
 
 The launcher pins no sampling parameter, and neither should a prompt or a
 wrapper: the Kimi rows refuse a temperature, and Google says to leave Gemini's

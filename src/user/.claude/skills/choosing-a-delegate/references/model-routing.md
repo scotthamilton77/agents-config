@@ -4,7 +4,7 @@ Captured **2026-10-03**. This is the one model table for every provider this
 harness delegates to. It answers two questions and no other: which model a
 provider offers at each tier, and what each model costs and accepts. The
 effort a run uses, the tools it is granted, and whether it reads a whole
-artifact or a delta are the dispatching skill's decisions, made for its own
+artifact or a change are the dispatching skill's decisions, made for its own
 task from the accepted efforts listed here.
 
 Sources, all re-read on the capture date: OpenRouter's catalog endpoint
@@ -43,15 +43,14 @@ subscription quota is a reason to ask, not a reason to reroute.
 | `mid` | `sonnet` | `gpt-6.1-sol` | `gemini-3.8-flash` | `z-ai/glm-5.3` |
 | `cheap` | `haiku` | `gpt-6-luna` | `gemini-3.8-flash` | `z-ai/glm-5.3-flash` |
 
-The tiers are the vocabulary the delegation rule and the review panel's
-staffing use. `top` is a vendor's strongest and most expensive seat, spawned
-only after consulting the user. `frontier` is a whole-artifact judgment seat:
-architecture, security, cross-subsystem work, a final pre-merge pass,
-implementation under a real test gate. `mid` is a walk or a delta re-read:
-standard review, delta re-review, the general default. `cheap` is triage,
-extraction and cost-sensitive fan-out. An empty cell means that provider has
-no seat at that tier. Where two tiers name one model, the dispatching skill's
-effort is what separates them.
+The tiers are the vocabulary every dispatching skill and rule uses. `top` is
+a vendor's strongest and most expensive model, spawned only after consulting
+the user. `frontier` is judgment over a whole artifact: architecture,
+security, cross-subsystem work, a final pre-merge pass, implementation under
+a real test gate. `mid` is a walk or a re-read of a change: standard review,
+the general default. `cheap` is triage, extraction and cost-sensitive fan-out.
+An empty cell means that provider has no model at that tier. Where two tiers
+name one model, the dispatching skill's effort is what separates them.
 
 ## Models
 
@@ -76,8 +75,8 @@ How an effort reaches each provider is the launcher's business, and each
 launcher skill says so: the Agent tool takes no effort and a Workflow
 `agent()` call does; Codex takes it in the dispatch; agy takes it as a suffix
 on the model id; the OpenRouter launcher takes an `--effort` flag. `ultra` on
-OpenAI adds automatic task delegation inside Codex and is never the pick for a
-lens, which must read the target itself.
+OpenAI adds automatic task delegation inside Codex, so it is never the pick
+for a run that must read its target itself.
 
 ## A model not in this table
 
