@@ -178,7 +178,7 @@ function stripDeferredTools(body) {
  *  here means something upstream misrouted. A literal list is the point — it
  *  needs revisiting when the model roster moves, and a clever pattern would
  *  hide that. */
-const DENIED_MODEL_PREFIXES = ["claude", "gpt-5.5", "gpt-5.6"];
+const DENIED_MODEL_PREFIXES = ["claude", "gpt-5.5", "gpt-5.6", "gpt-6"];
 
 /** Prefixes above whose `-mini` variants stay reachable: they are cheap enough
  *  to be worth having, and are not what the denial is protecting against.
