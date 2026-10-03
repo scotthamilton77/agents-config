@@ -48,8 +48,8 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
 ## Rules that are load-bearing, not stylistic
 
 - **The tool proves "this is merged", never "deleting this is safe."** The
-  second is a total function over every repository state that exists, and three
-  review rounds each found another state it did not cover. The first is
+  second is a total function over every repository state that exists, and that
+  set has no enumerable edge. The first is
   partial: an unproven target appears in the report and a human names it. Any
   change that widens what a bare sweep takes must widen it through merge
   evidence, not around it.
@@ -187,8 +187,8 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   commits reachable from a ref or a worktree HEAD before the run and demands
   each one still is afterwards, so a run that strands a commit nobody thought
   to write a test about fails a test that never mentions it. Exempt a commit
-  only by naming it or by restoring the salvage that holds it; loosening the
-  guard to make a suite green is how the last three rounds shipped. A test that
+  only by naming it or by restoring the salvage that holds it; never loosen the
+  guard to make a suite green. A test that
   deletes from the server guards the **bare** repository rather than the
   working clone: `push --delete` is what the run performs, and the server is
   what loses the ref.
