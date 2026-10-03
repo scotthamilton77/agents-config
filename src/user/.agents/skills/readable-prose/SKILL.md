@@ -51,7 +51,7 @@ Take the original one decision and one criterion at a time, and find each in the
 
 For an acceptance criterion, compare the promised outcome and its check separately. The pass rule accepts and rejects exactly what it did before.
 
-Classify every difference as one of four kinds: wording only, a narrowed or widened obligation, a strengthened claim, or a resolved conflict. Only a wording difference may stand. Restore the original meaning for the other three. If you believe the original was wrong, restore it anyway and report it.
+Classify every difference as one of four kinds: wording only, a narrowed or widened obligation, a strengthened claim, or a resolved conflict. Only a wording difference may stand. Restore the original meaning for the other three. If you believe the original was wrong, restore it anyway and report it. That includes a claim in the original that rule 8 would not allow: the claim is the original's meaning, so keep it and report it.
 
 The revision is not done until the check has covered every decision and every criterion.
 

@@ -8,7 +8,7 @@
     "should_trigger": true
   },
   {
-    "query": "We settled the retry-queue design above. Draft the design doc for the product owner to approve; he wasn't in any of these discussions.",
+    "query": "Write the description for work item OPS-88 from my notes below. The on-call lead who picks it up wasn't in the incident review, so it has to make sense cold.",
     "should_trigger": true
   },
   {
@@ -32,7 +32,7 @@
     "should_trigger": true
   },
   {
-    "query": "Summarise the decision we just reached into a short design note that the steering group can approve on Thursday.",
+    "query": "Write up the root cause of last night's outage and the fix we chose as a one-page note for the VP of engineering. She reads these on her own and won't have anyone to ask.",
     "should_trigger": true
   },
   {

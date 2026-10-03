@@ -24,7 +24,7 @@ This skill takes the current conversation context and codebase understanding and
 
 Check with the user that these seams match their expectations.
 
-3. Load the `readable-prose` skill, then write the spec using the template below and save it as a dated file (`YYYY-MM-DD-<slug>.md`) in the project's spec home. That skill's rules govern every section as it is written; a spec drafted under them owes no readability pass afterwards. Publishing work items to the issue tracker is a separate step and out of scope here.
+3. Load the `readable-prose` skill, then write the spec using the template below and save it as a dated file (`YYYY-MM-DD-<slug>.md`) in the project's spec home. Publishing work items to the issue tracker is a separate step and out of scope here.
 
 <spec-template>
 
