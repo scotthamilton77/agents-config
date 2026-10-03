@@ -58,6 +58,13 @@ def added_nodes_carry_short_and_body(document: GrillMasterDocument) -> str | Non
     return None if not thin else f"add-node without short or body: {thin}"
 
 
+def _names_a_decision(target: object) -> bool:
+    """Whether a note's `target` is one the board will render it on. The fold
+    keeps a target only when it is a string, so anything else lands the note in
+    the queue beside the notice."""
+    return isinstance(target, str) and bool(target)
+
+
 def the_turn_speaks_once(document: GrillMasterDocument, limit: int = 1) -> str | None:
     """The turn addresses the human through one channel.
 
@@ -68,7 +75,8 @@ def the_turn_speaks_once(document: GrillMasterDocument, limit: int = 1) -> str |
     one that names none lands in the queue beside the notice.
     """
     speaking = sum(
-        one.get("kind") == SPEAKING_KIND and not one.get("target") for one in document.updates
+        one.get("kind") == SPEAKING_KIND and not _names_a_decision(one.get("target"))
+        for one in document.updates
     )
     speaking += 1 if document.text.strip() else 0
     return None if speaking <= limit else f"{speaking} speech channels, at most {limit} allowed"

@@ -993,17 +993,20 @@ def test_an_informational_naming_a_decision_is_board_content_and_not_a_second_ch
     Then it passes: the board renders that note on the decision, which is where
          the gap rule sends a note that asks the human for nothing. The same
          note naming no decision lands in the queue beside the notice and
-         counts, and an empty target names nothing.
+         counts, and an empty or non-string target names nothing: the fold
+         keeps only a string target.
     """
     targeted = {"kind": "informational", "target": "d3", "text": "Read the store contract first."}
     with_notice = document(text="Option b of d3 holds.", updates=[targeted])
     untargeted = document(text="Option b of d3 holds.", updates=[targeted | {"target": None}])
     emptied = document(text="Option b of d3 holds.", updates=[targeted | {"target": ""}])
+    numbered = document(text="Option b of d3 holds.", updates=[targeted | {"target": 3}])
     silent = document(updates=[targeted, {"kind": "informational", "text": "And this."}])
 
     assert the_turn_speaks_once(with_notice) is None
     assert the_turn_speaks_once(untargeted) is not None
     assert the_turn_speaks_once(emptied) is not None
+    assert the_turn_speaks_once(numbered) is not None
     assert the_turn_speaks_once(silent) is None
 
 
