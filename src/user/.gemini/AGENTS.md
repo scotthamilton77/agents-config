@@ -20,7 +20,9 @@ exists, or selected via `--tools=gemini`).
 - Shared content from `src/user/.agents/` also stages into `~/.gemini/`.
   Shared skills land in `~/.gemini/config/skills/`, the only place Antigravity
   CLI discovers global skills. Name collisions in `skills/` across the shared
-  tree and active plugins are a **fatal install error**.
+  tree and active plugins are a **fatal install error**, with one exception: a
+  plugin's shared skill merges into a same-named shared skill when their files
+  do not overlap.
 - `GEMINI.md.template` is the Gemini-specific workflow extension point. Keep
   Gemini-only conventions here; put cross-tool content in `src/user/.agents/`.
 

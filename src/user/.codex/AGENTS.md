@@ -19,7 +19,8 @@ or selected via `--tools=codex`).
   changes what gets installed to users' real `~/.codex/` on next install.
 - Shared content from `src/user/.agents/` also stages into `~/.codex/`. Name
   collisions in `skills/` across the shared tree and active plugins are a
-  **fatal install error**.
+  **fatal install error**, with one exception: a plugin's shared skill merges
+  into a same-named shared skill when their files do not overlap.
 - `AGENTS.md.template` is the Codex-specific workflow extension point. Keep
   Codex-only conventions here; put cross-tool content in `src/user/.agents/`.
 
