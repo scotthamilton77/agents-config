@@ -986,6 +986,27 @@ def test_two_updates_that_speak_are_two_channels() -> None:
     assert the_turn_speaks_once(twice, limit=2) is None
 
 
+def test_an_informational_naming_a_decision_is_board_content_and_not_a_second_channel() -> None:
+    """
+    Given a turn with a notice and one informational that names a decision
+    When the speech channels are counted
+    Then it passes: the board renders that note on the decision, which is where
+         the gap rule sends a note that asks the human for nothing. The same
+         note naming no decision lands in the queue beside the notice and
+         counts, and an empty target names nothing.
+    """
+    targeted = {"kind": "informational", "target": "d3", "text": "Read the store contract first."}
+    with_notice = document(text="Option b of d3 holds.", updates=[targeted])
+    untargeted = document(text="Option b of d3 holds.", updates=[targeted | {"target": None}])
+    emptied = document(text="Option b of d3 holds.", updates=[targeted | {"target": ""}])
+    silent = document(updates=[targeted, {"kind": "informational", "text": "And this."}])
+
+    assert the_turn_speaks_once(with_notice) is None
+    assert the_turn_speaks_once(untargeted) is not None
+    assert the_turn_speaks_once(emptied) is not None
+    assert the_turn_speaks_once(silent) is None
+
+
 def test_the_owed_rulings_check_reads_the_seat_and_not_the_landed_entry(
     log: SessionLog,
 ) -> None:

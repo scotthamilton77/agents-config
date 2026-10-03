@@ -62,9 +62,14 @@ def the_turn_speaks_once(document: GrillMasterDocument, limit: int = 1) -> str |
     """The turn addresses the human through one channel.
 
     A notice and a shelf of informational updates are two places the human has
-    to read to learn one thing, and nothing tells them which is the answer.
+    to read to learn one thing, and nothing tells them which is the answer. An
+    informational that names a decision in its `target` is not on that shelf:
+    the board renders it on the decision, as content of that decision, and the
+    one that names none lands in the queue beside the notice.
     """
-    speaking = sum(one.get("kind") == SPEAKING_KIND for one in document.updates)
+    speaking = sum(
+        one.get("kind") == SPEAKING_KIND and not one.get("target") for one in document.updates
+    )
     speaking += 1 if document.text.strip() else 0
     return None if speaking <= limit else f"{speaking} speech channels, at most {limit} allowed"
 
