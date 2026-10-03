@@ -74,6 +74,8 @@ Then shrink the repro to the **smallest scenario that still goes red**, cutting 
 
 Before ranking anything, gather evidence along at least two lines that cannot steer each other: the change history of the affected code, and a data-flow trace from entry point to failure, with boundary instrumentation when the bug spans components. This stops the first plausible idea from anchoring the diagnosis. Then rank several competing falsifiable hypotheses, each naming the change that would make the bug disappear.
 
+If similar working code exists, the data-flow trace lists every difference from it, however small — do not assume any cannot matter.
+
 **Multi-layer bugs — instrument the boundaries first.** When the bug spans components (client → gateway → worker), reading source is not enough: extend the data-flow trace with the boundary logging in `references/instrumentation.md` and run it once. This is evidence gathering, not Phase 4's prediction-testing — it establishes *which layer* fails before you hypothesise about *why*, so you do not fix the first suspicious component when the break is one boundary earlier.
 
 A hypothesis with no prediction is a vibe — discard or sharpen it.
