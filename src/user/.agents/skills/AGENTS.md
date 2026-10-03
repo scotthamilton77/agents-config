@@ -20,7 +20,7 @@ skills/
 └── ...
 ```
 
-**Why depth-1.** All four target runtimes (Claude Code, Codex CLI, Gemini CLI, OpenCode) only discover skills one level deep. Anything nested deeper is invisible to the runtime — verified against each tool's official discovery docs (May 2026). Codex CLI's `.system/` exception is OpenAI-owned and not extensible by us.
+**Why depth-1.** All four target runtimes (Claude Code, Codex CLI, Antigravity CLI, OpenCode) only discover skills one level deep. Anything nested deeper is invisible to the runtime. Codex CLI's `.system/` exception is OpenAI-owned and not extensible by us.
 
 ## OSS provenance requirement
 
