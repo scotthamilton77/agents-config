@@ -27,14 +27,12 @@ rank, not a quote: read the endpoint before any cost-sensitive dispatch.
 | `google` | The `delegating-to-agy` skill | The Google AI Pro subscription |
 | `openrouter` | The `openrouter-claude-subagent` skill, a nested harness on another vendor's weights | The OpenRouter key, metered |
 
-A model with two providers takes the subscription provider first; the metered
-one is the fallback once the subscription's quota is spent or its launcher is
-down. Today that is the Gemini family: `google` first, `openrouter` after.
-
-The OpenRouter launcher refuses every Claude model and every GPT-5.5, GPT-5.6
-and GPT-6 tier outright, the `-mini` variants of 5.5 and 5.6 excepted: those
-families have a subscription provider above, so one arriving there is a
-misroute.
+A model family with a subscription provider runs there and nowhere else
+unless the user says otherwise for a run: Claude models through `anthropic`,
+GPT models through `openai`, Gemini models through `google`. The OpenRouter
+launcher refuses every Claude model outright, and it runs a GPT or Gemini
+model only on the user's explicit instruction for that run. A spent
+subscription quota is a reason to ask, not a reason to reroute.
 
 ## Pick by tier
 
@@ -72,7 +70,7 @@ effort is what separates them.
 | `openrouter` | `z-ai/glm-5.3` | $0.22 / $4.40 | 1M | `low` `high` `max` |
 | `openrouter` | `moonshotai/kimi-k2.6` | $0.43 / $1.83 | 262K | none: reasoning on or off, no level |
 | `openrouter` | `z-ai/glm-5.3-flash` | $0.15 / $0.50 | 1M | `low` `high` `max` |
-| `openrouter` | `google/gemini-3.8-flash` | $0.75 / $3.75 | 1M | `low` `medium` `high`; the `google` fallback only |
+| `openrouter` | `google/gemini-3.8-flash` | $0.75 / $3.75 | 1M | `low` `medium` `high`; on the user's explicit instruction only |
 
 How an effort reaches each provider is the launcher's business, and each
 launcher skill says so: the Agent tool takes no effort and a Workflow
