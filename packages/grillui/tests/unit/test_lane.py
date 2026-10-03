@@ -1897,7 +1897,7 @@ class RacingLog(SessionLog):
         channel: str = MAP_CHANNEL,
         *,
         tier: str | None = None,
-        tasks: list[dict[str, Any]] | None = None,
+        **keys: Any,
     ) -> LogEntry:
         if phase == STATUS_PHASE_TRANSFERRED and self.gate is not None:
             with suppress(threading.BrokenBarrierError):
@@ -1906,7 +1906,7 @@ class RacingLog(SessionLog):
                 # the caller waits the turn out with, so a gate nobody else
                 # reaches ends the turn rather than hanging it.
                 self.gate.wait(TIMEOUT / 2)
-        return super().emit_status(phase, detail, channel, tier=tier, tasks=tasks)
+        return super().emit_status(phase, detail, channel, tier=tier, **keys)
 
 
 def test_two_presses_racing_write_one_transfer_between_them(session_dir: Path) -> None:

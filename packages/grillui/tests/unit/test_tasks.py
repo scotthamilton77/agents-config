@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from conftest import TIMEOUT, SpyDriver
 
 from grillui.drivers import record_document
-from grillui.lane import Lane
+from grillui.lane import Lane, unclosed_turns
 from grillui.projector import replay
 from grillui.schemas import (
     HEAVY_TIER,
@@ -495,3 +495,78 @@ def test_pnd_a15_a_restart_after_a_supersession_shows_the_task_superseded(
     for one in seat.release:
         one.set()
     _join([*first, *second])
+
+
+# --- two map turns at once, and what closes each ------------------------------
+
+
+def _map_lane(entries: list[LogEntry]) -> list[LogEntry]:
+    return [one for one in entries if one.kind == STATUS_KIND and one.channel == MAP_CHANNEL]
+
+
+def test_pnd_a15_a_restart_closes_each_overlapping_map_turn_with_its_own_entry(
+    session_dir: Path, log: SessionLog
+) -> None:
+    """
+    Given two marked answers whose map turns are both in flight when their
+         process dies, the second announced before the first replied
+    When a fresh backend opens the same directory
+    Then the map carries exactly one closing entry per announced turn, each
+         dead task is named by the closing entry of the turn that opened it, and
+         no closing entry names tasks from both turns.
+    """
+    _seed(log)
+    seat = HeldRuler()
+    lane = Lane(log, seat)
+    _, first = lane.accept([_answer("d1")], log.epoch)
+    assert seat.started[0].wait(TIMEOUT)
+    _, second = lane.accept([_answer("d4")], log.epoch)
+    assert seat.started[1].wait(TIMEOUT)
+    owned = {
+        "d1": {f"impact-{_gesture(log, 'd1')}-d3"},
+        "d4": {f"impact-{_gesture(log, 'd4')}-d2"},
+    }
+
+    successor = open_session(session_dir)
+
+    lane_entries = _map_lane(successor.entries())
+    opened = [one for one in lane_entries if one.payload["phase"] == "composing"]
+    closed = [one for one in lane_entries if one.payload["phase"] in {"replied", "error"}]
+    assert len(opened) == 2
+    assert len(closed) == 2, [one.payload for one in closed]
+    named = [{item["id"] for item in one.payload.get("tasks") or []} for one in closed]
+    assert sorted(map(sorted, named)) == sorted(map(sorted, owned.values())), named
+
+    for one in seat.release:
+        one.set()
+    _join([*first, *second])
+
+
+def test_one_of_two_overlapping_map_turns_closing_leaves_the_other_unclosed(
+    log: SessionLog,
+) -> None:
+    """
+    Given two marked answers whose map turns are both in flight
+    When the first of them replies while the second is still running
+    Then the map still reads as owing a turn, and stops only once the second
+         closes too.
+
+    A channel read as quiet while a turn on it is still running is a channel a
+    restart would leave unclosed, and a reader asking whether a reply is still
+    outstanding would be told no.
+    """
+    _seed(log)
+    seat = HeldRuler()
+    lane = Lane(log, seat)
+    _, first = lane.accept([_answer("d1")], log.epoch)
+    assert seat.started[0].wait(TIMEOUT)
+    _, second = lane.accept([_answer("d4")], log.epoch)
+    assert seat.started[1].wait(TIMEOUT)
+
+    seat.release[0].set()
+    _join(first)
+    assert MAP_CHANNEL in unclosed_turns(log.entries())
+
+    seat.release[1].set()
+    _join(second)
+    assert unclosed_turns(log.entries()) == {}

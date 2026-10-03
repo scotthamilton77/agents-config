@@ -348,6 +348,13 @@ STATUS_PHASES = frozenset(
 TASKS_KEY = "tasks"
 IMPACT_MODE = "impact"
 
+# The sequence of the `composing` entry a `replied` or `error` closes. Map turns
+# run concurrently, so "the latest announcement on the channel" names the wrong
+# turn as often as the right one once two are in flight, and the closing entry
+# names its own instead. A closing entry without it predates the key and closes
+# every announcement open on its channel, which is what it meant when written.
+OPENED_KEY = "opened"
+
 # What marks a `composing` entry as the backend handing a refused turn up to the
 # expert rather than seating a turn there for any of the other reasons. It rides
 # the announcement the hand-up writes anyway, so the hand-up leaves a record on

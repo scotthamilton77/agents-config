@@ -124,6 +124,7 @@ from grillui.schemas import (
     DISMISS_KIND,
     IMPACT_MODE,
     MAP_CHANNEL,
+    OPENED_KEY,
     PRESSED_KEY,
     STATUS_KIND,
     STATUS_PHASE_ACCEPTED,
@@ -321,7 +322,8 @@ class Turn(NamedTuple):
     which names the seat whatever the channel's mode is.
 
     `tasks` is the ids of the impact tasks this turn's gesture started, which
-    the turn's closing entry ends.
+    the turn's closing entry ends. `opened` is the sequence of the turn's own
+    announcement, which that closing entry names.
 
     `mootness` is what the gesture this turn was scheduled for owes the rest of
     the board, read when it was scheduled and carried here rather than derived
@@ -338,6 +340,7 @@ class Turn(NamedTuple):
     mootness: MootnessObligation | None = None
     proceed: bool = False
     tasks: tuple[str, ...] = ()
+    opened: int | None = None
 
 
 def turn_of(event: EventSubmission) -> Turn:
@@ -369,24 +372,38 @@ def _dismisses_on_the_map(event: EventSubmission) -> bool:
     return event.actor == "human" and event.kind == DISMISS_KIND and event.channel == MAP_CHANNEL
 
 
-def unclosed_turns(entries: Sequence[LogEntry]) -> dict[str, LogEntry]:
-    """The `composing` entry on each channel that no `replied` or `error` closed.
+def open_announcements(entries: Sequence[LogEntry]) -> list[LogEntry]:
+    """Every `composing` entry that opened a turn no `replied` or `error` closed.
 
-    The same reading of the lane a page does, kept here because the lane's
-    pairing rule is this module's. One entry per channel, latest wins: a channel
-    takes one turn at a time, so a second `composing` on it replaces the first
-    rather than queueing behind it.
+    A closing entry names the announcement it closes, because map turns run
+    concurrently and the latest announcement on the channel is not always the
+    turn that ended. A hand-up's announcement opens no turn of its own: the
+    turn it continues is closed once. A closing entry that names nothing was
+    written when a channel took one turn at a time, and closes every
+    announcement open on its channel.
     """
-    open_turns: dict[str, LogEntry] = {}
+    opened: dict[int, LogEntry] = {}
     for entry in entries:
         if entry.kind != STATUS_KIND:
             continue
         phase = entry.payload.get("phase")
-        if phase == STATUS_PHASE_COMPOSING:
-            open_turns[entry.channel] = entry
+        if phase == STATUS_PHASE_COMPOSING and not entry.payload.get(PRESSED_KEY):
+            opened[entry.seq] = entry
         elif phase in (STATUS_PHASE_REPLIED, STATUS_PHASE_ERROR):
-            open_turns.pop(entry.channel, None)
-    return open_turns
+            closes = entry.payload.get(OPENED_KEY)
+            ended = (
+                [closes]
+                if isinstance(closes, int)
+                else [seq for seq, one in opened.items() if one.channel == entry.channel]
+            )
+            for seq in ended:
+                opened.pop(seq, None)
+    return list(opened.values())
+
+
+def unclosed_turns(entries: Sequence[LogEntry]) -> dict[str, LogEntry]:
+    """The latest unclosed announcement on each channel still owed a turn."""
+    return {one.channel: one for one in open_announcements(entries)}
 
 
 def close_dead_turns(log: SessionLog) -> None:
@@ -401,40 +418,33 @@ def close_dead_turns(log: SessionLog) -> None:
     Only a prior epoch's turn is closed. A turn this tenure announced is live,
     and the driver taking it will close the lane itself.
 
-    Every impact task a prior epoch left live fails with it, named on the map's
-    closing entry. A failed task still holds its decision, so the board shows
-    the same wait it showed before the restart; what changes is that nobody
-    reads it as a ruling still coming. Map turns run concurrently, so a task
-    can outlive the one announcement the pairing rule still sees open, and a
-    map left with no open turn still gets an entry ending the tasks it held.
+    Each dead turn gets a closing entry of its own, naming its announcement,
+    and every impact task that turn left live fails on it. A failed task still
+    holds its decision, so the board shows the same wait it showed before the
+    restart; what changes is that nobody reads it as a ruling still coming.
     """
     entries = log.entries()
-    dead = [
-        {"id": task.id, "phase": STATUS_PHASE_ERROR}
-        for task in impact_tasks(entries).values()
-        if task.phase == STATUS_PHASE_COMPOSING and task.epoch != log.epoch
-    ]
-    for channel, opened in unclosed_turns(entries).items():
+    live = impact_tasks(entries)
+    for opened in open_announcements(entries):
         if opened.epoch == log.epoch:
             continue
         tier = opened.payload.get(TIER_KEY)
         whose = f"the {tier!r} tier's turn" if isinstance(tier, str) else "the turn"
+        carried = opened.payload.get(TASKS_KEY)
+        dead = [
+            {"id": item["id"], "phase": STATUS_PHASE_ERROR}
+            for item in (carried if isinstance(carried, list) else [])
+            if isinstance(item, dict)
+            and item.get("id") in live
+            and live[item["id"]].phase == STATUS_PHASE_COMPOSING
+        ]
         log.emit_status(
             STATUS_PHASE_ERROR,
             f"{whose} died with the process holding epoch {opened.epoch!r}, "
             f"which ended before it replied",
-            channel,
-            tasks=dead if channel == MAP_CHANNEL else None,
-        )
-        if channel == MAP_CHANNEL:
-            dead = []
-    if dead:
-        log.emit_status(
-            STATUS_PHASE_ERROR,
-            "impact tasks died with the process that was running them, which ended before "
-            "they replied",
-            MAP_CHANNEL,
+            opened.channel,
             tasks=dead,
+            opened=opened.seq,
         )
 
 
@@ -565,7 +575,6 @@ class Lane:
                 # the expert here rather than after a first-rung turn was
                 # announced and taken.
                 driver = self.tier_for(turn.channel, base, turn)
-                turns.append((driver, turn))
                 # The two entries are addressed to two different channels, and
                 # for every gesture but a fold they are the same one. `accepted`
                 # answers the human's gesture, so it belongs where they made it.
@@ -584,10 +593,10 @@ class Lane:
                     event.channel,
                     tasks=self._supersede(targets),
                 )
-                self._announce(
+                announced = self._announce(
                     driver,
                     turn,
-                    opened=[
+                    tasks=[
                         {
                             "id": task_id(receipt.seq, one),
                             "target": one,
@@ -600,6 +609,7 @@ class Lane:
                         for one in targets
                     ],
                 )
+                turns.append((driver, turn._replace(opened=announced)))
         return receipts, [self._schedule(driver, turn) for driver, turn in turns]
 
     def _supersede(self, targets: Sequence[str]) -> list[dict[str, Any]]:
@@ -617,8 +627,8 @@ class Lane:
         turn: Turn,
         *,
         pressed: bool = False,
-        opened: list[dict[str, Any]] | None = None,
-    ) -> None:
+        tasks: list[dict[str, Any]] | None = None,
+    ) -> int:
         """Open the lane on a turn about to be taken, naming the seat taking it.
 
         Every turn is announced, including the two nobody spoke a gesture to
@@ -633,9 +643,12 @@ class Lane:
         announces anyway, and a second entry saying the same thing is one more
         thing for a reader of the lane to pair up.
 
-        `opened` is the impact tasks this turn carries, each described whole. A
+        `tasks` is the impact tasks this turn carries, each described whole. A
         task opens where the seat weighing it is announced, so its start is
         when the human began waiting on that seat.
+
+        Returns the announcement's sequence, which the turn's closing entry
+        names.
         """
         payload: dict[str, Any] = {
             "phase": STATUS_PHASE_COMPOSING,
@@ -644,9 +657,9 @@ class Lane:
         }
         if pressed:
             payload[PRESSED_KEY] = True
-        if opened:
-            payload[TASKS_KEY] = opened
-        self.log.record(STATUS_KIND, payload, turn.channel)
+        if tasks:
+            payload[TASKS_KEY] = tasks
+        return self.log.record(STATUS_KIND, payload, turn.channel).seq
 
     def _owed(self, turn: Turn) -> MootnessObligation | None:
         """What the gesture this turn is being taken on owes the rest of the
@@ -743,8 +756,7 @@ class Lane:
         self._doctor = True
         turn = Turn(MAP_CHANNEL, reassess=True)
         driver = self.tier_for(MAP_CHANNEL, self.driver, turn)
-        self._announce(driver, turn)
-        return self._schedule(driver, turn)
+        return self._schedule(driver, turn._replace(opened=self._announce(driver, turn)))
 
     def _schedule(self, driver: TurnDriver, turn: Turn) -> threading.Thread:
         thread = threading.Thread(
@@ -806,7 +818,7 @@ class Lane:
                 for one in turn.tasks
                 if one in known and known[one].phase == STATUS_PHASE_COMPOSING
             ]
-            self.log.emit_status(phase, detail, turn.channel, tasks=ended)
+            self.log.emit_status(phase, detail, turn.channel, tasks=ended, opened=turn.opened)
 
     def _press(self, driver: TurnDriver, turn: Turn, dispatch: Path, reply: _Pressed) -> TurnDriver:
         """Press a turn that did not answer, and say so when no seat will.
@@ -977,8 +989,7 @@ class Lane:
                 # for it too rather than inherited from whoever raised it.
                 turn = Turn(MAP_CHANNEL, conflict=conflict)
                 seat = self.tier_for(MAP_CHANNEL, driver, turn)
-                self._announce(seat, turn)
-                self._take_turn(seat, turn)
+                self._take_turn(seat, turn._replace(opened=self._announce(seat, turn)))
 
 
 def _impact_targets(gesture: int, owed: MootnessObligation | None) -> list[str]:
