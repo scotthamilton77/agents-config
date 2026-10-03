@@ -536,6 +536,15 @@ def test_pnd_a15_a_restart_closes_each_overlapping_map_turn_with_its_own_entry(
     assert len(closed) == 2, [one.payload for one in closed]
     named = [{item["id"] for item in one.payload.get("tasks") or []} for one in closed]
     assert sorted(map(sorted, named)) == sorted(map(sorted, owned.values())), named
+    # Each closing entry names the announcement it closes, and that is the
+    # announcement which opened the very tasks it fails.
+    announced = {one.seq: {item["id"] for item in one.payload.get("tasks") or []} for one in opened}
+    assert {one.payload.get("opened") for one in closed} == set(announced), [
+        one.payload for one in closed
+    ]
+    for one in closed:
+        failed = {item["id"] for item in one.payload.get("tasks") or []}
+        assert failed <= announced[one.payload["opened"]], one.payload
 
     for one in seat.release:
         one.set()
