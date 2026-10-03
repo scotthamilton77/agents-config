@@ -42,6 +42,7 @@ from grillui.schemas import (
     ANSWER_KINDS,
     APPLY_KIND,
     DISMISS_KIND,
+    FOLD_KIND,
     FOLD_SHAPED,
     HEAVY_TIER,
     MAP_CHANNEL,
@@ -332,8 +333,8 @@ class SessionLog:
             problem = _queue_gesture_problem(event, queued, waiting)
         if problem is None and is_proceed(event):
             problem = _proceed_problem(self.epoch, self._entries, event.channel)
-        if problem is None and event.kind == ANSWER_KIND:
-            problem = _waiting_problem(self._entries, event)
+        if problem is None and event.actor == "human":
+            problem = _waiting_problem(self._entries, event, queued)
         if problem is not None:
             reason, detail = problem
             return RejectedReceipt(
@@ -601,25 +602,43 @@ def _queue_gesture_problem(
     return None
 
 
-def _waiting_problem(entries: Sequence[LogEntry], event: EventSubmission) -> tuple[str, str] | None:
-    """Why this answer names a decision a ruling in flight is still weighing, or
-    None.
+# The kinds that change the decision they target: what a ruling in flight on
+# that decision may be about to move, so what the human may not do to it yet.
+_CHANGING_KINDS = frozenset({ANSWER_KIND, *PROPOSABLE_KINDS}) - {"add-node"}
 
-    Decided here, under the append lock, so no answer lands between a task
+
+def _waiting_problem(
+    entries: Sequence[LogEntry], event: EventSubmission, queued: Mapping[str, Proposed]
+) -> tuple[str, str] | None:
+    """Why this human gesture would change a decision a ruling in flight is
+    still weighing, or None.
+
+    Judged by what the gesture would do, wherever the change rides: on the
+    gesture itself, inside a fold, or in the queued proposal an apply lands.
+    Decided here, under the append lock, so no change lands between a task
     opening and this read. A task that failed holds its decision as firmly as a
     live one: nothing unlocks on inaction.
     """
-    target = event.payload.get("target")
+    if event.kind == APPLY_KIND:
+        updates = [queued[one].update for one in pending_ids(event.payload) if one in queued]
+    elif event.kind == FOLD_KIND:
+        raw = event.payload.get("updates")
+        updates = [one for one in raw if isinstance(one, dict)] if isinstance(raw, list) else []
+    else:
+        updates = [{**event.payload, "kind": event.kind}]
+    targets = {one.get("target") for one in updates if one.get("kind") in _CHANGING_KINDS}
+    if not targets:
+        return None
     holder = next(
-        (task for task in impact_tasks(entries).values() if task.target == target and task.holds),
+        (task for task in impact_tasks(entries).values() if task.target in targets and task.holds),
         None,
     )
     if holder is None:
         return None
     return (
         REASON_DECISION_WAITING,
-        f"{target!r} is waiting on the {holder.seat!r} seat's ruling for the answer at "
-        f"#{holder.gesture}, and takes no answer until that ruling lands",
+        f"{holder.target!r} is waiting on the {holder.seat!r} seat's ruling for the answer at "
+        f"#{holder.gesture}, and nothing may change it until that ruling lands",
     )
 
 

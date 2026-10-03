@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
+from itertools import count
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from conftest import TIMEOUT, SpyDriver
 
 from grillui.drivers import record_document
@@ -696,3 +698,118 @@ def test_a_closing_entry_closes_no_announcement_on_another_channel(log: SessionL
     log.emit_status("replied", "the turn is over", "t-elsewhere", opened=announced.seq)
 
     assert [one.seq for one in open_announcements(log.entries())] == [announced.seq]
+
+
+# --- every human gesture that would change a held decision is refused ---------
+
+_KEYS = count()
+
+
+def _held_board(log: SessionLog) -> None:
+    """d2 answered, then held by a live impact task, so every gesture below has
+    something on it to change."""
+    _seed(log)
+    assert _submit(log, _answer("d2", "a")).status == "accepted"
+    log.record(
+        STATUS_KIND,
+        {
+            "phase": "composing",
+            "detail": "the 'heavy' tier is composing a reply",
+            "tier": HEAVY_TIER,
+            "tasks": [
+                {
+                    "id": "impact-1-d2",
+                    "target": "d2",
+                    "gesture": 1,
+                    "basis": 1,
+                    "mode": "impact",
+                    "seat": HEAVY_TIER,
+                    "phase": "composing",
+                }
+            ],
+        },
+    )
+
+
+def _queued(log: SessionLog, kind: str, **payload: Any) -> str:
+    """An agent's proposal on d2, queued because d2 carries an answer."""
+    before = {one.id for one in replay(log.epoch, log.entries()).pending}
+    landed = _submit(
+        log,
+        EventSubmission(
+            kind=kind,
+            actor="grill-master",
+            idempotency_key=f"proposal-{next(_KEYS)}",
+            payload={"target": "d2", **payload},
+        ),
+    )
+    assert landed.status == "accepted"
+    (pending,) = {one.id for one in replay(log.epoch, log.entries()).pending} - before
+    return pending
+
+
+def _human(kind: str, **payload: Any) -> EventSubmission:
+    return EventSubmission(
+        kind=kind, actor="human", idempotency_key=f"human-{next(_KEYS)}", payload=payload
+    )
+
+
+CHANGES: dict[str, dict[str, Any]] = {
+    "settle": {"answer": {"option": "c"}},
+    "unsettle": {},
+    "revise": {"title": "Which d2, now?", "why": "the question moved"},
+    "invalidate": {"why": "out of scope"},
+}
+
+
+@pytest.mark.parametrize("path", ["direct", "fold", "apply"])
+@pytest.mark.parametrize("kind", sorted(CHANGES))
+def test_pnd_a1_a_human_gesture_that_would_change_a_held_decision_is_refused(
+    log: SessionLog, kind: str, path: str
+) -> None:
+    """
+    Given d2 answered and then held by a live impact task
+    When the human submits a change to d2 -- directly, inside a fold, or as the
+         apply of an agent's queued proposal
+    Then the gesture is refused as waiting on a ruling and d2 does not move.
+    """
+    _held_board(log)
+    if path == "apply":
+        gesture = _human("apply", pending=[_queued(log, kind, **CHANGES[kind])])
+    elif path == "fold":
+        gesture = _human("fold", updates=[{"kind": kind, "target": "d2", **CHANGES[kind]}])
+    else:
+        gesture = _human(kind, target="d2", **CHANGES[kind])
+    before = replay(log.epoch, log.entries())
+
+    refused = _submit(log, gesture)
+
+    assert refused.status == "rejected", refused
+    assert refused.reason == REASON_DECISION_WAITING
+    after = replay(log.epoch, log.entries())
+    assert after.decisions == before.decisions
+    assert after.pending == before.pending
+
+
+def test_gestures_that_change_no_held_decision_are_still_accepted(log: SessionLog) -> None:
+    """
+    Given d2 answered, held by a live impact task, with an agent's change queued
+    When the human dismisses that change, opens a thread on d2, and answers d5
+    Then all three are accepted: none of them changes d2.
+    """
+    _held_board(log)
+    pending = _queued(log, "invalidate", why="out of scope")
+
+    assert _submit(log, _human("dismiss", pending=[pending])).status == "accepted"
+    opened = _submit(
+        log,
+        EventSubmission(
+            kind="thread-created",
+            actor="human",
+            channel="t-d2",
+            idempotency_key="discuss-d2",
+            payload={"decision": "d2", "turns": [{"who": "human", "text": "Why wait?"}]},
+        ),
+    )
+    assert opened.status == "accepted"
+    assert _submit(log, _answer("d5", "a")).status == "accepted"

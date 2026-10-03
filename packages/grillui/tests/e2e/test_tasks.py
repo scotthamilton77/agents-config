@@ -200,3 +200,43 @@ def test_pnd_a3_a_later_answer_takes_the_ruling_over_and_the_earlier_result_is_d
     assert not dropped, image["pending"]
     assert any(stale in one["why"] for one in image["history"]["d2"]), image["history"]["d2"]
     assert "waiting" not in next(one for one in image["decisions"] if one["id"] == "d2")
+
+
+def test_pnd_a1_letting_a_queued_change_land_on_a_waiting_decision_is_refused(
+    launcher: Callable[..., Session], board: Callable[[Session], Page]
+) -> None:
+    """
+    Given the agent's reopening of d2 queued in the inbox
+    When the human takes d1's option marking d2, and while the ruling is in
+         flight lets the queued change land
+    Then the apply is refused by name in the page's refusal banner, and the
+         change stays queued.
+
+    Reopen needs no check of its own: only a settled decision offers it, and a
+    settled decision is never put in question, so it never waits.
+    """
+    session = launcher(handoff=handoff(PLAN))
+    session.script_codex(
+        turn(
+            document(
+                "", updates=[{"kind": "unsettle", "target": "d2", "why": "worth asking again"}]
+            )
+        )
+    )
+    session.script_claude(
+        turn(document("", rulings=[ruling("d2", "stands", "the question still holds")]), delay=HELD)
+    )
+    page = board(session)
+
+    pick(page, "d3")
+    session.settled()
+    assert [one["kind"] for one in session.board()["pending"]] == ["unsettle"]
+    pick(page, "d1")
+    page.wait_for_selector("#col-d2 .task-notice", timeout=BOARD_TIMEOUT)
+
+    page.click('#col-d2 [data-act="applyone"]')
+    page.wait_for_selector(".banner.refusal", timeout=BOARD_TIMEOUT)
+    banner = page.locator(".banner.refusal").inner_text()
+    assert "decision is waiting on a ruling" in banner, banner
+    assert [one["kind"] for one in session.board()["pending"]] == ["unsettle"]
+    session.settled()
