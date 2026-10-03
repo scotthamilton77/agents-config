@@ -96,7 +96,7 @@ Each probe must map to a specific prediction from Phase 3. **Change one variable
 
 **No fix without a failing test first.** Write the regression test **before the fix**, at a **correct seam**: one where the test exercises the real bug pattern as it occurs at the call site. Too shallow a seam — a unit test that cannot replicate the chain that triggered the bug — gives false confidence.
 
-**If no correct seam exists, that is a finding to resolve, not an exemption** — the architecture is preventing the bug from being locked down. Do not apply the fix without the failing test. Create the seam first, or escalate to the user with what blocks it.
+**If no correct seam exists, that is a finding to resolve, not an exemption** — the architecture is preventing the bug from being locked down. Create the seam first, or escalate to the user with what blocks it.
 
 1. Turn the minimised repro into a failing test at that seam, and watch it fail.
 2. Apply the fix — one focused change at the root cause, nothing bundled in.
