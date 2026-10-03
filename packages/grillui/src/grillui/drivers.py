@@ -1900,6 +1900,13 @@ def record_document(
         if owed is None or owed.gesture is None or not gone:
             return _record_document(log, tier, document, attribution, owed)
         kept = [one for one in owed.ids if one not in gone]
+        # Only a target this turn actually said something about had a result
+        # to drop. A turn silent on it dropped nothing, and a history line
+        # saying otherwise would describe a ruling that never arrived.
+        said = {one.decision for one in document.rulings} | {
+            one.get("target") for one in document.updates
+        }
+        dropped = [one for one in gone if one in said]
         document = document.model_copy(
             update={
                 "rulings": [one for one in document.rulings if one.decision not in gone],
@@ -1910,14 +1917,14 @@ def record_document(
         spoke = _record_document(log, tier, document, attribution, narrowed)
         # Recorded only once the turn has landed: a turn the appender refuses
         # is retried, and the retry strikes the same result again.
-        for one in gone:
-            dropped = task_id(owed.gesture, one)
+        for one in dropped:
+            name = task_id(owed.gesture, one)
             log.emit_status(
                 STATUS_PHASE_RULINGS_DROPPED,
-                f"the result for {one} from task {dropped} arrived after a later answer "
+                f"the result for {one} from task {name} arrived after a later answer "
                 f"superseded that task, and was dropped",
                 MAP_CHANNEL,
-                tasks=[{"id": dropped, "phase": STATUS_PHASE_SUPERSEDED}],
+                tasks=[{"id": name, "phase": STATUS_PHASE_SUPERSEDED}],
             )
         return spoke
 

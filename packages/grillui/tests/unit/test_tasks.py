@@ -16,11 +16,12 @@ from typing import TYPE_CHECKING, Any
 from conftest import TIMEOUT, SpyDriver
 
 from grillui.drivers import record_document
-from grillui.lane import Lane, unclosed_turns
+from grillui.lane import Lane, open_announcements, unclosed_turns
 from grillui.projector import replay
 from grillui.schemas import (
     HEAVY_TIER,
     MAP_CHANNEL,
+    REASON_DECISION_WAITING,
     STATUS_KIND,
     DispatchContext,
     EventSubmission,
@@ -141,6 +142,7 @@ class HeldRuler:
         default_factory=lambda: [threading.Event() for _ in range(4)]
     )
     calls: int = 0
+    silent_on: frozenset[str] = frozenset()
     _taking: threading.Lock = field(default_factory=threading.Lock)
 
     def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
@@ -150,7 +152,7 @@ class HeldRuler:
             self.calls += 1
         self.started[mine].set()
         assert self.release[mine].wait(TIMEOUT), f"call {mine} was never released"
-        ids = [] if owed is None else owed.ids
+        ids = [] if owed is None else [one for one in owed.ids if one not in self.silent_on]
         document = GrillMasterDocument(
             text="",
             updates=[{"kind": "invalidate", "target": one, "why": "moved"} for one in ids],
@@ -579,3 +581,118 @@ def test_one_of_two_overlapping_map_turns_closing_leaves_the_other_unclosed(
     seat.release[1].set()
     _join(second)
     assert unclosed_turns(log.entries()) == {}
+
+
+# --- the gate holds the lock, not only the page -------------------------------
+
+
+def _submit(log: SessionLog, event: EventSubmission) -> Any:
+    return log.submit([event], log.epoch)[0]
+
+
+def _settled(log: SessionLog, node: str) -> bool:
+    found = next(one for one in replay(log.epoch, log.entries()).decisions if one.id == node)
+    return found.status == "settled"
+
+
+def test_pnd_a1_an_answer_to_a_waiting_decision_is_refused_and_settles_nothing(
+    session_dir: Path, log: SessionLog
+) -> None:
+    """
+    Given d2 waiting on the ruling d1's marked answer started
+    When a client that has not redrawn answers d2 anyway, opens a thread on it,
+         and answers d4, whose option also marks d2
+    Then the answer to d2 is refused by name and settles nothing, the thread and
+         the superseding answer are accepted, and after a restart that fails
+         the task, an answer to d2 is still refused.
+    """
+    _seed(log)
+    seat = SpyDriver(tier=HEAVY_TIER, hold=True)
+    lane = Lane(log, seat)
+    _, turns = lane.accept([_answer("d1")], log.epoch)
+    assert seat.started.wait(TIMEOUT)
+
+    refused = _submit(log, _answer("d2", "a"))
+    assert refused.status == "rejected"
+    assert refused.reason == REASON_DECISION_WAITING
+    assert "d2" in refused.detail
+    assert not _settled(log, "d2")
+
+    opened = _submit(
+        log,
+        EventSubmission(
+            kind="thread-created",
+            actor="human",
+            channel="t-d2",
+            idempotency_key="discuss-d2",
+            payload={"decision": "d2", "turns": [{"who": "human", "text": "Why wait?"}]},
+        ),
+    )
+    assert opened.status == "accepted"
+    assert _submit(log, _answer("d4")).status == "accepted"
+
+    successor = open_session(session_dir)
+    again = successor.submit(
+        [
+            EventSubmission(
+                kind="answer",
+                actor="human",
+                idempotency_key="after-restart",
+                payload={"target": "d2", "answer": {"option": "a"}},
+            )
+        ],
+        successor.epoch,
+    )[0]
+    assert again.status == "rejected"
+    assert again.reason == REASON_DECISION_WAITING
+
+    seat.release.set()
+    _join(turns)
+
+
+def test_pnd_a3_a_drop_is_recorded_only_for_a_target_the_result_spoke_to(
+    log: SessionLog,
+) -> None:
+    """
+    Given d1's marked answer in flight with tasks on d2 and d3, and d4's answer
+         superseding the task on d2
+    When d1's turn then arrives ruling on d3 alone
+    Then no dropped-result line is recorded on d2, because nothing for d2 arrived
+         to be dropped; d3's ruling lands as usual.
+    """
+    _seed(log)
+    seat = HeldRuler(silent_on=frozenset({"d2"}))
+    lane = Lane(log, seat)
+    _, first = lane.accept([_answer("d1")], log.epoch)
+    assert seat.started[0].wait(TIMEOUT)
+    _, second = lane.accept([_answer("d4")], log.epoch)
+    assert seat.started[1].wait(TIMEOUT)
+    stale = f"impact-{_gesture(log, 'd1')}-d2"
+
+    seat.release[0].set()
+    _join(first)
+
+    image = replay(log.epoch, log.entries())
+    assert not any(stale in one.why for one in image.history.get("d2", [])), image.history["d2"]
+    assert not [
+        entry
+        for entry, item in _task_items(log.entries())
+        if item["id"] == stale and entry.payload["phase"] == "rulings-dropped"
+    ]
+    assert ("invalidate", "d3") in {(one.kind, one.target) for one in image.pending}
+
+    seat.release[1].set()
+    _join(second)
+
+
+def test_a_closing_entry_closes_no_announcement_on_another_channel(log: SessionLog) -> None:
+    """
+    Given a turn announced on the map
+    When a closing entry on a thread names that announcement's sequence
+    Then the map's turn is still open: a closing entry only ever closes a turn
+         on its own channel.
+    """
+    announced = log.emit_status("composing", "the 'heavy' tier is composing a reply", tier="heavy")
+    log.emit_status("replied", "the turn is over", "t-elsewhere", opened=announced.seq)
+
+    assert [one.seq for one in open_announcements(log.entries())] == [announced.seq]

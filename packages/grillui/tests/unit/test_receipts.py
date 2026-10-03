@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from grillui.log import SessionLog
 from grillui.schemas import (
     APPLY_KIND,
+    REASON_DECISION_WAITING,
     REASON_EMPTY_ANSWER,
     REASON_EPOCH_MISMATCH,
     REASON_FOREIGN_THREAD,
@@ -32,6 +33,7 @@ from grillui.schemas import (
     REASON_UNKNOWN_PENDING,
     REASON_UNKNOWN_THREAD,
     REJECTION_REASONS,
+    STATUS_KIND,
     payload_problem,
 )
 
@@ -264,6 +266,38 @@ def _leave_a_conflicted_proposal(client: TestClient, log: SessionLog) -> None:
     )
 
 
+def _leave_a_decision_waiting(_client: TestClient, log: SessionLog) -> None:
+    """Put a ruling in flight on the seed node: the lane's announcement of a turn
+    carrying an impact task on it, which is all the board reads a wait off."""
+    log.record(
+        STATUS_KIND,
+        {
+            "phase": "composing",
+            "detail": "the 'heavy' tier is composing a reply",
+            "tier": "heavy",
+            "tasks": [
+                {
+                    "id": f"impact-1-{SEED_NODE}",
+                    "target": SEED_NODE,
+                    "gesture": 1,
+                    "basis": 1,
+                    "mode": "impact",
+                    "seat": "heavy",
+                    "phase": "composing",
+                }
+            ],
+        },
+    )
+
+
+def _refuse_waiting_decision(client: TestClient, log: SessionLog) -> dict[str, Any]:
+    return post(
+        client,
+        log.epoch,
+        event("answer", actor="human", key="k1", target=SEED_NODE, answer={"option": "a"}),
+    )[0]
+
+
 def _refuse_pending_conflict(client: TestClient, log: SessionLog) -> dict[str, Any]:
     return queue_gesture(client, log.epoch, APPLY_KIND, *proposed(client, SEED_NODE), key="k1")
 
@@ -275,6 +309,7 @@ SETUPS: dict[str, Callable[[TestClient, SessionLog], None]] = {
     REASON_PENDING_CONFLICT: _leave_a_conflicted_proposal,
     REASON_FOREIGN_THREAD: _open_a_thread_on_another_decision,
     REASON_NOTHING_TO_PROCEED: _park_a_thread,
+    REASON_DECISION_WAITING: _leave_a_decision_waiting,
 }
 
 
@@ -292,6 +327,7 @@ REFUSALS: dict[str, Callable[[TestClient, SessionLog], dict[str, Any]]] = {
     REASON_FOREIGN_THREAD: _refuse_foreign_thread,
     REASON_PENDING_CONFLICT: _refuse_pending_conflict,
     REASON_NOTHING_TO_PROCEED: _refuse_nothing_to_proceed,
+    REASON_DECISION_WAITING: _refuse_waiting_decision,
 }
 
 

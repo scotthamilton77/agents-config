@@ -391,11 +391,13 @@ def open_announcements(entries: Sequence[LogEntry]) -> list[LogEntry]:
             opened[entry.seq] = entry
         elif phase in (STATUS_PHASE_REPLIED, STATUS_PHASE_ERROR):
             closes = entry.payload.get(OPENED_KEY)
-            ended = (
-                [closes]
-                if isinstance(closes, int)
-                else [seq for seq, one in opened.items() if one.channel == entry.channel]
-            )
+            # A closing entry only ever closes a turn on its own channel, so one
+            # naming another channel's announcement closes nothing.
+            ended = [
+                seq
+                for seq, one in opened.items()
+                if one.channel == entry.channel and (not isinstance(closes, int) or seq == closes)
+            ]
             for seq in ended:
                 opened.pop(seq, None)
     return list(opened.values())

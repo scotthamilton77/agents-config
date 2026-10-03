@@ -99,6 +99,13 @@ REASON_FOREIGN_THREAD = "thread anchored to another decision"
 # thread that exists, so none of the reasons above says why it is refused.
 REASON_NOTHING_TO_PROCEED = "nothing to proceed on"
 
+# An answer to a decision a ruling in flight is weighing. The ruling may move
+# the question itself, so the decision takes no answer until the ruling lands.
+# This is the one hold the gate refuses rather than leaving to the page: a tab
+# that has not redrawn since the gesture that started the ruling still offers
+# the answer, and the wait is meant to hold against it too.
+REASON_DECISION_WAITING = "decision is waiting on a ruling"
+
 REJECTION_REASONS = frozenset(
     {
         REASON_MISSING_KEY,
@@ -114,6 +121,7 @@ REJECTION_REASONS = frozenset(
         REASON_FOREIGN_THREAD,
         REASON_UNKNOWN_OPTION,
         REASON_NOTHING_TO_PROCEED,
+        REASON_DECISION_WAITING,
     }
 )
 

@@ -35,8 +35,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from grillui.escalation import ANSWER_KIND
 from grillui.lane import unclosed_turns
-from grillui.projector import Proposed, node_from_payload, queue, replay
+from grillui.projector import Proposed, impact_tasks, node_from_payload, queue, replay
 from grillui.schemas import (
     ANSWER_KINDS,
     APPLY_KIND,
@@ -46,6 +47,7 @@ from grillui.schemas import (
     MAP_CHANNEL,
     PROPOSABLE_KINDS,
     QUEUE_GESTURE_KINDS,
+    REASON_DECISION_WAITING,
     REASON_EPOCH_MISMATCH,
     REASON_MISSING_KEY,
     REASON_NOTHING_TO_PROCEED,
@@ -330,6 +332,8 @@ class SessionLog:
             problem = _queue_gesture_problem(event, queued, waiting)
         if problem is None and is_proceed(event):
             problem = _proceed_problem(self.epoch, self._entries, event.channel)
+        if problem is None and event.kind == ANSWER_KIND:
+            problem = _waiting_problem(self._entries, event)
         if problem is not None:
             reason, detail = problem
             return RejectedReceipt(
@@ -595,6 +599,28 @@ def _queue_gesture_problem(
                 f"since; it stays queued rather than overwriting that change",
             )
     return None
+
+
+def _waiting_problem(entries: Sequence[LogEntry], event: EventSubmission) -> tuple[str, str] | None:
+    """Why this answer names a decision a ruling in flight is still weighing, or
+    None.
+
+    Decided here, under the append lock, so no answer lands between a task
+    opening and this read. A task that failed holds its decision as firmly as a
+    live one: nothing unlocks on inaction.
+    """
+    target = event.payload.get("target")
+    holder = next(
+        (task for task in impact_tasks(entries).values() if task.target == target and task.holds),
+        None,
+    )
+    if holder is None:
+        return None
+    return (
+        REASON_DECISION_WAITING,
+        f"{target!r} is waiting on the {holder.seat!r} seat's ruling for the answer at "
+        f"#{holder.gesture}, and takes no answer until that ruling lands",
+    )
 
 
 def _proceed_problem(

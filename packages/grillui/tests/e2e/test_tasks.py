@@ -90,8 +90,9 @@ def test_pnd_a1_a_decision_a_ruling_is_weighing_waits_on_the_board_and_says_on_w
     Then while the ruling is in flight image 1 lists d2 as waiting on that
          gesture and seat, the frontier leaves it out, and the page shows d2
          waiting on a ruling with no answer control on it while its history and
-         threads stay open; d3, which nothing is weighing, stays answerable; and
-         once the ruling lands, d2 takes an answer again.
+         threads stay open; d3, which nothing is weighing, stays answerable; an
+         answer to d2 from a tab that has not redrawn is refused and the page
+         says so; and once the ruling lands, d2 takes an answer again.
     """
     session = launcher(handoff=handoff(PLAN))
     session.script_claude(
@@ -123,6 +124,18 @@ def test_pnd_a1_a_decision_a_ruling_is_weighing_waits_on_the_board_and_says_on_w
     column.locator('[data-act="history"]').click()
     page.wait_for_selector("#col-d2 .hist", timeout=BOARD_TIMEOUT)
     assert column.locator('[data-act="newthread"]').count() == 1
+
+    # A tab that has not redrawn since the first answer still offers d2, and
+    # sends exactly what its answer control would. The backend refuses it, and
+    # the page says so in the banner it gives every refused gesture.
+    page.evaluate('send(ev("answer", MAP, { target: "d2", answer: { option: "a", text: null } }))')
+    page.wait_for_selector(".banner.refusal", timeout=BOARD_TIMEOUT)
+    banner = page.locator(".banner.refusal").inner_text()
+    assert "decision is waiting on a ruling" in banner, banner
+    assert "not recorded" in banner, banner
+    assert (
+        next(one for one in session.board()["decisions"] if one["id"] == "d2")["status"] == "open"
+    )
 
     session.settled()
     page.wait_for_selector('#col-d2 [data-act="pick"]', timeout=BOARD_TIMEOUT)
