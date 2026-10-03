@@ -129,20 +129,15 @@ through its Anthropic-compatible endpoint as a thinking budget, so a level a
 row does not list still bounds the model's thinking; treat the model as the
 reliable control and the level as a hint.
 
-Two constraints on this launcher's rows hold today and override the grid:
-
-- A single-pass read of a whole artifact on `moonshotai/kimi-k3` runs at
-  `low`, never `high` or `max`, and is granted no tools when the prompt
-  carries the text. At the higher levels its thinking outlasts the stream and
-  the run ends inside a thinking block with no report. A read of a change
-  runs `high`.
-- `z-ai/glm-5.3` returns thinking-only turns on a single pass over a whole
-  document until the request times out, so it takes a read of a change or a
-  walk, never a whole-artifact read.
+A model's own notes override the grid. Before dispatching to a model that has
+a file under `references/`, read it: `references/kimi-k3.md` and
+`references/glm-5.3.md` exist today, each recording what that model does
+under which effort and task shape, and what it refuses. A model with no file
+has no recorded constraint.
 
 The launcher pins no sampling parameter, and neither should a prompt or a
-wrapper: the Kimi rows refuse a temperature, and Google says to leave Gemini's
-at its default.
+wrapper: a model's notes say whether it refuses one, and Google says to leave
+Gemini's at its default.
 
 ## Example
 
