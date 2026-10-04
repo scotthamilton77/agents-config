@@ -57,6 +57,7 @@ from grillui.schemas import (
     STATUS_PHASE_ERROR,
     STATUS_PHASE_REPLIED,
     STATUS_PHASE_TRANSFERRED,
+    TASKS_KEY,
     TIER_KEY,
     TRANSFER_FLAG,
     DispatchContext,
@@ -633,14 +634,18 @@ def _obligations(driver: Any) -> list[Any]:
     ]
 
 
-def _rule(log: SessionLog, named: Sequence[str]) -> int | None:
-    """One grill-master turn ruling `invalidate` on each named id, queueing the
+def _rule(log: SessionLog, named: Sequence[str], tasks: Sequence[str] = ()) -> int | None:
+    """One grill-master turn ruling `invalidate` on each named id, carrying the
     update each ruling is credited by, appended the way a seat appends one.
 
     It comes back with the sequence the reply landed at, which is the receipt a
     driver owes the lane: the coverage check credits a turn by the entry that
     turn named, so a stand-in seat that appended and named nothing stands in for
     a seat that said nothing.
+
+    `tasks` is the impact tasks the turn was dispatched with, named on the entry
+    as a real seat's recorder names them, so the replay judges this result by
+    the rule it judges a real one by.
     """
     receipt = log.submit(
         [
@@ -660,6 +665,7 @@ def _rule(log: SessionLog, named: Sequence[str]) -> int | None:
                         {"decision": one, "ruling": "invalidate", "why": "the answer kills it"}
                         for one in named
                     ],
+                    **({TASKS_KEY: [{"id": one} for one in tasks]} if tasks else {}),
                 },
             )
         ],
@@ -670,7 +676,7 @@ def _rule(log: SessionLog, named: Sequence[str]) -> int | None:
 
 @dataclass
 class ProposingDriver:
-    """A tier that rules `invalidate` on every id its dispatch named, and queues
+    """A tier that rules `invalidate` on every id its dispatch named, and carries
     the update each ruling is credited by.
 
     The turn a model is supposed to take, standing in for one: it reads the
@@ -689,7 +695,7 @@ class ProposingDriver:
     def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
         context = DispatchContext.model_validate_json(dispatch.read_text(encoding="utf-8"))
         self.dispatches.append(dispatch)
-        return _rule(log, [] if context.mootness is None else context.mootness.ids)
+        return _rule(log, [] if context.mootness is None else context.mootness.ids, context.tasks)
 
 
 def test_a_gesture_owed_rulings_is_composed_by_the_expert_carrying_the_ids(
@@ -765,14 +771,16 @@ def test_an_obligation_met_or_never_created_presses_nobody(log: SessionLog, tmp_
           naming nothing
     When each answer's turn is taken
     Then neither takes a second turn and neither says anything to the human, and
-         the first has both invalidates waiting in the queue.
+         the first has both invalidates landed on their own targets, each with a
+         history line naming its impact task.
 
     Both halves are about what the press costs when it should not fire. A ruling
-    the same turn queued the update for is the obligation met, whether or not the
-    human has applied it yet -- a check reading the decision's status alone would
-    press every honoured turn. And every session log written before this existed
-    carries no pre-marks at all, so each has to go on costing exactly what it
-    cost: the obligation is a property of the option the human took.
+    the same turn carried the update for is the obligation met, whether that
+    update landed or still waits for the human -- a check reading the decision's
+    status alone would press every honoured turn whose change is waiting. And
+    every session log written before this existed carries no pre-marks at all,
+    so each has to go on costing exactly what it cost: the obligation is a
+    property of the option the human took.
 
     Which seat is which follows from the option: the marked one is a judgment
     class and is composed on the expert, the unmarked one is clerical and stays
@@ -785,8 +793,13 @@ def test_an_obligation_met_or_never_created_presses_nobody(log: SessionLog, tmp_
     assert first_rung.dispatches == [], "a judgment gesture went through the first rung"
     assert len(honoured.dispatches) == 1, "the classed seat was asked twice for one gesture"
     assert _notices(log) == []
-    queued = replay(log.epoch, log.entries()).pending
-    assert sorted(str(one.target) for one in queued if one.kind == "invalidate") == KILLED
+    board = replay(log.epoch, log.entries())
+    gesture = next(one.seq for one in log.entries() if one.kind == "answer")
+    assert sorted(one.id for one in board.decisions if one.status == "invalidated") == KILLED
+    for one in KILLED:
+        assert [entry.task for entry in board.history[one] if entry.kind == "invalidate"] == [
+            f"impact-{gesture}-{one}"
+        ]
 
     plain = SessionLog(tmp_path / "unmarked")
     prose, unused = SpyDriver(tier=FAST_TIER, reply="Noted."), SpyDriver(tier=HEAVY_TIER)
