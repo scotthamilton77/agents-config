@@ -408,7 +408,9 @@ def test_pnd_a13_a_map_turn_whose_seat_fails_is_handed_up_and_says_so(
 
 # --- the two-seat ladder, cell by cell -----------------------------------------
 
-ANSWERED, INCOMPLETE, REFUSED, FAILED = "answered", "incomplete", "refused", "failed"
+ANSWERED, INCOMPLETE, REFUSED, BARE, FAILED = "answered", "incomplete", "refused", "bare", "failed"
+ANSWERING = (ANSWERED, INCOMPLETE)
+REFUSING = (REFUSED, BARE)
 CARRIED = GrillMasterDocument.model_validate(
     {
         "text": "Ruled.",
@@ -420,15 +422,22 @@ CARRIED = GrillMasterDocument.model_validate(
 )
 
 
+def _ruled(outcome: str, owed: list[str]) -> list[str]:
+    """What a seat answering this way rules on, out of what it was asked."""
+    return owed if outcome == ANSWERED else owed[:-1]
+
+
 @dataclass
 class ScriptedSeat:
     """A seat whose one turn ends the way it is scripted to.
 
-    `answered` rules on every decision its dispatch owes and `incomplete` on the
-    first of them only; both land a reply. `refused` raises the refusal a
-    document the board read and would not take ends in, and `failed` raises a
-    timeout. `gate` holds the turn until the test has finished setting the
-    lane up around it.
+    `answered` rules on every decision its dispatch owes, and `incomplete` on
+    all but the last of them -- on nothing at all where it owes one; both land
+    a reply. `refused` raises the refusal of a document the board read and
+    would not take, carrying its judgement, and `bare` the refusal of a reply
+    that never read as the document, carrying none. `failed` raises a timeout.
+    `gate` holds the turn until the test has finished setting the lane up
+    around it.
     """
 
     tier: str
@@ -442,30 +451,46 @@ class ScriptedSeat:
             assert self.gate.wait(TIMEOUT)
         owed = DispatchContext.model_validate_json(dispatch.read_text(encoding="utf-8")).mootness
         ids = [] if owed is None else owed.ids
-        if self.outcome == ANSWERED:
-            return _rule(log, ids)
-        if self.outcome == INCOMPLETE:
-            return _rule(log, ids[:1])
-        if self.outcome == REFUSED:
-            raise DocumentRefusedError(self.tier, f"unknown node id from {self.tier}", CARRIED)
-        raise AgentUnreachableError(self.tier, f"it timed out on {self.tier}")
+        if self.outcome in ANSWERING:
+            return _rule(log, _ruled(self.outcome, ids))
+        if self.outcome in REFUSING:
+            carried = CARRIED if self.outcome == REFUSED else None
+            raise DocumentRefusedError(self.tier, _cause(self.tier, self.outcome), carried)
+        raise AgentUnreachableError(self.tier, _cause(self.tier, self.outcome))
 
 
 # Every reachable pair of outcomes. A first seat that answered whole is never
 # pressed, and a second seat of None is a session with no expert to press.
 CELLS = [
     (ANSWERED, None),
-    *[(first, None) for first in (INCOMPLETE, REFUSED, FAILED)],
     *[
         (first, second)
-        for first in (INCOMPLETE, REFUSED, FAILED)
-        for second in (ANSWERED, REFUSED, FAILED)
+        for first in (INCOMPLETE, REFUSED, BARE, FAILED)
+        for second in (None, ANSWERED, INCOMPLETE, REFUSED, BARE, FAILED)
     ],
 ]
 
 
 def _cause(tier: str, outcome: str) -> str:
-    return f"unknown node id from {tier}" if outcome == REFUSED else f"it timed out on {tier}"
+    return {
+        REFUSED: f"unknown node id from {tier}",
+        BARE: f"prose from {tier}",
+        FAILED: f"it timed out on {tier}",
+    }[outcome]
+
+
+def _traced(seats: list[tuple[str, str]], index: int) -> bool:
+    """Whether the rule names this seat to the human in a notice of its own.
+
+    A seat that failed outright always is. A refused one is when no later seat
+    answered in its place, and either the ladder ended on it or it took a
+    judgement down with it.
+    """
+    outcome = seats[index][1]
+    if outcome == FAILED:
+        return True
+    replaced = any(later in ANSWERING for _, later in seats[index + 1 :])
+    return not replaced and (index == len(seats) - 1 or outcome == REFUSED)
 
 
 @pytest.mark.parametrize(("first", "second"), CELLS)
@@ -478,12 +503,12 @@ def test_pnd_a13_every_cell_of_the_two_seat_ladder_traces_each_seat_and_closes_h
           turn ends another
     When the turn is taken
     Then the turn and its tasks close `replied` exactly when some seat answered,
-         and `error` otherwise; every seat that did not answer is named with its
-         cause in a notice -- except a refused document a later seat answered
-         in place of -- and, on an error, in the closing detail; each refused
-         document no later seat answered in place of is stated lost once; and
-         what is left unruled is stated once, unless a failed task still holds
-         it.
+         and `error` otherwise; on an error, the closing detail names every
+         seat that did not answer; a seat that failed outright is named with
+         its cause in one notice, and so is a refusal no later seat answered in
+         place of where the ladder ended on it or it carried a judgement, which
+         is then stated lost; nothing else is said but what is left unruled,
+         once, unless a failed task still holds it.
     """
     gate = threading.Event()
     lane = Lane(log, ScriptedSeat(FAST_TIER, first, gate))
@@ -509,7 +534,7 @@ def test_pnd_a13_every_cell_of_the_two_seat_ladder_traces_each_seat_and_closes_h
         assert not one.is_alive()
 
     seats = [(FAST_TIER, first), *([] if second is None else [(HEAVY_TIER, second)])]
-    answered = any(outcome in (ANSWERED, INCOMPLETE) for _, outcome in seats)
+    answered = any(outcome in ANSWERING for _, outcome in seats)
     closing = [one for one in statuses(log) if one.payload["phase"] in ("replied", "error")]
     assert len(closing) == 1, [one.payload for one in closing]
     phase = closing[0].payload["phase"]
@@ -517,34 +542,34 @@ def test_pnd_a13_every_cell_of_the_two_seat_ladder_traces_each_seat_and_closes_h
     assert {one.phase for one in impact_tasks(log.entries()).values()} == {phase}
 
     said = _notices(log)
+    unmet = [one for one in said if "not ruled on" in one]
+    traces = [one for one in said if "not ruled on" not in one]
+    owed_traces = 0
     for index, (tier, outcome) in enumerate(seats):
-        if outcome in (ANSWERED, INCOMPLETE):
-            continue
-        answered_later = any(later in (ANSWERED, INCOMPLETE) for _, later in seats[index + 1 :])
-        traced = [one for one in said if _cause(tier, outcome) in one]
-        if outcome == REFUSED and answered_later:
-            assert traced == [], said
+        if outcome in ANSWERING:
             continue
         if phase == STATUS_PHASE_ERROR:
             assert _cause(tier, outcome) in closing[0].payload["detail"]
-        assert len(traced) == 1, (tier, outcome, said)
-        assert repr(tier) in traced[0]
-        if outcome == REFUSED:
-            assert "d2 stands" in traced[0], "the refused document's ruling was not stated lost"
+        named = [one for one in traces if _cause(tier, outcome) in one]
+        if not _traced(seats, index):
+            assert named == [], (tier, outcome, said)
+            continue
+        owed_traces += 1
+        assert len(named) == 1, (tier, outcome, said)
+        assert repr(tier) in named[0]
+        lost = "d2 stands" in named[0]
+        assert lost == (outcome == REFUSED), ("what the refusal carried", named[0])
     # And nothing else is said: a seat that answered leaves no trace.
-    owed_traces = [
-        tier
-        for index, (tier, outcome) in enumerate(seats)
-        if outcome in (REFUSED, FAILED)
-        and not (
-            outcome == REFUSED
-            and any(later in (ANSWERED, INCOMPLETE) for _, later in seats[index + 1 :])
-        )
-    ]
-    assert len([one for one in said if "not ruled on" not in one]) == len(owed_traces), said
-    unmet = [one for one in said if "not ruled on" in one]
-    # Only a first rung that answered in part leaves something unruled on a
-    # turn that answered; a pressed seat is asked for all of what is left. On a
-    # turn that failed, the tasks still hold what is left, so nothing is said.
-    left = 1 if first == INCOMPLETE and second != ANSWERED else 0
-    assert len(unmet) == left, said
+    assert len(traces) == owed_traces, said
+
+    # What is left unruled is what no answering seat ruled on, read the way the
+    # ladder narrows it: a pressed seat is asked for what the seat below left.
+    owed = ["d2", "d3"]
+    for _, outcome in seats:
+        if outcome in ANSWERING:
+            owed = [one for one in owed if one not in _ruled(outcome, owed)]
+    # On a turn that failed, the tasks still hold what is left, so nothing is
+    # said about it.
+    assert len(unmet) == (1 if answered and owed else 0), said
+    if unmet:
+        assert ", ".join(owed) in unmet[0], unmet

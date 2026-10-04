@@ -1356,9 +1356,15 @@ class DoctorState(Strict):
 
 
 class RetryRequest(Strict):
-    """The human asking for a failed ruling to be taken again, by its task."""
+    """The human asking for a failed ruling to be taken again, by its task.
+
+    `epoch` is the tenure the page last read, refused on a mismatch the way a
+    write is: a task id read off another process's board names a failure this
+    process may already have moved past.
+    """
 
     task: str
+    epoch: str
 
 
 class RetryState(Strict):

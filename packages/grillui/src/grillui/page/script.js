@@ -1882,13 +1882,17 @@ function endSession(confirmed) {
 }
 // The retry is a control rather than an event, like the doctor: what it leaves
 // on the log is the lane's own, and the next poll shows the decision waiting on
-// the retry. A press that started nothing left nothing on the log for a poll to
-// bring in, so the board is read whole again instead, and shows whatever holds
-// the decision now -- an answer's fresh ruling, or a retry already running.
+// the retry. It carries the epoch the board was read under, and a press from
+// another tenure is refused with the receipt a write would get, which is shown
+// and recovered from the same way. A press that started nothing left nothing
+// on the log for a poll to bring in, so the board is read whole again instead,
+// and shows whatever holds the decision now.
 function retryRuling(task) {
   if (sessionOver()) return;
-  srvPost("/retry", { task: task }).then(function (r) {
-    if (!r.started) WIRE.hydrated = false;
+  srvPost("/retry", { task: task, epoch: WIRE.epoch }).then(function (r) {
+    if (r.status === "rejected") WIRE.lastRejection = r;
+    if (r.status === "rejected" || !r.started) WIRE.hydrated = false;
+    render();
     poll();
   }, wireFailed);
 }

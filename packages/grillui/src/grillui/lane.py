@@ -138,6 +138,7 @@ from grillui.schemas import (
     OPENED_KEY,
     PRESSED_KEY,
     RETRIES_KEY,
+    SESSION_END_KIND,
     STATUS_KIND,
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
@@ -910,7 +911,8 @@ class Lane:
         makes a second press, two presses at once and a press after an upstream
         answer all start nothing: the first press ends the failed task, and an
         upstream answer supersedes it. A pre-ruling holds no lock, so it has no
-        blocker to release and is never retried.
+        blocker to release and is never retried. A session that has ended starts
+        nothing either.
         """
         base = self.driver
         if base is None:
@@ -918,6 +920,10 @@ class Lane:
         with self.log.appending():
             entries = self.log.entries()
             failed = impact_tasks(entries).get(task)
+            # An ended session's terminal result is its last word, so nothing
+            # is started that could land after it.
+            if any(one.kind == SESSION_END_KIND for one in entries):
+                return None
             if failed is None or failed.phase != STATUS_PHASE_ERROR or failed.option is not None:
                 return None
             image = replay(self.log.epoch, entries)
