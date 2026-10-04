@@ -64,6 +64,16 @@ DISPATCH_DIR = "dispatches"
 GRILL_MASTER = "grill-master"
 THREAD_AGENT = "thread-agent"
 
+# What every turn weighing the board against a settlement is told about the
+# board it weighs. No gate can read whether a ruling judged the settlement or
+# redesigned the map around it, so the rule lives in the brief. It opens on a
+# fixed heading so the dispatch record shows the turn carried it.
+BACKPRESSURE = (
+    "Backpressure: the map author's structure and rationale stand. Move a decision's shape, "
+    "its prerequisites or the reasoning behind it only where you have a significant reason to, "
+    "and when you do, state that reason in the ruling or the `why` you write for the change."
+)
+
 
 def agent_for(channel: str) -> str:
     """Whose context a channel's turns belong to.
@@ -96,6 +106,7 @@ def assemble(
     catch_up: Sequence[CatchUpEntry] = (),
     help_reference: str | None = None,
     mootness: MootnessObligation | None = None,
+    tasks: Sequence[str] = (),
 ) -> str:
     """One dispatch context, serialised, carrying the whole of what it owes.
 
@@ -127,6 +138,10 @@ def assemble(
     inside the board's bytes either way, and a turn asked to find it there is a
     turn that may not.
 
+    `tasks` is the impact tasks the turn carries. A turn carrying one weighs the
+    board against a settlement, and so does the doctor, so both are handed the
+    backpressure paragraph.
+
     The pending queue rides inside the image either way, which is what makes
     every one of these dispatches carry the queue as of the moment it was replayed.
     """
@@ -143,6 +158,8 @@ def assemble(
         catch_up=list(catch_up),
         help_reference=help_reference,
         mootness=mootness,
+        tasks=list(tasks),
+        backpressure=BACKPRESSURE if tasks or reassess else None,
     )
     recorded = context.model_dump_json()
     # The map dispatch is checked against the source image, not the projection
@@ -182,6 +199,7 @@ def record_dispatch(
     conflict: SupersedeConflict | None = None,
     reassess: bool = False,
     mootness: MootnessObligation | None = None,
+    tasks: Sequence[str] = (),
 ) -> Path:
     """Replay at dispatch time, assemble, and record what the agent was given.
 
@@ -206,6 +224,7 @@ def record_dispatch(
         catch_up=catch_up(log.epoch, entries, channel),
         help_reference=help_reference(entries, image, channel),
         mootness=mootness or mootness_obligation(image, entries, channel),
+        tasks=tasks,
     )
     directory = log.directory / DISPATCH_DIR
     directory.mkdir(parents=True, exist_ok=True)

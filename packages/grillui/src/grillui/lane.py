@@ -72,10 +72,11 @@ board of this session has.
 Nothing here writes to the map: the insistence buys another agent turn, and the
 human is told when it buys nothing.
 
-**A ruling in flight holds what it rules on, and only one holds each.** A
-marked answer starts one impact task per decision it puts in question, opened
-on its turn's `composing` entry, and the replay keeps each target off the
-frontier until its task ends. A later gesture whose own task would target a
+**A ruling in flight holds what it rules on, and only one holds each.** An
+answer starts one impact task per decision it puts in question: each decision
+its option marks, and each decision it opens where it carries the human's own
+words. The tasks open on the turn's `composing` entry, and the replay keeps
+each target off the frontier until its task ends. A later gesture whose own task would target a
 decision already held supersedes the holding task on its `accepted` entry, in
 the same hold of the append lock that accepts the gesture, so no batch and no
 interleaving can leave two tasks holding one target. The superseded turn runs
@@ -485,9 +486,9 @@ class Lane:
 
     def tier_for(self, channel: str, driver: TurnDriver, gesture: Turn | None = None) -> TurnDriver:
         """The tier this channel's next turn goes to: the expert one when the
-        human has transferred this channel, asked the expert to proceed, or the
-        gesture's own class names it,
-        and this channel's own first-rung seat otherwise.
+        human has transferred this channel, asked the expert to proceed, the
+        turn carries an impact task, or the gesture's own class names it, and
+        this channel's own first-rung seat otherwise.
 
         Named before the `composing` entry is written rather than after, so the
         tier the human is told they are waiting on is the tier that takes the
@@ -502,7 +503,9 @@ class Lane:
             return seated
         if in_expert_mode(self.log.entries(), channel):
             return self.expert
-        if gesture is not None and (gesture.proceed or self._judgment(gesture) is not None):
+        if gesture is not None and (
+            gesture.proceed or gesture.tasks or self._judgment(gesture) is not None
+        ):
             return self.expert
         return seated
 
@@ -789,6 +792,7 @@ class Lane:
                 conflict=turn.conflict,
                 reassess=turn.reassess,
                 mootness=turn.mootness,
+                tasks=turn.tasks,
             )
             took = self._press(driver, turn, dispatch, _run(driver, self.log, dispatch))
             if self._watching(turn):
@@ -952,6 +956,7 @@ class Lane:
                 conflict=turn.conflict,
                 reassess=turn.reassess,
                 mootness=narrowed,
+                tasks=turn.tasks,
             )
             return _run(expert, self.log, dispatch)
         except Exception:
