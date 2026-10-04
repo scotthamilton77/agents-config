@@ -489,12 +489,12 @@ A3_REFUSALS = {
     "worker-missing-timeout": (lambda R: ["worker", "--model", MODEL, "-p", "P"], "--timeout"),
     "lens-missing-repo": (lambda R: ["lens", "--base", R.base, "--model", MODEL, "-p", "P"], "--repo"),
     "lens-missing-base": (lambda R: ["lens", "--repo", str(R.path), "--model", MODEL, "-p", "P"], "--base"),
-    "worker-effort": (
-        lambda R: ["worker", "--effort", "high", "--model", MODEL, "--timeout", "42", "-p", "P"],
+    "worker-effort-without-a-value": (
+        lambda R: ["worker", "--model", "gemini-3.8-flash", "--timeout", "42", "--effort", "-p", "P"],
         "--effort",
     ),
-    "lens-effort": (
-        lambda R: ["lens", "--repo", str(R.path), "--base", R.base, "--effort", "high", "--model", MODEL, "-p", "P"],
+    "lens-effort-without-a-value": (
+        lambda R: ["lens", "--repo", str(R.path), "--base", R.base, "--model", "gemini-3.8-flash", "--effort", "-p", "P"],
         "--effort",
     ),
     "agy-flag-disable-slash-commands": (
@@ -533,6 +533,101 @@ def test_a3_effort_as_or_inside_the_prompt_spawns_verbatim(rig, prompt):
     assert r.code == 0, r.err
     [call] = rig.fake.calls
     assert call.argv[2] == prompt
+
+
+# What agy 1.2.16 prints for each pairing it refuses, before any turn runs.
+AGY_REFUSED_PAIRS = {
+    "a-level-the-model-lacks": (
+        "gemini-3.1-pro",
+        "medium",
+        (
+            'error: invalid model selection (--model "gemini-3.1-pro" --effort "medium"): '
+            'gemini-3.1-pro has no "medium" effort (available: low, high)\n'
+        ),
+    ),
+    "a-variant-id-with-a-conflicting-effort": (
+        "gemini-3.8-flash-low",
+        "high",
+        (
+            'error: invalid model selection (--model "gemini-3.8-flash-low" --effort "high"): '
+            "--model gemini-3.8-flash-low conflicts with --effort=high\n"
+        ),
+    ),
+    "an-unknown-model": (
+        "nope",
+        "low",
+        'error: invalid model selection (--model "nope" --effort "low"): --effort is not supported for model "nope"\n',
+    ),
+    "a-level-agy-never-offered": (
+        "gemini-3.8-flash",
+        "zzz",
+        (
+            'error: invalid model selection (--model "gemini-3.8-flash" --effort "zzz"): '
+            'invalid --effort "zzz" (valid: low, medium, high, xhigh, max)\n'
+        ),
+    ),
+}
+
+
+def _with_model(argv: list[str], model: str, effort: str | None) -> list[str]:
+    """Swap the rig's model for another and add an effort, both before -p."""
+    at = argv.index("--model")
+    return [*argv[:at], "--model", model, *([] if effort is None else ["--effort", effort]), *argv[at + 2 :]]
+
+
+@pytest.mark.parametrize("mode", ["worker", "lens"])
+def test_model_and_effort_reach_agy_unchanged(rig, repo, mode):
+    r = rig.launch(_with_model(rig.argv(mode, repo), "gemini-3.8-flash", "low"))
+    [call] = rig.fake.calls
+    assert call.argv[call.argv.index("--model") + 1] == "gemini-3.8-flash"
+    assert call.argv[call.argv.index("--effort") + 1] == "low"
+    assert call.argv.count("--model") == call.argv.count("--effort") == 1
+    assert r.code in (0, 70), r.err
+
+
+@pytest.mark.parametrize("mode", ["worker", "lens"])
+def test_without_effort_the_model_reaches_agy_alone(rig, repo, mode):
+    rig.launch(_with_model(rig.argv(mode, repo), "gemini-3.8-flash-low", None))
+    [call] = rig.fake.calls
+    assert call.argv[call.argv.index("--model") + 1] == "gemini-3.8-flash-low"
+    assert "--effort" not in call.argv
+
+
+@pytest.mark.parametrize("case", AGY_REFUSED_PAIRS, ids=list(AGY_REFUSED_PAIRS))
+def test_a_pairing_agy_refuses_is_spawned_as_given_and_reported_as_a_refused_invocation(rig, case):
+    model, effort, message = AGY_REFUSED_PAIRS[case]
+    rig.fake.behave(stderr=message, exit=1)
+    r = rig.launch(_with_model(rig.argv("worker"), model, effort))
+    [call] = rig.fake.calls
+    assert call.argv[call.argv.index("--model") + 1] == model
+    assert call.argv[call.argv.index("--effort") + 1] == effort
+    assert r.code == 78
+    assert r.reasons == []
+    assert message in r.err
+    assert "agy_run.py: agy refused the model and effort" in r.err
+    assert r.out == ""
+
+
+def test_a_bare_model_without_effort_is_agys_refusal_and_reported_as_a_refused_invocation(rig):
+    message = (
+        'error: invalid model selection (--model "gemini-3.8-flash" --effort ""): '
+        "--model gemini-3.8-flash requires --effort (available: low, medium, high)\n"
+    )
+    rig.fake.behave(stderr=message, exit=1)
+    r = rig.launch(_with_model(rig.argv("worker"), "gemini-3.8-flash", None))
+    [call] = rig.fake.calls
+    assert "--effort" not in call.argv
+    assert r.code == 78
+    assert message in r.err
+
+
+def test_an_agy_too_old_for_the_effort_flag_is_reported_as_any_agy_error(rig):
+    message = "flag provided but not defined: -effort\n"
+    rig.fake.behave(stderr=message, exit=2)
+    r = rig.launch(_with_model(rig.argv("worker"), "gemini-3.8-flash", "low"))
+    assert r.code == 75
+    assert r.reasons == ["[agy-run] reason=error"]
+    assert message in r.err
 
 
 def test_a4_a_clean_run_exits_0_with_the_response_alone_on_stdout(rig):

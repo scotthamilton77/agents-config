@@ -74,8 +74,8 @@ name one model, the dispatching skill's effort is what separates them.
 
 How an effort reaches each provider is the launcher's business, and each
 launcher skill says so: the Agent tool takes no effort and a Workflow
-`agent()` call does; Codex takes it in the dispatch; agy takes it as a suffix
-on the model id; the OpenRouter launcher takes an `--effort` flag. `ultra` on
+`agent()` call does; Codex takes it in the dispatch; the agy and OpenRouter
+launchers each take an `--effort` flag. `ultra` on
 OpenAI adds automatic task delegation inside Codex, so it is never the pick
 for a run that must read its target itself.
 

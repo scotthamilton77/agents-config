@@ -27,19 +27,21 @@ success.
 
 ```bash
 uv run "${CLAUDE_SKILL_DIR}/scripts/agy_run.py" worker \
-  --model <agy-model-id> --timeout <seconds> -p "<prompt>"
+  --model <model> --effort <level> --timeout <seconds> -p "<prompt>"
 
 uv run "${CLAUDE_SKILL_DIR}/scripts/agy_run.py" lens \
-  --repo <path> --base <base-rev> [--rev <rev>] --model <agy-model-id> \
+  --repo <path> --base <base-rev> [--rev <rev>] --model <model> --effort <level> \
   [--timeout <seconds>] [--keep-snapshot] -p "<prompt>"
 ```
 
 `-p` comes last, and the prompt is the one argument after it. Pass a long brief
 as `-p "$(cat brief.md)"`. Take the model from the `google` column of the
 `choosing-a-delegate` skill's model routing table and the effort from that
-model's accepted list, and form the id as `<model>-<effort>`, for example
-`gemini-3.8-flash-low`: on agy the effort rides in the id, and the launcher
-takes the id whole.
+model's accepted list, and pass them as `--model` and `--effort`, for example
+`--model gemini-3.8-flash --effort low`. The launcher hands both to agy
+unchanged. agy refuses a pairing it does not offer before the run starts, and
+its message names the levels the model has; that refusal arrives as exit 78,
+to fix and not to fail over.
 
 Set the Bash tool's timeout above the run's seconds plus 40. A lens that omits
 `--timeout` runs for 600 seconds. Alternatively, run the command in the
@@ -64,7 +66,7 @@ revision rather than a change. Lens mode needs macOS.
 | `0` | A usable response, on stdout. | Use it. |
 | `70` | agy finished, but the output is unusable. `reason=empty` means no response. `reason=denied` means agy denied a tool call, and the `denied=` field names it. `reason=unread` means a lens answered without calling a single tool, so it never looked at the snapshot. | Re-brief, for example to keep the run inside its workspace or to read the diff first, or move to another route. A worker's denied command can instead go on `permissions.allow`, with the user's agreement. |
 | `75` | The route did not serve the run. The `reason=` line on stderr says why. | Fail over to the next route or model, quoting the reason. After a signal you sent yourself, stop. |
-| `78` | The launcher refused the invocation. The `agy_run.py:` line on stderr names what it refused and why. | Fix the invocation, or its setup when the worker's directory is untrusted. Do not fail over. |
+| `78` | The launcher refused the invocation, or agy refused the model and effort it was given. The `agy_run.py:` line on stderr names what was refused and why, and agy's own line above it names the levels the model has. | Fix the invocation, or its setup when the worker's directory is untrusted. Do not fail over. |
 
 Any other exit is a launcher defect, reported with a Python traceback. Treat it
 as `78`, and report it rather than failing over.
