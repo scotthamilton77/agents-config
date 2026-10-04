@@ -115,8 +115,8 @@ def test_a_dismissed_change_is_not_reported_as_one_and_an_applied_change_is(
     launcher: Callable[..., Session], board: Callable[[Session], Page]
 ) -> None:
     """
-    Given a turn proposing an invalidate on each of two decisions, which is a
-         kind that always waits for the human
+    Given a turn carrying no impact task proposing an invalidate on each of two
+         decisions, which is a kind that then always waits for the human
     When the human applies the one and dismisses the other
     Then the applied decision says what moved it and why, and the dismissed one
          says nothing at all.
@@ -127,7 +127,9 @@ def test_a_dismissed_change_is_not_reported_as_one_and_an_applied_change_is(
     move.
     """
     session = launcher(handoff=handoff(PLAN))
-    session.script_claude(
+    # Answered with the option that marks nothing, so the turn carries no impact
+    # task and both invalidates wait for the human as any agent's do.
+    session.script_codex(
         turn(
             document(
                 "Both of these are in question now.",
@@ -135,16 +137,12 @@ def test_a_dismissed_change_is_not_reported_as_one_and_an_applied_change_is(
                     {"kind": "invalidate", "target": "d2", "why": KILLED},
                     {"kind": "invalidate", "target": "d3", "why": SURVIVES_A_DISMISSAL},
                 ],
-                rulings=[
-                    ruling("d2", "invalidate", KILLED),
-                    ruling("d3", "invalidate", SURVIVES_A_DISMISSAL),
-                ],
             )
         )
     )
     page = board(session)
 
-    page.click('#col-d1 [data-act="pick"][data-opt="a"]')
+    page.click('#col-d1 [data-act="pick"][data-opt="b"]')
     session.settled()
     page.wait_for_timeout(RENDER)
 

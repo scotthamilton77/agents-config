@@ -424,6 +424,11 @@
   .pending-row:last-child { border-bottom: 0; }
   .pending-row .c { color: var(--conflict-ink); font-weight: 600; font-size: 12px; }
   .pending-row .acts { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+  .pending-row .diff { border-collapse: collapse; margin-top: 6px; font-size: 12px; }
+  .pending-row .diff th { text-align: left; font-weight: 600; padding: 2px 8px 2px 0; vertical-align: top; }
+  .pending-row .diff td { padding: 2px 8px; vertical-align: top; }
+  .pending-row .diff .was { color: var(--ink-dim); text-decoration: line-through; }
+  .autoapply { display: block; font-size: 12px; margin-bottom: 10px; }
 
   /* ---------- the map doctor's modal ---------- */
   .scrim { position: fixed; inset: 0; z-index: 900; background: rgba(15,23,42,.42);

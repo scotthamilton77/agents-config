@@ -17,7 +17,7 @@ var EMISSIONS = {
   "thread-fold":    { "channel": "thread", "payload": [] },
   "thread-park":    { "channel": "thread", "payload": [] },
   "thread-close":   { "channel": "thread", "payload": [] },
-  "apply":          { "channel": "map",    "payload": ["pending"] },
+  "apply":          { "channel": "map",    "payload": ["pending", "by_preference"] },
   "dismiss":        { "channel": "map",    "payload": ["pending"] },
   "session-end":    { "channel": "map",    "payload": [] }
 };
@@ -275,6 +275,40 @@ function saveRead() {
   // the board down with it.
   try { window.localStorage.setItem(readKey(), JSON.stringify(READ)); } catch (e) {}
 }
+// Whether this browser lets a change land for the human when every part of it
+// touches a decision they have not answered. It is theirs and this page's alone:
+// the backend learns of it only through the applies it makes, so one log replays
+// to one board whatever any browser has set. Keyed by the session token like the
+// read-state, so a new session starts with it off until they turn it on there.
+function autoApplyKey() { return "grillui:auto-apply:" + CLAIM.token; }
+function autoApplying() {
+  try { return window.localStorage.getItem(autoApplyKey()) === "on"; } catch (e) { return false; }
+}
+function setAutoApply(on) {
+  try { window.localStorage.setItem(autoApplyKey(), on ? "on" : "off"); } catch (e) {}
+}
+// The proposals that just arrived, applied for the human where the switch is on
+// and each one qualifies. A proposal is everything one entry queued, and it is
+// applied whole or not at all, as the human would have applied it. Only what
+// arrives is judged: a change already in the inbox when the page loaded, or when
+// the switch was turned on, was put in front of the human and stays theirs.
+function applyByPreference(arrived) {
+  if (!autoApplying()) return;
+  arrived.forEach(function (e) {
+    var group = proposals().filter(function (p) { return p.authored_at === e.seq; });
+    if (!group.length || !group.every(touchesNoAnswer)) return;
+    send(ev(APPLY_KIND, MAP, { pending: group.map(function (p) { return p.id; }), by_preference: true }));
+  });
+}
+// A change the switch may apply: it overwrites no answer and withdraws none. A
+// decision a ruling is still weighing is left alone as well, because the backend
+// refuses any change to it, and a refusal banner for a gesture the human never
+// made would be a message about nothing they did.
+function touchesNoAnswer(p) {
+  var d = node(p.target);
+  return p.kind !== "unsettle" && !(d && (d.answer || d.waiting));
+}
+
 // What this window has started and has not committed: an answer held against a
 // mandated thread, and which waiting change each discussion thread was opened to
 // judge. Neither crosses the wire and neither is board content -- but both are
@@ -705,6 +739,7 @@ function poll() {
         // stays here: a notification points at a decision, and pointing at one
         // the page has not read yet is a notification about nothing.
         arrived.forEach(function (e, i) { observe(e, arrived, i); });
+        applyByPreference(arrived);
         WIRE.doctorKnown = false;
         done();
         return refreshDoctor();
@@ -2680,6 +2715,32 @@ function renderNotifications() {
 function applyAllButton(n) {
   return '<button class="btn primary sm" data-act="applyall">Let all ' + n + " land</button>";
 }
+// What a waiting change would do, field by field: what the decision says now
+// beside what the change would make it say. A new decision has no before side
+// and shows none, because an empty before cell would read as a question that was
+// already there with nothing in it. The status kinds change one thing, and it is
+// shown the same way.
+var DIFF_FIELDS = ["short", "title", "body", "prereqs", "options"];
+var STATUS_AFTER = { "invalidate": "invalidated", "unsettle": "open", "settle": "settled" };
+function shown(v) {
+  if (v === null || v === undefined) return "";
+  if (!Array.isArray(v)) return String(v);
+  return v.map(function (o) { return o && typeof o === "object" ? o.id + ": " + o.text : String(o); }).join("; ");
+}
+function diffOf(p) {
+  var u = sourceOf(p);
+  if (!u) return "";
+  var was = p.kind === "add-node" ? null : node(p.target);
+  var rows = DIFF_FIELDS.filter(function (f) { return u[f] !== undefined && u[f] !== null; })
+    .map(function (f) { return [f, was ? was[f] : null, u[f]]; });
+  if (STATUS_AFTER[p.kind] && was) rows.push(["status", was.status, STATUS_AFTER[p.kind]]);
+  if (!rows.length) return "";
+  return '<table class="diff">' + rows.map(function (r) {
+    return '<tr data-field="' + esc(r[0]) + '"><th>' + esc(r[0]) + "</th>" +
+      (was ? '<td class="was">' + esc(shown(r[1])) + "</td>" : "") +
+      '<td class="now"' + (was ? "" : ' colspan="2"') + ">" + esc(shown(r[2])) + "</td></tr>";
+  }).join("") + "</table>";
+}
 // The inbox: only what has NOT landed.
 function renderInbox() {
   var ps = proposals();
@@ -2689,12 +2750,14 @@ function renderInbox() {
   var batch = ps.length > 1 ? applyAllButton(ps.length) : "";
   var h = '<div class="slide"><button class="close" data-act="closepanel">✕</button>' +
     '<div class="inbox-head"><h3 style="font-size:16px">Inbox — changes waiting on you</h3>' + batch + "</div>" +
+    '<label class="autoapply"><input type="checkbox" data-act="autoapply"' + (autoApplying() ? " checked" : "") +
+    "> Let a change land for me when it touches only decisions I have not answered</label>" +
     '<div class="muted" style="margin-bottom:12px">The backend queues a change when letting it land would overwrite or undermine something you decided. ' +
     'Each one locks the decision it targets until you let it land or talk the agent out of it.</div><div class="pending-list">';
   if (!ps.length) h += '<div class="muted">Empty. Everything the agent sent landed when it arrived.</div>';
   ps.forEach(function (p) {
     h += '<div class="pending-row"><strong>' + esc(p.target || "—") + '</strong> · <span class="did">' + esc(p.kind) + "</span><br>" +
-      esc(summarise(p)) +
+      esc(summarise(p)) + diffOf(p) +
       (conflicted(p) ? '<div class="c">⚡ you changed ' + esc(p.target) +
         " after this was written — the backend will refuse it until one of you gives way</div>" : "") +
       '<div class="acts"><button class="btn primary sm" data-act="applyone" data-uid="' + esc(p.id) + '">Let it land</button>' +
@@ -3431,6 +3494,7 @@ document.addEventListener("click", function (e) {
     case "abandon": abandonAnswer(id); break;
     case "reopen": reopenDecision(id); break;
     case "popout": popOut(tid); break;
+    case "autoapply": setAutoApply(el.checked); break;
     case "applyone": applyPending([uid]); break;
     case "applyall": applyPending(proposals().map(function (p) { return p.id; })); break;
     case "dismissone": dismissPending([uid]); break;

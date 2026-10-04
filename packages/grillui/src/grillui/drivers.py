@@ -115,6 +115,7 @@ from grillui.schemas import (
     STATUS_PHASE_TRANSFERRED,
     STOP_KEY,
     SUPERSEDES_KEY,
+    TASKS_KEY,
     TIER_KEY,
     TRANSFER_SOURCE_KEY,
     VERDICT_KEY,
@@ -1148,7 +1149,9 @@ class FastDriver:
             # that costs nothing -- a refusal raises out of the block before either
             # is written, and nothing else could have read the log in between.
             with log.appending():
-                spoke = record_reply(log, self.tier, channel, reply, attribution, context.mootness)
+                spoke = record_reply(
+                    log, self.tier, channel, reply, attribution, context.mootness, context.tasks
+                )
                 spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, model)
 
@@ -1268,7 +1271,9 @@ class HeavyDriver:
             # out of the block before anything is said about a turn that never
             # happened.
             with log.appending():
-                spoke = record_reply(log, self.tier, channel, reply, attribution, context.mootness)
+                spoke = record_reply(
+                    log, self.tier, channel, reply, attribution, context.mootness, context.tasks
+                )
                 spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, model)
 
@@ -1397,7 +1402,9 @@ class CodexDriver:
             # one: the transfer a policy buys and the warning this turn measured are
             # about the reply immediately above them.
             with log.appending():
-                spoke = record_reply(log, self.tier, channel, reply, attribution, context.mootness)
+                spoke = record_reply(
+                    log, self.tier, channel, reply, attribution, context.mootness, context.tasks
+                )
                 spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, seat.model)
 
@@ -1885,6 +1892,7 @@ def record_document(
     document: GrillMasterDocument,
     attribution: dict[str, Any],
     owed: MootnessObligation | None = None,
+    tasks: Sequence[str] = (),
 ) -> int | None:
     """Put a grill-master turn into the log without what it ruled on decisions a
     later gesture took over, and say where it landed.
@@ -1902,7 +1910,7 @@ def record_document(
     with log.appending():
         gone = superseded_targets(log.entries(), owed)
         if owed is None or owed.gesture is None or not gone:
-            return _record_document(log, tier, document, attribution, owed)
+            return _record_document(log, tier, document, attribution, owed, tasks)
         kept = [one for one in owed.ids if one not in gone]
         # Only a target this turn actually said something about had a result
         # to drop. A turn silent on it dropped nothing, and a history line
@@ -1918,7 +1926,11 @@ def record_document(
             }
         )
         narrowed = owed.model_copy(update={"ids": kept}) if kept else None
-        spoke = _record_document(log, tier, document, attribution, narrowed)
+        # Every task the turn carried is still named, superseded ones included.
+        # A superseded task has no target left to change, and the replay skips
+        # it; but a turn left naming none would read as one dispatched with no
+        # task at all, and land its wider changes without the human.
+        spoke = _record_document(log, tier, document, attribution, narrowed, tasks)
         # Recorded only once the turn has landed: a turn the appender refuses
         # is retried, and the retry strikes the same result again.
         for one in dropped:
@@ -1939,6 +1951,7 @@ def _record_document(
     document: GrillMasterDocument,
     attribution: dict[str, Any],
     owed: MootnessObligation | None = None,
+    tasks: Sequence[str] = (),
 ) -> int | None:
     """Put a grill-master turn into the log, whole, and say where it landed.
 
@@ -1957,6 +1970,12 @@ def _record_document(
     `owed` is what this turn's dispatch put in question, and the rulings are cut
     to it before anything is built out of them. A turn that owed nothing lands
     no rulings and mints no `stands` notice, whatever it sent.
+
+    `tasks` is the impact tasks this turn was dispatched with, and the entry
+    names them. The replay lets a change to the target of one still live land
+    without the human's apply and queues everything else the turn proposed, so
+    a turn that carries no task leaves the key off and lands exactly as it
+    always has.
     """
     document, struck = owed_rulings(document, owed)
     updates = sub_updates(document)
@@ -1995,6 +2014,8 @@ def _record_document(
     }
     if struck:
         judgement[DROPPED_RULINGS_KEY] = struck
+    if tasks:
+        judgement[TASKS_KEY] = [{"id": one} for one in tasks]
     # The turn spoke and did nothing else: with one sub-update and a notice in
     # it, the notice is what that one is, since everything else contributed
     # none. It rides as the entry itself rather than inside a fold.
@@ -2015,6 +2036,7 @@ def record_reply(
     text: str,
     attribution: dict[str, Any],
     owed: MootnessObligation | None = None,
+    tasks: Sequence[str] = (),
 ) -> int | None:
     """Put the turn into the log, attributed, and say where it landed.
 
@@ -2045,10 +2067,11 @@ def record_reply(
 
     `owed` is the dispatch's mootness obligation, and it reaches only the map
     turn: a thread agent rules on nothing, so there is nothing there to cut to
-    an obligation it was never given.
+    an obligation it was never given. `tasks` is the impact tasks the dispatch
+    carried, and reaches only the map turn for the same reason.
     """
     if channel == MAP_CHANNEL:
-        return record_document(log, tier, read_document(text), attribution, owed)
+        return record_document(log, tier, read_document(text), attribution, owed, tasks)
     prose, updates, superseded, proposal, asked = declared_updates(text)
     refusal = _proposal_refusal(log, channel, text, proposal)
     if refusal is not None:
