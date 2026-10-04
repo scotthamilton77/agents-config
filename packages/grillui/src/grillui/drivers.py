@@ -1150,7 +1150,14 @@ class FastDriver:
             # is written, and nothing else could have read the log in between.
             with log.appending():
                 spoke = record_reply(
-                    log, self.tier, channel, reply, attribution, context.mootness, context.tasks
+                    log,
+                    self.tier,
+                    channel,
+                    reply,
+                    attribution,
+                    context.mootness,
+                    context.tasks,
+                    scope=context.scope,
                 )
                 spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, model)
@@ -1272,7 +1279,14 @@ class HeavyDriver:
             # happened.
             with log.appending():
                 spoke = record_reply(
-                    log, self.tier, channel, reply, attribution, context.mootness, context.tasks
+                    log,
+                    self.tier,
+                    channel,
+                    reply,
+                    attribution,
+                    context.mootness,
+                    context.tasks,
+                    scope=context.scope,
                 )
                 spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, model)
@@ -1403,7 +1417,14 @@ class CodexDriver:
             # about the reply immediately above them.
             with log.appending():
                 spoke = record_reply(
-                    log, self.tier, channel, reply, attribution, context.mootness, context.tasks
+                    log,
+                    self.tier,
+                    channel,
+                    reply,
+                    attribution,
+                    context.mootness,
+                    context.tasks,
+                    scope=context.scope,
                 )
                 spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, seat.model)
@@ -1897,6 +1918,8 @@ def record_document(
     attribution: dict[str, Any],
     owed: MootnessObligation | None = None,
     tasks: Sequence[str] = (),
+    *,
+    scope: Sequence[str] = (),
 ) -> int | None:
     """Put a grill-master turn into the log without what it ruled on decisions a
     later gesture took over, and say where it landed.
@@ -1910,7 +1933,19 @@ def record_document(
     The check and the append are one hold of the append lock. Split apart, a
     gesture landing between them supersedes a task whose result is already on
     its way to the board.
+
+    `scope` is set on a retry, and it is the failed decision with everything
+    resting on it. A change outside it is refused before anything is appended,
+    and the refusal names what reached outside, so the seat's one retry is
+    told exactly which update to drop.
     """
+    outside = _outside(document, scope)
+    if outside:
+        raise ReplyRefusedError(
+            tier,
+            f"a retry may change only {', '.join(scope)}, and this turn changed "
+            f"{', '.join(outside)}",
+        )
     with log.appending():
         gone = superseded_targets(log.entries(), owed)
         if owed is None or owed.gesture is None or not gone:
@@ -1947,6 +1982,29 @@ def record_document(
                 tasks=[{"id": name, "phase": STATUS_PHASE_SUPERSEDED}],
             )
         return spoke
+
+
+def _outside(document: GrillMasterDocument, scope: Sequence[str]) -> list[str]:
+    """Which decisions this turn's changes reach that lie outside the scope.
+
+    Nothing where there is no scope, because only a retry has one. A notice
+    changes no decision, so it is never outside. A new decision is inside when
+    it rests on one that is, since it then joins the subtree it was added to.
+    """
+    if not scope:
+        return []
+    inside = set(scope)
+    reached = []
+    for one in document.updates:
+        kind, target = one.get("kind"), one.get("target")
+        if kind in {"informational", "elicit-alert"}:
+            continue
+        prereqs = one.get("prereqs")
+        if kind == "add-node" and isinstance(prereqs, list) and inside.intersection(prereqs):
+            continue
+        if target not in inside:
+            reached.append(str(target))
+    return reached
 
 
 def _record_document(
@@ -2041,6 +2099,8 @@ def record_reply(
     attribution: dict[str, Any],
     owed: MootnessObligation | None = None,
     tasks: Sequence[str] = (),
+    *,
+    scope: Sequence[str] = (),
 ) -> int | None:
     """Put the turn into the log, attributed, and say where it landed.
 
@@ -2072,10 +2132,13 @@ def record_reply(
     `owed` is the dispatch's mootness obligation, and it reaches only the map
     turn: a thread agent rules on nothing, so there is nothing there to cut to
     an obligation it was never given. `tasks` is the impact tasks the dispatch
-    carried, and reaches only the map turn for the same reason.
+    carried, and `scope` what a retry may change, and both reach only the map
+    turn for the same reason.
     """
     if channel == MAP_CHANNEL:
-        return record_document(log, tier, read_document(text), attribution, owed, tasks)
+        return record_document(
+            log, tier, read_document(text), attribution, owed, tasks, scope=scope
+        )
     prose, updates, superseded, proposal, asked = declared_updates(text)
     refusal = _proposal_refusal(log, channel, text, proposal)
     if refusal is not None:

@@ -85,7 +85,10 @@ decision already held supersedes the holding task on its `accepted` entry, in
 the same hold of the append lock that accepts the gesture, so no batch and no
 interleaving can leave two tasks holding one target. The superseded turn runs
 on; what it owed on that target is no longer owed, and a result it sends for
-it is dropped rather than folded.
+it is dropped rather than folded. A task that failed goes on holding its
+target, and the human's retry is a gesture like any other here: it supersedes
+the failed task and opens one in its place, scoped to that decision and what
+rests on it.
 
 The driver seam is the whole of what a tier has to implement. A turn is one
 invocation: the driver runs, says what it has to say into the log, and returns
@@ -113,7 +116,9 @@ from grillui.escalation import (
     judgment_class,
     mootness_obligation,
     policy_transferred,
+    retry_obligation,
     rulings_of,
+    subtree,
     unruled,
 )
 from grillui.projector import (
@@ -132,6 +137,7 @@ from grillui.schemas import (
     MAP_CHANNEL,
     OPENED_KEY,
     PRESSED_KEY,
+    RETRIES_KEY,
     STATUS_KIND,
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
@@ -412,6 +418,9 @@ class Turn(NamedTuple):
     the turn's closing entry ends. `opened` is the sequence of the turn's own
     announcement, which that closing entry names.
 
+    `scope` is what a retry may change: the failed decision and everything
+    resting on it. Every other turn has none.
+
     `mootness` is what the gesture this turn was scheduled for owes the rest of
     the board, read when it was scheduled and carried here rather than derived
     again when the turn runs. The board is mutable and the turn runs later: an
@@ -428,6 +437,7 @@ class Turn(NamedTuple):
     proceed: bool = False
     tasks: tuple[str, ...] = ()
     opened: int | None = None
+    scope: tuple[str, ...] = ()
 
 
 def turn_of(event: EventSubmission) -> Turn:
@@ -863,6 +873,74 @@ class Lane:
         driver = self.tier_for(MAP_CHANNEL, self.driver, turn)
         return self._schedule(driver, turn._replace(opened=self._announce(driver, turn)))
 
+    def retry(self, task: str) -> threading.Thread | None:
+        """Ask again for a ruling whose task failed, over the board as it now
+        stands. Returns the turn taking it, or nothing where nothing started.
+
+        The press is the human's act on a decision the failed task is holding,
+        and it changes nothing on that decision: it ends the failed task and
+        opens a new one in its place, so the decision goes on waiting until a
+        ruling lands. The press is acknowledged with an `accepted` entry that
+        ends the failed task, and the retry's task opens on the turn's own
+        `composing` entry -- the same pair every gesture-started task has, so a
+        restarted backend reads the retry back off the log like any other.
+
+        Its id is derived from where its `accepted` entry landed, and it names
+        the task it retries. It is seated on the expert in the failed task's own
+        mode, it is owed one ruling on the failed decision, and its dispatch is
+        scoped to that decision and what rests on it.
+
+        Only a task that failed and still holds its decision can be retried,
+        and the check is made under the append lock that ends it. That one rule
+        makes a second press, two presses at once and a press after an upstream
+        answer all start nothing: the first press ends the failed task, and an
+        upstream answer supersedes it. A pre-ruling holds no lock, so it has no
+        blocker to release and is never retried.
+        """
+        base = self.driver
+        if base is None:
+            return None
+        with self.log.appending():
+            entries = self.log.entries()
+            failed = impact_tasks(entries).get(task)
+            if failed is None or failed.phase != STATUS_PHASE_ERROR or failed.option is not None:
+                return None
+            image = replay(self.log.epoch, entries)
+            owed = retry_obligation(image, entries, failed.gesture, failed.target)
+            if owed is None:
+                return None
+            pressed = self.log.emit_status(
+                STATUS_PHASE_ACCEPTED,
+                f"a retry of task {task} from the human accepted on channel {MAP_CHANNEL!r}",
+                MAP_CHANNEL,
+                tasks=[{"id": task, "phase": STATUS_PHASE_SUPERSEDED}],
+            )
+            name = task_id(pressed.seq, failed.target)
+            turn = Turn(
+                MAP_CHANNEL,
+                mootness=owed.model_copy(update={"gesture": pressed.seq}),
+                tasks=(name,),
+                scope=tuple(subtree(image, failed.target)),
+            )
+            driver = self.tier_for(MAP_CHANNEL, base, turn)
+            announced = self._announce(
+                driver,
+                turn,
+                tasks=[
+                    {
+                        "id": name,
+                        "target": failed.target,
+                        "gesture": failed.gesture,
+                        "basis": pressed.seq,
+                        "mode": failed.mode,
+                        RETRIES_KEY: task,
+                        "seat": driver.tier,
+                        "phase": STATUS_PHASE_COMPOSING,
+                    }
+                ],
+            )
+        return self._schedule(driver, turn._replace(opened=announced))
+
     def _schedule(self, driver: TurnDriver, turn: Turn) -> threading.Thread:
         thread = threading.Thread(
             target=self._take_turn,
@@ -893,6 +971,7 @@ class Lane:
                 reassess=turn.reassess,
                 mootness=turn.mootness,
                 tasks=turn.tasks,
+                scope=turn.scope,
             )
             took = self._press(driver, turn, dispatch, _run(driver, self.log, dispatch))
             if self._watching(turn):
@@ -1114,6 +1193,7 @@ class Lane:
                 reassess=turn.reassess,
                 mootness=narrowed,
                 tasks=turn.tasks,
+                scope=turn.scope,
             )
             return _run(expert, self.log, dispatch)
         except Exception:

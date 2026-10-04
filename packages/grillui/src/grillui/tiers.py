@@ -1075,6 +1075,13 @@ REASSESS_RULE = (
     "frozen until you answer, so do it in this turn."
 )
 
+RETRY_RULE = (
+    "An earlier turn owed this ruling and failed before it landed, and the human has asked for "
+    "it again. Rule on it over the board as it stands now. Change nothing outside the decisions "
+    "named above: a change to any other decision is refused, and the refusal costs you your "
+    "turn."
+)
+
 CATCH_UP_RULE = (
     "This thread was set aside and has just been picked back up. The board above is current; "
     "the list is what moved on it while you were away, so read it as the correction to "
@@ -1446,6 +1453,15 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
                 ]
             ),
             *(["## The map doctor", REASSESS_RULE] if context.reassess else []),
+            *(
+                [
+                    "## A retry of a failed ruling",
+                    f"This turn may change only {', '.join(context.scope)}.",
+                    RETRY_RULE,
+                ]
+                if context.scope
+                else []
+            ),
             *_mootness_section(context.mootness),
             *([context.backpressure] if context.backpressure else []),
             "## Your turn",

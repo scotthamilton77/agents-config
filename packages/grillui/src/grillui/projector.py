@@ -103,7 +103,9 @@ recorded on the lane's status entries. While a task started by a gesture is live
 without a result, its target carries a `waiting` field naming the task, and
 the frontier skips it exactly as it skips a locked one. A task ends in one of
 four phases: `replied` and `superseded` are final, `error` holds the decision
-until a later gesture supersedes it, and `composing` is live. Reading the
+until a later gesture or the human's retry supersedes it, and `composing` is
+live. A failed task's `waiting` field names the failure -- its cause, its seat
+and when -- because that is what the human retries against. Reading the
 phases off the log rather than out of process memory is what lets a fresh
 backend show the same wait the dead one showed.
 
@@ -144,9 +146,11 @@ from grillui.schemas import (
     FOLD_SHAPED,
     FROM_THREAD_KEY,
     IMPACT_MODE,
+    OPTION_KEY,
     PENDING_KEY,
     PROPOSABLE_KINDS,
     PROPOSED_ANSWER_KEY,
+    RETRIES_KEY,
     RULING_STANDS,
     RULINGS_KEY,
     SESSION_START_KIND,
@@ -169,6 +173,7 @@ from grillui.schemas import (
     CatchUpEntry,
     ConvergedProposal,
     Decision,
+    Failure,
     FoldedThreadStub,
     HistoryEntry,
     Image1,
@@ -213,6 +218,11 @@ class Task:
     `start` and `epoch` are the opening entry's: when the seat was announced,
     and which process announced it. A task opened by a process that has since
     died will never be closed by it, and the epoch is how a successor tells.
+
+    `mode` is what kind of weighing the task is, which a retry repeats. `option`
+    is set on a pre-ruling, the option it was computed for. `retries` names the
+    failed task this one retries. `failed` is how the task ended where it ended
+    without a ruling, read off the entry that closed its turn.
     """
 
     id: str
@@ -222,6 +232,10 @@ class Task:
     start: str
     epoch: str
     phase: str
+    mode: str = IMPACT_MODE
+    option: str | None = None
+    retries: str | None = None
+    failed: Failure | None = None
 
     @property
     def holds(self) -> bool:
@@ -395,6 +409,13 @@ def _fold_tasks(board: _Board, entry: LogEntry) -> None:
             _record_drop(board, entry, known)
         elif known.phase not in _FINAL_PHASES:
             known.phase = phase
+            # The turn's own closing entry is the failure's record: its detail
+            # is the lane's account of each seat that failed, and its time is
+            # when the human was left holding a decision nothing was weighing.
+            if phase == STATUS_PHASE_ERROR:
+                known.failed = Failure(
+                    cause=_text(entry.payload, "detail"), seat=known.seat, at=entry.timestamp
+                )
 
 
 def _open_task(board: _Board, entry: LogEntry, name: str, item: Mapping[str, object]) -> None:
@@ -406,8 +427,18 @@ def _open_task(board: _Board, entry: LogEntry, name: str, item: Mapping[str, obj
         or not isinstance(seat, str)
     ):
         return
+    mode, option, retries = item.get("mode"), item.get(OPTION_KEY), item.get(RETRIES_KEY)
     board.tasks[name] = Task(
-        name, target, gesture, seat, entry.timestamp, entry.epoch, STATUS_PHASE_COMPOSING
+        name,
+        target,
+        gesture,
+        seat,
+        entry.timestamp,
+        entry.epoch,
+        STATUS_PHASE_COMPOSING,
+        mode=mode if isinstance(mode, str) else IMPACT_MODE,
+        option=option if isinstance(option, str) else None,
+        retries=retries if isinstance(retries, str) else None,
     )
 
 
@@ -528,7 +559,12 @@ def replay(epoch: str, entries: Sequence[LogEntry]) -> Image2:
         held = board.decisions.get(task.target)
         if held is not None and task.holds:
             held.waiting = Waiting(
-                task=task.id, gesture=task.gesture, seat=task.seat, start=task.start
+                task=task.id,
+                gesture=task.gesture,
+                seat=task.seat,
+                start=task.start,
+                failed=task.failed,
+                retries=task.retries,
             )
     frontier = [
         node.id
