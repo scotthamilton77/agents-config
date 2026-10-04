@@ -1126,3 +1126,235 @@ test("counting tokens is not a completion and is neither gated nor ledgered", as
     await proxy.close();
   }
 });
+
+// ─── A stand-in upstream ───────────────────────────────────────────
+//
+// The cases below need a request the proxy actually forwards. They point the
+// proxy at a local stand-in through the `upstream` option, and they replace
+// `https.request` for their duration, so that a proxy which ignored the option
+// would be caught recording a dial instead of reaching OpenRouter.
+
+const http = require("node:http");
+const https = require("node:https");
+const { EventEmitter } = require("node:events");
+
+/** Start a local server that hands each request to `respond(req, res)`. */
+async function startStandIn(respond) {
+  const standIn = { requests: [] };
+  const server = http.createServer((req, res) => {
+    standIn.requests.push(req.url);
+    req.resume();
+    respond(req, res);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  standIn.url = `http://127.0.0.1:${server.address().port}`;
+  standIn.host = `127.0.0.1:${server.address().port}`;
+  standIn.close = () => {
+    server.closeAllConnections();
+    return new Promise((r) => server.close(r));
+  };
+  return standIn;
+}
+
+/** Run `fn` with `https.request` replaced by a fake that records the options
+ *  it was called with and never opens a socket. */
+async function withoutDialingOpenRouter(fn) {
+  const real = https.request;
+  const dialed = [];
+  https.request = (options) => {
+    dialed.push(options);
+    const fake = new EventEmitter();
+    Object.assign(fake, { setTimeout() {}, setHeader() {}, write() {}, end() {}, destroy() {} });
+    return fake;
+  };
+  try {
+    return await fn(dialed);
+  } finally {
+    https.request = real;
+  }
+}
+
+/** Resolve once `predicate()` holds, or reject at the deadline. */
+async function waitUntil(predicate, what, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting until ${what}`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+const answerAtOnce = (req, res) => res.end("{}");
+
+// ─── The forward hook ──────────────────────────────────────────────
+
+/** Start a proxy against a stand-in that answers at once, send one request
+ *  through it, and return how many times the forward hook was called. */
+async function forwardsCountedFor({ pinnedModel, urlPath, model }) {
+  const standIn = await startStandIn(answerAtOnce);
+  let forwards = 0;
+  const proxy = await start({
+    port: 0, pinnedModel, log: () => {}, upstream: standIn.url,
+    onForward: () => { forwards++; },
+  });
+  try {
+    await withoutDialingOpenRouter(async (dialed) => {
+      await rawSend(proxy.port, "POST", urlPath, JSON.stringify({ model, messages: [] })).response;
+      assert.deepEqual(dialed, [], "the proxy dialed OpenRouter instead of the stand-in");
+    });
+    return { forwards, reached: standIn.requests.length };
+  } finally {
+    await proxy.close();
+    await standIn.close();
+  }
+}
+
+test("a forwarded completion calls the forward hook exactly once", async () => {
+  const { forwards, reached } = await forwardsCountedFor({
+    pinnedModel: PINNED, urlPath: "/v1/messages", model: PINNED,
+  });
+  assert.equal(reached, 1, "the completion did not reach the upstream");
+  assert.equal(forwards, 1);
+});
+
+test("a completion refused for naming another model does not call the forward hook", async () => {
+  const { forwards, reached } = await forwardsCountedFor({
+    pinnedModel: PINNED, urlPath: "/v1/messages", model: "some/other-model",
+  });
+  assert.equal(reached, 0);
+  assert.equal(forwards, 0);
+});
+
+test("a completion refused by the denylist does not call the forward hook", async () => {
+  const { forwards, reached } = await forwardsCountedFor({
+    pinnedModel: "anthropic/claude-opus-5", urlPath: "/v1/messages", model: "anthropic/claude-opus-5",
+  });
+  assert.equal(reached, 0);
+  assert.equal(forwards, 0);
+});
+
+test("a request that is not a completion does not call the forward hook, though it is forwarded", async () => {
+  const { forwards, reached } = await forwardsCountedFor({
+    pinnedModel: PINNED, urlPath: "/v1/messages/count_tokens", model: PINNED,
+  });
+  assert.equal(reached, 1, "the request did not reach the upstream");
+  assert.equal(forwards, 0);
+});
+
+// ─── Another upstream origin ───────────────────────────────────────
+
+test("with another upstream origin, a completion reaches it and leaves the same ledger line", async () => {
+  const standIn = await startStandIn(answerAtOnce);
+  const body = JSON.stringify({ model: PINNED, messages: [] });
+  const overridden = [];
+  const plain = [];
+  const viaStandIn = await start({ port: 0, pinnedModel: PINNED, log: (m) => overridden.push(m), upstream: standIn.url });
+  const viaOpenRouter = await start({ port: 0, pinnedModel: PINNED, log: (m) => plain.push(m) });
+  try {
+    await withoutDialingOpenRouter(async (dialed) => {
+      await rawSend(viaStandIn.port, "POST", "/v1/messages", body).response;
+      assert.deepEqual(dialed, [], "the override did not stop the dial to OpenRouter");
+      assert.deepEqual(standIn.requests, ["/api/v1/messages"]);
+
+      // Without the override the same request goes to OpenRouter, which the
+      // fake records rather than dials, so the ledger line can be compared.
+      const sent = rawSend(viaOpenRouter.port, "POST", "/v1/messages", body);
+      sent.response.catch(() => {});
+      await waitUntil(() => dialed.length === 1, "the plain proxy dialed");
+      sent.abort();
+      assert.equal(dialed[0].hostname, "openrouter.ai");
+      assert.equal(dialed[0].path, "/api/v1/messages");
+    });
+    const ledgerOf = (logs) => logs.filter((line) => line.startsWith("model-ledger"));
+    assert.equal(ledgerOf(overridden).length, 1);
+    assert.deepEqual(ledgerOf(overridden), ledgerOf(plain));
+    assert.equal(ledgerOf(overridden)[0], `model-ledger POST /api/v1/messages model=${PINNED} decision=forward`);
+  } finally {
+    await viaStandIn.close();
+    await viaOpenRouter.close();
+    await standIn.close();
+  }
+});
+
+for (const [label, requestLine, status] of [
+  ["an absolute-form target naming the upstream origin itself", (standIn) => `GET http://${standIn.host}/steal HTTP/1.1\r\nHost: ${standIn.host}\r\n\r\n`, 403],
+  ["an unparseable target", () => "GET http://[/x HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n", 400],
+]) {
+  test(`with another upstream origin, ${label} is refused exactly as it is without one`, async () => {
+    const standIn = await startStandIn(answerAtOnce);
+    const viaStandIn = await start({ port: 0, log: () => {}, upstream: standIn.url });
+    const viaOpenRouter = await start({ port: 0, log: () => {} });
+    try {
+      await withoutDialingOpenRouter(async (dialed) => {
+        const overridden = await rawRequest(viaStandIn.port, requestLine(standIn), 5000);
+        const plain = await rawRequest(viaOpenRouter.port, requestLine(standIn), 5000);
+        assert.match(overridden, new RegExp(`^HTTP/1\\.1 ${status}\\b`));
+        assert.equal(overridden.split("\r\n")[0], plain.split("\r\n")[0]);
+        assert.deepEqual(dialed, []);
+      });
+      assert.deepEqual(standIn.requests, [], "a refused target still reached the upstream");
+    } finally {
+      await viaStandIn.close();
+      await viaOpenRouter.close();
+      await standIn.close();
+    }
+  });
+}
+
+// ─── A client that goes away ───────────────────────────────────────
+
+/** Watch how a stand-in's response ends: completed, or closed before it was. */
+function watchEnding(res, standIn) {
+  res.on("finish", () => { standIn.completed = true; });
+  res.on("close", () => { if (!res.writableFinished) standIn.cutShort = true; });
+}
+
+test("a client that disconnects mid-response closes the upstream request", async () => {
+  const standIn = await startStandIn((req, res) => {
+    watchEnding(res, standIn);
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    // OpenAI-format, so the proxy passes it straight through.
+    res.write('data: {"id":"open"}\n\n');
+  });
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: () => {}, upstream: standIn.url });
+  try {
+    await withoutDialingOpenRouter(async () => {
+      await new Promise((resolve, reject) => {
+        const req = http.request(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "text/event-stream" },
+        }, (res) => res.once("data", () => { req.destroy(); resolve(); }));
+        req.on("error", () => {});
+        req.setTimeout(5000, () => reject(new Error("no upstream bytes reached the client")));
+        req.end(JSON.stringify({ model: PINNED, messages: [], stream: true }));
+      });
+      await waitUntil(() => standIn.cutShort, "the upstream request was closed");
+    });
+  } finally {
+    await proxy.close();
+    await standIn.close();
+  }
+});
+
+test("a client that reads a response to its end lets the upstream response complete", async () => {
+  const standIn = await startStandIn((req, res) => {
+    watchEnding(res, standIn);
+    res.writeHead(200, { "content-type": "application/json" });
+    res.write('{"part":');
+    setTimeout(() => res.end('"whole"}'), 100);
+  });
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: () => {}, upstream: standIn.url });
+  try {
+    await withoutDialingOpenRouter(async () => {
+      const raw = await rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify({ model: PINNED, messages: [] })).response;
+      assert.match(raw, /^HTTP\/1\.1 200\b/);
+      assert.ok(raw.includes('{"part":') && raw.includes('"whole"}'), "the client did not receive the whole body");
+      await waitUntil(() => standIn.completed || standIn.cutShort, "the upstream response ended");
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    assert.equal(standIn.cutShort, undefined, "the upstream request was destroyed before its response completed");
+    assert.equal(standIn.completed, true);
+  } finally {
+    await proxy.close();
+    await standIn.close();
+  }
+});
