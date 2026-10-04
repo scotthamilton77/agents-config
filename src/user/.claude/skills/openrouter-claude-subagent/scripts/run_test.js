@@ -449,3 +449,199 @@ test("a prompt cannot smuggle in a model of its own", () => {
 test("a legitimate prompt that merely mentions a flag still validates", () => {
   assert.equal(validateArgv([...VALID_ARGV.slice(0, -1), "explain the --effort flag"]), null);
 });
+
+// ─── Fake children ─────────────────────────────────────────────────
+//
+// The launcher spawns `claude` from PATH, so each test below writes a fake
+// `claude` into a fresh directory and puts that directory first on PATH. The
+// fake records its pid, argv and environment to `record.json` beside itself,
+// which is how a test learns the proxy port and which process group to watch.
+
+const fs = require("node:fs");
+const os = require("node:os");
+const { spawn } = require("node:child_process");
+
+const RUN_JS = path.join(__dirname, "run.js");
+
+/** Write a fake `claude` whose body runs `behaviour` and return its directory.
+ *  The preamble gives the body a `record(extra)` helper, and SIGUSR2 makes the
+ *  fake exit with code 3 so a test can end it on its own terms. */
+function fakeClaude(behaviour) {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "run-test-"));
+  fs.writeFileSync(
+    path.join(bin, "claude"),
+    `#!/usr/bin/env node
+const fs = require("fs"), path = require("path"), { spawn } = require("child_process");
+function record(extra = {}) {
+  const file = path.join(__dirname, "record.json");
+  fs.writeFileSync(file + ".tmp", JSON.stringify({
+    pid: process.pid, argv: process.argv.slice(2), env: process.env, ...extra,
+  }));
+  fs.renameSync(file + ".tmp", file);
+}
+process.on("SIGUSR2", () => process.exit(3));
+${behaviour}
+`,
+    { mode: 0o755 },
+  );
+  return bin;
+}
+
+/** A fake that records what it was given and exits 0 at once. */
+const RECORD_AND_EXIT = "record(); process.exit(0);";
+
+/** The environment a launch under test inherits: nothing from the machine
+ *  running the suite, so a recorded environment is the same everywhere. */
+function launchEnv(bin, extra = {}) {
+  return {
+    HOME: "/home/fixture",
+    OPENROUTER_API_KEY: "sk-or-fixture",
+    ...extra,
+    PATH: `${bin}:${path.dirname(process.execPath)}`,
+  };
+}
+
+/** Wait for the fake child's record, which it writes once it is running. */
+async function readRecord(bin, timeoutMs = 5000) {
+  const file = path.join(bin, "record.json");
+  const stop = Date.now() + timeoutMs;
+  while (Date.now() < stop) {
+    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, "utf8"));
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error("the fake child never wrote its record");
+}
+
+/** Run the launcher as its own process and resolve with its exit and stderr. */
+function launch(argv, env) {
+  const proc = spawn(process.execPath, [RUN_JS, ...argv], { env, stdio: ["ignore", "ignore", "pipe"] });
+  let stderr = "";
+  proc.stderr.on("data", (c) => { stderr += c; });
+  const done = new Promise((resolve) => {
+    proc.on("close", (code, signal) => resolve({ code, signal, stderr }));
+  });
+  return { proc, done };
+}
+
+/** What a child received, with the values that differ run to run replaced by
+ *  placeholders: the kernel-assigned proxy port, and the PATH that points at a
+ *  fresh temporary directory. macOS adds `__CF_USER_TEXT_ENCODING` to every
+ *  process it starts, keyed to the user running the suite, and the launcher
+ *  never sets it, so it is left out. */
+function normalise(record) {
+  const env = { ...record.env, PATH: "<PATH>" };
+  env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.replace(/:\d+$/, ":<PORT>");
+  delete env.__CF_USER_TEXT_ENCODING;
+  return { argv: record.argv, env };
+}
+
+/** Launch with a recording fake child and return what that child received. */
+async function childLaunch(argv, extraEnv = {}) {
+  const bin = fakeClaude(RECORD_AND_EXIT);
+  const { done } = launch(argv, launchEnv(bin, extraEnv));
+  const result = await done;
+  assert.equal(result.code, 0, result.stderr);
+  return normalise(await readRecord(bin));
+}
+
+// ─── With no clock flag, the child's launch is unchanged ───────────
+//
+// Recorded from the launcher as it stood before it gained its clock, by
+// running each input below through it with the recording fake child.
+
+const PRE_CLOCK_LAUNCHES = [
+  {
+    argv: [
+      "--model", "vendor/model", "--effort", "low", "--permission-mode", "dontAsk",
+      "--allowedTools", "Read", "Grep", "-p", "task",
+    ],
+    extraEnv: {},
+    child: {
+      argv: [
+        "--model", "vendor/model", "--effort", "low", "--permission-mode", "dontAsk",
+        "--allowedTools", "Read", "Grep", "-p", "task",
+      ],
+      env: {
+        HOME: "/home/fixture",
+        OPENROUTER_API_KEY: "sk-or-fixture",
+        PATH: "<PATH>",
+        CLAUDE_CONFIG_DIR: "/home/fixture/.claude_openrouter",
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:<PORT>",
+        ANTHROPIC_AUTH_TOKEN: "sk-or-fixture",
+        ANTHROPIC_API_KEY: "",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "vendor/model",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "vendor/model",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "vendor/model",
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "vendor/model",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      },
+    },
+  },
+  {
+    argv: [
+      "--model=moonshotai/kimi-k3", "--effort=medium", "--permission-mode=dontAsk",
+      "--allowed-tools=Read", "--output-format", "json", "-p", "review this",
+    ],
+    extraEnv: {
+      ANTHROPIC_API_KEY: "sk-ant-inherited",
+      CLAUDE_CONFIG_DIR_OPENROUTER: "/custom/config",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "anthropic/claude-sonnet-5",
+    },
+    child: {
+      argv: [
+        "--model=moonshotai/kimi-k3", "--effort=medium", "--permission-mode=dontAsk",
+        "--allowed-tools=Read", "--output-format", "json", "-p", "review this",
+      ],
+      env: {
+        HOME: "/home/fixture",
+        OPENROUTER_API_KEY: "sk-or-fixture",
+        ANTHROPIC_API_KEY: "",
+        CLAUDE_CONFIG_DIR_OPENROUTER: "/custom/config",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "moonshotai/kimi-k3",
+        PATH: "<PATH>",
+        CLAUDE_CONFIG_DIR: "/custom/config",
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:<PORT>",
+        ANTHROPIC_AUTH_TOKEN: "sk-or-fixture",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "moonshotai/kimi-k3",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "moonshotai/kimi-k3",
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "moonshotai/kimi-k3",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      },
+    },
+  },
+  {
+    // The prompt names both clock flags, and it is task text, not flags.
+    argv: [
+      "--model", "z-ai/glm-5", "--effort", "high", "--permission-mode", "dontAsk",
+      "--allowedTools", "Read", "--print", "--timeout 30 --idle-timeout=5",
+    ],
+    extraEnv: { LANG: "C" },
+    child: {
+      argv: [
+        "--model", "z-ai/glm-5", "--effort", "high", "--permission-mode", "dontAsk",
+        "--allowedTools", "Read", "--print", "--timeout 30 --idle-timeout=5",
+      ],
+      env: {
+        HOME: "/home/fixture",
+        OPENROUTER_API_KEY: "sk-or-fixture",
+        LANG: "C",
+        PATH: "<PATH>",
+        CLAUDE_CONFIG_DIR: "/home/fixture/.claude_openrouter",
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:<PORT>",
+        ANTHROPIC_AUTH_TOKEN: "sk-or-fixture",
+        ANTHROPIC_API_KEY: "",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "z-ai/glm-5",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "z-ai/glm-5",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "z-ai/glm-5",
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "z-ai/glm-5",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      },
+    },
+  },
+];
+
+PRE_CLOCK_LAUNCHES.forEach(({ argv, extraEnv, child }, i) => {
+  test(`DEL-B4: with no clock flag the child receives the recorded pre-clock argv and environment (input ${i + 1})`, async () => {
+    assert.deepEqual(await childLaunch(argv, extraEnv), child);
+  });
+});
