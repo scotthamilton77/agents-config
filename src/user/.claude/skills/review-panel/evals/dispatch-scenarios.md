@@ -2,8 +2,7 @@
 
 These five scenarios check that a dispatcher who reads the panel's doctrine arrives at the
 pinned dispatch for a lens, for a lens that fails over, and for the staffing recommendation.
-Each key was written before the doctrine was edited to point at the pins, so the doctrine is
-judged against the key and never the other way round.
+The key is the authority: the doctrine is judged against the key and never the other way round.
 
 ## How to run them
 
@@ -23,7 +22,10 @@ the question from them alone. Answer with the model id, the effort level and the
 then one sentence saying which file and which entry each value came from.
 
 Files:
-<the scenario's files, one absolute path per line>
+<the three files every scenario gives, one absolute path per line>
+
+The round being dispatched: <the absolute path of the scenario's round record, with the words
+"this file is the round's round.json", or the words "no round has been emitted yet">
 
 Question: <the scenario's question>
 ```

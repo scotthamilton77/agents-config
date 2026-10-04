@@ -65,7 +65,9 @@ reason, and, when the swap was forced rather than chosen, the dead route's error
 No lens declares a model. `contracts.json` carries the lens rosters, the profile table and the
 seat pins, and never a model. A lens's seat in a round is its transport, its tier this round and
 its scope this round. A pin is the effort and the tool grant that seat is dispatched with. You
-pick none of the three values yourself:
+pick none of the three values yourself. Start from the lens's entry in this round's `round.json`,
+never from the roster: the roster gives the tier a lens declares, and a later round may run it at
+another.
 
 - **The model** is the cell of the `choosing-a-delegate` skill's model routing table for the
   lens's provider and its `tier_this_round` in `round.json`. Transport `codex` is the table's
