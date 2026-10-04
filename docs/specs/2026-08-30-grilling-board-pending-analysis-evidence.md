@@ -23,7 +23,10 @@ hand probe stays `probe:`.
 - PND-A4 | test: packages/grillui/tests/unit/test_result_scope.py::test_pnd_a4_a_revise_supplying_no_structural_field_is_refused_at_the_document_gate
 - PND-A4 | test: packages/grillui/tests/unit/test_result_scope.py::test_pnd_a4_an_empty_revise_never_reaches_the_inbox_and_its_retry_quotes_the_fault
 - PND-A4 | test: packages/grillui/tests/unit/test_result_scope.py::test_pnd_a4_a_revise_supplying_only_prereqs_is_a_structural_change
-- PND-A5 | open
+- PND-A5 | test: packages/grillui/tests/e2e/test_retry.py::test_pnd_a5_a_refused_ruling_holds_its_decision_until_the_retry_lands
+- PND-A5 | test: packages/grillui/tests/unit/test_retry.py::test_pnd_a5_retry_records_a_task_naming_the_failed_one_whose_result_folds
+- PND-A5 | test: packages/grillui/tests/unit/test_retry.py::test_pnd_a5_two_presses_at_once_start_exactly_one_retry
+- PND-A5 | test: packages/grillui/tests/unit/test_retry.py::test_pnd_a5_the_retry_is_absent_once_an_upstream_answer_superseded_the_failure
 - PND-A6 | open
 - PND-A7 | open
 - PND-A8 | open
