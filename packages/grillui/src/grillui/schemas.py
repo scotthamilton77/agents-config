@@ -358,6 +358,16 @@ STATUS_PHASES = frozenset(
 # weigh -- and the replay can only read that off the entry itself.
 TASKS_KEY = "tasks"
 IMPACT_MODE = "impact"
+# What a retry's task is opened with beside the rest of a task's description:
+# the id of the failed task it retries. A retry is the failed task's ruling
+# asked for again, so the board names the failure it is retrying, and a reader
+# of the log can follow one decision's rulings from the first through each
+# retry without inferring the chain from timing.
+RETRIES_KEY = "retries"
+# What a pre-ruling's task is opened with: the option it was computed for. The
+# key's presence is the whole marker, and a task carrying it holds no lock, so
+# there is no blocker for a retry to release.
+OPTION_KEY = "option"
 
 # The sequence of the `composing` entry a `replied` or `error` closes. Map turns
 # run concurrently, so "the latest announcement on the channel" names the wrong
@@ -585,6 +595,19 @@ class Answer(Strict):
     text: str | None = None
 
 
+class Failure(Strict):
+    """Why an impact task ended without a ruling, as the board names it.
+
+    `cause` is the lane's own account of the turn that failed, `seat` the tier
+    that was weighing it, and `at` when the turn closed. They are what the human
+    needs to decide whether to retry: what went wrong, on which seat, and when.
+    """
+
+    cause: str
+    seat: str
+    at: str
+
+
 class Waiting(Strict):
     """The impact task holding a decision off the frontier, as the board names it.
 
@@ -592,12 +615,30 @@ class Waiting(Strict):
     started it, `seat` the tier weighing it, and `start` when that tier was
     announced. The four are what the human is owed while they wait: which
     gesture, which seat, and since when.
+
+    `failed` is set once the task has ended without a ruling. The decision
+    stays waiting -- nothing unlocks on inaction -- and the failure is what the
+    board offers the retry against. `retries` names the failed task this one
+    retries, where it is a retry.
     """
 
     task: str
     gesture: int
     seat: str
     start: str
+    failed: Failure | None = None
+    retries: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_absent_failure(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        """A task that is still weighing, and is no retry, carries neither key,
+        so a board whose rulings are all in flight keeps the bytes it always
+        had."""
+        dumped: dict[str, object] = handler(self)
+        for key in ("failed", "retries"):
+            if dumped.get(key) is None:
+                dumped.pop(key, None)
+        return dumped
 
 
 class Decision(Strict):
@@ -1274,6 +1315,10 @@ class DispatchContext(Strict):
     task, and the doctor -- and is the paragraph its brief opens on that. It is
     recorded here rather than only in the composed brief so a reader of the
     dispatch record can see that the turn was told.
+
+    `scope` rides a retry's dispatch and no other: the failed decision and
+    every decision resting on it. The retry may change nothing outside it, and
+    the turn is told so here rather than left to find out from the refusal.
     """
 
     agent: str
@@ -1289,6 +1334,7 @@ class DispatchContext(Strict):
     mootness: MootnessObligation | None = None
     tasks: list[str] = Field(default_factory=list)
     backpressure: str | None = None
+    scope: list[str] = Field(default_factory=list)
 
 
 class DoctorState(Strict):
@@ -1301,6 +1347,30 @@ class DoctorState(Strict):
     """
 
     outstanding: bool
+
+
+class RetryRequest(Strict):
+    """The human asking for a failed ruling to be taken again, by its task.
+
+    `epoch` is the tenure the page last read, refused on a mismatch the way a
+    write is: a task id read off another process's board names a failure this
+    process may already have moved past.
+    """
+
+    task: str
+    epoch: str
+
+
+class RetryState(Strict):
+    """Whether a retry press started a retry.
+
+    False is an answer rather than an error. The task may already have been
+    retried by an earlier press, or superseded by an answer that started a
+    fresh ruling, and either way the page's next read of the board shows what
+    is holding the decision now.
+    """
+
+    started: bool
 
 
 class ClaimRequest(Strict):

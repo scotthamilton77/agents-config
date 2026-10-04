@@ -107,6 +107,7 @@ def assemble(
     help_reference: str | None = None,
     mootness: MootnessObligation | None = None,
     tasks: Sequence[str] = (),
+    scope: Sequence[str] = (),
 ) -> str:
     """One dispatch context, serialised, carrying the whole of what it owes.
 
@@ -140,7 +141,7 @@ def assemble(
 
     `tasks` is the impact tasks the turn carries. A turn carrying one weighs the
     board against a settlement, and so does the doctor, so both are handed the
-    backpressure paragraph.
+    backpressure paragraph. `scope` is what a retry may change.
 
     The pending queue rides inside the image either way, which is what makes
     every one of these dispatches carry the queue as of the moment it was replayed.
@@ -160,6 +161,7 @@ def assemble(
         mootness=mootness,
         tasks=list(tasks),
         backpressure=BACKPRESSURE if tasks or reassess else None,
+        scope=list(scope),
     )
     recorded = context.model_dump_json()
     # The map dispatch is checked against the source image, not the projection
@@ -200,6 +202,7 @@ def record_dispatch(
     reassess: bool = False,
     mootness: MootnessObligation | None = None,
     tasks: Sequence[str] = (),
+    scope: Sequence[str] = (),
 ) -> Path:
     """Replay at dispatch time, assemble, and record what the agent was given.
 
@@ -225,6 +228,7 @@ def record_dispatch(
         help_reference=help_reference(entries, image, channel),
         mootness=mootness or mootness_obligation(image, entries, channel),
         tasks=tasks,
+        scope=scope,
     )
     directory = log.directory / DISPATCH_DIR
     directory.mkdir(parents=True, exist_ok=True)
