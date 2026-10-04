@@ -68,7 +68,11 @@ what is left; a second reply that rules on nothing is said to the human as a
 notice naming those decisions. A grill-master turn the board would not take
 walks the same ladder, its own seat's one retry already spent -- whether what
 arrived was not the document at all, or was the document naming something no
-board of this session has.
+board of this session has. So does a map turn whose seat could not be reached
+or ran out of time, and the human is told that seat failed even when the rung
+above then answers. A turn no seat answers ends on an error naming each seat
+that failed and why, and what it owed the board is named to the human as
+unruled rather than dropped.
 Nothing here writes to the map: the insistence buys another agent turn, and the
 human is told when it buys nothing.
 
@@ -149,6 +153,7 @@ if TYPE_CHECKING:
     from grillui.log import SessionLog
     from grillui.schemas import (
         EventSubmission,
+        GrillMasterDocument,
         Image2,
         LogEntry,
         MootnessObligation,
@@ -213,12 +218,19 @@ class DocumentRefusedError(RuntimeError):
     what it said is unusable. It carries the tier it ended on because the ladder
     moves a refused turn up a rung -- the seat that failed last is the one the
     human is owed the name of, and it is not always the one the turn started on.
+
+    `document` is the turn the board refused, where it read as the map
+    document and was refused at the append. Its rulings and its stop judgement
+    die with it, and the human is owed the list of what died rather than a
+    sentence saying only that something did. A reply that never read as the
+    document carries none, because there is no judgement in it to name.
     """
 
-    def __init__(self, tier: str, detail: str) -> None:
+    def __init__(self, tier: str, detail: str, document: GrillMasterDocument | None = None) -> None:
         super().__init__(f"the {tier!r} tier's turn did not reach the board: {detail}")
         self.tier = tier
         self.detail = detail
+        self.document = document
 
 
 class TurnDriver(Protocol):
@@ -271,39 +283,127 @@ class _Pressed(NamedTuple):
     appended none. It is what the coverage check correlates against, so it must
     be the driver's own receipt and never a position the lane read off the log
     around the turn.
+
+    `failed` is why the seat produced no turn at all: it could not be reached,
+    it ran out of time, or what it sent was refused with no rung of its own
+    left. `carried` is the document a refusal was over, where it read as one.
     """
 
     refusal: str | None
     spoke: int | None = None
+    failed: Exception | None = None
+    carried: GrillMasterDocument | None = None
 
 
 def _run(driver: TurnDriver, log: SessionLog, dispatch: Path) -> _Pressed:
-    """One turn, with a refused document handed back rather than raised.
+    """One turn, with whatever ended it handed back rather than raised.
 
-    A document that will not validate is not the end of the turn -- there is a
-    rung above, and the ladder is the caller's to walk -- so it comes back as
-    the fault it is. Every other failure still raises: a seat that could not be
-    reached has no turn to press on.
+    Neither a refused document nor a seat that failed outright is the end of
+    the turn. There is a rung above, and the ladder is the caller's to walk, so
+    each comes back as the fault it is. A seat that could not be reached owes
+    the turn exactly what a seat that answered badly owes it: the obligation it
+    was carrying still has to go somewhere.
 
-    A refused turn appended nothing, so it names no entry: what the ladder does
-    next is decided by the fault, and the coverage read never runs on it.
+    A turn that ended either way appended nothing, so it names no entry: what
+    the ladder does next is decided by the fault, and the coverage read never
+    runs on it.
     """
     try:
         return _Pressed(None, driver.run(log, dispatch))
     except DocumentRefusedError as error:
-        return _Pressed(error.detail)
+        return _Pressed(error.detail, carried=error.document)
+    except Exception as error:
+        return _Pressed(None, failed=error)
 
 
-def _lost(tier: str) -> str:
+class _TurnFailedError(RuntimeError):
+    """A turn the ladder could not get answered by any seat it tried.
+
+    It carries the closing entry's detail whole, because that detail is the
+    trace the human reads: each seat that failed, in the order the ladder met
+    them, and what each one failed on.
+    """
+
+    def __init__(self, faults: Sequence[str]) -> None:
+        super().__init__("; ".join(faults))
+        self.detail = "; ".join(faults)
+
+
+def _fault(tier: str, error: Exception) -> str:
+    """One seat's failure, in the words the lane closes a turn with."""
+    return f"the {tier!r} tier failed: {error!r}"
+
+
+def _lost(tier: str, refusal: str, carried: GrillMasterDocument | None = None) -> str:
     """What the human is told when a turn was taken and nothing came of it.
 
     The seat's own bytes are deliberately not quoted at them: a reply the board
     could not read is not made readable by printing it, and what they can act on
-    is that the gesture went unanswered.
+    is that the gesture went unanswered. The board's own reason for refusing it
+    is quoted, because that is the fault, and it is in the board's words rather
+    than the seat's.
+
+    A document the board read and still refused is different. Its judgement
+    was made, and it is named here ruling by ruling, so the human can ask for
+    the rulings they lost rather than assume none was ever made.
+    """
+    reason = f" The board's reason: {refusal}."
+    if carried is None:
+        return (
+            f"The {tier!r} tier answered in a shape the board cannot read, twice, so nothing "
+            f"was taken from its turn.{reason} Ask again, or ask on the map thread."
+        )
+    said = (
+        f"The {tier!r} tier's turn read as the map document and the board refused it, twice, "
+        f"so nothing was taken from its turn.{reason}"
+    )
+    ruled = ", ".join(f"{one.decision} {one.ruling}" for one in carried.rulings)
+    if ruled:
+        said += f" Its rulings were lost with it: {ruled}."
+    if carried.stop.met:
+        said += " So was its judgement that the grilling is over."
+    return f"{said} Ask again, or ask on the map thread."
+
+
+def _where(channel: str) -> str:
+    return "the map" if channel == MAP_CHANNEL else f"thread {channel!r}"
+
+
+def _failed(channel: str, fault: str) -> str:
+    """What the human is told when the last seat a turn was offered to failed
+    outright and no seat had answered it."""
+    return f"A turn on {_where(channel)} ended without a reply: {fault}."
+
+
+def _insisted(channel: str, fault: str) -> str:
+    """What the human is told when the seat pressed for what a turn left
+    unruled failed outright.
+
+    The turn itself stands, because the seat below it answered. The failure is
+    said anyway, since a dead seat is a fault the human may want to act on and
+    the answered turn would otherwise hide it.
     """
     return (
-        f"The {tier!r} tier answered in a shape the board cannot read, twice, so nothing was "
-        f"taken from its turn. Ask again, or ask on the map thread."
+        f"A turn on {_where(channel)} was pressed for what it left unruled, and the press "
+        f"was not taken: {fault}."
+    )
+
+
+def _answered(outcome: _Pressed) -> bool:
+    """Whether a seat's turn came back as a reply rather than a fault."""
+    return outcome.refusal is None and outcome.failed is None
+
+
+def _handed_up(channel: str, fault: str, expert: str) -> str:
+    """What the human is told when a seat failed and the turn went up a rung.
+
+    Said even though the turn may yet be answered. A seat that cannot be reached
+    or runs out of time is a fault the human may want to act on, and the turn
+    landing on the rung above would otherwise hide that it ever happened.
+    """
+    return (
+        f"A turn on {_where(channel)} was not taken: {fault}. "
+        f"It was handed up to the {expert!r} tier."
     )
 
 
@@ -813,11 +913,11 @@ class Lane:
             if self._watching(turn):
                 self._hand_back(took, standing)
             self._close(turn, STATUS_PHASE_REPLIED, f"the {took.tier!r} tier's turn is over")
-        except DocumentRefusedError as error:
-            # Named for the seat the ladder ended on rather than the one it
-            # started from: that is the seat the human is owed the name of, and
-            # on a turn handed up once it is not the same seat.
-            self._close(turn, STATUS_PHASE_ERROR, f"the {error.tier!r} tier failed: {error!r}")
+        except _TurnFailedError as failed:
+            # Named for every seat the ladder tried rather than the one it
+            # started from: the human is owed each seat that failed and why,
+            # and on a turn handed up once there are two.
+            self._close(turn, STATUS_PHASE_ERROR, failed.detail)
         except Exception as error:
             self._close(turn, STATUS_PHASE_ERROR, f"the {driver.tier!r} tier failed: {error!r}")
         finally:
@@ -843,14 +943,21 @@ class Lane:
 
     def _press(self, driver: TurnDriver, turn: Turn, dispatch: Path, reply: _Pressed) -> TurnDriver:
         """Press a turn that did not answer, and say so when no seat will.
-        Returns whichever seat ended up taking it.
+        Returns whichever seat answered last.
 
-        Two failures press, and they press the same way. A reply that is not the
-        grill-master's document is one; a valid one leaving a decision the
-        dispatch named unruled is the other. Neither is a failure another turn on
-        the same seat fixes -- the seat has already had its retry -- so the turn
-        goes up one rung, narrowed to what is still outstanding, and no further:
-        from the seat with nothing above it the human is told instead.
+        Three failures press, and they press the same way. A seat that produced
+        no turn at all is one -- it could not be reached, ran out of time, or
+        sent what the board refused with no retry of its own left. A reply that
+        is not the grill-master's document is another, and a valid one leaving a
+        decision the dispatch named unruled is the third. None is a failure
+        another turn on the same seat fixes -- the seat has already had its
+        retry -- so the turn goes up one rung, narrowed to what is still
+        outstanding, and no further: from the seat with nothing above it the
+        human is told instead.
+
+        A seat that failed outright goes up a rung only on the map: on a thread
+        only the human engages the expert, so a thread turn that failed ends on
+        its error instead.
 
         The check is code's, and it is coverage rather than correctness: the
         obligation is a list of decision ids, and what the reply did with each is
@@ -871,26 +978,103 @@ class Lane:
         # list, or a decision the first seat ruled on is reported as one nobody
         # did -- and the human is sent to argue about a verdict that was made.
         standing = [] if obligation is None else list(obligation.ids)
-        refusal = reply.refusal
-        if refusal is None:
+        tried = [(driver, reply)]
+        if _answered(reply):
             standing = self._unruled(standing, reply.spoke, obligation)
-        if refusal is None and not standing:
-            return driver
-        if self.expert is not None and self.expert is not driver:
+            if not standing:
+                return driver
+        # A thread's seat that failed is not handed up. Only the human's own
+        # gesture engages the expert on a thread, so its failed turn ends on the
+        # error that says so, and the human decides whether the expert takes it.
+        if (
+            self.expert is not None
+            and self.expert is not driver
+            and (reply.failed is None or turn.channel == MAP_CHANNEL)
+        ):
+            # Said before the rung above is asked, so the human reads that a
+            # seat failed whatever the rung above then does with the turn.
+            if reply.failed is not None:
+                fault = _fault(driver.tier, reply.failed)
+                self.log.record(
+                    "informational", {"text": _handed_up(turn.channel, fault, self.expert.tier)}
+                )
             self._hand_up(self.expert, turn)
             pressed = self._insist(self.expert, turn, obligation, standing)
             if pressed is not None:
-                driver, refusal = self.expert, pressed.refusal
-                if refusal is None:
+                tried.append((self.expert, pressed))
+                if _answered(pressed):
                     standing = self._unruled(standing, pressed.spoke, obligation)
-        if refusal is not None:
-            self.log.record("informational", {"text": _lost(driver.tier)})
-            raise DocumentRefusedError(driver.tier, refusal)
+        return self._settle(turn, obligation, standing, tried)
+
+    def _settle(
+        self,
+        turn: Turn,
+        obligation: MootnessObligation | None,
+        standing: Sequence[str],
+        tried: Sequence[tuple[TurnDriver, _Pressed]],
+    ) -> TurnDriver:
+        """Say what each seat the ladder tried came to, and end the turn on it.
+        Returns the seat that answered last, or raises where none did.
+
+        The turn answered when any seat answered, and a reply already on the
+        log is never turned into a failed turn by what a seat asked after it
+        did. A seat that failed outright is named to the human with its cause,
+        once: when it was handed up from, or here when nothing came after it.
+        The refused document the ladder ended on is named with its reason and
+        what it carried stated as lost. A refused document the ladder handed up
+        is the ladder working rather than a fault, and is said only where it
+        carried a judgement that no later seat answered in place of. Where no
+        seat answered, the turn's error names every seat in the order the
+        ladder tried them.
+
+        What is still unruled is said once. On a turn no seat answered, a
+        decision a task holds is left out: the failed task already says so and
+        keeps that decision from being answered, so the board is not offering
+        it.
+        """
+        faults: list[str] = []
+        answered: TurnDriver | None = None
+        for index, (seat, outcome) in enumerate(tried):
+            if _answered(outcome):
+                answered = seat
+                continue
+            last = index == len(tried) - 1
+            if outcome.failed is not None:
+                fault = _fault(seat.tier, outcome.failed)
+                if last:
+                    said = _failed if answered is None else _insisted
+                    self.log.record("informational", {"text": said(turn.channel, fault)})
+            else:
+                refused = DocumentRefusedError(seat.tier, outcome.refusal or "")
+                fault = _fault(seat.tier, refused)
+                # A refusal the ladder handed up is the ladder working, and it
+                # is said only where it took a judgement down with it that no
+                # later seat replaced. The refusal the ladder ended on is
+                # always said.
+                replaced = any(_answered(later) for _, later in tried[index + 1 :])
+                if not replaced and (last or outcome.carried is not None):
+                    text = _lost(seat.tier, outcome.refusal or "", outcome.carried)
+                    self.log.record("informational", {"text": text})
+            faults.append(fault)
         # Something is only ever outstanding where an obligation stated it, so
         # the second test is the type system's rather than a case of its own.
-        if standing and obligation is not None:
-            self.log.record("informational", {"text": _unmet(obligation, standing)})
-        return driver
+        unmet = standing if answered is not None else self._unheld(standing)
+        if unmet and obligation is not None:
+            self.log.record("informational", {"text": _unmet(obligation, unmet)})
+        if answered is None:
+            raise _TurnFailedError(faults)
+        return answered
+
+    def _unheld(self, owed: Sequence[str]) -> list[str]:
+        """Which of these decisions no impact task is holding.
+
+        A decision a task holds is off the frontier until that task ends, and a
+        task that failed goes on holding it, so the board is not offering it --
+        and a notice saying the board is offering it would be wrong about the
+        very decision it names.
+        """
+        held = {task.target for task in impact_tasks(self.log.entries()).values() if task.holds}
+        return [one for one in owed if one not in held]
 
     def _unruled(
         self, owed: Sequence[str], spoke: int | None, obligation: MootnessObligation | None
@@ -953,10 +1137,10 @@ class Lane:
         The turn is already announced: the caller writes that announcement as
         the hand-up's own record, before the count that reads it.
 
-        A tier that cannot be reached costs the insistence and nothing else. The
-        human's turn was already answered by the first tier, and turning a
-        reachability failure into the turn's own failure would report an answer
-        they can read as an error.
+        A seat that fails outright comes back as the failure it is, and whether
+        it costs the insistence alone or ends the turn is the caller's call: it
+        knows whether the rung below answered. Only a dispatch that could not be
+        recorded at all comes back as nothing.
         """
         narrowed = (
             None

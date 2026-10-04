@@ -34,7 +34,9 @@ hand probe stays `probe:`.
 - PND-A12 | test: packages/grillui/tests/e2e/test_result_scope.py::test_pnd_a12_with_the_switch_on_a_qualifying_proposal_is_applied_as_the_switchs
 - PND-A12 | test: packages/grillui/tests/e2e/test_result_scope.py::test_pnd_a12_a_proposal_touching_an_answer_or_carrying_an_unsettle_waits_either_way
 - PND-A12 | test: packages/grillui/tests/unit/test_result_scope.py::test_pnd_a12_an_apply_made_by_the_preference_replays_as_the_same_board
-- PND-A13 | open
+- PND-A13 | test: packages/grillui/tests/e2e/test_seat_failure.py::test_pnd_a13_a_turn_no_seat_answers_leaves_a_trace_naming_each_seat_and_cause
+- PND-A13 | test: packages/grillui/tests/e2e/test_seat_failure.py::test_pnd_a13_a_map_seat_that_times_out_is_handed_up_and_the_page_says_so
+- PND-A13 | test: packages/grillui/tests/unit/test_seat_failure.py::test_pnd_a13_every_cell_of_the_two_seat_ladder_traces_each_seat_and_closes_honestly
 - PND-A14 | open
 - PND-A15 | test: packages/grillui/tests/unit/test_tasks.py::test_pnd_a15_a_superseded_task_is_closed_by_the_superseding_accepted_entry
 - PND-A15 | test: packages/grillui/tests/unit/test_tasks.py::test_pnd_a15_a_restart_after_a_supersession_shows_the_task_superseded
