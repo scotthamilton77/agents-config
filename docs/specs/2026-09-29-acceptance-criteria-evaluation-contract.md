@@ -11,12 +11,14 @@ text. That round is not yet triaged.
 ## Scope
 
 S2 owns twenty-seven parent criteria. Six of them govern prompt emission and
-the record check: ACQ-A20, A22, A23, A26, A28 and A29. The other twenty-one,
-ACQ-A30 and ACQ-A31 among them, are claims about stochastic lenses. The
-parent's Testing decisions require a fixed evaluation contract to judge them.
-This spec fixes it.
+the record check: ACQ-A20, A22, A23, A26, A28 and A29. Those six, and the
+ownership of each rule by one lens, belong to the rule-ownership spec,
+`docs/specs/2026-10-04-criteria-attack-rule-ownership.md`. The other
+twenty-one, ACQ-A30 and ACQ-A31 among them, are claims about stochastic
+lenses. The parent's Testing decisions require a fixed evaluation contract to
+judge them. This spec fixes it.
 
-Two things are decided elsewhere. The arm experiments on
+Two more things are decided elsewhere. The arm experiments on
 `agents-config-9k9.441` have their own spec,
 `docs/specs/2026-10-01-criteria-attack-arm-experiments.md`. What a re-attack
 round sees stays with `agents-config-9k9.442`.
@@ -33,28 +35,9 @@ Verified at 38bda4ba.
 
 ## Decisions
 
-**ACE-D1 — Every rule has exactly one owning lens.** The lenses enforce these rules:
-
-| Lens | Rules |
-| --- | --- |
-| behavioural-outcome | `observable-obligation`, `document-deliverable`, `one-obligation`, `verification-contract`, `human-measurement`, `human-judgment`, `pending-until-performed`, `stochastic-and-window` |
-| obligation-reduction | `coverage`, `sufficiency`, `can-fail`, `has-basis`, `restraint` |
-| set-consistency | `consistency`, `decision-closure`, `verified-premise` |
-| what-if | `what-if-questions` |
-
-Six rules have no lens today: `restraint`, `verified-premise`,
-`human-measurement`, `human-judgment`, `pending-until-performed` and
-`stochastic-and-window`. The checker refuses an objection that cites a rule
-outside its lens's list. A lens therefore cannot report a defect under any of
-those six rules, and ACQ-A24 cannot pass for them.
-
-ACQ-D6 gives behavioural-outcome checkability, so the verification rules go
-there. A duplicate or an unsupported prescription discharges no obligation
-part of its own, and the obligation-reduction inventory shows that. A premise
-contradicted by evidence inside the document is a contradiction, and
-set-consistency reads for contradictions. No lens reads the repository.
-
-One owner per rule gives each case one lens.
+Rule ownership is ARO-D1 in the rule-ownership spec. It gives every rule
+exactly one owning lens, so each case below has one lens. The IDs ACE-D1 and
+ACE-A1 to ACE-A10 are not used here.
 
 **ACE-D2 — A case is a document pair with a stated expectation.** Cases
 live in `src/user/.claude/skills/ac-attack/evals/`, so they never deploy. The
@@ -81,7 +64,8 @@ scorer reads both.
 **ACE-D3 — The catalogue follows the parent's own text.** A parent
 criterion's "Given" clause is its case's defect. Its no-finding clause is one
 of two things: the correction itself, or a feature present in both documents
-outside the changed hunk. Every control run then tests it.
+outside the changed hunk. Every control run then tests it. A case's lens is
+the owner ARO-D1 gives its rule.
 
 | Case | Serves | Rule | Lens | Child |
 | --- | --- | --- | --- | --- |
@@ -244,27 +228,6 @@ registry's baseline entry is the current template.
 evaluation of record when it holds a current lock (ACE-D8). The emitter and
 checker suites run under `make content-tests`.
 
-- **ACE-A1** In the source tree, every rule ID the standard holds appears in
-  exactly one lens's `enforces` list. The emitter suite fails, naming the
-  rule, when a rule has no owning lens or two.
-- **ACE-A2** The emitter suite fails when the lens registry holds any set other
-  than behavioural-outcome, obligation-reduction, set-consistency and what-if.
-- **ACE-A3** Each emitted prompt equals its lens's body plus the four shared
-  contracts, byte for byte, under the existing prompt-composition test.
-- **ACE-A4** Each emitted prompt carries exactly the rules its lens enforces,
-  under the existing prompt-composition test.
-- **ACE-A5** A lens naming a rule the standard lacks is refused as `no-lenses`
-  with nothing written, under the existing emitter test.
-- **ACE-A6** The record check refuses as `schema` an objection lacking its
-  target, its ground's rule, or any scenario part.
-- **ACE-A7** The record check refuses as `schema` an objection carrying a field
-  outside the objection schema, such as a drafted criterion.
-- **ACE-A8** The record check refuses an obligation-reduction report whose
-  workings are missing or fail their schema, as `invalid-workings`.
-- **ACE-A9** The record check refuses a report whose undischarged part has no
-  objection naming it, as `unreported-residue`.
-- **ACE-A10** The record check refuses a ground its lens does not enforce, as
-  `ground-outside-lens`.
 - **ACE-A11** The case check refuses a catalogue with no case for a rule the
   standard holds, naming the rule.
 - **ACE-A12** The case check refuses a catalogue missing a case ACE-D3 lists,
@@ -340,14 +303,8 @@ checker suites run under `make content-tests`.
 | Parent | Child criteria | Check |
 | --- | --- | --- |
 | ACQ-A1 to A10, A14 to A19, A21, A30, A31 | ACE-A25 to ACE-A41, ACE-A44, ACE-A45, as the catalogue's Child column maps | The scorer's report on the evaluation of record |
-| ACQ-A20 | ACE-A6, ACE-A7 | Checker suite |
-| ACQ-A22 | ACE-A2 | Emitter suite |
-| ACQ-A23 | ACE-A3 | Emitter suite, existing test |
-| ACQ-A24 | ACE-A1, ACE-A11 to ACE-A21, ACE-A42, ACE-A46 to ACE-A49, and the cases ACE-A25 to ACE-A40, ACE-A44 and ACE-A45 score | Emitter suite, case check, scorer suite, scorer report |
-| ACQ-A26 | ACE-A4, ACE-A5 | Emitter suite, existing tests |
+| ACQ-A24, apart from rule ownership | ACE-A11 to ACE-A21, ACE-A42, ACE-A46 to ACE-A49, and the cases ACE-A25 to ACE-A40, ACE-A44 and ACE-A45 score | Case check, scorer suite, scorer report |
 | ACQ-A27 | ACE-A17, ACE-A43 | Scorer suite, scorer report |
-| ACQ-A28 | ACE-A8, ACE-A9 | Checker suite, existing tests |
-| ACQ-A29 | ACE-A10 | Checker suite, existing test |
 | The template rule in the parent's S2 slice text | ACE-A22 to ACE-A24 | Scorer suite, emitter suite |
 
 ### What-if questions
@@ -359,10 +316,8 @@ For ACE-A25 to ACE-A45:
 - An attempt beyond a fingerprint's attempt and retest is refused (ACE-A21).
 - The empty question does not apply to a fixed document pair.
 
-For ACE-A1 to ACE-A13:
+For ACE-A11 to ACE-A13:
 
-- An empty registry and an absent standard are the existing `no-lenses` and
-  `no-standard` refusals.
 - An empty catalogue fails ACE-A11.
 
 For ACE-A14 to ACE-A20:
@@ -380,11 +335,9 @@ same way.
 
 ## Ordered slice list
 
-- **S2.1: Rule ownership and the attack surface** (ACE-A1 to ACE-A10; ACE-D1).
-  Reassign `enforces` in `lenses/*/prompt.md`, and add the new tests to
-  `emit_prompts_test.py` and `check_record_test.py`. Depends on S1, landed.
 - **S2.2: Case check** (ACE-A11 to ACE-A13; ACE-D2). The `evals/cases.json`
-  format, and `evals/check_cases.py` with its suite. Depends on S2.1.
+  format, and `evals/check_cases.py` with its suite. Depends on the
+  rule-ownership spec's S2.1.
 - **S2.3: Planning, scoring and the judge** (ACE-A14 to ACE-A21, ACE-A46 to
   ACE-A49; ACE-D4 to ACE-D8). `evals/plan_run.py`, `evals/score.py` and `evals/judge.md`, their
   suites, and the detection and P1 calibration records. Depends on S2.2.
@@ -393,7 +346,7 @@ same way.
 - **S2.5: The catalogue** (ACE-D3). The documents in `evals/cases/`. Cases
   harvested on `agents-config-9k9.441` join in ACE-D2's format when they
   land, and this slice does not wait for them. Depends on S2.2.
-- **S2.6: Lens mandates** (ACE-D1, ACE-D9). A baseline attempt on every case, then body
+- **S2.6: Lens mandates** (ACE-D9; ARO-D1). A baseline attempt on every case, then body
   revisions for the rules each lens gained, each shown by a lens-level
   comparison to regress no case. Depends on S2.3, S2.4 and S2.5.
 - **S2.7: Evaluation of record** (ACE-A25 to ACE-A45; ACE-D7). The
@@ -405,16 +358,17 @@ They are not S2 slices.
 
 ## Continuations
 
-- feat: AC evaluation S2.1: rule ownership and the attack surface (ACE-D1) — AC: ACE-A1, ACE-A2, ACE-A3, ACE-A4, ACE-A5, ACE-A6, ACE-A7, ACE-A8, ACE-A9, ACE-A10; make content-tests exits 0.
 - feat: AC evaluation S2.2: the case check (ACE-D2) — AC: ACE-A11, ACE-A12, ACE-A13; make content-tests exits 0.
 - feat: AC evaluation S2.3: planning, scoring and the judge (ACE-D4 to ACE-D8) — AC: ACE-A14, ACE-A15, ACE-A16, ACE-A17, ACE-A18, ACE-A19, ACE-A20, ACE-A21, ACE-A46, ACE-A47, ACE-A48, ACE-A49; make content-tests exits 0.
 - feat: AC evaluation S2.4: comparison and the template gate (ACE-D9) — AC: ACE-A22, ACE-A23, ACE-A24; make content-tests exits 0.
 - feat: AC evaluation S2.5: the catalogue (ACE-D3) — AC: the committed catalogue passes the case check; make content-tests exits 0.
-- feat: AC evaluation S2.6: lens mandates (ACE-D1, ACE-D9) — AC: a committed baseline attempt on every case, and a lens-level comparison per revised lens.
+- feat: AC evaluation S2.6: lens mandates (ACE-D9) — AC: a committed baseline attempt on every case, and a lens-level comparison per revised lens.
 - feat: AC evaluation S2.7: evaluation of record, the verification child (ACE-D7) — AC: ACE-A25, ACE-A26, ACE-A27, ACE-A28, ACE-A29, ACE-A30, ACE-A31, ACE-A32, ACE-A33, ACE-A34, ACE-A35, ACE-A36, ACE-A37, ACE-A38, ACE-A39, ACE-A40, ACE-A41, ACE-A42, ACE-A43, ACE-A44, ACE-A45.
 
 ## Out of scope
 
+- Rule ownership, and the suite criteria on prompt emission and the record
+  check, which the rule-ownership spec holds.
 - What a re-attack round sees (`agents-config-9k9.442`).
 - ACQ-A11 and ACQ-A25, which the parent gives to S1, with the content-lint
   rule `agents-config-9k9.405.3` suggests for ACQ-A11.

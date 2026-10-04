@@ -1,15 +1,5 @@
 # Evidence
 
-- ACE-A1 | open
-- ACE-A2 | open
-- ACE-A3 | open
-- ACE-A4 | open
-- ACE-A5 | open
-- ACE-A6 | open
-- ACE-A7 | open
-- ACE-A8 | open
-- ACE-A9 | open
-- ACE-A10 | open
 - ACE-A11 | open
 - ACE-A12 | open
 - ACE-A13 | open
