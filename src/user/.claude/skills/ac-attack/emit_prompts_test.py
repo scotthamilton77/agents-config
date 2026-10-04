@@ -59,6 +59,19 @@ def read_lens(name: str) -> dict:
 LENS_NAMES = sorted(path.parent.name for path in LENSES_DIR.glob("*/prompt.md"))
 LENSES = [read_lens(name) for name in LENS_NAMES]
 
+# The lenses an attack runs, and the rules each one owns. Every rule of the standard has exactly
+# one owner, so a defect under any rule has one lens whose prompt carries that rule and whose
+# objections the record check accepts under it. Written out rather than read from the front
+# matter, since the front matter is what this table holds to account.
+OWNERSHIP = {
+    "behavioural-outcome": ["observable-obligation", "document-deliverable", "one-obligation",
+                            "verification-contract", "human-measurement", "human-judgment",
+                            "pending-until-performed", "stochastic-and-window"],
+    "obligation-reduction": ["coverage", "sufficiency", "can-fail", "has-basis", "restraint"],
+    "set-consistency": ["consistency", "decision-closure", "verified-premise"],
+    "what-if": ["what-if-questions"],
+}
+
 
 def standard_rules() -> dict[str, str]:
     """The source standard's rules by id, each as the text under its `### ` heading."""
@@ -1202,6 +1215,45 @@ class TestRoundFile:
         assert first.returncode == second.returncode == 0
         assert first.stdout == second.stdout
         assert {path.name: path.read_bytes() for path in sorted(out_dir.iterdir())} == written
+
+
+class TestRuleOwnership:
+    def test_aro_a1_every_rule_of_the_standard_has_exactly_one_owning_lens(self):
+        """A rule no lens enforces is one no prompt carries and no objection may cite, so a defect
+        under it goes unreported. A rule two lenses enforce, or one lens lists twice, splits its
+        cases between owners. Each faulty rule is named with the number of times it is owned."""
+        owned = [rule for lens in LENSES for rule in lens["enforces"]]
+        faults = [f"{rule} owned {owned.count(rule)} times" for rule in standard_rules()
+                  if owned.count(rule) != 1]
+        assert not faults, faults
+
+    def test_aro_a2_the_registry_is_the_four_lenses(self):
+        """The registry is every lens directory holding a prompt, read as the emitter reads it, so
+        a lens whose prompt is gone has left the attack, and a directory added has joined it."""
+        assert sorted(lens["lens"] for lens in emitter.load_lenses()) == sorted(OWNERSHIP)
+
+    def test_aro_a11_each_prompt_carries_exactly_the_rules_its_lens_owns(self, document, tmp_path,
+                                                                       capsys):
+        """The front matter is configuration, and a correct list does not show what the attacker
+        receives, so the rules are read off the emitted prompt itself. A lens whose prompt is
+        missing carries none of its rules and fails the same way."""
+        emitted = emit(document, tmp_path / "attack", capsys)
+        for lens, rules in OWNERSHIP.items():
+            carried = re.findall(r"^### (\S+)$", emitted.get(lens, ""), flags=re.MULTILINE)
+            assert sorted(carried) == sorted(rules), lens
+
+    def test_aro_a12_a_round_names_the_four_lenses_and_writes_one_prompt_for_each(
+            self, document, tmp_path, capsys):
+        """Dispatch is the invoking agent's act, so what the emitter can be held to is the round it
+        hands over: a round file naming each lens once and a prompt for each, nothing more."""
+        out_dir = tmp_path / "attack"
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert code == 0
+        meta = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))
+        assert sorted(entry["lens"] for entry in meta["lenses"]) == sorted(OWNERSHIP)
+        expected = sorted(f"{name}.md" for name in OWNERSHIP)
+        assert sorted(path.name for path in out_dir.glob("*.md")) == expected
+        assert sorted(Path(path).name for path in result["prompts"]) == expected
 
 
 class TestStandard:
