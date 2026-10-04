@@ -2,7 +2,8 @@
 
 **Date:** 2026-09-29
 **Status:** Draft child spec of `docs/specs/2026-09-18-acceptance-criteria-quality.md`,
-slice S2 (quality assessment). Not yet attacked.
+slice S2 (quality assessment). Attacked once, on 2026-09-29, in an earlier
+text. That round is not yet triaged.
 **Work item:** `agents-config-9k9.405.10` (S2 feature), design child `agents-config-9k9.405.10.1`.
 **Bounded by:** `docs/specs/2026-09-18-acceptance-criteria-lifecycle.md`.
 **Charter:** `docs/specs/2026-07-21-harness-rework-way-forward.md`, decisions D2, D3, D5 and D7.
@@ -165,6 +166,8 @@ the evaluation waits.
 
 **ACE-D7 — A case is locked on its own runs, and every run counts.** The unit
 of evaluation is the case. An attempt plans five runs of each of its documents.
+A case has two sides: its detection, judged on the defective runs, and its
+control, judged on the control runs for silence.
 
 - A case detects when at least four of its five defective runs detect.
 - A case's control holds when at least four of its five control runs are silent.
@@ -173,7 +176,8 @@ of evaluation is the case. An attempt plans five runs of each of its documents.
 - A case is locked when it detects and its control holds. P1 is locked when
   at least four of its five panel runs pass, with the same retest.
 - A lens passes ACQ-A27 when at least 80 percent of the control runs behind
-  its cases' current locks, P1's included, are empty.
+  its cases' current locks, P1's included, are empty. That rate is pooled
+  across the lens's cases, so it is no side and earns no retest.
 
 A parent criterion passes only when every case serving it is locked. Requiring
 every case to pass inside one run would fail a lens that is right nineteen
@@ -188,9 +192,9 @@ above the one baseline, PR 785's control false positive, on purpose.
 
 Locking the whole catalogue from nothing plans 310 lens dispatches, 220 on
 Codex, plus retests and ACE-D4's repeats. Any larger plan, an experiment's
-included, needs the owner's approval before dispatch. The counts are
-provisional until the baseline observation on `agents-config-9k9.453`, and are
-fixed before the first lock is recorded. Changing a threshold after that
+included, needs the owner's approval before dispatch. The run counts
+and thresholds are provisional until the baseline observation on
+`agents-config-9k9.453`, and are fixed before the first lock is recorded. Changing a threshold after that
 amends this spec, and scored results keep their thresholds.
 
 **ACE-D8 — A lock is tied to what produced it.** The planner writes an
