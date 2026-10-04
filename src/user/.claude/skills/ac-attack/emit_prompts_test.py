@@ -1182,8 +1182,8 @@ class TestRoundFile:
         }
 
     def test_c4_round_json_seeds_a_record_the_schema_accepts(self, document, tmp_path, capsys):
-        """S6-C4: an empty union is a first-class outcome — the emitted round plus three empty
-        reports is already a valid, complete record with nothing adjudicated."""
+        """S6-C4: an empty union is a first-class outcome — the emitted round plus an empty
+        report from each lens is a record the schema accepts, with nothing adjudicated."""
         from jsonschema import Draft202012Validator
 
         emit(document, tmp_path / "attack", capsys)
@@ -1220,8 +1220,9 @@ class TestRoundFile:
 class TestRuleOwnership:
     def test_aro_a1_every_rule_of_the_standard_has_exactly_one_owning_lens(self):
         """A rule no lens enforces is one no prompt carries and no objection may cite, so a defect
-        under it goes unreported. A rule two lenses enforce, or one lens lists twice, splits its
-        cases between owners. Each faulty rule is named with the number of times it is owned."""
+        under it goes unreported. A rule two lenses enforce splits its cases between owners. A rule
+        one lens lists twice reaches its prompt once, so the repeat is an editing slip the list
+        should not keep. Each faulty rule is named with the number of times it is listed."""
         owned = [rule for lens in LENSES for rule in lens["enforces"]]
         faults = [f"{rule} owned {owned.count(rule)} times" for rule in standard_rules()
                   if owned.count(rule) != 1]
