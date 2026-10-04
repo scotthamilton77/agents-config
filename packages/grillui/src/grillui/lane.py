@@ -102,8 +102,8 @@ the result is written straight after it, in the one hold of the append lock
 that accepts the answer, so no other write lands between the two. A pre-ruling
 the board moved under is never taken, and is weighed again whenever the lane
 next has the lock and its decision is still on offer. Weighing goes one hop:
-a decision is pre-ruled when an answer opens it, and the decisions resting on
-it wait until it is answered in turn.
+a decision is pre-ruled once a settlement has opened it and it is on offer,
+and the decisions resting on it wait until they are on offer in turn.
 
 The driver seam is the whole of what a tier has to implement. A turn is one
 invocation: the driver runs, says what it has to say into the log, and returns
@@ -131,7 +131,6 @@ from grillui.escalation import (
     in_expert_mode,
     judgment_class,
     mootness_obligation,
-    opened_by,
     policy_transferred,
     retry_obligation,
     rulings_of,
@@ -580,9 +579,11 @@ def close_dead_turns(log: SessionLog) -> None:
     and the driver taking it will close the lane itself.
 
     Each dead turn gets a closing entry of its own, naming its announcement,
-    and every impact task that turn left live fails on it. A failed task still
-    holds its decision, so the board shows the same wait it showed before the
-    restart; what changes is that nobody reads it as a ruling still coming.
+    and every impact task that turn left live fails on it. A failed task a
+    gesture started still holds its decision, so the board shows the same wait
+    it showed before the restart. A failed pre-ruling holds nothing, as it held
+    nothing while it ran. Either way, nobody reads the task as a ruling still
+    coming.
 
     The exception is a task whose result is already on the log: the process
     died between landing the result and closing the turn, so the task did
@@ -727,10 +728,7 @@ class Lane:
         base = self.driver
         receipts: list[Receipt] = []
         turns: list[tuple[TurnDriver, Turn]] = []
-        answered: list[str] = []
         with self.log.appending():
-            if base is None:
-                return self.log.submit(batch, epoch), []
             # One event at a time under the one lock, so each turn's lane
             # entries land adjacent to the turn they report -- a second turn in
             # the same batch never wedges between a turn and its `accepted`.
@@ -741,6 +739,12 @@ class Lane:
                 receipt = self.log.submit([event], epoch)[0]
                 receipts.append(receipt)
                 if receipt.status != "accepted":
+                    continue
+                # A backend with no tier still takes a pre-ruling already
+                # weighed, because taking one starts no turn.
+                if base is None:
+                    if takeable:
+                        self._take(takeable, receipt.seq, self._owed(turn_of(event)))
                     continue
                 # Asked once the gesture has landed, because the count is read
                 # off the entry it just left. Which dismissals are a refusal of
@@ -755,8 +759,7 @@ class Lane:
                 owed = self._owed(turn)
                 if not is_answerable(event) and not self._owes_rulings(event, owed):
                     continue
-                if event.kind == ANSWER_KIND and event.actor == "human":
-                    answered.append(str(event.payload.get("target")))
+                named = _impact_targets(receipt.seq, owed)
                 owed = self._take(takeable, receipt.seq, owed)
                 targets = _impact_targets(receipt.seq, owed)
                 turn = turn._replace(
@@ -781,11 +784,13 @@ class Lane:
                 # superseded here, on the `accepted` entry, before the new task
                 # opens: read and written under the one hold of the lock, so the
                 # next gesture in the batch sees this one's task as the holder.
+                # A target this answer's pre-ruling just ruled on counts too,
+                # or the older task's result would land over that ruling.
                 self.log.emit_status(
                     STATUS_PHASE_ACCEPTED,
                     f"{event.kind} from the human accepted on channel {event.channel!r}",
                     event.channel,
-                    tasks=self._supersede(targets),
+                    tasks=self._supersede(named),
                 )
                 announced = self._announce(
                     driver,
@@ -804,7 +809,8 @@ class Lane:
                     ],
                 )
                 turns.append((driver, turn._replace(opened=announced)))
-            turns += self._pre_rule(answered)
+            if base is not None:
+                turns += self._pre_rule()
         return receipts, [self._schedule(driver, turn) for driver, turn in turns]
 
     def _takeable(self, event: EventSubmission) -> dict[str, Task]:
@@ -813,21 +819,24 @@ class Lane:
 
         Only an answer taking an option with no note takes one: the human's own
         words are weighed by the expert whatever was weighed before them. Only
-        a pre-ruling whose result is waiting, and whose board has not moved
-        since its basis, is taken.
+        a pre-ruling whose result is waiting, rules on its target, and whose
+        board has not moved since its basis, is taken. A result that rules on
+        nothing there leaves the ruling to the task the answer starts.
         """
         given = event.payload.get(ANSWER_KIND)
         option = given.get("option") if isinstance(given, dict) else None
         if event.actor != "human" or event.kind != ANSWER_KIND or _custom_text(event):
             return {}
         decision = event.payload.get("target")
+        entries = self.log.entries()
         return {
             key[2]: found.task
-            for key, found in pre_rulings(self.log.entries()).items()
+            for key, found in pre_rulings(entries).items()
             if key[:2] == (decision, option)
             and not found.stale
             and found.task.result is not None
             and not found.task.consumed
+            and not unruled([key[2]], *rulings_of(entries, found.task.result))
         }
 
     def _take(
@@ -842,7 +851,7 @@ class Lane:
         the pre-ruling. A result the appender now refuses is not taken, and that
         decision is weighed by a task like any other.
         """
-        if owed is None or owed.cause != ANSWER_KIND or owed.gesture != gesture:
+        if not takeable or owed is None or owed.cause != ANSWER_KIND or owed.gesture != gesture:
             return owed
         entries = {one.seq: one for one in self.log.entries()}
         taken = {
@@ -878,15 +887,17 @@ class Lane:
             return False
         return receipt.status == "accepted"
 
-    def _pre_rule(self, answered: Sequence[str]) -> list[tuple[TurnDriver, Turn]]:
+    def _pre_rule(self) -> list[tuple[TurnDriver, Turn]]:
         """Open the pre-rulings owed now, and return the turns that weigh them.
 
-        Called under the append lock. Each decision these answers opened that is
-        on offer is pre-ruled for every option marking a decision still
-        standing. Each decision whose latest pre-ruling for some option and
-        target the board moved under is weighed again for that option and
-        target. A pre-ruling still fresh is never started twice, and a session
-        that has ended starts nothing.
+        Called under the append lock. Each decision on offer that a settlement
+        opened, which is one with a prereq or a fog gate, is pre-ruled for every
+        option marking a decision still standing: where that option and target
+        have no pre-ruling yet, or the board moved under the latest one. A
+        decision on offer from the session's start has no gate and is not
+        pre-ruled, and one whose gate is still unsettled is not on offer. A
+        pre-ruling still fresh is never started twice, and a session that has
+        ended starts nothing.
 
         A mark naming its own decision is never pre-ruled. Taking the option
         settles that decision, which leaves the mark nothing standing to rule
@@ -897,20 +908,18 @@ class Lane:
         if base is None or any(one.kind == SESSION_END_KIND for one in entries):
             return []
         image = replay(self.log.epoch, entries)
-        opened = [one for decision in answered for one in opened_by(image, decision)]
         known = pre_rulings(entries)
-        moved = [key[0] for key, found in known.items() if found.stale]
-        offered = {node.id: node for node in image.decisions if node.id in image.frontier}
         live = {node.id for node in image.decisions if node.status not in DEAD_STATUSES}
         started: list[tuple[TurnDriver, Turn]] = []
-        for decision in dict.fromkeys([*opened, *moved]):
-            node = offered.get(decision)
-            for option in [] if node is None else node.options:
+        for node in image.decisions:
+            if node.id not in image.frontier or not (node.prereqs or node.fog_until):
+                continue
+            for option in node.options:
                 for target in dict.fromkeys(option.puts_in_question or []):
-                    found = known.get((decision, option.id, target))
-                    owed = found.stale if found is not None else decision in opened
-                    if target in live and target != decision and owed:
-                        started.append(self._open_pre_ruling(base, decision, option, target))
+                    found = known.get((node.id, option.id, target))
+                    owed = found is None or found.stale
+                    if target in live and target != node.id and owed:
+                        started.append(self._open_pre_ruling(base, node.id, option, target))
         return started
 
     def _open_pre_ruling(
@@ -1246,9 +1255,10 @@ class Lane:
         by that gesture's `accepted` entry, and is left out here: it reads
         superseded for good, never replied and never failed.
 
-        A turn that may have changed the board is where a pre-ruling the board
-        moved under is weighed again, in the same hold of the lock. A
-        pre-ruling's own turn changed nothing, so it starts nothing.
+        A turn that may have changed the board opens the pre-rulings now owed,
+        in the same hold of the lock: for a decision it put on offer, and again
+        where the board moved under one. A pre-ruling's own turn changed
+        nothing, so it starts nothing.
         """
         with self.log.appending():
             known = impact_tasks(self.log.entries())
@@ -1258,7 +1268,7 @@ class Lane:
                 if one in known and known[one].phase == STATUS_PHASE_COMPOSING
             ]
             self.log.emit_status(phase, detail, turn.channel, tasks=ended, opened=turn.opened)
-            again = [] if turn.option is not None else self._pre_rule(())
+            again = [] if turn.option is not None else self._pre_rule()
         for driver, background in again:
             self._schedule(driver, background)
 

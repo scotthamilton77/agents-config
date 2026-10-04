@@ -46,6 +46,11 @@ hand probe stays `probe:`.
 - PND-A6 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a6_a_proposal_merely_queued_leaves_a_pre_ruling_fresh
 - PND-A6 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a6_a_stale_pre_ruling_is_recomputed_and_the_fresh_one_is_consumed
 - PND-A6 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a6_a_mutation_in_the_consuming_batch_lands_before_or_after_the_consume
+- PND-A6 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a6_consuming_a_pre_ruling_supersedes_a_task_another_answer_left_on_its_target
+- PND-A6 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a6_a_pre_ruling_that_ruled_nothing_on_its_target_is_never_consumed
+- PND-A6 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a6_a_backend_with_no_tier_still_consumes_a_fresh_pre_ruling
+- PND-A6 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a6_a_decision_a_noted_answer_opened_is_pre_ruled_once_its_judgment_lands
+- PND-A6 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a6_a_settlement_by_the_grill_master_pre_rules_what_it_opens
 - PND-A7 | open
 - PND-A8 | test: packages/grillui/tests/e2e/test_doctor.py::test_pnd_a8_the_doctors_changes_wait_in_the_inbox_until_the_human_lets_them_land
 - PND-A8 | test: packages/grillui/tests/unit/test_retry.py::test_pnd_a8_a_retry_that_reaches_outside_twice_fails_and_lands_nothing
@@ -63,6 +68,7 @@ hand probe stays `probe:`.
 - PND-A13 | test: packages/grillui/tests/e2e/test_seat_failure.py::test_pnd_a13_a_map_seat_that_times_out_is_handed_up_and_the_page_says_so
 - PND-A13 | test: packages/grillui/tests/unit/test_seat_failure.py::test_pnd_a13_every_cell_of_the_two_seat_ladder_traces_each_seat_and_closes_honestly
 - PND-A14 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a14_pre_rulings_announce_and_close_on_their_own_channel
+- PND-A14 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a14_a_map_turn_held_across_background_turns_closes_on_its_own_announcement
 - PND-A14 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a14_a_restart_closes_the_background_turn_and_leaves_the_map_alone
 - PND-A14 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a14_the_task_a_missing_pre_ruling_leaves_runs_on_the_map_channel
 - PND-A14 | test: packages/grillui/tests/unit/test_pre_rulings.py::test_pnd_a14_the_expert_takes_a_pre_ruling_cold_and_its_result_lands_on_its_own_channel

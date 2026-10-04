@@ -213,15 +213,16 @@ from grillui.schemas import (
 
 _NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
 _REVISABLE_TEXT = ("short", "title", "body")
-# A task in either of these phases has ended for good. A failed task has not:
-# it still holds its decision, and a later gesture can still supersede it.
+# A task in either of these phases has ended for good. A failed task a gesture
+# started has not: it still holds its decision, and a later gesture can still
+# supersede it.
 _FINAL_PHASES = frozenset({STATUS_PHASE_REPLIED, STATUS_PHASE_SUPERSEDED})
 _HOLDING_PHASES = frozenset({STATUS_PHASE_COMPOSING, STATUS_PHASE_ERROR})
 # The kinds that change the decision they land on, which is what makes a
-# pre-ruling weighed against that decision stale. A notice changes no decision,
-# and a new decision is nobody's ancestor until a revise makes it one.
+# pre-ruling weighed against that decision stale. A notice changes no decision.
+# An added node replaces any decision already under its id.
 _CHANGING_KINDS = frozenset(
-    {"answer", "settle", "revise", "invalidate", "unsettle", "resolve-stale"}
+    {"answer", "settle", "revise", "invalidate", "unsettle", "resolve-stale", "add-node"}
 )
 
 
@@ -259,9 +260,11 @@ class Task:
     one retries. `failed` is how the task ended where it ended without a
     ruling, read off the entry that closed its turn.
 
-    `basis` is the log sequence the task was computed over. `result` is where a
-    pre-ruling's result is waiting to be taken, and `consumed` is whether it
-    was taken.
+    `basis` is the log sequence the task was opened at. A pre-ruling's turn
+    reads the board later, so staleness measured from its basis also counts
+    changes that turn already saw, and errs only toward weighing it again.
+    `result` is where a pre-ruling's result is waiting to be taken, and
+    `consumed` is whether it was taken.
     """
 
     id: str

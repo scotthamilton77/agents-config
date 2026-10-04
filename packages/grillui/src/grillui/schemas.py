@@ -1828,8 +1828,8 @@ def rejection_reason(
         return (
             REASON_THREAD_MAP_MUTATION,
             f"{submission.kind!r} mutates the map, which only the grill-master authors on "
-            f"the {MAP_CHANNEL!r} channel; got actor {submission.actor!r} on channel "
-            f"{submission.channel!r}",
+            f"one of the channels {sorted(GRILL_MASTER_CHANNELS)!r}; got actor "
+            f"{submission.actor!r} on channel {submission.channel!r}",
         )
 
     if is_proceed(submission):

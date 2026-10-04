@@ -22,9 +22,10 @@ restarted over that directory picks the same conversation back up instead of
 starting a cold one; the cold turn costs about ten times a resumed one, which is
 what makes that file worth writing. One turn at a time, always: the discount
 lives in a cache one process holds, and two processes talking over each other on
-the same chain forfeit it. One turn is opened cold on purpose: the one reopening
-a thread whose board moved while it was set aside, whose chain reasoned from a
-board that no longer holds.
+the same chain forfeit it. Two turns are opened cold on purpose, because each
+chain reasoned from something that no longer holds: the one reopening a thread
+whose board moved while it was set aside, and a pre-ruling, whose channel's
+chain weighed some other answer the human has not given.
 
 **A reply may declare map updates, and only the grill-master's are heard at
 all.** The two roles answer in different shapes. A grill-master turn is the
@@ -2097,8 +2098,10 @@ def _record_document(
 
     `tasks` is the impact tasks this turn was dispatched with, and the entry
     names them. The replay lets a change to the target of one still live land
-    without the human's apply and queues everything else the turn proposed, so
-    a turn that carries no task leaves the key off and lands exactly as it
+    without the human's apply and queues everything else the turn proposed. On
+    the background channel the replay keeps the whole entry aside, and it lands
+    that way only once the human takes the option its pre-ruling weighed. A
+    turn that carries no task leaves the key off and lands exactly as it
     always has.
     """
     document, struck = owed_rulings(document, owed)
@@ -2173,8 +2176,9 @@ def record_reply(
     reply is judged like any other write and a refusal is not swallowed: the
     human asked something, and a reply nobody can read is not an answer.
 
-    A map turn is a document and nothing else, and it is recorded by the
-    function above. What is left here is a thread agent's turn, which is prose
+    A grill-master turn, on the map or on the background channel a pre-ruling
+    runs on, is a document and nothing else, and it is recorded by the function
+    above. What is left here is a thread agent's turn, which is prose
     and may carry the offer or the request to read it is allowed to make.
 
     A reply declaring map updates is submitted as one gesture carrying them and
@@ -2194,12 +2198,12 @@ def record_reply(
     what it takes the thread to have settled, or saying what it would have had
     to read to answer -- in the same breath as it says the new thing.
 
-    `owed` is the dispatch's mootness obligation, and it reaches only the map
-    turn: a thread agent rules on nothing, so there is nothing there to cut to
+    `owed` is the dispatch's mootness obligation, and it reaches only the
+    grill-master's turn: a thread agent rules on nothing, so there is nothing there to cut to
     an obligation it was never given. `tasks` is the impact tasks the dispatch
     carried, `scope` what a retry may change, and `reassess` whether this is the
-    map doctor's turn, and all three reach only the map turn for the same
-    reason.
+    map doctor's turn, and all three reach only the grill-master's turn for the
+    same reason.
     """
     if channel in GRILL_MASTER_CHANNELS:
         return record_document(

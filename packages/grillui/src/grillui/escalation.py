@@ -643,7 +643,7 @@ def _answer_obligation(image: Image2, answered: LogEntry) -> MootnessObligation 
     note = answer.get("text")
     said = note if isinstance(note, str) and note else None
     marked = (option.puts_in_question if option else None) or []
-    opened = [] if said is None else opened_by(image, target)
+    opened = [] if said is None else _opened(image, target)
     standing = _still_standing(image, [*marked, *opened])
     if not standing:
         return None
@@ -701,7 +701,7 @@ def subtree(image: Image2, root: str) -> list[str]:
     return [one.id for one in image.decisions if one.id in inside]
 
 
-def opened_by(image: Image2, answered: str) -> list[str]:
+def _opened(image: Image2, answered: str) -> list[str]:
     """The decisions the answer to this one opened: gated on it, by a prereq or
     by fog, and with every gate now clear.
 

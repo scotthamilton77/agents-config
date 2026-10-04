@@ -58,17 +58,21 @@ DEEPER = {"id": "b", "text": "Split it", "puts_in_question": ["d4"]}
 
 
 def _seed(log: SessionLog) -> None:
-    """d9 is settled before the session's lane starts, and d2 rests on it. d1
-    rests on d0, and two of its options mark d2. d3 rests on d1, so settling d0
-    does not open it, and its option marks d4. d5 is marked by nobody."""
-    for node, options, prereqs in (
-        ("d9", PLAIN, []),
-        ("d0", PLAIN, []),
-        ("d1", [PLAIN[0], MARKS, ALSO], ["d0"]),
-        ("d2", PLAIN, ["d9"]),
-        ("d3", [PLAIN[0], DEEPER], ["d1"]),
-        ("d4", PLAIN, []),
-        ("d5", PLAIN, []),
+    """d8, d9 and d7 are settled before the session's lane starts. d2 rests on
+    d9, which rests on d8, and d2's fog waits on d7. d1 rests on d0, and two of
+    its options mark d2. d3 rests on d1, so settling d0 does not open it, and
+    its option marks d4. d5 rests on nothing, so it is on offer from the start,
+    and its option `b` marks d2 too."""
+    for node, options, gates in (
+        ("d8", PLAIN, {}),
+        ("d9", PLAIN, {"prereqs": ["d8"]}),
+        ("d7", PLAIN, {}),
+        ("d0", PLAIN, {}),
+        ("d1", [PLAIN[0], MARKS, ALSO], {"prereqs": ["d0"]}),
+        ("d2", PLAIN, {"prereqs": ["d9"], "fogUntil": "d7"}),
+        ("d3", [PLAIN[0], DEEPER], {"prereqs": ["d1"]}),
+        ("d4", PLAIN, {}),
+        ("d5", [PLAIN[0], {**MARKS, "text": "Touch it"}], {}),
     ):
         _accepted(
             log,
@@ -81,12 +85,14 @@ def _seed(log: SessionLog) -> None:
                     "short": node,
                     "title": f"Which {node}?",
                     "body": "Decide.",
-                    "prereqs": prereqs,
+                    "prereqs": [],
                     "options": options,
+                    **gates,
                 },
             ),
         )
-    _accepted(log, _answer("d9", "a"))
+    for node in ("d8", "d9", "d7"):
+        _accepted(log, _answer(node, "a"))
 
 
 def _accepted(log: SessionLog, event: EventSubmission) -> int:
@@ -118,6 +124,24 @@ def _revise(node: str) -> EventSubmission:
     )
 
 
+def _replace(node: str) -> EventSubmission:
+    """The grill-master adding a node under an id the board already holds,
+    which replaces that decision."""
+    return EventSubmission(
+        kind="add-node",
+        actor="grill-master",
+        idempotency_key=f"replace-{node}",
+        payload={
+            "target": node,
+            "short": node,
+            "title": "New title",
+            "body": "Decide anew.",
+            "prereqs": [],
+            "options": PLAIN,
+        },
+    )
+
+
 def _apply(log: SessionLog, node: str) -> EventSubmission:
     """The human applying the proposal waiting on this decision."""
     pending = next(one.id for one in replay(log.epoch, log.entries()).pending if one.target == node)
@@ -141,13 +165,15 @@ class Ruler:
 
     It lands through the real reply recorder on the channel its dispatch names,
     the way every seat does. `release` holds every call until the test sets it,
-    and `failing` makes every call on that channel fail outright.
+    `failing` makes every call on that channel fail outright, and `silent`
+    makes every call on that channel reply with a notice that rules on nothing.
     """
 
     tier: str = HEAVY_TIER
     calls: list[DispatchContext] = field(default_factory=list)
     release: threading.Event = field(default_factory=threading.Event)
     failing: str | None = None
+    silent: str | None = None
 
     def __post_init__(self) -> None:
         self.release.set()
@@ -158,10 +184,11 @@ class Ruler:
         assert self.release.wait(TIMEOUT), "a held call was never released"
         if context.channel == self.failing:
             raise AgentUnreachableError(self.tier, "it timed out")
-        owed = [] if context.mootness is None else context.mootness.ids
+        silent = context.channel == self.silent
+        owed = [] if context.mootness is None or silent else context.mootness.ids
         title = _ruled_title(context.tasks[0] if context.tasks else "nothing")
         reply = document(
-            text="",
+            text="Need to inspect this." if silent else "",
             updates=[
                 {"kind": "revise", "target": one, "title": title, "why": "moved"} for one in owed
             ],
@@ -464,7 +491,8 @@ def test_pnd_a6_taking_a_pre_ruled_option_with_no_note_consumes_it(log: SessionL
     Then no task starts, d2 never waits and is on the frontier at once in the
          shape the `b` pre-ruling gave it, its history credits that pre-ruling
          by task, the expert is not called again, and the `c` pre-ruling's
-         result never lands.
+         result never lands; and d3, which the answer opened, is on the
+         frontier at once with its option `b` pre-ruled on d4.
     """
     ruler = Ruler()
     lane = _settled_d0(log, ruler)
@@ -475,12 +503,146 @@ def test_pnd_a6_taking_a_pre_ruled_option_with_no_note_consumes_it(log: SessionL
 
     assert _tasks_started_by(log, _gesture(log, "d1")) == []
     assert _d2(log).waiting is None
-    assert "d2" in replay(log.epoch, log.entries()).frontier
+    assert {"d2", "d3"} <= set(replay(log.epoch, log.entries()).frontier)
     assert _d2(log).title == _ruled_title(taken)
     assert _credited(log, taken)
+    assert ("b", "d4") in _pre_rulings(log)
     _join(turns)
     assert [one.channel for one in ruler.calls if one.channel == MAP_CHANNEL] == []
     assert not _credited(log, other)
+
+
+def test_pnd_a6_consuming_a_pre_ruling_supersedes_a_task_another_answer_left_on_its_target(
+    log: SessionLog,
+) -> None:
+    """
+    Given both pre-rulings on d2 landed, and then d5's option `b` -- which
+          also marks d2 -- taken, its task on d2 still running
+    When the human takes d1's option `b` with no note
+    Then that task is superseded, d2 waits on nothing, and when that task's
+         result arrives d2 keeps the shape the pre-ruling gave it.
+    """
+    ruler = Ruler()
+    lane = _settled_d0(log, ruler)
+    taken = _pre_rulings(log)[("b", "d2")]
+    ruler.release.clear()
+    _, first = lane.accept([_answer("d5", "b")], log.epoch)
+    assert _d2(log).waiting is not None
+
+    _, second = lane.accept([_answer("d1", "b")], log.epoch)
+
+    assert _d2(log).waiting is None
+    ruler.release.set()
+    _join([*first, *second])
+    assert _d2(log).title == _ruled_title(taken)
+
+
+def test_pnd_a6_a_pre_ruling_that_ruled_nothing_on_its_target_is_never_consumed(
+    log: SessionLog,
+) -> None:
+    """
+    Given both pre-rulings on d2 replied with a notice that rules on nothing
+    When the human takes d1's option `b` with no note
+    Then neither is consumed, and the click starts a task on d2.
+    """
+    ruler = Ruler(silent=BACKGROUND)
+    lane = _settled_d0(log, ruler)
+    ruler.release.clear()
+
+    _, turns = lane.accept([_answer("d1", "b")], log.epoch)
+
+    assert [item["target"] for _, item in _tasks_started_by(log, _gesture(log, "d1"))] == ["d2"]
+    ruler.release.set()
+    _join(turns)
+
+
+def test_pnd_a6_a_backend_with_no_tier_still_consumes_a_fresh_pre_ruling(log: SessionLog) -> None:
+    """
+    Given both pre-rulings on d2 landed, and a backend with no tier configured
+    When the human takes d1's option `b` with no note
+    Then d2 takes the shape the pre-ruling gave it and its history credits
+         it, and nothing is announced: no task and no pre-ruling.
+    """
+    ruler = Ruler()
+    _settled_d0(log, ruler)
+    taken = _pre_rulings(log)[("b", "d2")]
+
+    receipts, turns = Lane(log).accept([_answer("d1", "b")], log.epoch)
+
+    assert receipts[0].status == "accepted"
+    assert turns == []
+    assert _d2(log).title == _ruled_title(taken)
+    assert _credited(log, taken)
+    answer = _gesture(log, "d1")
+    assert [
+        one
+        for one in log.entries()
+        if one.seq > answer
+        and one.kind == STATUS_KIND
+        and one.payload.get("phase") == STATUS_PHASE_COMPOSING
+    ] == []
+
+
+def test_pnd_a6_a_decision_a_noted_answer_opened_is_pre_ruled_once_its_judgment_lands(
+    log: SessionLog,
+) -> None:
+    """
+    Given d1 resting on d0, with two options marking d2
+    When the human settles d0 with a note, and the expert's judgment of d1
+         lands
+    Then d1 is back on the frontier, and each of its marking options is
+         pre-ruled on d2.
+    """
+    _seed(log)
+    run_turns(_lane(log, Ruler()), _answer("d0", "a", note="and keep it small"))
+
+    _until(lambda: len(_closed(log, BACKGROUND)) == 2)
+    assert "d1" in replay(log.epoch, log.entries()).frontier
+    assert sorted(_pre_rulings(log)) == [("b", "d2"), ("c", "d2")]
+
+
+@dataclass
+class Settler:
+    """A map seat whose every turn settles d0 by document."""
+
+    tier: str = "fast"
+
+    def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
+        context = DispatchContext.model_validate_json(dispatch.read_text(encoding="utf-8"))
+        reply = document(
+            updates=[
+                {"kind": "settle", "target": "d0", "answer": {"option": "a"}, "why": "decided"}
+            ]
+        )
+        with log.appending():
+            return record_reply(
+                log, self.tier, context.channel, reply, {}, context.mootness, context.tasks
+            )
+
+
+def test_pnd_a6_a_settlement_by_the_grill_master_pre_rules_what_it_opens(log: SessionLog) -> None:
+    """
+    Given d1 resting on d0, with two options marking d2
+    When a grill-master turn on the map settles d0 by document
+    Then each of d1's marking options is pre-ruled on d2.
+    """
+    _seed(log)
+    said = EventSubmission(
+        kind="thread-turn",
+        actor="human",
+        channel=MAP_CHANNEL,
+        idempotency_key="human-said",
+        payload={"turns": [{"text": "Settle d0 for me."}]},
+    )
+
+    run_turns(Lane(log, Settler(), Ruler()), said)
+
+    _until(lambda: len(_closed(log, BACKGROUND)) == 2)
+    assert (
+        next(one for one in replay(log.epoch, log.entries()).decisions if one.id == "d0").status
+        == "settled"
+    )
+    assert sorted(_pre_rulings(log)) == [("b", "d2"), ("c", "d2")]
 
 
 def test_pnd_a6_an_answer_with_a_note_consumes_nothing(log: SessionLog) -> None:
@@ -505,9 +667,15 @@ def test_pnd_a6_an_answer_with_a_note_consumes_nothing(log: SessionLog) -> None:
 # names the proposal the revise before it queued.
 TOUCHES: dict[str, list[Callable[[SessionLog], EventSubmission]]] = {
     "its-target": [lambda _log: _revise("d2")],
+    "its-target-replaced-by-a-new-node": [lambda _log: _replace("d2")],
     "the-decision-it-was-computed-for": [lambda _log: _revise("d1")],
     "an-ancestor-of-its-target": [lambda _log: _revise("d9"), lambda log: _apply(log, "d9")],
     "an-ancestor-of-its-decision": [lambda _log: _revise("d0"), lambda log: _apply(log, "d0")],
+    "an-ancestor-two-hops-above-its-target": [
+        lambda _log: _revise("d8"),
+        lambda log: _apply(log, "d8"),
+    ],
+    "the-fog-gate-of-its-target": [lambda _log: _revise("d7"), lambda log: _apply(log, "d7")],
 }
 
 
@@ -517,9 +685,10 @@ def test_pnd_a6_a_landed_change_after_its_basis_makes_a_pre_ruling_stale(
 ) -> None:
     """
     Given both pre-rulings on d2 landed and cached
-    When a change lands on d2, on d1, or on an ancestor of either -- an agent's
-         revise of an unanswered decision, or a human's apply of a proposal on
-         an answered one -- and the human then takes d1's option `b`
+    When a change lands on d2, on d1, or on an ancestor of either -- one or two
+         hops up, by prereq or by fog -- as an agent's revise or replacement of
+         an unanswered decision or a human's apply of a proposal on an answered
+         one, and the human then takes d1's option `b`
     Then the pre-ruling is never consumed, and the click starts a task on d2.
     """
     ruler = Ruler()
@@ -682,6 +851,34 @@ def test_pnd_a14_pre_rulings_announce_and_close_on_their_own_channel(log: Sessio
     assert {one.payload["opened"] for one in _closed(log, BACKGROUND)} == announced
     assert _map_pairing(log.entries()) == (1, 1)
     assert open_announcements(log.entries()) == []
+
+
+def test_pnd_a14_a_map_turn_held_across_background_turns_closes_on_its_own_announcement(
+    log: SessionLog,
+) -> None:
+    """
+    Given the map turn d0's answer started, held open
+    When both pre-rulings it started announce and close while it runs, and
+         only then does it close
+    Then the map channel's one closing entry names the map channel's one
+         announcement, and no entry naming a pre-ruling is on the map channel.
+    """
+    _seed(log)
+    spy = SpyDriver(hold=True)
+    _, turns = Lane(log, spy, Ruler()).accept([_answer("d0", "a")], log.epoch)
+    _until(lambda: len(_closed(log, BACKGROUND)) == 2)
+    assert [one.channel for one in open_announcements(log.entries())] == [MAP_CHANNEL]
+
+    spy.release.set()
+    _join(turns)
+
+    on_map = [
+        one for one in log.entries() if one.kind == STATUS_KIND and one.channel == MAP_CHANNEL
+    ]
+    announced = [one.seq for one in on_map if one.payload.get("phase") == STATUS_PHASE_COMPOSING]
+    assert [one.payload["opened"] for one in _closed(log, MAP_CHANNEL)] == announced
+    assert len(announced) == 1
+    assert not any("option" in item for one in on_map for item in one.payload.get("tasks") or [])
 
 
 def test_pnd_a14_a_restart_closes_the_background_turn_and_leaves_the_map_alone(
