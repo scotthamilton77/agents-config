@@ -733,13 +733,11 @@ carries the replacement; *suspect* names what would settle it.
 - **GUI-A101.** Changes: "a fast tier that rules on neither decision is followed by an
   expert turn on the same gesture whose recorded dispatch names both ... and a fast tier
   that rules `stands` on both, each with a why, is followed by no expert turn".
-- **GUI-A103.** Changes: "a reply ruling on each named id — an `invalidate` queued for one
-  and `stands` with a why for the other — leaves the expert untouched, the human unsaid
-  to, the invalidate in the queue and the standing decision on the frontier under a notice
-  targeted at it". Where the turn carries an impact task, its change to that task's own
-  target lands directly under PND-D3 of
-  `docs/specs/2026-08-30-grilling-board-pending-analysis.md`, and the queue rule holds for
-  every other change.
+- **GUI-A103.** Changes: "a reply ruling on each named id — an `invalidate` for one and
+  `stands` with a why for the other — leaves the expert untouched, the human unsaid to, the
+  invalidate landed on its own target with a history line naming the impact task (PND-D3 of
+  `docs/specs/2026-08-30-grilling-board-pending-analysis.md`), and the standing decision on the
+  frontier under a notice targeted at it".
 - **GUI-A109.** Changes: "the expert proposes nothing and rules nothing" in place of
   "proposes nothing either".
 - **GUI-D46's map seat (`gpt-5.6-luna` at `medium`).** Suspect by design in both

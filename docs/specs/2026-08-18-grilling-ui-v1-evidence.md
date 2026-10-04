@@ -119,7 +119,6 @@ opens one proves something else.
 - GUI-A102 | test: packages/grillui/tests/unit/test_lane.py::test_an_expert_that_rules_on_nothing_either_leaves_the_ids_named_to_the_human
 - GUI-A103 | test: packages/grillui/tests/unit/test_lane.py::test_an_obligation_met_or_never_created_presses_nobody
 - GUI-A103 | test: packages/grillui/tests/unit/test_rulings.py::test_a_ruling_carrying_its_update_is_credited_and_the_change_lands_on_its_target
-- GUI-A103 | test: packages/grillui/tests/e2e/test_history.py::test_an_applied_proposal_records_its_proposer_and_the_verdict_that_produced_it
 - GUI-A106 | probe: packages/grillui/tests/browser/completion_probe.py::main
 - GUI-A107 | test: packages/grillui/tests/unit/test_capture.py::test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open
 - GUI-A110 | probe: packages/grillui/tests/browser/next_open_probe.py::main
