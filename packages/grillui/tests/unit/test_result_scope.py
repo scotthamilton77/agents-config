@@ -39,13 +39,13 @@ NEW_TITLE = "Which d2, now that it is rebuilt?"
 
 
 def _seed(log: SessionLog) -> None:
-    """d1's option b marks d2 and its option d marks d2 and d3. Nothing else
-    marks anything."""
+    """d1's option b marks d2 and its option d marks d2 and d3; d4's option b
+    marks d2 as well. Nothing else marks anything."""
     for node, options in (
         ("d1", [PLAIN[0], MARKS_D2, MARKS_BOTH]),
         ("d2", PLAIN),
         ("d3", PLAIN),
-        ("d4", PLAIN),
+        ("d4", [PLAIN[0], MARKS_D2]),
     ):
         receipt = log.submit(
             [
@@ -370,6 +370,58 @@ def test_pnd_a4_a_restart_fails_only_the_task_whose_result_never_landed(
     assert by_id["d2"].title == "d2, rebuilt"
     assert by_id["d3"].waiting is not None
     assert "d3" not in image.frontier
+
+
+def test_pnd_a4_a_result_whose_every_task_was_superseded_still_lands_nothing_wider(
+    log: SessionLog,
+) -> None:
+    """
+    Given d1's marked answer in flight with its one task on d2, and d4's
+         answer, also marking d2, superseding that task before it replies
+    When d1's turn then lands a document revising d2, revising d3, which nobody
+         has answered, and adding a decision
+    Then its change to d2 is dropped with a history line naming the superseded
+         task, and the revise of d3 and the new decision both wait in the inbox:
+         a turn dispatched with tasks lands nothing wider, however many of its
+         tasks a later gesture took over.
+    """
+    _seed(log)
+    seat = SpyDriver(tier="heavy", hold=True)
+    lane = Lane(log, seat)
+    _, first = lane.accept([_answer("d1")], log.epoch)
+    assert seat.started.wait(TIMEOUT)
+    context = DispatchContext.model_validate_json(seat.dispatches[0].read_text("utf-8"))
+    _, second = lane.accept([_answer("d4")], log.epoch)
+    stale = _task_of(log, "d2")
+    result = read_document(
+        document(
+            "",
+            updates=[
+                {"kind": "revise", "target": "d2", "title": "d2, rebuilt"},
+                {"kind": "revise", "target": "d3", "title": "d3, rebuilt"},
+                {
+                    "kind": "add-node",
+                    "title": "Who rebuilds it?",
+                    "options": [{"id": "a", "text": "Us"}, {"id": "b", "text": "Them"}],
+                },
+            ],
+            rulings=[{"decision": "d2", "ruling": "revise", "why": "rebuilt"}],
+        )
+    )
+
+    with log.appending():
+        record_document(log, "heavy", result, {}, context.mootness, context.tasks)
+
+    queued = _queued(log)
+    assert ("revise", "d3") in queued, queued
+    assert any(kind == "add-node" for kind, _ in queued), queued
+    assert _node(log, "d3").title == "Which d3?"
+    assert _node(log, "d2").title == "Which d2?"
+    history = replay(log.epoch, log.entries()).history["d2"]
+    assert any(stale in one.why for one in history), history
+    seat.release.set()
+    for one in [*first, *second]:
+        one.join(TIMEOUT)
 
 
 # --- the empty revise ---------------------------------------------------------

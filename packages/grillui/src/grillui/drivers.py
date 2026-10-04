@@ -1926,8 +1926,11 @@ def record_document(
             }
         )
         narrowed = owed.model_copy(update={"ids": kept}) if kept else None
-        mine = [one for one in tasks if one not in {task_id(owed.gesture, t) for t in gone}]
-        spoke = _record_document(log, tier, document, attribution, narrowed, mine)
+        # Every task the turn carried is still named, superseded ones included.
+        # A superseded task has no target left to change, and the replay skips
+        # it; but a turn left naming none would read as one dispatched with no
+        # task at all, and land its wider changes without the human.
+        spoke = _record_document(log, tier, document, attribution, narrowed, tasks)
         # Recorded only once the turn has landed: a turn the appender refuses
         # is retried, and the retry strikes the same result again.
         for one in dropped:
@@ -1968,10 +1971,11 @@ def _record_document(
     to it before anything is built out of them. A turn that owed nothing lands
     no rulings and mints no `stands` notice, whatever it sent.
 
-    `tasks` is the impact tasks this turn still carries, and the entry names
-    them. The replay lets a change to one of their targets land without the
-    human's apply and queues everything else the turn proposed, so a turn that
-    carries no task leaves the key off and lands exactly as it always has.
+    `tasks` is the impact tasks this turn was dispatched with, and the entry
+    names them. The replay lets a change to the target of one still live land
+    without the human's apply and queues everything else the turn proposed, so
+    a turn that carries no task leaves the key off and lands exactly as it
+    always has.
     """
     document, struck = owed_rulings(document, owed)
     updates = sub_updates(document)
