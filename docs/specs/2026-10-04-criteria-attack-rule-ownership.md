@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-04
 **Status:** Draft child spec of `docs/specs/2026-09-18-acceptance-criteria-quality.md`,
-part of slice S2 (quality assessment). Not yet attacked.
+part of slice S2 (quality assessment).
 **Work item:** `agents-config-9k9.405.13`, design child `agents-config-9k9.405.13.1`.
 **Bounded by:** `docs/specs/2026-09-18-acceptance-criteria-lifecycle.md`.
 **Charter:** `docs/specs/2026-07-21-harness-rework-way-forward.md`, decisions D3, D5 and D7.
@@ -91,10 +91,16 @@ reconsidered when that measurement shows its lens failing the rule's cases.
 emitter suite and the checker suite pin three things: how a prompt is
 composed, which lenses run, and what the record check refuses.
 
-Six of the criteria below name tests that exist today: ARO-A3, ARO-A4, ARO-A5,
-ARO-A8, ARO-A9 and ARO-A10. They already pass. They are preservation
-criteria, and they must still pass after the `enforces` lists change. The
-slice adds a test for each of the other five where none exists.
+Nine of the criteria below name tests that exist today: ARO-A3, ARO-A4,
+ARO-A5, ARO-A8, ARO-A9, ARO-A10, ARO-A15, ARO-A16 and ARO-A17. They already
+pass. They are preservation criteria, and they must still pass after the
+`enforces` lists change. The slice adds a test for each other criterion where
+none exists.
+
+A correct registry does not show that an attack runs four lenses. Dispatch is
+the invoking agent's act, which no suite observes. The suites can observe the
+two ends of it: the round the emitter writes, and the record the check closes.
+ARO-A12 and ARO-A13 pin those.
 
 Checking the `enforces` lists alone is rejected. A list is configuration, and
 a correct list does not show that the prompt a lens receives carries its
@@ -106,9 +112,10 @@ The emitter suite is `emit_prompts_test.py` and the checker suite is
 `check_record_test.py`, both in `src/user/.claude/skills/ac-attack/`. Both run
 under `make content-tests`.
 
-- **ARO-A1** In the source tree, every rule ID the standard holds appears in
-  exactly one lens's `enforces` list. The emitter suite fails, naming the
-  rule, when a rule has no owning lens or two.
+- **ARO-A1** In the source tree, every rule ID the standard holds appears
+  exactly once across the four lenses' `enforces` lists. The emitter suite
+  fails, naming the rule, when a rule appears in no list or more than once,
+  whether in two lenses' lists or twice in one.
 - **ARO-A2** The emitter suite fails when the lens registry holds any set other
   than behavioural-outcome, obligation-reduction, set-consistency and what-if.
 - **ARO-A3** Each emitted prompt equals its lens's body plus the four shared
@@ -117,8 +124,8 @@ under `make content-tests`.
   under the existing prompt-composition test.
 - **ARO-A5** A lens naming a rule the standard lacks is refused as `no-lenses`
   with nothing written, under the existing emitter test.
-- **ARO-A6** The record check refuses as `schema` an objection lacking its
-  target, its ground's rule, or any scenario part.
+- **ARO-A6** The record check refuses as `schema` an objection that lacks, or
+  leaves blank, its target, its ground's rule, or any scenario part.
 - **ARO-A7** The record check refuses as `schema` an objection carrying a field
   outside the objection schema, such as a drafted criterion.
 - **ARO-A8** The record check refuses an obligation-reduction report whose
@@ -130,41 +137,58 @@ under `make content-tests`.
 - **ARO-A11** The prompt emitted for each lens carries exactly the rules
   ARO-D1's table lists for that lens. The emitter suite fails, naming the
   lens, when the rules in a lens's prompt differ from its row.
+- **ARO-A12** Given the source registry, the round the emitter writes names
+  exactly the four lenses, and the emitter writes exactly one prompt for each.
+- **ARO-A13** The record check reports a record as incomplete when any of the
+  four lenses has no report in it, naming the lens.
+- **ARO-A14** For each of the six rules ARO-D1 newly assigns, the record check
+  raises no `ground-outside-lens` error on a well-formed objection from the
+  owning lens that cites that rule.
+- **ARO-A15** The emitter refuses an empty lens registry as `no-lenses` with
+  nothing written, under the existing emitter test.
+- **ARO-A16** The emitter refuses an absent standard as `no-standard` with
+  nothing written, under the existing emitter test.
+- **ARO-A17** Emitting twice from an unchanged tree and document writes
+  byte-identical prompts, under the existing determinism test.
+- **ARO-A18** With the `enforces` lists changed as ARO-D1 states, `make
+  content-tests` exits 0, so no other content suite regresses.
 
 ### Traceability
 
 | Parent | Child criteria | Check |
 | --- | --- | --- |
 | ACQ-A20 | ARO-A6, ARO-A7 | Checker suite |
-| ACQ-A22 | ARO-A2 | Emitter suite |
+| ACQ-A22 | ARO-A2, ARO-A12, ARO-A13 | Emitter suite, checker suite |
 | ACQ-A23, apart from template additions | ARO-A3 | Emitter suite, existing test |
-| ACQ-A24, an owning lens for every rule | ARO-A1, ARO-A11 | Emitter suite |
-| ACQ-A26 | ARO-A4, ARO-A5 | Emitter suite, existing tests |
+| ACQ-A24, an owning lens for every rule | ARO-A1, ARO-A11, ARO-A14 | Emitter suite, checker suite |
+| ACQ-A26 | ARO-A4, ARO-A5, ARO-A15, ARO-A16, ARO-A17 | Emitter suite, existing tests |
 | ACQ-A28 | ARO-A8, ARO-A9 | Checker suite, existing tests |
 | ACQ-A29 | ARO-A10 | Checker suite, existing test |
+| No regression in the other content suites | ARO-A18 | `make content-tests` |
 
 ### What-if questions
 
 - A failure names what broke: the rule for ARO-A1, the lens for ARO-A11, and
   the refusal code for ARO-A5 to ARO-A10.
-- An empty registry and an absent standard are the existing `no-lenses` and
-  `no-standard` refusals.
+- An empty registry is ARO-A15, and an absent standard is ARO-A16. A blank
+  field in an objection is ARO-A6.
 - A rule added to the standard with no owner fails ARO-A1. A lens naming a
-  rule the standard lacks is ARO-A5.
-- A rule in two lists fails ARO-A1.
-- Every check is a read, so running it twice or with nothing changed answers
-  the same way.
+  rule the standard lacks is ARO-A5. A lens missing from a record is ARO-A13.
+- A rule in two lists, or twice in one list, fails ARO-A1.
+- Emitting again with nothing changed is ARO-A17. This slice changes the
+  `enforces` lists and adds tests. It changes no code path that writes, so it
+  adds no criterion on what a check leaves behind.
 
 ## Ordered slice list
 
-- **S2.1: Rule ownership and the attack surface** (ARO-A1 to ARO-A11; ARO-D1,
+- **S2.1: Rule ownership and the attack surface** (ARO-A1 to ARO-A18; ARO-D1,
   ARO-D2). Reassign `enforces` in `lenses/*/prompt.md`, and add the new tests
   to `emit_prompts_test.py` and `check_record_test.py`. Depends on the
   parent's S1, landed.
 
 ## Continuations
 
-- feat: AC attack S2.1: rule ownership and the attack surface (ARO-D1, ARO-D2) — AC: ARO-A1, ARO-A2, ARO-A3, ARO-A4, ARO-A5, ARO-A6, ARO-A7, ARO-A8, ARO-A9, ARO-A10, ARO-A11; make content-tests exits 0.
+- feat: AC attack S2.1: rule ownership and the attack surface (ARO-D1, ARO-D2) — AC: ARO-A1, ARO-A2, ARO-A3, ARO-A4, ARO-A5, ARO-A6, ARO-A7, ARO-A8, ARO-A9, ARO-A10, ARO-A11, ARO-A12, ARO-A13, ARO-A14, ARO-A15, ARO-A16, ARO-A17, ARO-A18.
 
 ## Out of scope
 

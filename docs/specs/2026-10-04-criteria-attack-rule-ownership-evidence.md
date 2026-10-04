@@ -17,3 +17,10 @@ opens one proves something else.
 - ARO-A9 | open
 - ARO-A10 | open
 - ARO-A11 | open
+- ARO-A12 | open
+- ARO-A13 | open
+- ARO-A14 | open
+- ARO-A15 | open
+- ARO-A16 | open
+- ARO-A17 | open
+- ARO-A18 | open
