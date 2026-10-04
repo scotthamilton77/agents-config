@@ -10,14 +10,16 @@ session could not be run over last week's grilling.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import SpyDriver, apply_all, driven, event, handoff_doc, write_handoff
+from conftest import TIMEOUT, SpyDriver, apply_all, driven, event, handoff_doc, write_handoff
 
 from grillui.api import create_app
 from grillui.capture import ENDED_BY_HUMAN, NOT_FORMALLY_ENDED, capture, default_summary
+from grillui.lane import open_announcements
 from grillui.log import LOG_FILE, RESULT_FILE, SessionLog
 from grillui.schemas import (
     SESSION_END_KIND,
@@ -52,6 +54,20 @@ def answer(client: TestClient, epoch: str, node: str = "d1") -> None:
             ],
         },
     )
+
+
+def quiet(log: SessionLog) -> None:
+    """Wait until every turn the lane opened has been closed.
+
+    An answer schedules its turn in the background, and the turn appends its
+    entries after the request has returned. A check that reads the log twice
+    -- once through capture and once itself -- has to wait for that turn, or
+    the two reads see different logs.
+    """
+    deadline = time.monotonic() + TIMEOUT
+    while open_announcements(log.entries()):
+        assert time.monotonic() < deadline, "a turn the answer scheduled never closed"
+        time.sleep(0.01)
 
 
 def end(client: TestClient, epoch: str, actor: str = "human", **payload: Any) -> dict[str, Any]:
@@ -292,6 +308,7 @@ def test_capture_over_a_log_with_no_terminal_entry_says_so(session_dir: Path) ->
     log = started(session_dir)
     client = driven(log, SpyDriver())
     answer(client, log.epoch)
+    quiet(log)
 
     result = capture(session_dir)
 
