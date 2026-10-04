@@ -1,11 +1,11 @@
 """What the option row says about an answer once the human has given it.
 
 The column is where a human checks what they answered, and the option row is the
-part of it they read fastest: a filled button reads as the standing answer. So
+part of it they read fastest: a marked button reads as the standing answer. So
 the mark has to sit on the option the answer names, and the recommendation's
-fill has to leave when the answer arrives. A row that kept option a filled after
-the human took option b would tell them the opposite of what the log says, in
-the one place they would look to catch it.
+arrow and caption have to leave when the answer arrives. A row that kept option
+a marked after the human took option b would tell them the opposite of what the
+log says, in the one place they would look to catch it.
 
 The claim is a rendered one, which is why it is here rather than in the source
 checks: a class assembled in a function nobody renders is not a mark anyone saw.
@@ -40,12 +40,13 @@ def test_a_settled_decision_marks_the_option_the_human_chose(
     Given a decision offering two options
     When the human answers it with the second one and opens it again
     Then that option's control wears the mark and the tick, and the first
-         option wears neither the mark nor the recommendation's fill.
+         option wears neither the mark nor the recommendation's arrow
+         and caption.
 
     The decision is reopened because settling collapses it, and a mark on a row
     nobody can see is not the fix. The first option is asserted on directly: the
-    failure being closed is one control staying filled, and a check that only
-    looked at the answered option would pass with both of them filled.
+    failure being closed is one control staying marked, and a check that only
+    looked at the answered option would pass with both of them marked.
     """
     session = launcher(handoff=handoff(PLAN))
     session.script_codex(turn(document("Noted.")))
@@ -62,8 +63,10 @@ def test_a_settled_decision_marks_the_option_the_human_chose(
 
     passed_over = page.locator('#col-d1 [data-act="pick"][data-opt="a"]')
     worn = passed_over.get_attribute("class") or ""
-    assert "primary" not in worn, worn
     assert "chosen" not in worn, worn
+    said = passed_over.inner_text()
+    assert "➡️" not in said, said
+    assert passed_over.locator(".rec-line").count() == 0, said
 
 
 def test_the_human_reopens_a_decision_they_settled(
