@@ -33,6 +33,7 @@ All criteria describe future implementation; their evidence is open. The audit i
 - DEL-G6 | open
 - DEL-G7 | open
 - DEL-G8 | open
+- DEL-G9 | open
 - DEL-V1 | open
 - DEL-V2 | open
 - DEL-V3 | open
