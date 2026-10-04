@@ -50,6 +50,8 @@ checker = _load(CHECKER_PATH)
 # and holds one loader's verdict against the other's.
 emitter = _load(EMITTER_PATH)
 LENS_NAMES = sorted(path.parent.name for path in LENSES_DIR.glob("*/prompt.md"))
+# The rules each lens owns, held once in the emitter's suite, which pins the prompts to it.
+OWNERSHIP = _load(HERE / "emit_prompts_test.py").OWNERSHIP
 
 # The rule each shipped lens objects on in these records, one its front matter enforces. Any other
 # lens name, one no registry declares, objects on a rule chosen for nothing in particular.
@@ -1483,6 +1485,28 @@ class TestObjectionShape:
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
 
+    def test_aro_a6_an_objection_short_its_target_its_rule_or_a_scenario_part_is_refused(
+            self, attack, capsys):
+        """The criterion an objection concerns, the rule it cites and the three parts of its
+        scenario are what make it adjudicable, and a field written blank names nothing more than
+        one left out. The target `none` is content: it says no criterion covers the ground."""
+        for path in (("target_ac",), ("ground", "rule"), ("scenario", "given"),
+                     ("scenario", "when"), ("scenario", "expect")):
+            for mutation in ("absent", "", " \t "):
+                record = attack.record()
+                holder = record["objections"][0]
+                for key in path[:-1]:
+                    holder = holder[key]
+                if mutation == "absent":
+                    del holder[path[-1]]
+                else:
+                    holder[path[-1]] = mutation
+                code, result = check(attack, record, capsys)
+                assert (code, codes(result)) == (2, {"schema"}), (path, mutation)
+        record = attack.record()
+        record["objections"][0]["target_ac"] = "none"
+        assert check(attack, record, capsys) == (0, closed(attack))
+
     def test_c2_a_objection_naming_all_three_parts_is_a_testable_claim(self, attack, capsys):
         """S6-C2: inverse — an item that names a state, an action and an outcome enters the
         round and is adjudicated."""
@@ -1543,6 +1567,17 @@ class TestGround:
     def test_an_objection_on_a_rule_its_lens_enforces_closes(self, attack, capsys):
         """Inverse: every objection in the shipped record cites a rule its lens enforces."""
         assert check(attack, attack.record(), capsys) == (0, closed(attack))
+
+    def test_aro_a14_an_objection_under_any_rule_its_owning_lens_holds_closes_the_round(
+            self, attack, capsys):
+        """Every rule has a lens that can object under it: a well-formed objection from the owning
+        lens, citing the rule and adjudicated, leaves a record that is otherwise complete closed."""
+        for lens, rules in OWNERSHIP.items():
+            for rule in rules:
+                item = objection(lens, "A1", "p1")
+                item["ground"]["rule"] = rule
+                record = with_residue(attack.empty_round(), item)
+                assert check(attack, record, capsys) == (0, closed(attack)), (lens, rule)
 
     def test_the_rule_is_matched_under_either_spelling_of_the_lens(self, attack, capsys):
         """The producing lens is found the way coverage finds it, so an attribution differing in
@@ -1624,6 +1659,18 @@ class TestWorkings:
         damage(reduction(record)["workings"])
         code, result = check(attack, record, capsys)
         assert code == 1 and codes(result) == {"invalid-workings"}, description
+
+    def test_aro_a8_workings_missing_or_failing_their_schema_leave_the_round_open(self, attack,
+                                                                                capsys):
+        """An obligation-reduction report is read off its inventory, so a report carrying none and
+        one carrying an inventory its schema refuses are both a lens that returned nothing usable."""
+        for description, damage in (("missing", lambda entry: entry.pop("workings")),
+                                    ("failing their schema",
+                                     lambda entry: entry["workings"].pop("criteria"))):
+            record = attack.empty_round()
+            damage(reduction(record))
+            code, result = check(attack, record, capsys)
+            assert (code, codes(result)) == (1, {"invalid-workings"}), description
 
     def test_workings_on_a_lens_that_does_not_require_them_are_ignored(self, attack, capsys):
         record = attack.empty_round()

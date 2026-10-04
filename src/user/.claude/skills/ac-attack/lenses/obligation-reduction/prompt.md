@@ -2,7 +2,7 @@
 tier: frontier
 transport: codex
 standard: acceptance-criteria
-enforces: [coverage, sufficiency, can-fail, has-basis]
+enforces: [coverage, sufficiency, can-fail, has-basis, restraint]
 workings: required
 ---
 You are checking two things: that the document's acceptance criteria discharge every obligation the document takes on, and that every criterion discharges one of them.

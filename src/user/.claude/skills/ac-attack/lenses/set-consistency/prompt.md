@@ -2,7 +2,7 @@
 tier: mid
 transport: openrouter
 standard: acceptance-criteria
-enforces: [consistency, decision-closure]
+enforces: [consistency, decision-closure, verified-premise]
 ---
 You are reading the document's acceptance criteria as one set.
 
