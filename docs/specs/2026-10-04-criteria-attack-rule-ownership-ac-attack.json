@@ -1,0 +1,429 @@
+{
+  "dispositions": [
+    {
+      "disposition": "rejected",
+      "id": "behavioural-outcome-1",
+      "rationale": "Raised and answered in both earlier rounds. Dispatch is the invoking agent's act and no suite can observe it. ARO-D2 and Out of scope say so, ARO-A12 and ARO-A13 pin the two ends a suite can observe, and the record attests to the dispatch between them. The limit on the parent's ACQ-A22 is reported to the owner."
+    },
+    {
+      "disposition": "rejected",
+      "id": "behavioural-outcome-2",
+      "rationale": "A weakened or removed test is a defect in the change that weakens it, and the review of that change reads its diff. A criterion cannot make a gate detect the deletion of its own tests, and this slice adds tests and removes none."
+    },
+    {
+      "covering_ac": "ARO-A6",
+      "disposition": "accepted",
+      "id": "set-consistency-1",
+      "revision": "sha256:5218eef2dcd4e76174b9881d346d2a410b408c85079af6060372532dad50c033"
+    },
+    {
+      "disposition": "rejected",
+      "id": "what-if-1",
+      "rationale": "Existing behaviour outside the slice. The emitter already refuses, as no-lenses, a lens whose front matter omits enforces, leaves it blank or names no rule, and existing emitter tests pin that. In the source tree a wrongly edited list fails ARO-A1 or ARO-A11."
+    },
+    {
+      "disposition": "rejected",
+      "id": "what-if-2",
+      "rationale": "Existing behaviour outside the slice. The emitter already refuses as no-standard a standard whose body holds no rule heading, and an existing emitter test pins a missing or empty standard. The slice does not change how the standard is read."
+    },
+    {
+      "disposition": "rejected",
+      "id": "what-if-3",
+      "rationale": "Existing behaviour outside the slice. The record check already treats a lens reporting twice as a defect in the record, and an existing checker test pins it. The slice changes ownership lists, not how entries are counted."
+    }
+  ],
+  "lenses": [
+    {
+      "lens": "behavioural-outcome",
+      "report": "objections"
+    },
+    {
+      "lens": "obligation-reduction",
+      "report": "empty",
+      "workings": {
+        "criteria": [
+          "ARO-A1",
+          "ARO-A2",
+          "ARO-A3",
+          "ARO-A4",
+          "ARO-A5",
+          "ARO-A6",
+          "ARO-A7",
+          "ARO-A8",
+          "ARO-A9",
+          "ARO-A10",
+          "ARO-A11",
+          "ARO-A12",
+          "ARO-A13",
+          "ARO-A14",
+          "ARO-A15",
+          "ARO-A16",
+          "ARO-A17",
+          "ARO-A18"
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARO-A1"
+                ],
+                "id": "O1.1",
+                "statement": "Every standard rule appears exactly once across the source `enforces` lists, including rejection of duplicate ownership."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A4",
+                  "ARO-A11"
+                ],
+                "id": "O1.2",
+                "statement": "The source ownership and emitted prompt for each lens match that lens's row in ARO-D1."
+              }
+            ],
+            "source": "ARO-D1: “Every rule has exactly one owning lens,” followed by the ownership table; “A lens's `enforces` list names the rules it owns.”",
+            "statement": "Every standard rule has exactly one owner, with ownership matching ARO-D1's lens-to-rule table."
+          },
+          {
+            "id": "O2",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARO-A3"
+                ],
+                "id": "O2.1",
+                "statement": "Each emitted prompt remains the lens body plus the four shared contracts, byte for byte."
+              }
+            ],
+            "source": "ARO-D2: “The suites hold the attack surface while ownership changes” and “The emitter suite ... already pins prompt composition.”",
+            "statement": "Ownership changes preserve the established prompt-composition contract."
+          },
+          {
+            "id": "O3",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARO-A10"
+                ],
+                "id": "O3.1",
+                "statement": "An objection citing a rule not owned by its lens is refused."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A14"
+                ],
+                "id": "O3.2",
+                "statement": "A valid objection citing any rule through its owning lens is accepted."
+              }
+            ],
+            "source": "ARO-D1: “The record check accepts an objection from the lens only under those rules.”",
+            "statement": "The record checker permits each lens to object under exactly its owned rules."
+          },
+          {
+            "id": "O4",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARO-A2"
+                ],
+                "id": "O4.1",
+                "statement": "The source registry contains exactly behavioural-outcome, obligation-reduction, set-consistency and what-if."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A12"
+                ],
+                "id": "O4.2",
+                "statement": "The emitted round names those four lenses and contains exactly one prompt for each."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A13"
+                ],
+                "id": "O4.3",
+                "statement": "A record missing any registered lens remains incomplete, while an `empty` report counts as that lens's entry."
+              }
+            ],
+            "source": "Scope defines a lens as one of four reviewers. ARO-D2 says the suites pin “which lenses run” and observe “the round the emitter writes, and the record the check closes.”",
+            "statement": "The deterministic suites pin the four-lens attack surface at the emitted-round and checked-record boundaries."
+          },
+          {
+            "id": "O5",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARO-A5"
+                ],
+                "id": "O5.1",
+                "statement": "A lens naming a rule absent from the standard is refused as `no-lenses` with nothing written."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A15"
+                ],
+                "id": "O5.2",
+                "statement": "An empty lens registry is refused as `no-lenses` with nothing written."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A16"
+                ],
+                "id": "O5.3",
+                "statement": "An absent standard is refused as `no-standard` with nothing written."
+              }
+            ],
+            "source": "The current state says the emitter refuses a lens naming an unknown rule. ARO-D2 identifies ARO-A5, ARO-A15 and ARO-A16 as existing preservation criteria that must continue to pass.",
+            "statement": "The emitter refuses invalid or missing configuration without producing output."
+          },
+          {
+            "id": "O6",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARO-A6"
+                ],
+                "id": "O6.1",
+                "statement": "An objection with a missing or blank target, rule, or scenario component is refused as `schema`."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A7"
+                ],
+                "id": "O6.2",
+                "statement": "An objection containing a field outside the closed objection schema is refused as `schema`."
+              }
+            ],
+            "source": "Scope: “This spec serves ... ACQ-A20 ... in full.” ARO-D2 states that the checker suite pins what the record check refuses.",
+            "statement": "The checker enforces the objection record schema required by the parent contract."
+          },
+          {
+            "id": "O7",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARO-A8"
+                ],
+                "id": "O7.1",
+                "statement": "Missing or malformed obligation-reduction workings are refused as `invalid-workings`."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A9"
+                ],
+                "id": "O7.2",
+                "statement": "An undischarged obligation part without a corresponding objection is refused as `unreported-residue`."
+              }
+            ],
+            "source": "The current state says the checker suite already pins `invalid-workings` and `unreported-residue`; ARO-D2 requires those existing preservation criteria to remain passing.",
+            "statement": "Ownership changes preserve the checker's obligation-reduction integrity refusals."
+          },
+          {
+            "id": "O8",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARO-A17"
+                ],
+                "id": "O8.1",
+                "statement": "Two emissions from unchanged inputs produce byte-identical prompts."
+              }
+            ],
+            "source": "Scope says deterministic suites check this work. ARO-D2 identifies ARO-A17 as an existing preservation criterion that must still pass.",
+            "statement": "Prompt emission remains deterministic for an unchanged tree and document."
+          },
+          {
+            "id": "O9",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARO-A1",
+                  "ARO-A2",
+                  "ARO-A6",
+                  "ARO-A7",
+                  "ARO-A11",
+                  "ARO-A12",
+                  "ARO-A13",
+                  "ARO-A14"
+                ],
+                "id": "O9.1",
+                "statement": "The newly required suite checks cover the ownership, registry, schema, emitted-round, checked-record and owned-objection cases."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A3",
+                  "ARO-A4",
+                  "ARO-A5",
+                  "ARO-A8",
+                  "ARO-A9",
+                  "ARO-A10",
+                  "ARO-A15",
+                  "ARO-A16",
+                  "ARO-A17"
+                ],
+                "id": "O9.2",
+                "statement": "The nine identified existing preservation checks remain passing after the ownership change."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A18"
+                ],
+                "id": "O9.3",
+                "statement": "The complete content-test gate exits successfully after the change."
+              }
+            ],
+            "source": "ARO-D2: “The slice adds a test for each other criterion that a suite checks, where none exists”; the nine named existing criteria “must still pass”; “ARO-A18 is checked by the gate it names.”",
+            "statement": "The slice adds missing deterministic tests, preserves existing tests, and leaves the complete content-test gate green."
+          },
+          {
+            "id": "O10",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARO-A1"
+                ],
+                "id": "O10.1",
+                "statement": "A missing or multiply owned rule failure names the rule."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A11"
+                ],
+                "id": "O10.2",
+                "statement": "An emitted ownership-table mismatch names the lens."
+              },
+              {
+                "discharged_by": [
+                  "ARO-A5",
+                  "ARO-A6",
+                  "ARO-A7",
+                  "ARO-A8",
+                  "ARO-A9",
+                  "ARO-A10"
+                ],
+                "id": "O10.3",
+                "statement": "The invalid-rule, schema, workings, residue and outside-lens failures report their specified refusal codes."
+              }
+            ],
+            "source": "What-if questions: “A failure names what broke: the rule for ARO-A1, the lens for ARO-A11, and the refusal code for ARO-A5 to ARO-A10.”",
+            "statement": "Failures identify the broken rule or lens and use the promised refusal code."
+          }
+        ]
+      }
+    },
+    {
+      "lens": "set-consistency",
+      "report": "objections"
+    },
+    {
+      "lens": "what-if",
+      "report": "objections"
+    }
+  ],
+  "objections": [
+    {
+      "ground": {
+        "reason": "ARO-D2 says the suites pin which lenses run, but ARO-A12 checks only the emitted round and prompt files, while ARO-A13 checks only record entries and expressly accepts `empty`. The document also concedes that no suite observes dispatch. These artifacts cannot establish that the four reviewers actually ran.",
+        "rule": "observable-obligation"
+      },
+      "id": "behavioural-outcome-1",
+      "lens": "behavioural-outcome",
+      "objection": "The criteria let a complete emitter output and populated record stand in for running the four reviewer lenses.",
+      "obligation": "The criteria attack runs behavioural-outcome, obligation-reduction, set-consistency and what-if.",
+      "scenario": {
+        "expect": "ARO-A12 and ARO-A13 pass while one or more reviewer lenses were never dispatched.",
+        "given": "The emitter writes a round naming all four lenses and one prompt per lens, and the record contains four `empty` entries created without invoking the reviewers.",
+        "when": "The emitter and checker suites evaluate the round and record."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ARO-A18 promises that no other content suite regresses, but its only check is that `make content-tests` exits 0. A green gate does not detect a suite weakened through removed tests, skipped cases or relaxed assertions.",
+        "rule": "observable-obligation"
+      },
+      "id": "behavioural-outcome-2",
+      "lens": "behavioural-outcome",
+      "objection": "ARO-A18 lets a weakened content-test suite satisfy the no-regression promise solely because the remaining gate is green.",
+      "obligation": "No other content suite regresses when the `enforces` lists change.",
+      "scenario": {
+        "expect": "`make content-tests` exits 0 while previously protected content behaviour is no longer tested and has regressed.",
+        "given": "The ownership changes are present, but an existing content test is removed, skipped or weakened and the behaviour it protected is broken.",
+        "when": "The ARO-A18 gate runs."
+      },
+      "target_ac": "ARO-A18"
+    },
+    {
+      "ground": {
+        "reason": "ARO-A6 refuses an objection that 'lacks, or leaves blank, its target', but the document never states whether the attack's sanctioned target value 'none' (an objection no criterion covers) counts as blank. The decision the wording leaves open is whether 'none' is a valid target or a schema refusal. One reading has the record check refuse every rule-less objection as `schema`; the other has it accept them, and the two readings produce opposite verdicts on the same record.",
+        "rule": "decision-closure"
+      },
+      "id": "set-consistency-1",
+      "lens": "set-consistency",
+      "objection": "A record containing a well-formed objection whose target is the literal 'none' passes or fails depending on how 'blank' is read, so the same checker behaviour can be judged both conforming and non-conforming.",
+      "scenario": {
+        "expect": "under the 'none is blank' reading the check refuses the record as `schema`; under the 'none is a valid target' reading it reports no error",
+        "given": "a record that is otherwise complete, carrying a well-formed, adjudicated objection whose target is 'none' because no criterion covers it",
+        "when": "the record check validates the objection against ARO-A6"
+      },
+      "target_ac": "ARO-A6"
+    },
+    {
+      "ground": {
+        "reason": "The document answers the limit cases around the enforces front matter — an absent prompt.md fails ARO-A2 and an empty enforces list fails ARO-A11 — but the case of a prompt.md that is present with a malformed enforces field (missing key, non-list value, unparseable YAML) is neither covered nor ruled out, and this slice's whole change is editing those lists.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-1",
+      "lens": "what-if",
+      "objection": "A malformed enforces field lets the emitter crash or silently treat the lens as enforcing nothing, with no criterion pinning the refusal.",
+      "scenario": {
+        "expect": "a clean emitter failure naming the lens, which no criterion checks",
+        "given": "a lens directory whose prompt.md exists but its enforces key is missing or is not a list of rule IDs",
+        "when": "the emitter composes that lens's prompt"
+      },
+      "target_ac": "ARO-A11"
+    },
+    {
+      "ground": {
+        "reason": "ARO-A16 covers the standard being absent, but the dependency failing in any other way — the standard file present yet corrupt or unparseable — is not addressed by ARO-A16 or any other criterion, and the document's what-if section answers only the absent case.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-2",
+      "lens": "what-if",
+      "objection": "A present-but-unparseable standard leaves the emitter's behaviour unpinned: crash, partial emission, or a refusal code are all consistent with the criteria.",
+      "scenario": {
+        "expect": "a refusal with nothing written, in the manner of no-standard, which no criterion checks",
+        "given": "a standard file that exists but cannot be parsed into rule IDs",
+        "when": "the emitter runs"
+      },
+      "target_ac": "ARO-A16"
+    },
+    {
+      "ground": {
+        "reason": "Asked what happens if a lens runs twice, the criteria answer only the absence case: ARO-A13 requires an entry per lens and says nothing about two entries for one lens. The out-of-scope section rules out a report from a lens outside the registry, but a duplicate entry from a registered lens is inside the record check's scope and unpinned.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-3",
+      "lens": "what-if",
+      "objection": "A record with two entries for the same lens passes completeness under ARO-A13, leaving whether the check accepts, merges, or refuses it unspecified.",
+      "scenario": {
+        "expect": "the record check refuses or otherwise pins the duplicate, which no criterion checks",
+        "given": "a record in which one of the four lenses has two entries, both from the registered lens",
+        "when": "the record check runs"
+      },
+      "target_ac": "ARO-A13"
+    }
+  ],
+  "schema_version": "1",
+  "spec_path": "2026-10-04-criteria-attack-rule-ownership.md",
+  "spec_revision": "sha256:ca74acea756a9f5893f30126597f781f59d251b2f2eac85b40a9eab579c3e08f"
+}
