@@ -13,13 +13,14 @@ handling of the failure and not any one transport's way of producing it.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import SpyDriver, run_turns
-from test_lane import _seed, _seed_resting, statuses
+from conftest import TIMEOUT, SpyDriver, run_turns
+from test_lane import _rule, _seed, _seed_resting, statuses
 
 from grillui.drivers import ReplyRefusedError, take_document
 from grillui.lane import AgentUnreachableError, DocumentRefusedError, Lane
@@ -33,6 +34,7 @@ from grillui.schemas import (
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
     STATUS_PHASE_REPLIED,
+    DispatchContext,
     EventSubmission,
     GrillMasterDocument,
 )
@@ -402,3 +404,147 @@ def test_pnd_a13_a_map_turn_whose_seat_fails_is_handed_up_and_says_so(
     assert "'fast' tier failed" in said[0]
     assert "it exited 1" in said[0]
     assert "'heavy' tier" in said[0]
+
+
+# --- the two-seat ladder, cell by cell -----------------------------------------
+
+ANSWERED, INCOMPLETE, REFUSED, FAILED = "answered", "incomplete", "refused", "failed"
+CARRIED = GrillMasterDocument.model_validate(
+    {
+        "text": "Ruled.",
+        "updates": [],
+        "supersedes": [],
+        "rulings": [{"decision": "d2", "ruling": "stands", "why": "independent"}],
+        "stop": {"met": False, "why": ""},
+    }
+)
+
+
+@dataclass
+class ScriptedSeat:
+    """A seat whose one turn ends the way it is scripted to.
+
+    `answered` rules on every decision its dispatch owes and `incomplete` on the
+    first of them only; both land a reply. `refused` raises the refusal a
+    document the board read and would not take ends in, and `failed` raises a
+    timeout. `gate` holds the turn until the test has finished setting the
+    lane up around it.
+    """
+
+    tier: str
+    outcome: str
+    gate: threading.Event | None = None
+    dispatches: list[Path] = field(default_factory=list)
+
+    def run(self, log: SessionLog, dispatch: Path, /) -> int | None:
+        self.dispatches.append(dispatch)
+        if self.gate is not None:
+            assert self.gate.wait(TIMEOUT)
+        owed = DispatchContext.model_validate_json(dispatch.read_text(encoding="utf-8")).mootness
+        ids = [] if owed is None else owed.ids
+        if self.outcome == ANSWERED:
+            return _rule(log, ids)
+        if self.outcome == INCOMPLETE:
+            return _rule(log, ids[:1])
+        if self.outcome == REFUSED:
+            raise DocumentRefusedError(self.tier, f"unknown node id from {self.tier}", CARRIED)
+        raise AgentUnreachableError(self.tier, f"it timed out on {self.tier}")
+
+
+# Every reachable pair of outcomes. A first seat that answered whole is never
+# pressed, and a second seat of None is a session with no expert to press.
+CELLS = [
+    (ANSWERED, None),
+    *[(first, None) for first in (INCOMPLETE, REFUSED, FAILED)],
+    *[
+        (first, second)
+        for first in (INCOMPLETE, REFUSED, FAILED)
+        for second in (ANSWERED, REFUSED, FAILED)
+    ],
+]
+
+
+def _cause(tier: str, outcome: str) -> str:
+    return f"unknown node id from {tier}" if outcome == REFUSED else f"it timed out on {tier}"
+
+
+@pytest.mark.parametrize(("first", "second"), CELLS)
+def test_pnd_a13_every_cell_of_the_two_seat_ladder_traces_each_seat_and_closes_honestly(
+    log: SessionLog, first: str, second: str | None
+) -> None:
+    """
+    Given an answer putting d2 and d3 in question, seated on a first rung whose
+          turn ends one way, and an expert, where there is one, whose pressed
+          turn ends another
+    When the turn is taken
+    Then the turn and its tasks close `replied` exactly when some seat answered,
+         and `error` otherwise; every seat that did not answer is named with its
+         cause in a notice -- except a refused document a later seat answered
+         in place of -- and, on an error, in the closing detail; each refused
+         document no later seat answered in place of is stated lost once; and
+         what is left unruled is stated once, unless a failed task still holds
+         it.
+    """
+    gate = threading.Event()
+    lane = Lane(log, ScriptedSeat(FAST_TIER, first, gate))
+    _seed(log)
+    _, turns = lane.accept(
+        [
+            EventSubmission(
+                kind="answer",
+                actor="human",
+                idempotency_key="human-answer",
+                payload={"target": "d1", "answer": {"option": "b"}},
+            )
+        ],
+        log.epoch,
+    )
+    # The expert arrives after the turn was seated, which is how a first rung
+    # comes to carry an obligation with a rung above it to press.
+    if second is not None:
+        lane.expert = ScriptedSeat(HEAVY_TIER, second)
+    gate.set()
+    for one in turns:
+        one.join(TIMEOUT)
+        assert not one.is_alive()
+
+    seats = [(FAST_TIER, first), *([] if second is None else [(HEAVY_TIER, second)])]
+    answered = any(outcome in (ANSWERED, INCOMPLETE) for _, outcome in seats)
+    closing = [one for one in statuses(log) if one.payload["phase"] in ("replied", "error")]
+    assert len(closing) == 1, [one.payload for one in closing]
+    phase = closing[0].payload["phase"]
+    assert phase == (STATUS_PHASE_REPLIED if answered else STATUS_PHASE_ERROR)
+    assert {one.phase for one in impact_tasks(log.entries()).values()} == {phase}
+
+    said = _notices(log)
+    for index, (tier, outcome) in enumerate(seats):
+        if outcome in (ANSWERED, INCOMPLETE):
+            continue
+        answered_later = any(later in (ANSWERED, INCOMPLETE) for _, later in seats[index + 1 :])
+        traced = [one for one in said if _cause(tier, outcome) in one]
+        if outcome == REFUSED and answered_later:
+            assert traced == [], said
+            continue
+        if phase == STATUS_PHASE_ERROR:
+            assert _cause(tier, outcome) in closing[0].payload["detail"]
+        assert len(traced) == 1, (tier, outcome, said)
+        assert repr(tier) in traced[0]
+        if outcome == REFUSED:
+            assert "d2 stands" in traced[0], "the refused document's ruling was not stated lost"
+    # And nothing else is said: a seat that answered leaves no trace.
+    owed_traces = [
+        tier
+        for index, (tier, outcome) in enumerate(seats)
+        if outcome in (REFUSED, FAILED)
+        and not (
+            outcome == REFUSED
+            and any(later in (ANSWERED, INCOMPLETE) for _, later in seats[index + 1 :])
+        )
+    ]
+    assert len([one for one in said if "not ruled on" not in one]) == len(owed_traces), said
+    unmet = [one for one in said if "not ruled on" in one]
+    # Only a first rung that answered in part leaves something unruled on a
+    # turn that answered; a pressed seat is asked for all of what is left. On a
+    # turn that failed, the tasks still hold what is left, so nothing is said.
+    left = 1 if first == INCOMPLETE and second != ANSWERED else 0
+    assert len(unmet) == left, said

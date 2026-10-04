@@ -369,14 +369,29 @@ def _where(channel: str) -> str:
     return "the map" if channel == MAP_CHANNEL else f"thread {channel!r}"
 
 
-def _failed(channel: str, faults: Sequence[str]) -> str:
-    """What the human is told when no seat answered a turn at all.
+def _failed(channel: str, fault: str) -> str:
+    """What the human is told when the last seat a turn was offered to failed
+    outright and no seat had answered it."""
+    return f"A turn on {_where(channel)} ended without a reply: {fault}."
 
-    Every seat the ladder tried is named with its own cause, in the order it
-    was tried, because a seat that timed out and a seat that was never started
-    are different faults with different remedies.
+
+def _insisted(channel: str, fault: str) -> str:
+    """What the human is told when the seat pressed for what a turn left
+    unruled failed outright.
+
+    The turn itself stands, because the seat below it answered. The failure is
+    said anyway, since a dead seat is a fault the human may want to act on and
+    the answered turn would otherwise hide it.
     """
-    return f"A turn on {_where(channel)} ended without a reply: {'; '.join(faults)}."
+    return (
+        f"A turn on {_where(channel)} was pressed for what it left unruled, and the press "
+        f"was not taken: {fault}."
+    )
+
+
+def _answered(outcome: _Pressed) -> bool:
+    """Whether a seat's turn came back as a reply rather than a fault."""
+    return outcome.refusal is None and outcome.failed is None
 
 
 def _handed_up(channel: str, fault: str, expert: str) -> str:
@@ -928,7 +943,7 @@ class Lane:
 
     def _press(self, driver: TurnDriver, turn: Turn, dispatch: Path, reply: _Pressed) -> TurnDriver:
         """Press a turn that did not answer, and say so when no seat will.
-        Returns whichever seat ended up taking it.
+        Returns whichever seat answered last.
 
         Three failures press, and they press the same way. A seat that produced
         no turn at all is one -- it could not be reached, ran out of time, or
@@ -942,13 +957,7 @@ class Lane:
 
         A seat that failed outright goes up a rung only on the map: on a thread
         only the human engages the expert, so a thread turn that failed ends on
-        its error instead. Where it does go up, the failure is said to the
-        human even when the rung above answers, because a dead seat is a fault
-        they may want to act on and a turn that landed anyway would hide it.
-        Where no seat answers, the turn ends on an error naming every seat that
-        failed, and whatever the turn owed the board is named to the human as
-        unruled -- except a decision a task is holding, since the failed task
-        already says so and keeps that decision from being answered.
+        its error instead.
 
         The check is code's, and it is coverage rather than correctness: the
         obligation is a list of decision ids, and what the reply did with each is
@@ -969,9 +978,8 @@ class Lane:
         # list, or a decision the first seat ruled on is reported as one nobody
         # did -- and the human is sent to argue about a verdict that was made.
         standing = [] if obligation is None else list(obligation.ids)
-        refusal, failed, carried = reply.refusal, reply.failed, reply.carried
-        faults = [] if failed is None else [_fault(driver.tier, failed)]
-        if refusal is None and failed is None:
+        tried = [(driver, reply)]
+        if _answered(reply):
             standing = self._unruled(standing, reply.spoke, obligation)
             if not standing:
                 return driver
@@ -981,47 +989,81 @@ class Lane:
         if (
             self.expert is not None
             and self.expert is not driver
-            and (failed is None or turn.channel == MAP_CHANNEL)
+            and (reply.failed is None or turn.channel == MAP_CHANNEL)
         ):
-            if faults:
+            # Said before the rung above is asked, so the human reads that a
+            # seat failed whatever the rung above then does with the turn.
+            if reply.failed is not None:
+                fault = _fault(driver.tier, reply.failed)
                 self.log.record(
-                    "informational",
-                    {"text": _handed_up(turn.channel, faults[-1], self.expert.tier)},
+                    "informational", {"text": _handed_up(turn.channel, fault, self.expert.tier)}
                 )
             self._hand_up(self.expert, turn)
             pressed = self._insist(self.expert, turn, obligation, standing)
-            # An expert that fails outright costs only the insistence when the
-            # rung below did answer: that answer stands, and reporting the
-            # expert's failure as the turn's would make an answered gesture read
-            # as an error. Where the rung below produced nothing, the expert's
-            # outcome is the turn's whatever it is.
-            if pressed is not None and (pressed.failed is None or failed is not None):
-                driver = self.expert
-                refusal, failed, carried = pressed.refusal, pressed.failed, pressed.carried
-                if failed is not None:
-                    faults.append(_fault(driver.tier, failed))
-                elif refusal is None:
+            if pressed is not None:
+                tried.append((self.expert, pressed))
+                if _answered(pressed):
                     standing = self._unruled(standing, pressed.spoke, obligation)
-                    # The rung above took the turn, so the failure below it was
-                    # a hand-up rather than the turn's end, and it has already
-                    # been said.
-                    faults = []
-        # Each way a turn ends unanswered leaves one notice saying which seat
-        # failed and why, because the error that closes the lane is a status
-        # entry and the board draws none of those.
-        if refusal is not None:
-            self.log.record("informational", {"text": _lost(driver.tier, refusal, carried)})
-            faults.append(_fault(driver.tier, DocumentRefusedError(driver.tier, refusal)))
-        elif faults:
-            self.log.record("informational", {"text": _failed(turn.channel, faults)})
+        return self._settle(turn, obligation, standing, tried)
+
+    def _settle(
+        self,
+        turn: Turn,
+        obligation: MootnessObligation | None,
+        standing: Sequence[str],
+        tried: Sequence[tuple[TurnDriver, _Pressed]],
+    ) -> TurnDriver:
+        """Say what each seat the ladder tried came to, and end the turn on it.
+        Returns the seat that answered last, or raises where none did.
+
+        The turn answered when any seat answered, and a reply already on the
+        log is never turned into a failed turn by what a seat asked after it
+        did. A seat that failed outright is named to the human with its cause,
+        once: when it was handed up from, or here when nothing came after it.
+        The refused document the ladder ended on is named with its reason and
+        what it carried stated as lost. A refused document the ladder handed up
+        is the ladder working rather than a fault, and is said only where it
+        carried a judgement that no later seat answered in place of. Where no
+        seat answered, the turn's error names every seat in the order the
+        ladder tried them.
+
+        What is still unruled is said once. On a turn no seat answered, a
+        decision a task holds is left out: the failed task already says so and
+        keeps that decision from being answered, so the board is not offering
+        it.
+        """
+        faults: list[str] = []
+        answered: TurnDriver | None = None
+        for index, (seat, outcome) in enumerate(tried):
+            if _answered(outcome):
+                answered = seat
+                continue
+            last = index == len(tried) - 1
+            if outcome.failed is not None:
+                fault = _fault(seat.tier, outcome.failed)
+                if last:
+                    said = _failed if answered is None else _insisted
+                    self.log.record("informational", {"text": said(turn.channel, fault)})
+            else:
+                refused = DocumentRefusedError(seat.tier, outcome.refusal or "")
+                fault = _fault(seat.tier, refused)
+                # A refusal the ladder handed up is the ladder working, and it
+                # is said only where it took a judgement down with it that no
+                # later seat replaced. The refusal the ladder ended on is
+                # always said.
+                replaced = any(_answered(later) for _, later in tried[index + 1 :])
+                if not replaced and (last or outcome.carried is not None):
+                    text = _lost(seat.tier, outcome.refusal or "", outcome.carried)
+                    self.log.record("informational", {"text": text})
+            faults.append(fault)
         # Something is only ever outstanding where an obligation stated it, so
         # the second test is the type system's rather than a case of its own.
-        unmet = self._unheld(standing) if faults else standing
+        unmet = standing if answered is not None else self._unheld(standing)
         if unmet and obligation is not None:
             self.log.record("informational", {"text": _unmet(obligation, unmet)})
-        if faults:
+        if answered is None:
             raise _TurnFailedError(faults)
-        return driver
+        return answered
 
     def _unheld(self, owed: Sequence[str]) -> list[str]:
         """Which of these decisions no impact task is holding.
