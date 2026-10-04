@@ -19,7 +19,13 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from conftest import TIMEOUT, SpyDriver, document, driven, run_turns
 
-from grillui.drivers import HeavyDriver, ReplyRefusedError, read_document, record_document
+from grillui.drivers import (
+    HeavyDriver,
+    ReplyRefusedError,
+    read_document,
+    record_document,
+    take_document,
+)
 from grillui.lane import AgentUnreachableError, Lane
 from grillui.projector import impact_tasks, replay, to_image1
 from grillui.schemas import (
@@ -665,3 +671,39 @@ def test_pnd_a8_the_scope_refusal_names_an_unattached_new_decision_in_words(
 
     assert "None" not in str(refused.value), str(refused.value)
     assert "a new decision resting on nothing" in str(refused.value), str(refused.value)
+
+
+def test_a_reply_that_is_not_the_document_is_retried_with_the_shape_rule() -> None:
+    """
+    Given a seat whose first reply is prose
+    When the ladder retries it on the same seat
+    Then the retry tells it the reply is not the map document and how to send
+         one -- the shape rule, never the rule a retried ruling is briefed with.
+    """
+    asked: list[str] = []
+
+    def attempt(prompt: str) -> str:
+        asked.append(prompt)
+        return "prose" if len(asked) == 1 else _rules_d2()
+
+    take_document(HEAVY_TIER, "ask", attempt, lambda said: said)
+
+    assert "is not the map document" in asked[1], asked[1]
+    assert "An earlier turn owed this ruling" not in asked[1], asked[1]
+
+
+def test_a_retried_rulings_brief_carries_the_node_retry_rule(log: SessionLog) -> None:
+    """
+    Given a failed ruling on d2
+    When the human presses retry
+    Then the brief the seat is given carries the rule for a retried ruling,
+         and not the rule a reply in the wrong shape is retried with.
+    """
+    cli = SequenceCli([TIMED_OUT, _rules_d2()])
+    lane, failed = _failed(log, cli)
+
+    _retry(lane, failed)
+
+    brief = cli.calls[-1][-1]
+    assert "An earlier turn owed this ruling and failed before it landed" in brief
+    assert "is not the map document" not in brief
