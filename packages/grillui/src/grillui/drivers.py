@@ -107,6 +107,7 @@ from grillui.schemas import (
     NEEDS_TO_READ_KEY,
     PROMPT_TOKENS_KEY,
     PROPOSED_ANSWER_KEY,
+    REASSESS_KEY,
     RECOMMENDATION_KEY,
     RULING_STANDS,
     RULINGS_KEY,
@@ -1158,6 +1159,7 @@ class FastDriver:
                     context.mootness,
                     context.tasks,
                     scope=context.scope,
+                    reassess=context.reassess,
                 )
                 spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, model)
@@ -1287,6 +1289,7 @@ class HeavyDriver:
                     context.mootness,
                     context.tasks,
                     scope=context.scope,
+                    reassess=context.reassess,
                 )
                 spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, model)
@@ -1425,6 +1428,7 @@ class CodexDriver:
                     context.mootness,
                     context.tasks,
                     scope=context.scope,
+                    reassess=context.reassess,
                 )
                 spend_transfer(log, self.config, channel, advice)
                 measured.warn(log, seat.model)
@@ -1920,6 +1924,7 @@ def record_document(
     tasks: Sequence[str] = (),
     *,
     scope: Sequence[str] = (),
+    reassess: bool = False,
 ) -> int | None:
     """Put a grill-master turn into the log without what it ruled on decisions a
     later gesture took over, and say where it landed.
@@ -1938,6 +1943,9 @@ def record_document(
     resting on it. A change outside it is refused before anything is appended,
     and the refusal names what reached outside, so the seat's one retry is
     told exactly which update to drop.
+
+    `reassess` is set on the map doctor's turn, and the entry says so, which is
+    what makes the replay queue every structural change it carries.
     """
     outside = _outside(document, scope)
     if outside:
@@ -1949,7 +1957,7 @@ def record_document(
     with log.appending():
         gone = superseded_targets(log.entries(), owed)
         if owed is None or owed.gesture is None or not gone:
-            return _record_document(log, tier, document, attribution, owed, tasks)
+            return _record_document(log, tier, document, attribution, owed, tasks, reassess)
         kept = [one for one in owed.ids if one not in gone]
         # Only a target this turn actually said something about had a result
         # to drop. A turn silent on it dropped nothing, and a history line
@@ -1969,7 +1977,7 @@ def record_document(
         # A superseded task has no target left to change, and the replay skips
         # it; but a turn left naming none would read as one dispatched with no
         # task at all, and land its wider changes without the human.
-        spoke = _record_document(log, tier, document, attribution, narrowed, tasks)
+        spoke = _record_document(log, tier, document, attribution, narrowed, tasks, reassess)
         # Recorded only once the turn has landed: a turn the appender refuses
         # is retried, and the retry strikes the same result again.
         for one in dropped:
@@ -2046,6 +2054,7 @@ def _record_document(
     attribution: dict[str, Any],
     owed: MootnessObligation | None = None,
     tasks: Sequence[str] = (),
+    reassess: bool = False,
 ) -> int | None:
     """Put a grill-master turn into the log, whole, and say where it landed.
 
@@ -2110,6 +2119,8 @@ def _record_document(
         judgement[DROPPED_RULINGS_KEY] = struck
     if tasks:
         judgement[TASKS_KEY] = [{"id": one} for one in tasks]
+    if reassess:
+        judgement[REASSESS_KEY] = True
     # The turn spoke and did nothing else: with one sub-update and a notice in
     # it, the notice is what that one is, since everything else contributed
     # none. It rides as the entry itself rather than inside a fold.
@@ -2133,6 +2144,7 @@ def record_reply(
     tasks: Sequence[str] = (),
     *,
     scope: Sequence[str] = (),
+    reassess: bool = False,
 ) -> int | None:
     """Put the turn into the log, attributed, and say where it landed.
 
@@ -2164,12 +2176,13 @@ def record_reply(
     `owed` is the dispatch's mootness obligation, and it reaches only the map
     turn: a thread agent rules on nothing, so there is nothing there to cut to
     an obligation it was never given. `tasks` is the impact tasks the dispatch
-    carried, and `scope` what a retry may change, and both reach only the map
-    turn for the same reason.
+    carried, `scope` what a retry may change, and `reassess` whether this is the
+    map doctor's turn, and all three reach only the map turn for the same
+    reason.
     """
     if channel == MAP_CHANNEL:
         return record_document(
-            log, tier, read_document(text), attribution, owed, tasks, scope=scope
+            log, tier, read_document(text), attribution, owed, tasks, scope=scope, reassess=reassess
         )
     prose, updates, superseded, proposal, asked = declared_updates(text)
     refusal = _proposal_refusal(log, channel, text, proposal)

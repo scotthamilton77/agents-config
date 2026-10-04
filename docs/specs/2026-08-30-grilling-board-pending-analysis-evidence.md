@@ -29,7 +29,8 @@ hand probe stays `probe:`.
 - PND-A5 | test: packages/grillui/tests/unit/test_retry.py::test_pnd_a5_the_retry_is_absent_once_an_upstream_answer_superseded_the_failure
 - PND-A6 | open
 - PND-A7 | open
-- PND-A8 | open
+- PND-A8 | test: packages/grillui/tests/e2e/test_doctor.py::test_pnd_a8_the_doctors_changes_wait_in_the_inbox_until_the_human_lets_them_land
+- PND-A8 | test: packages/grillui/tests/unit/test_retry.py::test_pnd_a8_a_retry_that_reaches_outside_twice_fails_and_lands_nothing
 - PND-A9 | open
 - PND-A10 | open
 - PND-A11 | open
