@@ -40,6 +40,18 @@ PLAN = [
     decision("d4", "Where does it live?"),
 ]
 
+# A board whose ruled changes still wait for the human. A ruling on a decision a
+# marked answer put in question is an impact task's result, and its change to
+# that decision lands as it arrives. A ruling owed because the human applied an
+# invalidate that stranded a dependent carries no task, so its change waits like
+# any agent's: d3 rests on d5, and applying d5's invalidate owes a ruling on d3.
+RESTING = [
+    decision("d2", "How is it compacted?"),
+    decision("d3", "What is retained?", prereqs=["d5"]),
+    decision("d4", "Where does it live?"),
+    decision("d5", "Is there a retention policy at all?"),
+]
+
 KILLED = "the store leaves this no question to ask"
 RULED = "a ruling why, which the update's own why wins over"
 STANDS = "retention is asked whatever the store is"
@@ -59,12 +71,27 @@ def queued(session: Session) -> list[dict[str, Any]]:
     return [one for one in session.board()["pending"] if one["kind"] in {"invalidate", "revise"}]
 
 
+def apply_one(page: Page, session: Session, pending: str) -> None:
+    page.click('[data-act="inbox"]')
+    page.wait_for_timeout(400)
+    page.click(f'#overlay [data-act="applyone"][data-uid="{pending}"]')
+    page.wait_for_timeout(800)
+    session.settled()
+
+
+def strand_d3(page: Page, session: Session) -> None:
+    """Apply the queued invalidate of d5, which owes the ruling on d3 resting on it."""
+    stranding = next(one["id"] for one in queued(session) if one["target"] == "d5")
+    apply_one(page, session, stranding)
+
+
 def test_an_applied_proposal_records_its_proposer_and_the_verdict_that_produced_it(
     launcher: Callable[..., Session], board: Callable[[Session], Page]
 ) -> None:
     """
     Given a turn that proposes an invalidate on a decision and rules that
-         verdict on it in the same document
+         verdict on it in the same document, owed because the human applied an
+         invalidate that left that decision resting on nothing
     When the human applies it
     Then that decision's history names the human as the actor, the agent as the
          proposer and `invalidate` as the verdict, and carries the rationale the
@@ -77,8 +104,15 @@ def test_an_applied_proposal_records_its_proposer_and_the_verdict_that_produced_
     nobody has answered overwrites nothing and lands when it arrives, so it
     never becomes an apply at all.
     """
-    session = launcher(handoff=handoff(PLAN))
-    session.script_codex(turn(document("Noted.")))
+    session = launcher(handoff=handoff(RESTING))
+    session.script_codex(
+        turn(
+            document(
+                "Noted.",
+                updates=[{"kind": "invalidate", "target": "d5", "why": "no policy is wanted"}],
+            )
+        )
+    )
     session.script_claude(
         turn(
             document(
@@ -103,16 +137,11 @@ def test_an_applied_proposal_records_its_proposer_and_the_verdict_that_produced_
     assert "proposed_by" not in answered[0], answered[0]
     assert "verdict" not in answered[0], answered[0]
 
-    answer(page, "d1")
-    session.settled()
+    strand_d3(page, session)
     waiting = queued(session)
     assert [one["target"] for one in waiting] == ["d3"], session.board()["pending"]
 
-    page.click('[data-act="inbox"]')
-    page.wait_for_timeout(400)
-    page.click(f'#overlay [data-act="applyone"][data-uid="{waiting[0]["id"]}"]')
-    page.wait_for_timeout(800)
-    session.settled()
+    apply_one(page, session, waiting[0]["id"])
 
     landed = history(session, "d3")[-1]
     assert landed["kind"] == "invalidate", landed
@@ -178,12 +207,15 @@ def test_two_changes_landing_together_each_keep_their_own_origin(
     it named the ids -- so an origin read one place out gives every change after
     it the wrong author and the wrong verdict.
     """
-    session = launcher(handoff=handoff(PLAN))
+    session = launcher(handoff=handoff(RESTING))
     session.script_codex(
         turn(
             document(
                 "This one is moot.",
-                updates=[{"kind": "invalidate", "target": "d2", "why": "nothing rules this"}],
+                updates=[
+                    {"kind": "invalidate", "target": "d2", "why": "nothing rules this"},
+                    {"kind": "invalidate", "target": "d5", "why": "no policy is wanted"},
+                ],
             )
         )
     )
@@ -200,8 +232,7 @@ def test_two_changes_landing_together_each_keep_their_own_origin(
 
     answer(page, "d4")
     session.settled()
-    answer(page, "d1")
-    session.settled()
+    strand_d3(page, session)
     assert {one["target"] for one in queued(session)} == {"d2", "d3"}, session.board()["pending"]
 
     page.click('[data-act="inbox"]')

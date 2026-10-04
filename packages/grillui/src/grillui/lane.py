@@ -115,6 +115,7 @@ from grillui.escalation import (
 from grillui.projector import (
     impact_tasks,
     replay,
+    resulted_tasks,
     supersede_conflicts,
     superseded_targets,
     task_id,
@@ -425,28 +426,42 @@ def close_dead_turns(log: SessionLog) -> None:
     and every impact task that turn left live fails on it. A failed task still
     holds its decision, so the board shows the same wait it showed before the
     restart; what changes is that nobody reads it as a ruling still coming.
+
+    The exception is a task whose result is already on the log: the process
+    died between landing the result and closing the turn, so the task did
+    reply, and it is closed `replied` -- the board is then what it would have
+    been had the process lived. The turn's own entry is `replied` where any of
+    its tasks landed, because a turn lands its result as one entry.
     """
     entries = log.entries()
     live = impact_tasks(entries)
+    answered = resulted_tasks(entries)
     for opened in open_announcements(entries):
         if opened.epoch == log.epoch:
             continue
         tier = opened.payload.get(TIER_KEY)
         whose = f"the {tier!r} tier's turn" if isinstance(tier, str) else "the turn"
         carried = opened.payload.get(TASKS_KEY)
-        dead = [
-            {"id": item["id"], "phase": STATUS_PHASE_ERROR}
+        ended = [
+            {
+                "id": item["id"],
+                "phase": STATUS_PHASE_REPLIED if item["id"] in answered else STATUS_PHASE_ERROR,
+            }
             for item in (carried if isinstance(carried, list) else [])
             if isinstance(item, dict)
             and item.get("id") in live
             and live[item["id"]].phase == STATUS_PHASE_COMPOSING
         ]
+        landed = any(one["phase"] == STATUS_PHASE_REPLIED for one in ended)
         log.emit_status(
-            STATUS_PHASE_ERROR,
-            f"{whose} died with the process holding epoch {opened.epoch!r}, "
+            STATUS_PHASE_REPLIED if landed else STATUS_PHASE_ERROR,
+            f"{whose} landed its result and died with the process holding epoch "
+            f"{opened.epoch!r} before it closed"
+            if landed
+            else f"{whose} died with the process holding epoch {opened.epoch!r}, "
             f"which ended before it replied",
             opened.channel,
-            tasks=dead,
+            tasks=ended,
             opened=opened.seq,
         )
 
