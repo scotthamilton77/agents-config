@@ -1206,9 +1206,9 @@ def test_a_decisions_options_are_labelled_by_position() -> None:
 
 def test_a_settled_decision_marks_the_option_the_human_chose() -> None:
     """The mark goes on the option the answer names, and the recommendation's
-    fill belongs to a decision still being asked.
+    arrow belongs to a decision still being asked.
 
-    A row that went on filling `options[0]` after the human answered would show
+    A row that went on marking `options[0]` after the human answered would show
     option a as the standing answer while the answer line above it says option
     b. That is the one reading of the board the human has nothing else on the
     page to check against, so it is the one the row must not offer.
@@ -1217,7 +1217,9 @@ def test_a_settled_decision_marks_the_option_the_human_chose() -> None:
     assert 'if (d.status === "settled") {' in dress, "settled is read off the status alone"
     assert "var taken = d.answer && d.answer.option === o.id;" in dress
     assert 'taken ? { cls: " chosen", lead: "\u2713 " }' in dress
-    assert 'recommended ? { cls: " primary", lead: "\u27a1\ufe0f " }' in dress
+    # The arrow is the recommendation's whole dress. No class rides with it, so
+    # the recommended option wears the same colours as every other option.
+    assert 'recommended ? { cls: "", lead: "\u27a1\ufe0f " }' in dress
     # Twice: a settled decision answered in free text names no option, so it
     # marks nothing -- and it offers no recommendation either, because the
     # question it recommended an answer to has been answered.
@@ -1228,9 +1230,14 @@ def test_a_settled_decision_marks_the_option_the_human_chose() -> None:
     assert '"btn wide" + rec.cls' in controls, "the recommendation dresses itself"
     assert '"btn wide sm" + dress.cls' in controls
     assert ".btn.chosen {" in page_source(), "the mark has no styling"
-    assert '(d.status === "settled" ? "Options" : "Recommended answer")' in controls, (
+    assert '(asking ? "Recommended answer" : "Options")' in controls, (
         "a settled row is still captioned as the recommendation"
     )
+    assert 'var asking = d.status !== "settled";' in controls
+    # The caption is the recommended option's own first line while the decision
+    # asks, and a line above the row only once it is settled.
+    assert "if (!asking) h += caption;" in controls
+    assert '"btn wide" + rec.cls, (asking ? caption : "") + rec.lead' in controls
 
 
 def test_an_option_and_a_note_are_one_answer_carrying_both(client: TestClient, log: Any) -> None:

@@ -101,8 +101,7 @@
   /* The option a taken proposal built on, marked as the control that would
      record it. A ring rather than a fill: the option is not chosen until the
      human presses it, and a filled one would read as an answer already given.
-     The gap is what makes the ring visible on the recommended option, which is
-     already filled in the same colour. */
+     The gap keeps the ring apart from the option's own border. */
   .btn.armed { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--accent); }
 
   /* The option the human actually took, in the settled palette the rest of the
@@ -117,10 +116,12 @@
      all refer to it by, so it is on the button rather than in a tooltip. */
   .olab { display: inline-block; min-width: 15px; font: 700 11px ui-monospace, Menlo, monospace;
           letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin-right: 7px; }
-  .btn.primary .olab { color: rgba(255, 255, 255, .78); }
 
   .q-body { color: var(--ink-dim); font-size: 13.5px; margin: 8px 0 12px; }
-  .rec-line { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px; }
+  .rec-line { display: block; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px; }
+  /* Inside the recommended option the caption is the first line of the
+     control, so it sits closer to the line it captions. */
+  .btn .rec-line { margin-bottom: 2px; }
   .alts { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
 
   /* An option and, where it has one, the icon carrying its trade-off. The icon
@@ -139,15 +140,22 @@
   .pcricon:hover, .pcricon:focus-visible { color: var(--accent); border-color: var(--accent); }
   .pcricon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-  .free { display: flex; gap: 6px; margin-top: 8px; }
+  /* Every composer is one grid: the box with its send hint beneath it in the
+     first column, and whatever controls that composer carries along the box's
+     row after it. The hint belongs to the box, so it sits under the box rather
+     than between the box and the control that sends it. */
+  .free { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-columns: auto;
+          column-gap: 6px; row-gap: 2px; margin-top: 8px; }
+  .free > * { grid-row: 1; }
   .free textarea {
-    flex: 1; font: inherit; font-size: 13px; padding: 7px 9px; resize: vertical;
+    grid-column: 1; font: inherit; font-size: 13px; padding: 7px 9px; resize: vertical;
     border: 1px solid var(--line); border-radius: 8px; min-height: 38px;
   }
   .free textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
-  /* Two short lines rather than one long one: the chord is stated in full and the
-     box it belongs to keeps the width. */
-  .free .hint { font-size: 10.5px; color: var(--ink-faint); align-self: flex-end; padding-bottom: 7px; white-space: nowrap; text-align: right; line-height: 1.4; }
+  /* The hint hangs under the box's right corner, so it stays nearest the
+     controls that send what the box holds. */
+  .free .hint { grid-column: 1; grid-row: 2; font-size: 10.5px; color: var(--ink-faint);
+                white-space: nowrap; text-align: right; line-height: 1.4; }
   .free .sends { display: flex; flex-direction: column; gap: 4px; align-self: flex-end; }
   /* A proceed with nothing typed has nothing to take up in the states the
      reason names. Typed text makes it a send, which those states still take, so
@@ -271,19 +279,26 @@
     background: linear-gradient(to right, rgba(248,250,252,0) 0%, rgba(226,232,240,.75) 45%, rgba(203,213,225,.92) 100%); }
   .foglabel { position: absolute; top: 10px; font: 600 10px ui-monospace, Menlo, monospace;
               letter-spacing: .14em; text-transform: uppercase; color: #94a3b8; }
+  /* The card is light like the rest of the board, so it is the edge and the
+     shadow that make it read as floating over the page rather than as part of
+     it. Its labels are dimmed by colour rather than by opacity, because a
+     half-transparent grey on a white card drops below a readable contrast. */
   .hovercard {
     position: fixed; z-index: 950; max-width: 320px; pointer-events: none;
-    background: #0f172a; color: #fff; border-radius: 9px; padding: 9px 12px; font-size: 12px; line-height: 1.5;
-    box-shadow: 0 10px 30px rgba(15,23,42,.3);
+    background: var(--paper); color: var(--ink); border: 1px solid #cbd5e1;
+    border-radius: 9px; padding: 9px 12px; font-size: 12px; line-height: 1.5;
+    box-shadow: 0 10px 30px rgba(15,23,42,.16), 0 2px 6px rgba(15,23,42,.08);
   }
-  .hovercard .hid { font: 600 10px ui-monospace, Menlo, monospace; opacity: .6; letter-spacing: .08em; }
-  .hovercard .att { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.18); }
-  .hovercard .att div { opacity: .92; }
+  /* The title takes the headers' upper case, so neither of the two reads as
+     the one that was set by mistake. */
+  .hovercard .hid { font: 600 10px ui-monospace, Menlo, monospace; color: var(--ink-dim);
+                    letter-spacing: .08em; text-transform: uppercase; }
+  .hovercard .att { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
   .hovercard .pcr { margin-top: 5px; }
   /* A gutter rather than a width alone: the longest of the three labels is
      wider than the column, and on a min-width it ran straight into its text. */
   .hovercard .pcr b { display: inline-block; min-width: 74px; padding-right: 8px;
-                      opacity: .55; font-weight: 600;
+                      color: var(--ink-dim); font-weight: 600;
                       font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
   .maplegend { flex: none; display: flex; gap: 13px; flex-wrap: wrap; padding: 9px 15px; border-top: 1px solid var(--line);
                font-size: 11.5px; color: var(--ink-dim); }
