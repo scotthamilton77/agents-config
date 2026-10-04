@@ -88,7 +88,9 @@ arrives -- an `invalidate` too -- unless it would overwrite an answer; the
 history line names the task, and `proposed_by` stays unset, because no apply
 landed it. Everything else the result proposes waits, an `add-node` included:
 the human bought a ruling on the decisions the answer put in question, not a
-rewrite of the rest of the map.
+rewrite of the rest of the map. The map doctor's entry is held to the same rule
+with no target of its own, so every structural change it sends waits for the
+human: a reassessment of the whole map is the turn whose reach nobody bought.
 
 A queued proposal locks the decision it targets out of the frontier, so nobody
 answers a question that has a change waiting on it, and it holds its update's
@@ -150,6 +152,7 @@ from grillui.schemas import (
     PENDING_KEY,
     PROPOSABLE_KINDS,
     PROPOSED_ANSWER_KEY,
+    REASSESS_KEY,
     RETRIES_KEY,
     RULING_STANDS,
     RULINGS_KEY,
@@ -318,9 +321,17 @@ def _own_targets(board: _Board, entry: LogEntry) -> dict[str, str] | None:
     An agent's entry names the tasks its turn carried. Only a task still live
     counts: one a later gesture superseded has no result left to land, and
     its target belongs to the task that took it over.
+
+    The map doctor's entry weighs no decision of its own, so it owns none, and
+    under the task-result rule every structural change it carries waits for
+    the human, a new decision included.
     """
     raw = entry.payload.get(TASKS_KEY)
-    if entry.actor == "human" or entry.kind == STATUS_KIND or not isinstance(raw, list):
+    if entry.actor == "human" or entry.kind == STATUS_KIND:
+        return None
+    if entry.payload.get(REASSESS_KEY) is True:
+        return {}
+    if not isinstance(raw, list):
         return None
     return {
         task.target: task.id

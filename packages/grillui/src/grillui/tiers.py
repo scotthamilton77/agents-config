@@ -1072,7 +1072,8 @@ SUPERSEDE_CONFLICT_RULE = (
 REASSESS_RULE = (
     "The human called for a full reassessment: go over every decision and everything in the "
     "queue above, say what no longer holds, and send the updates that fix it. Their board is "
-    "frozen until you answer, so do it in this turn."
+    "frozen until you answer, so do it in this turn. Every change you send waits for the human "
+    "to apply it, a new decision included: nothing in this turn lands on the board by itself."
 )
 
 RETRY_RULE = (
