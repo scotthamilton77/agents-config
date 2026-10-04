@@ -308,14 +308,36 @@ def _own_targets(board: _Board, entry: LogEntry) -> dict[str, str] | None:
     raw = entry.payload.get(TASKS_KEY)
     if entry.actor == "human" or entry.kind == STATUS_KIND or not isinstance(raw, list):
         return None
-    named = [item.get("id") for item in raw if isinstance(item, Mapping)]
     return {
         task.target: task.id
-        for name in named
-        if isinstance(name, str)
-        and (task := board.tasks.get(name)) is not None
+        for item in _named(raw)
+        if (task := board.tasks.get(item["id"])) is not None
         and task.phase == STATUS_PHASE_COMPOSING
     }
+
+
+def resulted_tasks(entries: Sequence[LogEntry]) -> set[str]:
+    """Every impact task whose result is on the log, by id.
+
+    A result is an agent's entry naming the tasks it answers. It is the one
+    fact a restarted backend has that a turn finished its work, since the
+    turn's closing entry is a separate append the process may not have lived
+    to write.
+    """
+    return {
+        item["id"]
+        for entry in entries
+        if entry.actor != "human" and entry.kind != STATUS_KIND
+        for item in _named(entry.payload.get(TASKS_KEY))
+    }
+
+
+def _named(raw: object) -> list[Mapping[str, Any]]:
+    return [
+        item
+        for item in (raw if isinstance(raw, list) else [])
+        if isinstance(item, Mapping) and isinstance(item.get("id"), str)
+    ]
 
 
 def impact_tasks(entries: Sequence[LogEntry]) -> dict[str, Task]:

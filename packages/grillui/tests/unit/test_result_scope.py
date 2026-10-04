@@ -20,23 +20,33 @@ from conftest import TIMEOUT, ScriptedCli, SpyDriver, document, event, post, pro
 from grillui.drivers import HeavyDriver, document_problem, read_document, record_document
 from grillui.lane import Lane
 from grillui.projector import replay, to_image1
-from grillui.schemas import EventSubmission, LogEntry
+from grillui.schemas import DispatchContext, EventSubmission, Image2, LogEntry
+from grillui.session import open_session
 from grillui.tiers import TierConfig
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from fastapi.testclient import TestClient
 
     from grillui.log import SessionLog
 
 MARKS_D2 = {"id": "b", "text": "Rebuild it", "puts_in_question": ["d2"]}
+MARKS_BOTH = {"id": "d", "text": "Replace it", "puts_in_question": ["d2", "d3"]}
 PLAIN = [{"id": "a", "text": "Yes"}, {"id": "c", "text": "No"}]
 STRUCTURAL = ("short", "title", "body", "prereqs", "options")
 NEW_TITLE = "Which d2, now that it is rebuilt?"
 
 
 def _seed(log: SessionLog) -> None:
-    """d1's option b marks d2. d3 and d4 are marked by nobody."""
-    for node, options in (("d1", [*PLAIN, MARKS_D2]), ("d2", PLAIN), ("d3", PLAIN), ("d4", PLAIN)):
+    """d1's option b marks d2 and its option d marks d2 and d3. Nothing else
+    marks anything."""
+    for node, options in (
+        ("d1", [PLAIN[0], MARKS_D2, MARKS_BOTH]),
+        ("d2", PLAIN),
+        ("d3", PLAIN),
+        ("d4", PLAIN),
+    ):
         receipt = log.submit(
             [
                 EventSubmission(
@@ -261,6 +271,105 @@ def test_pnd_a4_a_result_entry_recorded_without_its_tasks_replays_as_it_always_d
     assert _node(log, "d2").status == "open"
     history = replay(log.epoch, log.entries()).history.get("d2", [])
     assert all(one.task is None for one in history), history
+
+
+def _die_after_landing(
+    session_dir: Path, log: SessionLog, option: str, landed: list[str]
+) -> tuple[Image2, list[LogEntry]]:
+    """A marked answer whose turn lands a result for the tasks on `landed` and
+    whose process dies before the turn's closing entry, then a fresh backend
+    over the same directory: the board that backend replays, and the entries it
+    wrote on opening.
+
+    The result is recorded through the real recorder, naming the tasks it is
+    the result of, while the turn is still held open; the restart happens
+    before the turn is released, which is the crash between the two appends.
+    """
+    _seed(log)
+    seat = SpyDriver(tier="heavy", hold=True)
+    _, turns = Lane(log, seat).accept([_answer("d1", option)], log.epoch)
+    assert seat.started.wait(TIMEOUT)
+    context = DispatchContext.model_validate_json(seat.dispatches[0].read_text("utf-8"))
+    result = read_document(
+        document(
+            "",
+            updates=[
+                {"kind": "revise", "target": one, "title": f"{one}, rebuilt"} for one in landed
+            ],
+            rulings=[{"decision": one, "ruling": "revise", "why": "rebuilt"} for one in landed],
+        )
+    )
+    with log.appending():
+        record_document(
+            log,
+            "heavy",
+            result,
+            {},
+            context.mootness,
+            [one for one in context.tasks if one.rsplit("-", 1)[1] in landed],
+        )
+
+    successor = open_session(session_dir)
+    written = [one for one in successor.entries() if one.epoch == successor.epoch]
+    image = replay(successor.epoch, successor.entries())
+    seat.release.set()
+    for one in turns:
+        one.join(TIMEOUT)
+    return image, written
+
+
+def _closings(written: list[LogEntry]) -> list[LogEntry]:
+    return [
+        one
+        for one in written
+        if one.kind == "status" and one.payload.get("phase") in {"replied", "error"}
+    ]
+
+
+def test_pnd_a4_a_restart_after_a_result_landed_closes_its_task_as_replied(
+    session_dir: Path, log: SessionLog
+) -> None:
+    """
+    Given d1's marked answer, whose turn landed its result revising d2 and
+         whose process died before writing the turn's closing entry
+    When a fresh backend opens the same directory
+    Then it writes one closing entry for that turn, `replied`, naming d2's task
+         as replied; d2 carries its new title, waits on nothing and is back on
+         the frontier, exactly as if the process had lived to close the turn.
+    """
+    image, written = _die_after_landing(session_dir, log, "b", ["d2"])
+
+    closings = _closings(written)
+    assert len(closings) == 1, closings
+    assert closings[0].payload["phase"] == "replied", closings[0].payload
+    assert [item["phase"] for item in closings[0].payload["tasks"]] == ["replied"]
+    d2 = next(one for one in image.decisions if one.id == "d2")
+    assert d2.title == "d2, rebuilt"
+    assert d2.waiting is None
+    assert "d2" in image.frontier
+
+
+def test_pnd_a4_a_restart_fails_only_the_task_whose_result_never_landed(
+    session_dir: Path, log: SessionLog
+) -> None:
+    """
+    Given d1's answer marking d2 and d3, whose turn's entry on the log names
+         d2's task as its result and not d3's, and whose process then died
+    When a fresh backend opens the same directory
+    Then its one closing entry for the turn names d2's task replied and d3's
+         failed: d2 is free and changed, and d3 still waits on its failed task.
+    """
+    image, written = _die_after_landing(session_dir, log, "d", ["d2"])
+
+    closings = _closings(written)
+    assert len(closings) == 1, closings
+    phases = {item["id"].rsplit("-", 1)[1]: item["phase"] for item in closings[0].payload["tasks"]}
+    assert phases == {"d2": "replied", "d3": "error"}, closings[0].payload
+    by_id = {one.id: one for one in image.decisions}
+    assert by_id["d2"].waiting is None
+    assert by_id["d2"].title == "d2, rebuilt"
+    assert by_id["d3"].waiting is not None
+    assert "d3" not in image.frontier
 
 
 # --- the empty revise ---------------------------------------------------------
