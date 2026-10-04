@@ -76,7 +76,14 @@ def test_pnd_a5_a_refused_ruling_holds_its_decision_until_the_retry_lands(
     assert "heavy" in said, said
     assert "unknown node" in said, said
 
-    column.locator('[data-act="retry"]').click()
+    # The press carries the tenure the board was read under, which is what lets
+    # the backend refuse one from a page another process served.
+    with page.expect_request("**/retry") as pressed:
+        column.locator('[data-act="retry"]').click()
+    assert pressed.value.post_data_json == {
+        "task": held["waiting"]["task"],
+        "epoch": session.state()["epoch"],
+    }
     session.settled()
     page.wait_for_selector('#col-d2 [data-act="pick"]', timeout=BOARD_TIMEOUT)
 

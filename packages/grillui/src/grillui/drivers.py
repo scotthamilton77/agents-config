@@ -1989,22 +1989,54 @@ def _outside(document: GrillMasterDocument, scope: Sequence[str]) -> list[str]:
 
     Nothing where there is no scope, because only a retry has one. A notice
     changes no decision, so it is never outside. A new decision is inside when
-    it rests on one that is, since it then joins the subtree it was added to.
+    it rests on one that is, since it then joins the subtree it was added to --
+    and so is one resting on that, whichever of the two the document lists
+    first, because the admitted set is grown until it stops growing. What lies
+    outside is named in words the seat can act on, a new decision with no id of
+    its own by what it rests on.
     """
     if not scope:
         return []
+    changes = [one for one in document.updates if one.get("kind") not in _NOTICES]
     inside = set(scope)
-    reached = []
-    for one in document.updates:
-        kind, target = one.get("kind"), one.get("target")
-        if kind in {"informational", "elicit-alert"}:
-            continue
-        prereqs = one.get("prereqs")
-        if kind == "add-node" and isinstance(prereqs, list) and inside.intersection(prereqs):
-            continue
-        if target not in inside:
-            reached.append(str(target))
-    return reached
+    grew = True
+    while grew:
+        grew = False
+        for one in changes:
+            target, prereqs = one.get("target"), one.get("prereqs")
+            if (
+                one.get("kind") == "add-node"
+                and isinstance(target, str)
+                and target not in inside
+                and isinstance(prereqs, list)
+                and inside.intersection(prereqs)
+            ):
+                inside.add(target)
+                grew = True
+    return [_named_change(one) for one in changes if not _admitted(one, inside)]
+
+
+_NOTICES = frozenset({"informational", "elicit-alert"})
+
+
+def _admitted(change: dict[str, Any], inside: set[str]) -> bool:
+    prereqs = change.get("prereqs")
+    if change.get("kind") == "add-node" and isinstance(prereqs, list):
+        return bool(inside.intersection(prereqs))
+    return change.get("target") in inside
+
+
+def _named_change(change: dict[str, Any]) -> str:
+    """One out-of-scope change, said so the seat knows which update to drop."""
+    target = change.get("target")
+    if change.get("kind") != "add-node":
+        return (
+            str(target) if isinstance(target, str) else f"a {change.get('kind')} naming no decision"
+        )
+    prereqs = change.get("prereqs")
+    rests = ", ".join(prereqs) if isinstance(prereqs, list) and prereqs else "nothing"
+    named = f"new decision {target}" if isinstance(target, str) else "a new decision"
+    return f"{named} resting on {rests}"
 
 
 def _record_document(

@@ -377,13 +377,15 @@ def test_pnd_a5_two_presses_at_once_start_exactly_one_retry(log: SessionLog) -> 
     assert len([item for _, item in _items(log) if item.get("retries") == failed]) == 1
 
 
-def test_pnd_a5_a_failed_pre_ruling_offers_no_retry(log: SessionLog) -> None:
+def test_pnd_a5_the_retry_gate_refuses_a_task_carrying_an_option(log: SessionLog) -> None:
     """
-    Given a pre-ruling -- a task carrying the option it was computed for --
-          that failed
+    Given a failed task carrying the option it was computed for, as a
+          pre-ruling's does, written to the log by hand
     When the human presses retry on it
-    Then nothing starts and nothing is written: a pre-ruling holds no lock, so
-         there is no blocker for a retry to release.
+    Then the retry gate starts nothing and writes nothing.
+
+    This pins the gate alone. Whether such a task holds its decision at all is
+    the pre-ruling's own rule, and nothing here produces one.
     """
     _seed(log)
     name = "impact-6-d2-b"
@@ -549,9 +551,117 @@ def test_pnd_a5_the_retry_route_starts_one_retry_and_then_reports_none(log: Sess
     failed = next(iter(impact_tasks(log.entries())))
     cli.hold = hold
     try:
-        first = client.post("/retry", json={"task": failed}).json()
-        second = client.post("/retry", json={"task": failed}).json()
+        first = client.post("/retry", json={"task": failed, "epoch": log.epoch}).json()
+        second = client.post("/retry", json={"task": failed, "epoch": log.epoch}).json()
     finally:
         hold.set()
     assert first == {"started": True}
     assert second == {"started": False}
+
+
+def test_pnd_a5_a_retry_from_another_tenure_is_refused_as_an_events_write_is(
+    log: SessionLog,
+) -> None:
+    """
+    Given a failed ruling on d2
+    When a page holding another tenure's epoch posts the retry
+    Then it is refused with the same receipt a write under that epoch gets, and
+         nothing is appended.
+    """
+    cli = SequenceCli([TIMED_OUT, _rules_d2()])
+    _, failed = _failed(log, cli)
+    client = driven(log, SpyDriver(), HeavyDriver(TierConfig.from_env({}), cli))
+    before = len(log.entries())
+
+    said = client.post("/retry", json={"task": failed, "epoch": "a-tenure-long-gone"}).json()
+
+    written = client.post(
+        "/events",
+        json={"epoch": "a-tenure-long-gone", "events": [_answer("d5", "a").model_dump()]},
+    ).json()[0]
+    assert said == {**written, "idempotency_key": None}, said
+    assert said["reason"] == "epoch mismatch"
+    assert len(log.entries()) == before
+
+
+def test_pnd_a5_a_retry_after_the_session_ended_starts_nothing(log: SessionLog) -> None:
+    """
+    Given a failed ruling on d2, and the human then ending the session
+    When a retry of the failed task arrives
+    Then nothing starts and nothing is appended: the terminal result is the
+         session's last word.
+    """
+    lane, failed = _failed(log, SequenceCli([TIMED_OUT, _rules_d2()]))
+    ended = log.submit(
+        [EventSubmission(kind="session-end", actor="human", idempotency_key="end", payload={})],
+        log.epoch,
+    )[0]
+    assert ended.status == "accepted", ended
+    before = len(log.entries())
+
+    assert lane.retry(failed) is None
+    assert len(log.entries()) == before
+
+
+def test_pnd_a8_a_new_decision_resting_on_one_added_inside_the_scope_is_inside_it(
+    log: SessionLog,
+) -> None:
+    """
+    Given a retry scoped to d2 and d3
+    When its document adds d9 resting on d2 and d10 resting on d9, listing d10
+         first
+    Then the scope gate admits both: a decision added inside the subtree is in
+         it for the rest of the document, in whatever order the document lists
+         them.
+    """
+    _seed(log)
+    owed = MootnessObligation(target="d1", answer="Rebuild it", ids=["d2"], gesture=6)
+
+    def added(target: str, rests_on: str) -> dict[str, Any]:
+        return {
+            "kind": "add-node",
+            "target": target,
+            "short": target,
+            "title": f"Which {target}?",
+            "body": "Decide.",
+            "prereqs": [rests_on],
+            "options": PLAIN,
+            "why": "the rebuild asks it",
+        }
+
+    chained = read_document(_rules_d2(added("d10", "d9"), added("d9", "d2")))
+
+    try:
+        record_document(log, HEAVY_TIER, chained, {}, owed, (), scope=("d2", "d3"))
+    except ReplyRefusedError as refused:
+        assert "may change only" not in str(refused), str(refused)
+
+
+def test_pnd_a8_the_scope_refusal_names_an_unattached_new_decision_in_words(
+    log: SessionLog,
+) -> None:
+    """
+    Given a retry scoped to d2 and d3
+    When its document adds a decision with no id of its own resting on nothing
+    Then the refusal names it as a new decision resting on nothing, never as
+         the word None.
+    """
+    _seed(log)
+    owed = MootnessObligation(target="d1", answer="Rebuild it", ids=["d2"], gesture=6)
+    loose = {
+        "kind": "add-node",
+        "short": "dx",
+        "title": "Which dx?",
+        "body": "Decide.",
+        "prereqs": [],
+        "options": PLAIN,
+        "why": "it came up",
+    }
+
+    with pytest.raises(ReplyRefusedError) as refused:
+        record_document(
+            log, HEAVY_TIER, read_document(_rules_d2(loose)), {}, owed, (), scope=("d2", "d3")
+        )
+
+    assert "None" not in str(refused.value), str(refused.value)
+    assert "a new decision resting on nothing" in str(refused.value), str(refused.value)
