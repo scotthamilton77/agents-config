@@ -20,12 +20,10 @@ rank, not a quote: read the endpoint before any cost-sensitive dispatch.
 
 ## Providers
 
-| Provider | Reach it through | Bills |
-|---|---|---|
-| `anthropic` | The Agent tool, or a Workflow `agent()` call | The Claude subscription |
-| `openai` | The Codex delegation skill, present when the Codex plugin is installed | The ChatGPT subscription |
-| `google` | The `delegating-to-agy` skill | The Google AI Pro subscription |
-| `openrouter` | The `openrouter-claude-subagent` skill, a nested harness on another vendor's weights | The OpenRouter key, metered |
+- `anthropic` is reached through the Agent tool, or a Workflow `agent()` call, and bills the Claude subscription.
+- `openai` is reached through the Codex delegation skill, present when the Codex plugin is installed, and bills the ChatGPT subscription.
+- `google` is reached through the `delegating-to-agy` skill and bills the Google AI Pro subscription.
+- `openrouter` is reached through the `openrouter-claude-subagent` skill, a nested harness on another vendor's weights, and bills the OpenRouter key, metered.
 
 A model family with a subscription provider runs there and nowhere else
 unless the user says otherwise for a run: Claude models through `anthropic`,
