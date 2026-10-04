@@ -2022,7 +2022,10 @@ Each criterion is mechanically checkable and convertible to a red test.
   turn and no more, says nothing to the human, and leaves the invalidate in the queue and the
   standing decision on the frontier under an informational targeted at it; and an answer on
   an option carrying no `puts_in_question` stays on the first-rung seat, producing a dispatch
-  with no obligation, no expert turn and no notice.
+  with no obligation, no expert turn and no notice. Where the turn carries an impact task,
+  its change to that task's own target lands directly under PND-D3 of
+  `docs/specs/2026-08-30-grilling-board-pending-analysis.md`, and the queue rule holds for
+  every other change.
 - **GUI-A106** In a browser, against a running backend: on a board whose one open decision
   is left invalidated by a proposal the human applies, every other decision being settled,
   the completion overlay appears carrying both actions, its copy names how many decisions
