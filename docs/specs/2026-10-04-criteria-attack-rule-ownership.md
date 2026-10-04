@@ -94,8 +94,8 @@ composed, which lenses run, and what the record check refuses.
 Nine of the criteria below name tests that exist today: ARO-A3, ARO-A4,
 ARO-A5, ARO-A8, ARO-A9, ARO-A10, ARO-A15, ARO-A16 and ARO-A17. They already
 pass. They are preservation criteria, and they must still pass after the
-`enforces` lists change. The slice adds a test for each other criterion where
-none exists.
+`enforces` lists change. The slice adds a test for each other criterion that
+a suite checks, where none exists. ARO-A18 is checked by the gate it names.
 
 A correct registry does not show that an attack runs four lenses. Dispatch is
 the invoking agent's act, which no suite observes. The suites can observe the
@@ -140,10 +140,11 @@ under `make content-tests`.
 - **ARO-A12** Given the source registry, the round the emitter writes names
   exactly the four lenses, and the emitter writes exactly one prompt for each.
 - **ARO-A13** The record check reports a record as incomplete when any of the
-  four lenses has no report in it, naming the lens.
-- **ARO-A14** For each of the six rules ARO-D1 newly assigns, the record check
-  raises no `ground-outside-lens` error on a well-formed objection from the
-  owning lens that cites that rule.
+  four lenses has no entry in it, naming the lens. A lens that reported
+  `empty` has an entry.
+- **ARO-A14** For each rule in ARO-D1's table, the record check reports no
+  error on an otherwise complete record that carries a well-formed,
+  adjudicated objection from the owning lens citing that rule.
 - **ARO-A15** The emitter refuses an empty lens registry as `no-lenses` with
   nothing written, under the existing emitter test.
 - **ARO-A16** The emitter refuses an absent standard as `no-standard` with
@@ -174,6 +175,11 @@ under `make content-tests`.
   field in an objection is ARO-A6.
 - A rule added to the standard with no owner fails ARO-A1. A lens naming a
   rule the standard lacks is ARO-A5. A lens missing from a record is ARO-A13.
+- The registry is the set of lens directories holding a `prompt.md`. A lens
+  whose `prompt.md` is absent is therefore out of the registry, which fails
+  ARO-A2.
+- A lens whose `enforces` list is empty fails ARO-A11, because no row of the
+  table is empty.
 - A rule in two lists, or twice in one list, fails ARO-A1.
 - Emitting again with nothing changed is ARO-A17. This slice changes the
   `enforces` lists and adds tests. It changes no code path that writes, so it
@@ -198,3 +204,8 @@ under `make content-tests`.
   of one.
 - Evaluation cases, scoring and the judge.
 - ACQ-A25, which the parent gives to its S1.
+- A record that carries a report from a lens outside the registry. The record
+  check keeps a retired lens's round closed, and this slice does not change
+  that.
+- Observing that each lens was dispatched. Dispatch is the invoking agent's
+  act, and the record attests to it.
