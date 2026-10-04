@@ -70,8 +70,41 @@ def contrast(one: tuple[int, int, int], two: tuple[int, int, int]) -> float:
     return (light + 0.05) / (dark + 0.05)
 
 
+def drawn(css: str, fade: float, ground: tuple[int, int, int]) -> tuple[int, int, int]:
+    """The opaque colour a text colour is drawn in, once its alpha and fade meet the ground."""
+    found = re.match(r"rgba?\([^,]+,[^,]+,[^,]+,\s*([\d.]+)", css)
+    alpha = (float(found[1]) if found else 1) * fade
+    r, g, b = (
+        round(alpha * ink + (1 - alpha) * paper)
+        for ink, paper in zip(rgb(css), ground, strict=True)
+    )
+    return r, g, b
+
+
+# Every element of the card that carries text of its own, with its colour and
+# the product of its opacity and its ancestors' up to and including the card.
+INKS = """card => [card, ...card.querySelectorAll('*')]
+  .filter(el => [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()))
+  .map(el => {
+    let fade = 1;
+    for (let at = el; at !== card.parentElement; at = at.parentElement)
+      fade *= Number(getComputedStyle(at).opacity);
+    return [getComputedStyle(el).color, fade];
+  })"""
+
+
 def style(locator: Locator, prop: str) -> str:
     return str(locator.evaluate(f"el => getComputedStyle(el).{prop}"))
+
+
+def inside(inner: dict[str, float], outer: dict[str, float]) -> bool:
+    """Whether one rendered box lies wholly within another."""
+    return (
+        outer["x"] <= inner["x"]
+        and outer["y"] <= inner["y"]
+        and inner["x"] + inner["width"] <= outer["x"] + outer["width"]
+        and inner["y"] + inner["height"] <= outer["y"] + outer["height"]
+    )
 
 
 def hovered_card(page: Page) -> Locator:
@@ -91,9 +124,10 @@ def test_the_hovercard_is_light_and_still_reads_as_an_overlay(
          read on that background, and it is set apart from the page by a shadow
          or a background that is not the page's paper.
 
-    The labels are read along with the card's own text, and their opacity with
-    them: a label dimmed by opacity is drawn paler than its computed colour, so
-    a colour that passes while the label is half transparent passes nothing.
+    Every piece of text on the card is read, as the colour it is drawn in: a
+    colour's alpha and the opacity of the text and of what holds it all make it
+    paler than its computed colour, so a colour that passes while the text is
+    half transparent passes nothing.
     """
     session = launcher(handoff=handoff(PLAN))
     page = board(session)
@@ -101,10 +135,11 @@ def test_the_hovercard_is_light_and_still_reads_as_an_overlay(
 
     ground = rgb(style(card, "backgroundColor"))
     assert luminance(ground) >= 0.7, f"the card is dark: {ground}"
-    for part in (card, card.locator(".hid"), card.locator(".pcr b").first):
-        ink = rgb(style(part, "color"))
-        assert style(part, "opacity") == "1", f"a part of the card is dimmed: {part}"
-        assert contrast(ink, ground) >= 4.5, f"{ink} on {ground} does not read"
+    inks = card.evaluate(INKS)
+    assert len(inks) >= 8, inks
+    for colour, fade in inks:
+        ink = drawn(colour, fade, ground)
+        assert contrast(ink, ground) >= 4.5, f"{colour} at {fade} on {ground} does not read"
     shadow = style(card, "boxShadow")
     assert shadow != "none" or ground != PAPER, "nothing sets the card apart from the page"
 
@@ -125,8 +160,11 @@ def test_the_hovercard_title_shares_the_case_of_its_headers(
     card = hovered_card(page)
 
     title = style(card.locator(".hid"), "textTransform")
-    headers = style(card.locator(".pcr b").first, "textTransform")
-    assert title == headers, (title, headers)
+    headers = card.locator(".pcr b").evaluate_all(
+        "bs => bs.map(b => getComputedStyle(b).textTransform)"
+    )
+    assert len(headers) == 3, headers
+    assert set(headers) == {title}, (title, headers)
 
 
 def test_the_recommended_option_is_dressed_like_the_others_and_captioned_inside(
@@ -147,9 +185,10 @@ def test_the_recommended_option_is_dressed_like_the_others_and_captioned_inside(
     page = board(session)
 
     recommended = page.locator('#col-d1 [data-act="pick"][data-opt="a"]')
-    alternative = page.locator('#col-d1 [data-act="pick"][data-opt="b"]')
+    alternatives = page.locator('#col-d1 [data-act="pick"]:not([data-opt="a"])').all()
+    assert len(alternatives) == 2, alternatives
     for prop in ("color", "backgroundColor"):
-        assert style(recommended, prop) == style(alternative, prop), prop
+        assert {style(alt, prop) for alt in alternatives} == {style(recommended, prop)}, prop
 
     caption = recommended.locator(".rec-line")
     assert caption.count() == 1, "the caption is not inside the recommended option"
@@ -159,12 +198,14 @@ def test_the_recommended_option_is_dressed_like_the_others_and_captioned_inside(
     assert lines[1].startswith("➡️"), lines
     above = caption.bounding_box()
     label = recommended.locator(".olab").bounding_box()
-    assert above and label
+    border = recommended.bounding_box()
+    assert above and label and border
+    assert inside(above, border), ("the caption renders outside the option", above, border)
     assert above["y"] + above["height"] <= label["y"] + 1, (above, label)
 
 
 def assert_hint_beneath_the_box(free: Locator, send: str) -> None:
-    """The send hint sits under the textarea, and the send control beside the box."""
+    """The send hint sits under the textarea, and the send control beside the box on its row."""
     box = free.locator("textarea").bounding_box()
     hint = free.locator(".hint").bounding_box()
     button = free.locator(send).bounding_box()
@@ -173,6 +214,8 @@ def assert_hint_beneath_the_box(free: Locator, send: str) -> None:
     assert hint["x"] >= box["x"] - 1, (box, hint)
     assert hint["x"] + hint["width"] <= box["x"] + box["width"] + 1, (box, hint)
     assert button["x"] >= box["x"] + box["width"] - 1, ("send is not beside the box", box, button)
+    assert button["y"] < box["y"] + box["height"], ("send is below the box's row", box, button)
+    assert button["y"] + button["height"] > box["y"], ("send is above the box's row", box, button)
 
 
 def test_every_composer_puts_the_send_hint_beneath_its_box(
