@@ -47,6 +47,15 @@ from pydantic import (
 )
 
 MAP_CHANNEL = "map"
+# The channel background pre-rulings run on. A pre-ruling weighs an option the
+# human has not taken, so nobody is waiting on it: its turns are announced and
+# closed here rather than on the map, whose announcements are the human's wait.
+# Its result is the grill-master's map document like any other, and it lands
+# here too, where the replay keeps it aside until the human takes that option.
+PRE_RULING_CHANNEL = "pre-ruling"
+# The channels whose turns are the grill-master's, and so the channels a map
+# mutation may be authored on.
+GRILL_MASTER_CHANNELS = frozenset({MAP_CHANNEL, PRE_RULING_CHANNEL})
 
 Actor = Literal["human", "grill-master", "thread-agent", "backend"]
 ACTORS: frozenset[str] = frozenset(get_args(Actor))
@@ -372,8 +381,11 @@ RETRIES_KEY = "retries"
 REASSESS_KEY = "reassess"
 # What a pre-ruling's task is opened with: the option it was computed for. The
 # key's presence is the whole marker, and a task carrying it holds no lock, so
-# there is no blocker for a retry to release.
+# there is no blocker for a retry to release. `DECISION_KEY` names the decision
+# that option belongs to, because an option id is unique only within its own
+# decision.
 OPTION_KEY = "option"
+DECISION_KEY = "decision"
 
 # The sequence of the `composing` entry a `replied` or `error` closes. Map turns
 # run concurrently, so "the latest announcement on the channel" names the wrong
@@ -580,10 +592,11 @@ class Option(Strict):
 
     `puts_in_question` is the plan author's prediction that taking this option
     puts those decisions in question, which the grill-master rules on -- a mark,
-    not a dependency. Until the human takes the option the page is its only
-    reader: it changes no status, places no hold and enters no projection but
-    the option it rides on. Taking it is what obliges a ruling on each named
-    decision, and what actually moves one is still an applied invalidate.
+    not a dependency. Until the human takes the option it changes no status,
+    places no hold and enters no projection but the option it rides on. Its
+    readers before then are the page, and the lane weighing it in the
+    background once its decision is on offer, whose result lands only if the
+    option is taken. Taking it is what obliges a ruling on each named decision.
     Nothing checks the ids against the board, deliberately -- a pre-mark naming
     no node marks nothing, while a dangling prereq strands a decision the
     frontier can never reach, so refusing one of these would let a stale hint
@@ -1326,6 +1339,10 @@ class DispatchContext(Strict):
     `scope` rides a retry's dispatch and no other: the failed decision and
     every decision resting on it. The retry may change nothing outside it, and
     the turn is told so here rather than left to find out from the refusal.
+
+    `option` rides a pre-ruling's dispatch and no other. It is the option of
+    the obligation's decision that the turn weighs, which the human has not
+    taken yet, so the turn is told it rules on an answer nobody has given.
     """
 
     agent: str
@@ -1343,6 +1360,7 @@ class DispatchContext(Strict):
     custom_text: bool = False
     backpressure: str | None = None
     scope: list[str] = Field(default_factory=list)
+    option: str | None = None
 
 
 class DoctorState(Strict):
@@ -1805,7 +1823,7 @@ def rejection_reason(
         )
 
     if submission.kind in MAP_MUTATION_KINDS and (
-        submission.actor == "thread-agent" or submission.channel != MAP_CHANNEL
+        submission.actor == "thread-agent" or submission.channel not in GRILL_MASTER_CHANNELS
     ):
         return (
             REASON_THREAD_MAP_MUTATION,

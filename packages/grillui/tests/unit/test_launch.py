@@ -713,6 +713,43 @@ def test_the_launched_board_is_given_a_heavy_expert_tier_on_the_one_configuratio
     assert expert.cli.keywords == {"timeout": 300.0}
 
 
+def test_the_launched_board_weighs_pre_rulings_on_an_expert_driver_of_their_own(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a launch
+    When it builds the board
+    Then the board is handed a second heavy driver for pre-rulings, on the same
+         configuration as the expert but not the same driver.
+
+    The heavy driver takes one turn at a time. A pre-ruling sharing the
+    expert's driver would make a ruling the human is waiting on queue behind
+    background work nobody is waiting on.
+    """
+    built: list[dict[str, Any]] = []
+    real = create_app
+
+    def recording(log: SessionLog, driver: Any = None, **rest: Any) -> Any:
+        built.append({"driver": driver, **rest})
+        return real(log, driver, **rest)
+
+    monkeypatch.setattr("grillui.launch.create_app", recording)
+
+    launch(
+        session_dir,
+        handoff=started(session_dir),
+        run=lambda _app, _port, _ready, _stop: None,
+        open_url=lambda _url: True,
+        stop=RunStop(),
+        out=io.StringIO(),
+    )
+
+    expert, background = built[0]["expert"], built[0]["background"]
+    assert isinstance(background, HeavyDriver)
+    assert background is not expert
+    assert background.config is expert.config
+
+
 def test_a_transfer_on_a_launched_board_takes_that_channels_next_turn_to_the_expert(
     session_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

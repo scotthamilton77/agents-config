@@ -111,6 +111,18 @@ and when -- because that is what the human retries against. Reading the
 phases off the log rather than out of process memory is what lets a fresh
 backend show the same wait the dead one showed.
 
+**A pre-ruling holds nothing until it is taken.** A task carrying the option it
+was computed for is a pre-ruling: the expert weighing an option before the
+human takes it. It folds into no `waiting` field, so its target stays on the
+frontier while it runs and after it fails. Its result arrives on the background
+channel and changes nothing there. It lands only when the lane writes it onto
+the map, on the human's taking that option, and it then lands as any task's
+result does, credited to the pre-ruling. Whether the board moved under it is
+read off the last sequence each decision was changed at: a pre-ruling is stale
+once its target, the decision whose option it weighs, or an ancestor of either
+has changed since its basis. A proposal still waiting in the queue changed
+nothing yet.
+
 Notices and proposals share the `pending` array, which is the queue of what the
 human has not dealt with yet. Four things take an item off it or mark it, and
 every one of them is a gesture somebody made.
@@ -137,12 +149,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from pydantic import ValidationError
 
 from grillui.schemas import (
     APPLY_KIND,
+    DECISION_KEY,
     DISCHARGING_KINDS,
     DISMISS_KIND,
     FOLD_SHAPED,
@@ -150,6 +163,7 @@ from grillui.schemas import (
     IMPACT_MODE,
     OPTION_KEY,
     PENDING_KEY,
+    PRE_RULING_CHANNEL,
     PROPOSABLE_KINDS,
     PROPOSED_ANSWER_KEY,
     REASSESS_KEY,
@@ -203,6 +217,12 @@ _REVISABLE_TEXT = ("short", "title", "body")
 # it still holds its decision, and a later gesture can still supersede it.
 _FINAL_PHASES = frozenset({STATUS_PHASE_REPLIED, STATUS_PHASE_SUPERSEDED})
 _HOLDING_PHASES = frozenset({STATUS_PHASE_COMPOSING, STATUS_PHASE_ERROR})
+# The kinds that change the decision they land on, which is what makes a
+# pre-ruling weighed against that decision stale. A notice changes no decision,
+# and a new decision is nobody's ancestor until a revise makes it one.
+_CHANGING_KINDS = frozenset(
+    {"answer", "settle", "revise", "invalidate", "unsettle", "resolve-stale"}
+)
 
 
 def task_id(gesture: int, target: str) -> str:
@@ -214,6 +234,17 @@ def task_id(gesture: int, target: str) -> str:
     return f"{IMPACT_MODE}-{gesture}-{target}"
 
 
+def pre_ruling_id(basis: int, target: str, decision: str, option: str) -> str:
+    """The id of the pre-ruling started at this sequence on one target, for one
+    option of one decision.
+
+    The option is named with its decision, because an option id is unique only
+    within its own decision, and two decisions may each offer an option of the
+    same id that marks the same target.
+    """
+    return f"{task_id(basis, target)}-{decision}-{option}"
+
+
 @dataclass
 class Task:
     """One impact task, as the lane's status entries tell it.
@@ -223,9 +254,14 @@ class Task:
     died will never be closed by it, and the epoch is how a successor tells.
 
     `mode` is what kind of weighing the task is, which a retry repeats. `option`
-    is set on a pre-ruling, the option it was computed for. `retries` names the
-    failed task this one retries. `failed` is how the task ended where it ended
-    without a ruling, read off the entry that closed its turn.
+    is set on a pre-ruling, the option it was computed for, and `decision` is
+    the decision that option belongs to. `retries` names the failed task this
+    one retries. `failed` is how the task ended where it ended without a
+    ruling, read off the entry that closed its turn.
+
+    `basis` is the log sequence the task was computed over. `result` is where a
+    pre-ruling's result is waiting to be taken, and `consumed` is whether it
+    was taken.
     """
 
     id: str
@@ -239,11 +275,20 @@ class Task:
     option: str | None = None
     retries: str | None = None
     failed: Failure | None = None
+    decision: str | None = None
+    basis: int = 0
+    result: int | None = None
+    consumed: bool = False
 
     @property
     def holds(self) -> bool:
-        """Whether this task keeps its target off the frontier."""
-        return self.phase in _HOLDING_PHASES
+        """Whether this task keeps its target off the frontier.
+
+        Only a task a gesture started does. A pre-ruling weighs an answer
+        nobody has given, so its target stays answerable while it runs, and a
+        failed one leaves no blocker behind for a retry to release.
+        """
+        return self.option is None and self.phase in _HOLDING_PHASES
 
 
 @dataclass
@@ -276,6 +321,7 @@ class _Board:
     touched: dict[str, int] = field(default_factory=dict)
     conflicts: list[SupersedeConflict] = field(default_factory=list)
     tasks: dict[str, Task] = field(default_factory=dict)
+    changed: dict[str, int] = field(default_factory=dict)
 
     def node(self, payload: Mapping[str, object]) -> Decision | None:
         target = payload.get("target")
@@ -295,7 +341,18 @@ def _run(entries: Sequence[LogEntry]) -> _Board:
     board = _Board()
     for entry in entries:
         board.seq = entry.seq
+        if entry.channel == PRE_RULING_CHANNEL:
+            # A pre-ruling's result is kept aside rather than folded: it is a
+            # ruling on an answer the human has not given.
+            if entry.kind == STATUS_KIND:
+                _fold_tasks(board, entry)
+            else:
+                _keep_aside(board, entry)
+            continue
         own = _own_targets(board, entry)
+        for name in (own or {}).values():
+            taken = board.tasks[name]
+            taken.consumed = taken.consumed or taken.option is not None
         if entry.kind in FOLD_SHAPED:
             # The gesture is one entry, so there is no state in which half of it
             # landed: either the log has it and every sub-update applies, or it
@@ -325,6 +382,10 @@ def _own_targets(board: _Board, entry: LogEntry) -> dict[str, str] | None:
     The map doctor's entry weighs no decision of its own, so it owns none, and
     under the task-result rule every structural change it carries waits for
     the human, a new decision included.
+
+    A pre-ruling counts once its result is waiting and until it is taken: an
+    entry naming one is the lane writing that result onto the map, on the
+    human's taking the option it was computed for.
     """
     raw = entry.payload.get(TASKS_KEY)
     if entry.actor == "human" or entry.kind == STATUS_KIND:
@@ -337,8 +398,60 @@ def _own_targets(board: _Board, entry: LogEntry) -> dict[str, str] | None:
         task.target: task.id
         for item in _named(raw)
         if (task := board.tasks.get(item["id"])) is not None
-        and task.phase == STATUS_PHASE_COMPOSING
+        and (
+            task.phase == STATUS_PHASE_COMPOSING
+            if task.option is None
+            else task.result is not None and not task.consumed
+        )
     }
+
+
+def _keep_aside(board: _Board, entry: LogEntry) -> None:
+    """Note where each pre-ruling this entry is the result of is waiting."""
+    for item in _named(entry.payload.get(TASKS_KEY)):
+        task = board.tasks.get(item["id"])
+        if task is not None and task.option is not None:
+            task.result = entry.seq
+
+
+class PreRuled(NamedTuple):
+    """The latest pre-ruling for one option and target, and whether the board
+    moved under it since its basis."""
+
+    task: Task
+    stale: bool
+
+
+def pre_rulings(entries: Sequence[LogEntry]) -> dict[tuple[str, str, str], PreRuled]:
+    """The latest pre-ruling for each decision, option and target, by that key.
+
+    A pure read like the queue's, because the lane asks it under the append
+    lock: which pre-ruling an answer may take, and which the board moved under
+    and so must be weighed again. Ancestry is read off the board as it now
+    stands, through both gates a decision has: its prereqs and its fog rule.
+    """
+    board = _run(entries)
+    gates = {
+        node.id: [*node.prereqs, *([node.fog_until] if node.fog_until else [])]
+        for node in board.decisions.values()
+    }
+    latest: dict[tuple[str, str, str], Task] = {}
+    for task in board.tasks.values():
+        if task.option is not None and task.decision is not None:
+            latest[(task.decision, task.option, task.target)] = task
+    return {key: PreRuled(task, _moved_since(board, gates, task)) for key, task in latest.items()}
+
+
+def _moved_since(board: _Board, gates: Mapping[str, list[str]], task: Task) -> bool:
+    """Whether the target, the decision, or an ancestor of either changed after
+    this task's basis."""
+    reach = {task.target, task.decision or task.target}
+    grew = True
+    while grew:
+        above = {one for node in reach for one in gates.get(node, [])}
+        grew = not above <= reach
+        reach |= above
+    return any(board.changed.get(one, 0) > task.basis for one in reach)
 
 
 def resulted_tasks(entries: Sequence[LogEntry]) -> set[str]:
@@ -439,6 +552,7 @@ def _open_task(board: _Board, entry: LogEntry, name: str, item: Mapping[str, obj
     ):
         return
     mode, option, retries = item.get("mode"), item.get(OPTION_KEY), item.get(RETRIES_KEY)
+    decision, basis = item.get(DECISION_KEY), item.get("basis")
     board.tasks[name] = Task(
         name,
         target,
@@ -450,6 +564,8 @@ def _open_task(board: _Board, entry: LogEntry, name: str, item: Mapping[str, obj
         mode=mode if isinstance(mode, str) else IMPACT_MODE,
         option=option if isinstance(option, str) else None,
         retries=retries if isinstance(retries, str) else None,
+        decision=decision if isinstance(decision, str) else None,
+        basis=basis if isinstance(basis, int) else gesture,
     )
 
 
@@ -658,6 +774,8 @@ def _apply(
     elif kind in THREAD_GESTURE_KINDS:
         _set_thread_state(board, entry, kind)
     target = payload.get("target")
+    if kind in _CHANGING_KINDS and isinstance(target, str):
+        board.changed[target] = entry.seq
     task = own.get(target) if own and isinstance(target, str) else None
     _record_history(board, entry, kind, payload, origin, task)
 

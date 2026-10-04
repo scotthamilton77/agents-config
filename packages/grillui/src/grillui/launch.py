@@ -245,12 +245,15 @@ def launch(
     # Every seat off the one configuration. Two rungs: the first one seated per
     # channel -- the threads' hosted model, the map's reasoning one -- and the
     # expert, which is where the human's seat toggle moves any channel and
-    # is one shared configuration for all of them.
+    # is one shared configuration for all of them. Pre-rulings take the expert
+    # seat on a driver of their own, because the driver takes one turn at a time
+    # and a ruling the human is waiting on must not queue behind them.
     tiers = TierConfig.from_env()
     board = create_app(
         log,
         seat_driver(tiers, tiers.thread_seat),
         expert=seat_driver(tiers, tiers.expert_seat, HEAVY_TIER),
+        background=seat_driver(tiers, tiers.expert_seat, HEAVY_TIER),
         seats={MAP_CHANNEL: seat_driver(tiers, tiers.map_seat)},
         on_end=ending,
     )

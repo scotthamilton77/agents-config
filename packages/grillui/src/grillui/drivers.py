@@ -101,6 +101,7 @@ from grillui.schemas import (
     FAST_TIER,
     FOLD_KIND,
     FOLLOWED_TRANSFER_KEY,
+    GRILL_MASTER_CHANNELS,
     HEAVY_TIER,
     MAP_CHANNEL,
     MODEL_KEY,
@@ -1226,7 +1227,11 @@ class HeavyDriver:
         # reason to read the newest as a correction rather than as more of the
         # same. The old record is discarded as the turn opens rather than kept
         # for a null session id to fall back on.
-        cold = bool(context.catch_up)
+        #
+        # A pre-ruling opens a cold chain too. Its channel's chain belongs to an
+        # earlier pre-ruling, which weighed some other answer the human has not
+        # given, and resuming it would carry that hypothesis into this one.
+        cold = bool(context.catch_up) or context.option is not None
         # The rung's brief, not the expert's: a session may seat this transport
         # on a channel's first rung, and a turn briefed as the expert while the
         # lane, the attribution and the hand-up all call it `fast` is a seat
@@ -1932,6 +1937,7 @@ def record_document(
     *,
     scope: Sequence[str] = (),
     reassess: bool = False,
+    channel: str = MAP_CHANNEL,
 ) -> int | None:
     """Put a grill-master turn into the log without what it ruled on decisions a
     later gesture took over, and say where it landed.
@@ -1953,6 +1959,9 @@ def record_document(
 
     `reassess` is set on the map doctor's turn, and the entry says so, which is
     what makes the replay queue every structural change it carries.
+
+    `channel` is where the turn ran: the map, or the background channel a
+    pre-ruling runs on, whose result the replay keeps aside until it is taken.
     """
     outside = _outside(document, scope)
     if outside:
@@ -1964,7 +1973,9 @@ def record_document(
     with log.appending():
         gone = superseded_targets(log.entries(), owed)
         if owed is None or owed.gesture is None or not gone:
-            return _record_document(log, tier, document, attribution, owed, tasks, reassess)
+            return _record_document(
+                log, tier, document, attribution, owed, tasks, reassess, channel
+            )
         kept = [one for one in owed.ids if one not in gone]
         # Only a target this turn actually said something about had a result
         # to drop. A turn silent on it dropped nothing, and a history line
@@ -1984,7 +1995,9 @@ def record_document(
         # A superseded task has no target left to change, and the replay skips
         # it; but a turn left naming none would read as one dispatched with no
         # task at all, and land its wider changes without the human.
-        spoke = _record_document(log, tier, document, attribution, narrowed, tasks, reassess)
+        spoke = _record_document(
+            log, tier, document, attribution, narrowed, tasks, reassess, channel
+        )
         # Recorded only once the turn has landed: a turn the appender refuses
         # is retried, and the retry strikes the same result again.
         for one in dropped:
@@ -2062,6 +2075,7 @@ def _record_document(
     owed: MootnessObligation | None = None,
     tasks: Sequence[str] = (),
     reassess: bool = False,
+    channel: str = MAP_CHANNEL,
 ) -> int | None:
     """Put a grill-master turn into the log, whole, and say where it landed.
 
@@ -2108,7 +2122,7 @@ def _record_document(
             log.emit_status(
                 STATUS_PHASE_RULINGS_DROPPED,
                 f"rulings on {', '.join(struck)} were not owed by this turn",
-                MAP_CHANNEL,
+                channel,
             )
         # A withdrawal is the exception: `supersedes` rides on an entry, so a
         # turn that withdrew something and gave nothing to record it on has
@@ -2138,7 +2152,7 @@ def _record_document(
         else {"updates": updates, **attribution}
     )
     kind = "informational" if solo else FOLD_KIND
-    return _submit(log, tier, MAP_CHANNEL, kind, {**payload, **judgement})
+    return _submit(log, tier, channel, kind, {**payload, **judgement})
 
 
 def record_reply(
@@ -2187,9 +2201,17 @@ def record_reply(
     map doctor's turn, and all three reach only the map turn for the same
     reason.
     """
-    if channel == MAP_CHANNEL:
+    if channel in GRILL_MASTER_CHANNELS:
         return record_document(
-            log, tier, read_document(text), attribution, owed, tasks, scope=scope, reassess=reassess
+            log,
+            tier,
+            read_document(text),
+            attribution,
+            owed,
+            tasks,
+            scope=scope,
+            reassess=reassess,
+            channel=channel,
         )
     prose, updates, superseded, proposal, asked = declared_updates(text)
     refusal = _proposal_refusal(log, channel, text, proposal)
@@ -2236,7 +2258,7 @@ def _submit(log: SessionLog, tier: str, channel: str, kind: str, payload: dict[s
             [
                 EventSubmission(
                     kind=kind,
-                    actor="grill-master" if channel == MAP_CHANNEL else "thread-agent",
+                    actor="grill-master" if channel in GRILL_MASTER_CHANNELS else "thread-agent",
                     channel=channel,
                     idempotency_key=f"{tier}-{uuid4().hex}",
                     payload=payload,

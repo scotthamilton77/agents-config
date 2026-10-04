@@ -103,6 +103,7 @@ def create_app(
     *,
     expert: TurnDriver | None = None,
     seats: Mapping[str, TurnDriver] | None = None,
+    background: TurnDriver | None = None,
     summarize: Summarizer = default_summary,
     on_end: Callable[[], None] | None = None,
 ) -> FastAPI:
@@ -123,6 +124,9 @@ def create_app(
     there are: a seated channel hands a turn it could not take up to the same
     `expert` every other channel has.
 
+    `background` is the expert seat pre-rulings are weighed on, kept apart
+    from `expert` so a ruling the human is waiting on never queues behind them.
+
     `summarize` is the seam capture writes the terminal result's prose through.
     Its default builds the briefing from the structured parts, so ending a
     session never waits on a model being reachable.
@@ -134,7 +138,7 @@ def create_app(
     of its own to end.
     """
     app = FastAPI(title="grillui session backend")
-    lane = Lane(log, driver, expert, seats)
+    lane = Lane(log, driver, expert, seats, background)
     claim = Claim(log.directory)
 
     def require_epoch(presented: str) -> None:

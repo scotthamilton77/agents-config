@@ -1,6 +1,6 @@
 """The status lane, the answerability decision, and the seam a tier plugs into.
 
-Eight rules meet here.
+Nine rules meet here.
 
 **The lane is mechanical.** The instant a human turn is accepted, and inside the
 same lock that appended it, the backend emits `accepted` and then `composing`
@@ -90,6 +90,21 @@ target, and the human's retry is a gesture like any other here: it supersedes
 the failed task and opens one in its place, scoped to that decision and what
 rests on it.
 
+**The likely rulings are weighed before the human clicks.** Settling a decision
+opens the decisions resting on it, and each option of each of those that marks
+a decision still standing is weighed against it in the background: one
+pre-ruling per option and target, on the expert, announced and closed on a
+channel of its own so the map's lane never tells the human they are waiting on
+it. A pre-ruling holds nothing. When the human takes that option with no note,
+the lane takes the pre-ruling's result instead of starting a task, so nothing
+waits. Whether the board moved under it is read before the answer lands and
+the result is written straight after it, in the one hold of the append lock
+that accepts the answer, so no other write lands between the two. A pre-ruling
+the board moved under is never taken, and is weighed again whenever the lane
+next has the lock and its decision is still on offer. Weighing goes one hop:
+a decision is pre-ruled when an answer opens it, and the decisions resting on
+it wait until it is answered in turn.
+
 The driver seam is the whole of what a tier has to implement. A turn is one
 invocation: the driver runs, says what it has to say into the log, and returns
 the sequence of the entry it appended -- which is the receipt the coverage check
@@ -110,11 +125,13 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 from grillui.dispatch import record_dispatch
 from grillui.escalation import (
     ANSWER_KIND,
+    DEAD_STATUSES,
     INVALIDATE_KIND,
     distrust_count,
     in_expert_mode,
     judgment_class,
     mootness_obligation,
+    opened_by,
     policy_transferred,
     retry_obligation,
     rulings_of,
@@ -123,6 +140,8 @@ from grillui.escalation import (
 )
 from grillui.projector import (
     impact_tasks,
+    pre_ruling_id,
+    pre_rulings,
     replay,
     resulted_tasks,
     supersede_conflicts,
@@ -132,10 +151,13 @@ from grillui.projector import (
 from grillui.schemas import (
     ANSWERABLE_KINDS,
     APPLY_KIND,
+    DECISION_KEY,
     DISMISS_KIND,
     IMPACT_MODE,
     MAP_CHANNEL,
     OPENED_KEY,
+    OPTION_KEY,
+    PRE_RULING_CHANNEL,
     PRESSED_KEY,
     RETRIES_KEY,
     SESSION_END_KIND,
@@ -150,6 +172,8 @@ from grillui.schemas import (
     THREAD_FOLD_KIND,
     TIER_KEY,
     DispatchContext,
+    EventSubmission,
+    MootnessObligation,
     is_proceed,
 )
 
@@ -158,12 +182,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillui.log import SessionLog
+    from grillui.projector import Task
     from grillui.schemas import (
-        EventSubmission,
         GrillMasterDocument,
         Image2,
         LogEntry,
-        MootnessObligation,
+        Option,
         Receipt,
         SupersedeConflict,
     )
@@ -440,6 +464,10 @@ class Turn(NamedTuple):
     `custom_text` is the gesture being an answer in the human's own words. The
     expert weighs those words whether or not they opened anything.
 
+    `option` is set on a pre-ruling, and names the option it weighs. A turn
+    carrying one runs in the background: it owes the human nothing, and what it
+    sends waits to be taken.
+
     `mootness` is what the gesture this turn was scheduled for owes the rest of
     the board, read when it was scheduled and carried here rather than derived
     again when the turn runs. The board is mutable and the turn runs later: an
@@ -458,6 +486,7 @@ class Turn(NamedTuple):
     opened: int | None = None
     scope: tuple[str, ...] = ()
     custom_text: bool = False
+    option: str | None = None
 
 
 def turn_of(event: EventSubmission) -> Turn:
@@ -612,6 +641,11 @@ class Lane:
     never the number of rungs: a channel seated here still hands a turn up to
     the one expert, because a first rung that is already the expert has nowhere
     to hand one.
+
+    `background` is the expert seat pre-rulings are weighed on. A launched
+    backend gives it a driver of its own, so a ruling the human is waiting on
+    never queues behind one nobody is. It defaults to the expert, and to the
+    session's own driver where there is no expert.
     """
 
     def __init__(
@@ -620,11 +654,13 @@ class Lane:
         driver: TurnDriver | None = None,
         expert: TurnDriver | None = None,
         seats: Mapping[str, TurnDriver] | None = None,
+        background: TurnDriver | None = None,
     ) -> None:
         self.log = log
         self.driver = driver
         self.expert = expert
         self.seats = dict(seats or {})
+        self.background = background
         self._doctor = False
 
     def tier_for(self, channel: str, driver: TurnDriver, gesture: Turn | None = None) -> TurnDriver:
@@ -691,6 +727,7 @@ class Lane:
         base = self.driver
         receipts: list[Receipt] = []
         turns: list[tuple[TurnDriver, Turn]] = []
+        answered: list[str] = []
         with self.log.appending():
             if base is None:
                 return self.log.submit(batch, epoch), []
@@ -698,6 +735,9 @@ class Lane:
             # entries land adjacent to the turn they report -- a second turn in
             # the same batch never wedges between a turn and its `accepted`.
             for event in batch:
+                # Read before the answer lands, because the answer changes the
+                # decision every pre-ruling it may take was computed for.
+                takeable = self._takeable(event)
                 receipt = self.log.submit([event], epoch)[0]
                 receipts.append(receipt)
                 if receipt.status != "accepted":
@@ -715,6 +755,9 @@ class Lane:
                 owed = self._owed(turn)
                 if not is_answerable(event) and not self._owes_rulings(event, owed):
                     continue
+                if event.kind == ANSWER_KIND and event.actor == "human":
+                    answered.append(str(event.payload.get("target")))
+                owed = self._take(takeable, receipt.seq, owed)
                 targets = _impact_targets(receipt.seq, owed)
                 turn = turn._replace(
                     mootness=owed, tasks=tuple(task_id(receipt.seq, one) for one in targets)
@@ -761,7 +804,145 @@ class Lane:
                     ],
                 )
                 turns.append((driver, turn._replace(opened=announced)))
+            turns += self._pre_rule(answered)
         return receipts, [self._schedule(driver, turn) for driver, turn in turns]
+
+    def _takeable(self, event: EventSubmission) -> dict[str, Task]:
+        """The pre-rulings this answer may take, by target, as the board stands
+        before it lands.
+
+        Only an answer taking an option with no note takes one: the human's own
+        words are weighed by the expert whatever was weighed before them. Only
+        a pre-ruling whose result is waiting, and whose board has not moved
+        since its basis, is taken.
+        """
+        given = event.payload.get(ANSWER_KIND)
+        option = given.get("option") if isinstance(given, dict) else None
+        if event.actor != "human" or event.kind != ANSWER_KIND or _custom_text(event):
+            return {}
+        decision = event.payload.get("target")
+        return {
+            key[2]: found.task
+            for key, found in pre_rulings(self.log.entries()).items()
+            if key[:2] == (decision, option)
+            and not found.stale
+            and found.task.result is not None
+            and not found.task.consumed
+        }
+
+    def _take(
+        self, takeable: Mapping[str, Task], gesture: int, owed: MootnessObligation | None
+    ) -> MootnessObligation | None:
+        """Write each takeable pre-ruling's result onto the map, and return what
+        the answer still owes once they have landed.
+
+        Only a decision this answer's own obligation still names is taken. Each
+        result is written as the grill-master's entry naming its pre-ruling, so
+        the replay lands it the way any task's result lands and credits it to
+        the pre-ruling. A result the appender now refuses is not taken, and that
+        decision is weighed by a task like any other.
+        """
+        if owed is None or owed.cause != ANSWER_KIND or owed.gesture != gesture:
+            return owed
+        entries = {one.seq: one for one in self.log.entries()}
+        taken = {
+            target
+            for target, task in takeable.items()
+            if target in owed.ids and self._land(task, entries[task.result or 0])
+        }
+        rest = [one for one in owed.ids if one not in taken]
+        if not rest:
+            return None
+        return owed.model_copy(
+            update={"ids": rest, "opened": [one for one in owed.opened if one in rest]}
+        )
+
+    def _land(self, task: Task, result: LogEntry) -> bool:
+        """Write one pre-ruling's result onto the map; whether it landed."""
+        try:
+            receipt = self.log.submit(
+                [
+                    EventSubmission(
+                        kind=result.kind,
+                        actor="grill-master",
+                        channel=MAP_CHANNEL,
+                        idempotency_key=f"taken-{task.id}",
+                        payload=result.payload,
+                    )
+                ],
+                self.log.epoch,
+            )[0]
+        # The appender raises on a payload it refuses for its shape. The error
+        # is caught by its base class because the log module imports this one.
+        except RuntimeError:
+            return False
+        return receipt.status == "accepted"
+
+    def _pre_rule(self, answered: Sequence[str]) -> list[tuple[TurnDriver, Turn]]:
+        """Open the pre-rulings owed now, and return the turns that weigh them.
+
+        Called under the append lock. Each decision these answers opened that is
+        on offer is pre-ruled for every option marking a decision still
+        standing. Each decision whose latest pre-ruling for some option and
+        target the board moved under is weighed again for that option and
+        target. A pre-ruling still fresh is never started twice, and a session
+        that has ended starts nothing.
+
+        A mark naming its own decision is never pre-ruled. Taking the option
+        settles that decision, which leaves the mark nothing standing to rule
+        on, so the result could never be taken.
+        """
+        base = self.background or self.expert or self.driver
+        entries = self.log.entries()
+        if base is None or any(one.kind == SESSION_END_KIND for one in entries):
+            return []
+        image = replay(self.log.epoch, entries)
+        opened = [one for decision in answered for one in opened_by(image, decision)]
+        known = pre_rulings(entries)
+        moved = [key[0] for key, found in known.items() if found.stale]
+        offered = {node.id: node for node in image.decisions if node.id in image.frontier}
+        live = {node.id for node in image.decisions if node.status not in DEAD_STATUSES}
+        started: list[tuple[TurnDriver, Turn]] = []
+        for decision in dict.fromkeys([*opened, *moved]):
+            node = offered.get(decision)
+            for option in [] if node is None else node.options:
+                for target in dict.fromkeys(option.puts_in_question or []):
+                    found = known.get((decision, option.id, target))
+                    owed = found.stale if found is not None else decision in opened
+                    if target in live and target != decision and owed:
+                        started.append(self._open_pre_ruling(base, decision, option, target))
+        return started
+
+    def _open_pre_ruling(
+        self, driver: TurnDriver, decision: str, option: Option, target: str
+    ) -> tuple[TurnDriver, Turn]:
+        """Announce one pre-ruling on the background channel, as the task it is."""
+        basis = self.log.seq
+        name = pre_ruling_id(basis, target, decision, option.id)
+        turn = Turn(
+            PRE_RULING_CHANNEL,
+            mootness=MootnessObligation(target=decision, answer=option.text, ids=[target]),
+            tasks=(name,),
+            option=option.id,
+        )
+        announced = self._announce(
+            driver,
+            turn,
+            tasks=[
+                {
+                    "id": name,
+                    "target": target,
+                    "gesture": basis,
+                    "basis": basis,
+                    "mode": IMPACT_MODE,
+                    OPTION_KEY: option.id,
+                    DECISION_KEY: decision,
+                    "seat": driver.tier,
+                    "phase": STATUS_PHASE_COMPOSING,
+                }
+            ],
+        )
+        return driver, turn._replace(opened=announced)
 
     def _supersede(self, targets: Sequence[str]) -> list[dict[str, Any]]:
         """End every task holding one of these targets, as the entry ending them
@@ -984,7 +1165,7 @@ class Lane:
 
     def _schedule(self, driver: TurnDriver, turn: Turn) -> threading.Thread:
         thread = threading.Thread(
-            target=self._take_turn,
+            target=self._take_turn if turn.option is None else self._take_background,
             args=(driver, turn),
             daemon=True,
             name=f"turn-{turn.channel}",
@@ -1030,6 +1211,33 @@ class Lane:
             if turn.reassess:
                 self._doctor = False
 
+    def _take_background(self, driver: TurnDriver, turn: Turn) -> None:
+        """One pre-ruling, off the lock and off the request path.
+
+        It walks no ladder. It is already on the expert, nobody is waiting on
+        it, and an obligation it leaves unmet is met by the task the human's
+        click starts. So it tells the human nothing: a seat that failed it is
+        named on the turn's own closing entry, on the background channel.
+        """
+        try:
+            dispatch = record_dispatch(
+                self.log,
+                channel=turn.channel,
+                mootness=turn.mootness,
+                tasks=turn.tasks,
+                option=turn.option,
+            )
+            outcome = _run(driver, self.log, dispatch)
+        except Exception as error:
+            outcome = _Pressed(None, failed=error)
+        if _answered(outcome):
+            self._close(
+                turn, STATUS_PHASE_REPLIED, f"the {driver.tier!r} tier's pre-ruling is over"
+            )
+            return
+        fault = outcome.failed or DocumentRefusedError(driver.tier, outcome.refusal or "")
+        self._close(turn, STATUS_PHASE_ERROR, _fault(driver.tier, fault))
+
     def _close(self, turn: Turn, phase: str, detail: str) -> None:
         """Close the lane on a turn, ending each of its tasks still live in the
         same phase.
@@ -1037,6 +1245,10 @@ class Lane:
         A task a later gesture superseded while this turn ran was already ended
         by that gesture's `accepted` entry, and is left out here: it reads
         superseded for good, never replied and never failed.
+
+        A turn that may have changed the board is where a pre-ruling the board
+        moved under is weighed again, in the same hold of the lock. A
+        pre-ruling's own turn changed nothing, so it starts nothing.
         """
         with self.log.appending():
             known = impact_tasks(self.log.entries())
@@ -1046,6 +1258,9 @@ class Lane:
                 if one in known and known[one].phase == STATUS_PHASE_COMPOSING
             ]
             self.log.emit_status(phase, detail, turn.channel, tasks=ended, opened=turn.opened)
+            again = [] if turn.option is not None else self._pre_rule(())
+        for driver, background in again:
+            self._schedule(driver, background)
 
     def _press(self, driver: TurnDriver, turn: Turn, dispatch: Path, reply: _Pressed) -> TurnDriver:
         """Press a turn that did not answer, and say so when no seat will.
