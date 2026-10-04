@@ -42,6 +42,7 @@ from grillui.lane import Lane
 from grillui.persistence import project_and_persist
 from grillui.projector import replay, to_image1
 from grillui.schemas import (
+    REASON_EPOCH_MISMATCH,
     SESSION_END_KIND,
     BatchWrite,
     ClaimRequest,
@@ -50,6 +51,9 @@ from grillui.schemas import (
     Image1,
     Image2,
     Receipt,
+    RejectedReceipt,
+    RetryRequest,
+    RetryState,
     SessionStatus,
     StateRead,
     UpdateRead,
@@ -198,6 +202,30 @@ def create_app(
         """
         lane.call_doctor()
         return DoctorState(outstanding=lane.doctor_outstanding)
+
+    @app.post("/retry")
+    def retry(request: RetryRequest) -> RetryState | RejectedReceipt:
+        """Ask again for a ruling whose impact task failed.
+
+        A control rather than an event, like the doctor: the kind vocabulary is
+        closed, and what a retry leaves on the log is the lane's own pair of
+        entries ending the failed task and opening its successor. It is never a
+        hole in the rule refusing changes to a decision a task holds, because
+        it changes nothing on that decision -- the decision goes on waiting, now
+        on the retry. `started` is false where the task is not one a retry can
+        release: already retried, superseded by an answer, or never failed.
+
+        A page holding another tenure's epoch is refused with the receipt a
+        write under that epoch gets, so the page recovers from it the same way.
+        """
+        if request.epoch != log.epoch:
+            return RejectedReceipt(
+                idempotency_key=None,
+                epoch=log.epoch,
+                reason=REASON_EPOCH_MISMATCH,
+                detail=f"server epoch is {log.epoch!r}, presented epoch was {request.epoch!r}",
+            )
+        return RetryState(started=lane.retry(request.task) is not None)
 
     @app.post("/claim")
     def present_claim(request: ClaimRequest) -> ClaimState:

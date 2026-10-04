@@ -1880,6 +1880,22 @@ function endSession(confirmed) {
   send(ev("session-end", MAP, {}));
   render();
 }
+// The retry is a control rather than an event, like the doctor: what it leaves
+// on the log is the lane's own, and the next poll shows the decision waiting on
+// the retry. It carries the epoch the board was read under, and a press from
+// another tenure is refused with the receipt a write would get, which is shown
+// and recovered from the same way. A press that started nothing left nothing
+// on the log for a poll to bring in, so the board is read whole again instead,
+// and shows whatever holds the decision now.
+function retryRuling(task) {
+  if (sessionOver()) return;
+  srvPost("/retry", { task: task, epoch: WIRE.epoch }).then(function (r) {
+    if (r.status === "rejected") WIRE.lastRejection = r;
+    if (r.status === "rejected" || !r.started) WIRE.hydrated = false;
+    render();
+    poll();
+  }, wireFailed);
+}
 function callDoctor() {
   if (sessionOver()) return;
   srvPost("/doctor").then(function (d) { WIRE.doctor = d.outstanding; render(); }, wireFailed);
@@ -1918,7 +1934,17 @@ function pcrIcon(o) {
 // What a decision held by a ruling in flight is waiting on: the gesture that
 // started the ruling, the seat weighing it, and since when. It stands where the
 // answer controls would, because there is nothing to answer until it lands.
+// A failed ruling still holds its decision, so the notice says what failed,
+// on which seat and when, and offers the one control that releases it: asking
+// for the ruling again. Nothing else on the decision is answerable meanwhile.
 function taskNotice(w) {
+  if (w.failed) {
+    return '<div class="task-notice failed" data-task="' + esc(w.task) + '">⚠ <strong>The ruling failed.</strong> ' +
+      (w.retries ? "A retry of the ruling" : "The ruling") + " your answer at #" + esc(w.gesture) +
+      " asked for failed on the " + esc(w.failed.seat) + " seat at " + esc(stamp(w.failed.at)) + ": " +
+      esc(w.failed.cause) + ". This decision cannot be answered until a ruling lands. " +
+      '<button class="btn sm" data-act="retry" data-task="' + esc(w.task) + '">Retry the ruling</button></div>';
+  }
   return '<div class="task-notice" data-task="' + esc(w.task) + '">⏳ <strong>Waiting on a ruling.</strong> Your answer at #' +
     esc(w.gesture) + " put this decision in question, and the " + esc(w.seat) +
     " seat has been weighing it since " + esc(stamp(w.start)) + ". It cannot be answered until that ruling lands.</div>";
@@ -3334,7 +3360,7 @@ function popOut(tid) {
 // same thing, so an ended board offers no control whose click would be swallowed.
 var WRITE_ACTS = ["pick", "free", "say", "seed", "draftsay", "newthread", "discuss", "discussnotice",
   "fold", "park", "closethread", "abandon", "reopen", "applyone", "applyall", "dismissone", "transfer", "proceed",
-  "doctor", "endsession", "confirm-end"];
+  "doctor", "retry", "endsession", "confirm-end"];
 // Reading stays: the board, the map, the history, the inbox, the notifications
 // and the read markers are all this window's own and go nowhere. What goes is
 // the ability to say anything more into a log that has been closed.
@@ -3512,6 +3538,7 @@ document.addEventListener("click", function (e) {
     case "inbox": UI.panel = { kind: "inbox" }; render(); break;
     case "notifications": UI.panel = { kind: "notifications" }; render(); break;
     case "doctor": callDoctor(); break;
+    case "retry": retryRuling(el.dataset.task); break;
     case "endsession": endSession(); break;
     case "closepanel": UI.panel = null; render(); break;
     case "marknote": markRead(el.dataset.nid); render(); break;

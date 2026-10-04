@@ -296,8 +296,9 @@ def test_pnd_a1_a_restart_keeps_the_waiting_field_and_fails_the_dead_task(
     """
     Given a marked answer whose ruling is in flight when its process dies
     When a fresh backend opens the same directory
-    Then image 1 shows the same waiting field it showed before, and the task
-         is closed on the log as failed rather than left live.
+    Then image 1 shows the same task, gesture, seat and start it showed
+         before, now naming the failure the dead process left it in, and the
+         task is closed on the log as failed rather than left live.
     """
     _seed(log)
     seat = SpyDriver(tier=HEAVY_TIER, hold=True)
@@ -313,7 +314,10 @@ def test_pnd_a1_a_restart_keeps_the_waiting_field_and_fails_the_dead_task(
         for node in replay(successor.epoch, successor.entries()).decisions
         if node.waiting
     }
-    assert after == before
+    named = ("task", "gesture", "seat", "start")
+    assert {key: {one: value[one] for one in named} for key, value in after.items()} == before
+    assert all("failed" not in value for value in before.values())
+    assert all("died with the process" in value["failed"]["cause"] for value in after.values())
     assert _live_by_target(successor.entries()) == {}
     failed = [
         item["id"]

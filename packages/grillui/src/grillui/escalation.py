@@ -656,6 +656,51 @@ def _answer_obligation(image: Image2, answered: LogEntry) -> MootnessObligation 
     )
 
 
+def retry_obligation(
+    image: Image2, entries: Sequence[LogEntry], gesture: int, target: str
+) -> MootnessObligation | None:
+    """What a retry of a failed ruling owes: that one decision, ruled again on
+    the answer that first put it in question, as the board now stands.
+
+    The answer is read back off the log at the gesture the failed task names,
+    so the turn is told the same rationale the first run was. The obligation is
+    narrowed to the one decision, because the rest of that answer's targets
+    are other tasks' business. The caller keys it to the retry's own start, so
+    the retry's task is the one a later answer can supersede.
+
+    Nothing where the answer no longer puts that decision in question at all,
+    which leaves nothing for a retry to rule on.
+    """
+    answered = next((one for one in entries if one.seq == gesture), None)
+    owed = None if answered is None else _answer_obligation(image, answered)
+    if owed is None or target not in owed.ids:
+        return None
+    return owed.model_copy(
+        update={"ids": [target], "opened": [one for one in owed.opened if one == target]}
+    )
+
+
+def subtree(image: Image2, root: str) -> list[str]:
+    """This decision and every decision resting on it, directly or not, in
+    board order.
+
+    Resting is either gate a decision has: a prereq, or the fog rule naming
+    what it waits on. Both make a decision's question depend on the root's
+    answer, so a ruling on the root may have to move either kind.
+    """
+    inside = {root}
+    grew = True
+    while grew:
+        grew = False
+        for one in image.decisions:
+            if one.id not in inside and (
+                inside.intersection(one.prereqs) or one.fog_until in inside
+            ):
+                inside.add(one.id)
+                grew = True
+    return [one.id for one in image.decisions if one.id in inside]
+
+
 def _opened(image: Image2, answered: str) -> list[str]:
     """The decisions the answer to this one opened: gated on it, by a prereq or
     by fog, and with every gate now clear.
