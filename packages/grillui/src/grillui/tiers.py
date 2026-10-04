@@ -1072,10 +1072,13 @@ SUPERSEDE_CONFLICT_RULE = (
 REASSESS_RULE = (
     "The human called for a full reassessment: go over every decision and everything in the "
     "queue above, say what no longer holds, and send the updates that fix it. Their board is "
-    "frozen until you answer, so do it in this turn."
+    "frozen until you answer, so do it in this turn. Every change you send waits for the human "
+    "to apply it, a new decision included: nothing in this turn lands on the board by itself."
 )
 
-RETRY_RULE = (
+# What a retried ruling is briefed with. It is a rule of its own beside the one
+# a reply in the wrong shape is retried with, and the two are never the same text.
+NODE_RETRY_RULE = (
     "An earlier turn owed this ruling and failed before it landed, and the human has asked for "
     "it again. Rule on it over the board as it stands now. Change nothing outside the decisions "
     "named above: a change to any other decision is refused, and the refusal costs you your "
@@ -1457,7 +1460,7 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
                 [
                     "## A retry of a failed ruling",
                     f"This turn may change only {', '.join(context.scope)}.",
-                    RETRY_RULE,
+                    NODE_RETRY_RULE,
                 ]
                 if context.scope
                 else []

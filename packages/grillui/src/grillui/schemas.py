@@ -364,6 +364,12 @@ IMPACT_MODE = "impact"
 # of the log can follow one decision's rulings from the first through each
 # retry without inferring the chain from timing.
 RETRIES_KEY = "retries"
+# What marks the entry a map-doctor turn lands as. The doctor carries no task,
+# and every structural change it sends waits for the human, a new decision
+# included -- so the replay, which decides what lands, has to read that off the
+# entry itself. An entry written before the key existed carries none and
+# replays exactly as it always did.
+REASSESS_KEY = "reassess"
 # What a pre-ruling's task is opened with: the option it was computed for. The
 # key's presence is the whole marker, and a task carrying it holds no lock, so
 # there is no blocker for a retry to release.
