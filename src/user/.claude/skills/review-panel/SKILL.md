@@ -9,7 +9,7 @@ admission:
 
 A round is a panel of single-lens reviewers. This skill routes: it resolves the target to a
 profile, checks its gates ran, staffs the round, fans out one reviewer per staffed lens,
-and assembles the reports into the round verdict — it holds no lens expertise.
+and assembles the reports into the round verdict.
 Lens sets, mandates, tiers, transports, and the profile table are data in
 `contracts.json`; every mandate states what makes an instance worth reporting.
 
@@ -63,7 +63,7 @@ and undispositioned ones still block. `--sweep` flies under its own staffing dec
 blocking-only, ledger loaded — subtract-only from the class's frontier seats, unbounded by the
 profile ceiling, a target-shaped rationale per subtraction (looking clean justifies nothing); a
 justified zero-seat decision is the terminal record. A class with no frontier seat
-escalates to the human. A clean, complete full round 1 that retained every frontier seat is
+escalates to the human. A clean, complete round 1 that retained every frontier seat is
 terminal directly.
 
 ## Emitting the prompts
