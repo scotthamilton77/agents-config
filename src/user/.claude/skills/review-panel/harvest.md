@@ -17,8 +17,11 @@ head SHA it ran at. Produce it by running the profile's gates and recording what
 happened; the emitter refuses assertion-shaped evidence and stale heads.
 
 **The staffing record** — the staffed subset, a rationale per excluded roster lens, the
-recommending model, and the decision. Get the recommendation from a foreign mid-tier model — the
-routing table's mid tier, outside the reviewing session's own vendor family. Interactively,
+recommending model, and the decision. Get the recommendation from the dispatch that
+`contracts.json` pins under `pins.staffing_recommender`. That pin names the provider, the tier,
+the effort and the tool grant, and the model is the routing table's cell for that provider and
+tier. The pinned provider sits outside the reviewing session's own vendor family, and an empty
+tool grant means the recommender reads only what its prompt carries. Interactively,
 present it to the user and record their edit as the decision; non-interactively, record the
 recommendation and proceed. A sweep round's staffing decision subtracts only from the
 class's frontier seats, decision `sweep-contract`, unbounded by the profile's force ceiling, mid
@@ -58,22 +61,38 @@ declared transport, the model the displaced attempt ran on, or both when both ch
 reason, and, when the swap was forced rather than chosen, the dead route's error verbatim in
 `transport_error`. A round that lost diversity silently is indistinguishable from one that kept it.
 
-## Choosing the model
+## Choosing the model, the effort and the tools
 
-No lens declares a model. `contracts.json` carries the lens rosters and the profile table —
-never a model; the model is the dispatcher's to pick, every time.
+No lens declares a model. `contracts.json` carries the lens rosters, the profile table and the
+seat pins, and never a model. A lens's seat in a round is its transport, its tier this round and
+its scope this round. A pin is the effort and the tool grant that seat is dispatched with. You
+pick none of the three values yourself:
 
-Pick it by the lens's tier and transport from the `choosing-a-delegate` skill's model routing
-table, not from memory, and pick the effort for the lens's scope from the model's accepted list.
-That table is the source of truth for every provider's ids, prices, context windows and accepted
-reasoning efforts, and all of them move underneath a remembered pick: vendors reprice and retire
-models without notice. Two failures follow from picking free-hand, and the second is the
-expensive one — a model whose reasoning cannot be capped will strand a whole-artifact lens inside
-a thinking block and return no report at all, burning a full lens latency before the failover
-starts. The OpenRouter launcher skill names which of its models those are; a whole-artifact lens must not be routed to one.
+- **The model** is the cell of the `choosing-a-delegate` skill's model routing table for the
+  lens's provider and its `tier_this_round` in `round.json`. Transport `codex` is the table's
+  provider `openai`, and transport `openrouter` is its provider `openrouter`.
+- **The effort and the tool grant** are the lens's `effort` and `tools` fields in `round.json`,
+  which the emitter copied from its seat's pin. The tools value `read-only-sandbox` means the
+  Codex runtime's read-only sandbox. A list names the only tools the OpenRouter launcher is
+  granted.
 
-The gate does not enforce any of this: it accepts and records an unlisted model on purpose, so
-that a deliberate choice is possible and is visible afterwards. The discipline is yours.
+A lens whose route died fails over to the other transport's seat at the same tier and scope. Its
+pin is the entry under `pins.lenses.<transport>.<tier>.<scope>` in `contracts.json`, and its
+model is the table's cell for the other provider at that tier. One seat has no pin: the
+OpenRouter `mid` model never reads a whole artifact in one pass. A `codex` lens at `mid` whose
+scope is `full` therefore fails over to the `openrouter` seat at `frontier` and `full`. Failover
+reads `contracts.json` and never re-runs the emitter.
+
+The routing table is the source of truth for every provider's ids, prices, context windows and
+accepted reasoning efforts. All of them move underneath a remembered pick, because vendors
+reprice and retire models without notice. A free-hand effort fails expensively. A model whose
+reasoning cannot be capped will strand a whole-artifact lens inside a thinking block and return
+no report at all, burning a full lens latency before the failover starts. A free-hand tool grant
+fails the other way, with an exploratory walk billed at frontier prices.
+
+The gate does not enforce any of this. It accepts and records an unlisted model on purpose, so
+that a deliberate choice is possible and is visible afterwards, and it records no effort and no
+tool grant. The discipline is yours.
 
 ## Every dispatch is claimed first
 
@@ -118,10 +137,9 @@ uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
   --reason transport-error --evidence "402 Insufficient credits"
 ```
 
-Declare a route that has not just failed. A model can sit at capacity for the length of a round
-while another model of the same vendor answers, so the alternative to a dead route is another
-transport **or** another model on it — and a retry of the route that just said it is down is
-neither.
+Declare a route that has not just failed: the failover seat that "Choosing the model, the effort
+and the tools" names, dispatched at its pin. A retry of the route that just said it is down is
+not a failover.
 
 ### When the gate refuses
 
