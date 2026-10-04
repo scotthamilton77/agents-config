@@ -1,8 +1,8 @@
 # Delegation skills and rules as one system
 
-**Date:** 2026-10-01, revised 2026-10-03
-**Status:** Child spec of `docs/specs/2026-07-21-harness-rework-way-forward.md` (D5 foreign eyes in review seats, D16 removal conditions). Draft for review. Four criteria attacks ran, two on 2026-10-01 and two on 2026-10-03; the fourth covers the current text, and its record is `docs/specs/2026-10-01-delegation-coherence-ac-attack.json`.
-**Work item:** `agents-config-9k9.458`, design child `agents-config-9k9.458.1`.
+**Date:** 2026-10-01, revised 2026-10-04
+**Status:** Child spec of `docs/specs/2026-07-21-harness-rework-way-forward.md` (D5 foreign eyes in review seats, D16 removal conditions). Draft for review. Five criteria attacks ran, two on 2026-10-01, two on 2026-10-03 and one on 2026-10-04 after DEL-D9 and slice D were amended; the fifth covers the current text, and its record is `docs/specs/2026-10-01-delegation-coherence-ac-attack.json`.
+**Work item:** `agents-config-9k9.458`, design child `agents-config-9k9.458.1`. The 2026-10-04 amendment is `agents-config-9k9.469`.
 **Related:** `agents-config-9k9.457` (the model routing table, pull request 803), `agents-config-9k9.408` (review-seat pins, pull requests 772 to 774), `agents-config-9k9.17.29` (review-panel Gemini seats on agy).
 **Quality contract:** `docs/specs/2026-09-18-acceptance-criteria-quality.md`. **Lifecycle:** `docs/specs/2026-09-18-acceptance-criteria-lifecycle.md`.
 
@@ -41,6 +41,7 @@ A **provider** is what a run is launched through. There are four: `anthropic` (t
 | F13 | Failover is stated in the routing table (which provider a family runs on), in `harvest.md` (any lens may run on any live transport, recorded as a substitution) and in `ac-attack` (run the lenses over the other transport and say so). The three agree, and each serves a different record. | Duplication, consistent |
 | F15 | Three words name the provider. `choosing-a-delegate` and the agy skill's exit table say "route"; the panel's `contracts.json`, `harvest.md`, `dispatch_gate.py`, the `review-verdict` schema and `ac-attack`'s lens front matter say "transport" with the values `codex` and `openrouter`; the routing table says "provider" with the four values above. A reader meets a Codex reviewer as `transport: codex` in one file and as the `openai` provider in the next. | Inconsistency |
 | F16 | The agy launcher takes the effort as a suffix on the model id and refuses an `--effort` flag, so the caller composes `gemini-3.8-flash-low` by hand from the table's model and its accepted efforts. The OpenRouter and Codex launchers take the effort apart from the model. | Divergence |
+| F17 | agy itself takes an `--effort` flag; its changelog dates the flag to 1.2.11. Probed on agy 1.2.16 on 2026-10-04 with `-p "/model"`, which prints the resolved model and runs no turn: `--model gemini-3.8-flash --effort low` resolves to `gemini-3.8-flash-low`, and every level the routing table's `google` rows list resolves to the matching variant. A level the model lacks, a bare model with no effort, a variant id with a conflicting effort, and an unknown model each exit 1 with an `invalid model selection` message on stderr; the first two name the levels the model has. A variant id with no effort still resolves. The launcher's refusal message says agy carries the effort only in the id. | Stale premise |
 | F14 | prgroom's dispatcher chains name `gpt-5.6-luna` and `gpt-5.6-terra`. Both appear in the Codex CLI's model list on 2026-10-01. Neither is in the routing table, which lists only the GPT-6 tiers. | Divergence, out of scope |
 
 ## 4. Decisions
@@ -116,13 +117,15 @@ Rejected alternative: rename only the prose. Keeping `transport` in code would s
 
 Cost: a field rename in the verdict envelope, the version bump that implies, and the field's readers in the panel's scripts and prgroom's verdict posting. Remove when: the panel addresses models natively and carries no provider field.
 
-### DEL-D9. The agy launcher composes the model id
+### DEL-D9. The agy launcher passes the model and the effort to agy unchanged
 
-`agy_run.py` accepts `--model <model>` and `--effort <level>`, then forms `<model>-<level>` (F16). It rejects a `--model` that already carries an effort suffix. Skills do not teach callers to compose the id. The launcher holds no list of which levels a model accepts: a pairing agy does not know fails inside agy, and the launcher reports it as it reports an unknown id today, exit 75 with the composed id in the reason line.
+`agy_run.py` accepts `--model <model>` and `--effort <level>` and hands both to agy as given (F16, F17). It composes no id, and it stops refusing `--effort`. agy resolves the pair to a variant. agy refuses a pairing it does not offer before any turn runs, and its message names the levels the model has. The launcher holds no list of levels or models. It reports agy's refusal as it reports any agy error today: exit 75, `reason=error`, and agy's message on stderr. When the caller omits `--effort`, the launcher passes the model alone, so a full variant id such as `gemini-3.8-flash-low` runs as it does today. Skills teach the two-flag form and do not teach callers to compose an id.
 
-Rejected alternatives: the caller composing the id from the table, which repeats the suffix rule in every skill that dispatches to agy; the launcher checking the level against the model, which copies the routing table's accepted-efforts column into code, a second inventory.
+An agy older than 1.2.11 has no `--effort` flag. It refuses the flag, and the launcher reports that refusal under the same rule.
 
-Cost: launcher code and tests, and the agy skill's launch section. Remove when: agy accepts an effort flag of its own.
+Rejected alternatives: the launcher composing `<model>-<level>` itself, which repeats a resolution agy already performs and breaks when agy renames its variants; the caller composing the id from the table, which repeats the suffix rule in every skill that dispatches to agy; the launcher checking the level against the model, which copies the routing table's accepted-efforts column into code, a second inventory; the launcher requiring `--effort`, which refuses a variant id agy accepts and replaces agy's message, which names the available levels, with a poorer one.
+
+Cost: launcher code and tests, the agy skill's launch section, and the routing table's sentence on how an effort reaches agy. Remove when: the agy launcher is removed. Reconsider when agy changes what `--effort` accepts or how it reports a refused pairing.
 
 ### DEL-D10. The OpenRouter launcher refuses GPT and Gemini models unless the user instructed the run
 
@@ -168,14 +171,16 @@ Suite criteria run under `content-tests`. Scenario criteria use the protocol in 
 - **DEL-C8** A reader holding only `delegating-to-codex`, whose companion call was moved to the background before the run finished, returns the report once the run finishes. Check: scenario protocol 5.4, scenario C8. The stub companion prints nothing for a fixed delay after the reader's call returns, then writes the completion line and a report holding a token generated for that run, and exits only after a further delay, recording its exit time. The key is that token in the reader's answer together with the reader's statement that the process has exited, given after the recorded exit.
 - **DEL-C9** No Markdown file under `src/` outside the review panel and `ac-attack` uses the word "lens" for a run; `choosing-a-delegate` names the four outcomes in one passage and no other file under `src/` defines them; the passages slice C changes in `harvest.md` and `ac-attack` quote no launcher's exit code, reason line or error text; and the passages it changes in the three launcher skills use no panel word. Check: the reviewer of the slice's pull request reads every line of `src/` Markdown matching `lens` in any letter case outside those two skills and records the count and that each remaining use is a launcher's own command name; records the passage that names the four outcomes and a search for each outcome's name showing no second definition; and records, per changed passage, that it holds no text of the other side.
 
-### Slice D: the agy launcher composes the id
+### Slice D: the agy launcher passes the model and the effort through
 
-- **DEL-G1** `agy_run.py worker --model gemini-3.8-flash --effort low ...` spawns agy with `--model gemini-3.8-flash-low`, and the same holds for `lens` and for every model and level the routing table's `google` rows accept. Check: suite over the accepted pairs, fake spawn seam.
-- **DEL-G2** A `--effort` that agy does not accept for the named model, such as `medium` on `gemini-3.1-pro`, is composed and spawned like any other, and agy's refusal is reported as an unknown id is today: exit 75, `reason=error`, and the composed id on stderr. The launcher holds no list of accepted levels. Check: suite, fake spawn returning agy's unknown-model error; and a search of `agy_run.py` for the level names finds only the suffix check of DEL-G3.
-- **DEL-G3** A `--model` that already ends in `-low`, `-medium` or `-high`, a missing `--model`, or a missing `--effort`, exits 78 before anything spawns, with stderr naming the flag. Check: suite, one case each.
-- **DEL-G4** Every other argv, exit code and stderr line of the launcher is unchanged. Check: the existing suite passes with its model arguments rewritten to the two-flag form and no other edit.
-- **DEL-G5** The command a reader holding only `delegating-to-agy` and the routing table writes for a cheap-tier Google read-only run names a model and a level and composes no id by hand, and when run against the launcher with a fake spawn seam it spawns agy with the composed id. Check: scenario protocol 5.4, scenario G5, keyed on the two flags in the command and on the composed id in the recorded spawn argv.
-- **DEL-G6** No Markdown file under `src/` instructs a reader to form an agy model id by appending an effort suffix. Check: the reviewer of the slice's pull request reads every line of `src/` Markdown matching `-low`, `-medium`, `-high`, `suffix`, `append` or `agy` in any letter case, and records the count and that none gives that instruction.
+- **DEL-G1** `agy_run.py worker --model gemini-3.8-flash --effort low ...` spawns agy with `--model gemini-3.8-flash` and `--effort low` in its argv, each value unchanged, and the same holds for `lens`. Check: suite, fake spawn seam, one case per mode, asserting both flags and both values in the recorded argv.
+- **DEL-G2** A pairing agy refuses is spawned as given, and agy's refusal reaches the caller as any agy error does today: exit 75, `reason=error`, and agy's message on stderr. The launcher holds no list of levels or models. Check: suite, fake spawn that exits 1 with the message F17 records, one case each for a level the model lacks (`medium` on `gemini-3.1-pro`), a variant id with a conflicting `--effort`, and an unknown model; and one case passing `--effort zzz`, a level agy has never offered, which the launcher spawns unchanged.
+- **DEL-G3** A missing `--model`, or an `--effort` given with no value, exits 78 before anything spawns, with stderr naming the flag. Check: suite, one case each, asserting the spawn seam was not called.
+- **DEL-G4** Every other argv, exit code and stderr line of the launcher is unchanged. Check: the existing suite passes with no edit other than deleting the case that asserts `--effort` is refused.
+- **DEL-G5** The command a reader holding only `delegating-to-agy` and the routing table writes for a cheap-tier Google read-only run passes the model and the level as two flags and composes no id by hand, and when run against the launcher with a fake spawn seam it spawns agy with those two flags. Check: scenario protocol 5.4, scenario G5, keyed on the two flags in the command and on the same two flags and values in the recorded spawn argv.
+- **DEL-G6** No Markdown file under `src/` instructs a reader to form an agy model id by appending an effort suffix, and none says agy takes the effort only in the model id. Check: the reviewer of the slice's pull request reads every line of `src/` Markdown matching `-low`, `-medium`, `-high`, `suffix`, `append` or `agy` in any letter case, and records the count and that none gives that instruction or makes that statement.
+- **DEL-G7** A run with `--model` and no `--effort` spawns agy with no `--effort` in its argv, so a full variant id runs as it does today. Check: suite, fake spawn seam, one case per mode with `--model gemini-3.8-flash-low`, asserting the argv carries that model value and no `--effort`.
+- **DEL-G8** On an installed agy of 1.2.11 or later, a `lens` run through `agy_run.py` with `--model gemini-3.8-flash --effort low`, over a one-commit repository and a prompt asking for the first line of one file, exits 0 with that line in its response. The same run with `--model gemini-3.1-pro --effort medium` exits 75 with agy's message naming `low, high` on stderr. Check: the implementer performs both runs once and records the agy version, each command and its output in the slice's pull request. The criterion stays pending while the Google subscription quota is spent.
 
 ### Slice E: one word for the provider
 
@@ -210,15 +215,21 @@ Settled with the owner on 2026-10-03:
 
 No question is open.
 
-## 7. Continuations
+## 7. Slices and order
 
-Use `work promote` on each resulting feature before implementation.
+Six slices implement this spec. Each is a feature, and each is promoted with `work promote` before implementation.
 
-- feat: a lint keeps the routing table the only model inventory. AC: DEL-A1, DEL-A2, DEL-A3, DEL-A4, DEL-A5, DEL-A6, DEL-A7
-- feat: the OpenRouter launcher times and kills its own run. AC: DEL-B1, DEL-B2, DEL-B3, DEL-B4, DEL-B5, DEL-B6, DEL-B7
-- feat: the launcher skills answer the same four questions. AC: DEL-C1, DEL-C2, DEL-C3, DEL-C4, DEL-C5, DEL-C6, DEL-C7, DEL-C8, DEL-C9
-- feat: the agy launcher composes the model id from a model and an effort. AC: DEL-G1, DEL-G2, DEL-G3, DEL-G4, DEL-G5, DEL-G6
-- feat: one word, provider, through the panel's prose, data, scripts and verdict schema. AC: DEL-V1, DEL-V2, DEL-V3, DEL-V4, DEL-V5, DEL-V6
-- feat: the OpenRouter launcher refuses GPT and Gemini models unless the user instructed the run. AC: DEL-F1, DEL-F2, DEL-F3, DEL-F4, DEL-F5, DEL-F6
+| Slice | Feature | Criteria | Work item |
+| --- | --- | --- | --- |
+| A | A lint keeps the routing table the only model inventory | DEL-A1 to DEL-A7 | `agents-config-9k9.458.3` |
+| B | The OpenRouter launcher times and kills its own run | DEL-B1 to DEL-B7 | `agents-config-9k9.458.4` |
+| C | The launcher skills answer the same four questions | DEL-C1 to DEL-C9 | `agents-config-9k9.458.5` |
+| D | The agy launcher passes the model and the effort through | DEL-G1 to DEL-G8 | `agents-config-9k9.469` |
+| E | One word, provider, through the panel's prose, data, scripts and verdict schema | DEL-V1 to DEL-V6 | `agents-config-9k9.458.6` |
+| F | The OpenRouter launcher refuses GPT and Gemini models unless the user instructed the run | DEL-F1 to DEL-F6 | `agents-config-9k9.458.7` |
 
 Ordering: slice C lands after slices B and D, because DEL-C2 reads the flags slice B adds and the agy launch section it preserves is the two-flag one. Slice E lands last and after `agents-config-9k9.408`'s remaining pull requests, because it renames the field they edit. Slice F supersedes the denylist half of pull request 772, which is reworked or closed against it. Outside this spec's criteria, `agents-config-9k9.408` is reworked under DEL-D2, and a new item updates prgroom's chains under DEL-D7.
+
+## Continuations
+
+- none — the six slices above are already work items, minted on 2026-10-04 and named in the table in section 7.
