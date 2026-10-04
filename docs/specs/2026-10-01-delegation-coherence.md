@@ -1,7 +1,7 @@
 # Delegation skills and rules as one system
 
 **Date:** 2026-10-01, revised 2026-10-04
-**Status:** Child spec of `docs/specs/2026-07-21-harness-rework-way-forward.md` (D5 foreign eyes in review seats, D16 removal conditions). Draft for review. Five criteria attacks ran, two on 2026-10-01, two on 2026-10-03 and one on 2026-10-04 after DEL-D9 and slice D were amended; the fifth covers the current text, and its record is `docs/specs/2026-10-01-delegation-coherence-ac-attack.json`.
+**Status:** Child spec of `docs/specs/2026-07-21-harness-rework-way-forward.md` (D5 foreign eyes in review seats, D16 removal conditions). Draft for review. Six criteria attacks ran, two on 2026-10-01, two on 2026-10-03 and two on 2026-10-04 after DEL-D9 and slice D were amended; the sixth covers the current text, and its record is `docs/specs/2026-10-01-delegation-coherence-ac-attack.json`.
 **Work item:** `agents-config-9k9.458`, design child `agents-config-9k9.458.1`. The 2026-10-04 amendment is `agents-config-9k9.469`.
 **Related:** `agents-config-9k9.457` (the model routing table, pull request 803), `agents-config-9k9.408` (review-seat pins, pull requests 772 to 774), `agents-config-9k9.17.29` (review-panel Gemini seats on agy).
 **Quality contract:** `docs/specs/2026-09-18-acceptance-criteria-quality.md`. **Lifecycle:** `docs/specs/2026-09-18-acceptance-criteria-lifecycle.md`.
@@ -225,7 +225,7 @@ Six slices implement this spec. Each is a feature, and each is promoted with `wo
 | A | A lint keeps the routing table the only model inventory | DEL-A1 to DEL-A7 | `agents-config-9k9.458.3` |
 | B | The OpenRouter launcher times and kills its own run | DEL-B1 to DEL-B7 | `agents-config-9k9.458.4` |
 | C | The launcher skills answer the same four questions | DEL-C1 to DEL-C9 | `agents-config-9k9.458.5` |
-| D | The agy launcher passes the model and the effort through | DEL-G1 to DEL-G9 | `agents-config-9k9.469` |
+| D | The agy launcher and its skill take effort the way agy itself accepts it | DEL-G1 to DEL-G9 | `agents-config-9k9.469` |
 | E | One word, provider, through the panel's prose, data, scripts and verdict schema | DEL-V1 to DEL-V6 | `agents-config-9k9.458.6` |
 | F | The OpenRouter launcher refuses GPT and Gemini models unless the user instructed the run | DEL-F1 to DEL-F6 | `agents-config-9k9.458.7` |
 
@@ -233,4 +233,11 @@ Ordering: slice C lands after slices B and D, because DEL-C2 reads the flags sli
 
 ## Continuations
 
-- none — the six slices above are already work items, minted on 2026-10-04 and named in the table in section 7.
+The six slices, in the form `work deliver` reads. The work items in the table above already exist under the implementation placeholder with these titles, so delivery adopts them and mints nothing.
+
+- feat: A lint keeps the routing table the only model inventory — AC: DEL-A1, DEL-A2, DEL-A3, DEL-A4, DEL-A5, DEL-A6, DEL-A7
+- feat: The OpenRouter launcher times and kills its own run — AC: DEL-B1, DEL-B2, DEL-B3, DEL-B4, DEL-B5, DEL-B6, DEL-B7
+- feat: The launcher skills answer the same four questions — AC: DEL-C1, DEL-C2, DEL-C3, DEL-C4, DEL-C5, DEL-C6, DEL-C7, DEL-C8, DEL-C9
+- feat: The agy launcher and its skill take effort the way agy itself accepts it — AC: DEL-G1, DEL-G2, DEL-G3, DEL-G4, DEL-G5, DEL-G6, DEL-G7, DEL-G8, DEL-G9
+- feat: One word, provider, through the panel's prose, data, scripts and verdict schema — AC: DEL-V1, DEL-V2, DEL-V3, DEL-V4, DEL-V5, DEL-V6
+- feat: The OpenRouter launcher refuses GPT and Gemini models unless the user instructed the run — AC: DEL-F1, DEL-F2, DEL-F3, DEL-F4, DEL-F5, DEL-F6
