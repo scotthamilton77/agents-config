@@ -42,9 +42,11 @@ Verified at 38bda4ba.
 | set-consistency | `consistency`, `decision-closure`, `verified-premise` |
 | what-if | `what-if-questions` |
 
-Today no lens enforces `restraint`, `verified-premise` or the last four
-behavioural-outcome rules. The checker refuses a ground outside its lens, so
-ACQ-A24 cannot pass for those six rules.
+Six rules have no lens today: `restraint`, `verified-premise`,
+`human-measurement`, `human-judgment`, `pending-until-performed` and
+`stochastic-and-window`. The checker refuses an objection that cites a rule
+outside its lens's list. A lens therefore cannot report a defect under any of
+those six rules, and ACQ-A24 cannot pass for them.
 
 ACQ-D6 gives behavioural-outcome checkability, so the verification rules go
 there. A duplicate or an unsupported prescription discharges no obligation
