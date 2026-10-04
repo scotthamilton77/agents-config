@@ -128,13 +128,14 @@ _QUALIFIED = re.compile(r"[^\s.]+\.r\d+\.\S+")
 class Refusal(Exception):
     """A typed refusal to emit; carries a stable machine-readable code."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, **details: str) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.details = details
 
     def as_dict(self) -> dict[str, str]:
-        return {"code": self.code, "message": self.message}
+        return {**self.details, "code": self.code, "message": self.message}
 
 
 def load_contracts() -> dict[str, Any]:
@@ -1014,12 +1015,43 @@ def resolve_scopes(
     return scopes, skipped, rescope
 
 
-def lens_tier(lens: dict, round_no: int) -> str:
-    """Round 1 buys the declared tier; a re-review round buys the declared re_review_tier when
-    the lens names one, else the declared tier stays in force."""
-    if round_no < 2:
+def lens_tier(lens: dict, scope: str) -> str:
+    """A whole-artifact read buys the declared tier in every round; a read of a change buys the
+    declared re_review_tier when the lens names one, else the declared tier stays in force.
+
+    Keying this on the round instead would let a full rescope after round 1 fall to the
+    re-review tier, whose model may be one that never reads a whole artifact.
+    """
+    if scope == "full":
         return lens["tier"]
     return lens.get("re_review_tier", lens["tier"])
+
+
+def seat_pins(
+    contracts: dict[str, Any], emitting: list[dict], scopes: dict[str, dict],
+    tiers: dict[str, str],
+) -> dict[str, dict]:
+    """Resolve the effort and tool grant each emitted lens is dispatched with, or refuse.
+
+    A seat is the lens's transport, its tier this round and its scope this round. A seat with
+    no pin refuses the whole round before anything is written, because a dispatcher left to
+    pick the effort itself is the failure the pins exist to prevent.
+    """
+    table = contracts.get("pins", {}).get("lenses", {})
+    pins: dict[str, dict] = {}
+    for lens in emitting:
+        name = lens["lens"]
+        seat = (lens["transport"], tiers[name], scopes[name]["scope"])
+        pin = table.get(seat[0], {}).get(seat[1], {}).get(seat[2])
+        if not isinstance(pin, dict) or "effort" not in pin or "tools" not in pin:
+            raise Refusal(
+                "no-seat-pin",
+                f"lens {name!r} occupies the seat {'/'.join(seat)}, which has no pin naming an "
+                "effort and a tool grant; a seat nobody pinned is dispatched free-hand",
+                lens=name, seat="/".join(seat),
+            )
+        pins[name] = {"effort": pin["effort"], "tools": pin["tools"]}
+    return pins
 
 
 def _qualified(lens: Any, round_no: Any, item: str) -> str:
@@ -1198,7 +1230,8 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         args.repo_root, args.head_sha, args.last_full_head,
     )
     emitting = [lens for lens in roster if lens["lens"] in scopes]
-    tiers = {lens["lens"]: lens_tier(lens, args.round) for lens in emitting}
+    tiers = {lens["lens"]: lens_tier(lens, scopes[lens["lens"]]["scope"]) for lens in emitting}
+    pins = seat_pins(contracts, emitting, scopes, tiers)
     ctx = {
         "artifact_class": args.artifact_class, "round": args.round, "acs": acs,
         "target": args.target or "", "repo_root": args.repo_root or "",
@@ -1222,6 +1255,7 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         "lenses": [
             {"lens": lens["lens"], "tier": lens["tier"], "tier_this_round": tiers[lens["lens"]],
              "transport": lens["transport"], "scope_this_round": scopes[lens["lens"]]["scope"],
+             **pins[lens["lens"]],
              **({"delta_base_sha": scopes[lens["lens"]]["delta_base_sha"]}
                 if scopes[lens["lens"]]["scope"] == "delta" else {})}
             for lens in emitting

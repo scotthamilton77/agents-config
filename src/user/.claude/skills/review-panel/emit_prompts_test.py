@@ -1906,5 +1906,426 @@ class TestSurface:
         assert emitter.TRIVIALITY_BOUNDARY == 40
 
 
+# The routing table lives in a sibling skill of the source tree. Only these tests read it; the
+# emitter never does, so a deployed panel runs whether or not that skill is installed beside it.
+ROUTING_TABLE_PATH = (
+    HERE / ".." / "choosing-a-delegate" / "references" / "model-routing.md"
+).resolve()
+PROVIDER_OF = {"codex": "openai", "openrouter": "openrouter"}
+OTHER_TRANSPORT = {"codex": "openrouter", "openrouter": "codex"}
+READ_TOOLS = {"Read", "Grep", "Glob"}
+CODEX_SANDBOX = "read-only-sandbox"
+EFFORT_TOKENS = ("low", "medium", "high", "xhigh", "max")
+OPENROUTER_LENS = {
+    "typed-code": "security",
+    "spec-code": "contract-only-boundary",
+    "spec": "ac-testability",
+    "prose": "global-consistency",
+}
+CLASS_PROFILE = {
+    "typed-code": "typed-code", "spec-code": "spec-code", "spec": "spec",
+    "prose": "general-docs",
+}
+
+
+def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict:
+    keys = [key for key, _ in pairs]
+    duplicated = sorted({key for key in keys if keys.count(key) > 1})
+    assert not duplicated, f"contracts.json declares a key twice: {duplicated}"
+    return dict(pairs)
+
+
+def strict_contracts() -> dict:
+    """The shipped contracts file, read so that a key declared twice fails instead of
+    silently keeping the last value."""
+    return json.loads(CONTRACTS_PATH.read_text(encoding="utf-8"),
+                      object_pairs_hook=_no_duplicate_keys)
+
+
+def _markdown_table(text: str, heading: str) -> list[list[str]]:
+    """The rows of the first table under a heading, header row first, separator dropped."""
+    lines = text.splitlines()
+    start = lines.index(heading)
+    rows: list[list[str]] = []
+    for line in lines[start + 1:]:
+        if line.startswith("## "):
+            break
+        if line.startswith("|"):
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if not all(set(cell) <= set("-: ") for cell in cells):
+                rows.append(cells)
+        elif rows:
+            break
+    assert rows, f"no table under {heading!r}"
+    return rows
+
+
+def _backticked(cell: str) -> list[str]:
+    return re.findall(r"`([^`]+)`", cell)
+
+
+def routing_table() -> tuple[dict[str, dict[str, str]], dict[str, list[str]]]:
+    """Parse the tier grid and the models table: the model each provider names per tier, and
+    the efforts each model accepts. A missing or unparseable table fails the caller."""
+    text = ROUTING_TABLE_PATH.read_text(encoding="utf-8")
+    grid_rows = _markdown_table(text, "## Pick by tier")
+    providers = [_backticked(cell)[0] for cell in grid_rows[0][1:]]
+    grid: dict[str, dict[str, str]] = {provider: {} for provider in providers}
+    for row in grid_rows[1:]:
+        tier = _backticked(row[0])[0]
+        for provider, cell in zip(providers, row[1:]):
+            names = _backticked(cell)
+            if names:
+                grid[provider][tier] = names[0]
+    model_rows = _markdown_table(text, "## Models")
+    efforts: dict[str, list[str]] = {}
+    for row in model_rows[1:]:
+        efforts[_backticked(row[1])[0]] = [
+            token for token in _backticked(row[-1]) if token in EFFORT_TOKENS
+        ]
+    assert grid and efforts, "the routing table parsed to nothing"
+    return grid, efforts
+
+
+def emission_seats(contracts: dict) -> set[tuple[str, str, str]]:
+    """Every seat some lens can occupy at emission: a whole-artifact read at its declared tier,
+    and a read of a change at its re-review tier when it names one."""
+    seats = set()
+    for contract in contracts["classes"].values():
+        for lens in contract["lenses"]:
+            seats.add((lens["transport"], lens["tier"], "full"))
+            seats.add((lens["transport"], lens.get("re_review_tier", lens["tier"]), "delta"))
+    return seats
+
+
+def failover_seat(seat: tuple[str, str, str]) -> tuple[str, str, str]:
+    """The other transport at the same tier and scope, except that a mid whole-artifact read
+    moves to the OpenRouter frontier seat, since the OpenRouter mid model never reads whole."""
+    transport, tier, scope = seat
+    if (transport, tier, scope) == ("codex", "mid", "full"):
+        return ("openrouter", "frontier", "full")
+    return (OTHER_TRANSPORT[transport], tier, scope)
+
+
+def lens_pin(contracts: dict, seat: tuple[str, str, str]) -> dict | None:
+    transport, tier, scope = seat
+    return contracts["pins"]["lenses"].get(transport, {}).get(tier, {}).get(scope)
+
+
+def all_lens_pins(contracts: dict) -> list[tuple[tuple[str, str, str], dict]]:
+    return [
+        ((transport, tier, scope), pin)
+        for transport, tiers in contracts["pins"]["lenses"].items()
+        for tier, scopes in tiers.items()
+        for scope, pin in scopes.items()
+    ]
+
+
+def strip_fences(text: str) -> str:
+    """Drop every fenced block, backtick or tilde, of any fence length."""
+    kept: list[str] = []
+    fence: str | None = None
+    for line in text.splitlines():
+        marker = re.match(r"\s*(`{3,}|~{3,})", line)
+        if fence is None and marker:
+            fence = marker.group(1)
+            continue
+        if fence is not None:
+            if line.strip().startswith(fence) and set(line.strip()) <= set(fence[0]):
+                fence = None
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def class_round(tmp_path, repo: Repo, acs: Path, artifact_class: str, round_no: int,
+                **overrides: Any) -> list[str]:
+    """Argv for a round of a class with its whole roster staffed. Round 2 follows a clean
+    round 1 in which every lens reported, so every lens reads the change since then."""
+    roster = [lens["lens"] for lens in CLASSES[artifact_class]["lenses"]]
+    staffing = write_json(tmp_path / f"staffing-{artifact_class}-{round_no}.json",
+                          staffing_record(roster, roster))
+    out_dir = tmp_path / f"{artifact_class}-round-{round_no}"
+    fields = {"--class": artifact_class, "--artifact-type": CLASS_PROFILE[artifact_class],
+              "--staffing": str(staffing), "--round": str(round_no)}
+    if round_no < 2:
+        return argv(repo, acs, out_dir, **{**fields, **overrides})
+    prior = write_json(tmp_path / f"verdict-{artifact_class}-1.json", verdict_doc(
+        repo, 1, repo.head, roster, [], artifact_class=artifact_class))
+    head = repo.write_lines(4, f"fix-{artifact_class}.txt")
+    flat = argv(repo, acs, out_dir, **{**fields, "--head-sha": head, **overrides})
+    return flat + ["--prior-verdict", str(prior)]
+
+
+def out_dir_of(flat: list[str]) -> Path:
+    return Path(flat[flat.index("--out-dir") + 1])
+
+
+def entries_of(out_dir: Path) -> dict[str, dict]:
+    return {entry["lens"]: entry for entry in meta_of(out_dir)["lenses"]}
+
+
+class TestSeatPins:
+    @pytest.mark.parametrize("artifact_class", sorted(OPENROUTER_LENS))
+    def test_a1_each_class_routes_one_named_lens_through_openrouter(self, artifact_class):
+        """One OpenRouter seat per class keeps the second vendor without paying for two."""
+        lenses = strict_contracts()["classes"][artifact_class]["lenses"]
+        routed = {lens["lens"]: lens["transport"] for lens in lenses}
+        assert [name for name, transport in routed.items() if transport == "openrouter"] == [
+            OPENROUTER_LENS[artifact_class]]
+        assert all(transport in ("codex", "openrouter") for transport in routed.values())
+
+    def test_a1_every_class_is_named(self):
+        assert sorted(strict_contracts()["classes"]) == sorted(OPENROUTER_LENS)
+
+    def test_a2_an_openrouter_lens_reads_first_at_frontier_and_rereads_at_mid(self):
+        openrouter = [lens for contract in strict_contracts()["classes"].values()
+                      for lens in contract["lenses"] if lens["transport"] == "openrouter"]
+        assert openrouter
+        for lens in openrouter:
+            assert (lens["tier"], lens.get("re_review_tier")) == ("frontier", "mid"), lens["lens"]
+
+    def test_a4_every_reachable_seat_resolves_to_exactly_one_pin(self):
+        """Each seat a roster can put a lens in, and each seat a failover lands on, has one
+        pin carrying an effort and a tool grant."""
+        contracts = strict_contracts()
+        reachable = emission_seats(contracts)
+        reachable |= {failover_seat(seat) for seat in reachable}
+        for seat in sorted(reachable):
+            pin = lens_pin(contracts, seat)
+            assert isinstance(pin, dict), f"no pin for {seat}"
+            assert pin.get("effort") and "tools" in pin, seat
+
+    def test_a4_an_openrouter_mid_whole_artifact_read_has_no_pin(self):
+        assert lens_pin(strict_contracts(), ("openrouter", "mid", "full")) is None
+
+    @pytest.mark.parametrize("role", ["staffing_recommender", "trend_checkpoint"])
+    def test_a4_the_recommender_and_checkpoint_pins_name_a_filled_grid_cell(self, role):
+        grid, _ = routing_table()
+        pin = strict_contracts()["pins"][role]
+        assert pin.get("effort") and "tools" in pin
+        assert grid[pin["provider"]].get(pin["tier"]), (pin["provider"], pin["tier"])
+
+    def test_a5_every_pinned_effort_is_one_its_model_accepts(self):
+        grid, efforts = routing_table()
+        contracts = strict_contracts()
+        pins = [(PROVIDER_OF[transport], tier, pin)
+                for (transport, tier, _), pin in all_lens_pins(contracts)]
+        pins += [(contracts["pins"][role]["provider"], contracts["pins"][role]["tier"],
+                  contracts["pins"][role])
+                 for role in ("staffing_recommender", "trend_checkpoint")]
+        for provider, tier, pin in pins:
+            model = grid[provider][tier]
+            assert pin["effort"] in efforts[model], (provider, tier, model, pin["effort"])
+
+    def test_a6_openrouter_pins_follow_the_launcher_limits(self):
+        contracts = strict_contracts()
+        assert lens_pin(contracts, ("openrouter", "frontier", "full"))["effort"] == "low"
+        assert lens_pin(contracts, ("openrouter", "frontier", "delta"))["effort"] == "high"
+        assert lens_pin(contracts, ("openrouter", "mid", "delta"))["effort"] == "high"
+
+    def test_a7_no_pin_grants_a_tool_that_writes(self):
+        """A reviewer reads content its dispatcher does not trust, so no run can write."""
+        contracts = strict_contracts()
+        for (transport, tier, scope), pin in all_lens_pins(contracts):
+            tools = pin["tools"]
+            if transport == "codex":
+                assert tools == CODEX_SANDBOX, (transport, tier, scope)
+            else:
+                assert isinstance(tools, list) and set(tools) <= READ_TOOLS, (
+                    transport, tier, scope)
+        assert contracts["pins"]["staffing_recommender"]["tools"] == []
+        checkpoint = contracts["pins"]["trend_checkpoint"]["tools"]
+        assert isinstance(checkpoint, list) and set(checkpoint) <= READ_TOOLS
+
+    def test_a8_contracts_name_no_model(self):
+        _, efforts = routing_table()
+        models = set(efforts)
+
+        def strings(value: Any):
+            if isinstance(value, str):
+                yield value
+            elif isinstance(value, dict):
+                for item in value.values():
+                    yield from strings(item)
+            elif isinstance(value, list):
+                for item in value:
+                    yield from strings(item)
+
+        named = sorted(set(strings(strict_contracts())) & models)
+        assert not named, named
+
+    @pytest.mark.parametrize("situation", [
+        "round-one", "forced-rescope", "accretion", "newly-staffed", "sweep", "round-two-delta",
+    ])
+    def test_a3_a_whole_artifact_read_runs_at_the_declared_tier(
+        self, repo, acs_file, tmp_path, capsys, situation
+    ):
+        """The re-review tier prices a read of a change, so only a delta read falls to it."""
+        out_dir = tmp_path / "out"
+        if situation == "round-one":
+            flat = argv(repo, acs_file, out_dir)
+        elif situation == "forced-rescope":
+            forced = write_json(tmp_path / "forced.json",
+                                staffing_record(TYPED_CODE_LENSES, force_full=True))
+            flat, out_dir = round2(tmp_path, repo, acs_file, SETTLED,
+                                   **{"--staffing": str(forced)})
+        elif situation == "accretion":
+            head = repo.write_lines(emitter.TRIVIALITY_BOUNDARY + 1)
+            prior = write_json(tmp_path / "verdict-1.json",
+                               verdict_doc(repo, 1, repo.head, TYPED_CODE_LENSES, []))
+            flat = argv(repo, acs_file, out_dir, **{"--round": "2", "--head-sha": head})
+            flat += ["--prior-verdict", str(prior)]
+        elif situation == "newly-staffed":
+            head = repo.write_lines(4, "fix.txt")
+            reported = [name for name in TYPED_CODE_LENSES if name != "security"]
+            prior = write_json(tmp_path / "verdict-1.json",
+                               verdict_doc(repo, 1, repo.head, reported, []))
+            flat = argv(repo, acs_file, out_dir, **{"--round": "2", "--head-sha": head})
+            flat += ["--prior-verdict", str(prior)]
+        elif situation == "sweep":
+            head = repo.write_lines(4, "fix.txt")
+            prior = write_json(tmp_path / "verdict-1.json",
+                               verdict_doc(repo, 1, repo.head, TYPED_CODE_LENSES, []))
+            staffing = write_json(tmp_path / "sweep.json", staffing_record(
+                TYPED_CODE_FRONTIER, decision="sweep-contract"))
+            flat = argv(repo, acs_file, out_dir, **{
+                "--round": "2", "--head-sha": head, "--staffing": str(staffing)})
+            flat += ["--prior-verdict", str(prior), "--sweep"]
+        else:
+            flat, out_dir = round2(tmp_path, repo, acs_file, SETTLED)
+        code, result = run(flat, capsys)
+        assert code == 0, result
+        security = entries_of(out_dir)["security"]
+        if situation == "round-two-delta":
+            assert security["scope_this_round"] == "delta"
+            assert security["tier_this_round"] == "mid"
+        else:
+            assert security["scope_this_round"] == "full"
+            assert security["tier_this_round"] == "frontier"
+
+    @pytest.mark.parametrize("round_no", [1, 2])
+    @pytest.mark.parametrize("artifact_class", sorted(CLASSES))
+    def test_a9_the_round_record_names_each_lens_pin(self, repo, acs_file, tmp_path, capsys,
+                                                     artifact_class, round_no):
+        flat = class_round(tmp_path, repo, acs_file, artifact_class, round_no)
+        code, result = run(flat, capsys)
+        assert code == 0, result
+        contracts = strict_contracts()
+        entries = meta_of(out_dir_of(flat))["lenses"]
+        assert [entry["lens"] for entry in entries] == [
+            lens["lens"] for lens in CLASSES[artifact_class]["lenses"]]
+        for entry in entries:
+            scope = entry["scope_this_round"]
+            assert scope == ("full" if round_no == 1 else "delta"), entry
+            pin = lens_pin(contracts, (entry["transport"], entry["tier_this_round"], scope))
+            assert (entry.get("effort"), entry.get("tools")) == (pin["effort"], pin["tools"]), (
+                entry)
+
+    def test_a9_security_reads_whole_at_low_and_a_change_at_high(self, repo, acs_file, tmp_path,
+                                                                 capsys):
+        run(argv(repo, acs_file, tmp_path / "round-1"), capsys)
+        assert entries_of(tmp_path / "round-1")["security"]["effort"] == "low"
+        flat, out_dir = round2(tmp_path, repo, acs_file, SETTLED)
+        run(flat, capsys)
+        assert entries_of(out_dir)["security"]["effort"] == "high"
+
+    @pytest.mark.parametrize("seat,round_no,first_lens", [
+        (("codex", "frontier", "full"), 1, "correctness"),
+        (("openrouter", "frontier", "full"), 1, "security"),
+        (("codex", "mid", "full"), 1, "test-adequacy"),
+        (("codex", "frontier", "delta"), 2, "correctness"),
+        (("openrouter", "mid", "delta"), 2, "security"),
+        (("codex", "mid", "delta"), 2, "test-adequacy"),
+    ])
+    def test_a10_a_seat_with_no_pin_refuses_the_round(self, repo, acs_file, tmp_path, capsys,
+                                                      monkeypatch, seat, round_no, first_lens):
+        """Every pin a lens occupies at emission is removed in turn; the round refuses before
+        writing anything, naming the first lens in the seat and the seat itself."""
+        assert seat in emission_seats(CONTRACTS)
+        document = copy.deepcopy(CONTRACTS)
+        transport, tier, scope = seat
+        del document["pins"]["lenses"][transport][tier][scope]
+        monkeypatch.setattr(emitter, "CONTRACTS_PATH",
+                            write_json(tmp_path / "contracts.json", document))
+        flat = class_round(tmp_path, repo, acs_file, "typed-code", round_no)
+        code, result = run(flat, capsys)
+        assert code == 2 and result["emitted"] is False
+        error = result["errors"][0]
+        assert error["code"] == "no-seat-pin"
+        assert error["lens"] == first_lens
+        assert error["seat"] == "/".join(seat)
+        out_dir = out_dir_of(flat)
+        assert not out_dir.exists() or not any(out_dir.iterdir())
+
+    def test_a10_the_last_lens_in_the_roster_also_refuses(self, repo, acs_file, tmp_path,
+                                                          capsys, monkeypatch):
+        """The refusal does not depend on where in the roster the unpinned lens sits."""
+        document = copy.deepcopy(CONTRACTS)
+        del document["pins"]["lenses"]["codex"]["mid"]["full"]
+        monkeypatch.setattr(emitter, "CONTRACTS_PATH",
+                            write_json(tmp_path / "contracts.json", document))
+        staffed = ["correctness", "security", "documentation-quality"]
+        staffing = write_json(tmp_path / "last.json", staffing_record(staffed))
+        out_dir = tmp_path / "out"
+        code, result = run(argv(repo, acs_file, out_dir, **{"--staffing": str(staffing)}),
+                           capsys)
+        assert code == 2
+        assert result["errors"][0]["lens"] == "documentation-quality"
+        assert result["errors"][0]["seat"] == "codex/mid/full"
+        assert not out_dir.exists() or not any(out_dir.iterdir())
+
+    def test_a11_two_emissions_write_identical_round_records(self, repo, acs_file, tmp_path,
+                                                            capsys):
+        run(argv(repo, acs_file, tmp_path / "one"), capsys)
+        run(argv(repo, acs_file, tmp_path / "two"), capsys)
+        assert ((tmp_path / "one" / "round.json").read_bytes()
+                == (tmp_path / "two" / "round.json").read_bytes())
+
+    def test_a11_every_lens_entry_keeps_its_existing_fields(self, repo, acs_file, tmp_path,
+                                                            capsys):
+        flat, out_dir = round2(tmp_path, repo, acs_file, SETTLED)
+        run(flat, capsys)
+        meta = meta_of(out_dir)
+        assert set(meta) == {
+            "artifact_class", "claim_id", "round", "base_sha", "head_sha",
+            "retained_categories", "profile", "staffing_record", "sweep", "checkpoints",
+            "skipped_empty_delta", "full_rescope", "lenses", "prior_dispositions",
+        }
+        for entry in meta["lenses"]:
+            assert {"lens", "tier", "tier_this_round", "transport", "scope_this_round"} <= set(
+                entry)
+            assert ("delta_base_sha" in entry) == (entry["scope_this_round"] == "delta")
+
+    def test_a12_the_emitter_runs_without_the_routing_table(self, repo, acs_file, tmp_path):
+        """The routing table is read by tests alone; a panel installed without the
+        delegate-choosing skill beside it still emits."""
+        copy_dir = tmp_path / "isolated" / "skills" / "review-panel"
+        copy_dir.mkdir(parents=True)
+        for name in ("emit_prompts.py", "contracts.json"):
+            (copy_dir / name).write_bytes((HERE / name).read_bytes())
+        assert not (copy_dir.parent / "choosing-a-delegate").exists()
+        proc = subprocess.run(
+            [sys.executable, str(copy_dir / "emit_prompts.py"),
+             *argv(repo, acs_file, tmp_path / "out")],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert json.loads(proc.stdout)["emitted"] is True
+        assert "effort" in meta_of(tmp_path / "out")["lenses"][0]
+
+    @pytest.mark.parametrize("path", [HERE / "harvest.md", SKILL_PATH], ids=lambda p: p.name)
+    def test_a14_the_panel_prose_names_no_backticked_effort(self, path):
+        """An effort a sentence names is a free-hand pick waiting to happen; the round record
+        carries the pinned one."""
+        prose = strip_fences(path.read_text(encoding="utf-8"))
+        found = [token for token in EFFORT_TOKENS if f"`{token}`" in prose]
+        assert not found, found
+
+    def test_a14_fence_stripping_keeps_prose_and_drops_blocks(self):
+        text = "keep `high` here\n```bash\n--effort `low`\n```\n~~~~\n`max`\n~~~~\nend\n"
+        assert strip_fences(text) == "keep `high` here\nend"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
