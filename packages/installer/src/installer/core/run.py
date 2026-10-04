@@ -41,7 +41,9 @@ from installer.core.receipt_build import (
 from installer.core.receipt_diff import diff_orphans, scope_owners
 from installer.core.receipt_store import write_receipt
 from installer.core.sync import (
+    InstructionFileOverrunError,
     custom_content_conflicts,
+    instruction_file_overruns,
     refuse_custom_content_conflicts,
     sync_plan,
     sync_routes,
@@ -307,7 +309,9 @@ def install_pipeline(
     `CustomContentConflictError` here, before the first tool is installed and
     under ``dry_run`` too. The scan spans every tool in the run rather than
     stopping at the one that tripped, so the user is told about all of them at
-    once and no tool is left half-installed while another is refused.
+    once and no tool is left half-installed while another is refused. An
+    instruction file that would land past its runtime's byte limit, the user's
+    tail included, raises `InstructionFileOverrunError` the same way.
     """
     # Materialize: the custom-content scan below walks ``adapters`` before the
     # install loop does, and a one-shot iterator would be exhausted by the first
@@ -321,6 +325,15 @@ def install_pipeline(
         ],
         io=io,
     )
+    overruns = [
+        overrun
+        for adapter in adapters
+        for overrun in instruction_file_overruns(adapter, plans[Tool(adapter.name)], home=home)
+    ]
+    for overrun in overruns:
+        io.err(f"{overrun}; nothing was installed")
+    if overruns:
+        raise InstructionFileOverrunError(overruns)
     collect = outcomes_by_tool is not None and not dry_run
     result: dict[str, Counters] = {}
     for adapter in adapters:

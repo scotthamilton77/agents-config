@@ -15,6 +15,9 @@
         e2e-grillui eval-grillui \
         ci-agentprobe test-agentprobe lint-agentprobe format-check-agentprobe \
         typecheck-agentprobe cov-agentprobe audit-agentprobe verify-entry-agentprobe \
+        gates-installer gates-prgroom gates-grind gates-gitclean gates-executor \
+        gates-grillui gates-agentprobe gates-e2e-grillui gates-eval-grillui \
+        install-git-hooks \
         spec-lint content-lint content-tests doc-lint version-guard \
         ponytail-lint
 
@@ -26,6 +29,15 @@ EXECUTOR := packages/executor
 GRILLUI := packages/grillui
 AGENTPROBE := packages/agentprobe
 
+# A stamped gate runs its work in a sub-make, records the outcome under the
+# package it gates as a gitignored stamp -- green or red -- and then exits with
+# the status that work returned. The pre-commit hook reads those stamps, so a
+# gate that stops stamping stops guarding commits. $(1) is the gate's name,
+# $(2) the target holding its work.
+stamped = @$(MAKE) --no-print-directory $(2); gate_status=$$?; \
+          uv --project $(INSTALLER) run python -m installer.gate_stamp_cli \
+          write $(1) $$gate_status; exit $$gate_status
+
 # `doc-lint` gates here because the tree is clean. It reports live staleness in
 # prose nobody is editing, so a finding can turn an unrelated build red — and the
 # remedy for that is to correct the prose, never to exempt the file. An exemption
@@ -36,7 +48,10 @@ ci: ci-installer ci-prgroom ci-grind ci-gitclean ci-executor ci-grillui \
     lint-actions spec-lint content-lint content-tests doc-lint version-guard \
     ponytail-lint
 
-ci-installer: lint-installer format-check-installer typecheck-installer \
+ci-installer:
+	$(call stamped,ci-installer,gates-installer)
+
+gates-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
 
 test-installer:
@@ -134,7 +149,10 @@ verify-entry-installer:
 
 # ── prgroom (mirrors the ci-installer block one-for-one) ──
 
-ci-prgroom: lint-prgroom format-check-prgroom typecheck-prgroom \
+ci-prgroom:
+	$(call stamped,ci-prgroom,gates-prgroom)
+
+gates-prgroom: lint-prgroom format-check-prgroom typecheck-prgroom \
             cov-prgroom audit-prgroom \
             verify-entry-prgroom
 
@@ -178,7 +196,10 @@ mutants-prgroom:
 
 # ── grind (mirrors the ci-installer block one-for-one; enforced via the
 # top-level `ci:` aggregate). ──
-ci-grind: lint-grind format-check-grind typecheck-grind \
+ci-grind:
+	$(call stamped,ci-grind,gates-grind)
+
+gates-grind: lint-grind format-check-grind typecheck-grind \
           cov-grind audit-grind verify-entry-grind
 
 test-grind:
@@ -201,7 +222,10 @@ verify-entry-grind:
 
 # ── gitclean (mirrors the ci-grind block one-for-one; enforced via the
 # top-level `ci:` aggregate). ──
-ci-gitclean: lint-gitclean format-check-gitclean typecheck-gitclean \
+ci-gitclean:
+	$(call stamped,ci-gitclean,gates-gitclean)
+
+gates-gitclean: lint-gitclean format-check-gitclean typecheck-gitclean \
              cov-gitclean audit-gitclean verify-entry-gitclean
 
 test-gitclean:
@@ -224,7 +248,10 @@ verify-entry-gitclean:
 
 # ── executor (mirrors the ci-grind block one-for-one; enforced via the
 # top-level `ci:` aggregate). ──
-ci-executor: lint-executor format-check-executor typecheck-executor \
+ci-executor:
+	$(call stamped,ci-executor,gates-executor)
+
+gates-executor: lint-executor format-check-executor typecheck-executor \
              cov-executor audit-executor verify-entry-executor
 
 test-executor:
@@ -247,7 +274,10 @@ verify-entry-executor:
 
 # ── grillui (mirrors the ci-grind block one-for-one; enforced via the
 # top-level `ci:` aggregate). ──
-ci-grillui: lint-grillui format-check-grillui typecheck-grillui \
+ci-grillui:
+	$(call stamped,ci-grillui,gates-grillui)
+
+gates-grillui: lint-grillui format-check-grillui typecheck-grillui \
             cov-grillui audit-grillui verify-entry-grillui
 
 test-grillui:
@@ -274,6 +304,9 @@ verify-entry-grillui:
 # collect it either -- `testpaths` is `tests/unit`, and only naming a path
 # explicitly, as here, reaches anything else.
 e2e-grillui:
+	$(call stamped,e2e-grillui,gates-e2e-grillui)
+
+gates-e2e-grillui:
 	cd $(GRILLUI) && uv run --with playwright pytest tests/e2e -q
 
 # eval-grillui replays recorded turns against the models that actually sit in
@@ -282,13 +315,19 @@ e2e-grillui:
 # purpose and is a member of neither `ci` nor `ci-grillui`. Narrow a run with
 # `--case`, `--seat` and `-n` by invoking the module directly.
 eval-grillui:
+	$(call stamped,eval-grillui,gates-eval-grillui)
+
+gates-eval-grillui:
 	cd $(GRILLUI) && uv run python -m evals
 
 # ── agentprobe (mirrors the ci-grind block one-for-one; enforced via the
 # top-level `ci:` aggregate). The gate never drives a session: `agentprobe run`
 # spends real agent turns on the operator's account, so the suite works only
 # from recorded runs. ──
-ci-agentprobe: lint-agentprobe format-check-agentprobe typecheck-agentprobe \
+ci-agentprobe:
+	$(call stamped,ci-agentprobe,gates-agentprobe)
+
+gates-agentprobe: lint-agentprobe format-check-agentprobe typecheck-agentprobe \
                cov-agentprobe audit-agentprobe verify-entry-agentprobe
 
 test-agentprobe:
@@ -308,3 +347,9 @@ audit-agentprobe:
 # agentprobe venv where the entry point is installed is selected.
 verify-entry-agentprobe:
 	uv --project $(AGENTPROBE) run agentprobe --help > /dev/null
+
+# install-git-hooks puts the gate-stamp check into the hooks directory this
+# checkout shares with every worktree of it. Installing twice leaves one copy,
+# and a stanza another tool manages is left where it is.
+install-git-hooks:
+	uv --project $(INSTALLER) run python -m installer.gate_stamp_cli install-hook .

@@ -4,14 +4,14 @@ description: Grill the user relentlessly about a plan, decision, or idea, as an 
 admission:
   prevents: Implementation starting from a goals-only idea whose decisions and edge cases were never resolved, forcing rework and human babysitting downstream.
   cost: Front-loads a multi-round interview — one user round-trip per frontier, plus subagent fact-finding — and a terminal acceptance-criteria enumeration, before any building begins.
-  remove_when: The readiness gate can mechanically prove a plan enumerates red-test-convertible acceptance criteria without this interview having run.
+  remove_when: The readiness gate can mechanically prove a plan enumerates acceptance criteria meeting the acceptance-criteria standard without this interview having run.
 ---
 
 <!--
 Source: skills/productivity/grilling/
 Upstream: https://github.com/mattpocock/skills @ 84fdeffd12f2ee307994d1eb6feb48173b6e0502
 Last sync: 2026-08-07
-Drift policy: selective-amalgamation — upstream's design-tree/round/frontier machinery is grafted onto a local exit criterion (acceptance-criteria IDs plus the edge-case taxonomy) that upstream does not carry. A byte-for-byte resync would revert the exit criterion; take upstream changes selectively.
+Drift policy: selective-amalgamation — upstream's design-tree/round/frontier machinery is grafted onto a local exit criterion (acceptance-criteria IDs plus the what-if questions) that upstream does not carry. A byte-for-byte resync would revert the exit criterion; take upstream changes selectively.
 -->
 
 Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.
@@ -30,14 +30,8 @@ Finding *facts* is your job, never the user's. When a frontier question needs a 
 
 ## Exit criterion
 
-An empty question frontier is necessary but not sufficient. The session does not end until the plan's **acceptance criteria are enumerated with stable IDs**, each one stated so it is directly expressible as a *failing test* (red-test-convertible: a concrete observable that is false today and true when the work is done).
+An empty question frontier is necessary but not sufficient. The session does not end until the plan's **acceptance criteria are enumerated with stable IDs**, each one meeting the `acceptance-criteria` standard. Load that skill before enumerating them.
 
-Those criteria are branches of the same tree, not a checklist bolted onto the end. For every acceptance criterion, each row of the edge-case taxonomy is itself a question on the frontier — resolve it, or explicitly rule it out with a reason:
+Those criteria are branches of the same tree, not a checklist bolted onto the end. For every acceptance criterion, each of that standard's what-if questions is itself a question on the frontier — answer it, or explicitly rule it out with a reason.
 
-- **Inverse case** — the negative/failure path, not just the happy path.
-- **Empty / boundary input** — zero, empty, min, max, first, last.
-- **Dependency failure** — an upstream tool, file, service, or precondition is absent or errors.
-- **Repeated / concurrent invocation** — run twice, run in parallel, interleaved.
-- **Idempotency** — a second identical run changes nothing beyond the first.
-
-If any criterion lacks an ID, cannot be phrased as a failing test, or has an unaddressed taxonomy row, the frontier is not empty — keep grilling. Do not act on the plan until the user confirms you have reached a shared understanding.
+If any criterion lacks an ID, falls short of the standard, or has an unanswered what-if question, the frontier is not empty — keep grilling. Do not act on the plan until the user confirms you have reached a shared understanding.

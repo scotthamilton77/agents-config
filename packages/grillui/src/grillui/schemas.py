@@ -93,6 +93,19 @@ REASON_UNKNOWN_OPTION = "option the decision does not offer"
 # settled decision whose own thread is still open.
 REASON_FOREIGN_THREAD = "thread anchored to another decision"
 
+# The human asking the expert to proceed without saying anything, on a thread
+# where it has nothing to take up: a reply is already on its way, the expert
+# spoke last, or the thread is set aside. The entry is well-formed and names a
+# thread that exists, so none of the reasons above says why it is refused.
+REASON_NOTHING_TO_PROCEED = "nothing to proceed on"
+
+# An answer to a decision a ruling in flight is weighing. The ruling may move
+# the question itself, so the decision takes no answer until the ruling lands.
+# This is the one hold the gate refuses rather than leaving to the page: a tab
+# that has not redrawn since the gesture that started the ruling still offers
+# the answer, and the wait is meant to hold against it too.
+REASON_DECISION_WAITING = "decision is waiting on a ruling"
+
 REJECTION_REASONS = frozenset(
     {
         REASON_MISSING_KEY,
@@ -107,6 +120,8 @@ REJECTION_REASONS = frozenset(
         REASON_UNKNOWN_THREAD,
         REASON_FOREIGN_THREAD,
         REASON_UNKNOWN_OPTION,
+        REASON_NOTHING_TO_PROCEED,
+        REASON_DECISION_WAITING,
     }
 )
 
@@ -310,6 +325,12 @@ STATUS_PHASE_RULINGS_DROPPED = "rulings-dropped"
 # turn for finished: the backend's own, and the page's, which would then read
 # the channel as quiet and stop saying the human is waiting on anything.
 STATUS_PHASE_DOWNSTREAM_FAILED = "downstream-failed"
+# How an impact task ends when a later gesture starts another on the same
+# target before it returns. It names a task's end rather than a turn's, so it
+# appears only inside a status entry's `TASKS_KEY` list and closes no turn: the
+# turn carrying the superseded task runs on, and its own `replied` or `error`
+# still closes the lane.
+STATUS_PHASE_SUPERSEDED = "superseded"
 STATUS_PHASES = frozenset(
     {
         STATUS_PHASE_ACCEPTED,
@@ -319,8 +340,28 @@ STATUS_PHASES = frozenset(
         STATUS_PHASE_TRANSFERRED,
         STATUS_PHASE_RULINGS_DROPPED,
         STATUS_PHASE_DOWNSTREAM_FAILED,
+        STATUS_PHASE_SUPERSEDED,
     }
 )
+
+# The impact tasks a status entry opens or closes. A marked answer owes a
+# ruling on every decision it puts in question, and each of those rulings is
+# an impact task keyed by the decision it weighs. The task rides the lane
+# rather than a kind of its own, because the kind vocabulary is closed and a
+# task begins and ends exactly where the turn carrying it is announced,
+# accepted and closed. The `composing` entry opens each task whole -- id,
+# target, gesture, basis, mode and seat -- and every later entry names it by id
+# with the phase it ended in, so a restarted backend reads every task's state
+# back off the log alone.
+TASKS_KEY = "tasks"
+IMPACT_MODE = "impact"
+
+# The sequence of the `composing` entry a `replied` or `error` closes. Map turns
+# run concurrently, so "the latest announcement on the channel" names the wrong
+# turn as often as the right one once two are in flight, and the closing entry
+# names its own instead. A closing entry without it predates the key and closes
+# every announcement open on its channel, which is what it meant when written.
+OPENED_KEY = "opened"
 
 # What marks a `composing` entry as the backend handing a refused turn up to the
 # expert rather than seating a turn there for any of the other reasons. It rides
@@ -385,6 +426,11 @@ FOLLOWED_TRANSFER_KEY = "followed_transfer"
 TRANSFER_FLAG = "transfer"
 TRANSFER_SOURCE_KEY = "transfer_source"
 TRANSFER_SOURCE_POLICY = "policy"
+# The human sending the expert in on a thread as it stands. A payload key on a
+# `thread-turn` rather than a kind of its own, because the kind vocabulary is
+# closed; the entry carrying it with no text is the one human thread event that
+# says nothing, and the gesture itself is what it records.
+PROCEED_FLAG = "proceed"
 
 # How a response withdraws notices it sent earlier: a list of pending ids the
 # response replaces. A payload key rather than a kind of its own, because
@@ -536,6 +582,21 @@ class Answer(Strict):
     text: str | None = None
 
 
+class Waiting(Strict):
+    """The impact task holding a decision off the frontier, as the board names it.
+
+    `task` is the task's id, `gesture` the sequence of the human's answer that
+    started it, `seat` the tier weighing it, and `start` when that tier was
+    announced. The four are what the human is owed while they wait: which
+    gesture, which seat, and since when.
+    """
+
+    task: str
+    gesture: int
+    seat: str
+    start: str
+
+
 class Decision(Strict):
     """The same node shape in the handoff and in both images; the status, answer,
     rationale and lock fields exist only in the images.
@@ -546,6 +607,9 @@ class Decision(Strict):
     leaves every field it omits. Carrying it here is what keeps an
     invalidation and its justification one item rather than two: the block and
     the reasoning for it reach the page together.
+    `waiting` is the impact task weighing this decision, where one is: the
+    ruling a marked answer bought is still to land, so the decision is off the
+    frontier until it does.
     `locked` is the queue's hold on this decision, and a locked decision is not
     answerable now. Two things in the queue take it: a change waiting to land on
     it, and the most recent elicit-alert still queued against it declaring
@@ -567,6 +631,16 @@ class Decision(Strict):
     answer: Answer | None = None
     rationale: str | None = None
     locked: bool = False
+    waiting: Waiting | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_absent_waiting(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        """A decision nothing is weighing has no `waiting` key at all, so every
+        board where no ruling is in flight keeps the bytes it always had."""
+        dumped: dict[str, object] = handler(self)
+        if dumped.get("waiting") is None:
+            dumped.pop("waiting", None)
+        return dumped
 
 
 class Mandate(Strict):
@@ -1082,12 +1156,18 @@ class MootnessObligation(Strict):
     quotes as the rationale: for an answer, the option the human took; for an
     applied invalidate, `target` is the decision that left the flow and `answer`
     the rationale it carried.
+
+    `gesture` is the log sequence of the gesture that owes it. An answer's
+    impact tasks are keyed by that sequence and their target, so a turn reads
+    which of its own tasks a later gesture superseded off the log by it, at the
+    moment its reply lands.
     """
 
     target: str
     answer: str
     ids: list[str] = Field(min_length=1)
     cause: Literal["answer", "invalidate"] = "answer"
+    gesture: int | None = None
 
 
 class Ruling(Strict):
@@ -1610,6 +1690,20 @@ def rejection_reason(
             f"{submission.channel!r}",
         )
 
+    if is_proceed(submission):
+        # Judged as the thread gestures above are, because it is one: it says
+        # nothing, and names its thread by the channel it arrives on. Whether
+        # that thread has anything to proceed on is the appender's to decide.
+        if submission.channel == MAP_CHANNEL:
+            return _map_channel_thread_gesture(submission)
+        if submission.channel not in known_threads:
+            return (
+                REASON_UNKNOWN_THREAD,
+                f"a proceed names its thread by its channel, and no thread has been "
+                f"created on channel {submission.channel!r}",
+            )
+        return None
+
     if submission.kind in THREAD_KINDS:
         return _thread_turn_problem(submission)
 
@@ -1703,6 +1797,23 @@ def read_turns(payload: Mapping[str, Any], actor: Actor, timestamp: str) -> list
     if isinstance(text, str) and text:
         return [_turn(actor, text, timestamp, tier)]
     return []
+
+
+def is_proceed(event: EventSubmission | LogEntry) -> bool:
+    """Whether this is the human asking the expert to proceed without a turn.
+
+    Three things make it one: the human sent it, it carries the flag, and it
+    says nothing. The flag on a turn that says something is an ordinary turn,
+    because the page sends typed text as the same entry a send makes. From any
+    other actor the flag is open payload surface, and a key that dispatched
+    whoever wrote it would let a seat buy itself an expert turn.
+    """
+    return (
+        event.kind == "thread-turn"
+        and event.actor == "human"
+        and event.payload.get(PROCEED_FLAG) is True
+        and not read_turns(event.payload, event.actor, "")
+    )
 
 
 def reads_asked(payload: Mapping[str, Any]) -> list[str]:

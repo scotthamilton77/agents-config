@@ -1,6 +1,6 @@
 ---
 name: openrouter-claude-subagent
-description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT mini tiers), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex or Gemini CLI, and not for the Claude models and large GPT tiers this transport refuses. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with a Write grant scoped to that one path.
+description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT mini tiers), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex, and not for the Claude models this launcher refuses. A GPT or Gemini model runs here only on the user's explicit instruction; their own launchers are the Codex and agy skills. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with a Write grant scoped to that one path.
 admission:
   provides: A nested Claude Code harness whose model traffic is repointed at a non-Anthropic model, plus the stream repair that makes the reply actually arrive — so a task runs on another vendor's weights while keeping this harness's tool loop, permission system, and file editing.
   cost: A local proxy process for the life of each nested run, and an OpenRouter API key the user must supply and pay against. Node must be installed, and the model routing table needs a refresh whenever OpenRouter reprices or retires a model.
@@ -46,11 +46,13 @@ every run it starts answers on that same model — the aliases are redirected, s
 a dispatch that names `sonnet`, or an agent type whose own model is one of those
 aliases, still lands there. Anything outside that vocabulary is refused with an
 error explaining the alternative, including an agent type pinned to a specific
-vendor model id and a request that names no model at all. Two families are refused outright, pin or no pin:
-Claude models, which belong in the harness you are already running, and the
-large GPT tiers (`gpt-5.5*`, `gpt-5.6*`, `-mini` variants excepted), which have
-their own transport. Naming one exits `78` before anything starts, and there is
-no rerouting around it — if that transport is down, the task waits.
+vendor model id and a request that names no model at all. Claude models are
+refused outright, pin or no pin: they belong in the harness you are already
+running. The launcher also refuses the GPT-5.5, GPT-5.6 and GPT-6 tiers, the
+`-mini` variants of 5.5 and 5.6 excepted. A GPT or Gemini model runs on this
+launcher only when the user has explicitly instructed it for the run at hand;
+each has its own subscription launcher, and a spent quota or a dead launcher
+there is a reason to ask the user, never to reroute on your own.
 
 `references/proxy-contract.md` covers what the proxy repairs, why the tool
 grant is limited to what you pass, and what to re-verify when the Claude Code
@@ -84,32 +86,29 @@ cannot write its report and the verdict survives only in the run log's tail.
 
 ## Step 2 — Model selection
 
-`references/model-routing.md` is the source of truth for pricing, context
-window, effort support, and per-bucket defaults. Look the answer up. Picking
-from memory routes work to a model that may be repriced or retired, and
-re-deriving a "cheapest" pick by hand is how the bias drifts from what the
-bucket table already encodes.
+The `choosing-a-delegate` skill's model routing table is the one source for
+the model each provider offers at each tier, and for every model's price,
+context window and accepted effort levels; its `openrouter` rows are the
+models this launcher runs. Look the answer up there. Picking from memory
+routes work to a model that may be repriced or retired, and re-deriving a
+"cheapest" pick by hand is how the bias drifts from what the table encodes.
 
-1. Classify the task: mechanical/triage, standard implementation, or
-   architecture/judgment-heavy.
-2. Take that bucket's **Default pick** — unless the user said "cheap" (use
-   **Step down**) or "best"/"most capable" (use **Step up**).
-3. If the user named a specific `vendor/model-id`, check it against the
-   routing table **and** the supplemental registry at
-   `~/.config/agents-config/openrouter-model-registry.json`. Listed in
-   neither means its price, context, and effort support are all unverified —
-   run the Unknown Model Workflow in `references/model-routing.md` rather
-   than assuming.
-4. State the model and a one-sentence reason (task bucket + price), and ask
+1. Classify the task by the table's tiers.
+2. Take that tier's `openrouter` model, unless the user said "cheap" (one
+   tier down) or "best"/"most capable" (one tier up).
+3. A Gemini or GPT model is never your pick on this launcher. It runs here
+   only when the user explicitly instructed it for this run, and the Gemini
+   row exists for that case.
+4. A user-named `vendor/model-id` absent from the table is unverified: look it
+   up in the catalog endpoint the table names, say what you found and where,
+   and ask before using it.
+5. State the model and a one-sentence reason (task profile + price), and ask
    for confirmation — unless the user waived confirmation, in which case
    state the choice and proceed.
 
 Pass the bare model id. A context-window suffix such as `[1m]` is refused by
 the run's own model pin (`403 … decision=deny-pin`); `CLAUDE_CODE_MAX_CONTEXT_TOKENS`
-is the lever when the clamp matters. For a whole-document single pass avoid
-`z-ai/glm-5.3`: it returns thinking-only turns until the request times out,
-and a log full of thinking-only warnings is a dead run to re-dispatch, not one
-to wait on.
+is the lever when the clamp matters.
 
 ## Step 3 — Effort level
 
@@ -122,18 +121,30 @@ to wait on.
 Use the user's level if they named one. `max` only on an explicit request —
 it is the most expensive tier.
 
-Not every model accepts every level. `references/model-routing.md` lists the
-levels each one takes — pick from that list, since two of the listed models
-accept no level at all, one of those cannot be capped even in principle, and
-others are missing the middle of the range. Trust the recorded value rather
-than re-verifying at dispatch.
+Not every model accepts every level, and the routing table's accepted-efforts
+column bounds the choice: pick from the row's list. Where the row does not
+list the level this grid names, pass the next listed level up, so `medium` on
+a row listing `low` `high` `max` becomes `high`. The flag reaches OpenRouter
+through its Anthropic-compatible endpoint as a thinking budget, so a level a
+row does not list still bounds the model's thinking; treat the model as the
+reliable control and the level as a hint.
+
+A model's own notes override the grid. Before dispatching to a model that has
+a file under `references/`, read it: `references/kimi-k3.md` and
+`references/glm-5.3.md` exist today, each recording what that model does
+under which effort and task shape, and what it refuses. A model with no file
+has no recorded constraint.
+
+The launcher pins no sampling parameter, and neither should a prompt or a
+wrapper: a model's notes say whether it refuses one, and Google says to leave
+Gemini's at its default.
 
 ## Example
 
 ```bash
 # Read-only research on a cheap model — read-only tier, no confirmation needed
 node "${CLAUDE_SKILL_DIR}/scripts/run.js" \
-  --model "google/gemini-3.5-flash-lite" \
+  --model "z-ai/glm-5.3-flash" \
   --effort low \
   --permission-mode dontAsk \
   --allowedTools "Read" "Grep" "Glob" \

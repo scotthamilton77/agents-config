@@ -4,7 +4,7 @@ description: Turn the current conversation into a spec — no interview, just sy
 admission:
   prevents: A resolved conversation evaporating into a goals-only or verbally-agreed plan that an implementer cannot execute without re-litigating decisions and edge cases.
   cost: Adds a synthesis pass that writes a dated spec whose output contract requires enumerated acceptance criteria and an ordered, AC-cited slice list before it is done.
-  remove_when: The pipeline can mechanically emit an implementable spec with red-test-convertible acceptance criteria and sliced work from the conversation without this authoring step.
+  remove_when: The pipeline can mechanically emit an implementable spec with acceptance criteria meeting the acceptance-criteria standard and sliced work from the conversation without this authoring step.
 ---
 
 <!--
@@ -14,7 +14,7 @@ Last sync: 2026-07-24
 Drift policy: local-fork — grafted, do not re-sync
 -->
 
-This skill takes the current conversation context and codebase understanding and produces a spec (you may know this document as a PRD). Do NOT interview the user — just synthesize what you already know.
+This skill takes the current conversation context and codebase understanding and produces a spec (you may know this document as a PRD). Synthesize what you already know rather than interviewing the user; the one check-in is confirming the test seams in step 2.
 
 ## Process
 
@@ -24,7 +24,7 @@ This skill takes the current conversation context and codebase understanding and
 
 Check with the user that these seams match their expectations.
 
-3. Write the spec using the template below and save it as a dated file (`YYYY-MM-DD-<slug>.md`) in the project's spec home. Publishing work items to the issue tracker is a separate step and out of scope here.
+3. Load the `readable-prose` skill, then write the spec using the template below and save it as a dated file (`YYYY-MM-DD-<slug>.md`) in the project's spec home. Publishing work items to the issue tracker is a separate step and out of scope here.
 
 <spec-template>
 
@@ -38,7 +38,7 @@ The solution to the problem, from the user's perspective.
 
 ## User Stories
 
-A LONG, numbered list of user stories. Each in the format: `As an <actor>, I want a <feature>, so that <benefit>`. Cover all aspects of the feature.
+A numbered list of user stories, one per distinct actor and goal, covering every aspect of the feature. Each in the format: `As an <actor>, I want a <feature>, so that <benefit>`.
 
 ## Implementation Decisions
 
@@ -50,9 +50,9 @@ What makes a good test (only external behavior, not implementation details), whi
 
 ## Acceptance Criteria
 
-A numbered list of acceptance criteria, each with a **stable ID** (`<ID>` matches `[A-Z0-9]+-[A-Z]\d+` or `AC\d+`, e.g. `AC1`, `FOO-A1`). Each criterion MUST be **red-test-convertible**: stated as a concrete observable that is false today and true when the work is done, so it maps to one failing test.
+A numbered list of acceptance criteria, each with a **stable ID** (`<ID>` matches `[A-Z0-9]+-[A-Z]\d+` or `AC\d+`, e.g. `AC1`, `FOO-A1`). Each criterion MUST meet the `acceptance-criteria` standard, and the set MUST be ready by that standard's set checks. Load that skill before writing this section.
 
-For every criterion, apply the edge-case taxonomy — resolve or explicitly rule out each of: **inverse case** (failure path), **empty/boundary input** (zero, empty, min, max), **dependency failure** (an upstream tool/file/service absent or erroring), **repeated/concurrent invocation**, and **idempotency** (a second identical run changes nothing).
+For every criterion, ask that standard's what-if questions: answer each one or explicitly rule it out.
 
 ## Ordered Slice List
 

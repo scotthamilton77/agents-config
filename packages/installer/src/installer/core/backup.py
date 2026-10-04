@@ -2,7 +2,13 @@
 
 A target whose immediate parent is one of the prune-managed namespaces is
 copied to a sibling ``<namespace>-backup/`` dir under the grandparent; any
-other target gets an in-place ``<name>.backup-<ts>`` sibling. Handles both
+other target gets an in-place ``<name>.backup-<ts>`` sibling. A target inside a
+relocated namespace directory (``namespaces.RELOCATED``) backs up to a
+``<relocated path, dash-joined>-backup/`` dir at the tool root that directory
+hangs from, so the backup lands neither where the tool discovers the namespace,
+nor in a directory of the tool's own state that the relocated path passes
+through, nor in the ``<namespace>-backup/`` dir that copies left at the
+namespace's unrelocated path back up to. Handles both
 files (``shutil.copy2``) and directories (``shutil.copytree``).
 
 The ``timestamp`` is interpolated raw into the backup path, so callers MUST
@@ -55,11 +61,28 @@ def valid_timestamp(timestamp: str) -> bool:
 def _backup_path_for(target: Path, timestamp: str) -> Path:
     """Resolve the backup destination for ``target`` (no I/O).
 
-    A target whose parent is a backup-routed namespace (``namespaces.BACKUP``)
-    routes to ``<grandparent>/<namespace>-backup/<name>.backup-<ts>``; any other
-    target gets an in-place ``<name>.backup-<ts>`` sibling.
+    A target whose parent is a relocated namespace directory routes to
+    ``<tool root>/<relocated path, dash-joined>-backup/<name>.backup-<ts>``,
+    which is ``~/.gemini/config-skills-backup/`` for a Gemini skill. A target
+    whose parent is a backup-routed namespace (``namespaces.BACKUP``) routes to
+    ``<grandparent>/<namespace>-backup/<name>.backup-<ts>``; any other target
+    gets an in-place ``<name>.backup-<ts>`` sibling.
+
+    The relocated match is by the parent's trailing path segments, just as the
+    backup-routed match is by the parent's name: the grandparent of a relocated
+    Gemini skill is ``~/.gemini/config``, which belongs to Antigravity, so the
+    grandparent rule alone would write the backup into it. Routing it to
+    ``skills-backup/`` instead would share one backup path with the copy of the
+    same skill that an earlier install left in ``~/.gemini/skills/``, and a
+    pruning install that backs up both within one second would fail on the
+    second copy.
     """
     parent = target.parent
+    for prefix in namespaces.RELOCATED.values():
+        depth = len(prefix.parts)
+        if parent.parts[-depth:] == prefix.parts:
+            backup_dir = parent.parents[depth - 1] / f"{'-'.join(prefix.parts)}-backup"
+            return backup_dir / f"{target.name}.backup-{timestamp}"
     if parent.name in namespaces.BACKUP:
         backup_dir = parent.parent / f"{parent.name}-backup"
         return backup_dir / f"{target.name}.backup-{timestamp}"

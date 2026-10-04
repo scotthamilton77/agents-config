@@ -71,10 +71,11 @@ a non-technical user.
 
 ## Cross-Referencing Other Skills
 
-Use the skill name with an explicit requirement marker:
+Use the skill name, and state plainly that it is required and what the
+reader needs it for:
 
-- ✅ `REQUIRED SUB-SKILL: Use tdd`
-- ✅ `REQUIRED BACKGROUND: You MUST understand diagnosing-bugs`
+- ✅ `Required: work this inside tdd, which supplies the red-green-refactor loop.`
+- ✅ `Background: read diagnosing-bugs first; this skill builds on its diagnosis loop.`
 - ❌ `See skills/testing/tdd` — unclear if required
 - ❌ `@skills/testing/tdd/SKILL.md` — force-loads, burns
   context

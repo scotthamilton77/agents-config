@@ -27,7 +27,7 @@ import pytest
 HERE = Path(__file__).resolve().parent
 CHECKER_PATH = HERE / "check_record.py"
 EMITTER_PATH = HERE / "emit_prompts.py"
-LENSES_PATH = HERE / "lenses.json"
+LENSES_DIR = HERE / "lenses"
 SCHEMA_PATH = HERE / "attack-record.schema.json"
 
 DOCUMENT = "# Ledger export\n\n- A1 The exporter writes every settled entry.\n"
@@ -49,7 +49,32 @@ checker = _load(CHECKER_PATH)
 # cannot import each other, so what keeps their registry checks identical is a test that loads both
 # and holds one loader's verdict against the other's.
 emitter = _load(EMITTER_PATH)
-LENS_NAMES = [lens["lens"] for lens in json.loads(LENSES_PATH.read_text(encoding="utf-8"))["lenses"]]
+LENS_NAMES = sorted(path.parent.name for path in LENSES_DIR.glob("*/prompt.md"))
+
+# The rule each shipped lens objects on in these records, one its front matter enforces. Any other
+# lens name, one no registry declares, objects on a rule chosen for nothing in particular.
+RULE_OF = {"behavioural-outcome": "observable-obligation", "what-if": "what-if-questions",
+           "obligation-reduction": "coverage", "set-consistency": "consistency"}
+
+# An inventory in which every part is discharged and every criterion discharges one, so the lens
+# that returns it owes no objection for either.
+WORKINGS = {
+    "obligations": [{"id": "O1", "kind": "result", "statement": "every settled entry is exported",
+                     "source": "A1 The exporter writes every settled entry.",
+                     "parts": [{"id": "O1.1", "statement": "settled entries reach the file",
+                                "discharged_by": ["A1"]}]}],
+    "criteria": ["A1"],
+}
+
+
+def reports(objecting: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+    """One report per shipped lens, the lenses named reporting objections and the rest empty.
+
+    The lens whose front matter requires workings carries the discharged inventory above.
+    """
+    return [{"lens": name, "report": "objections" if name in objecting else "empty",
+             **({"workings": copy.deepcopy(WORKINGS)} if name == "obligation-reduction" else {})}
+            for name in LENS_NAMES]
 
 
 def sha_revision(text: str) -> str:
@@ -61,13 +86,14 @@ def blob_revision(text: str) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
-def proposal(lens: str, target: str, identifier: str) -> dict[str, Any]:
+def objection(lens: str, target: str, identifier: str) -> dict[str, Any]:
     return {
         "id": identifier, "lens": lens, "target_ac": target,
-        "hole": "an unwritable output path is never exercised",
-        "proposed_ac": "the exporter exits non-zero when the output cannot be written",
-        "red_test_sketch": {"given": "a read-only output directory",
-                            "when": "the exporter runs", "expect": "a non-zero exit status"},
+        "objection": "an unwritable output path is never exercised",
+        "ground": {"rule": RULE_OF.get(lens, "coverage"),
+                   "reason": "a failure the what-if questions raise has no criterion"},
+        "scenario": {"given": "a read-only output directory",
+                     "when": "the exporter runs", "expect": "a non-zero exit status"},
     }
 
 
@@ -89,12 +115,9 @@ class Attack:
             "schema_version": "1",
             "spec_path": self.document.name,
             "spec_revision": sha_revision(DOCUMENT),
-            "lenses": [
-                {"lens": name, "report": "proposals" if name != "criteria-holes" else "empty"}
-                for name in LENS_NAMES
-            ],
-            "proposals": [proposal("edge-cases", "A1", "p1"),
-                          proposal("absent-requirements", "none", "p2")],
+            "lenses": reports(("what-if", "set-consistency")),
+            "objections": [objection("what-if", "A1", "p1"),
+                          objection("set-consistency", "none", "p2")],
             "dispositions": [
                 {"id": "p1", "disposition": "accepted", "rationale": "a real hole",
                  "revision": sha_revision(REVISED), "covering_ac": "A2"},
@@ -106,8 +129,8 @@ class Attack:
     def empty_round(self) -> dict[str, Any]:
         record = self.record()
         record["spec_revision"] = sha_revision(REVISED)
-        record["lenses"] = [{"lens": name, "report": "empty"} for name in LENS_NAMES]
-        record["proposals"] = []
+        record["lenses"] = reports()
+        record["objections"] = []
         record["dispositions"] = []
         return record
 
@@ -139,17 +162,19 @@ def attack(tmp_path) -> Attack:
 def registry(tmp_path, monkeypatch):
     """Stand one lens registry in place of the shipped one for both scripts.
 
-    Each script reads its own module-level path, so pointing both at a single file is what makes
-    the two loaders answerable to the same registry. The checker's cache is cleared either side.
+    Each script lists the lens directories through its own `lens_files`, so standing one list of
+    names and prompt texts in for both is what makes the two loaders answerable to the same
+    registry — including names no directory on this volume could hold. The checker's cache is
+    cleared either side.
     """
-    def use(lenses: Any) -> None:
-        path = tmp_path / "lenses.json"
-        path.write_text(json.dumps({"lenses": lenses}), encoding="utf-8")
-        monkeypatch.setattr(checker, "LENSES_PATH", path)
-        monkeypatch.setattr(emitter, "LENSES_PATH", path)
-        checker.declared_lenses.cache_clear()
+    def use(lenses: list[dict[str, Any]]) -> None:
+        files = [(entry.get("lens"), lens_text(entry), entry.get("workings_schema"))
+                 for entry in lenses]
+        monkeypatch.setattr(checker, "lens_files", lambda: files)
+        monkeypatch.setattr(emitter, "lens_files", lambda: files)
+        checker.declared_registry.cache_clear()
     yield use
-    checker.declared_lenses.cache_clear()
+    checker.declared_registry.cache_clear()
 
 
 def run(args: list[str], capsys) -> tuple[int, dict]:
@@ -195,18 +220,18 @@ def snapshot(root: Path) -> dict[str, bytes]:
 SKILL_DIR_UNTOUCHED = snapshot(HERE)
 
 
-BUNDLED = ("check_record.py", "lenses.json", "attack-record.schema.json")
-
-
-def skill_copy(tmp_path: Path, corrupt: dict[str, str | None]) -> Path:
+def skill_copy(tmp_path: Path, corrupt: dict[str, str | bytes | None]) -> Path:
     """A standalone copy of the deployed skill, with its bundled data damaged as asked."""
     dest = tmp_path / "skill"
     dest.mkdir()
-    for name in BUNDLED:
+    for name in ("check_record.py", "attack-record.schema.json"):
         shutil.copy(HERE / name, dest / name)
+    shutil.copytree(LENSES_DIR, dest / "lenses")
     for name, content in corrupt.items():
         if content is None:
             (dest / name).unlink()
+        elif isinstance(content, bytes):
+            (dest / name).write_bytes(content)
         else:
             (dest / name).write_text(content, encoding="utf-8")
     return dest
@@ -214,23 +239,23 @@ def skill_copy(tmp_path: Path, corrupt: dict[str, str | None]) -> Path:
 
 class TestCompleteRound:
     def test_c3_a_fully_adjudicated_round_is_complete(self, attack, capsys):
-        """S6-C3: the disposition set covers every proposal id, so the round terminates."""
+        """S6-C3: the disposition set covers every objection id, so the round terminates."""
         code, result = check(attack, attack.record(), capsys)
         assert code == 0
         assert result == closed(attack)
 
-    def test_c3_a_proposal_without_a_disposition_blocks_termination(self, attack, capsys):
-        """S6-C3: coverage is decided from the record — one unadjudicated proposal leaves the
+    def test_c3_a_objection_without_a_disposition_blocks_termination(self, attack, capsys):
+        """S6-C3: coverage is decided from the record — one unadjudicated objection leaves the
         round open, and the checker names which."""
         record = attack.record()
         record["dispositions"] = record["dispositions"][:1]
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"unadjudicated-proposal"}
+        assert codes(result) == {"unadjudicated-objection"}
         assert result["errors"][0]["id"] == "p2"
 
-    def test_c3_a_duplicate_or_unknown_proposal_id_is_rejected(self, attack, capsys):
-        """S6-C3: a disposition set that adjudicates one proposal twice, or one the round does
+    def test_c3_a_duplicate_or_unknown_objection_id_is_rejected(self, attack, capsys):
+        """S6-C3: a disposition set that adjudicates one objection twice, or one the round does
         not hold, is not an account of the round."""
         record = attack.record()
         record["dispositions"].append(dict(record["dispositions"][1]))
@@ -239,39 +264,36 @@ class TestCompleteRound:
         record["dispositions"].append({"id": "p7", "disposition": "rejected", "rationale": "no"})
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"unknown-proposal-id"}
-        assert error_of(result, "unknown-proposal-id")["id"] == "p7"
+        assert codes(result) == {"unknown-objection-id"}
+        assert error_of(result, "unknown-objection-id")["id"] == "p7"
 
-    def test_c3_two_proposals_may_not_share_an_id(self, attack, capsys):
-        """S6-C3: the id is what a disposition adjudicates through, so two proposals wearing one
+    def test_c3_two_objections_may_not_share_an_id(self, attack, capsys):
+        """S6-C3: the id is what a disposition adjudicates through, so two objections wearing one
         id leave every disposition naming it ambiguous — refused rather than resolved towards
-        either proposal, since the record cannot say which was adjudicated."""
+        either objection, since the record cannot say which was adjudicated."""
         record = attack.record()
-        record["proposals"][1]["id"] = "p1"
+        record["objections"][1]["id"] = "p1"
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"duplicate-proposal-id", "unknown-proposal-id"}
-        assert error_of(result, "duplicate-proposal-id")["id"] == "p1"
+        assert codes(result) == {"duplicate-objection-id", "unknown-objection-id"}
+        assert error_of(result, "duplicate-objection-id")["id"] == "p1"
 
-    def test_c3_dropping_a_proposal_leaves_the_rest_bound_to_their_dispositions(self, attack,
+    def test_c3_dropping_a_objection_leaves_the_rest_bound_to_their_dispositions(self, attack,
                                                                                 capsys):
-        """S6-C3: a malformed proposal is dropped from the round, which moves every proposal after
-        it up a position; dispositions name their proposal by id, so the survivors stay paired
+        """S6-C3: a malformed objection is dropped from the round, which moves every objection after
+        it up a position; dispositions name their objection by id, so the survivors stay paired
         with the adjudication written for them instead of silently re-pointing at a neighbour."""
         attack.write_document(DOCUMENT)
         record = attack.record()
-        del record["proposals"][0]
+        del record["objections"][0]
         del record["dispositions"][0]
-        record["lenses"] = [
-            {"lens": name, "report": "proposals" if name == "absent-requirements" else "empty"}
-            for name in LENS_NAMES
-        ]
-        assert [entry["id"] for entry in record["proposals"]] == ["p2"]
+        record["lenses"] = reports(("set-consistency",))
+        assert [entry["id"] for entry in record["objections"]] == ["p2"]
         assert record["dispositions"][0]["id"] == "p2"
         assert check(attack, record, capsys)[0] == 0
 
     def test_c3_an_acceptance_must_name_the_revision_that_carries_it(self, attack, capsys):
-        """S6-C3: accepting with the document unchanged adjudicates nothing — the proposal is
+        """S6-C3: accepting with the document unchanged adjudicates nothing — the objection is
         neither carried into the criteria nor answered — in whichever notation the unchanged
         revision is written; the same acceptance naming the revision that does carry it closes
         the round (inverse)."""
@@ -307,9 +329,9 @@ class TestCompleteRound:
 
 
 class TestEmptyUnion:
-    def test_c4_a_round_where_no_lens_proposes_anything_terminates_clean(self, attack, capsys):
+    def test_c4_a_round_where_no_lens_objects_terminates_clean(self, attack, capsys):
         """S6-C4: the empty union is a first-class outcome, not a degenerate one — every lens
-        reported, nothing was proposed, and the round is over."""
+        reported, none objected, and the round is over."""
         code, result = check(attack, attack.empty_round(), capsys)
         assert code == 0
         assert result == closed(attack, clean=True)
@@ -325,7 +347,7 @@ class TestOrdering:
         code, result = check(attack, record, capsys, "--implementation-started")
         assert code == 1
         assert "ordering-violation" in codes(result)
-        assert "unadjudicated-proposal" in codes(result)
+        assert "unadjudicated-objection" in codes(result)
 
     def test_c4_the_check_can_reach_nothing_but_the_files_it_is_handed(self):
         """S6-C4: the verdict comes from the record, the document, and the declared observation —
@@ -373,7 +395,7 @@ class TestStaleness:
 
     def test_c6_an_edit_an_acceptance_drove_keeps_the_round_current(self, attack, capsys):
         """S6-C6: inverse — a revision an acceptance names accounts for the document, so
-        incorporating a proposal cannot invalidate the round that drove the incorporation."""
+        incorporating an objection cannot invalidate the round that drove the incorporation."""
         record = attack.record()
         assert record["spec_revision"] == sha_revision(DOCUMENT)
         assert attack.document.read_text(encoding="utf-8") == REVISED
@@ -381,10 +403,10 @@ class TestStaleness:
 
     def test_c6_a_document_still_at_the_revision_attacked_does_not_close_an_accepting_round(
             self, attack, capsys):
-        """S6-C6: an acceptance says the document was edited to carry the proposal, so a document
+        """S6-C6: an acceptance says the document was edited to carry the objection, so a document
         still hashing to the revision attacked means that edit was reverted, lost in a rebase, or
         never made. Closing the round would clear work to start against criteria every accepted
-        proposal is absent from — and this is decided, not attested: the checker holds the
+        objection is absent from — and this is decided, not attested: the checker holds the
         document's bytes and can see they are the pre-attack ones."""
         record = attack.record()
         attack.write_document(DOCUMENT)
@@ -396,7 +418,7 @@ class TestStaleness:
     def test_c6_a_round_that_accepted_nothing_stands_at_the_revision_it_attacked(self, attack,
                                                                                  capsys):
         """S6-C6: inverse — only an acceptance obliges the document to have moved, so a round that
-        proposed nothing, and one whose every proposal was rejected, close over the document
+        objected to nothing, and one whose every objection was rejected, close over the document
         exactly as attacked."""
         assert check(attack, attack.empty_round(), capsys) == (0, closed(attack, clean=True))
         record = attack.record()
@@ -410,7 +432,7 @@ class TestStaleness:
         revisions asks it to be in two states at once — and settling for either one would close
         the round with the other acceptance's criterion provably absent from the text in front of
         the checker, whether its revision names a reverted edit or was never a revision at all.
-        An acceptance names the revision the document reached once every accepted proposal was in
+        An acceptance names the revision the document reached once every accepted objection was in
         it, and the round closes once they all do (inverse)."""
         record = attack.record()
         record["dispositions"][1] = {"id": "p2", "disposition": "accepted",
@@ -866,21 +888,21 @@ class TestRevisionNotation:
         assert codes(result) == {"untrimmed-revision"}
         assert "git hash-object" in error_of(result, "untrimmed-revision")["message"]
 
-    @pytest.mark.parametrize("stray", ("a proposal the round does not hold", "one already judged"))
+    @pytest.mark.parametrize("stray", ("an objection the round does not hold", "one already judged"))
     def test_c6_an_acceptance_the_adjudication_discards_refuses_nothing(self, attack, capsys,
                                                                         stray):
-        """S6-C6: an acceptance naming a proposal the round does not hold, and a second acceptance
-        of a proposal already adjudicated, are both read by nothing, so the revision on either
+        """S6-C6: an acceptance naming an objection the round does not hold, and a second acceptance
+        of an objection already adjudicated, are both read by nothing, so the revision on either
         decides nothing either. Refusing the record over how one of them is written answers
         fatally, and hides the error naming the disposition itself — the one the reader has to act
         on, and the one the notation check is there to keep out of the way of."""
         record = attack.record()
         record["dispositions"].append({
-            "id": "p7" if stray.startswith("a proposal") else "p1", "disposition": "accepted",
+            "id": "p7" if stray.startswith("an objection") else "p1", "disposition": "accepted",
             "revision": blob_revision(FURTHER), "covering_ac": "A9"})
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"unknown-proposal-id" if stray.startswith("a proposal")
+        assert codes(result) == {"unknown-objection-id" if stray.startswith("an objection")
                                  else "duplicate-disposition"}
 
     def test_c6_either_notation_alone_decides_the_round_the_same_way(self, attack, capsys):
@@ -897,97 +919,106 @@ class TestRevisionNotation:
 
 
 class TestLensCoverage:
-    def test_c7_a_lens_that_did_not_report_leaves_the_round_unfinished(self, attack, capsys):
+    @pytest.mark.parametrize("silent", LENS_NAMES)
+    def test_c7_a_lens_that_did_not_report_leaves_the_round_unfinished(self, attack, capsys,
+                                                                        silent):
         """S6-C7: a silent or errored attack lens has no entry and the round is incomplete —
-        fail closed, never inferring coverage from an empty proposal list."""
+        fail closed, never inferring coverage from an empty objection list."""
         record = attack.empty_round()
-        record["lenses"] = [entry for entry in record["lenses"]
-                            if entry["lens"] != "criteria-holes"]
+        record["lenses"] = [entry for entry in record["lenses"] if entry["lens"] != silent]
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
         assert codes(result) == {"lens-missing"}
-        assert "criteria-holes" in result["errors"][0]["message"]
+        assert silent in result["errors"][0]["message"]
+
+    def test_c7_a_record_reporting_one_lens_leaves_the_rest_missing(self, attack, capsys):
+        """S6-C7: a round emitted for one lens alone is an evaluation of that lens, and coverage
+        is still read off the whole registry — so its record leaves every other lens missing."""
+        record = attack.empty_round()
+        record["lenses"] = [{"lens": "what-if", "report": "empty"}]
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"lens-missing"}
+        missing = " ".join(error["message"] for error in result["errors"])
+        assert len(result["errors"]) == len(LENS_NAMES) - 1
+        assert all(repr(name) in missing for name in LENS_NAMES if name != "what-if")
 
     def test_c7_a_lens_reporting_twice_is_a_defect_in_the_record(self, attack, capsys):
         """S6-C7: coverage is read off one entry per lens, so a doubled entry is two accounts of
         one attacker — and the two may disagree, leaving nothing to read the lens's result off."""
         record = attack.empty_round()
-        record["lenses"].append({"lens": "criteria-holes", "report": "empty"})
+        record["lenses"].append({"lens": "behavioural-outcome", "report": "empty"})
         assert codes(check(attack, record, capsys)[1]) == {"duplicate-lens"}
 
-    def test_c7_every_proposal_names_its_producing_lens(self, attack, capsys):
-        """S6-C7: the record identifies which lens produced each proposal; one that does not is
+    def test_c7_every_objection_names_its_producing_lens(self, attack, capsys):
+        """S6-C7: the record identifies which lens produced each objection; one that does not is
         not a record."""
         record = attack.record()
-        del record["proposals"][0]["lens"]
+        del record["objections"][0]["lens"]
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
 
-    def test_c7_a_proposal_credited_elsewhere_leaves_its_lens_contributing_nothing(self, attack,
+    def test_c7_a_objection_credited_elsewhere_leaves_its_lens_contributing_nothing(self, attack,
                                                                                     capsys):
-        """S6-C7: a lens's only proposal credited to a name the record does not report is two
-        losses at once, and the record answers for both — the proposal traces to no attacker, and
-        the lens that made it is left reporting proposals the round holds none of. Either alone
+        """S6-C7: a lens's only objection credited to a name the record does not report is two
+        losses at once, and the record answers for both — the objection traces to no attacker, and
+        the lens that made it is left reporting objections the round holds none of. Either alone
         refuses the record; a record showing both is told both, since repairing the attribution is
         one edit and repairing the report is another."""
         record = attack.record()
-        record["proposals"][0]["lens"] = "vibes"
+        record["objections"][0]["lens"] = "vibes"
         code, result = check(attack, record, capsys)
         assert code == 1
-        assert codes(result) == {"unreported-proposal-lens", "contradicted-proposals-report"}
-        assert "edge-cases" in error_of(result, "contradicted-proposals-report")["message"]
-        assert error_of(result, "unreported-proposal-lens")["id"] == "p1"
+        assert codes(result) == {"unreported-objection-lens", "contradicted-objections-report"}
+        assert "what-if" in error_of(result, "contradicted-objections-report")["message"]
+        assert error_of(result, "unreported-objection-lens")["id"] == "p1"
 
-    def test_c7_a_proposal_traces_to_a_lens_that_reported_in_this_round(self, attack, capsys):
-        """S6-C7: a lens that produced a proposal reported, so a proposal attributed to a name the
+    def test_c7_a_objection_traces_to_a_lens_that_reported_in_this_round(self, attack, capsys):
+        """S6-C7: a lens that produced an objection reported, so an objection attributed to a name the
         record files no report for traces to no attacker at all — nothing in the round says that
-        lens looked, and the proposal is adjudicated as though one had.
+        lens looked, and the objection is adjudicated as though one had.
 
-        The record here exits 0 without this check, and that is the case it exists for: `edge-cases`
-        produced two proposals and one attribution is misspelled, so the lens keeps the other, its
+        The record here exits 0 without this check, and that is the case it exists for: `what-if`
+        produced two objections and one attribution is misspelled, so the lens keeps the other, its
         report is contradicted by nothing, and every other lens is self-consistent. The check that
-        holds a report against its proposals cannot see this, and the one that reads coverage sees a
+        holds a report against its objections cannot see this, and the one that reads coverage sees a
         lens set that matches. Three attribution checks that look redundant are three directions,
-        and this is the only one watching a proposal whose lens is not in the record at all."""
+        and this is the only one watching an objection whose lens is not in the record at all."""
         record = attack.record()
-        record["lenses"] = [
-            {"lens": name, "report": "proposals" if name == "edge-cases" else "empty"}
-            for name in LENS_NAMES
-        ]
-        record["proposals"] = [proposal("edge-cases", "A1", "p1"),
-                               proposal("edge_cases", "none", "p2")]
+        record["lenses"] = reports(("what-if",))
+        record["objections"] = [objection("what-if", "A1", "p1"),
+                               objection("what_if", "none", "p2")]
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"unreported-proposal-lens"}
-        error = error_of(result, "unreported-proposal-lens")
-        assert error["id"] == "p2" and "edge_cases" in error["message"]
+        assert codes(result) == {"unreported-objection-lens"}
+        error = error_of(result, "unreported-objection-lens")
+        assert error["id"] == "p2" and "what_if" in error["message"]
 
-    def test_c7_a_lens_reporting_empty_cannot_have_proposals_attributed_to_it(self, attack,
+    def test_c7_a_lens_reporting_empty_cannot_have_objections_attributed_to_it(self, attack,
                                                                               capsys):
-        """S6-C7: the report and the proposal list are two accounts of one round — a lens that
-        said it found nothing, credited with a proposal, means one of them is wrong and the
+        """S6-C7: the report and the objection list are two accounts of one round — a lens that
+        said it found nothing, credited with an objection, means one of them is wrong and the
         record cannot say which."""
         record = attack.record()
-        record["proposals"].append(proposal("criteria-holes", "A1", "p3"))
+        record["objections"].append(objection("behavioural-outcome", "A1", "p3"))
         record["dispositions"].append({"id": "p3", "disposition": "rejected",
                                        "rationale": "already covered by A2"})
         code, result = check(attack, record, capsys)
         assert code == 1 and codes(result) == {"contradicted-empty-report"}
-        assert "criteria-holes" in result["errors"][0]["message"]
+        assert "behavioural-outcome" in result["errors"][0]["message"]
 
-    def test_c7_a_lens_reporting_proposals_must_have_contributed_one(self, attack, capsys):
+    def test_c7_a_lens_reporting_objections_must_have_contributed_one(self, attack, capsys):
         """S6-C7: the inverse loss — a lens reported holes and the record carries none of them,
-        so a proposal an attacker made is a hole nobody will adjudicate."""
+        so an objection an attacker made is a hole nobody will adjudicate."""
         record = attack.record()
-        record["proposals"] = record["proposals"][:1]
+        record["objections"] = record["objections"][:1]
         record["dispositions"] = record["dispositions"][:1]
         code, result = check(attack, record, capsys)
-        assert code == 1 and codes(result) == {"contradicted-proposals-report"}
-        assert "absent-requirements" in result["errors"][0]["message"]
+        assert code == 1 and codes(result) == {"contradicted-objections-report"}
+        assert "set-consistency" in result["errors"][0]["message"]
 
-    def test_c7_reports_and_proposals_that_agree_close_the_round(self, attack, capsys):
-        """S6-C7: inverse of all three — a record whose reports and proposals are one account,
-        with proposals or without any, terminates."""
+    def test_c7_reports_and_objections_that_agree_close_the_round(self, attack, capsys):
+        """S6-C7: inverse of all three — a record whose reports and objections are one account,
+        with objections or without any, terminates."""
         assert check(attack, attack.record(), capsys)[0] == 0
         assert check(attack, attack.empty_round(), capsys)[0] == 0
 
@@ -998,8 +1029,8 @@ class TestLensCoverage:
         stands in it, a difference the message cannot show the reader."""
         record = attack.record()
         for entry in record["lenses"]:
-            if entry["lens"] == "edge-cases":
-                entry["lens"] = "Edge-Cases"
+            if entry["lens"] == "what-if":
+                entry["lens"] = "What-If"
         assert check(attack, record, capsys) == (0, closed(attack))
 
     def test_c7_a_lens_the_registry_spells_differently_is_the_lens_that_reported(self, attack,
@@ -1009,51 +1040,72 @@ class TestLensCoverage:
         record filed its report under is asking for the prompt file that ran. Held apart, the round
         would be told a lens is missing while that lens's report stands in the record, and no edit
         to the record could ever close it."""
-        registry([lens_entry(lens="Edge-Cases" if name == "edge-cases" else name)
+        registry([shipped(name, "What-If" if name == "what-if" else None)
                   for name in LENS_NAMES])
         assert check(attack, attack.record(), capsys) == (0, closed(attack))
 
-    def test_c7_a_proposal_attributed_in_the_other_spelling_traces_to_the_lens_that_made_it(
+    def test_c7_a_objection_attributed_in_the_other_spelling_traces_to_the_lens_that_made_it(
             self, attack, capsys):
-        """S6-C7: the same matching read off the proposal rather than off the report. An
+        """S6-C7: the same matching read off the objection rather than off the report. An
         attribution differing from the lens's own entry in case alone names the prompt file that
-        ran, so the proposal traces to the attacker that produced it and that attacker is not left
-        reporting proposals the round holds none of. Held apart, one spelling would be answered as
+        ran, so the objection traces to the attacker that produced it and that attacker is not left
+        reporting objections the round holds none of. Held apart, one spelling would be answered as
         two losses at once, neither of them real — and the report side of this matching is guarded
         elsewhere, so nothing but the attribution differs here."""
         record = attack.record()
-        assert record["proposals"][0]["lens"] == "edge-cases"
-        record["proposals"][0]["lens"] = "Edge-Cases"
+        assert record["objections"][0]["lens"] == "what-if"
+        record["objections"][0]["lens"] = "What-If"
         assert check(attack, record, capsys) == (0, closed(attack))
 
     def test_c7_a_lens_reporting_empty_is_contradicted_in_either_spelling(self, attack, capsys):
-        """S6-C7: the contradiction between a report and the proposal list is decided over that
-        same matching. A lens whose entry says it found nothing, credited with a proposal under
+        """S6-C7: the contradiction between a report and the objection list is decided over that
+        same matching. A lens whose entry says it found nothing, credited with an objection under
         another spelling of its name, is one attacker with two accounts of what it found — and
-        matched literally the record would close instead, with a proposal adjudicated as the work
+        matched literally the record would close instead, with an objection adjudicated as the work
         of a lens that reports having made none."""
         record = attack.record()
         for entry in record["lenses"]:
-            if entry["lens"] == "criteria-holes":
-                entry["lens"] = "Criteria-Holes"
-        record["proposals"].append(proposal("criteria-holes", "A1", "p3"))
+            if entry["lens"] == "behavioural-outcome":
+                entry["lens"] = "Behavioural-Outcome"
+        record["objections"].append(objection("behavioural-outcome", "A1", "p3"))
         record["dispositions"].append({"id": "p3", "disposition": "rejected",
                                        "rationale": "already covered by A2"})
         code, result = check(attack, record, capsys)
         assert code == 1 and codes(result) == {"contradicted-empty-report"}
-        assert "Criteria-Holes" in result["errors"][0]["message"]
+        assert "Behavioural-Outcome" in result["errors"][0]["message"]
 
     def test_c7_two_spellings_of_one_name_are_one_lens_reporting_twice(self, attack, capsys):
         """S6-C7: the same matching in the other direction — an entry under each spelling is not
         two lenses covering the document, it is one lens with two accounts of what it found."""
         record = attack.record()
-        record["lenses"].append({"lens": "EDGE-CASES", "report": "proposals"})
+        record["lenses"].append({"lens": "WHAT-IF", "report": "objections"})
         code, result = check(attack, record, capsys)
         assert code == 1 and codes(result) == {"duplicate-lens"}
 
 
-COMPLETE_ENTRY = {"lens": "edge-cases", "mandate": "walk the taxonomy", "tier": "mid",
-                  "transport": "openrouter"}
+COMPLETE_ENTRY = {"lens": "what-if", "tier": "mid", "transport": "openrouter",
+                  "standard": "acceptance-criteria", "enforces": ["what-if-questions"],
+                  "body": "Ask the what-if questions."}
+FRONT_MATTER = ("tier", "transport", "standard", "enforces", "workings")
+
+
+def lens_text(entry: dict[str, Any]) -> str:
+    """A lens prompt file carrying an entry's front matter keys, those it has, and its body."""
+    head = "".join(
+        f"{key}: [{', '.join(entry[key])}]\n" if isinstance(entry[key], list)
+        else f"{key}: {entry[key]}\n"
+        for key in FRONT_MATTER if key in entry)
+    return f"---\n{head}---\n{entry.get('body', '')}"
+
+
+def shipped(name: str, spelled: str | None = None) -> dict[str, Any]:
+    """A shipped lens as a registry entry, read from its own files, under an optional spelling."""
+    head = (LENSES_DIR / name / "prompt.md").read_text(encoding="utf-8").split("---\n", 2)[1]
+    fields = dict(line.split(": ", 1) for line in head.splitlines())
+    fields["enforces"] = [part.strip() for part in fields["enforces"].strip("[]").split(",")]
+    schema = LENSES_DIR / name / "workings.schema.json"
+    return {**fields, "lens": spelled or name, "body": "Instructions.",
+            **({"workings_schema": schema.read_text(encoding="utf-8")} if schema.exists() else {})}
 
 
 def lens_entry(**damage: Any) -> dict[str, Any]:
@@ -1068,40 +1120,60 @@ def lens_entry(**damage: Any) -> dict[str, Any]:
 # Every way a registry can be damaged, and the shipped one at the head. The two scripts have to
 # read each of these the same way: both take the lens set off it, or both refuse it.
 REGISTRIES = [
-    ("the shipped lens set", [lens_entry(lens=name) for name in LENS_NAMES]),
+    ("the shipped lens set", [shipped(name) for name in LENS_NAMES]),
     ("no lens at all", []),
     ("an entry without its lens name", [lens_entry(lens=DELETE)]),
     ("a lens named with nothing", [lens_entry(lens="")]),
     ("a lens named with whitespace", [lens_entry(lens=" \t ")]),
-    ("a lens name that climbs out of the round's directory", [lens_entry(lens="../edge-cases")]),
+    ("a lens name that climbs out of the round's directory", [lens_entry(lens="../what-if")]),
     ("a lens named for a directory", [lens_entry(lens="..")]),
     ("a lens name that is not a string", [lens_entry(lens=7)]),
-    ("two lenses differing only in case", [lens_entry(), lens_entry(lens="Edge-Cases")]),
+    ("two lenses differing only in case", [lens_entry(), lens_entry(lens="What-If")]),
     # Escaped rather than written out: one composed character against the same character
     # written as a letter and a combining accent, which no reader tells apart on the page —
     # and one prompt file is what the filesystem makes of the pair.
     ("two lenses differing only in Unicode form",
      [lens_entry(lens="caf\u00e9-cases"), lens_entry(lens="cafe\u0301-cases")]),
-    ("a lens with no mandate", [lens_entry(mandate=DELETE)]),
-    ("a lens whose mandate is blank", [lens_entry(mandate="")]),
-    ("a lens whose mandate is whitespace", [lens_entry(mandate="  ")]),
-    ("a lens whose mandate is not a string", [lens_entry(mandate=42)]),
+    ("a lens with no body", [lens_entry(body=DELETE)]),
+    ("a lens whose body is whitespace", [lens_entry(body="  \n\n")]),
     ("a lens with no tier", [lens_entry(tier=DELETE)]),
     ("a lens whose tier is blank", [lens_entry(tier=" ")]),
     ("a lens with no transport", [lens_entry(transport=DELETE)]),
-    ("a lens whose transport is not a string", [lens_entry(transport=["codex"])]),
+    ("a lens whose transport is a list", [lens_entry(transport=["codex"])]),
+    ("a lens with no standard", [lens_entry(standard=DELETE)]),
+    ("a lens naming another standard", [lens_entry(standard="house-style")]),
+    ("a lens whose standard is a list", [lens_entry(standard=["acceptance-criteria"])]),
+    ("a lens with no enforces", [lens_entry(enforces=DELETE)]),
+    ("a lens enforcing nothing", [lens_entry(enforces=[])]),
+    ("a lens whose enforces is not a list", [lens_entry(enforces="coverage")]),
+    ("a lens enforcing a rule the standard lacks",
+     [lens_entry(enforces=["what-if-questions", "no-such-rule"])]),
+    ("a lens requiring workings with no schema", [lens_entry(workings="required")]),
+    ("a lens requiring workings beside a schema",
+     [lens_entry(workings="required", workings_schema='{"type": "object"}')]),
+    ("a lens requiring workings beside a schema that is not JSON",
+     [lens_entry(workings="required", workings_schema="{not json")]),
+    ("a lens requiring workings beside a schema that is not an object",
+     [lens_entry(workings="required", workings_schema="[]")]),
+    ("a lens with a workings value nothing reads", [lens_entry(workings="sometimes")]),
 ]
 
 BAD_REGISTRY = [
     ([], "declares no lens"),
     ([lens_entry(lens=DELETE)], "the entry at position 0 without a usable lens"),
     ([lens_entry(lens="  ")], "the entry at position 0 without a usable lens"),
-    ([lens_entry(mandate="")], "edge-cases without a usable mandate"),
-    ([lens_entry(tier=DELETE)], "edge-cases without a usable tier"),
-    ([lens_entry(transport=DELETE)], "edge-cases without a usable transport"),
+    ([lens_entry(body="")], "what-if without a usable body"),
+    ([lens_entry(standard=DELETE)], "what-if without a usable standard"),
+    ([lens_entry(standard="house-style")], "house-style"),
+    ([lens_entry(enforces=[])], "what-if without a usable enforces"),
+    ([lens_entry(enforces=["no-such-rule"])], "no-such-rule"),
+    ([lens_entry(workings="required")], "workings"),
+    ([lens_entry(workings="sometimes")], "workings"),
+    ([lens_entry(tier=DELETE)], "what-if without a usable tier"),
+    ([lens_entry(transport=DELETE)], "what-if without a usable transport"),
     ([lens_entry(), lens_entry()], "names one lens twice"),
-    ([lens_entry(), lens_entry(lens="Edge-Cases")], "names one lens twice"),
-    ([lens_entry(lens="../edge-cases")], "not a bare filename"),
+    ([lens_entry(), lens_entry(lens="What-If")], "names one lens twice"),
+    ([lens_entry(lens="../what-if")], "not a bare filename"),
     ([lens_entry(lens="..")], "not a bare filename"),
 ]
 
@@ -1171,20 +1243,20 @@ class TestRetiredLens:
         now asks for, which is surplus and not a defect; refusing it would leave every committed
         record naming that lens unclosable for good, over an attack that did run and that no edit
         to the record can undo."""
-        registry([lens_entry(lens=name) for name in LENS_NAMES if name != "criteria-holes"])
+        registry([shipped(name) for name in LENS_NAMES if name != "behavioural-outcome"])
         assert check(attack, attack.record(), capsys)[0] == 0
 
-    def test_c7_a_proposal_a_retired_lens_produced_is_adjudicated_not_refused(self, attack, capsys,
+    def test_c7_a_objection_a_retired_lens_produced_is_adjudicated_not_refused(self, attack, capsys,
                                                                               registry):
-        """S6-C7: the proposals a retired lens contributed are the round's work and the record
-        adjudicates them. This is what fixes the shape of the attribution check: a proposal is held
+        """S6-C7: the objections a retired lens contributed are the round's work and the record
+        adjudicates them. This is what fixes the shape of the attribution check: an objection is held
         against the lenses this record reports, which include the retired one, and never against the
         registry, which no longer names it. Read off the registry, the check would refuse every
         record holding a retired attacker's findings — the loss containment exists to avoid."""
-        registry([lens_entry(lens=name) for name in LENS_NAMES if name != "edge-cases"])
+        registry([shipped(name) for name in LENS_NAMES if name != "what-if"])
         record = attack.record()
-        assert record["proposals"][0]["lens"] == "edge-cases"  # attributed to the retired lens
-        assert "edge-cases" in [entry["lens"] for entry in record["lenses"]]
+        assert record["objections"][0]["lens"] == "what-if"  # attributed to the retired lens
+        assert "what-if" in [entry["lens"] for entry in record["lenses"]]
         assert check(attack, record, capsys) == (0, closed(attack))
 
     def test_c7_a_lens_added_to_the_registry_still_reopens_the_rounds_it_never_faced(self, attack,
@@ -1193,7 +1265,7 @@ class TestRetiredLens:
         """S6-C7: containment runs one way. A lens the registry declares and the record does not
         report is coverage the round never obtained, so the round stays open until that attacker
         runs — which is what makes adding a lens reopen the rounds that predate it."""
-        registry([lens_entry(lens=name) for name in [*LENS_NAMES, "protocol-drift"]])
+        registry([*(shipped(name) for name in LENS_NAMES), lens_entry(lens="protocol-drift")])
         code, result = check(attack, attack.record(), capsys)
         assert code == 1 and codes(result) == {"lens-missing"}
         assert "protocol-drift" in error_of(result, "lens-missing")["message"]
@@ -1204,11 +1276,11 @@ class TestRetiredLens:
         missing from the record."""
         record = attack.empty_round()
         for entry in record["lenses"]:
-            if entry["lens"] == "edge-cases":
-                entry["lens"] = "edge_cases"
+            if entry["lens"] == "what-if":
+                entry["lens"] = "what_if"
         code, result = check(attack, record, capsys)
         assert code == 1 and codes(result) == {"lens-missing"}
-        assert "edge-cases" in error_of(result, "lens-missing")["message"]
+        assert "what-if" in error_of(result, "lens-missing")["message"]
 
 
 def refusal_code(load: Any, refusal: type[Exception]) -> str | None:
@@ -1324,7 +1396,7 @@ class TestDocumentRefusal:
                                                                                   content):
         """S6-C6: an acceptance moves the document on, and the refusals are judged over the bytes
         that move it on rather than over the revision attacked. A document that states nothing now,
-        or that is not text now, carries no criterion for an accepted proposal to have landed in, so
+        or that is not text now, carries no criterion for an accepted objection to have landed in, so
         a round reading the acceptance as its excuse would close over a document there is nothing
         left to attack — and every one of these refusals is one the emitter raises over the same
         bytes, so the round it would close is one no further attacker can be dispatched at."""
@@ -1379,22 +1451,22 @@ class TestNameRefusal:
         assert emitted == checked, description
 
 
-class TestProposalShape:
-    @pytest.mark.parametrize("field", ("id", "lens", "target_ac", "hole", "proposed_ac",
-                                       "red_test_sketch"))
+class TestObjectionShape:
+    @pytest.mark.parametrize("field", ("id", "lens", "target_ac", "ground", "objection",
+                                       "scenario"))
     @pytest.mark.parametrize("mutation", ("absent", "blank"))
-    def test_c2_every_part_of_a_proposal_is_required_and_carries_content(self, attack, capsys,
+    def test_c2_every_part_of_a_objection_is_required_and_carries_content(self, attack, capsys,
                                                                          field, mutation):
-        """S6-C2: a proposal is a testable claim in every part — an absent field and a field
+        """S6-C2: an objection is a testable claim in every part — an absent field and a field
         holding only whitespace are the same defect, and either drops the item as malformed
         rather than sending an unattributable or contentless item to adjudication."""
         record = attack.record()
         if mutation == "absent":
-            del record["proposals"][0][field]
-        elif field == "red_test_sketch":
-            record["proposals"][0][field] = {}
+            del record["objections"][0][field]
+        elif field == "scenario":
+            record["objections"][0][field] = {}
         else:
-            record["proposals"][0][field] = " \t "
+            record["objections"][0][field] = " \t "
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
 
@@ -1405,22 +1477,201 @@ class TestProposalShape:
         a starting state, an action, and an observable outcome, none of them missing or blank."""
         record = attack.record()
         if mutation == "absent":
-            del record["proposals"][0]["red_test_sketch"][part]
+            del record["objections"][0]["scenario"][part]
         else:
-            record["proposals"][0]["red_test_sketch"][part] = "  "
+            record["objections"][0]["scenario"][part] = "  "
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
 
-    def test_c2_a_proposal_naming_all_three_parts_is_a_testable_claim(self, attack, capsys):
+    def test_c2_a_objection_naming_all_three_parts_is_a_testable_claim(self, attack, capsys):
         """S6-C2: inverse — an item that names a state, an action and an outcome enters the
         round and is adjudicated."""
         assert check(attack, attack.record(), capsys)[0] == 0
 
-    def test_c2_prose_in_place_of_a_proposal_is_rejected(self, attack, capsys):
-        """S6-C2: a bare worry returned by an attacker never enters the round as a proposal."""
+    @pytest.mark.parametrize(("old", "new"),
+                             (("hole", "objection"), ("red_test_sketch", "scenario")))
+    def test_an_objection_under_a_retired_field_name_is_refused(self, attack, capsys, old, new):
+        """The objection's fields are `objection` and `scenario`, and a record writing either under
+        its former name is the wrong shape: no reading of the old name is kept, so a record that
+        uses it names a field the schema does not have and lacks one it requires."""
         record = attack.record()
-        record["proposals"][0] = {"id": "p1", "lens": "edge-cases", "concern": "this feels risky"}
+        record["objections"][0][old] = record["objections"][0].pop(new)
+        code, result = check(attack, record, capsys)
+        assert code == 2 and codes(result) == {"schema"}
+
+    def test_c2_prose_in_place_of_a_objection_is_rejected(self, attack, capsys):
+        """S6-C2: a bare worry returned by an attacker never enters the round as an objection."""
+        record = attack.record()
+        record["objections"][0] = {"id": "p1", "lens": "what-if", "concern": "this feels risky"}
         assert check(attack, record, capsys)[0] == 2
+
+
+class TestGround:
+    @pytest.mark.parametrize("part", ("rule", "reason"))
+    @pytest.mark.parametrize("mutation", ("absent", "blank"))
+    def test_a_ground_names_its_rule_and_its_reason(self, attack, capsys, part, mutation):
+        """A ground is the rule the criteria break and the reason they break it, both carrying
+        content: a rule with no reason is an assertion, and a reason with no rule cites nothing
+        the author can check against the standard."""
+        record = attack.record()
+        if mutation == "absent":
+            del record["objections"][0]["ground"][part]
+        else:
+            record["objections"][0]["ground"][part] = "  "
+        code, result = check(attack, record, capsys)
+        assert code == 2 and codes(result) == {"schema"}
+
+    def test_a_ground_written_as_prose_is_refused(self, attack, capsys):
+        """No reading of a prose ground is kept: a record writing one is the wrong shape."""
+        record = attack.record()
+        record["objections"][0]["ground"] = "a failure the what-if questions raise has no criterion"
+        code, result = check(attack, record, capsys)
+        assert code == 2 and codes(result) == {"schema"}
+
+    def test_an_objection_on_a_rule_its_lens_does_not_enforce_is_refused(self, attack, capsys):
+        """A lens objects on the rules its front matter enforces and on no other, since those are
+        the only rules its prompt carried. An objection citing another rule was not produced by
+        that lens's instructions, so the record names it and the round stays open."""
+        record = attack.record()
+        record["objections"][0]["ground"]["rule"] = "consistency"
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"ground-outside-lens"}
+        error = error_of(result, "ground-outside-lens")
+        assert error["id"] == "p1"
+        assert "'consistency'" in error["message"] and "'what-if'" in error["message"]
+
+    def test_an_objection_on_a_rule_its_lens_enforces_closes(self, attack, capsys):
+        """Inverse: every objection in the shipped record cites a rule its lens enforces."""
+        assert check(attack, attack.record(), capsys) == (0, closed(attack))
+
+    def test_the_rule_is_matched_under_either_spelling_of_the_lens(self, attack, capsys):
+        """The producing lens is found the way coverage finds it, so an attribution differing in
+        case alone still reads that lens's enforced rules."""
+        record = attack.record()
+        record["objections"][0]["lens"] = "What-If"
+        assert check(attack, record, capsys) == (0, closed(attack))
+
+    @pytest.mark.parametrize("value", (DELETE, "O1.1"))
+    def test_obligation_is_optional_and_carries_content_when_present(self, attack, capsys, value):
+        """`obligation` is optional on every objection, and a record writing it is complete."""
+        record = attack.record()
+        if value is DELETE:
+            record["objections"][0].pop("obligation", None)
+        else:
+            record["objections"][0]["obligation"] = value
+        assert check(attack, record, capsys)[0] == 0
+
+    def test_a_blank_obligation_is_refused(self, attack, capsys):
+        record = attack.record()
+        record["objections"][0]["obligation"] = " "
+        code, result = check(attack, record, capsys)
+        assert code == 2 and codes(result) == {"schema"}
+
+
+def reduction(record: dict[str, Any]) -> dict[str, Any]:
+    """The obligation-reduction lens's entry in a record."""
+    return next(entry for entry in record["lenses"] if entry["lens"] == "obligation-reduction")
+
+
+def reduction_objection(identifier: str, target: str = "none",
+                        obligation: str | None = None) -> dict[str, Any]:
+    """An objection the obligation-reduction lens made, with its disposition."""
+    item = objection("obligation-reduction", target, identifier)
+    if obligation is not None:
+        item["obligation"] = obligation
+    return item
+
+
+def with_residue(record: dict[str, Any], *items: dict[str, Any]) -> dict[str, Any]:
+    """The record with objections added, each rejected, and their lenses reporting objections."""
+    for item in items:
+        record["objections"].append(item)
+        record["dispositions"].append({"id": item["id"], "disposition": "rejected",
+                                       "rationale": "the author judged it out of scope"})
+        for entry in record["lenses"]:
+            if entry["lens"] == item["lens"]:
+                entry["report"] = "objections"
+    return record
+
+
+class TestWorkings:
+    def test_a_lens_requiring_workings_reports_them(self, attack, capsys):
+        """The obligation-reduction lens's findings are read off its inventory, so a report
+        without one leaves the round unfinished rather than reading as nothing found."""
+        record = attack.empty_round()
+        del reduction(record)["workings"]
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"invalid-workings"}
+        assert "'obligation-reduction'" in error_of(result, "invalid-workings")["message"]
+
+    @pytest.mark.parametrize(("description", "damage"), (
+        ("an obligation of an unknown kind",
+         lambda w: w["obligations"][0].update(kind="wish")),
+        ("a part with a blank statement",
+         lambda w: w["obligations"][0]["parts"][0].update(statement=" ")),
+        ("no criteria list", lambda w: w.pop("criteria")),
+        ("an obligation with no parts", lambda w: w["obligations"][0].update(parts=[])),
+        ("a part discharged by a non-string", lambda w: w["obligations"][0]["parts"][0].update(
+            discharged_by=[1])),
+        ("a part id used twice", lambda w: w["obligations"].append(
+            {**copy.deepcopy(w["obligations"][0]), "id": "O2"})),
+    ))
+    def test_workings_the_lens_schema_refuses_leave_the_round_open(self, attack, capsys,
+                                                                    description, damage):
+        """The inventory is judged against the schema beside the lens's prompt, and part IDs are
+        unique across it, so an objection naming a part names one part."""
+        record = attack.empty_round()
+        damage(reduction(record)["workings"])
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"invalid-workings"}, description
+
+    def test_workings_on_a_lens_that_does_not_require_them_are_ignored(self, attack, capsys):
+        record = attack.empty_round()
+        record["lenses"][0]["workings"] = {"anything": "at all"}
+        assert record["lenses"][0]["lens"] != "obligation-reduction"
+        assert check(attack, record, capsys)[0] == 0
+
+    def test_an_undischarged_part_needs_an_objection_naming_it(self, attack, capsys):
+        """A part no criterion discharges is a hole the lens found, so the lens owes an objection
+        whose `obligation` names that part. The record naming the part without one is refused, and
+        the message names the part."""
+        record = attack.empty_round()
+        reduction(record)["workings"]["obligations"][0]["parts"].append(
+            {"id": "O1.2", "statement": "unsettled entries stay out", "discharged_by": []})
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"unreported-residue"}
+        assert "'O1.2'" in error_of(result, "unreported-residue")["message"]
+        with_residue(record, reduction_objection("r1", obligation="O1.2"))
+        assert check(attack, record, capsys)[0] == 0
+
+    def test_an_objection_from_another_lens_does_not_report_the_part(self, attack, capsys):
+        record = attack.empty_round()
+        reduction(record)["workings"]["obligations"][0]["parts"].append(
+            {"id": "O1.2", "statement": "unsettled entries stay out", "discharged_by": []})
+        item = objection("what-if", "none", "r1")
+        item["obligation"] = "O1.2"
+        with_residue(record, item)
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"unreported-residue"}
+
+    def test_a_criterion_discharging_nothing_needs_an_objection_targeting_it(self, attack, capsys):
+        """A criterion the inventory lists and no part is discharged by lacks a basis, or serves an
+        obligation the inventory missed, so the lens owes an objection whose `target_ac` names
+        it. Without one the record is refused, naming the criterion."""
+        record = attack.empty_round()
+        reduction(record)["workings"]["criteria"].append("A2")
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"unreported-residue"}
+        assert "'A2'" in error_of(result, "unreported-residue")["message"]
+        with_residue(record, reduction_objection("r1", target="A2"))
+        assert check(attack, record, capsys)[0] == 0
+
+    def test_a_criterion_targeted_by_another_lens_is_still_residue(self, attack, capsys):
+        record = attack.empty_round()
+        reduction(record)["workings"]["criteria"].append("A2")
+        with_residue(record, objection("what-if", "A2", "r1"))
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"unreported-residue"}
 
 
 BAD_ENVELOPE = [
@@ -1428,8 +1679,8 @@ BAD_ENVELOPE = [
     ("spec_path", DELETE), ("spec_path", "   "), ("spec_path", ["ledger-export.md"]),
     ("spec_revision", DELETE), ("spec_revision", "revision-7"), ("spec_revision", "sha256:beef"),
     ("lenses", DELETE), ("lenses", []), ("lenses", "every one of them"),
-    ("lenses", [{"lens": "edge-cases"}]), ("lenses", [{"lens": "edge-cases", "report": "maybe"}]),
-    ("proposals", DELETE), ("proposals", {"0": "a proposal"}),
+    ("lenses", [{"lens": "what-if"}]), ("lenses", [{"lens": "what-if", "report": "maybe"}]),
+    ("objections", DELETE), ("objections", {"0": "an objection"}),
     ("dispositions", DELETE), ("dispositions", "none of them"),
     ("dispositions", [{"id": "p1"}]), ("dispositions", [{"id": "p1", "disposition": "deferred"}]),
     ("dispositions", [{"disposition": "rejected", "rationale": "no"}]),
@@ -1442,13 +1693,14 @@ BAD_ENVELOPE = [
 # not declare. The envelope is covered by BAD_ENVELOPE above, which carries the same case.
 NESTED_OBJECTS = [
     ("a lens's report", lambda record: record["lenses"][0]),
-    ("a proposal", lambda record: record["proposals"][0]),
-    ("a proposal's red test sketch", lambda record: record["proposals"][0]["red_test_sketch"]),
+    ("an objection", lambda record: record["objections"][0]),
+    ("an objection's scenario", lambda record: record["objections"][0]["scenario"]),
+    ("an objection's ground", lambda record: record["objections"][0]["ground"]),
     ("a disposition", lambda record: record["dispositions"][0]),
 ]
 
 # The fields each verdict needs to be an adjudication at all: an acceptance names where the
-# proposal landed, a rejection why it did not.
+# objection landed, a rejection why it did not.
 BAD_DISPOSITION = [
     ("accepted", "revision", DELETE), ("accepted", "covering_ac", DELETE),
     ("accepted", "covering_ac", " \t "),
@@ -1474,7 +1726,7 @@ class TestRecordShape:
     def test_c3_each_verdict_carries_the_fields_that_make_it_an_adjudication(self, attack, capsys,
                                                                              verdict, field,
                                                                              value):
-        """S6-C3: an acceptance names the revision and criterion that now carry the proposal and a
+        """S6-C3: an acceptance names the revision and criterion that now carry the objection and a
         rejection states its reason — a field absent and a field holding only whitespace name
         neither. The shape of a disposition is the schema's to fix, so the record is refused as
         unusable before any question about the round is decided from it."""
@@ -1492,7 +1744,7 @@ class TestRecordShape:
     def test_c3_no_object_in_the_record_carries_a_field_the_contract_leaves_undeclared(
             self, attack, capsys, where, inside):
         """S6-C3: every object in the record is closed, not only the envelope. A field the contract
-        does not declare is one nothing reads, so a proposal marked `waived`, a disposition carrying
+        does not declare is one nothing reads, so an objection marked `waived`, a disposition carrying
         a second verdict under a name of its own, or a sketch with a fourth part reads to a reviewer
         as something the round accounted for while the check decides without it — and the record a
         reviewer reads and the record the round is decided from are two documents again. Each of
@@ -1747,7 +1999,7 @@ class TestUnusableInput:
         record["dispositions"] = []
         code, result = run([checker.DECLARATION, attack.save(record)], capsys)
         assert code == 1 and result["complete"] is False
-        assert codes(result) == {"unadjudicated-proposal", "ordering-violation"}
+        assert codes(result) == {"unadjudicated-objection", "ordering-violation"}
 
     @pytest.mark.parametrize("value", ("false", "FALSE", "0", "no", "off", " false "))
     def test_c3_a_denial_declares_nothing_where_the_command_line_parses_too(self, attack, capsys,
@@ -1776,21 +2028,22 @@ class TestUnusableInput:
         assert codes(result) == {"bad-arguments"}
 
     def test_c3_one_finding_is_reported_once(self, attack, capsys):
-        """S6-C3: a record repeating a lens entry contradicts its proposal list once per copy, and
+        """S6-C3: a record repeating a lens entry contradicts its objection list once per copy, and
         the two errors are byte-identical — a reader counting findings would see two defects where
         the record holds one, and the repeat says nothing the first did not."""
         record = attack.record()
-        entry = next(one for one in record["lenses"] if one["lens"] == "absent-requirements")
+        entry = next(one for one in record["lenses"] if one["lens"] == "set-consistency")
         record["lenses"].append(dict(entry))
-        record["proposals"] = record["proposals"][:1]
+        record["objections"] = record["objections"][:1]
         record["dispositions"] = record["dispositions"][:1]
         code, result = check(attack, record, capsys)
         assert code == 1
-        assert codes(result) == {"duplicate-lens", "contradicted-proposals-report"}
+        assert codes(result) == {"duplicate-lens", "contradicted-objections-report"}
         assert len(result["errors"]) == 2
 
-    @pytest.mark.parametrize("damaged", ("lenses.json", "attack-record.schema.json"))
-    @pytest.mark.parametrize("damage", (None, "{not json"))
+    @pytest.mark.parametrize(("damaged", "damage"), (
+        ("attack-record.schema.json", None), ("attack-record.schema.json", "{not json"),
+        ("lenses/what-if/prompt.md", b"---\ntier: \xff\n---\n")))
     def test_c3_damaged_bundled_data_is_typed_not_a_traceback(self, attack, tmp_path, damaged,
                                                               damage):
         """S6-C3: the check's own data is a dependency like any other — missing or corrupt, it

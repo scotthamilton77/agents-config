@@ -173,9 +173,12 @@ and nothing else, and it never needs the process that ran the session.
 
 **GUI-D28 — The launch path.** The backend serves loopback only, on a default port with a
 per-session override, taking the next free port when the default is occupied.
-The backend prints the resulting URL; `grill-with-ui` hands that URL to the human, and
-nothing opens a browser at it unless the launch was asked to with `--open` — a launch is
-usually driven by an agent on the human's behalf, and a tab nobody asked for is noise.
+The backend prints the resulting URL, and opens a browser at it only when the launch was
+asked to with `--open`. `grill-with-ui` launches with `--open`, because a human who asked
+for a board session asked for the tab. It also hands the URL to the human in its reply,
+which is the way in when the browser did not open. A launch without `--open` opens
+nothing: that launch is a test or an agent driving the backend directly, and a tab nobody
+asked for is noise.
 
 ## 3. Agent drive
 
@@ -213,10 +216,18 @@ human has rejected a reframing of the question, or says the trade-off itself is 
 cannot resolve; three or more decisions must be weighed at once. Asking a sharpening
 question back is the ordinary move and is not an escalation.
 
+A fourth condition, the **read request**, is read off the reply and applies on a thread
+only. The assistant declares in its reply's `needs_to_read` key what it would have to read
+to answer and was not given. This is not a self-assessment. The thread's assistant holds no
+tool, as a fact of how it is seated, so whether it lacks an input is decidable without
+asking its opinion. The condition is read from that key and never from the reply's prose.
+Under `autonomous` it moves a channel at most once in a session, because a seat that could
+raise it every turn would buy itself an expert turn every turn.
+
 **GUI-D35 — Whether a met condition needs the human's gesture is session configuration, and
 it defaults to needing it.** The escalation policy sits beside the model ids and the heavy
 tier's effort, and takes one of two values. Under `gated`, the default, a met condition
-highlights the transfer control and nothing moves until the human activates it. Under
+highlights the way to the expert (GUI-U11) and nothing moves until the human takes it. Under
 `autonomous`, the backend itself puts that channel into expert mode the moment a fast reply
 meets a condition, so the next turn on that channel goes to the heavy tier carrying the
 accumulated thread — the same channel mode the human's own transfer produces, reached
@@ -236,6 +247,58 @@ are fields on what the log already records rather than a new event kind, because
 transfer is a property of how a turn came to be taken and the kind vocabulary of §8.3 is
 closed. Per channel, as GUI-D11's transfers already are: an autonomous escalation on one
 thread leaves every other channel where it was.
+
+**GUI-D49 — The human names the seat a send goes to, and can send the expert in without
+speaking.** Two human gestures reach the expert on a thread, and both are the human's own
+under either escalation policy.
+
+The first is the seat toggle (GUI-U11). It names the seat the next send on a channel goes
+to. Selecting a seat writes nothing to the log. The turn the human sends next carries the
+choice as the `transfer` key.
+
+The second is *Proceed with expert* (GUI-U33). It dispatches the expert on a thread as it
+stands. With no text typed, the gesture is a human `thread-turn` whose payload carries
+`proceed: true` and no turn. It is the one human thread event that may carry no text
+(GUI-D20). It is a payload key on an existing kind because the kind vocabulary of §8.3 is
+closed. The expert takes the turn that answers it because the gesture names the expert,
+whatever the channel's mode is. The page also puts `transfer: true` on the entry when the
+channel is not already in expert mode, exactly as it does on a turn sent after *expert* is
+selected. The channel is therefore in expert mode after a proceed pressed on the page. The
+key is absent where the channel was already there, so a channel the policy moved keeps the
+policy's attribution (GUI-D35). With text typed, the gesture writes the entry that
+selecting *expert* and sending writes, and that entry carries no `proceed` key. The log
+then has one way to say one thing. Text that is only whitespace counts as no text.
+
+The expert's dispatch for a text-less proceed carries the accumulated thread. It also says
+that the human asked the expert to proceed without adding a turn. Without that sentence the
+expert receives a thread whose last turn is another seat's and no question to answer.
+
+The backend refuses a text-less proceed that has nothing to proceed on. There are four
+such states: the thread has no turn, an agent's reply is outstanding on the thread, the
+thread's latest turn is the expert's, or the thread is parked or closed. A thread with no
+turn is a thread nothing has created, so a proceed naming it is refused as every thread
+gesture naming no thread is. The other three are refused with a rejection reason of their
+own, *nothing to proceed on*, whose detail names the state. That reason joins the closed
+set GUI-D16 lists, because none of the existing reasons says it: the entry is well-formed,
+its thread exists, and it is refused for what the thread's conversation currently is. The
+refusal is decided under the append lock, as every refusal is.
+This one rule covers a double press, two windows pressing at once, and a
+press repeated with nothing changed. The first accepted proceed leaves a reply outstanding,
+and the expert's reply is then the latest turn. A proceed whose expert turn failed may be
+pressed again, because a failed turn leaves no reply outstanding and adds no expert turn.
+
+Only an entry whose actor is the human dispatches on `proceed`. The escalation policy never
+writes one, and the page writes one only when the human presses the action. The page
+likewise puts `transfer: true` on a turn only after the human selected *expert* or pressed
+the action. A recommendation arriving, a policy move and a redraw cause neither. Under `gated` a met condition therefore still moves nothing and engages nobody
+until the human acts (GUI-D35). Under `autonomous` the policy still only moves the channel,
+and the expert's turn waits for the human's next send or proceed.
+
+Two designs are refused. The first is a single transfer button. A press on it moves the
+channel and engages nobody, so a control lit by a recommendation appears to do nothing, and
+the expert answers only after the human types a further turn they had no reason to write.
+The second is a separate control for returning to the assistant. The toggle already states
+the seat and changes it, and a second control for the same state can disagree with it.
 
 **GUI-D13 — The status lane is mechanical and structurally cannot wait on a model.** The
 instant a human turn is accepted, and inside the same lock as the append, the backend
@@ -379,6 +442,9 @@ anti-pattern, and it is what lets an agent tell a human something is on the boar
 is not. Rejection reasons v1 must distinguish: missing idempotency key, epoch mismatch,
 unknown event kind, unknown node id, an answer carrying neither an option nor text, a
 thread event carrying no turn, and a map mutation authored by a thread agent (GUI-D25).
+The text-less proceed of GUI-D49 is the one thread event that carries no turn and is not
+refused for it. A text-less proceed with nothing to proceed on is one more reason, and
+GUI-D49 states it.
 
 **GUI-D17 — A rejected human action is visible on the page.** The page raises a banner
 naming the reason and stating plainly that the message was not recorded and no agent will
@@ -416,7 +482,8 @@ Confirming what landed is not an update kind: it is the state read of GUI-D18.
 **GUI-D20 — Thread events speak the page's shape.** `thread-created` and `thread-turn`
 both carry their content in a `turns[]` array of who/text pairs; `thread-created`
 additionally carries its kind, its title and whether it requires action. Backend-authored
-replies may carry bare text. One reader handles both shapes, shared by the accept path,
+replies may carry bare text. A human's thread event carries at least one turn with text,
+with one exception: the text-less proceed of GUI-D49 carries none. One reader handles both shapes, shared by the accept path,
 the projector and the driver — a backend written against only one of them passes a scripted
 check and rejects the real page.
 
@@ -682,8 +749,8 @@ the Codex transport, because the map's author rules where a thread's discusses; 
 expert seat is one shared configuration for every channel — the configured Claude model at
 the configured effort. Each is a default, and a session may seat any of them
 differently. The seat occupies the fast rung, so the rung stays what every other surface
-keys on: the lane names `fast` and `heavy`, the map's transfer control reads *Transfer to
-expert* at first paint like every other channel's (GUI-U22), the turn's attribution carries
+keys on: the lane names `fast` and `heavy`, the map's seat toggle marks *assistant* at
+first paint like every other channel's (GUI-U22), the turn's attribution carries
 its tier beside the seat's model and effort, and the recorded dispatch carries the same
 bytes on every transport.
 
@@ -749,8 +816,8 @@ text — a hand-up, a judgment class and a policy move — each with its own per
 map's included, through the note riding an answer: the note is a human turn, so a note
 meeting a condition fires, and under `autonomous` writes its own `transferred` entry. That
 is the map's only human-text route, and it is thin — the human's other gestures there, an
-apply and a dismiss, carry no text for a condition to read, and nobody presses *Transfer to
-expert* at an agent they never talk to. The three triggers below are what a transcript
+apply and a dismiss, carry no text for a condition to read, and nobody selects *expert*
+on a seat toggle for an agent they never talk to. The three triggers below are what a transcript
 condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note.
 
 1. **Hand-up** (the lane's *press*), per gesture. A reply leaving a named decision unruled, or a
@@ -779,12 +846,12 @@ condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note
    dismissing a first-rung seat's proposal, and a hand-up. At the second, GUI-D35's own
    policy decides what the count buys: under `autonomous` the backend writes a policy
    `transferred` status entry on the map channel — such an entry only ever moves a channel
-   up, and the way back down is the human's transfer control — while under `gated`, the
+   up, and the way back down is the human's seat toggle — while under `gated`, the
    default, it writes a recommendation status entry on that channel — backend-authored,
    because a dismissal produces no agent reply for a recommendation to ride, where a met
    transcript condition's advice rides its own reply's attribution — held sticky for the
-   session rather than riding one reply, and nothing moves until the human activates the
-   transfer control. One signal writes nothing, because one is noise; a third writes nothing
+   session rather than riding one reply, and nothing moves until the human selects *expert*
+   on the seat toggle. One signal writes nothing, because one is noise; a third writes nothing
    new, because the count is already spent.
 
 Two is a threshold nobody has defended under fire, and the observation that lowers the
@@ -938,18 +1005,24 @@ follows, and changes nothing else.
   the board teaches the human to stop looking at it. Agent framing about a particular
   decision renders on that decision rather than as a notification. The inbox remains the
   lane for items the human must act on.
-- **GUI-U11 — Transfer to expert is a control on every channel**, the map's and each
-  thread's, and it is always active. It is visually highlighted when the agent's reply
-  metadata recommends escalation (GUI-D11), and under the `gated` policy the human's
-  activation is what moves the channel (GUI-D35). Activating it forces the
-  next turn on that channel to the heavy tier, carrying the accumulated thread. While the
-  heavy tier is driving that channel, activating it sends the next turn on that channel to
-  the fast tier instead;
-  what the control reads in either position is GUI-U22's.
-  A thread pane carries the control from its first paint, before anything has been said in
+- **GUI-U11 — A seat toggle is a control on every channel**, the map's and each
+  thread's, and it is always active. It names the seat the next send on that channel goes
+  to, and what it shows is GUI-U22's. Selecting *expert* forces the next turn on that
+  channel to the heavy tier, carrying the accumulated thread. Selecting *assistant* sends
+  the next turn on that channel to the fast tier instead, and the toggle is the only
+  control that does so. Selecting a seat writes nothing to the log: the turn the human
+  sends next carries the choice (GUI-D49). On the map the human's send is an answer, so the
+  next answer carries it; an apply or a dismiss carries no seat. Under the `gated` policy the human's own
+  gesture is what moves the channel (GUI-D35).
+  When the agent's reply metadata recommends escalation (GUI-D11), the page highlights the
+  way to the expert. On a thread that is the *Proceed with expert* action (GUI-U33). On the
+  map it is the toggle's *expert* option, because the map has no such action.
+  On a thread the toggle sits beside the say box, where the send it governs is made. On the
+  map it sits in the board's header, because the map has no say box.
+  A thread pane carries the toggle from its first paint, before anything has been said in
   it and whether or not the thread exists yet — the human decides who they are asking
   before they ask, and a control that arrives with the first reply arrives one turn after
-  the turn it was wanted for. On a thread nothing has created, the mode is carried onto the
+  the turn it was wanted for. On a thread nothing has created, the choice is carried onto the
   thread the first turn opens, whose name the draft never had. Park, close and fold are not
   offered there: a thread gesture naming no thread is refused, and the pane's own dismissal
   is what closing a draft means.
@@ -959,22 +1032,50 @@ follows, and changes nothing else.
   mode is never the source: reading the mode would relabel every turn taken before a
   transfer as the tier that came after it, and the transcript is the human's only evidence
   that the transfer changed anything.
-- **GUI-U22 — The transfer control names the action it performs, not a state.** Its label
-  is *Transfer to expert* while the channel is on the fast tier and *Return to assistant*
-  while the heavy tier drives it, styled identically in both positions and carrying no state
-  colouring in either — the channel's tier is already legible from the per-turn labels of
-  GUI-U21. Rendering it as a state indicator instead — the label naming the tier the channel
-  would move to, coloured like a mandate — is refused: a coloured state word on a control
-  reads as *where the channel is now*, so the human infers the opposite of what activating
-  it does.
+- **GUI-U22 — The seat toggle shows both seats and marks the one the next send goes to.**
+  It reads *assistant* and *expert*, the names GUI-U21 gives the turns, under a caption
+  that says what it decides: *Next send goes to*. Exactly one of the two is marked.
+  Two other renderings are refused. The first is one button whose label names an action,
+  *Transfer to expert* or *Return to assistant*. A press on it only changes who takes the
+  next turn, so the human presses a control that promises the expert and sees nothing
+  happen. The second is a single word naming one tier. A lone state word on a control can
+  mean where the channel is now or where a press would take it, and the human cannot tell
+  which. Showing both seats with one marked removes that ambiguity. The caption says the
+  choice applies to the next send, so nothing about the toggle promises that a seat engages
+  when it is pressed. Engaging the expert without speaking is a separate action (GUI-U33).
 - **GUI-U24 — A channel the policy moved says so where it moved, and nowhere else.** Under
   `autonomous` (GUI-D35) the policy move appears on that channel's status lane, naming the
-  condition that fired, and the transfer control flips to *Return to assistant* (GUI-U22)
-  with the human having pressed nothing — the control's position follows the channel's mode
+  condition that fired, and the seat toggle marks *expert* (GUI-U22)
+  with the human having pressed nothing — the toggle follows the channel's mode
   as the lane states it, never the human's own last click, which after a policy move
   names the tier the channel has left. No notification is raised: the move is board state
-  and the lane already carries it (GUI-U10, GUI-U15). The control stays active throughout,
+  and the lane already carries it (GUI-U10, GUI-U15). The toggle stays active throughout,
   so returning the channel to the fast tier is the same gesture it always was.
+- **GUI-U33 — *Proceed with expert* sends the expert in on a thread as it stands.** Each
+  open thread's say box, and each draft's, carries the action beside its send control. With the say box empty,
+  pressing it records the human's gesture on the thread, and the expert takes the next turn
+  over the conversation so far. The human types nothing. With text in the say box, pressing
+  it sends that text as a turn the expert takes, which is what selecting *expert* on the
+  seat toggle and pressing send does. Either way the toggle marks *expert* afterwards, and
+  the toggle is the way back (GUI-U11).
+  The press is visible at once. After a press with the say box empty, the thread shows a
+  line saying the human asked the expert to proceed, and the wait of GUI-U28 appears under
+  it. After a press with text, the thread shows that text as it shows any turn the human
+  sends, and no such line.
+  The action is offered only when the expert has something it has not answered. With the
+  say box empty it is inactive, and says why, in three states: the thread has no turn, an
+  agent's reply is outstanding on the thread, or the thread's latest turn is the expert's
+  own. A parked or closed thread does not carry the action at all, because speaking in it is
+  what reopens it (GUI-D29). After the session has ended it is offered nowhere, as no send
+  is.
+  The map carries no such action. Every map turn answers a gesture on a decision, and the
+  map doctor is already the way to ask the expert about the map unprompted.
+  A reply in which the assistant asked to read something it was not given carries a hint
+  beneath it for as long as it is the latest turn of an open thread. The hint names
+  *Proceed with expert* as the next step. The page draws the hint from the read request the reply
+  recorded, whichever condition its recommendation names. An expert's reply carries no such
+  hint. It is not left to the assistant's prose, because a sentence in a prompt does
+  not make a model say something every time.
 - **GUI-U23 — A live converged answer renders beneath the turn that made it, with one
   control.**
   The agent's turn is followed by what it proposes — the option it builds on, the answer
@@ -1434,6 +1535,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D46 | GMR-A5, GMR-A11 |
 | GUI-D47 | GMR-A6, GMR-A7 |
 | GUI-D48 | GMR-A9, GMR-A10 |
+| GUI-D49 | GUI-A112, GUI-A113, GUI-A114, GUI-A115, GUI-A117 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -1466,6 +1568,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U30 | GUI-A105 |
 | GUI-U31 | GUI-A110 |
 | GUI-U32 | GUI-A111 |
+| GUI-U33 | GUI-A112, GUI-A113, GUI-A114, GUI-A116 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1582,14 +1685,18 @@ Each criterion is mechanically checkable and convertible to a red test.
   prior context — produces a complete terminal result.
 - **GUI-A33** A fast-tier reply that meets a GUI-D12 condition carries escalation
   recommendation metadata that reaches the page, and the page highlights that channel's
-  transfer-to-expert control; a reply meeting none carries no such metadata and leaves the
-  control unhighlighted.
-- **GUI-A34** Activating transfer-to-expert forces the next turn on that channel to the
-  heavy tier, and the heavy dispatch contains the channel's accumulated thread rather than
-  only the last message; the log attributes the turn to the heavy tier.
-- **GUI-A35** While a channel is in expert mode, activating the control returns the next
-  turn on that channel to the fast tier — verified in a browser. The control is present and
-  active on the map channel and every open thread channel, idle ones included.
+  way to the expert: the *Proceed with expert* action on an open thread, and the seat
+  toggle's *expert* option on the map; a reply meeting none carries no such metadata and
+  leaves both unhighlighted. A parked or closed thread renders no such action (GUI-U33),
+  so a reply that lands on one highlights nothing.
+- **GUI-A34** Selecting *expert* on a channel's seat toggle forces the next turn on that
+  channel to the heavy tier, and the heavy dispatch contains the channel's accumulated
+  thread rather than only the last message; the log attributes the turn to the heavy tier;
+  and the selection itself appends no entry.
+- **GUI-A35** While a channel is in expert mode, selecting *assistant* on its seat toggle
+  returns the next turn on that channel to the fast tier — verified in a browser. The
+  toggle is present and active on the map channel and every open thread channel, idle ones
+  included.
 - **GUI-A36** Two thread channels take turns concurrently while the map channel is also in
   flight; each thread agent's dispatch contains its own thread's turns and no other
   thread's; escalating one thread leaves the others on the fast tier; and the grill-master's
@@ -1638,8 +1745,9 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A50** The shipped page contains no dark-theme styles and renders the single light
   palette, verified by inspection of the shipped stylesheet and in a browser.
 - **GUI-A51** The backend refuses non-loopback connections, takes the next free port when
-  the default is occupied, and reports the resulting URL; `grill-with-ui` opens that URL
-  and prints it.
+  the default is occupied, and reports the resulting URL, opening a browser at it only when
+  launched with `--open`; `grill-with-ui` launches with `--open` and gives the human that
+  URL in its reply.
 - **GUI-A52** A backend launched against a handoff with no page attached starts the
   session and folds its images; a page arriving late renders the full board from the state
   read; a page that leaves while an agent turn is in flight stops nothing — the reply
@@ -1691,10 +1799,18 @@ Each criterion is mechanically checkable and convertible to a red test.
   with the channel in each mode. A page joining that session after both turns renders the
   same labels, which is what the projected turn's `tier` (§8.5) is for. Verified in a
   browser.
-- **GUI-A63** The transfer control reads *Transfer to expert* on a channel driven by the
-  fast tier and *Return to assistant* on one driven by the heavy tier, with the same
-  styling in both positions and no state colouring in either — verified in a browser and
-  against the shipped stylesheet.
+- **GUI-A63** Every channel's seat toggle shows both *assistant* and *expert* under the
+  caption *Next send goes to* and marks exactly one of them: the seat the next send on that
+  channel goes to. That is the seat the human last selected, from the moment they select
+  it and before any entry reaches the log. Where no selection is waiting to be carried, it
+  is *assistant* on a channel driven by the fast tier and *expert* on one driven by the
+  heavy tier. The toggle's *assistant* option is the only control on the page that returns
+  a channel to the fast tier. The page renders neither *Transfer to expert* nor *Return to
+  assistant*, and the page source holds exactly one site that sets a channel's next seat to
+  the assistant. On a thread and on a draft the toggle renders in the say box's own row of
+  controls: measured in a browser at the end-to-end suite's window size, its bounding box
+  overlaps the send control's vertically. On the map it renders in the board's header.
+  Verified in a browser and against the shipped page source.
 - **GUI-A64** Every shipped thread-agent prompt states the no-fishing rule and the two cases
   a question is allowed in, asserted against the prompt the driver actually composes rather
   than against a constant read out of the source; and over one live session's thread turns,
@@ -1758,8 +1874,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   no `transfer_source` and its `followed_transfer` flag is unchanged in shape, an agent
   reply asserting a transfer under either policy moves no channel, and the move appends no
   notification-bearing entry.
-- **GUI-A74** After an autonomous escalation the human's control still governs: activating
-  it returns the next turn on that channel to the fast tier, and a later reply meeting a
+- **GUI-A74** After an autonomous escalation the human's seat toggle still governs:
+  selecting *assistant* returns the next turn on that channel to the fast tier, and a later reply meeting a
   condition escalates that channel again.
 - **GUI-A75** A thread reopened after a set-aside gesture is dispatched with a catch-up exactly
   when at least one entry in the interval between that gesture and the reopening turn changes
@@ -1826,14 +1942,14 @@ Each criterion is mechanically checkable and convertible to a red test.
   decision the line is the whole of the turn; on a thread anchored to another decision what
   the agent said stands ahead of it. Neither entry carries the offer.
 - **GUI-A86** A thread pane opened before the human has said anything in it carries the
-  transfer-to-expert control wholly inside the viewport at first paint, on a thread an agent
+  seat toggle wholly inside the viewport at first paint, on a thread an agent
   opened and on a draft nothing has created alike, in the slide-out and in a popped-out
   window. Measured as a bounding box against the window, so a control rendered below the
   fold of the pane fails the same way one never rendered does. Verified in a browser.
-- **GUI-A87** Transfer activated on a draft is the tier that draft's first turn is taken on:
-  the mode recorded under the draft's channel reaches the thread the turn opens, whose name
-  the draft never had, and the backend reads it back off that thread's channel and off no
-  other.
+- **GUI-A87** The seat selected on a draft is the tier that draft's first turn is taken on.
+  The selection is held by the page and appends nothing. The page carries it on the
+  `thread-created` entry that opens the thread, whose name the draft never had, and the
+  backend reads it off that thread's channel and off no other.
 - **GUI-A92** In a thread's box and in that same thread popped into its own window: Enter
   posts the turn, Shift+Enter leaves the box holding a newline and posts nothing, a
   backslash before Enter leaves a newline with the backslash gone, and Cmd/Ctrl+Enter
@@ -1954,7 +2070,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   on the Codex transport by `gpt-5.6-luna` at `medium` effort and a thread's by the
   OpenRouter seat `google/gemini-3.5-flash-lite` at no effort; the lane names the `fast`
   tier on both; each turn's attribution carries that seat's model and its effort where it
-  has one, beside the tier; and the map's transfer control reads *Transfer to expert* at
+  has one, beside the tier; and the map's seat toggle marks *assistant* at
   first paint. Seating the map channel on the threads' seat makes its first turn take that
   transport and model and changes nothing else about the channel.
 - **GMR-A6** Every composed thread-agent prompt carries the board legend, on both tiers.
@@ -1977,8 +2093,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   exactly one policy `transferred` entry on the map channel and every map turn after it is
   the expert seat's, while under `gated`, the default, it writes exactly one recommendation
   status entry on the map channel and the next map turn is still the first-rung seat's
-  until the human's transfer control moves it; a third signal writes no further entry under
-  either policy; and the human's transfer control returns a transferred channel to its
+  until the human's seat toggle moves it; a third signal writes no further entry under
+  either policy; and the human's seat toggle returns a transferred channel to its
   first-rung seat.
 - **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
   the `thread.started` event, then resumes that thread on every later turn on the channel as
@@ -1997,6 +2113,106 @@ Each criterion is mechanically checkable and convertible to a red test.
   applied proposal leaves. The end-to-end suite drives the whole path against a running
   backend: a decision answered, its block opened again and the control pressed leaves that
   decision reading as a question again.
+
+GUI-A112 to GUI-A117, together with GUI-A33, GUI-A34, GUI-A35, GUI-A63, GUI-A86 and GUI-A87
+as amended, are the contract of one implementing work item and share one verification
+contract. Each is checked by a named test in the package's unit suite or its end-to-end
+suite, or by a named browser probe, and the evidence ledger beside this spec names it. The
+end-to-end suite drives a real browser against a running backend whose seats are scripted.
+A criterion that says *in a browser* is discharged only by an end-to-end test or a browser
+probe. GUI-A112, GUI-A113, GUI-A114, GUI-A116, GUI-A33 and GUI-A63 state changes: each
+one's check fails against the code before the change and passes after it. GUI-A115,
+GUI-A117, GUI-A34, GUI-A35, GUI-A86 and GUI-A87 state guarantees the change must keep: each
+one's check passes after the change and fails against an implementation that breaks the
+guarantee. The pass rule for the set has three parts. Every named test passes.
+`make ci-grillui` and `make e2e-grillui` each exit 0 from the root of the tree under test.
+Every named probe exits 0 when run against that tree. A probe runs outside both gates, so
+its command and its exit status are recorded on the pull request. The acceptance authority
+is those exit statuses. No criterion in this set needs a human's judgement. Delivery of the
+implementing work item waits on all twelve.
+
+- **GUI-A112** On an open thread that has a turn, has no reply outstanding and whose
+  latest turn is not the expert's, the human presses *Proceed with expert* with the say box
+  empty. The log gains one human `thread-turn` on that thread carrying `proceed: true` and
+  no turn. The expert takes the next turn on that thread. Its recorded dispatch contains
+  every earlier turn of the thread and a statement that the human asked it to proceed
+  without adding a turn. In a browser, before the reply lands the thread shows a line
+  saying the human asked the expert to proceed, with the outstanding-reply wait beneath it.
+  From the press onward the seat toggle marks *expert*. The human has typed nothing
+  throughout. A say box holding only whitespace behaves as an empty one.
+  Where the channel was on the fast tier, the entry also carries `transfer: true`, and the
+  reply carries `followed_transfer` and no `transfer_source`. Where the policy had already
+  moved the channel under `autonomous`, the entry carries no `transfer` key, and the reply
+  carries `transfer_source: "policy"` as GUI-A73 states.
+- **GUI-A113** With text in a thread's say box, pressing *Proceed with expert* appends the
+  entry that selecting *expert* on the seat toggle and pressing send appends for the same
+  text. The kind is the same: `thread-turn` on an existing thread and `thread-created` on a
+  draft. The payload is the same: it carries the text, it carries `transfer: true` where the
+  channel was not already in expert mode, and it carries no `proceed` key. The two entries are equal once `seq`, `timestamp`, `idempotency_key` and any minted
+  thread id are set aside. The say box empties, the expert takes that turn, and from the
+  press onward the seat toggle marks *expert*. In a browser the thread renders that turn as
+  it renders the same turn sent with the toggle, with no line saying the human asked the
+  expert to proceed.
+- **GUI-A114** A text-less proceed is refused, appends no turn and dispatches nobody in each
+  of four states: the thread has no turn, an agent's reply is outstanding on the thread,
+  the thread's latest turn is the expert's, or the thread is parked or closed. In each of
+  the first three states the page renders the action inactive and shows the reason, and on
+  a parked or closed thread it renders no such action, verified in a browser. In all four
+  the backend rejects the same entry posted directly. On a thread nothing has created the
+  receipt carries the reason every thread gesture naming no thread gets. In the other three
+  it carries the reason *nothing to proceed on* and a detail naming the state.
+  Twice: two text-less proceeds posted in one batch, or posted at once from two windows, leave exactly one accepted
+  proceed entry and one expert turn. Unchanged: a second press after the expert has
+  replied, with nothing said since, is refused. After the session has ended the page offers
+  the action on no thread. The map renders no such action, and a text-less proceed posted
+  on the map channel is refused as every thread gesture on the map is. Inverse: after an
+  agent turn that failed, the press is accepted and everything GUI-A112 states follows. That holds when the failed turn was the assistant's, which
+  leaves the human's turn as the thread's latest, and when it was the expert's own.
+- **GUI-A115** Only the human's own gesture engages the expert on a thread, under either
+  policy.
+  Under `gated`: after an assistant reply that carried a read request, nothing engages the
+  expert on that thread until a human entry carrying `transfer: true` or `proceed: true`
+  arrives on it. Until
+  then the lane records no `composing` entry naming the heavy tier on that thread, no
+  dispatch to the expert seat is recorded, and no `transferred` entry is written. A human
+  turn sent meanwhile with the toggle marking *assistant* is taken by the assistant. With
+  no input from the human after that reply, the log gains no entry on that thread at all:
+  the page emits a proceed, and puts `transfer: true` on a turn, only on the human's own
+  press or selection.
+  Under `autonomous`: the policy writes its `transferred` entry as GUI-A73 states, and that
+  entry is followed by no `composing` entry and no dispatch on that thread until the human's
+  next send or proceed arrives.
+  Under both: a `thread-turn` carrying `proceed: true` whose actor is not the human
+  dispatches no turn and moves no channel.
+- **GUI-A116** An assistant reply on an open thread that carries a read request, a
+  non-empty `needs_to_read`, renders a hint beneath that reply naming *Proceed with
+  expert*, for as long as the reply is the thread's latest turn and the thread stays open. The hint renders whichever condition the
+  reply's recommendation names. Its text is the page's own and is the same whatever the
+  reply's prose says. No hint renders beneath a reply with no read request, beneath an
+  expert's reply that carries one, beneath a read-request reply that is no longer the
+  thread's latest turn, or on a parked or closed thread, which carries no such action to
+  name. Verified in a browser.
+- **GUI-A117** A text-less proceed never reads as an empty turn. The thread projection
+  (§8.8) and the dispatch any later turn on that thread receives each list the thread's
+  spoken turns and the expert's reply, and neither lists a turn with no text. The capture
+  of a session whose log holds a text-less proceed, run from the session directory alone,
+  exits 0, and its terminal result (§8.7) lists that thread.
+
+The what-if questions, asked of the set together. A failed expert turn after a proceed is
+GUI-A114's inverse; making a failed seat visible on the board is the separate defect
+`agents-config-9k9.309` and is not promised here. An empty thread, an empty say box and a
+whitespace-only say box are GUI-A112's and GUI-A114's. A missing dependency is the expert
+seat failing, which is the first answer again. A double press, two windows and a repeat
+with nothing changed are GUI-A114's. A proceed pressed with text is a send (GUI-A113), so
+pressing it twice, or from two windows holding the same text, is two sends and behaves as
+two presses of send do; this set changes nothing there. The seat toggle has its own
+answers. A send that is refused has carried nothing, so the selection still waits and the
+toggle still marks it (GUI-A63). A channel with no turn is the draft (GUI-A86, GUI-A87).
+The toggle relies on nothing outside the page. Selecting one seat and then the other leaves
+the channel as it was and appends nothing, and two windows each hold their own selection
+until a turn carries one to the log, after which both follow the log (GUI-A34, GUI-A63).
+Selecting the seat already marked changes nothing and appends nothing (GUI-A34). The expert seat's ability to read
+the project once it is engaged is `agents-config-9k9.370`'s, and no criterion here depends on it.
 
 ## 10. Open questions for the implementing work
 
@@ -2045,7 +2261,7 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: Pending-queue consistency, supersede handling and the map doctor — AC: GUI-D26, GUI-U12,
   GUI-A38, GUI-A39, GUI-A40.
 - feat: The channel state model and its diagnostic surface — AC: GUI-D27, GUI-A41.
-- feat: The transfer-to-expert control across the map and thread channels — AC: GUI-U11, GUI-A33,
+- feat: The seat toggle across the map and thread channels — AC: GUI-U11, GUI-A33,
   GUI-A34, GUI-A35.
 - feat: Thread lifecycle: the park and close gestures, their board behaviour, and the
   terminal result's loose-end distinction — AC: GUI-D29, GUI-A55.
@@ -2058,7 +2274,7 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: The sticky decision header over a decision taller than its pane — AC: GUI-U20,
   GUI-A61.
 - feat: Per-turn tier labelling on threads and on the map channel — AC: GUI-U21, GUI-A62.
-- feat: The transfer control's action labelling — AC: GUI-U22, GUI-A63.
+- feat: The seat toggle's labelling — AC: GUI-U22, GUI-A63.
 - feat: The thread agent's questioning rule — AC: GUI-D30, GUI-A64.
 - feat: The converged-answer proposal on a thread turn: the reply-document key, its
   projection onto the turn, the liveness rule, and the thread-agent prompt that reaches one
@@ -2069,6 +2285,11 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: Autonomous escalation as a session policy: the configured default, the backend-driven
   transfer on a met condition, its attribution, and the control that still returns the
   channel — AC: GUI-D35, GUI-U24, GUI-A71, GUI-A72, GUI-A73, GUI-A74.
+- feat: The seat toggle beside the say box and the proceed-with-expert action: the toggle
+  that names the next send's seat, the human gesture that sends the expert in without a
+  typed turn, its refusals, and the hint beneath a reply that asked to read — AC: GUI-D49,
+  GUI-U11, GUI-U22, GUI-U33, GUI-A33, GUI-A34, GUI-A35, GUI-A63, GUI-A86, GUI-A87, GUI-A112,
+  GUI-A113, GUI-A114, GUI-A115, GUI-A116, GUI-A117.
 - feat: Catching up a reopened thread: the interval's catch-up in its first dispatch, and the
   heavy-tier chain that is opened cold rather than resumed — AC: GUI-D36, GUI-A75, GUI-A76,
   GUI-A77, GUI-A78.
@@ -2113,162 +2334,3 @@ Each criterion is mechanically checkable and convertible to a red test.
   the spec and the handoff-assembling skill alike — AC: GUI-D37, GMR-A8.
 - feat: The control that reopens a settled decision, as the human's own unsettle taking the
   fold an applied one takes — AC: GUI-U32, GUI-A111.
-
-## Evidence
-
-How each criterion above is discharged. States: `open`;
-`test: <file>::<test_fn>`; `probe: <file>::<name>`;
-`observed: #<PR> <YYYY-MM-DD> <name>`. A criterion whose own text says it is
-verified in a browser cannot be discharged by `test:` — a test that never
-opens one proves something else.
-
-- GUI-A1 | open
-- GUI-A2 | open
-- GUI-A3 | open
-- GUI-A5 | open
-- GUI-A6 | open
-- GUI-A7 | open
-- GUI-A8 | open
-- GUI-A9 | open
-- GUI-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_lane_lands_with_the_human_turn_rather_than_with_the_reply
-- GUI-A11 | open
-- GUI-A12 | open
-- GUI-A13 | open
-- GUI-A14 | open
-- GUI-A16 | open
-- GUI-A17 | open
-- GUI-A18 | open
-- GUI-A19 | open
-- GUI-A20 | open
-- GUI-A21 | open
-- GUI-A22 | open
-- GUI-A23 | open
-- GUI-A24 | open
-- GUI-A25 | open
-- GUI-A26 | open
-- GUI-A27 | open
-- GUI-A28 | open
-- GUI-A29 | open
-- GUI-A30 | open
-- GUI-A31 | open
-- GUI-A32 | open
-- GUI-A33 | open
-- GUI-A34 | open
-- GUI-A35 | open
-- GUI-A36 | open
-- GUI-A37 | open
-- GUI-A38 | open
-- GUI-A39 | open
-- GUI-A40 | open
-- GUI-A41 | open
-- GUI-A42 | open
-- GUI-A43 | open
-- GUI-A44 | open
-- GUI-A45 | open
-- GUI-A46 | open
-- GUI-A47 | open
-- GUI-A48 | open
-- GUI-A49 | open
-- GUI-A50 | open
-- GUI-A51 | open
-- GUI-A52 | open
-- GUI-A53 | open
-- GUI-A54 | open
-- GUI-A55 | open
-- GUI-A56 | open
-- GUI-A57 | open
-- GUI-A58 | open
-- GUI-A59 | open
-- GUI-A60 | open
-- GUI-A61 | probe: packages/grillui/tests/browser/sticky_header_probe.py::main
-- GUI-A62 | open
-- GUI-A63 | open
-- GUI-A64 | open
-- GUI-A65 | test: packages/grillui/tests/unit/test_convergence.py::test_a_proposal_riding_a_turn_records_the_prose_and_projects_onto_that_turn
-- GUI-A66 | test: packages/grillui/tests/unit/test_convergence.py::test_each_convergence_of_the_fixture_session_is_one_proposal_recording_what_it_carried
-- GUI-A67 | probe: packages/grillui/tests/browser/apply_decision_probe.py::main
-- GUI-A68 | test: packages/grillui/tests/unit/test_convergence.py::test_an_answer_carrying_from_thread_settles_and_closes_in_one_entry
-- GUI-A69 | test: packages/grillui/tests/unit/test_convergence.py::test_a_live_proposal_queues_nothing_and_holds_nothing
-- GUI-A70 | open
-- GUI-A71 | test: packages/grillui/tests/unit/test_transfer.py::test_a_session_with_no_policy_configured_leaves_a_met_condition_to_the_human
-- GUI-A72 | test: packages/grillui/tests/unit/test_transfer.py::test_under_the_autonomous_policy_a_met_condition_takes_that_channel_to_the_expert
-- GUI-A73 | test: packages/grillui/tests/unit/test_transfer.py::test_a_policy_escalation_is_named_on_the_lane_and_on_the_turn_it_bought
-- GUI-A74 | test: packages/grillui/tests/unit/test_transfer.py::test_the_human_takes_a_policy_transfer_back_and_a_later_condition_escalates_again
-- GUI-A75 | test: packages/grillui/tests/unit/test_catch_up.py::test_applying_that_queued_update_inside_the_interval_is_one_entry_at_the_apply
-- GUI-A76 | test: packages/grillui/tests/unit/test_catch_up.py::test_a_moved_interval_opens_the_heavy_turn_cold_with_the_thread_in_full
-- GUI-A77 | test: packages/grillui/tests/unit/test_catch_up.py::test_an_unchanged_interval_resumes_the_chain_the_channel_already_held
-- GUI-A78 | test: packages/grillui/tests/unit/test_catch_up.py::test_reopening_a_thread_raises_nothing_to_the_human
-- GUI-A79 | test: packages/grillui/tests/unit/test_update_kinds.py::test_an_options_pre_mark_reaches_both_images_as_authored
-- GUI-A80 | test: packages/grillui/tests/unit/test_session.py::test_two_sessions_driven_alike_log_the_same_entries_with_the_pre_mark_or_without
-- GUI-A81 | probe: packages/grillui/tests/browser/pre_mark_probe.py::main
-- GUI-A82 | probe: packages/grillui/tests/browser/pre_mark_probe.py::main
-- GUI-A83 | test: packages/grillui/tests/unit/test_tiers.py::test_every_brief_a_driver_composes_carries_the_register_rule
-- GUI-A84 | test: packages/grillui/tests/unit/test_drivers.py::test_a_declaring_reply_is_read_through_whatever_fence_it_arrived_in
-- GUI-A85 | test: packages/grillui/tests/unit/test_drivers.py::test_an_offer_on_a_thread_anchoring_nothing_is_a_notice_and_not_raw_bytes
-- GUI-A86 | probe: packages/grillui/tests/browser/thread_controls_probe.py::main
-- GUI-A87 | test: packages/grillui/tests/unit/test_page.py::test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_takes
-- GUI-A92 | probe: packages/grillui/tests/browser/chord_probe.py::main
-- GUI-A88 | test: packages/grillui/tests/unit/test_tiers.py::test_the_grill_master_brief_asks_for_rulings_nowhere_but_the_obligation_section
-- GUI-A89 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_can
-- GUI-A90 | probe: packages/grillui/tests/browser/thread_wait_probe.py::main
-- GUI-A93 | test: packages/grillui/tests/unit/test_tiers.py::test_a_turn_on_the_map_thread_is_told_to_state_which_decisions_change_and_how
-- GUI-A94 | test: packages/grillui/tests/unit/test_tiers.py::test_the_map_thread_mandate_reaches_no_other_channel
-- GUI-A95 | test: packages/grillui/tests/unit/test_dispatch.py::test_the_map_thread_is_not_given_the_boards_reference_material
-- GUI-A96 | test: packages/grillui/tests/unit/test_page.py::test_the_board_carries_a_control_that_opens_the_one_map_thread
-- GUI-A97 | test: packages/grillui/tests/unit/test_page.py::test_the_map_threads_fold_arms_on_the_same_turn_an_ordinary_ones_does
-- GUI-A98 | probe: packages/grillui/tests/browser/map_thread_probe.py::main
-- GUI-A91 | test: packages/grillui/tests/unit/test_page.py::test_an_ordinary_threads_fold_arms_on_the_turn_it_would_hand_over
-- GUI-A99 | probe: packages/grillui/tests/browser/side_thread_fold_probe.py::main
-- GUI-A105 | probe: packages/grillui/tests/browser/inbox_batch_probe.py::main
-- GUI-A100 | test: packages/grillui/tests/unit/test_tiers.py::test_a_turn_owed_invalidates_is_given_the_ids_and_the_answer_in_a_section_of_its_own
-- GUI-A101 | test: packages/grillui/tests/unit/test_lane.py::test_a_gesture_owed_rulings_is_composed_by_the_expert_carrying_the_ids
-- GUI-A101 | test: packages/grillui/tests/unit/test_rulings.py::test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision
-- GUI-A102 | test: packages/grillui/tests/unit/test_lane.py::test_an_expert_that_rules_on_nothing_either_leaves_the_ids_named_to_the_human
-- GUI-A103 | test: packages/grillui/tests/unit/test_lane.py::test_an_obligation_met_or_never_created_presses_nobody
-- GUI-A103 | test: packages/grillui/tests/unit/test_rulings.py::test_a_ruling_carrying_its_update_is_credited_and_the_change_waits_for_the_human
-- GUI-A106 | probe: packages/grillui/tests/browser/completion_probe.py::main
-- GUI-A107 | test: packages/grillui/tests/unit/test_capture.py::test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open
-- GUI-A110 | probe: packages/grillui/tests/browser/next_open_probe.py::main
-- GUI-A108 | test: packages/grillui/tests/unit/test_projector.py::test_a_prereq_that_has_been_invalidated_holds_nothing
-- GUI-A109 | test: packages/grillui/tests/unit/test_lane.py::test_an_invalidate_the_human_applied_obliges_the_map_turn_it_buys
-- GMR-A1 | open
-- GMR-A2 | test: packages/grillui/tests/unit/test_rulings.py::test_a_reply_that_is_not_the_document_is_refused_and_never_reaches_the_human
-- GMR-A3 | test: packages/grillui/tests/unit/test_rulings.py::test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision
-- GMR-A4 | test: packages/grillui/tests/unit/test_rulings.py::test_a_ruling_whose_document_carries_no_matching_update_is_not_credited
-- GMR-A5 | test: packages/grillui/tests/unit/test_seats.py::test_the_map_and_a_thread_take_the_same_rung_on_seats_configured_apart
-- GMR-A6 | open
-- GMR-A7 | test: packages/grillui/tests/unit/test_page.py::test_a_thread_opened_from_a_notice_anchors_the_decision_that_notice_targeted
-- GMR-A7 | test: packages/grillui/tests/unit/test_page.py::test_the_reference_material_crosses_to_the_help_kind_and_to_no_other_the_page_mints
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_an_applied_proposal_records_the_agent_that_proposed_it_and_the_verdict_behind_it
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_queued_proposal_is_no_history_until_the_human_lands_it
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_stands_ruling_records_its_verdict_and_the_why_it_was_credited_on
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_move_the_human_made_themselves_carries_neither_field
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_ruling_with_no_update_behind_it_credits_no_other_update_on_that_decision
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_one_apply_landing_two_proposals_gives_each_decision_its_own_verdict
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_an_apply_naming_one_id_twice_still_pairs_each_update_with_its_own_author
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_stands_verdict_lands_only_on_the_notice_that_ruling_minted
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_the_fold_credits_a_stamp_only_on_the_one_form_the_backend_mints
-- GMR-A7 | test: packages/grillui/tests/unit/test_rulings.py::test_a_turn_cannot_stamp_its_own_update_with_a_verdict_nobody_ruled
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_ruling_word_outside_the_closed_three_names_no_verdict
-- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_history_entry_written_before_these_fields_existed_still_folds
-- GMR-A7 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_is_told_how_to_read_a_board_that_moved
-- GMR-A8 | test: packages/grillui/tests/unit/test_rulings.py::test_the_option_shape_says_the_grill_master_rules_on_the_mark
-- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_answer_whose_mark_resolves_to_a_live_node_is_composed_by_the_expert
-- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_applied_invalidate_that_strands_a_dependent_is_composed_by_the_expert
-- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_apply_that_strands_nothing_buys_no_turn
-- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_thread_fold_is_composed_by_the_expert_on_the_map
-- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_withdrawal_the_human_got_in_front_of_is_composed_by_the_expert
-- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_the_doctor_is_composed_by_the_expert
-- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_clerical_answer_is_composed_by_the_first_rung
-- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_clerical_gesture_after_a_judgment_one_is_first_rung_again
-- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_mark_resolving_to_a_dead_node_stays_on_the_first_rung
-- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_one_dismissal_of_a_first_rung_proposal_moves_nothing
-- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_second_distrust_signal_writes_one_transfer_and_the_channel_stays_up
-- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_two_presses_racing_write_one_transfer_between_them
-- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_a_third_signal_writes_no_second_entry
-- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_a_restart_over_the_same_session_writes_no_second_transfer
-- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_humans_transfer_control_returns_the_channel_to_the_first_rung
-- GMR-A11 | test: packages/grillui/tests/unit/test_seats.py::test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter
-- GUI-A111 | test: packages/grillui/tests/unit/test_page.py::test_only_a_settled_decision_offers_the_way_back_to_open
-- GUI-A111 | test: packages/grillui/tests/unit/test_update_kinds.py::test_the_human_reopening_a_decision_folds_as_an_applied_unsettle_does
-- GUI-A111 | test: packages/grillui/tests/e2e/test_board.py::test_the_human_reopens_a_decision_they_settled

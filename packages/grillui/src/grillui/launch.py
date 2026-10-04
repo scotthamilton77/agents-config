@@ -244,7 +244,7 @@ def launch(
     log = open_session(directory, handoff)
     # Every seat off the one configuration. Two rungs: the first one seated per
     # channel -- the threads' hosted model, the map's reasoning one -- and the
-    # expert, which is where the human's transfer control moves any channel and
+    # expert, which is where the human's seat toggle moves any channel and
     # is one shared configuration for all of them.
     tiers = TierConfig.from_env()
     board = create_app(

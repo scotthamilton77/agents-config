@@ -3,38 +3,48 @@ name: ac-attack
 description: Attack a document's acceptance criteria with a panel of adversarial lenses, then check that the resulting record closes the round. Use when criteria have been drafted or revised and work is about to be claimed against them.
 admission:
   prevents: Criteria that read complete and are not, because the failure modes nobody named stay unnamed until the code exists — and by then a review can only audit coverage of the cases the criteria already list, so the missing case ships.
-  cost: A document's criteria cannot go to implementation until an attacker has run per lens over the whole document and every proposal they return carries a written disposition committed beside it.
-  remove_when: Attack rounds stop producing accepted proposals across a run of documents, or the criteria-drafting step starts producing criteria that survive an attack unchanged.
+  cost: A document's criteria cannot go to implementation until an attacker has run per lens over the whole document and every objection they return carries a written disposition committed beside it.
+  remove_when: Attack rounds stop producing accepted objections across a run of documents, or the criteria-drafting step starts producing criteria that survive an attack unchanged.
 ---
 
 Criteria that read complete rarely are. This skill attacks them: a panel of adversarial lenses
-reads the document, each naming behaviours its criteria let through, and every proposal comes back
-adjudicated into the criteria or rejected on the record.
+reads the document, each objecting to what its criteria let through on a named ground, and every
+objection comes back adjudicated on the record. An accepted one is answered by a criterion the
+author writes, since the author holds the context an attacker lacks.
 
 Running before the work starts is the point: once code exists, a review can check the tests cover
 the failure cases the criteria name, but cannot invent the ones nobody thought of. Those get
-invented here.
+invented here. Attack before use, and again after amendment: an attack on one version of the
+criteria says nothing about the next.
 
-Both scripts below run via `uv run`. If `uv` is not installed, run them with plain `python3`
-instead — `emit_prompts.py` has no dependency beyond the standard library; `check_record.py`
-additionally needs `jsonschema` installed first.
+The scripts below run via `uv run`. If `uv` is not installed, run them with plain `python3`
+instead; `check_record.py` and `assemble_record.py` need `jsonschema` installed first.
 
 ## Attack lenses
 
+The lenses are the directories under `lenses/`, and each script reads that registry live. Each
+lens owns `lenses/<lens>/prompt.md`: its body is the lens's instructions, and its front matter
+gives its `tier`, its `transport`, and the `acceptance-criteria` rule IDs it `enforces`. Its prompt
+carries exactly those rules, read live from that skill installed beside this one, and every
+objection cites one of them. A lens marked `workings: required` also returns an inventory, judged
+by the `workings.schema.json` beside its prompt, and each gap the inventory shows is owed an
+objection.
+
 | Lens | What it attacks |
 | --- | --- |
-| `criteria-holes` | Behaviours that satisfy every stated criterion and are still wrong. |
-| `edge-cases` | The taxonomy walk — inverse, empty and boundary, dependency failure, repeated and concurrent invocation, idempotency — naming cases no criterion tests. |
-| `absent-requirements` | Obligations the document takes on that no criterion covers. |
+| `behavioural-outcome` | Criteria that pin an artifact where the document promises an outcome, bundle separable obligations, or have no way to decide the result. |
+| `obligation-reduction` | Obligations no criterion discharges, and criteria that discharge no obligation, read off an obligation inventory. |
+| `set-consistency` | Criteria that cannot hold together, and wording that admits materially different outcomes. |
+| `what-if` | The standard's what-if questions, asked of each criterion, naming cases no criterion tests. |
 
-Mandates are data in `lenses.json`, each lens's `tier` naming the model capability it needs and
-`transport` the route its prompt goes out on: an `openrouter` lens through the
+A lens's `tier` names the model capability it needs and `transport` the route its prompt goes
+out on: an `openrouter` lens through the
 `openrouter-claude-subagent` skill, a `codex` lens through the codex command-line tool. When one
 transport is down, run its lenses over the other — the panel has then lost its vendor diversity,
 and blind spots correlate within a vendor. No field records that substitution and the checker
-cannot see it, so say so in your own report to the user or it is lost. One attacker runs per lens, alone, exhaustive within
-it and silent outside: asked for everything, one attacker satisfices, returning two holes where a
-panel returns seven.
+cannot see it, so say so in your own report to the user or it is lost. One attacker runs per lens,
+alone: asked for everything, one attacker satisfices, returning two holes where a panel returns
+seven.
 
 ## Emitting the prompts
 
@@ -48,7 +58,9 @@ uv run emit_prompts.py --spec /path/to/document.md --out-dir /tmp/attack-documen
 ```
 
 One `<lens>.md` prompt lands per lens, plus `round.json` recording the document, the revision
-attacked, and each lens with its tier and transport. Dispatch the lenses `round.json` names, not
+attacked, and each lens with its tier and transport. `--lens <name>` emits that lens alone, for
+evaluating one lens; its round file names only that lens, so a record built from it stays
+incomplete. Dispatch the lenses `round.json` names, not
 the files the directory holds — the round file is what says which prompts are this round's. A
 round refuses an out-dir holding a Markdown file it does not write, which catches the
 reused directory for the caller who dispatches it anyway, and catches only Markdown.
@@ -61,12 +73,22 @@ truncate whatever wears them in the directory it ran from. A directory the round
 owner-only and it creates no parent along the way; one already there keeps the permissions its
 owner gave it. Every file written is owner-only, since a prompt carries the whole document.
 
-Proposals and the record they are written into are described in `record.md`: the shape an attacker
+Objections and the record they are written into are described in `record.md`: the shape an attacker
 returns, the `id` a disposition names, and the record committed beside the document as
 `<document>-ac-attack.json`, the document's name without its extension — `ledger.md` gets
 `ledger-ac-attack.json`, and the check holds the record to that name rather than trusting it, so a
 record copied onto a second document closes nothing. Its machine-readable form is
 `attack-record.schema.json`.
+
+## Assembling the record
+
+```bash
+uv run assemble_record.py union --round <dir>/round.json --report <lens>=<raw-output> …
+uv run assemble_record.py assemble --union <dir>/union.json --dispositions <file> --spec <document>
+```
+
+Between the two, fill in the skeleton the union writes and make every accepted edit. Disclose the
+repairs and drops stdout lists. `record.md` describes both steps.
 
 ## Checking the round
 
@@ -76,11 +98,11 @@ uv run check_record.py /path/to/document-ac-attack.json [--spec <path>] [--imple
 
 Stdout is
 `{"clean": …, "complete": …, "errors": [{"code", "id"?, "message"}], "document"?, "revision"?}`,
-keys and errors sorted. `complete` says the round is closed: every lens reported, every proposal
+keys and errors sorted. `complete` says the round is closed: every lens reported, every objection
 adjudicated, and every acceptance carried into a revision the document still hashes to — or, in a
 round that accepted nothing, the revision attacked. The edits an acceptance drives never
 invalidate the round that drove them; an unrelated later edit does, having faced no attacker. `clean`
-adds that nothing was proposed. `document` and `revision` name the file the verdict was decided
+adds that no lens objected. `document` and `revision` name the file the verdict was decided
 against and what it hashes to. Exit 0 complete, 1 not, 2 on unusable input. Every code the check
 can return, and what each one means, is in `errors.md`.
 
@@ -92,7 +114,7 @@ it, while retiring one leaves the rounds it ran in closed, holding coverage they
 
 The record **attests** that the round happened as written; the checker does not verify that it did.
 It can see the document is at the revision an acceptance names, never that the criterion is in it —
-a hash names content without describing it — so an edit carrying none of the accepted proposals
+a hash names content without describing it — so an edit carrying none of the accepted objections
 closes the round as well as one carrying all of them, and a lens entry claims a report nothing
 shows was made. For the same reason it reads the document as it now stands: what that
 document held when the attackers read it is gone, so a refusal only the attacked revision could

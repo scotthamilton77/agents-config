@@ -4,8 +4,8 @@ Standalone uv projects; **not** part of the installed config surface. This is
 real Python code with mandatory quality gates: `make ci` is the whole-repo gate
 CI enforces, and each gated package also has its own `ci-<package>` target
 running lint, format-check, typecheck, coverage, audit, and entry-verify. Read
-the `Makefile` for which packages are currently in `ci` — not every package
-under `packages/` is wired in. Most packages carry their own `AGENTS.md` with a
+the `ci` target in the `Makefile` for its current membership rather than a copy
+here. Most packages carry their own `AGENTS.md` with a
 scoped workflow — read it before changing that package.
 
 ## The roster

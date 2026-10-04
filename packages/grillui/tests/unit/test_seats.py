@@ -312,7 +312,7 @@ def test_the_map_and_a_thread_take_the_same_rung_on_seats_configured_apart(
     Then the map's turn is composed on the Codex transport by `gpt-5.6-luna` at
          `medium` and the thread's over OpenRouter by the hosted model at no
          effort; both name the `fast` tier; and the map is not in expert mode, so
-         its transfer control reads *Transfer to expert* at first paint.
+         its seat toggle marks *assistant* at first paint.
     """
     config = TierConfig.from_env({})
     assert config.seat_for(MAP_CHANNEL) == Seat("codex", DEFAULT_MAP_MODEL, DEFAULT_MAP_EFFORT)
@@ -345,7 +345,7 @@ def test_the_map_and_a_thread_take_the_same_rung_on_seats_configured_apart(
     # The label itself is the page's, and `test_page` pins its two strings. What
     # the backend owns is what the label is computed from: the channel is not in
     # expert mode, and the lane named `fast` as the tier the human is waiting on,
-    # so the control renders *Transfer to expert* rather than the way back.
+    # so the toggle marks *assistant* rather than *expert*.
     assert not in_expert_mode(log.entries(), MAP_CHANNEL)
     assert [
         entry.payload.get(TIER_KEY)

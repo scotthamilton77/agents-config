@@ -8,6 +8,7 @@ run over the admitted set only.
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -128,6 +129,32 @@ def test_an_oversized_instruction_file_fails_the_core_sub_budget() -> None:
     assert not result.ok
     assert any("always-on core" in v for v in result.violations)
     assert not any("always-on surface" in v for v in result.violations)
+
+
+@pytest.mark.parametrize(("size", "breaches"), [(24_000, False), (24_001, True)])
+def test_a_gemini_instruction_file_over_the_runtime_s_byte_limit_fails_closed(
+    size: int, breaches: bool
+) -> None:
+    """Antigravity CLI truncates a rule file past 24,000 bytes, silently, so a
+    GEMINI.md over that size must abort the deploy rather than ship a tail no
+    session reads. The core cap also fires at this size, so the assertion names
+    the byte-limit message itself: the vendor limit must hold on its own if the
+    core cap ever moves."""
+    gemini_md = replace(_instruction(b"x" * size), dest_relpath=Path("GEMINI.md"))
+    result = run_admission_gate({Tool.GEMINI: _plan(gemini_md, tool=Tool.GEMINI)})
+
+    assert any("gemini: instruction file is" in v for v in result.violations) is breaches
+    if breaches:
+        assert not result.ok
+
+
+@pytest.mark.parametrize("tool", [Tool.CLAUDE, Tool.CODEX, Tool.OPENCODE])
+def test_no_other_tool_s_instruction_file_carries_a_byte_limit(tool: Tool) -> None:
+    """The byte limit is the Gemini runtime's, so the same oversized file deployed
+    to any other tool meets only the caps it already met."""
+    result = run_admission_gate({tool: _plan(_instruction(b"x" * 24_001), tool=tool)})
+
+    assert not any("byte limit" in v for v in result.violations)
 
 
 def test_the_gate_reports_the_core_beside_the_surface_total() -> None:
@@ -417,19 +444,13 @@ def test_an_unflagged_body_over_the_standard_cap_still_fails(tmp_path: Path) -> 
     assert any(f"{SKILL_BODY_TOKEN_CAP}-token cap" in v for v in result.violations)
 
 
-#: Every tool whose skill bodies are measured. Gemini is absent because its skill
-#: loading is unmodelled, so it is charged on neither count and can say nothing
-#: about which cap applies; it has its own case below.
-_BODY_MEASURING_TOOLS = [Tool.CLAUDE, Tool.CODEX, Tool.OPENCODE]
-
-
-@pytest.mark.parametrize("tool", _BODY_MEASURING_TOOLS)
+@pytest.mark.parametrize("tool", list(Tool))
 def test_the_cap_follows_the_source_declaration_on_every_target(tmp_path: Path, tool: Tool) -> None:
     """One shared skill declaring itself user-invoked, with a body between the two
-    caps, is admitted against the loose ceiling on every tool that weighs a body —
-    including Codex and OpenCode, whose projection strips the key. The declaration
-    prices the shape its author committed to, so a loader that cannot express it
-    does not get to charge the strict cap for a claim that was made."""
+    caps, is admitted against the loose ceiling on every tool — including Codex,
+    Gemini and OpenCode, whose projection strips the key. The declaration prices
+    the shape its author committed to, so a loader that cannot express it does not
+    get to charge the strict cap for a claim that was made."""
     body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
     item = _shared_skill(
         tmp_path,
@@ -442,13 +463,12 @@ def test_the_cap_follows_the_source_declaration_on_every_target(tmp_path: Path, 
     assert [m.cap for m in result.skills] == [USER_INVOKED_SKILL_BODY_TOKEN_CAP]
 
 
-@pytest.mark.parametrize("tool", _BODY_MEASURING_TOOLS)
+@pytest.mark.parametrize("tool", list(Tool))
 def test_the_same_body_without_the_declaration_is_rejected_everywhere(
     tmp_path: Path, tool: Tool
 ) -> None:
     """The sibling that keeps the loose cap honest: the body the declaration buys
-    room for is over the strict cap on every tool that measures it. Gemini is
-    absent because it measures no body at all, declared or not."""
+    room for is over the strict cap on every tool."""
     body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
     item = _shared_skill(tmp_path, "roomy", f"---\nname: roomy\n{_RECORD}---\n{body}")
     result = run_admission_gate({tool: _plan(_instruction(b"laws"), item, tool=tool)})
@@ -476,13 +496,13 @@ def test_a_user_invoked_skill_is_a_catalog_entry_only_where_the_key_is_stripped(
         f"---\nname: quiet\ndescription: {'d' * 400}\n"
         f"disable-model-invocation: true\n{_RECORD}---\nbody\n",
     )
-    tools = (Tool.CLAUDE, Tool.CODEX, Tool.OPENCODE)
-    result = run_admission_gate({t: _plan(_instruction(b"laws"), item, tool=t) for t in tools})
+    result = run_admission_gate({t: _plan(_instruction(b"laws"), item, tool=t) for t in Tool})
 
     charged = {s.tool: s.catalog_entries for s in result.surfaces}
-    assert charged == {"claude": 0, "codex": 1, "opencode": 1}
+    assert charged == {"claude": 0, "codex": 1, "gemini": 1, "opencode": 1}
     weights = {s.tool: s.tokens for s in result.surfaces}
     assert weights["codex"] > weights["claude"]
+    assert weights["gemini"] > weights["claude"]
     assert weights["opencode"] > weights["claude"]
     assert {m.cap for m in result.skills} == {USER_INVOKED_SKILL_BODY_TOKEN_CAP}
 
@@ -524,29 +544,29 @@ def test_a_command_description_is_charged_nothing(tmp_path: Path) -> None:
     assert result.skills == []
 
 
-@pytest.mark.parametrize("declaration", ["", "disable-model-invocation: true\n"])
-def test_gemini_contributes_to_neither_skill_measurement(tmp_path: Path, declaration: str) -> None:
-    """Gemini's CLI is deprecated and nothing establishes what its runtime does
-    with a deployed skill, so this project models neither its catalog nor its body
-    cap. A number invented for it would be a guess a reader would act on.
-
-    Both declarations, because an over-cap body is admitted here either way and it
-    matters which fact is doing the work: the exemption is, not the declaration. A
-    reader shown only the flagged case would credit the loose ceiling for an
-    admission the strict one would equally have allowed."""
+def test_gemini_charges_a_skill_s_catalog_entry_and_caps_its_body(tmp_path: Path) -> None:
+    """Antigravity CLI, which loads the Gemini target, discloses skills
+    progressively: name and description sit in every session, and the body loads
+    on activation. That is the shape the other tools are priced on, so Gemini is
+    charged the same catalog entry and held to the same body cap."""
     body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
     item = _shared_skill(
         tmp_path,
-        "unmodelled",
-        f"---\nname: unmodelled\ndescription: {'d' * 400}\n{declaration}{_RECORD}---\n{body}",
+        "priced",
+        f"---\nname: priced\ndescription: {'d' * 400}\n{_RECORD}---\n{body}",
     )
     result = run_admission_gate({Tool.GEMINI: _plan(_instruction(b"laws"), item, tool=Tool.GEMINI)})
 
-    assert result.ok, result.violations
-    assert result.skills == []
-    assert [s.catalog_entries for s in result.surfaces] == [0]
-    # The skill still deploys — exempt from the measurements, not from the gate.
-    assert Path("skills/unmodelled") in result.plans[Tool.GEMINI].items
+    [surface] = result.surfaces
+    assert surface.catalog_entries == 1
+    assert surface.tokens > surface.core_tokens + 100
+    assert [(m.label, m.cap) for m in result.skills] == [
+        ("gemini:skills/priced", SKILL_BODY_TOKEN_CAP)
+    ]
+    assert any(
+        "gemini:skills/priced" in v and f"{SKILL_BODY_TOKEN_CAP}-token cap" in v
+        for v in result.violations
+    )
 
 
 def test_item_label_is_the_join_key_the_gate_reports_under() -> None:

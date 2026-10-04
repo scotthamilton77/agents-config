@@ -14,6 +14,7 @@ from grillui.drivers import document_problem
 from grillui.schemas import GrillMasterDocument
 
 SPEAKING_KIND = "informational"
+ALERT_KIND = "elicit-alert"
 SUBSTANCE = ("short", "title", "body", "options")
 # An option is named by a letter, and the decision it belongs to by an id. A
 # reply that says "option b" leaves the human to guess which board row moved.
@@ -57,13 +58,26 @@ def added_nodes_carry_short_and_body(document: GrillMasterDocument) -> str | Non
     return None if not thin else f"add-node without short or body: {thin}"
 
 
+def _names_a_decision(target: object) -> bool:
+    """Whether a note's `target` is one the board will render it on. The fold
+    keeps a target only when it is a string, so anything else lands the note in
+    the queue beside the notice."""
+    return isinstance(target, str) and bool(target)
+
+
 def the_turn_speaks_once(document: GrillMasterDocument, limit: int = 1) -> str | None:
     """The turn addresses the human through one channel.
 
     A notice and a shelf of informational updates are two places the human has
-    to read to learn one thing, and nothing tells them which is the answer.
+    to read to learn one thing, and nothing tells them which is the answer. An
+    informational that names a decision in its `target` is not on that shelf:
+    the board renders it on the decision, as content of that decision, and the
+    one that names none lands in the queue beside the notice.
     """
-    speaking = sum(one.get("kind") == SPEAKING_KIND for one in document.updates)
+    speaking = sum(
+        one.get("kind") == SPEAKING_KIND and not _names_a_decision(one.get("target"))
+        for one in document.updates
+    )
     speaking += 1 if document.text.strip() else 0
     return None if speaking <= limit else f"{speaking} speech channels, at most {limit} allowed"
 
@@ -105,3 +119,23 @@ def a_revise_supplies_what_it_revises(document: GrillMasterDocument) -> str | No
         if one.get("kind") == "revise" and not any(one.get(field) for field in SUBSTANCE)
     ]
     return None if not empty else f"revise supplying no change: {empty}"
+
+
+def an_alert_asks_the_human_for_something(document: GrillMasterDocument) -> str | None:
+    """An alert that asks the human for nothing is the wrong kind of note.
+
+    An alert is a demand on the human, and one they cannot meet is one they
+    read twice and then clear by hand. What the turn had to say belongs on the
+    decision as an informational instead. A question mark is the whole of what
+    is read here, and that is the ceiling: an alert asking in the imperative
+    reads red, and so does the second alert on a decision that lifts a lock by
+    saying what the human supplied, which the contract allows to ask for
+    nothing. The report keeps the reply, so a red cell of either kind is one
+    the reader settles from the alert's own words.
+    """
+    silent = [
+        one.get("target", "?")
+        for one in document.updates
+        if one.get("kind") == ALERT_KIND and "?" not in str(one.get("text", ""))
+    ]
+    return None if not silent else f"elicit-alert asking nothing: {silent}"

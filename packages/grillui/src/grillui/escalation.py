@@ -96,6 +96,7 @@ from grillui.schemas import (
     TRANSFER_FLAG,
     TRANSFER_SOURCE_POLICY,
     MootnessObligation,
+    is_proceed,
     read_turns,
     reads_asked,
 )
@@ -114,6 +115,10 @@ CONDITION_TOOL_NEED = "the seat asked to read something it was not given"
 # conversation. Worded as the first-rung seat speaking, because that is what it
 # is and that is where the line sits.
 ASKED_TO_READ = "I asked to read, having no way to read it from this seat: "
+# How a proceed the human pressed without typing reaches the expert, as its own
+# line in the channel's conversation. Without it the expert is handed a thread
+# whose last turn is another seat's and no question to answer.
+PROCEED_ASKED = "I asked the expert to proceed on this thread as it stands, without adding a turn."
 
 DEPENDENTS_THRESHOLD = 2
 DECISIONS_THRESHOLD = 3
@@ -193,7 +198,7 @@ def turns_of(entries: Sequence[LogEntry], channel: str = MAP_CHANNEL) -> list[Tu
     A turn that asked to read something says so on a line of its own, beside the
     prose it rode in on. Here rather than in the turn reader the page shares,
     because the human already has the request from two directions: the seat says
-    it in its own prose, and the transfer control carries the evidence naming
+    it in its own prose, and the proceed action carries the evidence naming
     what was asked for. What the seat above gets is this conversation and
     nothing else, so a request stated nowhere in it is one that seat never
     hears.
@@ -207,6 +212,8 @@ def turns_of(entries: Sequence[LogEntry], channel: str = MAP_CHANNEL) -> list[Tu
                 Turn(who=turn.who, text=turn.text)
                 for turn in read_turns(entry.payload, entry.actor, entry.timestamp)
             )
+            if is_proceed(entry):
+                turns.append(Turn(who=entry.actor, text=PROCEED_ASKED))
             asked = reads_asked(entry.payload)
             if asked:
                 turns.append(Turn(who=entry.actor, text=ASKED_TO_READ + ", ".join(asked)))
@@ -229,9 +236,9 @@ def _moved_by(entries: Sequence[LogEntry], channel: str) -> LogEntry | None:
     transfer, and a payload key is open surface, so one that could set this
     would spend the human's subscription without being asked.
 
-    The key rides a human turn only where their own press on the transfer
-    control put it there, and a turn that says nothing about the tier leaves
-    whatever is beneath it standing. That is what makes the human's branch a
+    The key rides a human turn only where their own choice on the seat toggle,
+    or their press of the proceed action, put it there. A turn that says nothing
+    about the tier leaves whatever is beneath it standing. That is what makes the human's branch a
     gesture rather than an opinion: a page that stamped every turn with the tier
     it last read would undo a transfer written while it was between polls, and
     the expert turn the policy had just bought would run on the first rung.
@@ -276,7 +283,7 @@ def policy_transferred(
 
     Asked before writing another such entry, and answered over the whole log
     rather than from the mode the channel is in now. The two are different
-    questions the moment the human uses the transfer control: the way back down
+    questions the moment the human uses the seat toggle: the way back down
     is theirs, and a second entry written on the next signal would buy the
     channel again on a decision they have already reversed. Log-derived, so a
     successor process asks it of the same record and reaches the same answer --
@@ -636,6 +643,7 @@ def _answer_obligation(image: Image2, answered: LogEntry) -> MootnessObligation 
         target=target,
         answer=note if isinstance(note, str) and note else option.text,
         ids=standing,
+        gesture=answered.seq,
     )
 
 
@@ -666,6 +674,7 @@ def _resting_obligation(image: Image2, gesture: LogEntry) -> MootnessObligation 
         answer=str(blamed.get("why")),
         ids=standing,
         cause=INVALIDATE_KIND,
+        gesture=gesture.seq,
     )
 
 

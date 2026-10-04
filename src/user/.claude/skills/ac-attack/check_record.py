@@ -27,8 +27,20 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 SCHEMA_PATH = HERE / "attack-record.schema.json"
-LENSES_PATH = HERE / "lenses.json"
-REQUIRED_KEYS = ("lens", "mandate", "tier", "transport")
+# The emitter's registry: every directory here holding a `prompt.md`, read the way it reads them,
+# with the schema a lens requiring workings keeps beside its prompt.
+LENSES_DIR = HERE / "lenses"
+WORKINGS_SCHEMA = "workings.schema.json"
+STANDARD = "acceptance-criteria"
+FRONT_MATTER_KEYS = ("tier", "transport", "standard", "enforces", "workings")
+REQUIRED_KEYS = ("lens", "tier", "transport", "standard", "enforces", "body")
+
+# Where the emitter looks for the acceptance-criteria standard: installed beside this skill, then
+# where the source tree keeps shared skills.
+STANDARD_CANDIDATES = (
+    HERE.parent / "acceptance-criteria" / "SKILL.md",
+    HERE.parents[2] / ".agents" / "skills" / "acceptance-criteria" / "SKILL.md",
+)
 
 # What the record wears once the document's own extension is dropped.
 RECORD_SUFFIX = "-ac-attack.json"
@@ -101,35 +113,117 @@ def invisible(name: str) -> str | None:
 def usable(value: Any) -> bool:
     """Whether a registry field carries something an attacker can be built from — the emitter's.
 
-    Present is not usable. An entry carrying `"mandate": ""` is one the emitter refuses outright,
-    so a registry holding it dispatched nothing; and a lens named with only whitespace passes for
-    a name to demand a report for, while the record schema forbids any record from carrying it —
+    Present is not usable. A lens whose body is blank is one the emitter refuses outright, so a
+    registry holding it dispatched nothing; and a lens named with only whitespace passes for a
+    name to demand a report for, while the record schema forbids any record from carrying it —
     the round is then unclosable by any record, and no error names the entry that made it so.
     """
     return isinstance(value, str) and bool(value.strip())
 
 
-@lru_cache(maxsize=1)
-def declared_lenses() -> tuple[str, ...]:
-    """The declared lens set, refused unless the emitter would emit a round from it.
+def carries(lens: dict[str, Any], key: str) -> bool:
+    """Whether a lens holds a usable value for a key it owes — the emitter's test."""
+    value = lens.get(key)
+    if key == "enforces":
+        return isinstance(value, list) and bool(value) and all(usable(item) for item in value)
+    return usable(value)
 
-    Cached: the file is static for the life of a run. Coverage is read off this set, so it has to
-    be the set the round was dispatched from — a registry the emitter refuses could not have
+
+def lens_files() -> list[tuple[str, str, str | None]]:
+    """Every lens directory's name, its prompt's text, and its workings schema's text if any."""
+    files = []
+    for path in sorted(LENSES_DIR.glob("*/prompt.md")):
+        schema = path.parent / WORKINGS_SCHEMA
+        files.append((path.parent.name, path.read_text(encoding="utf-8"),
+                      schema.read_text(encoding="utf-8") if schema.is_file() else None))
+    return files
+
+
+def json_object(text: str | None) -> dict[str, Any] | None:
+    """The JSON object a text holds, or None where it holds none."""
+    try:
+        value = json.loads(text) if text is not None else None
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def parse_lens(name: Any, text: str, schema: str | None = None) -> dict[str, Any]:
+    """A lens as its files state it, front matter keys, body and workings schema — the emitter's."""
+    lens: dict[str, Any] = {"lens": name, "body": text.strip(),
+                            "workings_schema": json_object(schema)}
+    head, fence, body = text[3:].partition("\n---\n") if text.startswith("---\n") else ("", "", "")
+    if not fence:
+        return lens
+    lens["body"] = body.strip()
+    for line in head.splitlines():
+        key, _, value = (part.strip() for part in line.partition(":"))
+        if key in FRONT_MATTER_KEYS:
+            lens[key] = ([item.strip() for item in value[1:-1].split(",") if item.strip()]
+                         if value.startswith("[") and value.endswith("]") else value)
+    return lens
+
+
+def standard_rules() -> set[str] | None:
+    """The rule IDs of the standard the emitter reads, or None where it finds none.
+
+    None leaves the lenses' rule IDs unjudged. The emitter refuses every round while no standard
+    is found, which is a fault of the installation rather than of the registry, and the round in
+    hand was emitted while one was there.
+    """
+    for candidate in STANDARD_CANDIDATES:
+        if candidate.is_file():
+            text = candidate.read_text(encoding="utf-8")
+            if text.startswith("---"):
+                text = text.split("---", 2)[2] if text.count("---") >= 2 else ""
+            return {line[4:].strip() for line in text.splitlines() if line.startswith("### ")} or None
+    return None
+
+
+def lens_faults(lenses: list[dict[str, Any]]) -> list[str]:
+    """Each lens citing another standard, or stating workings its directory cannot judge."""
+    faults = []
+    for lens in lenses:
+        name, workings = lens["lens"], lens.get("workings")
+        if lens["standard"] != STANDARD:
+            faults.append(f"{name} citing the standard {lens['standard']!r} where only {STANDARD!r} "
+                          "is served")
+        if workings is not None and workings != "required":
+            faults.append(f"{name} with workings {workings!r} where only 'required' is read")
+        elif workings == "required" and lens["workings_schema"] is None:
+            faults.append(f"{name} requiring workings with no JSON object in its {WORKINGS_SCHEMA}")
+    return faults
+
+
+def unknown_rules(lenses: list[dict[str, Any]]) -> list[str]:
+    """Each rule a lens enforces that the standard lacks, when the standard is found."""
+    rules = standard_rules()
+    if rules is None:
+        return []
+    return [f"{lens['lens']} enforcing the rule {rule!r}"
+            for lens in lenses for rule in lens["enforces"] if rule not in rules]
+
+
+@lru_cache(maxsize=1)
+def declared_registry() -> tuple[dict[str, Any], ...]:
+    """The declared lenses, refused unless the emitter would emit a round from them.
+
+    Cached: the registry is static for the life of a run. Coverage is read off this set, so it has
+    to be the set the round was dispatched from — a registry the emitter refuses could not have
     produced the round in hand, and a name declared twice would demand the same lens twice here.
 
-    Every key an entry owes is held to the same test, though only the name is read here: the
-    question this answers is whether a round could have come from this registry at all, and an
-    entry without a usable mandate, tier or transport is one the emitter refuses to emit from —
-    leaving a lens that no round could dispatch counted here as an attacker that ran.
+    Every key a lens owes is held to the same test, though only the name, the rules it enforces
+    and its workings are read here: the question this answers is whether a round could have come
+    from this registry at all, and a lens the emitter refuses to emit from is one no round could
+    dispatch, counted here as an attacker that ran.
     """
-    with LENSES_PATH.open(encoding="utf-8") as handle:
-        lenses = json.load(handle)["lenses"]
-    names = [entry["lens"] for entry in lenses if usable(entry.get("lens"))]
-    labels = [entry["lens"] if usable(entry.get("lens")) else f"the entry at position {position}"
-              for position, entry in enumerate(lenses)]
+    lenses = [parse_lens(*entry) for entry in lens_files()]
+    names = [lens["lens"] for lens in lenses if usable(lens["lens"])]
+    labels = [lens["lens"] if usable(lens["lens"]) else f"the entry at position {position}"
+              for position, lens in enumerate(lenses)]
     unusable = [f"{labels[position]} without a usable {key}"
-                for position, entry in enumerate(lenses)
-                for key in REQUIRED_KEYS if not usable(entry.get(key))]
+                for position, lens in enumerate(lenses)
+                for key in REQUIRED_KEYS if not carries(lens, key)]
     if not lenses:
         problem = "declares no lens"
     elif unusable:
@@ -138,14 +232,23 @@ def declared_lenses() -> tuple[str, ...]:
         problem = "names one lens twice, matching names the way the filesystem does"
     elif any(name != Path(name).name or name in ("", ".", "..") for name in names):
         problem = "names a lens that is not a bare filename"
+    elif faults := lens_faults(lenses):
+        problem = f"declares {', '.join(faults)}"
+    elif unknown := unknown_rules(lenses):
+        problem = f"declares {', '.join(unknown)}, which the standard does not have"
     else:
-        return tuple(names)
+        return tuple(lenses)
     raise RecordError(
         "no-lenses",
         f"the lens registry {problem}; the emitter refuses to emit a round from a registry like "
         "this one, so no round in hand came from it, and coverage read off it credits the record "
         "with attackers that never ran — repair the registry both scripts read",
     )
+
+
+def declared_lenses() -> tuple[str, ...]:
+    """The names of the declared lenses, in registry order."""
+    return tuple(lens["lens"] for lens in declared_registry())
 
 
 def one_value_per_key(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -401,13 +504,13 @@ def require_comparable_revisions(record: dict) -> None:
     incorporation. Held to one spelling, string equality decides revision identity soundly.
 
     Only the revisions the adjudication reads are checked: one left behind on a disposition flipped
-    to rejected, one on a disposition naming a proposal the round does not hold, and one on a
-    second disposition for a proposal already adjudicated are all read by nothing. Refusing the
+    to rejected, one on a disposition naming an objection the round does not hold, and one on a
+    second disposition for an objection already adjudicated are all read by nothing. Refusing the
     whole record over how any of them is written would send the reader to debug a field that
     decides no part of the round — and it refuses fatally, hiding the error that names the
     disposition itself.
     """
-    held = {proposal["id"] for proposal in record["proposals"]}
+    held = {objection["id"] for objection in record["objections"]}
     adjudicating: dict[str, dict[str, Any]] = {}
     for entry in record["dispositions"]:
         if entry["id"] in held:
@@ -466,7 +569,7 @@ def _lens_errors(record: dict) -> list[dict[str, Any]]:
     errors += [
         {"code": "lens-missing",
          "message": f"the {name!r} lens has no report; a lens that errored or returned unreadable "
-                    "output leaves the round unfinished, and an empty proposal list never stands "
+                    "output leaves the round unfinished, and an empty objection list never stands "
                     "in for a report"}
         for name in declared_lenses() if fold(name) not in counted
     ]
@@ -474,20 +577,20 @@ def _lens_errors(record: dict) -> list[dict[str, Any]]:
 
 
 def _report_errors(record: dict) -> list[dict[str, Any]]:
-    """Hold each lens's report against the proposals attributed to it.
+    """Hold each lens's report against the objections attributed to it.
 
-    A report and the proposal list are two accounts of the same round, and a record where they
+    A report and the objection list are two accounts of the same round, and a record where they
     disagree describes no round at all: it either credits a lens with work it did not report or
     loses the work it did. Attribution is matched as coverage is, the way the filesystem matched
-    the prompt names, so a lens and the proposals it produced are held together by whichever of the
+    the prompt names, so a lens and the objections it produced are held together by whichever of the
     two spellings each was written in.
 
-    Three ways they disagree, and none of the three implies another: a proposal attributed to a
-    lens the record files no report for traces to no attacker at all; a lens reporting proposals
-    with none attributed to it has lost the ones it made; a lens reporting empty with proposals
+    Three ways they disagree, and none of the three implies another: an objection attributed to a
+    lens the record files no report for traces to no attacker at all; a lens reporting objections
+    with none attributed to it has lost the ones it made; a lens reporting empty with objections
     attributed to it never made them. The first is what catches a misspelled attribution on a lens
-    that produced more than one proposal — the lens keeps the others, so nothing about its report
-    contradicts anything, and the misattributed proposal would otherwise close the round traceable
+    that produced more than one objection — the lens keeps the others, so nothing about its report
+    contradicts anything, and the misattributed objection would otherwise close the round traceable
     to nothing.
 
     Attribution is read against the lenses this record reports, never against the registry. A lens
@@ -496,52 +599,52 @@ def _report_errors(record: dict) -> list[dict[str, Any]]:
     findings — which is the loss coverage is containment to avoid.
     """
     reported = {fold(entry["lens"]) for entry in record["lenses"]}
-    attributed = {fold(proposal["lens"]) for proposal in record["proposals"]}
+    attributed = {fold(objection["lens"]) for objection in record["objections"]}
     errors: list[dict[str, Any]] = [
-        {"code": "unreported-proposal-lens", "id": proposal["id"],
-         "message": f"proposal {proposal['id']!r} is attributed to {proposal['lens']!r}, which "
-                    "files no report in this round; a lens that produced a proposal reported, so "
+        {"code": "unreported-objection-lens", "id": objection["id"],
+         "message": f"objection {objection['id']!r} is attributed to {objection['lens']!r}, which "
+                    "files no report in this round; a lens that produced an objection reported, so "
                     "this one traces to no attacker the record names — correct the attribution, "
                     "or record the report the lens that made it owes"}
-        for proposal in record["proposals"]
-        if fold(proposal["lens"]) not in reported
+        for objection in record["objections"]
+        if fold(objection["lens"]) not in reported
     ]
     for entry in record["lenses"]:
         name, report = entry["lens"], entry["report"]
         if report == "empty" and fold(name) in attributed:
             errors.append({
                 "code": "contradicted-empty-report",
-                "message": f"the {name!r} lens reports empty, yet proposals in this round are "
-                           "attributed to it; a report and the proposal list are one account",
+                "message": f"the {name!r} lens reports empty, yet objections in this round are "
+                           "attributed to it; a report and the objection list are one account",
             })
-        elif report == "proposals" and fold(name) not in attributed:
+        elif report == "objections" and fold(name) not in attributed:
             errors.append({
-                "code": "contradicted-proposals-report",
-                "message": f"the {name!r} lens reports proposals, yet none in this round are "
-                           "attributed to it; a proposal it made and the record lost is a hole "
+                "code": "contradicted-objections-report",
+                "message": f"the {name!r} lens reports objections, yet none in this round are "
+                           "attributed to it; an objection it made and the record lost is a hole "
                            "nobody adjudicates",
             })
     return errors
 
 
 def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
-    """Adjudication of every proposal, plus the revisions the acceptances account for.
+    """Adjudication of every objection, plus the revisions the acceptances account for.
 
-    A disposition names its proposal by id, not by position: dropping a malformed proposal
+    A disposition names its objection by id, not by position: dropping a malformed objection
     renumbers every position after it, and a disposition keyed on position would then adjudicate a
-    proposal nobody wrote it against. Two proposals sharing an id leave the same doubt, so the
+    objection nobody wrote it against. Two objections sharing an id leave the same doubt, so the
     round is refused rather than resolved either way.
 
     An acceptance names a revision other than the one attacked, decided by string comparison: the
     record is refused upstream unless every revision in it is written in one notation, so two
     revision strings differ exactly when the content they name does.
     """
-    ids = [proposal["id"] for proposal in record["proposals"]]
+    ids = [objection["id"] for objection in record["objections"]]
     attacked = record["spec_revision"]
     errors: list[dict[str, Any]] = [
-        {"code": "duplicate-proposal-id", "id": name,
-         "message": f"two proposals in this round carry the id {name!r}; a disposition naming it "
-                    "adjudicates neither of them, so give each proposal an id of its own"}
+        {"code": "duplicate-objection-id", "id": name,
+         "message": f"two objections in this round carry the id {name!r}; a disposition naming it "
+                    "adjudicates neither of them, so give each objection an id of its own"}
         for name in dict.fromkeys(ids)
         if ids.count(name) > 1
     ]
@@ -551,15 +654,15 @@ def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
         name = entry["id"]
         if name not in ids:
             errors.append({
-                "code": "unknown-proposal-id", "id": name,
-                "message": f"there is no proposal {name!r} in this round; every disposition "
-                           "adjudicates a proposal the round holds",
+                "code": "unknown-objection-id", "id": name,
+                "message": f"there is no objection {name!r} in this round; every disposition "
+                           "adjudicates an objection the round holds",
             })
             continue
         if name in seen:
             errors.append({
                 "code": "duplicate-disposition", "id": name,
-                "message": f"proposal {name!r} is adjudicated more than once; each proposal gets "
+                "message": f"objection {name!r} is adjudicated more than once; each objection gets "
                            "exactly one disposition",
             })
             continue
@@ -568,8 +671,8 @@ def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
             if entry["revision"] == attacked:
                 errors.append({
                     "code": "unincorporated-acceptance", "id": name,
-                    "message": f"proposal {name!r} was accepted against the revision it attacked; "
-                               "accepting a proposal without changing the document leaves it "
+                    "message": f"objection {name!r} was accepted against the revision it attacked; "
+                               "accepting an objection without changing the document leaves it "
                                "unadjudicated",
                 })
             else:
@@ -577,11 +680,94 @@ def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
     for name in dict.fromkeys(ids):
         if name not in seen:
             errors.append({
-                "code": "unadjudicated-proposal", "id": name,
-                "message": f"proposal {name!r} has no disposition; the round closes only once "
-                           "every proposal is accepted or rejected",
+                "code": "unadjudicated-objection", "id": name,
+                "message": f"objection {name!r} has no disposition; the round closes only once "
+                           "every objection is accepted or rejected",
             })
     return errors, accounted
+
+
+def _ground_errors(record: dict) -> list[dict[str, Any]]:
+    """Hold each objection's rule against the rules its producing lens enforces.
+
+    A lens's prompt carries only the rules it enforces, so an objection citing another rule was
+    not produced by that lens's instructions. The lens is found as coverage finds it, by the name
+    the filesystem matched. An objection from a lens the registry no longer declares is not judged:
+    what that lens enforced when it ran is not on record anywhere this check can read.
+    """
+    enforced = {fold(lens["lens"]): lens["enforces"] for lens in declared_registry()}
+    return [
+        {"code": "ground-outside-lens", "id": objection["id"],
+         "message": f"objection {objection['id']!r} cites the rule {objection['ground']['rule']!r}, "
+                    f"which the {objection['lens']!r} lens does not enforce; a lens objects on the "
+                    f"rules its prompt carried, and this one carried {', '.join(map(repr, rules))}"}
+        for objection in record["objections"]
+        if (rules := enforced.get(fold(objection["lens"]))) is not None
+        and objection["ground"]["rule"] not in rules
+    ]
+
+
+def workings_faults(lens: dict[str, Any], workings: Any) -> list[str]:
+    """What is wrong with a lens's workings, judged against the schema beside its prompt."""
+    from jsonschema import Draft202012Validator
+
+    if workings is None:
+        return ["carries none"]
+    faults = [("/" + "/".join(str(part) for part in err.absolute_path) + ": "
+               if err.absolute_path else "") + err.message
+              for err in Draft202012Validator(lens["workings_schema"]).iter_errors(workings)]
+    if faults:
+        return faults
+    # Part IDs are unique across the whole inventory, which the schema cannot say: an objection
+    # names a part by its ID, and an ID two parts share names neither of them.
+    parts = [part["id"] for obligation in workings.get("obligations", [])
+             for part in obligation.get("parts", [])]
+    return [f"names the part {name!r} more than once"
+            for name in dict.fromkeys(parts) if parts.count(name) > 1]
+
+
+def _workings_errors(record: dict) -> list[dict[str, Any]]:
+    """Hold the workings of each lens that requires them, and the objections they oblige.
+
+    Such a lens's findings are read off its inventory, so a report without a valid one is a lens
+    that returned nothing usable and the round is unfinished. A valid inventory then obliges
+    objections from that lens: one naming each part no criterion discharges in `obligation`, and
+    one naming each listed criterion that discharges no part in `target_ac`. A residue with no
+    such objection is a finding the lens made and the record lost.
+    """
+    errors: list[dict[str, Any]] = []
+    entries = {fold(entry["lens"]): entry for entry in record["lenses"]}
+    for lens in declared_registry():
+        entry = entries.get(fold(lens["lens"]))
+        if lens.get("workings") != "required" or entry is None:
+            continue
+        faults = workings_faults(lens, entry.get("workings"))
+        if faults:
+            errors.append({
+                "code": "invalid-workings",
+                "message": f"the {lens['lens']!r} lens requires workings, and its report's "
+                           f"{'; '.join(faults)}; its findings are read off that inventory, so "
+                           "run the lens again rather than record it without one",
+            })
+            continue
+        own = [item for item in record["objections"] if fold(item["lens"]) == fold(lens["lens"])]
+        workings = entry["workings"]
+        parts = [part for obligation in workings["obligations"] for part in obligation["parts"]]
+        discharging = {name for part in parts for name in part["discharged_by"]}
+        residue = [("part", part["id"], "obligation") for part in parts
+                   if not part["discharged_by"]]
+        residue += [("criterion", name, "target_ac") for name in workings["criteria"]
+                    if name not in discharging]
+        errors += [
+            {"code": "unreported-residue",
+             "message": f"the {lens['lens']!r} lens's workings leave the {kind} {name!r} "
+                        f"{'undischarged' if kind == 'part' else 'discharging nothing'}, and no "
+                        f"objection from that lens names it in `{field}`; record the objection "
+                        "the lens made, or run it again"}
+            for kind, name, field in residue
+            if not any(item.get(field) == name for item in own)
+        ]
+    return errors
 
 
 def check(record: dict, revisions: dict[str, str]) -> list[dict[str, Any]]:
@@ -591,13 +777,14 @@ def check(record: dict, revisions: dict[str, str]) -> list[dict[str, Any]]:
     the round is decided against and the run has them in hand already.
     """
     present = set(revisions.values())
-    errors = _lens_errors(record) + _report_errors(record)
+    errors = (_lens_errors(record) + _report_errors(record) + _ground_errors(record)
+              + _workings_errors(record))
     disposition_errors, accounted = _disposition_errors(record)
     errors += disposition_errors
-    # An acceptance says the document was edited to carry the proposal, so the revision attacked
+    # An acceptance says the document was edited to carry the objection, so the revision attacked
     # accounts for the document only in a round that accepted nothing. Unioning it in regardless
     # would close a round whose edit was reverted, lost in a rebase, or never made — clearing work
-    # to start against criteria every accepted proposal is absent from. Containment rather than
+    # to start against criteria every accepted objection is absent from. Containment rather than
     # intersection for the same reason: the document hashes to one content, so matching just one of
     # several accepted revisions lets a reverted final edit, or an acceptance carrying a fabricated
     # revision, ride in on whichever acceptance does match.
@@ -609,7 +796,7 @@ def check(record: dict, revisions: dict[str, str]) -> list[dict[str, Any]]:
                        "each acceptance names the revision that carries it, and the document is "
                        "one content, so a record whose acceptances name several different "
                        "revisions asks it to be in two states at once; name in every acceptance "
-                       "the revision the document reached once every accepted proposal was in it, "
+                       "the revision the document reached once every accepted objection was in it, "
                        "and in a round that accepted nothing the revision attacked, or attack the "
                        "document as it now stands and re-adjudicate against that. The revision "
                        "names the document's bytes as they stand on disk: `git hash-object "
@@ -629,7 +816,7 @@ def report(errors: list[dict[str, Any]], started: bool, code: int, clean: bool =
     file it read. A run that opened none omits both keys rather than naming a document it never
     read.
 
-    One finding is printed once. A record repeating a lens entry contradicts its proposal list
+    One finding is printed once. A record repeating a lens entry contradicts its objection list
     once per copy, and byte-identical errors distinguish nothing for a reader while inviting them
     to count two defects where the record holds one.
     """
@@ -757,7 +944,7 @@ def main(argv: list[str]) -> int:
                       read=read)
     if errors:
         return report(errors, started, EXIT_INCOMPLETE, read=read)
-    return report([], started, EXIT_COMPLETE, clean=not record["proposals"], read=read)
+    return report([], started, EXIT_COMPLETE, clean=not record["objections"], read=read)
 
 
 if __name__ == "__main__":

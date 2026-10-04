@@ -373,8 +373,8 @@ outcomes and stay on every path; the verb block is not.
   skip. Here it fails *open*. Which way a drop points is a property of what
   reads the result, not of the parser, so decide it per read.
 - **Every failure raised after the outside system may have acted carries what
-  it may have done.** This is one rule, and four review rounds found it four
-  times before it got written down. The runtime appends *before* it replies
+  it may have done.** This is one rule; it applies wherever a raise follows an
+  outside call. The runtime appends *before* it replies
   and the facade writes *before* it replies, so an `ok: true` reply from an
   appending or mutating verb means the effect is durable however the call ends
   after that — a wrapper dying, an unreadable `applied`, a park reply naming

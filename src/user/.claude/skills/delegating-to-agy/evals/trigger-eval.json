@@ -1,0 +1,21 @@
+[
+  {"query": "use agy to have gemini flash triage the 30 failing tests in packages/installer, cheapest tier is fine, i just want a shortlist of causes", "should_trigger": true},
+  {"query": "get an antigravity lens on the diff between main and this branch. i want a gemini review that doesn't see our house rules", "should_trigger": true},
+  {"query": "have gemini pro go over docs/specs/2026-09-27-delegating-to-agy.md for holes, its a cross-subsystem design so use the strongest tier", "should_trigger": true},
+  {"query": "can you hand the config migration off to gemini as a worker in this checkout? it should pick up the repo's AGENTS.md the way codex would", "should_trigger": true},
+  {"query": "the review-panel round wants a gemini seat for the security lens on PR 790, go dispatch it", "should_trigger": true},
+  {"query": "spin up agy on gemini-3.8-flash-medium for a delta re-review of the fixes since round 2", "should_trigger": true},
+  {"query": "run this prompt through antigravity cli headless and give me back just its answer", "should_trigger": true},
+  {"query": "get a second opinion on packages/installer/src/installer/core/sanitize.py from gemini", "should_trigger": true},
+  {"query": "my claude usage is getting heavy this week. push the TODO-comment extraction out to a gemini run on my google subscription", "should_trigger": true},
+  {"query": "agy lens over HEAD~3..HEAD please, and keep the snapshot so i can look at what it actually saw afterwards", "should_trigger": true},
+
+  {"query": "route this refactor to kimi-k3 through openrouter, i dont want you burning context on it", "should_trigger": false},
+  {"query": "run gemini flash via openrouter for this one, i've got credits there and want it on the openrouter bill", "should_trigger": false},
+  {"query": "have codex review the diff on this branch before i open the PR", "should_trigger": false},
+  {"query": "agy keeps opening a browser to sign me in every morning, how do i fix its google login", "should_trigger": false},
+  {"query": "how do i install antigravity cli on my other mac and get it authenticated", "should_trigger": false},
+  {"query": "review PR #788 for me before i merge it", "should_trigger": false},
+  {"query": "whats the actual difference between gemini 3.8 flash high and gemini 3.1 pro high? just curious, dont run anything", "should_trigger": false},
+  {"query": "find someone to poke holes in this migration plan, i dont care which model", "should_trigger": false}
+]
