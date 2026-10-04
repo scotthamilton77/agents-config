@@ -18,7 +18,7 @@ state a rule and be exempt from the rule it states, whatever its own date.
 Widening it to any other pre-floor spec needs the same kind of recorded
 ruling this one carries.
 
-Four mechanical, gaming-resistant checks:
+Five mechanical, gaming-resistant checks:
 
 1. an "Acceptance criteria" heading exists (case-insensitive, matched as a
    markdown heading line);
@@ -36,6 +36,11 @@ Four mechanical, gaming-resistant checks:
 4. a spec that mints implementation work — one carrying a ``## Continuations``
    manifest — accounts for every criterion from check 2 in an evidence ledger
    kept in a sidecar file beside it. See "The evidence ledger" below.
+5. a spec with any heading that names the follow-on section carries it under
+   the exact heading ``work deliver --spec`` reads, and every bullet there
+   parses the way that facade parses it, so a spec the facade would refuse
+   after merge is refused before it. The grammar is stated beside
+   ``_CONTINUATIONS_HEADING``.
 
 Both kinds count because both are contracts a slice can be held to, which is
 the whole of what the criterion asks for: a slice that names neither has no
@@ -213,6 +218,28 @@ _EVIDENCE_HEADING_KEYWORD = "evidence"
 # configuration at lint time. If the facade is ever reconfigured, this is the
 # other place to change.
 _CONTINUATIONS_HEADING_KEYWORD = "continuations"
+# The manifest grammar the facade parses, stated here for the same reason as
+# the keyword above, and to be changed with it. The facade finds the section by
+# this exact line and reads its bullets up to the next line opening with `## `.
+# Each bullet is an item or the single declining bullet. The nouns are the
+# canonical ones the project configures; the facade refuses an alias, because
+# it stores the bullet as written. A spec that merges with any other shape is
+# refused only after merge, when `work deliver` reads it, so this lint refuses
+# it first.
+_CONTINUATIONS_HEADING = "## Continuations"
+_MANIFEST_AC_SEPARATOR = " — AC: "
+_MANIFEST_NOUNS = ("spike", "chore", "decision", "feat", "bugfix", "spec", "epic", "milestone")
+_MANIFEST_FORM = (
+    f"every bullet under '{_CONTINUATIONS_HEADING}' is "
+    f"'- <noun>: <title>{_MANIFEST_AC_SEPARATOR}<acceptance>' with <noun> one of "
+    f"{', '.join(_MANIFEST_NOUNS)}, or the section holds the single bullet "
+    f"'- none — <why there is no follow-on work>'"
+)
+# Specs whose follow-on section predates this grammar check and whose follow-on
+# work is already minted and closed. Renaming such a heading now would put a
+# delivered spec under the evidence-ledger rule for work already shipped, so
+# each is named here instead and its section is not read.
+_MANIFEST_EXEMPT = frozenset({"2026-09-27-delegating-to-agy.md"})
 
 # The phrase by which a criterion states its own verification kind. It is
 # author-maintained prose, which is exactly its value: no grep over test names
@@ -234,11 +261,14 @@ _Heading = tuple[int, int, str]
 @dataclass(frozen=True, slots=True)
 class Violation:
     """One mechanical lint failure. ``slice`` is set only for a per-slice
-    citation failure (check 3); ``reason`` is a human-readable message."""
+    citation failure (check 3); ``line`` is the 1-based line the author has to
+    change, set where one line is at fault; ``reason`` is a human-readable
+    message."""
 
     file: Path
     reason: str
     slice: str | None = None
+    line: int | None = None
 
 
 def _parse_spec_date(filename: str) -> date | None:
@@ -594,6 +624,112 @@ def _lint_inline_ledger(path: Path, headings: list[_Heading]) -> list[Violation]
     ]
 
 
+def _manifest_bullets(lines: list[str], heading_idx: int) -> list[tuple[int, str]]:
+    """``(line_index, text)`` for every bullet under the follow-on heading at
+    ``heading_idx``, read the way the facade reads it. The section runs to the
+    next line opening with ``## ``. A later non-blank line joins the bullet
+    above it, and prose before the first bullet is ignored. A code fence bounds
+    nothing here, because the facade sees no fences and reads a fenced bullet
+    as a bullet."""
+    bullets: list[tuple[int, list[str]]] = []
+    for offset in range(heading_idx + 1, len(lines)):
+        stripped = lines[offset].strip()
+        if lines[offset].startswith("## "):
+            break
+        if stripped.startswith("- "):
+            bullets.append((offset, [stripped[2:].strip()]))
+        elif stripped and bullets:
+            bullets[-1][1].append(stripped)
+    return [(offset, " ".join(parts)) for offset, parts in bullets]
+
+
+def _is_none_bullet(text: str) -> bool:
+    return text == "none" or text.startswith("none —")
+
+
+def _manifest_item_fault(text: str) -> str | None:
+    """What keeps the bullet ``text`` from being a manifest item, or ``None``
+    when it is one."""
+    noun, has_noun, rest = text.partition(": ")
+    if not has_noun:
+        return "is neither an item nor the declining bullet"
+    if noun.strip() not in _MANIFEST_NOUNS:
+        return f"names the noun '{noun.strip()}', which the tracker does not accept"
+    title, has_separator, acceptance = rest.partition(_MANIFEST_AC_SEPARATOR)
+    if not has_separator:
+        return f"lacks the '{_MANIFEST_AC_SEPARATOR}' separator"
+    if not title.strip() or not acceptance.strip():
+        return "has an empty title or acceptance"
+    return None
+
+
+def _lint_manifest(path: Path, lines: list[str], headings: list[_Heading]) -> list[Violation]:
+    """The follow-on section against the grammar `work deliver --spec` parses.
+
+    A spec with no heading naming the section mints no work and is not read.
+    One that names it under any other heading is refused at that heading,
+    because the facade would find no section at all."""
+    if path.name in _MANIFEST_EXEMPT:
+        return []
+    named = [h for h in headings if _CONTINUATIONS_HEADING_KEYWORD in h[2].lower()]
+    violations = [
+        Violation(
+            file=path,
+            line=line_idx + 1,
+            reason=(
+                f"heading '{lines[line_idx].strip()}' names the follow-on section, which "
+                f"`work deliver` reads only under the exact line '{_CONTINUATIONS_HEADING}'; "
+                f"{_MANIFEST_FORM}"
+            ),
+        )
+        for line_idx, _level, _text in named
+        if lines[line_idx] != _CONTINUATIONS_HEADING
+    ]
+    exact = [
+        line_idx for line_idx, _level, _text in named if lines[line_idx] == _CONTINUATIONS_HEADING
+    ]
+    if not exact:
+        return violations
+    bullets = _manifest_bullets(lines, exact[0])
+    if not bullets:
+        return [
+            *violations,
+            Violation(
+                file=path,
+                line=exact[0] + 1,
+                reason=f"the follow-on section holds no bullets; {_MANIFEST_FORM}",
+            ),
+        ]
+    declining = [(offset, text) for offset, text in bullets if _is_none_bullet(text)]
+    if declining:
+        if len(declining) < len(bullets):
+            violations.append(
+                Violation(
+                    file=path,
+                    line=declining[0][0] + 1,
+                    reason=f"'- none' cannot stand beside item bullets; {_MANIFEST_FORM}",
+                )
+            )
+        return violations
+    titles: set[str] = set()
+    for offset, text in bullets:
+        fault = _manifest_item_fault(text)
+        if fault is None:
+            title = text.partition(": ")[2].partition(_MANIFEST_AC_SEPARATOR)[0].strip()
+            if title in titles:
+                fault = "repeats the title of an earlier item, so only one would be minted"
+            titles.add(title)
+        if fault is not None:
+            violations.append(
+                Violation(
+                    file=path,
+                    line=offset + 1,
+                    reason=f"follow-on bullet '- {text}' {fault}; {_MANIFEST_FORM}",
+                )
+            )
+    return violations
+
+
 def _lint_evidence(
     path: Path,
     headings: list[_Heading],
@@ -672,7 +808,7 @@ def init_evidence(text: str) -> str | None:
 def lint_spec_text(
     path: Path, text: str, repo_root: Path | None = None, evidence: str | None = None
 ) -> list[Violation]:
-    """The lint's four checks over one spec's text. ``path`` labels the
+    """The lint's five checks over one spec's text. ``path`` labels the
     violations and names the evidence sidecar beside it; this function reads
     no file.
 
@@ -687,10 +823,15 @@ def lint_spec_text(
     fenced = fence_mask(lines)
     headings = _headings(lines, fenced)
 
-    inline = _lint_inline_ledger(path, headings)
+    # Both hold whether or not the spec states usable criteria, so they ride
+    # along with every early return below.
+    unconditional = [*_lint_inline_ledger(path, headings), *_lint_manifest(path, lines, headings)]
     ac_headings = [h for h in headings if _AC_HEADING_KEYWORD in h[2].lower()]
     if not ac_headings:
-        return [Violation(file=path, reason="no 'Acceptance criteria' heading found"), *inline]
+        return [
+            Violation(file=path, reason="no 'Acceptance criteria' heading found"),
+            *unconditional,
+        ]
 
     defined_acs = _defined_acs(lines, headings, fenced)
     defined_ids = set(defined_acs)
@@ -703,7 +844,7 @@ def lint_spec_text(
                     "definition entry (- **ID** text) found under it"
                 ),
             ),
-            *inline,
+            *unconditional,
         ]
 
     # Check 2 is satisfied by AC entries alone — a spec with decisions and no
@@ -712,7 +853,7 @@ def lint_spec_text(
     citation_re = _citation_re(defined_ids | _defined_decision_ids(lines, fenced))
 
     violations: list[Violation] = [
-        *inline,
+        *unconditional,
         *_lint_evidence(path, headings, defined_acs, evidence, repo_root),
     ]
     for idx, (line_idx, level, heading_text) in enumerate(headings):
@@ -788,6 +929,8 @@ def lint_specs(specs_dir: Path, repo_root: Path | None = None) -> list[Violation
 def format_violation(violation: Violation) -> str:
     """The human-readable rendering of one violation, for the CLI edge."""
     location = str(violation.file)
+    if violation.line is not None:
+        location += f":{violation.line}"
     if violation.slice is not None:
         location += f" [slice: {violation.slice}]"
     return f"{location}: {violation.reason}"
