@@ -28,6 +28,8 @@ from grillui.schemas import (
     HEAVY_TIER,
     MAP_CHANNEL,
     STATUS_KIND,
+    STATUS_PHASE_TRANSFERRED,
+    TRANSFER_FLAG,
     DispatchContext,
     EventSubmission,
     LogEntry,
@@ -89,12 +91,14 @@ def _seed(log: SessionLog) -> None:
         assert receipt.status == "accepted"
 
 
-def _answer(option: str | None = "a", text: str | None = None) -> EventSubmission:
+def _answer(
+    option: str | None = "a", text: str | None = None, target: str = "d1"
+) -> EventSubmission:
     return EventSubmission(
         kind="answer",
         actor="human",
-        idempotency_key=f"answer-d1-{option}-{text}",
-        payload={"target": "d1", "answer": {"option": option, "text": text}},
+        idempotency_key=f"answer-{target}-{option}-{text}",
+        payload={"target": target, "answer": {"option": option, "text": text}},
     )
 
 
@@ -379,3 +383,139 @@ def test_a_brief_names_the_decisions_the_humans_own_words_opened_apart_from_the_
     brief = "\n\n".join(_paragraphs(expert.dispatches[0]))
     assert "That option names d4, and the board is still offering it." in brief
     assert "Their own words open d2, d6, which no option marked" in brief
+
+
+# --- custom text with nothing downstream -------------------------------------
+
+# d4 is a leaf: nothing rests on it. d3 rests on d5, but also on d1, which
+# nobody has answered, so answering d5 opens nothing either.
+NOTHING_DOWNSTREAM = [_answer(None, NOTE, "d4"), _answer("a", NOTE, "d5")]
+NOTHING_DOWNSTREAM_IDS = ["free-text-on-a-leaf", "note-on-a-decision-whose-dependent-stays-gated"]
+
+
+@pytest.mark.parametrize("answer", NOTHING_DOWNSTREAM, ids=NOTHING_DOWNSTREAM_IDS)
+def test_pnd_a2_custom_text_that_opens_nothing_is_still_weighed_by_the_expert(
+    log: SessionLog, answer: EventSubmission
+) -> None:
+    """
+    Given an answer in the human's own words that marks and opens nothing
+    When the lane takes it
+    Then its one map turn opens on the expert, carrying no task, nothing waits,
+         and the first rung is never handed the turn.
+    """
+    _seed(log)
+    fast, expert = SpyDriver(), SpyDriver(tier=HEAVY_TIER)
+    run_turns(Lane(log, fast, expert), answer)
+
+    announced = _announcements(log.entries())
+    assert [one.payload["tier"] for one in announced] == [HEAVY_TIER]
+    assert "tasks" not in announced[0].payload
+    assert _waiting(log) == []
+    assert len(expert.dispatches) == 1
+    assert fast.dispatches == []
+
+
+@pytest.mark.parametrize("answer", NOTHING_DOWNSTREAM, ids=NOTHING_DOWNSTREAM_IDS)
+def test_pnd_a2_custom_text_that_opens_nothing_runs_at_the_task_effort(
+    log: SessionLog, answer: EventSubmission
+) -> None:
+    """
+    Given an expert seat whose heavy effort is set to max
+    When an answer in the human's own words that opens nothing reaches it
+    Then the turn is asked for at the task effort, medium, and its attribution
+         records medium.
+    """
+    _seed(log)
+    cli = ScriptedCli()
+    expert = HeavyDriver(TierConfig.from_env({HEAVY_EFFORT_ENV: "max"}), cli)
+    run_turns(Lane(log, SpyDriver(), expert), answer)
+
+    (argv,) = cli.calls
+    assert argv[argv.index("--effort") + 1] == "medium"
+    assert _effort_of_reply(log) == "medium"
+
+
+@pytest.mark.parametrize("answer", NOTHING_DOWNSTREAM, ids=NOTHING_DOWNSTREAM_IDS)
+def test_pnd_a11_a_custom_text_dispatch_carries_a_backpressure_paragraph(
+    log: SessionLog, answer: EventSubmission
+) -> None:
+    """
+    Given an answer in the human's own words that opens nothing
+    When the expert is dispatched to weigh those words against the board
+    Then its dispatch record and its brief carry the `Backpressure:` paragraph.
+    """
+    _seed(log)
+    expert = SpyDriver(tier=HEAVY_TIER)
+    run_turns(Lane(log, SpyDriver(), expert), answer)
+
+    recorded, paragraphs = _backpressure_in(expert.dispatches[0])
+    assert isinstance(recorded, str)
+    assert paragraphs == [recorded]
+
+
+# --- which effort, on a channel already moved to the expert ------------------
+
+
+def _moved(answer: EventSubmission) -> EventSubmission:
+    """The same answer, with the human moving the map to the expert on it."""
+    return answer.model_copy(update={"payload": {**answer.payload, TRANSFER_FLAG: True}})
+
+
+def _efforts_on_a_heavy_seat_of_max(log: SessionLog, *answers: EventSubmission) -> list[str]:
+    """Take each answer on an expert seat whose heavy effort is max, and return
+    the effort each expert turn was asked for."""
+    cli = ScriptedCli()
+    expert = HeavyDriver(TierConfig.from_env({HEAVY_EFFORT_ENV: "max"}), cli)
+    lane = Lane(log, SpyDriver(), expert)
+    for answer in answers:
+        run_turns(lane, answer)
+    return [argv[argv.index("--effort") + 1] for argv in cli.calls]
+
+
+@pytest.mark.parametrize("answer", NOTHING_DOWNSTREAM, ids=NOTHING_DOWNSTREAM_IDS)
+def test_pnd_a2_custom_text_on_a_channel_the_human_moved_to_the_expert_keeps_the_heavy_effort(
+    log: SessionLog, answer: EventSubmission
+) -> None:
+    """
+    Given an expert seat whose heavy effort is max
+    When the human answers in their own words and moves the map to the expert
+         on the same answer, and nothing is downstream of it
+    Then the turn runs and is attributed at max, the effort the human moved the
+         channel to, and its dispatch still carries the backpressure paragraph.
+    """
+    _seed(log)
+    assert _efforts_on_a_heavy_seat_of_max(log, _moved(answer)) == ["max"]
+    assert _effort_of_reply(log) == "max"
+    dispatched = sorted((log.directory / "dispatches").glob("*.json"))
+    recorded, paragraphs = _backpressure_in(dispatched[-1])
+    assert isinstance(recorded, str)
+    assert paragraphs == [recorded]
+
+
+def test_pnd_a2_custom_text_on_a_channel_the_policy_moved_runs_at_the_task_effort(
+    log: SessionLog,
+) -> None:
+    """
+    Given a map the escalation policy moved to the expert, not the human
+    When the human answers in their own words
+    Then the turn runs at the task effort: the words are the reason it is
+         weighed, and nobody chose the heavy effort for it.
+    """
+    _seed(log)
+    log.emit_status(
+        STATUS_PHASE_TRANSFERRED, "the escalation policy moved this channel", MAP_CHANNEL
+    )
+    assert _efforts_on_a_heavy_seat_of_max(log, NOTHING_DOWNSTREAM[0]) == ["medium"]
+
+
+def test_pnd_a2_a_task_turn_on_a_channel_the_human_moved_still_runs_at_the_task_effort(
+    log: SessionLog,
+) -> None:
+    """
+    Given an expert seat whose heavy effort is max
+    When the human takes a marked option and moves the map to the expert on the
+         same answer
+    Then the impact task's turn still runs at the task effort.
+    """
+    _seed(log)
+    assert _efforts_on_a_heavy_seat_of_max(log, _moved(_answer("b"))) == ["medium"]

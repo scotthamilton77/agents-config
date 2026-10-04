@@ -108,6 +108,7 @@ def assemble(
     mootness: MootnessObligation | None = None,
     tasks: Sequence[str] = (),
     scope: Sequence[str] = (),
+    custom_text: bool = False,
 ) -> str:
     """One dispatch context, serialised, carrying the whole of what it owes.
 
@@ -139,8 +140,9 @@ def assemble(
     inside the board's bytes either way, and a turn asked to find it there is a
     turn that may not.
 
-    `tasks` is the impact tasks the turn carries. A turn carrying one weighs the
-    board against a settlement, and so does the doctor, so both are handed the
+    `tasks` is the impact tasks the turn carries, and `custom_text` says the
+    turn answers the human's own words. Each of those turns weighs the board
+    against a settlement, and so does the doctor, so all three are handed the
     backpressure paragraph. `scope` is what a retry may change.
 
     The pending queue rides inside the image either way, which is what makes
@@ -160,7 +162,8 @@ def assemble(
         help_reference=help_reference,
         mootness=mootness,
         tasks=list(tasks),
-        backpressure=BACKPRESSURE if tasks or reassess else None,
+        custom_text=custom_text,
+        backpressure=BACKPRESSURE if tasks or custom_text or reassess else None,
         scope=list(scope),
     )
     recorded = context.model_dump_json()
@@ -203,6 +206,7 @@ def record_dispatch(
     mootness: MootnessObligation | None = None,
     tasks: Sequence[str] = (),
     scope: Sequence[str] = (),
+    custom_text: bool = False,
 ) -> Path:
     """Replay at dispatch time, assemble, and record what the agent was given.
 
@@ -229,6 +233,7 @@ def record_dispatch(
         mootness=mootness or mootness_obligation(image, entries, channel),
         tasks=tasks,
         scope=scope,
+        custom_text=custom_text,
     )
     directory = log.directory / DISPATCH_DIR
     directory.mkdir(parents=True, exist_ok=True)

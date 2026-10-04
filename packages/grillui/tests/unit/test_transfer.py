@@ -135,6 +135,12 @@ def answered(key: str, text: str, **payload: Any) -> EventSubmission:
     return human("answer", MAP_CHANNEL, key, target=NODE, answer={"text": text}, **payload)
 
 
+def picked(key: str, **payload: Any) -> EventSubmission:
+    """A map answer taking an option with no words of the human's own, which the
+    map's first rung takes unless the channel was moved."""
+    return human("answer", MAP_CHANNEL, key, target=NODE, answer={"option": "a"}, **payload)
+
+
 def said(thread: str, key: str, text: str, **payload: Any) -> EventSubmission:
     return human("thread-turn", thread, key, turns=[{"text": text}], **payload)
 
@@ -322,14 +328,14 @@ def test_activating_transfer_takes_the_next_map_turn_to_the_heavy_tier(
     fast, heavy, cli = both_tiers()
     lane = Lane(log, fast, heavy)
 
-    run_turns(lane, answered("ordinary", FIRST_ASKED))
+    run_turns(lane, picked("ordinary"))
     run_turns(lane, answered("escalated", ESCALATED_ASKED, **{TRANSFER_FLAG: True}))
 
     assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, HEAVY_TIER]
     asked = prompts(cli)
     assert len(asked) == 1
     said_to_the_expert = conversation(asked[0])
-    assert FIRST_ASKED in said_to_the_expert
+    assert "option a" in said_to_the_expert
     assert FAST_SAID in said_to_the_expert
     assert ESCALATED_ASKED in said_to_the_expert
     assert attributions(log) == [
@@ -404,7 +410,7 @@ def test_deactivating_transfer_returns_the_next_turn_to_the_fast_tier(
     lane = Lane(log, fast, heavy)
 
     run_turns(lane, answered("escalated", ESCALATED_ASKED, **{TRANSFER_FLAG: True}))
-    run_turns(lane, answered("returned", FIRST_ASKED, **{TRANSFER_FLAG: False}))
+    run_turns(lane, picked("returned", **{TRANSFER_FLAG: False}))
 
     assert waited_on(log, MAP_CHANNEL) == [HEAVY_TIER, FAST_TIER]
     assert attributions(log)[-1] == {"text": FAST_SAID, TIER_KEY: FAST_TIER, MODEL_KEY: FAST_MODEL}
@@ -432,7 +438,7 @@ def test_one_channels_switches_leave_every_other_channel_where_it_was(
     run_turns(lane, said(MINE, "escalate-mine", LATER_ASKED, **{TRANSFER_FLAG: True}))
     run_turns(lane, answered("map-up", ESCALATED_ASKED, **{TRANSFER_FLAG: True}))
     run_turns(lane, said(OTHER, "other-again", "And on restart?"))
-    run_turns(lane, answered("map-down", FIRST_ASKED, **{TRANSFER_FLAG: False}))
+    run_turns(lane, picked("map-down", **{TRANSFER_FLAG: False}))
     run_turns(lane, said(MINE, "mine-again", "Say more."))
 
     assert waited_on(log, MAP_CHANNEL) == [HEAVY_TIER, FAST_TIER]
@@ -487,7 +493,7 @@ def test_an_agent_claiming_a_transfer_moves_no_channel_in_either_direction(
         ],
         log.epoch,
     )
-    run_turns(lane, answered("map-after", FIRST_ASKED))
+    run_turns(lane, picked("map-after"))
     run_turns(lane, said(MINE, "mine-after", "Say more."))
 
     assert waited_on(log, MAP_CHANNEL) == [FAST_TIER]
@@ -516,15 +522,15 @@ def test_a_session_with_no_policy_configured_leaves_a_met_condition_to_the_human
     fast, heavy, _cli = both_tiers()
     lane = Lane(log, fast, heavy)
 
-    run_turns(lane, answered("irreducible", IRREDUCIBLE_ASKED))
-    run_turns(lane, answered("after", FIRST_ASKED))
+    run_turns(lane, opened(MINE, "irreducible", IRREDUCIBLE_ASKED))
+    run_turns(lane, said(MINE, "after", FIRST_ASKED))
 
     assert [payload.get(RECOMMENDATION_KEY, {}).get("condition") for payload in replies(log)] == [
         CONDITION_IRREDUCIBLE,
         None,
     ]
-    assert transfers(log, MAP_CHANNEL) == []
-    assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, FAST_TIER]
+    assert transfers(log, MINE) == []
+    assert waited_on(log, MINE) == [FAST_TIER, FAST_TIER]
     written = (log.directory / LOG_FILE).read_text(encoding="utf-8")
     assert STATUS_PHASE_TRANSFERRED not in written
     assert TRANSFER_SOURCE_KEY not in written
@@ -539,10 +545,10 @@ def test_under_the_autonomous_policy_a_met_condition_takes_that_channel_to_the_e
     """
     Given an autonomous session with a side thread already talking to the fast
          tier about something that meets no condition
-    When a fast reply on the map meets one
-    Then the next map turn composes on the heavy tier and is handed the map's
+    When a fast reply on a second thread meets one
+    Then that thread's next turn composes on the heavy tier and is handed its
          whole accumulated conversation rather than the last message, while the
-         thread's next turn is still fast.
+         first thread's next turn is still fast.
 
     Three claims in one session because they are one claim: the policy moves a
     channel, and a channel is not the session. A transfer that also moved the
@@ -553,14 +559,14 @@ def test_under_the_autonomous_policy_a_met_condition_takes_that_channel_to_the_e
     fast, heavy, cli = both_tiers(POLICY_AUTONOMOUS)
     lane = Lane(log, fast, heavy)
 
-    run_turns(lane, opened(MINE, "open-mine", THREAD_OPENED))
-    run_turns(lane, answered("irreducible", IRREDUCIBLE_ASKED))
-    run_turns(lane, answered("after", ESCALATED_ASKED))
-    run_turns(lane, said(MINE, "mine-after", "Say more."))
+    run_turns(lane, opened(OTHER, "open-other", THREAD_OPENED))
+    run_turns(lane, opened(MINE, "irreducible", IRREDUCIBLE_ASKED))
+    run_turns(lane, said(MINE, "after", ESCALATED_ASKED))
+    run_turns(lane, said(OTHER, "other-after", "Say more."))
 
-    assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, HEAVY_TIER]
-    assert waited_on(log, MINE) == [FAST_TIER, FAST_TIER]
-    assert transfers(log, MINE) == []
+    assert waited_on(log, MINE) == [FAST_TIER, HEAVY_TIER]
+    assert waited_on(log, OTHER) == [FAST_TIER, FAST_TIER]
+    assert transfers(log, OTHER) == []
     asked = prompts(cli)
     assert len(asked) == 1
     said_to_the_expert = conversation(asked[0])
@@ -577,9 +583,9 @@ def test_a_policy_escalation_is_named_on_the_lane_and_on_the_turn_it_bought(
 ) -> None:
     """
     Given an autonomous session
-    When the policy escalates the map and the human escalates a thread by hand
-    Then the lane carries a backend-authored transfer entry on the map naming the
-         condition, the heavy map turn carries `transfer_source: "policy"` beside
+    When the policy escalates one thread and the human escalates another by hand
+    Then the lane carries a backend-authored transfer entry on the first naming the
+         condition, its heavy turn carries `transfer_source: "policy"` beside
          a `followed_transfer` flag of the shape it always had, the heavy thread
          turn the human asked for carries no source at all, and the move appends
          nothing the human is notified about.
@@ -592,12 +598,12 @@ def test_a_policy_escalation_is_named_on_the_lane_and_on_the_turn_it_bought(
     fast, heavy, _cli = both_tiers(POLICY_AUTONOMOUS)
     lane = Lane(log, fast, heavy)
 
-    run_turns(lane, answered("irreducible", IRREDUCIBLE_ASKED))
-    run_turns(lane, answered("after", ESCALATED_ASKED))
-    run_turns(lane, opened(MINE, "open-mine", THREAD_OPENED))
-    run_turns(lane, said(MINE, "escalate-mine", LATER_ASKED, **{TRANSFER_FLAG: True}))
+    run_turns(lane, opened(MINE, "irreducible", IRREDUCIBLE_ASKED))
+    run_turns(lane, said(MINE, "after", ESCALATED_ASKED))
+    run_turns(lane, opened(OTHER, "open-other", THREAD_OPENED))
+    run_turns(lane, said(OTHER, "escalate-other", LATER_ASKED, **{TRANSFER_FLAG: True}))
 
-    assert transfers(log, MAP_CHANNEL) == [
+    assert transfers(log, MINE) == [
         f"the escalation policy moved this channel to the expert tier: {CONDITION_IRREDUCIBLE}"
     ]
     heavy_turns = [payload for payload in attributions(log) if payload[TIER_KEY] == HEAVY_TIER]
@@ -632,7 +638,7 @@ def test_the_human_takes_a_policy_transfer_back_and_a_later_condition_escalates_
     client: TestClient, log: SessionLog
 ) -> None:
     """
-    Given a map channel the policy moved to the heavy tier
+    Given a thread the policy moved to the heavy tier
     When the human sends it back to the fast tier, and a later fast reply meets a
          condition
     Then their return takes the next turn, the channel escalates a second time,
@@ -647,13 +653,13 @@ def test_the_human_takes_a_policy_transfer_back_and_a_later_condition_escalates_
     fast, heavy, _cli = both_tiers(POLICY_AUTONOMOUS)
     lane = Lane(log, fast, heavy)
 
-    run_turns(lane, answered("irreducible", IRREDUCIBLE_ASKED))
-    run_turns(lane, answered("returned", FIRST_ASKED, **{TRANSFER_FLAG: False}))
-    run_turns(lane, answered("irreducible-again", IRREDUCIBLE_AGAIN))
-    run_turns(lane, answered("after", ESCALATED_ASKED))
+    run_turns(lane, opened(MINE, "irreducible", IRREDUCIBLE_ASKED))
+    run_turns(lane, said(MINE, "returned", FIRST_ASKED, **{TRANSFER_FLAG: False}))
+    run_turns(lane, said(MINE, "irreducible-again", IRREDUCIBLE_AGAIN))
+    run_turns(lane, said(MINE, "after", ESCALATED_ASKED))
 
-    assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, FAST_TIER, FAST_TIER, HEAVY_TIER]
-    assert len(transfers(log, MAP_CHANNEL)) == 2
+    assert waited_on(log, MINE) == [FAST_TIER, FAST_TIER, FAST_TIER, HEAVY_TIER]
+    assert len(transfers(log, MINE)) == 2
 
 
 def test_a_human_turn_arriving_the_instant_the_reply_lands_still_goes_to_the_expert(
@@ -681,7 +687,7 @@ def test_a_human_turn_arriving_the_instant_the_reply_lands_still_goes_to_the_exp
     def race() -> None:
         """The next human turn, taken from a thread of its own so it contends
         for the append lock rather than re-entering it."""
-        _receipts, scheduled = lane.accept([answered("raced", ESCALATED_ASKED)], log.epoch)
+        _receipts, scheduled = lane.accept([said(MINE, "raced", ESCALATED_ASKED)], log.epoch)
         racing.extend(scheduled)
 
     def interleave() -> None:
@@ -693,13 +699,13 @@ def test_a_human_turn_arriving_the_instant_the_reply_lands_still_goes_to_the_exp
         runner.join(RACE_WINDOW)
 
     log.hook = interleave
-    run_turns(lane, answered("irreducible", IRREDUCIBLE_ASKED))
+    run_turns(lane, opened(MINE, "irreducible", IRREDUCIBLE_ASKED))
     for thread in racing:
         thread.join(TIMEOUT)
         assert not thread.is_alive(), "a raced turn outlived its timeout"
 
-    assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, HEAVY_TIER]
-    assert len(transfers(log, MAP_CHANNEL)) == 1
+    assert waited_on(log, MINE) == [FAST_TIER, HEAVY_TIER]
+    assert len(transfers(log, MINE)) == 1
 
 
 # ── the capability request: the one condition read off the reply ──
