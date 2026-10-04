@@ -207,15 +207,18 @@
       },
       "openrouter": {
         "frontier": {
-          "full": {"effort": "low", "tools": ["Read", "Grep", "Glob"]},
-          "delta": {"effort": "high", "tools": ["Read", "Grep", "Glob"]}
+          "full": {"effort": "low", "tools": ["Read", "Grep", "Glob", "Bash(git diff *)", "Bash(git log *)"]},
+          "delta": {"effort": "high", "tools": ["Read", "Grep", "Glob", "Bash(git diff *)", "Bash(git log *)"]}
         },
         "mid": {
-          "delta": {"effort": "high", "tools": ["Read", "Grep", "Glob"]}
+          "delta": {"effort": "high", "tools": ["Read", "Grep", "Glob", "Bash(git diff *)", "Bash(git log *)"]}
         }
       }
     },
-    "staffing_recommender": {"provider": "openai", "tier": "mid", "effort": "medium", "tools": []},
+    "staffing_recommender": {
+      "provider": "openai", "tier": "mid", "effort": "medium",
+      "tools": "read-only-sandbox"
+    },
     "trend_checkpoint": {
       "provider": "anthropic", "tier": "top", "effort": "high", "tools": ["Read", "Grep", "Glob"]
     }

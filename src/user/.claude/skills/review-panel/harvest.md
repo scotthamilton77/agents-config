@@ -20,8 +20,7 @@ happened; the emitter refuses assertion-shaped evidence and stale heads.
 recommending model, and the decision. Get the recommendation from the dispatch that
 `contracts.json` pins under `pins.staffing_recommender`. That pin names the provider, the tier,
 the effort and the tool grant, and the model is the routing table's cell for that provider and
-tier. The pinned provider sits outside the reviewing session's own vendor family, and an empty
-tool grant means the recommender reads only what its prompt carries. Interactively,
+tier. The pinned provider sits outside the reviewing session's own vendor family. Interactively,
 present it to the user and record their edit as the decision; non-interactively, record the
 recommendation and proceed. A sweep round's staffing decision subtracts only from the
 class's frontier seats, decision `sweep-contract`, unbounded by the profile's force ceiling, mid
@@ -74,7 +73,7 @@ pick none of the three values yourself:
 - **The effort and the tool grant** are the lens's `effort` and `tools` fields in `round.json`,
   which the emitter copied from its seat's pin. The tools value `read-only-sandbox` means the
   Codex runtime's read-only sandbox. A list names the only tools the OpenRouter launcher is
-  granted.
+  granted; its two git entries are how that reviewer reads the change between two revisions.
 
 A lens whose route died fails over to the other transport's seat at the same tier and scope. Its
 pin is the entry under `pins.lenses.<transport>.<tier>.<scope>` in `contracts.json`, and its

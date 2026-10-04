@@ -46,7 +46,7 @@ re-derive each key's model from the table along that derivation before running t
 
 - Round record: `src/user/.claude/skills/review-panel/evals/round-2-typed-code.json`
 - Question: what model, effort and tools does the `security` lens dispatch with?
-- Key: model `z-ai/glm-5.3`, effort `high`, tools `Read`, `Grep` and `Glob`.
+- Key: model `z-ai/glm-5.3`, effort `high`, tools `Read`, `Grep`, `Glob`, `Bash(git diff *)` and `Bash(git log *)`.
 - Derivation: the round record's `security` entry has transport `openrouter`, which is the
   routing table's provider `openrouter`, and `tier_this_round` `mid`. The table's `mid` cell for
   that provider names `z-ai/glm-5.3`. The effort and the tools are the entry's own `effort` and
@@ -57,7 +57,7 @@ re-derive each key's model from the table along that derivation before running t
 - Round record: `src/user/.claude/skills/review-panel/evals/round-2-typed-code.json`
 - Question: the `correctness` lens's Codex route returned a usage-limit error; what model,
   effort and tools does its next dispatch use?
-- Key: model `moonshotai/kimi-k3`, effort `high`, tools `Read`, `Grep` and `Glob`.
+- Key: model `moonshotai/kimi-k3`, effort `high`, tools `Read`, `Grep`, `Glob`, `Bash(git diff *)` and `Bash(git log *)`.
 - Derivation: the `correctness` entry is a `codex` seat at `tier_this_round` `frontier` and
   scope `delta`. Its failover is the other transport's seat at the same tier and scope, which
   is `openrouter`, `frontier`, `delta`. The table's `frontier` cell for provider `openrouter`
@@ -68,7 +68,7 @@ re-derive each key's model from the table along that derivation before running t
 - Round record: `src/user/.claude/skills/review-panel/evals/round-1-typed-code.json`
 - Question: the `test-adequacy` lens's Codex route returned a usage-limit error; what model,
   effort and tools does its next dispatch use?
-- Key: model `moonshotai/kimi-k3`, effort `low`, tools `Read`, `Grep` and `Glob`.
+- Key: model `moonshotai/kimi-k3`, effort `low`, tools `Read`, `Grep`, `Glob`, `Bash(git diff *)` and `Bash(git log *)`.
 - Derivation: the `test-adequacy` entry is a `codex` seat at `tier_this_round` `mid` and scope
   `full`. The `openrouter` seat at `mid` and `full` has no pin, because the OpenRouter `mid`
   model never reads a whole artifact. The failover is therefore the `openrouter` seat at
@@ -81,7 +81,7 @@ re-derive each key's model from the table along that derivation before running t
 
 - Round record: none.
 - Question: what provider, tier, effort and tools does the staffing recommendation run with?
-- Key: provider `openai`, tier `mid`, effort `medium`, no tools.
+- Key: provider `openai`, tier `mid`, effort `medium`, tools the Codex read-only sandbox.
 - Derivation: the staffing recommender's pin in `contracts.json` names all four values. The
   model, which the question does not ask for, is the table's `mid` cell for provider `openai`.
 

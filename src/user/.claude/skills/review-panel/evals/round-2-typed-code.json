@@ -30,7 +30,9 @@
       "tools": [
         "Read",
         "Grep",
-        "Glob"
+        "Glob",
+        "Bash(git diff *)",
+        "Bash(git log *)"
       ],
       "transport": "openrouter"
     },

@@ -1913,7 +1913,8 @@ ROUTING_TABLE_PATH = (
 ).resolve()
 PROVIDER_OF = {"codex": "openai", "openrouter": "openrouter"}
 OTHER_TRANSPORT = {"codex": "openrouter", "openrouter": "codex"}
-READ_TOOLS = {"Read", "Grep", "Glob"}
+READ_TOOLS = {"Read", "Grep", "Glob", "Bash(git diff *)", "Bash(git log *)"}
+CHANGE_READER = "Bash(git diff *)"
 CODEX_SANDBOX = "read-only-sandbox"
 EFFORT_TOKENS = ("low", "medium", "high", "xhigh", "max")
 OPENROUTER_LENS = {
@@ -2125,7 +2126,11 @@ class TestSeatPins:
         assert lens_pin(contracts, ("openrouter", "mid", "delta"))["effort"] == "high"
 
     def test_a7_no_pin_grants_a_tool_that_writes(self):
-        """A reviewer reads content its dispatcher does not trust, so no run can write."""
+        """A reviewer reads content its dispatcher does not trust, so no run can write.
+
+        The panel's prompt names the change by two revisions and carries no diff, so an
+        OpenRouter lens that cannot run a diff cannot see what it was asked to review.
+        """
         contracts = strict_contracts()
         for (transport, tier, scope), pin in all_lens_pins(contracts):
             tools = pin["tools"]
@@ -2134,7 +2139,8 @@ class TestSeatPins:
             else:
                 assert isinstance(tools, list) and set(tools) <= READ_TOOLS, (
                     transport, tier, scope)
-        assert contracts["pins"]["staffing_recommender"]["tools"] == []
+                assert CHANGE_READER in tools, (transport, tier, scope)
+        assert contracts["pins"]["staffing_recommender"]["tools"] == CODEX_SANDBOX
         checkpoint = contracts["pins"]["trend_checkpoint"]["tools"]
         assert isinstance(checkpoint, list) and set(checkpoint) <= READ_TOOLS
 
