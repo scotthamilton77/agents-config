@@ -23,4 +23,4 @@ opens one proves something else.
 - ARO-A15 | test: src/user/.claude/skills/ac-attack/emit_prompts_test.py::test_c7_an_empty_lens_registry_is_refused_not_reported_as_an_emitted_round
 - ARO-A16 | test: src/user/.claude/skills/ac-attack/emit_prompts_test.py::test_a_missing_or_empty_standard_refuses_before_writing
 - ARO-A17 | test: src/user/.claude/skills/ac-attack/emit_prompts_test.py::test_emission_is_deterministic
-- ARO-A18 | open
+- ARO-A18 | observed: #837 2026-10-04 scotthamilton77
