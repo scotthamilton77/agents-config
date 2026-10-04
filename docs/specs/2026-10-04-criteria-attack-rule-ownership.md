@@ -125,7 +125,8 @@ under `make content-tests`.
 - **ARO-A5** A lens naming a rule the standard lacks is refused as `no-lenses`
   with nothing written, under the existing emitter test.
 - **ARO-A6** The record check refuses as `schema` an objection that lacks, or
-  leaves blank, its target, its ground's rule, or any scenario part.
+  leaves blank, its target, its ground's rule, or any scenario part. The
+  target `none`, for an objection no criterion covers, is not blank.
 - **ARO-A7** The record check refuses as `schema` an objection carrying a field
   outside the objection schema, such as a drafted criterion.
 - **ARO-A8** The record check refuses an obligation-reduction report whose
