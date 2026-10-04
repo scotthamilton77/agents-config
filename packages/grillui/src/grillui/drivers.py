@@ -1724,7 +1724,11 @@ def take_document(
     outcome = attempt(f"{prompt}\n\n## Your last reply was refused\n{refused.rule} {refused.fault}")
     refused = _unusable(outcome, said, land)
     if refused is not None:
-        raise DocumentRefusedError(tier, refused.fault)
+        # A document the appender refused was read whole before it was
+        # offered, so the judgement it carried is handed up with the refusal.
+        # A reply the gate refused never read as one and carries none.
+        carried = read_document(said(outcome)) if refused.rule == APPENDER_RETRY_RULE else None
+        raise DocumentRefusedError(tier, refused.fault, carried)
     return outcome
 
 

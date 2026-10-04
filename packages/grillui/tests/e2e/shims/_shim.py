@@ -32,6 +32,10 @@ from typing import Any
 # the driver builds the argv, and there is no room in it for the harness.
 SCRIPT_ENV = "GRILLUI_E2E_DIR"
 
+# How often a held turn looks for its release. Short enough that a released
+# turn answers before the scenario's next poll, long enough to cost nothing.
+HOLD_POLL = 0.02
+
 
 def directory() -> Path:
     """The scenario's own scratch directory, as the environment states it."""
@@ -95,6 +99,11 @@ def settings(argv: list[str]) -> list[str]:
     ]
 
 
+def released(name: str) -> Path:
+    """The file a scenario writes to let a turn held open under `name` finish."""
+    return directory() / f"release-{name}"
+
+
 def emit(turn: dict[str, Any], lines: list[str]) -> None:
     """Print what this turn prints and exit as it was scripted to exit.
 
@@ -103,7 +112,16 @@ def emit(turn: dict[str, Any], lines: list[str]) -> None:
     announced the turn and no reply has closed it, for as long as the scenario
     needs to click something while that is true. Slept here rather than faked in
     the backend, because a turn that takes time is what the page is reading.
+
+    A turn carrying `hold` waits until the scenario releases it by that name,
+    however long that takes. It is how a scenario holds a turn open across as
+    many gestures as it needs without guessing at a delay, and how it runs one
+    into the backend's turn timeout: a hold nobody releases is a seat that never
+    answers, and the backend kills the process when its time is up.
     """
+    held = turn.get("hold")
+    while held and not released(str(held)).exists():
+        time.sleep(HOLD_POLL)
     time.sleep(float(turn.get("delay", 0)))
     sys.stdout.write("".join(line + "\n" for line in lines))
     sys.stdout.flush()
