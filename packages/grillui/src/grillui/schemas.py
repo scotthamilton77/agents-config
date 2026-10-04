@@ -1316,9 +1316,10 @@ class DispatchContext(Strict):
     which the answer is worth its bytes, since every other agent here is
     grilling a design and would only be carrying it.
 
-    `tasks` names the impact tasks this turn carries. `backpressure` rides every
-    dispatch that weighs the board against a settlement -- a turn carrying a
-    task, and the doctor -- and is the paragraph its brief opens on that. It is
+    `tasks` names the impact tasks this turn carries, and `custom_text` says the
+    turn answers the human's own words. `backpressure` rides every dispatch that
+    weighs the board against a settlement -- either of those turns, and the
+    doctor -- and is the paragraph its brief opens on that. It is
     recorded here rather than only in the composed brief so a reader of the
     dispatch record can see that the turn was told.
 
@@ -1339,6 +1340,7 @@ class DispatchContext(Strict):
     help_reference: str | None = None
     mootness: MootnessObligation | None = None
     tasks: list[str] = Field(default_factory=list)
+    custom_text: bool = False
     backpressure: str | None = None
     scope: list[str] = Field(default_factory=list)
 

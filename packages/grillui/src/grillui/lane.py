@@ -437,6 +437,9 @@ class Turn(NamedTuple):
     `scope` is what a retry may change: the failed decision and everything
     resting on it. Every other turn has none.
 
+    `custom_text` is the gesture being an answer in the human's own words. The
+    expert weighs those words whether or not they opened anything.
+
     `mootness` is what the gesture this turn was scheduled for owes the rest of
     the board, read when it was scheduled and carried here rather than derived
     again when the turn runs. The board is mutable and the turn runs later: an
@@ -454,13 +457,27 @@ class Turn(NamedTuple):
     tasks: tuple[str, ...] = ()
     opened: int | None = None
     scope: tuple[str, ...] = ()
+    custom_text: bool = False
 
 
 def turn_of(event: EventSubmission) -> Turn:
     """Which agent owes this gesture a turn."""
     if event.kind == THREAD_FOLD_KIND:
         return Turn(MAP_CHANNEL, concluding=event.channel)
-    return Turn(event.channel, proceed=is_proceed(event))
+    return Turn(event.channel, proceed=is_proceed(event), custom_text=_custom_text(event))
+
+
+def _custom_text(event: EventSubmission) -> bool:
+    """Whether this is the human answering in their own words: a note on an
+    option, or an answer written instead of one."""
+    given = event.payload.get(ANSWER_KIND)
+    note = given.get("text") if isinstance(given, dict) else None
+    return (
+        event.actor == "human"
+        and event.kind == ANSWER_KIND
+        and isinstance(note, str)
+        and bool(note)
+    )
 
 
 def is_answerable(event: EventSubmission) -> bool:
@@ -613,8 +630,8 @@ class Lane:
     def tier_for(self, channel: str, driver: TurnDriver, gesture: Turn | None = None) -> TurnDriver:
         """The tier this channel's next turn goes to: the expert one when the
         human has transferred this channel, asked the expert to proceed, the
-        turn carries an impact task, or the gesture's own class names it, and
-        this channel's own first-rung seat otherwise.
+        turn carries an impact task or the human's own words, or the gesture's
+        own class names it, and this channel's own first-rung seat otherwise.
 
         Named before the `composing` entry is written rather than after, so the
         tier the human is told they are waiting on is the tier that takes the
@@ -630,7 +647,10 @@ class Lane:
         if in_expert_mode(self.log.entries(), channel):
             return self.expert
         if gesture is not None and (
-            gesture.proceed or gesture.tasks or self._judgment(gesture) is not None
+            gesture.proceed
+            or gesture.tasks
+            or gesture.custom_text
+            or self._judgment(gesture) is not None
         ):
             return self.expert
         return seated
@@ -993,6 +1013,7 @@ class Lane:
                 mootness=turn.mootness,
                 tasks=turn.tasks,
                 scope=turn.scope,
+                custom_text=turn.custom_text,
             )
             took = self._press(driver, turn, dispatch, _run(driver, self.log, dispatch))
             if self._watching(turn):
@@ -1242,6 +1263,7 @@ class Lane:
                 mootness=narrowed,
                 tasks=turn.tasks,
                 scope=turn.scope,
+                custom_text=turn.custom_text,
             )
             return _run(expert, self.log, dispatch)
         except Exception:

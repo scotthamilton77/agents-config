@@ -1207,10 +1207,17 @@ class HeavyDriver:
         entries = log.entries()
         seat = self.seat if self.seat is not None else self.config.expert_seat
         model = seat.model
-        # A turn carrying an impact task is a ruling the human is waiting on,
-        # so the expert takes it at the task effort. The heavy effort is what a
-        # transferred channel's expert turns run at, and it never reseats one.
-        tasked = bool(context.tasks) and self.tier == HEAVY_TIER
+        # A turn carrying an impact task is a ruling the human is waiting on, so
+        # the expert takes it at the task effort wherever it runs. The human's
+        # own words are weighed at the task effort too, except on a channel the
+        # human moved to the expert themselves: there they chose the heavy
+        # effort, and a typed turn keeps it.
+        moved_by_human = in_expert_mode(entries, channel) and (
+            transfer_source(entries, channel) is None
+        )
+        tasked = self.tier == HEAVY_TIER and (
+            bool(context.tasks) or (context.custom_text and not moved_by_human)
+        )
         effort = self.config.task_effort if tasked else seat.effort or self.config.heavy_effort
         # A thread reopened across a board that moved opens a cold chain rather
         # than resuming one formed against the older board. The catch-up and the

@@ -503,35 +503,35 @@ def test_gui_a116_a_reply_that_asked_to_read_carries_the_hint_while_it_is_latest
     assert page.locator('[data-recommended="1"]').count() == 0
 
 
-def test_gui_a33_the_recommendation_lights_the_expert_seat_on_the_map_and_nothing_else(
+def test_gui_a33_the_recommendation_lights_the_way_to_the_expert_on_its_thread_and_nothing_else(
     launcher: Callable[..., Session], board: Callable[[Session], Page]
 ) -> None:
     """
     Given a gated session
-    When the human answers a decision saying the question is not the one, and
-         then answers another plainly
-    Then the map toggle's expert seat is lit after the first reply and unlit
-         after the second, the assistant seat is never lit, and nothing moved.
+    When the human opens a thread saying the question is not the one, and then
+         says something plain on it
+    Then the thread's *Proceed with expert* action is lit after the first reply
+         and unlit after the second, the assistant seat is never lit, and
+         nothing moved.
     """
     session = launcher(
         handoff=handoff([decision("d1", "Which storage?"), decision("d2", "How long?")])
     )
-    session.script_codex(turn(document("Noted.")), turn(document("Noted again.")))
+    session.stub.script("Noted.", "Noted again.")
     page = board(session)
 
-    page.fill("#ft-d1", IRREDUCIBLE)
-    page.wait_for_timeout(150)
-    page.click('#col-d1 [data-act="pick"][data-opt="a"]')
+    start_thread(page, "d1", IRREDUCIBLE)
     session.settled()
-    lit = f'.topbar {seats("map")} [data-seat="heavy"][data-recommended="1"]'
+    channel = thread_id(session)
+    lit = f'{proceed(channel)}[data-recommended="1"]'
     page.wait_for_selector(lit, timeout=BOARD_TIMEOUT)
     assert page.locator('[data-seat="fast"][data-recommended="1"]').count() == 0
-    assert marked(page, "map") == "assistant"
+    assert marked(page, channel) == "assistant"
 
-    page.click('#col-d2 [data-act="pick"][data-opt="a"]')
+    say(page, AGAIN)
     session.settled()
     page.wait_for_selector(lit, state="detached", timeout=BOARD_TIMEOUT)
-    assert composings(session, "map") == ["fast", "fast"]
+    assert composings(session, channel) == ["fast", "fast"]
 
 
 def test_gui_a63_the_toggle_marks_the_next_send_and_sits_where_that_send_is_made(

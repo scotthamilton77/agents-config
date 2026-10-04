@@ -39,7 +39,7 @@ opens one proves something else.
 - GUI-A33 | test: packages/grillui/tests/unit/test_transfer.py::test_a_recommended_reply_carries_its_metadata_on_the_wire_the_page_reads
 - GUI-A33 | test: packages/grillui/tests/unit/test_transfer.py::test_a_reply_meeting_no_condition_carries_no_metadata_on_the_wire
 - GUI-A33 | test: packages/grillui/tests/e2e/test_reading.py::test_the_default_policy_offers_the_hand_up_and_says_what_was_asked_for
-- GUI-A33 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a33_the_recommendation_lights_the_expert_seat_on_the_map_and_nothing_else
+- GUI-A33 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a33_the_recommendation_lights_the_way_to_the_expert_on_its_thread_and_nothing_else
 - GUI-A33 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a116_a_reply_that_asked_to_read_carries_the_hint_while_it_is_latest_and_open
 - GUI-A34 | test: packages/grillui/tests/unit/test_transfer.py::test_activating_transfer_takes_the_next_map_turn_to_the_heavy_tier
 - GUI-A34 | test: packages/grillui/tests/unit/test_transfer.py::test_an_escalated_thread_hands_the_heavy_tier_its_own_accumulated_turns
