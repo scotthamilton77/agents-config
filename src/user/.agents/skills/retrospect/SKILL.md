@@ -10,6 +10,16 @@ admission:
 
 # Retrospect
 
+**Model floor.** This skill depends on reasoning that smaller models do not sustain.
+Before doing anything else, check which model you are running on. If it is Claude
+Sonnet or Haiku, or another vendor's comparable mid or small tier, stop. Tell the
+user that a retrospective from this model is likely to list symptoms and miss root
+causes, and ask them to either switch to a stronger model or confirm that they
+accept the risk. Do not start the work until they answer. If another agent
+dispatched you and you cannot reach the user, return this message to the dispatcher
+instead of proceeding. Once the user has confirmed in this session, do not ask
+again.
+
 ## Overview
 
 A retrospective turns one session's lived experience into durable improvements to
@@ -51,24 +61,20 @@ compliance failure, not a context gap — recommend enforcement, not duplication
 
 ## Process
 
-### 1. Scope it — honour the user's spotlight
+Reconstruct the session from what is actually in context: goal, path, outcome, and
+the avoidable cost. Say so if compaction removed part of it. Classify every problem
+by root cause and route it to the fix that cause calls for, across agent context,
+tooling and prompting, with the user's named focus analysed deepest. Name what
+worked and why. Rank the recommendations by impact against effort, lead with the
+top one, give each a landing site from the table below, then offer to action the
+approved ones.
 
-If the user named a focus area when invoking, make it the **spotlight**: analyse it
-deepest and lead the report with it. Still run the full sweep below — the spotlight
-is additive, never exclusive. If no focus was given, sweep everything.
+The avoidable cost is correction round-trips, redundant searches, wrong turns and
+token-heavy detours; quantify it where visible. A named focus leads the report, but
+it is additive, never exclusive: still sweep every target. Impact is the time,
+tokens and rework a recommendation saves; effort is the cost to land it.
 
-### 2. Reconstruct the session
-
-From the actual conversation in context (don't fabricate; if context was compacted,
-say so and work from what remains), establish:
-
-- **Goal** — what the user actually wanted.
-- **Path** — the route taken to get there.
-- **Outcome** — shipped, partial, or abandoned.
-- **Cost** — the *avoidable* part: correction round-trips, redundant searches, wrong
-  turns, token-heavy detours. Quantify where visible.
-
-### 3. Sweep the three improvement targets
+Sweep the three improvement targets:
 
 | Target | Ask |
 |---|---|
@@ -79,26 +85,12 @@ say so and work from what remains), establish:
 Efficiency is the cross-cutting lens: most findings surface first as wasted time or
 tokens. Trace each waste back to one of the three targets.
 
-### 4. Root-cause and route each finding
+What worked is reinforcement, not praise: state **why** each practice worked so the
+user repeats it with confidence, and name only real wins. A retrospective that lists
+only problems trains the user away from what was working.
 
-For every problem, name the root cause from the table above, then the correct fix.
-
-### 5. Mark what went well — and why
-
-Identify practices, skills, or techniques that genuinely worked, and state **why**
-each worked, so the user repeats them with confidence. This is reinforcement, not
-praise — name only real wins, skip the filler. A retrospective that lists only
-problems trains the user away from what was working.
-
-### 6. Prioritise
-
-Score each recommendation by **impact** (time, tokens, and rework it saves) against
-**effort** (cost to land it), and sort. Lead with the top item.
-
-### 7. Give every recommendation a landing site
-
-A fix with no home is a fix that does not survive the session. Before presenting it,
-say where it lands:
+A fix with no home is a fix that does not survive the session. Before presenting a
+recommendation, say where it lands:
 
 | Fix | Where it lands |
 |---|---|

@@ -64,6 +64,11 @@ Documented divergences in the vendored bodies that are carried:
   - references/testing-skills-with-subagents.md — line "Add symptoms of ABOUT
     to violate." repaired to "Add symptoms of when you're ABOUT to violate
     the rule." (upstream truncation typo).
+  - references/testing-skills-with-subagents.md — restated in this skill's
+    plain discipline register: each named workaround is paired with its
+    target behaviour, the capitalized requirement marker and the
+    letter-versus-spirit slogan are replaced by stated reasons, and "your
+    human partner" reads "the user".
   - This SKILL.md body was 2.9x over the deployed skill-body token cap. Six
     sections moved verbatim into project-added references — descriptions.md,
     testing-methodology.md, bulletproofing.md, checklist.md, anatomy.md,
@@ -170,57 +175,52 @@ other than me find this".
 
 ## Three document types and the register split
 
-The type drives both the **register** (how MUST-y the prose is) and the test
+The type drives both the **register** (how the prose states its rules) and the test
 approach — pressure scenarios, application scenarios or retrieval scenarios
 respectively, laid out under those names in `references/testing-methodology.md`.
 
 | Type | Register |
 |------|----------|
-| **Discipline** — obeyed under pressure | Hard MUSTs, Iron Law, "no exceptions", rationalization tables, red flags |
+| **Discipline** — obeyed under pressure | State each rule plainly with its reason. Name the specific rationalizations that baseline testing surfaced and why each fails. Reserve emphasis for the one rule testing shows is underweighted. |
 | **Technique** — a method the agent lacks | Explain the why; examples beat MUSTs |
 | **Reference** — looked up | Neutral, scannable tables, no admonitions |
 
 **Why the split matters.** Discipline documents exist because the agent will
-rationalize and soft prose loses to time pressure — the MUSTs *are* the document.
+rationalize under time pressure. A rule that carries its reason and names its
+excuses holds where a bare command gives way.
 Technique documents exist because the agent lacks the method, and hard MUSTs make it
 rigid where explanation makes it capable.
 
 **Pick the type first, then write to the register.** Mixed registers in one document
 usually mean it is doing two jobs and should be split.
 
-**Mechanical constraints carry MUSTs regardless of type.** Where the runtime enforces
-a rule (depth-1 discovery, `name:` matching the folder, the 1024-char frontmatter
-limit), use a MUST even in a technique document: the register split governs
-*judgment-call* prose, not constraints the host rejects anyway.
-## The Iron Law
+**Mechanical constraints are hard requirements regardless of type.** Where the
+runtime enforces a rule (depth-1 discovery, `name:` matching the folder, the
+1024-char frontmatter limit), state it as a requirement even in a technique document:
+the register split governs *judgment-call* prose, not constraints the host rejects
+anyway.
 
-```
-NO SKILL WITHOUT A FAILING TEST FIRST
-```
+## Test before you ship
 
-NEW skills AND EDITS to existing ones — and an instruction file is no exception.
-Wrote it before testing? Delete it, start over. Edited without testing? Same
-violation.
+Every new skill and every edit, instruction files included, starts from a baseline
+run that fails. The baseline is the only evidence of what the document has to fix;
+without it, the document encodes your guess. A change too small to test still
+changes how the agent behaves, and only a run shows how. A draft kept as reference,
+or adapted while testing, steers what you look for, so discard it and write from
+what the baseline showed. Meeting the purpose another way skips the run, which is
+where the evidence comes from.
 
-**No exceptions:** not "simple additions", not "just adding a section", not
-"documentation updates". Don't keep untested changes as "reference". Don't "adapt"
-while running tests. Delete means delete.
-
-**Violating the letter of the rules is violating the spirit of the rules.**
-
-This binds **discipline** documents in full. For technique and reference the spirit
-still applies — verify the document teaches what you think it teaches — but the test
-format is application or retrieval, not pressure compliance.
+This binds **discipline** documents in full. Technique and reference documents are
+tested with application or retrieval scenarios instead.
 
 The cycle is `tdd` applied to documentation. **RED** runs the
-scenario WITHOUT the document, or with the OLD version, capturing verbatim what the
+scenario without the document, or with the old version, capturing verbatim what the
 agent chose and which queries missed; **GREEN** addresses only those failures;
 **REFACTOR** counters the rationalizations and near-misses that testing then
 surfaces. Scenario design is in `references/testing-methodology.md`.
 
-After writing ANY document covered here you MUST STOP and work
-`references/checklist.md` before moving on. Deploying an untested skill is deploying
-untested code.
+Work `references/checklist.md` before moving on to the next document. Deploying an
+untested skill is deploying untested code.
 
 ## Bundled references
 

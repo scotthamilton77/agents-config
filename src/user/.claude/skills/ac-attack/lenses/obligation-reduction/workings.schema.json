@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Obligation-reduction workings",
+  "description": "The inventory the obligation-reduction lens returns beside its objections: each obligation the document takes on, split into parts that the criteria discharge completely or not at all, and every criterion the document states. Part ids are unique across the whole inventory, which the checker enforces since this schema cannot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["obligations", "criteria"],
+  "properties": {
+    "obligations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/obligation"}
+    },
+    "criteria": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/text"},
+      "description": "Every criterion id the document states."
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "pattern": "\\S"},
+    "obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "statement", "source", "parts"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "kind": {"enum": ["result", "guarantee", "failure"]},
+        "statement": {"$ref": "#/$defs/text"},
+        "source": {"$ref": "#/$defs/text", "description": "The passage of the document the obligation comes from."},
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/part"},
+          "description": "The obligation split so that each part is discharged completely or not at all. An obligation discharged whole is one part."
+        }
+      }
+    },
+    "part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "discharged_by"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "statement": {"$ref": "#/$defs/text"},
+        "discharged_by": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/text"},
+          "description": "The criterion ids that discharge this part completely. Empty when no criterion does."
+        }
+      }
+    }
+  }
+}

@@ -12,8 +12,7 @@ forward with a note to fix it later.
 ## Scope
 
 Applies to any artifact in a gated namespace: `rules`, `skills`, `commands`,
-`agents`. Claude `workflows/` are not gated by the installer today; that is a
-known hole.
+`agents`, `workflows`.
 
 Applies equally to a newly authored artifact and to one being reinstated after
 retirement. **There is no grandfathering.** An artifact that shipped before
@@ -185,6 +184,9 @@ write:
   **800 tokens**
 - each **model-invoked** skill body, after front matter: **2k tokens**
 - each **user-invoked** skill body: **5k tokens**
+- on Gemini only, the deployed instruction file: **24,000 bytes**, the
+  per-file limit past which Antigravity CLI (the runtime that loads
+  `~/.gemini`) truncates it
 
 The always-on numbers are measured per tool, on the bytes that tool deploys.
 The body cap is not: it is chosen from the source declaration, so one skill
@@ -207,24 +209,21 @@ catalog is loaded whatever the author declared.
 the deployed front matter. Codex's loader does not define the key, so the
 installer strips it there and emits Codex's own declaration instead — a
 generated `agents/openai.yaml` sidecar (`policy.allow_implicit_invocation:
-false`) beside the deployed SKILL.md. OpenCode has no equivalent to translate
-onto, so there the skill is model-invocable whatever its author declared, and
-its description is charged to OpenCode's catalog. Codex's description is
-charged too, an over-charge in the safe direction, since the sidecar keeps the
-skill out of implicit invocation. Two consequences to hold:
+false`) beside the deployed SKILL.md. Gemini and OpenCode have no equivalent to
+translate onto, so there the skill is model-invocable whatever its author
+declared, and its description is charged to each one's catalog. Codex's
+description is charged too, an over-charge in the safe direction, since the
+sidecar keeps the skill out of implicit invocation. Two consequences to hold:
 
 - The 5k number is not permission to leave a body whole. It is relief for one
   that has already been split down, and it now applies on every target — so a
   4,900-token user-invoked body deploys everywhere, and the only thing standing
   between it and a reader is whether the work of moving prose into
-  `references/` was actually done. Gemini is outside both numbers: no vendor
-  documentation establishes whether a deployed skill reaches its runtime at
-  all, so this project models its skill loading not at all rather than guessing
-  — no catalog charge, no body cap, and no claim here about how it invokes.
+  `references/` was actually done.
 - Carrying the flag is not by itself a reason to leave the shared tree, since it
   is projected out cleanly. But dropping a key removes the bytes, not the gap: a
   skill whose worth claim *depends* on never firing unprompted is still
-  model-invocable on OpenCode, and belongs in
+  model-invocable on Gemini and OpenCode, and belongs in
   `src/user/.claude/` where the claim holds. Check 5 decides this; check 4 only
   tells you which number to measure against.
 

@@ -1,0 +1,181 @@
+# Evidence
+
+How each criterion in the spec beside this file is discharged. States: `open`;
+`test: <file>::<test_fn>`; `probe: <file>::<name>`;
+`observed: #<PR> <YYYY-MM-DD> <name>`. A criterion whose own text says it is
+verified in a browser cannot be discharged by `test:` — a test that never
+opens one proves something else.
+
+- GUI-A1 | open
+- GUI-A2 | open
+- GUI-A3 | open
+- GUI-A5 | open
+- GUI-A6 | open
+- GUI-A7 | open
+- GUI-A8 | open
+- GUI-A9 | open
+- GUI-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_lane_lands_with_the_human_turn_rather_than_with_the_reply
+- GUI-A11 | open
+- GUI-A12 | open
+- GUI-A13 | open
+- GUI-A14 | open
+- GUI-A16 | open
+- GUI-A17 | open
+- GUI-A18 | open
+- GUI-A19 | open
+- GUI-A20 | open
+- GUI-A21 | open
+- GUI-A22 | open
+- GUI-A23 | open
+- GUI-A24 | open
+- GUI-A25 | open
+- GUI-A26 | open
+- GUI-A27 | open
+- GUI-A28 | open
+- GUI-A29 | open
+- GUI-A30 | open
+- GUI-A31 | open
+- GUI-A32 | open
+- GUI-A33 | test: packages/grillui/tests/unit/test_transfer.py::test_a_recommended_reply_carries_its_metadata_on_the_wire_the_page_reads
+- GUI-A33 | test: packages/grillui/tests/unit/test_transfer.py::test_a_reply_meeting_no_condition_carries_no_metadata_on_the_wire
+- GUI-A33 | test: packages/grillui/tests/e2e/test_reading.py::test_the_default_policy_offers_the_hand_up_and_says_what_was_asked_for
+- GUI-A33 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a33_the_recommendation_lights_the_expert_seat_on_the_map_and_nothing_else
+- GUI-A33 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a116_a_reply_that_asked_to_read_carries_the_hint_while_it_is_latest_and_open
+- GUI-A34 | test: packages/grillui/tests/unit/test_transfer.py::test_activating_transfer_takes_the_next_map_turn_to_the_heavy_tier
+- GUI-A34 | test: packages/grillui/tests/unit/test_transfer.py::test_an_escalated_thread_hands_the_heavy_tier_its_own_accumulated_turns
+- GUI-A34 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a63_the_toggle_marks_the_next_send_and_sits_where_that_send_is_made
+- GUI-A34 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a113_proceed_with_text_writes_the_entry_the_toggle_and_send_write
+- GUI-A35 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a35_every_channel_has_an_active_toggle_and_assistant_returns_the_next_turn
+- GUI-A35 | probe: packages/grillui/tests/e2e/test_reading.py::test_the_autonomous_policy_hands_the_request_to_the_expert_once
+- GUI-A36 | open
+- GUI-A37 | open
+- GUI-A38 | open
+- GUI-A39 | open
+- GUI-A40 | open
+- GUI-A41 | open
+- GUI-A42 | open
+- GUI-A43 | open
+- GUI-A44 | open
+- GUI-A45 | open
+- GUI-A46 | open
+- GUI-A47 | open
+- GUI-A48 | open
+- GUI-A49 | open
+- GUI-A50 | open
+- GUI-A51 | open
+- GUI-A52 | open
+- GUI-A53 | open
+- GUI-A54 | open
+- GUI-A55 | open
+- GUI-A56 | open
+- GUI-A57 | open
+- GUI-A58 | open
+- GUI-A59 | open
+- GUI-A60 | open
+- GUI-A61 | probe: packages/grillui/tests/browser/sticky_header_probe.py::main
+- GUI-A62 | probe: packages/grillui/tests/browser/tier_label_probe.py::main
+- GUI-A63 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a63_the_toggle_marks_the_next_send_and_sits_where_that_send_is_made
+- GUI-A64 | open
+- GUI-A65 | test: packages/grillui/tests/unit/test_convergence.py::test_a_proposal_riding_a_turn_records_the_prose_and_projects_onto_that_turn
+- GUI-A66 | test: packages/grillui/tests/unit/test_convergence.py::test_each_convergence_of_the_fixture_session_is_one_proposal_recording_what_it_carried
+- GUI-A67 | probe: packages/grillui/tests/browser/apply_decision_probe.py::main
+- GUI-A68 | test: packages/grillui/tests/unit/test_convergence.py::test_an_answer_carrying_from_thread_settles_and_closes_in_one_entry
+- GUI-A69 | test: packages/grillui/tests/unit/test_convergence.py::test_a_live_proposal_queues_nothing_and_holds_nothing
+- GUI-A70 | open
+- GUI-A71 | test: packages/grillui/tests/unit/test_transfer.py::test_a_session_with_no_policy_configured_leaves_a_met_condition_to_the_human
+- GUI-A72 | test: packages/grillui/tests/unit/test_transfer.py::test_under_the_autonomous_policy_a_met_condition_takes_that_channel_to_the_expert
+- GUI-A73 | test: packages/grillui/tests/unit/test_transfer.py::test_a_policy_escalation_is_named_on_the_lane_and_on_the_turn_it_bought
+- GUI-A74 | test: packages/grillui/tests/unit/test_transfer.py::test_the_human_takes_a_policy_transfer_back_and_a_later_condition_escalates_again
+- GUI-A75 | test: packages/grillui/tests/unit/test_catch_up.py::test_applying_that_queued_update_inside_the_interval_is_one_entry_at_the_apply
+- GUI-A76 | test: packages/grillui/tests/unit/test_catch_up.py::test_a_moved_interval_opens_the_heavy_turn_cold_with_the_thread_in_full
+- GUI-A77 | test: packages/grillui/tests/unit/test_catch_up.py::test_an_unchanged_interval_resumes_the_chain_the_channel_already_held
+- GUI-A78 | test: packages/grillui/tests/unit/test_catch_up.py::test_reopening_a_thread_raises_nothing_to_the_human
+- GUI-A79 | test: packages/grillui/tests/unit/test_update_kinds.py::test_an_options_pre_mark_reaches_both_images_as_authored
+- GUI-A80 | test: packages/grillui/tests/unit/test_session.py::test_two_sessions_driven_alike_log_the_same_entries_with_the_pre_mark_or_without
+- GUI-A81 | probe: packages/grillui/tests/browser/pre_mark_probe.py::main
+- GUI-A82 | probe: packages/grillui/tests/browser/pre_mark_probe.py::main
+- GUI-A83 | test: packages/grillui/tests/unit/test_tiers.py::test_every_brief_a_driver_composes_carries_the_register_rule
+- GUI-A84 | test: packages/grillui/tests/unit/test_drivers.py::test_a_declaring_reply_is_read_through_whatever_fence_it_arrived_in
+- GUI-A85 | test: packages/grillui/tests/unit/test_drivers.py::test_an_offer_on_a_thread_anchoring_nothing_is_a_notice_and_not_raw_bytes
+- GUI-A86 | probe: packages/grillui/tests/browser/thread_controls_probe.py::main
+- GUI-A87 | test: packages/grillui/tests/unit/test_page.py::test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_takes
+- GUI-A87 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a113_proceed_with_text_on_a_draft_writes_the_entry_the_toggle_and_send_write
+- GUI-A92 | probe: packages/grillui/tests/browser/chord_probe.py::main
+- GUI-A88 | test: packages/grillui/tests/unit/test_tiers.py::test_the_grill_master_brief_asks_for_rulings_nowhere_but_the_obligation_section
+- GUI-A89 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_can
+- GUI-A90 | probe: packages/grillui/tests/browser/thread_wait_probe.py::main
+- GUI-A93 | test: packages/grillui/tests/unit/test_tiers.py::test_a_turn_on_the_map_thread_is_told_to_state_which_decisions_change_and_how
+- GUI-A94 | test: packages/grillui/tests/unit/test_tiers.py::test_the_map_thread_mandate_reaches_no_other_channel
+- GUI-A95 | test: packages/grillui/tests/unit/test_dispatch.py::test_the_map_thread_is_not_given_the_boards_reference_material
+- GUI-A96 | test: packages/grillui/tests/unit/test_page.py::test_the_board_carries_a_control_that_opens_the_one_map_thread
+- GUI-A97 | test: packages/grillui/tests/unit/test_page.py::test_the_map_threads_fold_arms_on_the_same_turn_an_ordinary_ones_does
+- GUI-A98 | probe: packages/grillui/tests/browser/map_thread_probe.py::main
+- GUI-A91 | test: packages/grillui/tests/unit/test_page.py::test_an_ordinary_threads_fold_arms_on_the_turn_it_would_hand_over
+- GUI-A99 | probe: packages/grillui/tests/browser/side_thread_fold_probe.py::main
+- GUI-A105 | probe: packages/grillui/tests/browser/inbox_batch_probe.py::main
+- GUI-A100 | test: packages/grillui/tests/unit/test_tiers.py::test_a_turn_owed_invalidates_is_given_the_ids_and_the_answer_in_a_section_of_its_own
+- GUI-A101 | test: packages/grillui/tests/unit/test_lane.py::test_a_gesture_owed_rulings_is_composed_by_the_expert_carrying_the_ids
+- GUI-A101 | test: packages/grillui/tests/unit/test_rulings.py::test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision
+- GUI-A102 | test: packages/grillui/tests/unit/test_lane.py::test_an_expert_that_rules_on_nothing_either_leaves_the_ids_named_to_the_human
+- GUI-A103 | test: packages/grillui/tests/unit/test_lane.py::test_an_obligation_met_or_never_created_presses_nobody
+- GUI-A103 | test: packages/grillui/tests/unit/test_rulings.py::test_a_ruling_carrying_its_update_is_credited_and_the_change_waits_for_the_human
+- GUI-A106 | probe: packages/grillui/tests/browser/completion_probe.py::main
+- GUI-A107 | test: packages/grillui/tests/unit/test_capture.py::test_a_board_whose_rest_was_invalidated_is_written_up_with_nothing_open
+- GUI-A110 | probe: packages/grillui/tests/browser/next_open_probe.py::main
+- GUI-A108 | test: packages/grillui/tests/unit/test_projector.py::test_a_prereq_that_has_been_invalidated_holds_nothing
+- GUI-A109 | test: packages/grillui/tests/unit/test_lane.py::test_an_invalidate_the_human_applied_obliges_the_map_turn_it_buys
+- GMR-A1 | open
+- GMR-A2 | test: packages/grillui/tests/unit/test_rulings.py::test_a_reply_that_is_not_the_document_is_refused_and_never_reaches_the_human
+- GMR-A3 | test: packages/grillui/tests/unit/test_rulings.py::test_ruling_stands_on_every_named_id_presses_nobody_and_renders_on_each_decision
+- GMR-A4 | test: packages/grillui/tests/unit/test_rulings.py::test_a_ruling_whose_document_carries_no_matching_update_is_not_credited
+- GMR-A5 | test: packages/grillui/tests/unit/test_seats.py::test_the_map_and_a_thread_take_the_same_rung_on_seats_configured_apart
+- GMR-A6 | open
+- GMR-A7 | test: packages/grillui/tests/unit/test_page.py::test_a_thread_opened_from_a_notice_anchors_the_decision_that_notice_targeted
+- GMR-A7 | test: packages/grillui/tests/unit/test_page.py::test_the_reference_material_crosses_to_the_help_kind_and_to_no_other_the_page_mints
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_an_applied_proposal_records_the_agent_that_proposed_it_and_the_verdict_behind_it
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_queued_proposal_is_no_history_until_the_human_lands_it
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_stands_ruling_records_its_verdict_and_the_why_it_was_credited_on
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_move_the_human_made_themselves_carries_neither_field
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_ruling_with_no_update_behind_it_credits_no_other_update_on_that_decision
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_one_apply_landing_two_proposals_gives_each_decision_its_own_verdict
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_an_apply_naming_one_id_twice_still_pairs_each_update_with_its_own_author
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_stands_verdict_lands_only_on_the_notice_that_ruling_minted
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_the_fold_credits_a_stamp_only_on_the_one_form_the_backend_mints
+- GMR-A7 | test: packages/grillui/tests/unit/test_rulings.py::test_a_turn_cannot_stamp_its_own_update_with_a_verdict_nobody_ruled
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_ruling_word_outside_the_closed_three_names_no_verdict
+- GMR-A7 | test: packages/grillui/tests/unit/test_projector.py::test_a_history_entry_written_before_these_fields_existed_still_folds
+- GMR-A7 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_is_told_how_to_read_a_board_that_moved
+- GMR-A8 | test: packages/grillui/tests/unit/test_rulings.py::test_the_option_shape_says_the_grill_master_rules_on_the_mark
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_answer_whose_mark_resolves_to_a_live_node_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_applied_invalidate_that_strands_a_dependent_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_an_apply_that_strands_nothing_buys_no_turn
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_thread_fold_is_composed_by_the_expert_on_the_map
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_withdrawal_the_human_got_in_front_of_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_the_doctor_is_composed_by_the_expert
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_clerical_answer_is_composed_by_the_first_rung
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_clerical_gesture_after_a_judgment_one_is_first_rung_again
+- GMR-A9 | test: packages/grillui/tests/unit/test_lane.py::test_a_mark_resolving_to_a_dead_node_stays_on_the_first_rung
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_one_dismissal_of_a_first_rung_proposal_moves_nothing
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_second_distrust_signal_writes_one_transfer_and_the_channel_stays_up
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_two_presses_racing_write_one_transfer_between_them
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_a_third_signal_writes_no_second_entry
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_a_restart_over_the_same_session_writes_no_second_transfer
+- GMR-A10 | test: packages/grillui/tests/unit/test_lane.py::test_the_humans_transfer_control_returns_the_channel_to_the_first_rung
+- GMR-A11 | test: packages/grillui/tests/unit/test_seats.py::test_the_codex_seat_opens_a_thread_cold_and_resumes_it_thereafter
+- GUI-A111 | test: packages/grillui/tests/unit/test_page.py::test_only_a_settled_decision_offers_the_way_back_to_open
+- GUI-A111 | test: packages/grillui/tests/unit/test_update_kinds.py::test_the_human_reopening_a_decision_folds_as_an_applied_unsettle_does
+- GUI-A111 | test: packages/grillui/tests/e2e/test_board.py::test_the_human_reopens_a_decision_they_settled
+- GUI-A112 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a112_proceed_with_the_box_empty_sends_the_expert_in_over_the_thread
+- GUI-A112 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a112_proceed_on_a_thread_the_policy_moved_keeps_the_policys_attribution
+- GUI-A113 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a113_proceed_with_text_writes_the_entry_the_toggle_and_send_write
+- GUI-A113 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a113_proceed_with_text_on_a_draft_writes_the_entry_the_toggle_and_send_write
+- GUI-A114 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a114_the_action_is_inactive_and_says_why_where_there_is_nothing_to_proceed_on
+- GUI-A114 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a114_a_set_aside_thread_the_map_and_an_ended_session_offer_no_action
+- GUI-A114 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a114_the_backend_refuses_a_textless_proceed_posted_directly_in_each_state
+- GUI-A115 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a115_under_gated_a_read_request_engages_nobody_until_the_human_acts
+- GUI-A115 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a115_under_autonomous_the_policy_move_buys_no_turn_until_the_human_acts
+- GUI-A115 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a115_a_proceed_from_anyone_but_the_human_moves_nothing
+- GUI-A115 | test: packages/grillui/tests/unit/test_page.py::test_gui_a115_the_page_writes_a_proceed_only_from_the_humans_press
+- GUI-A115 | test: packages/grillui/tests/e2e/test_proceed.py::test_gui_a115_with_no_input_after_a_read_request_the_page_writes_nothing
+- GUI-A116 | probe: packages/grillui/tests/e2e/test_proceed.py::test_gui_a116_a_reply_that_asked_to_read_carries_the_hint_while_it_is_latest_and_open
+- GUI-A117 | test: packages/grillui/tests/unit/test_proceed.py::test_gui_a117_a_textless_proceed_never_reads_as_an_empty_turn

@@ -6,8 +6,8 @@ The moment a human most wants to choose who they are asking is before they ask.
 A thread pane reached from a decision exists in two states that look alike and
 render differently: one whose thread the agent already opened, and a draft whose
 thread nothing has created yet because the first thing said is what opens it.
-Only the first carried the tier control, so the control the human reaches for
-first arrived one turn after the turn it was wanted for.
+Both have to carry the seat toggle, or the control the human reaches for first
+arrives one turn after the turn it was wanted for.
 
 Presence is asserted against the viewport rather than against the markup,
 because a row rendered below the fold of the panel and a row never rendered are
@@ -16,9 +16,9 @@ is pinned, so a control inside it is on screen -- and that is a claim about
 layout, which only a layout engine can settle.
 
 The last case is what keeps the control from being decoration: the draft's
-channel is not the name the thread gets, so a transfer pressed on a draft has to
+channel is not the name the thread gets, so the expert chosen on a draft has to
 be carried onto the minted thread or the first turn goes out on the fast tier
-with the human having paid for the expert.
+with the human having asked for the expert.
 
 It seeds its own session: the shape it needs is a board with one decision and one
 agent-opened thread, which is a property of the fixture rather than of any
@@ -79,16 +79,16 @@ HANDOFF = {
     },
 }
 
-# The tier control and the row it sits in, measured against the window that is
-# showing them. `within` is the whole claim: rendered, laid out, and on screen.
+# The seat toggle, measured whole against the window that is showing it. `within`
+# is the whole claim: rendered, laid out, and on screen.
 MEASURE = """() => {
-  const btn = document.querySelector('.threadpane [data-act="transfer"]');
-  const r = btn ? btn.getBoundingClientRect() : null;
+  const toggle = document.querySelector('.threadpane .seats');
+  const marked = toggle ? toggle.querySelector('[aria-pressed="true"]') : null;
+  const r = toggle ? toggle.getBoundingClientRect() : null;
   return {
-    present: !!btn,
-    label: btn ? btn.innerText.trim() : null,
-    channel: btn ? btn.dataset.channel : null,
-    rows: document.querySelectorAll('.threadpane .thread-actions').length,
+    present: !!toggle,
+    marked: marked ? marked.innerText.trim() : null,
+    channel: toggle ? toggle.dataset.channel : null,
     vh: window.innerHeight,
     vw: window.innerWidth,
     box: r ? {top: Math.round(r.top), bottom: Math.round(r.bottom),
@@ -204,7 +204,7 @@ def main() -> None:
         agent_thread = page.evaluate(MEASURE)
         print(f"  agent-opened thread: {agent_thread}")
         assert agent_thread["within"], (
-            f"the tier control is off screen on an agent-opened thread: {agent_thread}"
+            f"the seat toggle is off screen on an agent-opened thread: {agent_thread}"
         )
 
         # 2. The draft, which is the same pane before the thread exists.
@@ -215,12 +215,12 @@ def main() -> None:
         page.wait_for_timeout(500)
         draft = page.evaluate(MEASURE)
         print(f"  draft thread: {draft}")
-        assert draft["present"], f"a draft thread offers no tier control at all: {draft}"
-        assert draft["within"], f"the tier control is off screen on a draft: {draft}"
+        assert draft["present"], f"a draft thread offers no seat toggle at all: {draft}"
+        assert draft["within"], f"the seat toggle is off screen on a draft: {draft}"
         assert draft["channel"] == f"draft:{DECISION}", (
             f"the control names a channel the draft is not on: {draft}"
         )
-        assert draft["label"] == "⚡ Transfer to expert", draft
+        assert draft["marked"] == "assistant", draft
 
         # 3. The popped-out draft is the same pane in its own window, and the
         #    control has to be on screen there too -- a window sized to its own
@@ -231,22 +231,20 @@ def main() -> None:
         window.wait_for_timeout(900)
         pop = window.evaluate(MEASURE)
         print(f"  popped-out draft: {pop}")
-        assert pop["present"], f"the popped draft offers no tier control: {pop}"
-        assert pop["within"], f"the tier control is off screen in the popped window: {pop}"
+        assert pop["present"], f"the popped draft offers no seat toggle: {pop}"
+        assert pop["within"], f"the seat toggle is off screen in the popped window: {pop}"
         window.close()
         page.wait_for_timeout(300)
 
-        # 4. What the control is for. Pressed on a draft it has to reach the
-        #    thread the first turn opens, whose name the draft never had.
+        # 4. What the control is for. The expert chosen on a draft has to reach
+        #    the thread the first turn opens, whose name the draft never had.
         expand(page, f'[data-act="newthread"][data-id="{DECISION}"]')
         page.locator(f'[data-act="newthread"][data-id="{DECISION}"]').first.click()
         page.wait_for_timeout(400)
         page.click('.threadpane [data-act="transfer"]')
         page.wait_for_timeout(300)
         flipped = page.evaluate(MEASURE)
-        assert flipped["label"] == "⚡ Return to assistant", (
-            f"the press did not move the draft's channel: {flipped}"
-        )
+        assert flipped["marked"] == "expert", f"the choice did not take on the draft: {flipped}"
         page.fill("#ft-say", FIRST_TURN)
         page.click('.threadpane [data-act="draftsay"]')
         page.wait_for_timeout(1500)
@@ -255,7 +253,7 @@ def main() -> None:
         print(f"  the first turn opened {opened}")
         assert opened != f"draft:{DECISION}", "the thread kept the draft's own name"
         assert in_expert_mode(log.entries(), opened), (
-            "the transfer pressed on the draft did not reach the thread it opened"
+            "the expert chosen on the draft did not reach the thread it opened"
         )
         assert not in_expert_mode(log.entries(), MAP_CHANNEL), (
             "a thread's transfer moved the map channel as well"

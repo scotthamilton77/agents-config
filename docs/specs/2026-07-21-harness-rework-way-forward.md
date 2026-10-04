@@ -20,14 +20,18 @@ every loop — including its own construction.**
 ### Contracts and specs
 
 **D1 — Spec falsifiability contract.** Every spec carries enumerated
-acceptance criteria, each expressible as a failing test (red-test-convertible).
-An edge-case taxonomy is applied during authoring: for each AC — inverse case,
-empty/boundary input, dependency failure, repeated/concurrent invocation,
-idempotency. The taxonomy grows from escaped defects: every defect that leaks
-downstream is traced to its missing-AC class and added.
+acceptance criteria, each falsifiable by a stated check. Change obligations
+normally admit a failing test before implementation. Preservation guarantees,
+live observation windows, and human acceptance use their defined verification
+contracts instead of requiring an artificial red test.
+What-if questions are asked of each AC during authoring: what if it fails,
+what if the input is empty or at a limit, what if a dependency is missing,
+what if it runs twice or concurrently, what if it runs again with nothing
+changed. The questions grow from escaped defects: every defect that leaks
+downstream is traced to its missing-AC class and added as a question.
 
 **D2 — Decomposition shape.** One spec carries an ordered slice list. Each
-slice is the smallest change that flips a defined set of ACs red→green and is
+slice is the smallest change that discharges a defined set of ACs and is
 separately mergeable; each slice carries its own ACs and is the unit a
 scaffold picks up. Size tripwire (initial, tunable): a spec exceeding 400
 lines or 8 slices splits into a parent doc + child specs. Decomposition is the
@@ -35,9 +39,12 @@ spec author's deliverable — a spec is not ready until it is decomposed.
 
 **D3 — AC-attack review at the readiness gate.** A foreign (non-Anthropic)
 model attacks the AC set before implementation: "name behaviors that satisfy
-these ACs while still being wrong." Findings must arrive as proposed ACs
-(testable claims about inputs/states), never as concerns. Each proposal is
-accepted into the AC set or rejected as out-of-scope; the round terminates.
+these ACs while still being wrong." Findings arrive as objections: the AC
+concerned, the rule it breaks, and a failing scenario stated as a testable
+claim about inputs/states, never as a bare concern. The attacker holds less
+context than the author, so the author answers each accepted objection with an
+AC of their own; each objection is accepted or rejected as out-of-scope, and
+the round terminates.
 Enforcement of D1–D3 is author-side (the brainstorming replacement's output
 contract; the goals-only escape is deleted) plus a mechanical lint at the gate
 (AC-section presence and per-slice AC coverage).
@@ -58,11 +65,28 @@ contract."
   set is checked by script, not judgment.
 - **Separation:** the scaffold writer is a fresh-context agent receiving the
   spec only — never the spec-writing session. A foreign model reviews the
-  scaffold (bijection, contract-only, taxonomy applied). The spec author
+  scaffold (bijection, contract-only, what-if questions answered). The spec author
   adjudicates disputes only.
-- **Prose deliverables** (skills, docs, config) can't scaffold as red tests:
-  the dispatch brief names the mechanical checks that gate completion;
-  anything not mechanically checkable rides as advisory review.
+- **Prose deliverables** (skills, docs, config) often cannot scaffold as red
+  tests: the dispatch brief names the mechanical checks that gate completion;
+  material commitments that require human acceptance use a planned check,
+  while other non-mechanical findings ride as advisory review.
+
+*Amended 2026-09-26 (D1, D4 and D8):* every material commitment needs an
+explicit verification method, pass/fail rule, and acceptance authority.
+Mechanical verification remains the default. Where the outcome requires human
+participation or judgment, the contract defines the observation protocol or
+assessment standard and names the evaluator before implementation. Completion
+at the declared acceptance boundary waits for that check's recorded result.
+Checking that an authorized decision was recorded does not mechanize the
+judgment itself. Automatable change obligations normally admit failing tests;
+preservation guarantees and live observation windows use their defined checks.
+Human acceptance uses this bounded exception. Ordinary advisory findings remain
+non-blocking under D8. A terminal-clean review does not discharge a pending
+human acceptance check. Cost or difficulty never makes a material commitment
+optional; changing the commitment requires an authorized scope amendment.
+The quality standard specifies this contract in
+`docs/specs/2026-09-18-acceptance-criteria-quality.md`.
 
 **D5 — Foreign eyes sit in review seats, not authoring seats.** Authoring
 quality dominates in the writer seat (fresh-context Anthropic frontier);
@@ -88,6 +112,9 @@ CONTEXT.md design). Mechanical findings block and must carry a mechanical
 artifact (failing test, lint output, broken link). Advisory findings route to
 the backlog, never block, and are never re-litigated in the fix loop. Review
 exits when a complete round produces zero mechanical findings.
+
+*Amended 2026-09-26:* a terminal-clean review verdict does not discharge a
+pending human acceptance check under the D4 amendment.
 
 **D9 — The PR is a thin merge vehicle.** Merge eligibility = CI green +
 verdict artifact + approval. PR comments cease to be a review medium; a human
@@ -224,7 +251,7 @@ once content shrinks below what justifies it.
 
 **D18 — Skills strategy: import shapes, own contracts, admit per-item.**
 Never adopt a set wholesale. Initial admissions from Pocock (each with a
-graft): `grilling` (+AC/taxonomy exit criterion) as the brainstorming core;
+graft): `grilling` (+AC/what-if exit criterion) as the brainstorming core;
 `to-spec` (+AC section and slice list as output contract); `to-tickets`
 (aimed at `work` verbs); `tdd` (executor-side); `code-review`'s two-axis
 shape (pattern feeds the verdict design, not adopted as a skill);
@@ -356,8 +383,8 @@ run in parallel after S1.
 - **S4 — Instruction-surface teardown.** Delete the INSTRUCTIONS.md mountain
   (survivors already extracted in S0) and its per-tool assembly; reassess
   DYNAMIC-INCLUDE once content shrinks below what justifies it. (D17)
-- **S5 — Spec contract.** Admit + graft `grilling`/`to-spec`; edge-case
-  taxonomy; spec lint (AC4); delete the old brainstorming skill's goals-only
+- **S5 — Spec contract.** Admit + graft `grilling`/`to-spec`; what-if
+  questions; spec lint (AC4); delete the old brainstorming skill's goals-only
   path by deleting the skill. (D1, D2, D18)
 - **S6 — Review contracts.** Verdict schema (D8); class-specific review
   contracts; AC-attack contract (D3); self-managed invocation + bot identity

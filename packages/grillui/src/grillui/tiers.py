@@ -149,7 +149,7 @@ CONTEXT_WARN_FRACTION = 0.75
 BYTES_PER_TOKEN = 4
 
 # Who acts on a met escalation condition. Under `gated` the condition highlights
-# the transfer control and nothing moves until the human presses it; under
+# the way to the expert and nothing moves until the human takes it; under
 # `autonomous` the backend moves that channel itself. Gated is the default
 # because the other direction spends the owner's subscription on a condition
 # they never watched fire -- and a session where they take every recommendation

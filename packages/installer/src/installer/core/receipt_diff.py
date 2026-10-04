@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from installer.core import namespaces
 from installer.core.model import Orphan, Tool
 from installer.core.receipt import Receipt, ReceiptEntry
 
@@ -109,11 +110,13 @@ def diff_orphans(
             continue
         # Namespace is the first path segment AFTER the recorded root, so roots
         # with multiple segments (e.g. OpenCode's ``.config/opencode``) group
-        # orphans under the real namespace (``skills/``), not the root tail.
+        # orphans under the real namespace (``skills/``), not the root tail. A
+        # relocated namespace maps back to its own name the same way, so a
+        # Gemini skill under ``config/skills/`` groups under ``skills/`` too.
         # By construction ``path`` is lexically under ``root``; the ValueError
         # fallback keeps the prune from crashing on a pathological entry.
         try:
-            rel_parts = e.path.relative_to(e.root).parts
+            rel_parts = namespaces.staged_relpath(e.owner, e.path.relative_to(e.root)).parts
         except ValueError:
             rel_parts = ()
         orphans.append(

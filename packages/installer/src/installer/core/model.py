@@ -126,6 +126,11 @@ class Contribution:
 class StagedItem:
     """In-memory record of one entry destined for a tool's install root.
 
+    `dest_relpath` is the item's plan key, `<namespace>/<name>` for a
+    namespaced item on every tool. It is also where the item lands under the
+    tool's install root, except for a relocated namespace: code that turns the
+    key into a path on disk goes through `namespaces.deployed_relpath`.
+
     `content` is `None` when `kind == FileKind.DIR` — top-level skill /
     agent directories are staged as single units; their bytes are derived
     from `source_path` at sync time, not carried in the data model. For

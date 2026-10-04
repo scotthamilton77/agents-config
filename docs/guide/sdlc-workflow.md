@@ -105,9 +105,11 @@ slice list — before any code. It synthesizes rather than interviews, which is
 why it follows the grilling rather than replacing it.
 
 Then attack what you wrote. **`ac-attack`** (Claude Code only) runs a panel of
-adversarial lenses over the criteria — behaviours that satisfy every stated
-criterion and are still wrong, the edge-case taxonomy, obligations no criterion
-covers — and every proposal it returns gets adjudicated into the criteria or
+adversarial lenses over the criteria. They look for criteria that check an
+artifact instead of an outcome, obligations no criterion discharges, criteria
+that contradict each other, and cases the what-if questions raise that no
+criterion tests. Each objection names the `acceptance-criteria` rule it rests
+on, and each one is accepted, and answered with a criterion you write, or
 rejected on the record. Running it before implementation is the point: once code
 exists, review can only check coverage of the cases you already named.
 

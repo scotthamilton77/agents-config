@@ -473,7 +473,7 @@ the `claude` transport. Each is configuration, so a session may seat any of them
 differently, and no session gets a third rung.
 
 The seat occupies the fast rung, so the rung stays what every other surface keys on: the
-lane names `fast` and `heavy`, the map's transfer control reads *Transfer to expert* at
+lane names `fast` and `heavy`, the map's seat toggle marks *assistant* at
 first paint like every other channel's (GUI-U22), the turn's attribution carries its `tier`
 beside the seat's `model` and `effort`, and the recorded dispatch carries the same bytes on
 every transport.
@@ -561,8 +561,8 @@ its own persistence.** GUI-D35's policy and GUI-D12's conditions reach every cha
 map's included, through the note riding an answer: the note is a human turn, so a note
 meeting a condition fires, and under `autonomous` writes its own `transferred` entry. That
 is the map's only human-text route, and it is thin — the human's other gestures there, an
-apply and a dismiss, carry no text for a condition to read, and nobody presses *Transfer to
-expert* at an agent they never talk to. The three triggers below are what a transcript
+apply and a dismiss, carry no text for a condition to read, and nobody selects *expert*
+on a seat toggle for an agent they never talk to. The three triggers below are what a transcript
 condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note.
 
 1. **Hand-up** (the lane's "press"), per gesture. A reply leaving a named decision unruled,
@@ -591,7 +591,7 @@ condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note
    dismissing a first-rung seat's proposal, and a hand-up (trigger 1). At the second
    signal the backend writes a policy `transferred` status entry on the map channel — GUI-D35's
    own machinery, unchanged: such an entry only ever moves a channel up, and the way back down
-   is the human's transfer control. One signal writes nothing, because one is noise; a third
+   is the human's seat toggle. One signal writes nothing, because one is noise; a third
    writes nothing new, because the channel is already there.
 
 **N=2 is a default nobody has defended under fire.** Its revert observation is a session
@@ -777,7 +777,7 @@ skill's text, and each names what a red test would assert.
   on the Codex transport by `gpt-5.6-luna` at `medium` effort and a thread's by the
   OpenRouter seat `google/gemini-3.5-flash-lite` at no effort; the lane names the `fast`
   tier on both; each turn's attribution carries that seat's model and its effort where it
-  has one, beside the tier; and the map's transfer control reads *Transfer to expert* at
+  has one, beside the tier; and the map's seat toggle marks *assistant* at
   first paint. Seating the map channel on the threads' seat makes its first turn take that
   transport and model and changes nothing else about the channel.
 - **GMR-A6** Every composed thread-agent prompt carries the board legend, on both tiers.
@@ -800,8 +800,8 @@ skill's text, and each names what a red test would assert.
   exactly one policy `transferred` entry on the map channel and every map turn after it is
   the expert seat's, while under `gated`, the default, it writes exactly one recommendation
   status entry on the map channel and the next map turn is still the first-rung seat's
-  until the human's transfer control moves it; a third signal writes no further entry under
-  either policy; and the human's transfer control returns a transferred channel to its
+  until the human's seat toggle moves it; a third signal writes no further entry under
+  either policy; and the human's seat toggle returns a transferred channel to its
   first-rung seat.
 - **GMR-A11** The Codex driver invokes `codex exec --json` and records the `thread_id` from
   the `thread.started` event, then resumes that thread on every later turn on the channel as

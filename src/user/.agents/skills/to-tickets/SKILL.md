@@ -96,7 +96,7 @@ Do NOT close or modify the container or any parent item — it holds the rest of
 
 ### 6. Hand off the ticket frontier
 
-`work ready` now returns the **ticket frontier** — every ticket whose blockers are all closed and which nobody has claimed. This frontier is work that is startable, not questions that are answerable. For a purely linear chain it is top to bottom. Whoever picks one up takes it with `work claim <id>` first, so concurrent sessions don't collide.
+`work list --parent <container-id> --status open` lists this effort's unclaimed tickets. The **ticket frontier** is the subset whose blockers are all closed: work that is startable, not questions that are answerable. For a purely linear chain it is top to bottom. Do not hand off with `work ready`: it takes no parent, so it returns every other effort's startable work alongside this one's. Whoever picks a ticket up takes it with `work claim <id>` first; claim refuses a ticket whose blockers are still open.
 
 ## What goes in the ticket body
 
@@ -104,7 +104,7 @@ The facade carries most of the structure as fields, so the body only holds what 
 
 - The **parent** is the `--parent` edge, not a section of prose.
 - The **blocking edges** are `work dep` edges, not a "Blocked by" list.
-- The **acceptance criteria** are `--acceptance`, one criterion per line.
+- The **acceptance criteria** are `--acceptance`, one criterion per line, each meeting the `acceptance-criteria` standard.
 
 That leaves `--description` to carry one thing: **the end-to-end behaviour this ticket makes work, from the user's perspective** — not a layer-by-layer implementation list.
 

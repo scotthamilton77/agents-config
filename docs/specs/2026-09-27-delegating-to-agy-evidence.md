@@ -1,0 +1,41 @@
+# Evidence
+
+All criteria describe future implementation; their evidence is open. The probe record in section 3 supports the decisions and establishes no criterion.
+
+- AGY-A1 | open
+- AGY-A2 | open
+- AGY-A3 | open
+- AGY-A4 | open
+- AGY-A5 | open
+- AGY-A6 | open
+- AGY-A7 | open
+- AGY-A8 | open
+- AGY-A9 | open
+- AGY-A10 | open
+- AGY-A11 | open
+- AGY-A12 | open
+- AGY-B1 | open
+- AGY-B2 | open
+- AGY-B3 | open
+- AGY-B4 | open
+- AGY-B5 | open
+- AGY-B6 | open
+- AGY-B7 | open
+- AGY-B8 | open
+- AGY-B9 | open
+- AGY-B10 | open
+- AGY-B11 | open
+- AGY-B12 | open
+- AGY-B13 | open
+- AGY-B14 | open
+- AGY-C1 | open
+- AGY-C2 | open
+- AGY-C3 | open
+- AGY-C4 | open
+- AGY-C5 | open
+- AGY-C6 | open
+- AGY-E1 | open
+- AGY-E2 | open
+- AGY-E3 | open
+- AGY-E4 | open
+- AGY-E5 | open

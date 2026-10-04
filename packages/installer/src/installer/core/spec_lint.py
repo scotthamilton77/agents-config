@@ -34,8 +34,8 @@ Four mechanical, gaming-resistant checks:
    Citing only an ID the spec never defines still fails, naming the slice; an
    ID matches as a whole token, never as a fragment of a longer one.
 4. a spec that mints implementation work — one carrying a ``## Continuations``
-   manifest — accounts for every criterion from check 2 in an ``## Evidence``
-   ledger. See "The evidence ledger" below.
+   manifest — accounts for every criterion from check 2 in an evidence ledger
+   kept in a sidecar file beside it. See "The evidence ledger" below.
 
 Both kinds count because both are contracts a slice can be held to, which is
 the whole of what the criterion asks for: a slice that names neither has no
@@ -74,14 +74,32 @@ full CommonMark parser.
 The evidence ledger
 -------------------
 
-An ``## Evidence`` section, last in the spec so concurrent edits near the
-criteria and the manifest do not collide with it, holding one row per
-criterion::
+The ledger lives in a sidecar file beside the spec, named for it without its
+extension: ``2026-08-18-grilling-ui-v1.md`` keeps its ledger in
+``2026-08-18-grilling-ui-v1-evidence.md``. Only the last extension comes off,
+which is how an acceptance-criteria attack record beside the same spec is
+named. The sidecar holds a row for every criterion, anywhere in the file
+outside a code fence::
 
     - GUI-A34 | open
     - GUI-A12 | test: packages/grillui/tests/unit/test_page.py::test_transfer
     - GUI-A35 | probe: docs/probes/transfer.md::probe_transfer
     - GUI-A62 | observed: #614 2026-08-22 scotthamilton77
+
+The ledger stays out of the spec because an attack record binds to the sha256
+of the spec's whole file. Any byte change to an attacked spec invalidates its
+record and owes a new attack round. Evidence rows change as work delivers, so a
+ledger inside the spec would reopen the attack every time someone recorded
+delivery. In the sidecar, those updates leave the attacked bytes alone.
+
+There is one location. An in-scope spec carrying an exact ``## Evidence``
+heading is refused, and the finding names the sidecar the ledger belongs in.
+The refusal holds whether or not a sidecar also exists, because two places for
+one ledger let them disagree. A longer or deeper heading, such as
+``## Evidence of need``, is some other section and stays legal. A
+``-evidence.md`` file whose spec sits beside it is a sidecar, so discovery
+skips it rather than linting it as a spec. A file with that suffix and no such
+spec is linted as a spec, so the suffix cannot hide a spec from the gate.
 
 Four states, and no others. ``open`` is always legal and blocks nothing — the
 ledger maps the criterion universe, it does not claim completion, so a spec
@@ -94,19 +112,19 @@ not unforgeable, but callable in.
 **The kind rule.** A criterion whose own text says it is verified "in a
 browser" cannot be discharged by ``test:``; it needs ``probe:`` or
 ``observed:``. This is the check's whole reason to exist. Counting evidence is
-not enough on its own: a slice once closed with three named, passing tests
-citing the criteria for a page control that shipped absent — the tests pinned
-the wire protocol underneath it. No grep over test names can tell those apart,
-and the criterion's own prose can.
+not enough on its own: three named, passing tests can cite the criteria for a
+page control that is absent, because they pin the wire protocol underneath it.
+No grep over test names can tell those apart, and the criterion's own prose
+can.
 
 What it does not catch, stated so nobody reads more into a green ledger: a
 ``test:`` row whose test is real, passing, and exercising the wrong surface
 where the author never wrote the phrase; a false ``observed:``; a criterion the
 spec never stated at all.
 
-``init_evidence`` generates an all-``open`` ledger for a spec that owes one, so
-backfill is mechanical; it returns nothing for a spec that already has rows and
-therefore cannot clobber them.
+``init_evidence`` generates the text of an all-``open`` sidecar for a spec that
+owes one, so backfill is mechanical. The CLI writes it only where no sidecar
+exists, so it cannot clobber rows an author filled in.
 
 Prose quality stays advisory human review; this module never judges
 content, only structure. Results are data (``Violation``); printing happens
@@ -203,6 +221,7 @@ _CONTINUATIONS_HEADING_KEYWORD = "continuations"
 _BROWSER_PHRASE = "in a browser"
 
 _EVIDENCE_HEADING = "## Evidence"
+_EVIDENCE_SUFFIX = "-evidence.md"
 _EVIDENCE_ROW_RE = re.compile(rf"^\s*-\s+({_AC_ID})\s*\|\s*(\S.*?)\s*$")
 _SYMBOL_ROW_RE = re.compile(r"^(test|probe):\s+(\S+)::(\S+)$")
 _OBSERVED_ROW_RE = re.compile(r"^observed:\s+#\d+\s+\d{4}-\d{2}-\d{2}\s+\S+$")
@@ -234,16 +253,33 @@ def _parse_spec_date(filename: str) -> date | None:
         return None
 
 
+def evidence_path(spec: Path) -> Path:
+    """The sidecar file that holds ``spec``'s evidence ledger, beside it and
+    named for it without its last extension."""
+    return spec.with_name(f"{spec.stem}{_EVIDENCE_SUFFIX}")
+
+
+def _is_sidecar(path: Path) -> bool:
+    """Whether ``path`` is the evidence sidecar of a spec standing beside it.
+    The suffix alone does not decide it, because a spec that happened to be
+    named that way would then escape the lint."""
+    if not path.name.endswith(_EVIDENCE_SUFFIX):
+        return False
+    spec = path.with_name(f"{path.name.removesuffix(_EVIDENCE_SUFFIX)}.md")
+    return spec.is_file()
+
+
 def discover_spec_files(specs_dir: Path) -> list[Path]:
     """Spec files under ``specs_dir`` in scope for the lint: dated ≥
     ``GATE_START_DATE``, plus any exact match in ``_ALWAYS_IN_SCOPE``
-    regardless of date. A missing or empty directory yields an empty list
-    — no crash, nothing to lint."""
+    regardless of date. A spec's evidence sidecar is not a spec and is left
+    out. A missing or empty directory yields an empty list — no crash,
+    nothing to lint."""
     if not specs_dir.is_dir():
         return []
     out: list[Path] = []
     for path in sorted(specs_dir.iterdir()):
-        if not path.is_file():
+        if not path.is_file() or _is_sidecar(path):
             continue
         if path.name in _ALWAYS_IN_SCOPE:
             out.append(path)
@@ -459,23 +495,20 @@ def _has_heading(headings: list[_Heading], keyword: str) -> bool:
     return any(_is_section(level, text, keyword) for _idx, level, text in headings)
 
 
-def _evidence_rows(
-    lines: list[str], headings: list[_Heading], fenced: list[bool]
-) -> list[tuple[str, str]]:
-    """``(ac_id, state)`` for every ledger row under an Evidence heading, in
-    document order. Duplicates are kept: two rows for one criterion are two
-    claims, and both are checked."""
+def _evidence_rows(sidecar_text: str) -> list[tuple[str, str]]:
+    """``(ac_id, state)`` for every ledger row in a sidecar, in file order. The
+    whole file is the ledger, so no heading bounds it, and a fenced row is an
+    illustration rather than a row. Duplicates are kept: two rows for one
+    criterion are two claims, and both are checked."""
+    lines = sidecar_text.splitlines()
+    fenced = fence_mask(lines)
     rows: list[tuple[str, str]] = []
-    for idx, (line_idx, level, text) in enumerate(headings):
-        if not _is_section(level, text, _EVIDENCE_HEADING_KEYWORD):
+    for offset, line in enumerate(lines):
+        if fenced[offset]:
             continue
-        end = _section_end(headings, idx, level, len(lines))
-        for offset, line in enumerate(lines[line_idx + 1 : end], start=line_idx + 1):
-            if fenced[offset]:
-                continue
-            m = _EVIDENCE_ROW_RE.match(line)
-            if m:
-                rows.append((m.group(1), m.group(2)))
+        m = _EVIDENCE_ROW_RE.match(line)
+        if m:
+            rows.append((m.group(1), m.group(2)))
     return rows
 
 
@@ -498,7 +531,7 @@ def _symbol_resolves(repo_root: Path, file_ref: str, symbol: str) -> bool:
 
 
 def _lint_evidence_row(
-    path: Path, ac_id: str, state: str, ac_text: str, repo_root: Path | None
+    sidecar: Path, ac_id: str, state: str, ac_text: str, repo_root: Path | None
 ) -> list[Violation]:
     """One ledger row against its criterion. The state set is closed: an open
     vocabulary is no vocabulary, since `done` or `n/a` would pass and neither
@@ -511,17 +544,18 @@ def _lint_evidence_row(
         if kind == "test" and _BROWSER_PHRASE in ac_text.lower():
             return [
                 Violation(
-                    file=path,
+                    file=sidecar,
                     reason=(
-                        f"{ac_id} states '{_BROWSER_PHRASE}' and cannot be discharged "
-                        f"by a test: row — use probe: or observed:"
+                        f"evidence row '{ac_id} | {state}': {ac_id} states "
+                        f"'{_BROWSER_PHRASE}' and cannot be discharged by a test: row "
+                        f"— use probe: or observed:"
                     ),
                 )
             ]
         if repo_root is not None and not _symbol_resolves(repo_root, file_ref, name):
             return [
                 Violation(
-                    file=path,
+                    file=sidecar,
                     reason=(
                         f"evidence row '{ac_id} | {state}' names "
                         f"{file_ref}::{name}, which does not resolve in the tree"
@@ -533,7 +567,7 @@ def _lint_evidence_row(
         return []
     return [
         Violation(
-            file=path,
+            file=sidecar,
             reason=(
                 f"evidence row '{ac_id} | {state}' has no recognised state — expected "
                 f"open, test: <file>::<fn>, probe: <file>::<name>, or "
@@ -543,92 +577,107 @@ def _lint_evidence_row(
     ]
 
 
+def _lint_inline_ledger(path: Path, headings: list[_Heading]) -> list[Violation]:
+    """An inline ledger is refused in any spec, because the ledger has one
+    home."""
+    if not _has_heading(headings, _EVIDENCE_HEADING_KEYWORD):
+        return []
+    return [
+        Violation(
+            file=path,
+            reason=(
+                f"spec carries an inline '{_EVIDENCE_HEADING}' ledger — the ledger "
+                f"belongs in {evidence_path(path).name} beside the spec, so move its "
+                f"rows there and delete the section"
+            ),
+        )
+    ]
+
+
 def _lint_evidence(
     path: Path,
-    lines: list[str],
     headings: list[_Heading],
-    fenced: list[bool],
     defined_acs: dict[str, str],
+    evidence: str | None,
     repo_root: Path | None,
 ) -> list[Violation]:
-    """The AC-evidence ledger check, over a spec that mints implementation
-    work. A spec with no Continuations manifest slices nothing, so it has no
-    criterion anybody is about to claim and nothing to hold a ledger against."""
+    """The AC-evidence ledger check over one spec and its sidecar text, which
+    is ``None`` when the spec has no sidecar.
+
+    Only a spec with a Continuations manifest owes a ledger: a spec that slices
+    nothing has no criterion anybody is about to claim."""
+    sidecar = evidence_path(path)
     if not _has_heading(headings, _CONTINUATIONS_HEADING_KEYWORD):
         return []
-    rows = _evidence_rows(lines, headings, fenced)
-    if not rows:
+    if evidence is None:
         return [
             Violation(
                 file=path,
                 reason=(
-                    f"spec mints work but carries no '{_EVIDENCE_HEADING}' ledger — run "
-                    f"`python -m installer.spec_lint_cli --init-evidence` to emit an "
-                    f"all-open one"
+                    f"spec mints work but has no evidence sidecar {sidecar.name} — "
+                    f"run `python -m installer.spec_lint_cli --init-evidence` to "
+                    f"emit an all-open one"
                 ),
             )
         ]
     violations: list[Violation] = []
     covered: set[str] = set()
-    for ac_id, state in rows:
+    for ac_id, state in _evidence_rows(evidence):
         ac_text = defined_acs.get(ac_id)
         if ac_text is None:
             violations.append(
                 Violation(
-                    file=path,
-                    reason=f"evidence row names {ac_id}, which the spec defines no criterion for",
+                    file=sidecar,
+                    reason=(
+                        f"evidence row '{ac_id} | {state}' names {ac_id}, which the spec "
+                        f"defines no criterion for"
+                    ),
                 )
             )
             continue
         covered.add(ac_id)
-        violations.extend(_lint_evidence_row(path, ac_id, state, ac_text, repo_root))
+        violations.extend(_lint_evidence_row(sidecar, ac_id, state, ac_text, repo_root))
     for ac_id in defined_acs:
         if ac_id not in covered:
             violations.append(
-                Violation(
-                    file=path,
-                    reason=f"{ac_id} has no row in the '{_EVIDENCE_HEADING}' ledger",
-                )
+                Violation(file=sidecar, reason=f"{ac_id} has no row in the evidence ledger")
             )
     return violations
 
 
 def init_evidence(text: str) -> str | None:
-    """``text`` with an all-``open`` Evidence ledger appended, or ``None`` when
-    the spec needs none — it mints no work, defines no criteria, or already
-    carries rows. Returning ``None`` rather than the unchanged text is what
-    makes the generator safe to re-run: it can never clobber a row an author
-    filled in.
-
-    Last section by construction. A spec under active slicing is appended to
-    near its criteria and its manifest by whoever is implementing it, and a
-    ledger at the end is the one place that stays out of their way."""
+    """The text of an all-``open`` evidence sidecar for the spec ``text``, or
+    ``None`` when the spec owes no ledger — it mints no work or defines no
+    criteria. Whether a sidecar already exists is the caller's question, since
+    the answer lives on disk and the rows in an existing one are an author's."""
     lines = text.splitlines()
     fenced = fence_mask(lines)
     headings = _headings(lines, fenced)
     if not _has_heading(headings, _CONTINUATIONS_HEADING_KEYWORD):
-        return None
-    if _evidence_rows(lines, headings, fenced):
         return None
     defined_acs = _defined_acs(lines, headings, fenced)
     if not defined_acs:
         return None
     rows = "\n".join(f"- {ac_id} | {_OPEN_ROW}" for ac_id in defined_acs)
     preamble = (
-        "How each criterion above is discharged. States: `open`;\n"
-        "`test: <file>::<test_fn>`; `probe: <file>::<name>`;\n"
+        "How each criterion in the spec beside this file is discharged. States:\n"
+        "`open`; `test: <file>::<test_fn>`; `probe: <file>::<name>`;\n"
         "`observed: #<PR> <YYYY-MM-DD> <name>`. A criterion whose own text says it is\n"
         f"verified {_BROWSER_PHRASE} cannot be discharged by `test:` — a test that never\n"
         "opens one proves something else."
     )
-    body = f"{_EVIDENCE_HEADING}\n\n{preamble}\n\n{rows}\n"
-    separator = "" if text.endswith("\n\n") else "\n" if text.endswith("\n") else "\n\n"
-    return f"{text}{separator}{body}"
+    return f"# Evidence\n\n{preamble}\n\n{rows}\n"
 
 
-def lint_spec_text(path: Path, text: str, repo_root: Path | None = None) -> list[Violation]:
-    """The lint's four checks over one spec's text. ``path`` is carried
-    through only for violation labeling.
+def lint_spec_text(
+    path: Path, text: str, repo_root: Path | None = None, evidence: str | None = None
+) -> list[Violation]:
+    """The lint's four checks over one spec's text. ``path`` labels the
+    violations and names the evidence sidecar beside it; this function reads
+    no file.
+
+    ``evidence`` is the text of that sidecar, or ``None`` when the spec has
+    none.
 
     ``repo_root`` is the tree the evidence ledger's ``test:``/``probe:`` rows
     are resolved against; passing ``None`` leaves the rest of the lint pure and
@@ -638,9 +687,10 @@ def lint_spec_text(path: Path, text: str, repo_root: Path | None = None) -> list
     fenced = fence_mask(lines)
     headings = _headings(lines, fenced)
 
+    inline = _lint_inline_ledger(path, headings)
     ac_headings = [h for h in headings if _AC_HEADING_KEYWORD in h[2].lower()]
     if not ac_headings:
-        return [Violation(file=path, reason="no 'Acceptance criteria' heading found")]
+        return [Violation(file=path, reason="no 'Acceptance criteria' heading found"), *inline]
 
     defined_acs = _defined_acs(lines, headings, fenced)
     defined_ids = set(defined_acs)
@@ -652,7 +702,8 @@ def lint_spec_text(path: Path, text: str, repo_root: Path | None = None) -> list
                     "'Acceptance criteria' heading present but no structured AC "
                     "definition entry (- **ID** text) found under it"
                 ),
-            )
+            ),
+            *inline,
         ]
 
     # Check 2 is satisfied by AC entries alone — a spec with decisions and no
@@ -660,9 +711,10 @@ def lint_spec_text(path: Path, text: str, repo_root: Path | None = None) -> list
     # widen only what a slice may cite to discharge itself.
     citation_re = _citation_re(defined_ids | _defined_decision_ids(lines, fenced))
 
-    violations: list[Violation] = _lint_evidence(
-        path, lines, headings, fenced, defined_acs, repo_root
-    )
+    violations: list[Violation] = [
+        *inline,
+        *_lint_evidence(path, headings, defined_acs, evidence, repo_root),
+    ]
     for idx, (line_idx, level, heading_text) in enumerate(headings):
         if _SLICE_HEADING_KEYWORD not in _strip_parens(heading_text).lower():
             continue
@@ -719,7 +771,17 @@ def lint_specs(specs_dir: Path, repo_root: Path | None = None) -> list[Violation
         except (OSError, UnicodeDecodeError) as exc:
             violations.append(Violation(file=path, reason=f"unreadable spec file: {exc}"))
             continue
-        violations.extend(lint_spec_text(path, text, repo_root))
+        sidecar = evidence_path(path)
+        evidence: str | None = None
+        if sidecar.is_file():
+            try:
+                evidence = sidecar.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                violations.append(
+                    Violation(file=sidecar, reason=f"unreadable evidence sidecar: {exc}")
+                )
+                continue
+        violations.extend(lint_spec_text(path, text, repo_root, evidence))
     return violations
 
 

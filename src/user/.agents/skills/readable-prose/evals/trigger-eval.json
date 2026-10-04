@@ -1,0 +1,74 @@
+[
+  {
+    "query": "this spec in docs/specs/2026-10-01-delegation-coherence.md is correct but i had to read every paragraph twice. can you make it readable without changing anything it decides",
+    "should_trigger": true
+  },
+  {
+    "query": "Write the PR description for this branch. The reviewer is our tech lead and she reads these between meetings, so it has to land on the first read.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write the description for work item OPS-88 from my notes below. The on-call lead who picks it up wasn't in the incident review, so it has to make sense cold.",
+    "should_trigger": true
+  },
+  {
+    "query": "The description on work item PAY-212 is one 180-word sentence. Rewrite it so someone outside the team can tell what is being asked for.",
+    "should_trigger": true
+  },
+  {
+    "query": "after three review rounds this RFC has turned into clause soup, every fix bolted on another 'provided that'. tidy the prose. the decisions are final so dont touch those",
+    "should_trigger": true
+  },
+  {
+    "query": "Our CTO reads every ADR and keeps asking what paragraph 3 of docs/adr/0014-event-store.md means. Fix the ADR so he doesn't have to ask.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm about to write up the database migration plan for the ops lead to sign off. Write it so it reads cleanly the first time through.",
+    "should_trigger": true
+  },
+  {
+    "query": "Edit this proposal for clarity. Legal already approved the acceptance criteria, so their meaning must not move at all.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write up the root cause of last night's outage and the fix we chose as a one-page note for the VP of engineering. She reads these on her own and won't have anyone to ask.",
+    "should_trigger": true
+  },
+  {
+    "query": "This SKILL.md is too long and the agent keeps ignoring the second half of it. Tighten it up.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rewrite our CLAUDE.md so the rules are clearer and the agent stops skipping the testing section.",
+    "should_trigger": false
+  },
+  {
+    "query": "The spec's retry decision is wrong. We should use exponential backoff, not a fixed delay. Update the spec to say that.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write acceptance criteria for the CSV export feature in the spec we drafted yesterday.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review PR 412 for correctness bugs before I merge it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add docstrings to the public functions in billing/invoice.py.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draft the prompt I'll send to the subagent that runs the schema migration, including what it should report back.",
+    "should_trigger": false
+  },
+  {
+    "query": "Is this spec ready to implement? Poke holes in the plan before we commit to it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fix the typo in the heading of docs/guide.md and the broken link in the paragraph under it.",
+    "should_trigger": false
+  }
+]

@@ -91,7 +91,7 @@ from grillui.escalation import (
 )
 from grillui.lane import AgentUnreachableError, DocumentRefusedError
 from grillui.log import TRANSCRIPT_DIR, PayloadRefusedError
-from grillui.projector import replay
+from grillui.projector import replay, superseded_targets, task_id
 from grillui.schemas import (
     CHAIN_KEY,
     CONTEXT_BYTES_KEY,
@@ -111,6 +111,7 @@ from grillui.schemas import (
     RULING_STANDS,
     RULINGS_KEY,
     STATUS_PHASE_RULINGS_DROPPED,
+    STATUS_PHASE_SUPERSEDED,
     STATUS_PHASE_TRANSFERRED,
     STOP_KEY,
     SUPERSEDES_KEY,
@@ -1301,7 +1302,7 @@ class CodexDriver:
     but a wrong one.
 
     It sits on the first rung, not a third one: a channel seated here still
-    names the `fast` tier, still offers *Transfer to expert*, and hands a turn
+    names the `fast` tier, still has its seat toggle mark *assistant*, and hands a turn
     it could not take up to the same expert every other channel has.
     """
 
@@ -1875,6 +1876,60 @@ def owed_rulings(
 
 
 def record_document(
+    log: SessionLog,
+    tier: str,
+    document: GrillMasterDocument,
+    attribution: dict[str, Any],
+    owed: MootnessObligation | None = None,
+) -> int | None:
+    """Put a grill-master turn into the log without what it ruled on decisions a
+    later gesture took over, and say where it landed.
+
+    A later answer marking a decision this turn owed a ruling on supersedes this
+    turn's task on it, and the ruling on it is then the later turn's to make.
+    This turn's ruling and its changes on that decision are struck before the
+    append and never reach the board, and each strike is recorded on the lane
+    naming the task, which the replay keeps as a history line on the decision.
+
+    The check and the append are one hold of the append lock. Split apart, a
+    gesture landing between them supersedes a task whose result is already on
+    its way to the board.
+    """
+    with log.appending():
+        gone = superseded_targets(log.entries(), owed)
+        if owed is None or owed.gesture is None or not gone:
+            return _record_document(log, tier, document, attribution, owed)
+        kept = [one for one in owed.ids if one not in gone]
+        # Only a target this turn actually said something about had a result
+        # to drop. A turn silent on it dropped nothing, and a history line
+        # saying otherwise would describe a ruling that never arrived.
+        said = {one.decision for one in document.rulings} | {
+            one.get("target") for one in document.updates
+        }
+        dropped = [one for one in gone if one in said]
+        document = document.model_copy(
+            update={
+                "rulings": [one for one in document.rulings if one.decision not in gone],
+                "updates": [one for one in document.updates if one.get("target") not in gone],
+            }
+        )
+        narrowed = owed.model_copy(update={"ids": kept}) if kept else None
+        spoke = _record_document(log, tier, document, attribution, narrowed)
+        # Recorded only once the turn has landed: a turn the appender refuses
+        # is retried, and the retry strikes the same result again.
+        for one in dropped:
+            name = task_id(owed.gesture, one)
+            log.emit_status(
+                STATUS_PHASE_RULINGS_DROPPED,
+                f"the result for {one} from task {name} arrived after a later answer "
+                f"superseded that task, and was dropped",
+                MAP_CHANNEL,
+                tasks=[{"id": name, "phase": STATUS_PHASE_SUPERSEDED}],
+            )
+        return spoke
+
+
+def _record_document(
     log: SessionLog,
     tier: str,
     document: GrillMasterDocument,

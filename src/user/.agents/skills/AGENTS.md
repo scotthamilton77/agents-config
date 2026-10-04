@@ -1,6 +1,6 @@
 # src/user/.agents/skills/ — Shared Skill Sources
 
-Source-of-truth for every skill that gets staged into each active tool's user-space skills directory by `scripts/install.sh`. Edits here are what land in `~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`, and `~/.config/opencode/skills/` on the next install run.
+Source-of-truth for every skill that gets staged into each active tool's user-space skills directory by `scripts/install.sh`. Edits here are what land in `~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/config/skills/` (where Antigravity CLI discovers global skills), and `~/.config/opencode/skills/` on the next install run.
 
 Staging is gated on admission: a `SKILL.md` without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned from every tool. Only admitted skills live in this folder; a skill awaiting admission, or retired after it, is not here at all.
 
@@ -20,7 +20,7 @@ skills/
 └── ...
 ```
 
-**Why depth-1.** All four target runtimes (Claude Code, Codex CLI, Gemini CLI, OpenCode) only discover skills one level deep. Anything nested deeper is invisible to the runtime — verified against each tool's official discovery docs (May 2026). Codex CLI's `.system/` exception is OpenAI-owned and not extensible by us.
+**Why depth-1.** All four target runtimes (Claude Code, Codex CLI, Antigravity CLI, OpenCode) only discover skills one level deep. Anything nested deeper is invisible to the runtime. Codex CLI's `.system/` exception is OpenAI-owned and not extensible by us.
 
 ## OSS provenance requirement
 

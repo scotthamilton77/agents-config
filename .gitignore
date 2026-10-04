@@ -63,3 +63,7 @@ graphify-out/
 
 # mutmut's generated mutant tree — rebuilt by the mutation gate, never versioned
 mutants/
+
+# Gate stamps — what each package's gate last ran over, written by the stamped
+# make targets and read by the pre-commit check. Local to one working tree.
+packages/*/.gate-stamps/

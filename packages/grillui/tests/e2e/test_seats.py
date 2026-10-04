@@ -90,7 +90,7 @@ def test_each_channel_takes_its_turn_on_the_seat_the_session_configured(
     # rung above it.
     control = page.locator('[data-act="transfer"][data-channel="map"]')
     assert control.count() == 1, f"{control.count()} map transfer controls"
-    assert control.inner_text().strip().endswith("Transfer to expert"), control.inner_text()
+    assert control.inner_text().strip() == "expert", control.inner_text()
 
     answer(page, "d1", "a", "Append-only log, for recovery.")
     session.settled()
@@ -192,7 +192,7 @@ def test_the_human_moves_a_channel_up_and_back_down_by_their_own_gesture(
     # The control now offers the way back, and the way back is theirs.
     page.wait_for_timeout(600)
     control = page.locator('[data-act="transfer"][data-channel="map"]')
-    assert control.inner_text().strip().endswith("Return to assistant"), control.inner_text()
+    assert control.inner_text().strip() == "assistant", control.inner_text()
     control.click()
     page.wait_for_timeout(300)
     answer(page, "d2", "a")

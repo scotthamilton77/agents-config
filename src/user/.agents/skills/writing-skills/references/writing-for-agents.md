@@ -67,7 +67,11 @@ agent performs) and **reference** (definitions, rules, facts consulted on demand
 file), or both. The core decision is where each piece sits on the **information
 hierarchy**, a ladder ranked by how immediately the agent needs the material:
 
-1. **In-file step** — the primary tier: what the agent does, in order.
+1. **In-file step** — what the agent does, in order, where the order is
+   load-bearing: a gate, a fragile or exact command, a protocol with another
+   process. Judgment work gets its outcome, its constraints and its check
+   instead of steps; a script for a judgment task over-constrains a current
+   model and lowers the quality of its work.
 2. **In-file reference** — consulted on demand. Often a legitimately flat
    peer-set (every rule of a review on one rung) — a fine arrangement, not a
    smell.

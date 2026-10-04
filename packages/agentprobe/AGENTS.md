@@ -7,7 +7,7 @@ applies; this file adds what is specific to this package. Like the other package
 ## The quality gate is mandatory
 
 Before pushing any change under `packages/agentprobe/`, run the canonical gate from the
-repo root:
+root of the tree you are working in (the worktree root, if you are on a worktree branch):
 
 ```bash
 make ci-agentprobe
@@ -69,11 +69,11 @@ subagent and no teammate idle ever fires, so the behaviours this package exists 
 measure are invisible in that mode. Driving a real interactive session on a
 pseudo-terminal is the only way to reach them.
 
-Two details of that driving are load-bearing, and both were learned by losing runs to
-them. Accepting the workspace-trust dialog repaints the screen, and keystrokes sent
-during the repaint are dropped silently. The driver therefore waits, and then reads the
-instruction back off the screen before pressing return. An instruction that never echoes
-is never submitted, because a session driven by a fragment is not the scenario.
+Two details of that driving are load-bearing. Accepting the workspace-trust dialog
+repaints the screen, and keystrokes sent during the repaint are dropped silently. The
+driver therefore waits, and then reads the instruction back off the screen before
+pressing return. An instruction that never echoes is never submitted, because a session
+driven by a fragment is not the scenario.
 
 Accepting the dialog also makes the terminal echo the chosen line back, so its text stays
 in the captured screen for the rest of the run. Nothing may exclude the main screen on

@@ -63,13 +63,14 @@ reason, and, when the swap was forced rather than chosen, the dead route's error
 No lens declares a model. `contracts.json` carries the lens rosters and the profile table —
 never a model; the model is the dispatcher's to pick, every time.
 
-Pick it by the lens's tier from the routing table the `openrouter-claude-subagent` skill carries,
-not from memory. That table is the source of truth for price, context window and which reasoning
-efforts a model accepts, and all three move underneath a remembered pick: OpenRouter reprices and
-retires models without notice. Two failures follow from picking free-hand, and the second is the
+Pick it by the lens's tier and transport from the `choosing-a-delegate` skill's model routing
+table, not from memory, and pick the effort for the lens's scope from the model's accepted list.
+That table is the source of truth for every provider's ids, prices, context windows and accepted
+reasoning efforts, and all of them move underneath a remembered pick: vendors reprice and retire
+models without notice. Two failures follow from picking free-hand, and the second is the
 expensive one — a model whose reasoning cannot be capped will strand a whole-artifact lens inside
 a thinking block and return no report at all, burning a full lens latency before the failover
-starts. The table marks which models those are; a whole-artifact lens must not be routed to one.
+starts. The OpenRouter launcher skill names which of its models those are; a whole-artifact lens must not be routed to one.
 
 The gate does not enforce any of this: it accepts and records an unlisted model on purpose, so
 that a deliberate choice is possible and is visible afterwards. The discipline is yours.
@@ -81,7 +82,7 @@ this directory before every dispatch of a lens, the first one included:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
-  --transport codex --model gpt-5.6-sol --reason initial
+  --transport codex --model gpt-6.1-sol --reason initial
 ```
 
 An authorized answer carries the `output_path` this attempt writes its raw output to — one path
@@ -113,7 +114,7 @@ Either way, the next claim declares that reason and the failure verbatim:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
-  --transport openrouter --model moonshotai/kimi-k2.7-code \
+  --transport openrouter --model moonshotai/kimi-k3 \
   --reason transport-error --evidence "402 Insufficient credits"
 ```
 

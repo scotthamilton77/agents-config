@@ -70,7 +70,7 @@ terminal directly.
 
 `--target` names the change in a phrase the reviewer resolves against the repository and reads
 directly, surroundings included. `--acs` is the criteria file every lens
-of every round judges against; changed criteria mean a new claim and a new round 1. From this
+of every round judges against, held to the `acceptance-criteria` standard; changed criteria mean a new claim and a new round 1. From this
 directory:
 
 ```bash
@@ -86,9 +86,8 @@ each due `--checkpoint`. Prompts put fixed instructions first, fence every inter
 declared data, and carry no other lens's mandate and no ambient house context — a lens's own
 mandate is the only route a house standard reaches the reviewer.
 
-The emitter refuses an unsound round with machine-readable errors (exit 2): an unsynced base, a
-missing gate or checkpoint, broken staffing or profile table, a ledger gap, an unsupported
-disposition, a terminated campaign.
+The emitter refuses an unsound round (exit 2) with machine-readable errors naming what is
+unsound: an unsynced base, a missing gate or checkpoint, broken staffing, a ledger gap.
 
 ## Dispositions and termination
 

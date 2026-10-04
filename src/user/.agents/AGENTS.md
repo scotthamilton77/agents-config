@@ -34,5 +34,6 @@ exists; or `--tools=` selects any of them).
   `src/user/.claude/` and every `src/plugins/*/` — the installer aborts on
   duplicate names.
 
-See the root [AGENTS.md](../../../AGENTS.md) for the full install model, file
-format conventions, and repo-wide rules.
+See the root [AGENTS.md](../../../AGENTS.md) for repo-wide rules, and
+[packages/installer/AGENTS.md](../../../packages/installer/AGENTS.md) for how
+the installer stages this tree.

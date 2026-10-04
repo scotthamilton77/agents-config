@@ -29,8 +29,8 @@ the transport.
 | Dispatch site | Routes to | Prompt varies by model? |
 |---|---|---|
 | `src/user/.claude/skills/review-panel/contracts.json` + `emit_prompts.py` | Review lenses → Codex or OpenRouter by vendor class; no model named in config | No — `render_prompt()` never sees the transport |
-| `src/user/.claude/skills/ac-attack/lenses.json` | AC-attack lenses → Codex / OpenRouter | No |
-| `src/user/.claude/skills/openrouter-claude-subagent/` (`scripts/run.js`, `scripts/proxy.js`) | Gemini flash tiers, Kimi k2.6 / k2.7-code / k3, GLM (roster in `references/model-routing.md`) | No — proxy forwards unmodified; model is a `--model` flag. **No sampling params pinned either** — provider defaults apply |
+| `src/user/.claude/skills/ac-attack/lenses/` | AC-attack lenses → Codex / OpenRouter | No |
+| `src/user/.claude/skills/openrouter-claude-subagent/` (`scripts/run.js`, `scripts/proxy.js`) | Gemini flash tiers, Kimi k2.6 / k2.7-code / k3, GLM (roster in the routing table beside the `choosing-a-delegate` skill) | No — proxy forwards unmodified; model is a `--model` flag. **No sampling params pinned either** — provider defaults apply |
 | `src/plugins/codex/.claude/skills/delegating-to-codex/SKILL.md` | `gpt-5.6-sol` / `terra` / `luna`, `gpt-5.3-codex` | No — tier picked by task profile, same mandate |
 | `src/user/.claude/skills/choosing-a-delegate/SKILL.md` | Vendor-selection logic only | n/a |
 | `packages/prgroom/src/prgroom/agent/dispatcher.py` | Fallback chains crossing tiers (`ollama gemma4` → `haiku` → `gpt-5.6-luna`; `opus[1m]` → `gpt-5.6-terra`) | No — one template per contract (`load_prompt(self._contract)`), served unchanged to every rung |
@@ -184,7 +184,7 @@ guards against.
    temperature-stays-1.0. Today no OpenRouter dispatch pins any of these
    (provider defaults apply), which is accidentally safe — the hazard arrives
    the day someone pins a "sensible" temperature across the roster. The
-   `openrouter-claude-subagent` roster in `references/model-routing.md` is the
+   routing table beside the `choosing-a-delegate` skill is the
    natural home for a per-model parameter column; grillui's `temperature: 0`
    on a Gemini flash tier is the one live instance to re-verify against
    Google's warning.

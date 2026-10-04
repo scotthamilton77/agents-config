@@ -170,5 +170,5 @@ def test_excluding_evals_does_not_take_the_rest_of_the_skill_with_it() -> None:
     assert (source / "evals").is_dir(), "fixture skill no longer carries evals/"
 
     deployed = _deployed_relpaths(source, ignore)
-    for kept in (Path("SKILL.md"), Path("references/model-routing.md"), Path("scripts/run.js")):
+    for kept in (Path("SKILL.md"), Path("references/proxy-contract.md"), Path("scripts/run.js")):
         assert kept in deployed, f"{kept} stopped deploying"

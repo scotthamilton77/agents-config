@@ -32,9 +32,12 @@ while reading as the mechanism that makes skills load.
 
 ## Agents and commands
 
-This repo ships neither. If it ever does, they will not cross over to OpenCode
-unchanged: OpenCode's agent frontmatter uses provider-prefixed model IDs plus
-`mode:` and `permission:` keys, and its command frontmatter differs again.
+This repo ships no agents. Its commands are Claude-only: they live in
+`src/user/.claude/commands/`, a tool-scoped namespace the OpenCode adapter does
+not stage, so none reaches `~/.config/opencode/`. Neither would cross over to
+OpenCode unchanged: OpenCode's agent frontmatter uses provider-prefixed model
+IDs plus `mode:` and `permission:` keys, and its command frontmatter differs
+again.
 OpenCode-specific ones would be installed by hand to
 `~/.config/opencode/agents/` and `~/.config/opencode/commands/`.
 
@@ -43,4 +46,6 @@ OpenCode-specific ones would be installed by hand to
 These are **source templates**, not runtime config. Editing a file here changes
 what gets installed to users' real `~/.config/opencode/` on next install.
 
-See the root [AGENTS.md](../../../AGENTS.md) for the full install model.
+See the root [AGENTS.md](../../../AGENTS.md) for repo-wide rules, and
+[packages/installer/AGENTS.md](../../../packages/installer/AGENTS.md) for how
+the installer stages this tree.

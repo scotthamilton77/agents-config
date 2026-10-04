@@ -35,17 +35,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from grillui.projector import Proposed, node_from_payload, queue, replay
+from grillui.escalation import ANSWER_KIND
+from grillui.lane import unclosed_turns
+from grillui.projector import Proposed, impact_tasks, node_from_payload, queue, replay
 from grillui.schemas import (
     ANSWER_KINDS,
     APPLY_KIND,
     DISMISS_KIND,
+    FOLD_KIND,
     FOLD_SHAPED,
+    HEAVY_TIER,
     MAP_CHANNEL,
     PROPOSABLE_KINDS,
     QUEUE_GESTURE_KINDS,
+    REASON_DECISION_WAITING,
     REASON_EPOCH_MISMATCH,
     REASON_MISSING_KEY,
+    REASON_NOTHING_TO_PROCEED,
     REASON_PENDING_CONFLICT,
     REASON_UNKNOWN_PENDING,
     SESSION_START_KIND,
@@ -60,6 +66,7 @@ from grillui.schemas import (
     RejectedReceipt,
     batch_payload_problem,
     fold_outcomes,
+    is_proceed,
     mint_targets,
     pending_ids,
     rejection_reason,
@@ -264,7 +271,13 @@ class SessionLog:
             return entry
 
     def emit_status(
-        self, phase: str, detail: str, channel: str = MAP_CHANNEL, *, tier: str | None = None
+        self,
+        phase: str,
+        detail: str,
+        channel: str = MAP_CHANNEL,
+        *,
+        tier: str | None = None,
+        **keys: Any,
     ) -> LogEntry:
         """Append one status entry.
 
@@ -273,10 +286,15 @@ class SessionLog:
         `tier` names who is taking the turn and is absent from a phase that has
         no tier to name; a page reading the lane learns which tier it is waiting
         on from the entry itself rather than from a lookup it could get wrong.
+
+        `keys` are further payload keys -- the impact tasks an entry ends, the
+        announcement a closing entry closes -- and each rides only where it has
+        a value, so an entry with nothing to say about either carries neither.
         """
-        payload = {"phase": phase, "detail": detail}
+        payload: dict[str, Any] = {"phase": phase, "detail": detail}
         if tier is not None:
             payload["tier"] = tier
+        payload.update({key: value for key, value in keys.items() if value})
         return self.record(STATUS_KIND, payload, channel)
 
     def _submit_one(self, event: EventSubmission, epoch: str) -> Receipt:
@@ -313,6 +331,10 @@ class SessionLog:
         waiting = self._waiting() if event.kind == DISMISS_KIND else frozenset()
         if problem is None and event.kind in QUEUE_GESTURE_KINDS:
             problem = _queue_gesture_problem(event, queued, waiting)
+        if problem is None and is_proceed(event):
+            problem = _proceed_problem(self.epoch, self._entries, event.channel)
+        if problem is None and event.actor == "human":
+            problem = _waiting_problem(self._entries, event, queued)
         if problem is not None:
             reason, detail = problem
             return RejectedReceipt(
@@ -578,6 +600,78 @@ def _queue_gesture_problem(
                 f"since; it stays queued rather than overwriting that change",
             )
     return None
+
+
+# The kinds that change the decision they target: what a ruling in flight on
+# that decision may be about to move, so what the human may not do to it yet.
+_CHANGING_KINDS = frozenset({ANSWER_KIND, *PROPOSABLE_KINDS}) - {"add-node"}
+
+
+def _waiting_problem(
+    entries: Sequence[LogEntry], event: EventSubmission, queued: Mapping[str, Proposed]
+) -> tuple[str, str] | None:
+    """Why this human gesture would change a decision a ruling in flight is
+    still weighing, or None.
+
+    Judged by what the gesture would do, wherever the change rides: on the
+    gesture itself, inside a fold, or in the queued proposal an apply lands.
+    Decided here, under the append lock, so no change lands between a task
+    opening and this read. A task that failed holds its decision as firmly as a
+    live one: nothing unlocks on inaction.
+    """
+    if event.kind == APPLY_KIND:
+        updates = [queued[one].update for one in pending_ids(event.payload) if one in queued]
+    elif event.kind == FOLD_KIND:
+        raw = event.payload.get("updates")
+        updates = [one for one in raw if isinstance(one, dict)] if isinstance(raw, list) else []
+    else:
+        updates = [{**event.payload, "kind": event.kind}]
+    targets = {one.get("target") for one in updates if one.get("kind") in _CHANGING_KINDS}
+    if not targets:
+        return None
+    holder = next(
+        (task for task in impact_tasks(entries).values() if task.target in targets and task.holds),
+        None,
+    )
+    if holder is None:
+        return None
+    return (
+        REASON_DECISION_WAITING,
+        f"{holder.target!r} is waiting on the {holder.seat!r} seat's ruling for the answer at "
+        f"#{holder.gesture}, and nothing may change it until that ruling lands",
+    )
+
+
+def _proceed_problem(
+    epoch: str, entries: Sequence[LogEntry], channel: str
+) -> tuple[str, str] | None:
+    """Why the thread has nothing for the expert to proceed on, or None.
+
+    Decided here, under the append lock, because every answer is a reading of
+    the thread as it stands at the moment the entry would land. One rule then
+    covers a double press, two windows pressing at once and a press repeated
+    with nothing changed: the first accepted proceed leaves a reply
+    outstanding, and the expert's reply is then the latest turn. A failed turn
+    leaves neither behind, so the press works again after one.
+
+    Whether a reply is outstanding is the lane's own pairing rule, read off the
+    log rather than off the latest speaker: a turn that failed leaves the human
+    speaking last with nothing on its way, and that thread is one to proceed on.
+    The ceiling is one replay per proceed, which is a human-paced act over a log
+    bounded by one grilling.
+    """
+    thread = next((one for one in replay(epoch, entries).threads if one.id == channel), None)
+    if thread is None:
+        return None
+    if thread.state in {"parked", "closed"}:
+        state = f"the thread is {thread.state}"
+    elif channel in unclosed_turns(entries):
+        state = "an agent's reply is outstanding on the thread"
+    elif thread.turns and thread.turns[-1].tier == HEAVY_TIER:
+        state = "the thread's latest turn is the expert's"
+    else:
+        return None
+    return (REASON_NOTHING_TO_PROCEED, f"a proceed with no text has nothing to proceed on: {state}")
 
 
 def _resolve(

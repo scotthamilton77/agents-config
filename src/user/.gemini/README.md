@@ -27,10 +27,11 @@ carries no identity content.
 ## Who it's for
 
 Google Gemini CLI users who want the same shared instruction core they'd get
-under Claude Code. The skills stage here too, but whether the Gemini CLI reads a
-deployed skill at all is not established by any vendor documentation, so this
-project does not model its skill loading and reports no skill measurement for
-it — expect the instruction core to carry the weight.
+under Claude Code. Antigravity CLI reads `~/.gemini`, and it loads skills by
+progressive disclosure: each skill's name and description sit in every session,
+and its body loads on activation. The installer prices Gemini's skills the same
+way it prices the other tools' skills. It also refuses to deploy a `GEMINI.md`
+over 24,000 bytes, the size past which Antigravity CLI truncates it.
 
 See the [root README](../../../README.md) for install flow and customization
 pointers.

@@ -97,11 +97,19 @@ Answer questions about it without reading any file:
   nothing on the map by itself — parks it as a loose end they may come back to, or closes
   it because they are done with it. Nothing is taken away by any of the three, and a
   closed thread opens again if the human says something in it.
-- A **transfer-to-expert** control per channel, moving that conversation from its
-  first-rung seat to the expert — the heavier, slower seat above it, and one of four
-  routes there (the human's transfer, the escalation policy, a hand-up of one turn, a
-  judgment class). It highlights on a condition the backend evaluates in code, never on a
-  model's opinion of its own reach.
+- A **seat toggle** on every channel, the map's in the board's header and each thread's
+  beside its say box. Under the caption *Next send goes to* it shows both seats,
+  *assistant* and *expert*, and marks the one the human's next send on that channel goes
+  to. Choosing a seat sends nothing; the next send carries the choice. The assistant is
+  the channel's first-rung seat, and the expert is the heavier, slower seat above it.
+- **Proceed with expert** beside each open thread's send, which hands the thread as it
+  stands to the expert: with nothing typed it asks the expert to take the conversation so
+  far, and with text it sends that text to the expert. Either way the toggle marks
+  *expert* afterwards, and the toggle is the way back. The map has no such action.
+  These two are the human's routes to the expert, alongside the escalation policy, a
+  hand-up of one turn, and a judgment class. The way to the expert highlights, the
+  toggle's *expert* seat on the map and this action on a thread, on a condition the
+  backend evaluates in code, never on a model's opinion of its own reach.
 - A **pending queue** of what the human has not dealt with yet: the map mutations the
   agents propose and the notices they raise. The board shows the proposals in the inbox,
   where the human applies or dismisses each, and the notices in the notification lane.

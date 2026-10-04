@@ -50,5 +50,6 @@ into `~/.claude/` (Claude is always an active tool; never auto-detected away).
   with it, so the deployed file is plain JavaScript; the authored file is not
   valid JS until then. There is no workflow in the tree today.
 
-See the root [AGENTS.md](../../../AGENTS.md) for the full install model, file
-format conventions, and repo-wide rules.
+See the root [AGENTS.md](../../../AGENTS.md) for repo-wide rules, and
+[packages/installer/AGENTS.md](../../../packages/installer/AGENTS.md) for how
+the installer stages this tree.

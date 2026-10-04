@@ -844,6 +844,8 @@ test("denies the large GPT tiers this transport does not carry", () => {
   assert.equal(isDeniedModel("openai/gpt-5.6-sol"), true);
   assert.equal(isDeniedModel("openai/gpt-5.5-turbo"), true);
   assert.equal(isDeniedModel("gpt-5.6"), true);
+  assert.equal(isDeniedModel("openai/gpt-6.1-sol"), true);
+  assert.equal(isDeniedModel("gpt-6-luna"), true, "every GPT-6 tier has its own transport");
 });
 
 test("exempts the -mini GPT variants, which are cheap and not what the denial guards", () => {

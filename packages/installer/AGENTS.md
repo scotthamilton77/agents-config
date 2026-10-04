@@ -39,7 +39,7 @@ but the full gate must pass before push.
 
 - `uv`-managed; Python ≥ 3.11 (`uv` auto-installs it first run).
 - Run tools via `uv run …` from inside `packages/installer/`, or the `make`
-  targets from the repo root.
+  targets from the root of the tree you are working in.
 - Config lives in `pyproject.toml`: ruff (line-length 100, strict rule set),
   mypy `strict = true`, coverage `branch = true` / `fail_under = 90`.
 
@@ -56,8 +56,10 @@ but the full gate must pass before push.
   per-concern views (`TOOL_SCOPED`, `SHARED`, `SHARED_CARRIER`,
   `PLUGIN_TOOL_SCOPED`, `PRUNE`, `BACKUP`). Adding a namespace means adding it
   there *and* to each view it belongs in; a namespace carrying `.md` files also
-  needs the merge registry. `scripts/install.sh` holds no namespace logic —
-  it is a thin stub.
+  needs the merge registry. The same module holds `RELOCATED`, the one table of
+  namespaces a tool reads from somewhere other than `<tool root>/<namespace>/`,
+  and the two functions that map a plan key to its on-disk path and back.
+  `scripts/install.sh` holds no namespace logic — it is a thin stub.
 
 ## Tests
 

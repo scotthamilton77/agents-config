@@ -86,7 +86,7 @@ must pass before push.
 
 - `uv`-managed; Python ≥ 3.11.
 - Run tools via `uv run …` from inside `packages/grind/`, or the `make`
-  targets from the repo root.
+  targets from the root of the tree you are working in.
 - Config lives in `pyproject.toml`: ruff (line-length 100), mypy
   `strict = true`, coverage `branch = true` / `fail_under = 80`.
 - Zero runtime dependencies by design: nothing in `src/` imports a third-party
