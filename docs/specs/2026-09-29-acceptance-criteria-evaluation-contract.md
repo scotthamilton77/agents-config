@@ -100,11 +100,13 @@ the owner ARO-D1 gives its rule.
 **ACE-D4 — Scoring separates detection from silence.** A run is one fresh
 dispatch of one lens over one document.
 
-- A defective run detects when an objection cites the case's rule and the
-  judge (ACE-D5) rules that it describes the detection statement. Citing the
-  rule and the site is necessary. It is not sufficient.
-- A control run is silent when no objection cites the case's rule. This is
-  mechanical, and an objection on another rule does not break it.
+- A defective run detects when an objection cites the case's rule at the
+  case's site. This is mechanical. An objection citing only the rule, or only
+  the site, detects when the judge (ACE-D5) rules that it describes the
+  detection statement. A case whose site is `none` always goes to the judge.
+- A control run is silent unless the judge rules that one of its objections
+  describes the detection statement. Only an objection citing the case's rule
+  or its site goes to the judge. Any other objection leaves the run silent.
 - A control run is empty when the lens reports `empty`, which ACQ-A27 needs.
 - A P1 run passes when the judge rules that no objection demands criteria for
   the implementation the document describes. P1 runs all four lenses, since
@@ -115,8 +117,9 @@ most twice. A run still without a usable report, or holding an objection the
 judge has not ruled on, leaves its case pending and the evaluation incomplete.
 A pending case is never scored as a miss.
 
-**ACE-D5 — A calibrated judge decides detection.** The judge is Claude Opus
-through the native Agent tool, with the prompt `evals/judge.md`.
+**ACE-D5 — A calibrated judge decides what the scorer cannot place.** The
+judge is Claude Opus through the native Agent tool, with the prompt
+`evals/judge.md`.
 
 For a case it receives the case's rule text, its
 detection statement and one objection. For P1 it receives one objection alone.
@@ -128,6 +131,11 @@ prompt revised after a failed calibration is calibrated on twenty new items.
 The experiments' validity and ground-matching tasks are calibrated the same
 way.
 
+The twenty items for a case task include mechanical detections. A mechanical
+detection can be false: an objection can cite the right rule at the right site
+and describe something else. The owner's labels on those items are the check
+on that.
+
 Eighteen of twenty bounds disagreement with
 one evaluator on one sample, and says nothing about documents unlike it.
 
@@ -138,7 +146,7 @@ under one judge model ID.
 
 | Lens | Transport | Model | Effort | Reads |
 | --- | --- | --- | --- | --- |
-| behavioural-outcome, obligation-reduction | Codex CLI | `gpt-5.6-sol` | high | its prompt only, from an empty directory |
+| behavioural-outcome, obligation-reduction | Codex CLI | `gpt-6.1-sol` | high | its prompt only, from an empty directory |
 | set-consistency, what-if | OpenRouter | `moonshotai/kimi-k3` | low | its prompt only, with no tools |
 
 Evaluating another configuration would judge a panel nobody runs. Kimi K3
@@ -178,10 +186,10 @@ above the one baseline, PR 785's control false positive, on purpose.
 
 Locking the whole catalogue from nothing plans 310 lens dispatches, 220 on
 Codex, plus retests and ACE-D4's repeats. Any larger plan, an experiment's
-included, needs the owner's approval before dispatch. The run counts
-and thresholds are provisional until the baseline observation on
-`agents-config-9k9.453`, and are fixed before the first lock is recorded. Changing a threshold after that
-amends this spec, and scored results keep their thresholds.
+included, needs the owner's approval before dispatch. The owner confirmed the
+run counts and thresholds on `agents-config-9k9.453`, after a pilot in which a
+Codex run took one to three minutes. Changing a threshold amends this spec,
+and scored results keep their thresholds.
 
 **ACE-D8 — A lock is tied to what produced it.** The planner writes an
 attempt's plan before any dispatch. The plan fixes every dispatch, the
@@ -236,9 +244,10 @@ checker suites run under `make content-tests`.
   identical, or differ in more than one contiguous hunk, or whose rule its
   lens does not enforce, naming the case and the fault.
 - **ACE-A14** Given fixture reports and verdicts, the scorer counts a detection
-  only for an objection citing the case's rule that the judge matches to the
-  detection statement, and passes a P1 run only when the judge rules no objection demands
-  implementation criteria.
+  for an objection citing the case's rule at its site, and for one citing only
+  the rule or only the site that the judge matches to the detection statement.
+  It counts no other objection, and passes a P1 run only when the judge rules
+  no objection demands implementation criteria.
 - **ACE-A15** Given fixture reports, the scorer passes a case's detection at
   four detecting runs of five and, after a retest, at eight of ten. It fails
   it at seven of ten and at two of five.
@@ -297,13 +306,16 @@ checker suites run under `make content-tests`.
   when its case still passes.
 - **ACE-A49** The scorer's report states each lens's pooled detection and
   silence rates over the runs behind its current locks.
+- **ACE-A50** Given fixture control reports and verdicts, the scorer counts a
+  control run as not silent only when the judge matches one of its objections,
+  citing the case's rule or its site, to the detection statement.
 
 ### Traceability
 
 | Parent | Child criteria | Check |
 | --- | --- | --- |
 | ACQ-A1 to A10, A14 to A19, A21, A30, A31 | ACE-A25 to ACE-A41, ACE-A44, ACE-A45, as the catalogue's Child column maps | The scorer's report on the evaluation of record |
-| ACQ-A24, apart from rule ownership | ACE-A11 to ACE-A21, ACE-A42, ACE-A46 to ACE-A49, and the cases ACE-A25 to ACE-A40, ACE-A44 and ACE-A45 score | Case check, scorer suite, scorer report |
+| ACQ-A24, apart from rule ownership | ACE-A11 to ACE-A21, ACE-A42, ACE-A46 to ACE-A50, and the cases ACE-A25 to ACE-A40, ACE-A44 and ACE-A45 score | Case check, scorer suite, scorer report |
 | ACQ-A27 | ACE-A17, ACE-A43 | Scorer suite, scorer report |
 | The template rule in the parent's S2 slice text | ACE-A22 to ACE-A24 | Scorer suite, emitter suite |
 
@@ -320,7 +332,7 @@ For ACE-A11 to ACE-A13:
 
 - An empty catalogue fails ACE-A11.
 
-For ACE-A14 to ACE-A20:
+For ACE-A14 to ACE-A20, and ACE-A50:
 
 - Fixture reports are fixed, so empty does not apply.
 - A missing input is ACE-A19.
@@ -339,7 +351,7 @@ same way.
   format, and `evals/check_cases.py` with its suite. Depends on the
   rule-ownership spec's S2.1.
 - **S2.3: Planning, scoring and the judge** (ACE-A14 to ACE-A21, ACE-A46 to
-  ACE-A49; ACE-D4 to ACE-D8). `evals/plan_run.py`, `evals/score.py` and `evals/judge.md`, their
+  ACE-A50; ACE-D4 to ACE-D8). `evals/plan_run.py`, `evals/score.py` and `evals/judge.md`, their
   suites, and the detection and P1 calibration records. Depends on S2.2.
 - **S2.4: Comparison and the template gate** (ACE-A22 to ACE-A24; ACE-D9). A
   comparison mode in `evals/score.py` and the registry test. Depends on S2.3.
@@ -359,7 +371,7 @@ They are not S2 slices.
 ## Continuations
 
 - feat: AC evaluation S2.2: the case check (ACE-D2) — AC: ACE-A11, ACE-A12, ACE-A13; make content-tests exits 0.
-- feat: AC evaluation S2.3: planning, scoring and the judge (ACE-D4 to ACE-D8) — AC: ACE-A14, ACE-A15, ACE-A16, ACE-A17, ACE-A18, ACE-A19, ACE-A20, ACE-A21, ACE-A46, ACE-A47, ACE-A48, ACE-A49; make content-tests exits 0.
+- feat: AC evaluation S2.3: planning, scoring and the judge (ACE-D4 to ACE-D8) — AC: ACE-A14, ACE-A15, ACE-A16, ACE-A17, ACE-A18, ACE-A19, ACE-A20, ACE-A21, ACE-A46, ACE-A47, ACE-A48, ACE-A49, ACE-A50; make content-tests exits 0.
 - feat: AC evaluation S2.4: comparison and the template gate (ACE-D9) — AC: ACE-A22, ACE-A23, ACE-A24; make content-tests exits 0.
 - feat: AC evaluation S2.5: the catalogue (ACE-D3) — AC: the committed catalogue passes the case check; make content-tests exits 0.
 - feat: AC evaluation S2.6: lens mandates (ACE-D9) — AC: a committed baseline attempt on every case, and a lens-level comparison per revised lens.
