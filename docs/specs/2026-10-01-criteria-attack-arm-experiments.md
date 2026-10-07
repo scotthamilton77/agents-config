@@ -72,7 +72,9 @@ the scorer counts:
 - repeats: objections reaching adjudication that the judge matches to an
   earlier rejected ground;
 - recall: the share of new valid objections reaching adjudication, where a
-  new valid objection is one a later round accepted and no earlier round raised;
+  new valid objection is one a later round accepted and no earlier round
+  raised, and the ground-matching task decides whether an objection reaching
+  adjudication is one of them;
 - overturnability: per seeded wrong rejection, whether it reaches the
   adjudicator, adjudicated or listed as a repeat;
 - effort: every objection reaching adjudication.
@@ -111,8 +113,9 @@ contract's (ACE-D5, ACE-D6), and a run recorded under another does not count.
 The experiments add three judge tasks, calibrated as ACE-D5 says. The
 validity task gives the judge the rule text and one objection and asks
 whether the objection holds under the rule. The ground-matching task gives
-one objection and one earlier rejected ground with its rationale and asks
-whether they are the same ground. The incorporation task gives one accepted
+one objection and one ground from the fixture, an earlier rejected ground
+with its rationale or a new valid objection, and asks whether they are the
+same ground; it decides repeats and recall alike. The incorporation task gives one accepted
 objection with the author's decision and the result's added and changed
 criteria, and asks whether the result answers the objection. Each returns
 yes or no with a reason, and the judge sees no arm, lens or model. Each task has its own prompt, calibrated and digested on
@@ -181,7 +184,7 @@ The scorer is the evaluation contract's, run over experiment inputs.
   on it, and names no arm as meeting the bar over it.
 - **ARM-A12** The input the scorer assembles for the validity task holds the
   rule text and one objection, for the ground-matching task one objection and
-  one earlier rejected ground with its rationale, and for the incorporation
+  one fixture ground with its rationale, and for the incorporation
   task one accepted objection with its decision and the result's added and
   changed criteria, each stripped of any field naming a lens, arm or model,
   and nothing else; a verdict that is not yes or no with a reason makes the

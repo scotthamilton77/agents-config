@@ -88,9 +88,9 @@ case for each rule, and both suites read it.
 A case's label proves nothing about coverage. A variant of the helper's parser
 that breaks a rule and still passes every case shows that rule uncovered.
 
-The two suites treat an absent fixture differently. spec-lint's fixture test
-fails when the fixture is absent. Only the helper's test skips then, because
-the helper's suite also runs where the installer has pruned `evals/`.
+Both suites fail when the fixture is absent. The installer prunes every test
+file along with `evals/`, so neither suite ever runs in a deployed tree, and
+nothing needs a skip.
 
 **BRF-D3 — Fidelity is the set of IDs and their words.** A brief preserves its
 criteria when two things hold. Its criteria section holds exactly the assigned
@@ -283,9 +283,8 @@ spec-lint's under `make ci`.
   when its reading of an entry departs from the case's expected text. In the
   repository, for each rule, a variant of the helper's parser that breaks that
   rule fails at least one case. Each parser carries a marking naming the
-  other as its counterpart. spec-lint's fixture test fails when the fixture
-  is absent, and the helper's test skips where the repository's copy of the
-  fixture is absent.
+  other as its counterpart. Each suite's fixture test fails when the fixture
+  is absent.
 - **BRF-A10** Given planned checks for every assigned criterion, `emit` prints
   an evidence section holding exactly the assigned IDs, each with its planned
   observation and pass rule, and exits 0. A well-formed checks entry keyed

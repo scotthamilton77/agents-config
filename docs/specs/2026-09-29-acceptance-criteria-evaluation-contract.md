@@ -193,7 +193,7 @@ control, judged on the control runs for silence.
   retest.
 
 A parent criterion passes only when every case serving it is locked. Requiring
-every case to pass inside one run would fail a lens that is right nineteen
+every case to pass inside one attempt would fail a lens that is right nineteen
 times in twenty about three times in four, on luck alone.
 
 No rate is averaged across cases. The scorer also reports each lens's pooled
@@ -243,7 +243,8 @@ A change to the judge prompt, the judge model or the scorer dispatches no
 lens. The stored reports are rescored, and a lock stands when its case still
 passes.
 
-A fingerprint gets one attempt, with the retest where ACE-D7 earns one. The
+A fingerprint gets one attempt, plus the retest a side at three of five earns
+under ACE-D7. The
 planner refuses another attempt on it, whether the case locked or failed, so a
 failed case is answered only by changing something, and a locked case is not
 re-rolled.
@@ -452,7 +453,8 @@ same way.
   harvested on `agents-config-9k9.441` join in ACE-D2's format when they
   land, and this slice does not wait for them. Depends on S2.2.
 - **S2.6: Lens mandates** (ACE-D9; ARO-D1). A baseline attempt on every case, then body
-  revisions for the rules each lens gained, each shown by a lens-level
+  revisions for the rules the rule-ownership spec newly assigns each lens
+  (ARO-D1), each shown by a lens-level
   comparison to regress no case. Depends on S2.3, S2.4 and S2.5.
 - **S2.7: Evaluation of record** (ACE-A25 to ACE-A45, ACE-A57 to ACE-A66;
   ACE-D7). The
