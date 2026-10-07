@@ -1,0 +1,1793 @@
+{
+  "dispositions": [
+    {
+      "covering_ac": "ACE-A24",
+      "disposition": "accepted",
+      "id": "behavioural-outcome-1",
+      "rationale": "The registry is a chain (ACE-D9); the current template must be its last entry, and every entry after the first needs a reproducible improves report against the one before it, so no digest becomes a baseline without a comparison.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A20",
+      "disposition": "accepted",
+      "id": "behavioural-outcome-2",
+      "rationale": "A calibration record names the judge model ID it calibrated; a mismatch with the run refuses the task.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A57",
+      "disposition": "accepted",
+      "id": "behavioural-outcome-3",
+      "rationale": "ACE-A42 now covers C18 alone; C19 to C27 and C29 each have a criterion, ACE-A57 to ACE-A66.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-1",
+      "rationale": "The file names in the slice list are where each slice puts its behaviour, not promised deliverables; the obligations are the behaviours the criteria check, and an artifact criterion on a filename is what the observable-obligation rule warns against."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-2",
+      "rationale": "The installer suite already holds test_eval_corpora_never_deploy_for_any_tool, which stages every tool and fails when any skill evals/ directory reaches a plan."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-3",
+      "rationale": "The source revision is provenance the harvester records; a harvested document is edited to plant its defect, so nothing in the tree can compare it with the revision, and the owner reads it at validation."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-4",
+      "rationale": "ACE-D2 makes the owner the acceptance authority on the one-defect property at validation, with the run report, decision and digests recorded; that is the human-judgment rule satisfied, and no mechanical check can read defect count off two documents."
+    },
+    {
+      "covering_ac": "ACE-A13",
+      "disposition": "accepted",
+      "id": "obligation-reduction-5",
+      "rationale": "The validation record holds the run report, the owner decision and the digests; the case check refuses a case lacking any of them.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A13",
+      "disposition": "accepted",
+      "id": "obligation-reduction-6",
+      "rationale": "Same record for a control-only case, whose validation is one panel run.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A13",
+      "disposition": "accepted",
+      "id": "obligation-reduction-7",
+      "rationale": "ACE-D2: the owner confirms at validation that the planted defect is the one ACE-D3 names; the decision is part of the record the case check reads.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A18",
+      "disposition": "accepted",
+      "id": "obligation-reduction-8",
+      "rationale": "The dispatch record carries the isolation ACE-D6 fixes (fresh context, empty directory, no tools); the scorer refuses a run whose isolation differs.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A18",
+      "disposition": "accepted",
+      "id": "obligation-reduction-9",
+      "rationale": "Same.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-10",
+      "rationale": "A substituted transport is refused by ACE-A18 and a dispatch with no report leaves the case pending under ACE-A19; the evaluation stays incomplete until the transport returns, which is what waiting means in a tree nothing runs continuously."
+    },
+    {
+      "covering_ac": "ACE-A14",
+      "disposition": "accepted",
+      "id": "obligation-reduction-11",
+      "rationale": "A case whose site is none counts a detection only on a judge match.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A15",
+      "disposition": "accepted",
+      "id": "obligation-reduction-12",
+      "rationale": "Passes at four or five of five.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A16",
+      "disposition": "accepted",
+      "id": "obligation-reduction-13",
+      "rationale": "Holds at four or five of five.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A52",
+      "disposition": "accepted",
+      "id": "obligation-reduction-14",
+      "rationale": "P1 locks at four or five passing panel runs of five.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A19",
+      "disposition": "accepted",
+      "id": "obligation-reduction-15",
+      "rationale": "A pending run counts in no rate.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-16",
+      "rationale": "The judge identity the record can hold is its resolved model ID and prompt digest, and ACE-A20 refuses a mismatch with the calibration; the invocation path is not observable in a committed record and changes no judgment."
+    },
+    {
+      "covering_ac": "ACE-A20",
+      "disposition": "accepted",
+      "id": "obligation-reduction-17",
+      "rationale": "The calibration record names its labeller; a labeller other than the owner refuses the task.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A56",
+      "disposition": "accepted",
+      "id": "obligation-reduction-18",
+      "rationale": "A calibration record sharing an item with a failed calibration of an earlier prompt digest is refused.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A56",
+      "disposition": "accepted",
+      "id": "obligation-reduction-19",
+      "rationale": "A case-task calibration holding no mechanical detection is refused.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-20",
+      "rationale": "ACE-D8 states that writing the plan before dispatch rests on the operator; a committed tree holds no ordering evidence, and ACE-A53 holds what it can, that the reports match the plan."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-21",
+      "rationale": "A response ID is read from the transport response the report carries; the tree cannot ask the transport whether it issued it, so the record is an attestation like the committed reports themselves."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-22",
+      "rationale": "ACE-D8 states that committing every attempt rests on the operator; nothing in the tree sees a run nobody commits."
+    },
+    {
+      "covering_ac": "ACE-A21",
+      "disposition": "accepted",
+      "id": "obligation-reduction-23",
+      "rationale": "One attempt per fingerprint, locked, failed or retested.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A48",
+      "disposition": "accepted",
+      "id": "obligation-reduction-24",
+      "rationale": "A judge model change rescores stored reports with no lens dispatch.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A23",
+      "disposition": "accepted",
+      "id": "obligation-reduction-25",
+      "rationale": "The comparison refuses lock sets covering different cases.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A24",
+      "disposition": "accepted",
+      "id": "obligation-reduction-26",
+      "rationale": "The emitter suite reproduces the report from the committed lock sets the entry names.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-27",
+      "rationale": "The verification child is a tracker item the human closes under ACQ-D2; the tree cannot observe the tracker, and the slice list states the child stays open until every case holds a current lock."
+    },
+    {
+      "covering_ac": "ACE-A49",
+      "disposition": "accepted",
+      "id": "obligation-reduction-28",
+      "rationale": "The report names every case not locked with its failing or pending side.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A67",
+      "disposition": "accepted",
+      "id": "obligation-reduction-29",
+      "rationale": "Every check run twice over unchanged inputs answers the same way and writes nothing.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A67",
+      "disposition": "accepted",
+      "id": "obligation-reduction-30",
+      "rationale": "Same.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-31",
+      "rationale": "The gate clause in a continuation line is the delivery contract verification gate the work facade requires in that line, not a criterion of this spec; each slice obligations are the ACE criteria the same line lists."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-32",
+      "rationale": "Same as obligation-reduction-31."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-33",
+      "rationale": "Same as obligation-reduction-31."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-34",
+      "rationale": "Same as obligation-reduction-31."
+    },
+    {
+      "covering_ac": "ACE-A21",
+      "disposition": "accepted",
+      "id": "set-consistency-1",
+      "rationale": "One attempt per fingerprint, with the retest where one is earned; ACE-D8 reworded to match.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A53",
+      "disposition": "accepted",
+      "id": "set-consistency-2",
+      "rationale": "Usable reports match planned runs one to one; superseded repeat reports stay committed and match nothing.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A20",
+      "disposition": "accepted",
+      "id": "what-if-1",
+      "rationale": "Calibration record names the judge model ID; mismatch refused.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A21",
+      "disposition": "accepted",
+      "id": "what-if-2",
+      "rationale": "A locked fingerprint is refused a further attempt.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    },
+    {
+      "covering_ac": "ACE-A17",
+      "disposition": "accepted",
+      "id": "what-if-3",
+      "rationale": "A lens with no control run behind a current lock fails ACQ-A27.",
+      "revision": "sha256:b05eab1bf1fc4ca3d4d1b60fd88084e2475a708645b693c637301db5aabe1eab"
+    }
+  ],
+  "lenses": [
+    {
+      "lens": "behavioural-outcome",
+      "report": "objections"
+    },
+    {
+      "lens": "obligation-reduction",
+      "report": "objections",
+      "workings": {
+        "criteria": [
+          "ACE-A11",
+          "ACE-A12",
+          "ACE-A13",
+          "ACE-A14",
+          "ACE-A15",
+          "ACE-A16",
+          "ACE-A17",
+          "ACE-A18",
+          "ACE-A19",
+          "ACE-A20",
+          "ACE-A21",
+          "ACE-A22",
+          "ACE-A23",
+          "ACE-A24",
+          "ACE-A25",
+          "ACE-A26",
+          "ACE-A27",
+          "ACE-A28",
+          "ACE-A29",
+          "ACE-A30",
+          "ACE-A31",
+          "ACE-A32",
+          "ACE-A33",
+          "ACE-A34",
+          "ACE-A35",
+          "ACE-A36",
+          "ACE-A37",
+          "ACE-A38",
+          "ACE-A39",
+          "ACE-A40",
+          "ACE-A41",
+          "ACE-A42",
+          "ACE-A43",
+          "ACE-A44",
+          "ACE-A45",
+          "ACE-A46",
+          "ACE-A47",
+          "ACE-A48",
+          "ACE-A49",
+          "ACE-A50",
+          "ACE-A51",
+          "ACE-A52",
+          "ACE-A53",
+          "ACE-A54",
+          "ACE-A55",
+          "Continuation S2.2: make content-tests exits 0",
+          "Continuation S2.3: make content-tests exits 0",
+          "Continuation S2.4: make content-tests exits 0",
+          "Continuation S2.5: the committed catalogue passes the case check",
+          "Continuation S2.5: make content-tests exits 0",
+          "Continuation S2.6: a committed baseline attempt on every case",
+          "Continuation S2.6: a lens-level comparison per revised lens"
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O1.1",
+                "statement": "The specified files and suites are delivered at their promised locations."
+              }
+            ],
+            "source": "ACE-D2: 'The manifest evals/cases.json'; 'The directory evals/cases/<id>/ holds defective.md and control.md.' Ordered slices: 'evals/check_cases.py with its suite'; 'evals/plan_run.py, evals/score.py and evals/judge.md, their suites'; 'A comparison mode in evals/score.py and the registry test.'",
+            "statement": "Deliver the evaluation documents, manifest, named helpers, judge prompt and suites in the specified evaluation tree."
+          },
+          {
+            "id": "O2",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O2.1",
+                "statement": "Deployment excludes the evaluation cases."
+              }
+            ],
+            "source": "ACE-D2: 'Cases live in src/user/.claude/skills/ac-attack/evals/, so they never deploy.'",
+            "statement": "Evaluation cases never deploy."
+          },
+          {
+            "id": "O3",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A12",
+                  "ACE-A13"
+                ],
+                "id": "O3.1",
+                "statement": "Required manifest fields are present, and table-governed metadata matches the catalogue."
+              },
+              {
+                "discharged_by": [],
+                "id": "O3.2",
+                "statement": "A harvested document's recorded source revision identifies its actual source."
+              }
+            ],
+            "source": "ACE-D2: 'The manifest evals/cases.json gives each case' its ID, served parents, rule, lens, defect site, detection statement and 'the source revision of any harvested document.'",
+            "statement": "The manifest supplies the prescribed case identity, ownership, expectation and provenance fields."
+          },
+          {
+            "id": "O4",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A13"
+                ],
+                "id": "O4.1",
+                "statement": "Pair documents exist, are nonidentical and differ in one contiguous hunk; control-only cases omit the defective document and site."
+              },
+              {
+                "discharged_by": [],
+                "id": "O4.2",
+                "statement": "The pair actually contains exactly its stated defect, and the control corrects that defect."
+              }
+            ],
+            "source": "ACE-D2: 'The control is the defective document with its one defect corrected, and the two differ in one contiguous hunk. A control-only case has no defective document and no site.'",
+            "statement": "Each pair contains one defect and its correction, with one contiguous changed hunk; control-only cases have no defective document or site."
+          },
+          {
+            "id": "O5",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O5.1",
+                "statement": "A pair receives the control lens run, owner review and required amendment before evaluation runs count."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.2",
+                "statement": "A control-only case receives one validation panel run that the owner reads whole."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A13"
+                ],
+                "id": "O5.3",
+                "statement": "The checker refuses documents differing from recorded validation digests."
+              }
+            ],
+            "source": "ACE-D2: 'the owner validates a case before its runs count'; the lens runs once over the control, the owner reads relevant objections, upheld objections require amendment; 'The manifest records the digests of the validated pair'; 'A control-only case is validated by one panel run, read whole.'",
+            "statement": "Cases undergo the prescribed owner validation before their runs count, and validated document identity is enforced."
+          },
+          {
+            "id": "O6",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A11",
+                  "ACE-A12",
+                  "ACE-A13",
+                  "ACE-A42",
+                  "Continuation S2.5: the committed catalogue passes the case check"
+                ],
+                "id": "O6.1",
+                "statement": "The catalogue includes the listed cases and rules, with the prescribed parents, rule, lens and child metadata, and each lens enforces its case's rule."
+              },
+              {
+                "discharged_by": [],
+                "id": "O6.2",
+                "statement": "Case content represents the parent's Given defect and includes its no-finding clause in the prescribed place."
+              }
+            ],
+            "source": "ACE-D3: 'A parent criterion's Given clause is its case's defect'; its no-finding clause is the correction or a feature in both documents outside the hunk; 'A case's lens is the owner ARO-D1 gives its rule.' ACE-D3's catalogue table.",
+            "statement": "The catalogue follows the parent's cases and no-finding clauses, covers the standard's rules and uses their owning lenses."
+          },
+          {
+            "id": "O7",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A25"
+                ],
+                "id": "O7.1",
+                "statement": "C1 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A26"
+                ],
+                "id": "O7.2",
+                "statement": "C2 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A27"
+                ],
+                "id": "O7.3",
+                "statement": "C3 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A28"
+                ],
+                "id": "O7.4",
+                "statement": "C4 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A29"
+                ],
+                "id": "O7.5",
+                "statement": "C5 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A30"
+                ],
+                "id": "O7.6",
+                "statement": "C6 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A31"
+                ],
+                "id": "O7.7",
+                "statement": "C7 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A32"
+                ],
+                "id": "O7.8",
+                "statement": "C8 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A33"
+                ],
+                "id": "O7.9",
+                "statement": "C9 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A34"
+                ],
+                "id": "O7.10",
+                "statement": "C10 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A35"
+                ],
+                "id": "O7.11",
+                "statement": "C11 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A36"
+                ],
+                "id": "O7.12",
+                "statement": "C12 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A37"
+                ],
+                "id": "O7.13",
+                "statement": "C13 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A38"
+                ],
+                "id": "O7.14",
+                "statement": "C14 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A45"
+                ],
+                "id": "O7.15",
+                "statement": "C15 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A39"
+                ],
+                "id": "O7.16",
+                "statement": "C16 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A40"
+                ],
+                "id": "O7.17",
+                "statement": "C17 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A42"
+                ],
+                "id": "O7.18",
+                "statement": "C18 through C27 and C29 each hold a current lock over the committed, accepted catalogue."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A44"
+                ],
+                "id": "O7.19",
+                "statement": "C28 holds a current lock."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A41"
+                ],
+                "id": "O7.20",
+                "statement": "P1 holds a current lock."
+              }
+            ],
+            "source": "ACE-D3's catalogue and Child column. Ordered slice S2.7: 'It stays open until every case holds a current lock.' ACE-D8: 'The evaluation of record is the set of current locks.'",
+            "statement": "The specified catalogue cases hold current locks in the evaluation of record."
+          },
+          {
+            "id": "O8",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A18"
+                ],
+                "id": "O8.1",
+                "statement": "Substituted models, efforts, transports and planned counts are refused; served model identity comes from response metadata."
+              },
+              {
+                "discharged_by": [],
+                "id": "O8.2",
+                "statement": "Every run is a fresh dispatch without inherited evaluation conversation."
+              },
+              {
+                "discharged_by": [],
+                "id": "O8.3",
+                "statement": "Codex reads only its prompt from an empty directory, and OpenRouter reads only its prompt with no tools."
+              },
+              {
+                "discharged_by": [],
+                "id": "O8.4",
+                "statement": "Transport unavailability leaves the evaluation waiting for that transport."
+              }
+            ],
+            "source": "ACE-D4: 'A run is one fresh dispatch of one lens over one document.' ACE-D6's configuration table; 'every lens reads only its prompt'; 'A run on a substituted model or effort does not count. A down transport means the evaluation waits.'",
+            "statement": "Evaluation uses fresh, isolated dispatches of the production configuration and waits when its transport is unavailable."
+          },
+          {
+            "id": "O9",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A14"
+                ],
+                "id": "O9.1",
+                "statement": "For ordinary sites, detections use the mechanical match or the prescribed partial-citation judgment, and count no other objection."
+              },
+              {
+                "discharged_by": [],
+                "id": "O9.2",
+                "statement": "Every absence-site detection requires a matching judge ruling, including a rule-and-none citation."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A50"
+                ],
+                "id": "O9.3",
+                "statement": "Control non-silence requires a matching judgment on an objection citing the rule or site."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A17",
+                  "ACE-A43"
+                ],
+                "id": "O9.4",
+                "statement": "Empty control reports supply the emptiness observations used for ACQ-A27."
+              }
+            ],
+            "source": "ACE-D4: rule-and-site citations detect mechanically; rule-only or site-only citations require a matching judgment; 'A case whose site is none always goes to the judge'; controls are not silent only for matching eligible objections; 'A control run is empty when the lens reports empty.'",
+            "statement": "Detection, silence and emptiness follow the specified objection-routing rules."
+          },
+          {
+            "id": "O10",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A51"
+                ],
+                "id": "O10.1",
+                "statement": "A panel run passes only when none of its four runs has a judged demand for implementation criteria."
+              }
+            ],
+            "source": "ACE-D4: 'A P1 panel run is four runs, one per lens'; 'A panel run passes when all four of its runs pass.'",
+            "statement": "P1 panel-run scoring considers all four lenses and fails a panel when any lens wrongly demands implementation criteria."
+          },
+          {
+            "id": "O11",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A15"
+                ],
+                "id": "O11.1",
+                "statement": "Detection passes at 4/5 and 8/10 and fails at 2/5 and 7/10."
+              },
+              {
+                "discharged_by": [],
+                "id": "O11.2",
+                "statement": "Detection passes at 5/5 and fails at the other permitted failing totals: 0/5, 1/5 and 3/10 through 6/10."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A16"
+                ],
+                "id": "O11.3",
+                "statement": "Control holds at 4/5 and 8/10 and fails at 2/5 and 7/10."
+              },
+              {
+                "discharged_by": [],
+                "id": "O11.4",
+                "statement": "Control holds at 5/5 and fails at the other permitted failing totals: 0/5, 1/5 and 3/10 through 6/10."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A46"
+                ],
+                "id": "O11.5",
+                "statement": "Only a 3/5 side receives a retest, and all ten runs determine its retested result."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A41"
+                ],
+                "id": "O11.6",
+                "statement": "P1's observed evaluation-of-record aggregate satisfies its threshold and retest rule."
+              },
+              {
+                "discharged_by": [],
+                "id": "O11.7",
+                "statement": "P1 aggregate scoring applies the specified thresholds to other permitted panel-outcome distributions."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A52"
+                ],
+                "id": "O11.8",
+                "statement": "In the checked scoring fixtures, locks require both sides to pass, parents require every serving case locked, planned thresholds govern, and rates are not averaged across cases."
+              }
+            ],
+            "source": "ACE-D7: sides pass at four of five; three of five receives one five-run retest and passes at eight of ten; 'No run is discarded. A side below three fails'; P1 uses the same threshold and retest; parent passage requires every serving case locked; 'No rate is averaged across cases.'",
+            "statement": "Case and P1 locking use the prescribed thresholds and retest rules without discarding runs or averaging cases."
+          },
+          {
+            "id": "O12",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A19"
+                ],
+                "id": "O12.1",
+                "statement": "No usable report after two repeats, or an unruled objection, produces pending and incomplete status."
+              },
+              {
+                "discharged_by": [],
+                "id": "O12.2",
+                "statement": "Pending cases are not scored as misses."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A46"
+                ],
+                "id": "O12.3",
+                "statement": "No third repeat is planned."
+              }
+            ],
+            "source": "ACE-D4: a missing or wholly malformed report 'is repeated at most twice'; an unusable or unruled report 'leaves its case pending and the evaluation incomplete'; 'A pending case is never scored as a miss.'",
+            "statement": "Unusable or unresolved runs leave their cases pending and the evaluation incomplete, with bounded repeats and no miss score."
+          },
+          {
+            "id": "O13",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A17"
+                ],
+                "id": "O13.1",
+                "statement": "The emptiness threshold passes at 80 percent and fails below it."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A43"
+                ],
+                "id": "O13.2",
+                "statement": "Every lens meets that pooled threshold in the evaluation of record, including its P1 controls."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A46"
+                ],
+                "id": "O13.3",
+                "statement": "The pooled emptiness rate receives no side retest."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A49",
+                  "ACE-A52"
+                ],
+                "id": "O13.4",
+                "statement": "The report supplies pooled detection and silence rates over current-lock runs without using them to average case results."
+              }
+            ],
+            "source": "ACE-D7: a lens passes ACQ-A27 at 'at least 80 percent of the control runs behind its cases' current locks, P1's included'; the pooled rate earns no retest; 'The scorer also reports each lens's pooled rates, which decide nothing.'",
+            "statement": "ACQ-A27 uses pooled empty-control rates behind current locks, including P1, and the scorer reports pooled detection and silence rates."
+          },
+          {
+            "id": "O14",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O14.1",
+                "statement": "Judgments use Claude Opus through the native Agent tool with evals/judge.md."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A55"
+                ],
+                "id": "O14.2",
+                "statement": "The assembled judge input contains exactly the permitted fields and excludes lens, model and arm identity."
+              }
+            ],
+            "source": "ACE-D5: 'The judge is Claude Opus through the native Agent tool, with the prompt evals/judge.md'; case input is rule text, detection statement and one objection; P1 input is one objection; 'It never sees the lens, the model or the arm.'",
+            "statement": "The prescribed judge receives only its allowed case or P1 input and cannot see lens, model or arm identity."
+          },
+          {
+            "id": "O15",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A20"
+                ],
+                "id": "O15.1",
+                "statement": "The scorer rejects calibration records below 18/20, with a mismatching prompt digest or without a resolved judge model ID."
+              },
+              {
+                "discharged_by": [],
+                "id": "O15.2",
+                "statement": "Scott Hamilton actually labels the twenty task-specific calibration items."
+              },
+              {
+                "discharged_by": [],
+                "id": "O15.3",
+                "statement": "A prompt revised after failed calibration uses twenty new calibration items."
+              },
+              {
+                "discharged_by": [],
+                "id": "O15.4",
+                "statement": "Case-task calibration includes mechanical detections."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A23"
+                ],
+                "id": "O15.5",
+                "statement": "Compared lock sets share the resolved judge model ID and prompt digest."
+              }
+            ],
+            "source": "ACE-D5: Scott Hamilton 'labels twenty items for the task, and the judge must agree on eighteen'; a revised prompt uses 'twenty new items'; case-task items 'include mechanical detections'; experiment tasks are calibrated the same way; comparison requires one judge model ID and prompt digest.",
+            "statement": "Judgment tasks count only after the specified owner calibration, with renewed samples after failed revisions and compatible judge identity."
+          },
+          {
+            "id": "O16",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O16.1",
+                "statement": "The complete plan is fixed before any dispatch."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A18",
+                  "ACE-A53"
+                ],
+                "id": "O16.2",
+                "statement": "Scoring uses response model metadata, requires one-to-one plan correspondence and rejects duplicate response IDs."
+              },
+              {
+                "discharged_by": [],
+                "id": "O16.3",
+                "statement": "Every report includes its actual transport-provided response ID."
+              },
+              {
+                "discharged_by": [
+                  "Continuation S2.6: a committed baseline attempt on every case"
+                ],
+                "id": "O16.4",
+                "statement": "The baseline attempt on every catalogue case is committed."
+              },
+              {
+                "discharged_by": [],
+                "id": "O16.5",
+                "statement": "Every other attempt and all its reports are committed at the prescribed run location, including failures and final attempts."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A21"
+                ],
+                "id": "O16.6",
+                "statement": "A new attempt is refused while a planned attempt has no committed reports, and after an unchanged fingerprint has an attempt and retest."
+              },
+              {
+                "discharged_by": [],
+                "id": "O16.7",
+                "statement": "A below-three failure cannot obtain another unchanged-fingerprint attempt merely because it received no retest."
+              }
+            ],
+            "source": "ACE-D8: 'The planner writes an attempt's plan before any dispatch'; it fixes dispatches, configuration, thresholds and cases; 'Every attempt is committed with its reports under evals/runs/<run-id>/, whatever it shows'; reports carry the transport's model and response ID; reports match plans one to one; exhausted fingerprints are refused; 'A failed case is then answered only by changing something.'",
+            "statement": "Attempts are planned before dispatch, have authentic response metadata and complete committed reports, and cannot bypass the fingerprint's attempt budget."
+          },
+          {
+            "id": "O17",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A47",
+                  "ACE-A25",
+                  "ACE-A26",
+                  "ACE-A27",
+                  "ACE-A28",
+                  "ACE-A29",
+                  "ACE-A30",
+                  "ACE-A31",
+                  "ACE-A32",
+                  "ACE-A33",
+                  "ACE-A34",
+                  "ACE-A35",
+                  "ACE-A36",
+                  "ACE-A37",
+                  "ACE-A38",
+                  "ACE-A39",
+                  "ACE-A40",
+                  "ACE-A41",
+                  "ACE-A42",
+                  "ACE-A44",
+                  "ACE-A45"
+                ],
+                "id": "O17.1",
+                "statement": "Changed documents or emitted prompts void exactly affected fingerprinted locks, and evaluation-of-record cases have current locks."
+              }
+            ],
+            "source": "ACE-D8: fingerprints contain emitted-prompt digests and ACE-D6 model and effort; emitted prompts contain lens body, shared template and enforced rules; 'P1's fingerprint covers all four lenses'; 'A change voids only the locks whose fingerprint it alters.'",
+            "statement": "Current locks are tied to emitted document prompts and production configuration, with P1 covering all lenses and changes voiding only affected locks."
+          },
+          {
+            "id": "O18",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A48"
+                ],
+                "id": "O18.1",
+                "statement": "Judge-prompt and scorer changes rescore stored reports without lens dispatch, retaining only passing locks."
+              },
+              {
+                "discharged_by": [],
+                "id": "O18.2",
+                "statement": "A judge-model-only change follows the same rescore and no-dispatch rule."
+              }
+            ],
+            "source": "ACE-D8: 'A change to the judge prompt, the judge model or the scorer dispatches no lens. The stored reports are rescored, and a lock stands when its case still passes.'",
+            "statement": "Judge and scorer changes rescore stored reports without dispatching lenses, retaining only passing locks."
+          },
+          {
+            "id": "O19",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A54"
+                ],
+                "id": "O19.1",
+                "statement": "A plan over 310 dispatches without named owner approval is refused with its count."
+              }
+            ],
+            "source": "ACE-D7: 'Locking the whole catalogue from nothing plans 310 lens dispatches'; 'The planner refuses a larger plan, an experiment's included, unless the plan names the owner's approval.'",
+            "statement": "Plans exceeding the approved dispatch budget require named owner approval."
+          },
+          {
+            "id": "O20",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A22"
+                ],
+                "id": "O20.1",
+                "statement": "Same-case fixture comparisons report improves exactly for preserved baseline locks and gains in at least two lenses; otherwise they name regression or missing gain."
+              },
+              {
+                "discharged_by": [],
+                "id": "O20.2",
+                "statement": "Different case populations cannot create an unsupported improvement; disjoint populations produce no gain and name the missing gain."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A23"
+                ],
+                "id": "O20.3",
+                "statement": "Comparison refuses incompatible production configuration, judge identity or pending cases."
+              }
+            ],
+            "source": "ACE-D9: improvement is 'over the same cases'; every baseline lock is preserved and at least two lenses gain a lock. ACE-D5 requires matching judge identity. What-if text: 'Lock sets sharing no case gain nothing, so the comparison names the missing gain.'",
+            "statement": "Comparison applies the defined improvement rule over comparable case populations and refuses incompatible or pending evidence."
+          },
+          {
+            "id": "O21",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ACE-A24"
+                ],
+                "id": "O21.1",
+                "statement": "The emitter suite rejects a missing qualifying registry report and an incorrect current-template baseline digest."
+              },
+              {
+                "discharged_by": [],
+                "id": "O21.2",
+                "statement": "The qualifying report is supported by actual whole-catalogue evidence from the template without the addition and demonstrates the defined improvement."
+              }
+            ],
+            "source": "ACE-D9: 'An addition to the shared attack template ships only with a whole-catalogue comparison reporting improves against the template without it'; improvement preserves baseline locks and gains locks in two lenses; 'A test pins the template's digest to a registry of comparison reports.'",
+            "statement": "Shared-template additions ship only with whole-catalogue evidence of the defined improvement against the template without the addition."
+          },
+          {
+            "id": "O22",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "Continuation S2.6: a committed baseline attempt on every case"
+                ],
+                "id": "O22.1",
+                "statement": "A baseline attempt exists on every case."
+              },
+              {
+                "discharged_by": [
+                  "Continuation S2.6: a lens-level comparison per revised lens"
+                ],
+                "id": "O22.2",
+                "statement": "Each revised lens has a lens-level comparison artifact."
+              },
+              {
+                "discharged_by": [
+                  "ACE-A25",
+                  "ACE-A26",
+                  "ACE-A27",
+                  "ACE-A28",
+                  "ACE-A29",
+                  "ACE-A30",
+                  "ACE-A31",
+                  "ACE-A32",
+                  "ACE-A33",
+                  "ACE-A34",
+                  "ACE-A35",
+                  "ACE-A36",
+                  "ACE-A37",
+                  "ACE-A38",
+                  "ACE-A39",
+                  "ACE-A40",
+                  "ACE-A41",
+                  "ACE-A42",
+                  "ACE-A44",
+                  "ACE-A45"
+                ],
+                "id": "O22.3",
+                "statement": "The final revised lenses regress no catalogue case, because every catalogue case holds a current lock."
+              }
+            ],
+            "source": "Ordered slice S2.6: 'A baseline attempt on every case, then body revisions for the rules each lens gained, each shown by a lens-level comparison to regress no case.'",
+            "statement": "Lens revision work starts from a baseline on every case and supplies a lens-level comparison showing no regression."
+          },
+          {
+            "id": "O23",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O23.1",
+                "statement": "The child cannot close while any required case lacks a current lock."
+              }
+            ],
+            "source": "Ordered slice S2.7: 'The verification child for every review-outcome criterion'; 'It stays open until every case holds a current lock.'",
+            "statement": "The evaluation verification child remains open until all cases have current locks."
+          },
+          {
+            "id": "O24",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O24.1",
+                "statement": "A failed case is named in the evaluation failure result."
+              }
+            ],
+            "source": "What-if text for ACE-A25 to ACE-A45: 'A failure names the failing case.'",
+            "statement": "Evaluation failures identify the failing case."
+          },
+          {
+            "id": "O25",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O25.1",
+                "statement": "A check does not mutate its input or persistent evaluation state."
+              },
+              {
+                "discharged_by": [],
+                "id": "O25.2",
+                "statement": "Repeating a check over unchanged inputs yields the same answer."
+              }
+            ],
+            "source": "What-if text: 'Every check is a read, so running it twice or with nothing changed answers the same way.'",
+            "statement": "Checks are reads and answer consistently when repeated without changes."
+          }
+        ]
+      }
+    },
+    {
+      "lens": "set-consistency",
+      "report": "objections"
+    },
+    {
+      "lens": "what-if",
+      "report": "objections"
+    }
+  ],
+  "objections": [
+    {
+      "ground": {
+        "reason": "ACE-D9 promises that a shared-template addition ships only with a whole-catalogue comparison reporting improves against the template without it. ACE-A24 exempts the baseline entry from that check and requires its digest to equal the current template. Making the addition the current baseline therefore passes without establishing the promised improvement.",
+        "rule": "verification-contract"
+      },
+      "id": "behavioural-outcome-1",
+      "lens": "behavioural-outcome",
+      "objection": "A template addition can pass the emitter gate without any comparison evidence.",
+      "scenario": {
+        "expect": "The check passes while the addition has no whole-catalogue comparison reporting improves against the template without it.",
+        "given": "A shared-template addition whose digest is recorded as the registry's baseline entry, with no comparison report for the addition.",
+        "when": "The emitter suite applies ACE-A24's baseline exception and current-template digest check."
+      },
+      "target_ac": "ACE-A24"
+    },
+    {
+      "ground": {
+        "reason": "ACE-D5 says a judgment task counts only after calibration and requires the judge to agree with eighteen owner labels. ACE-A20 checks agreement count, prompt-digest equality and the presence of a resolved judge model ID. It does not require the calibrated model ID to match the model performing the judgment. ACE-D8 explicitly permits judge-model changes.",
+        "rule": "verification-contract"
+      },
+      "id": "behavioural-outcome-2",
+      "lens": "behavioural-outcome",
+      "objection": "A replacement judge model can score judgments using another model's calibration.",
+      "scenario": {
+        "expect": "The checks pass while model B has never demonstrated the required calibration agreement.",
+        "given": "A calibration record showing eighteen agreements under resolved judge model A, followed by judgments under resolved model B using the same prompt digest. Both model IDs are recorded.",
+        "when": "The scorer applies ACE-A20's calibration checks."
+      },
+      "target_ac": "ACE-A20"
+    },
+    {
+      "ground": {
+        "reason": "ACE-D3 assigns C18–C27 and C29 distinct expectations, including decision-document assessment, human measurement, observation windows and several what-if questions. ACE-A42 combines all eleven case outcomes and catalogue acceptance into one criterion. These outcomes can be delivered and accepted independently.",
+        "rule": "one-obligation"
+      },
+      "id": "behavioural-outcome-3",
+      "lens": "behavioural-outcome",
+      "objection": "ACE-A42 makes independently deliverable rule outcomes share one acceptance decision.",
+      "scenario": {
+        "expect": "The combined criterion passes, but it provides no separate criterion-level acceptance decision for the decision-document, human-measurement or observation-window obligations.",
+        "given": "An accepted committed catalogue with current locks for C18–C27 and C29.",
+        "when": "The scorer checks ACE-A42."
+      },
+      "target_ac": "ACE-A42"
+    },
+    {
+      "ground": {
+        "reason": "The checks observe catalogue contents and scorer behaviour, but do not establish the promised file layout or delivery of the named helpers and suites.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-1",
+      "lens": "obligation-reduction",
+      "objection": "The implementation can provide the checked behaviour while omitting the specified deliverable files.",
+      "obligation": "O1.1",
+      "scenario": {
+        "expect": "Every criterion passes, but evals/plan_run.py and the promised standalone suites are absent.",
+        "given": "Equivalent callable helpers provide all checked behaviour, and the gate exits successfully.",
+        "when": "The criteria are checked."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No criterion observes deployment output.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-2",
+      "lens": "obligation-reduction",
+      "objection": "Evaluation cases can deploy despite the promise that they never deploy.",
+      "obligation": "O2.1",
+      "scenario": {
+        "expect": "Every criterion passes, but evaluation documents appear in the deployed skill.",
+        "given": "The catalogue and evaluation machinery satisfy all checks, while deployment includes evals/.",
+        "when": "The skill is deployed."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Checking that a source-revision field exists does not check that it identifies the harvested source.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-3",
+      "lens": "obligation-reduction",
+      "objection": "A harvested case can carry an unrelated source revision.",
+      "obligation": "O3.2",
+      "scenario": {
+        "expect": "Every criterion passes, but the manifest attributes the case to a revision that did not supply its document.",
+        "given": "A valid harvested case has all required fields, correct validation digests and an incorrect source revision.",
+        "when": "The catalogue check and evaluation run."
+      },
+      "target_ac": "ACE-A13"
+    },
+    {
+      "ground": {
+        "reason": "One contiguous hunk and matching validation digests establish document shape and identity, not a single corrected defect.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-4",
+      "lens": "obligation-reduction",
+      "objection": "A pair can contain an additional defect or fail to correct its stated defect.",
+      "obligation": "O4.2",
+      "scenario": {
+        "expect": "Every criterion passes, but the pair contains an unrelated second defect.",
+        "given": "The documents differ in one hunk, their recorded digests match, and the additional defect does not affect the scored detection statement.",
+        "when": "The pair is checked and its runs are scored."
+      },
+      "target_ac": "ACE-A13"
+    },
+    {
+      "ground": {
+        "reason": "No criterion checks that the owner performed the required control review before runs counted.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-5",
+      "lens": "obligation-reduction",
+      "objection": "A pair can be treated as validated without the prescribed owner review and correction process.",
+      "obligation": "O5.1",
+      "scenario": {
+        "expect": "Every criterion passes, but the owner never reads the relevant control objections.",
+        "given": "Validation digests are recorded without owner review, and subsequent scored runs meet every threshold.",
+        "when": "The case is accepted and locked."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Passing P1's scored panel runs does not establish that its preliminary validation panel was read whole by the owner.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-6",
+      "lens": "obligation-reduction",
+      "objection": "A control-only case can enter evaluation without its required whole-panel validation.",
+      "obligation": "O5.2",
+      "scenario": {
+        "expect": "Every criterion passes, but no owner reads a complete P1 validation panel.",
+        "given": "P1 has accepted metadata and passing evaluation runs, but its validation record was created without the prescribed review.",
+        "when": "P1 receives a current lock."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The metadata checks and lock checks do not compare case content with the parent's Given and no-finding clauses.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-7",
+      "lens": "obligation-reduction",
+      "objection": "A case can serve the listed parent in metadata while testing a different defect or omitting its no-finding feature.",
+      "obligation": "O6.2",
+      "scenario": {
+        "expect": "Every criterion passes, but C1 does not represent ACQ-A1's Given clause.",
+        "given": "C1 has the required metadata and a valid single-defect pair that the lens reliably detects, but the defect differs from the parent's stated case.",
+        "when": "The catalogue is checked and C1 is locked."
+      },
+      "target_ac": "ACE-A25"
+    },
+    {
+      "ground": {
+        "reason": "Distinct response IDs and matching configuration do not establish a fresh dispatch context.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-8",
+      "lens": "obligation-reduction",
+      "objection": "Runs can reuse a conversation containing earlier documents or objections.",
+      "obligation": "O8.2",
+      "scenario": {
+        "expect": "Every criterion passes, but later runs inherit earlier evaluation context.",
+        "given": "A dispatcher reuses sessions while producing distinct response IDs and the required model, effort and run counts.",
+        "when": "Five runs are collected for each document."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ACE-A18 checks configuration fields, not the empty-directory and no-tools restrictions.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-9",
+      "lens": "obligation-reduction",
+      "objection": "A correctly identified production model can read the repository or use tools.",
+      "obligation": "O8.3",
+      "scenario": {
+        "expect": "Every criterion passes, but a lens can read the case catalogue.",
+        "given": "Models, effort, transport and counts match, while Codex runs in the repository or OpenRouter receives tools.",
+        "when": "The evaluation dispatches its lenses."
+      },
+      "target_ac": "ACE-A18"
+    },
+    {
+      "ground": {
+        "reason": "Refusing substituted configurations and marking unusable reports pending do not require waiting for an unavailable transport.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-10",
+      "lens": "obligation-reduction",
+      "objection": "A transport outage can terminate the evaluation instead of leaving it waiting.",
+      "obligation": "O8.4",
+      "scenario": {
+        "expect": "Every acceptance check passes, but the outage path terminates the evaluation permanently.",
+        "given": "The normal evaluation and fixtures pass, while the dispatcher treats an unavailable transport as a terminal error.",
+        "when": "The required transport becomes unavailable."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The detection criterion does not explicitly test the exception that an absence site always requires judgment.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-11",
+      "lens": "obligation-reduction",
+      "objection": "An objection with the correct rule and site none can be counted mechanically despite a negative judgment.",
+      "obligation": "O9.2",
+      "scenario": {
+        "expect": "Every specified fixture check and current-lock check passes, but this absence objection counts as a detection.",
+        "given": "An absence-site report cites the case's rule and target none, and the judge says it does not describe the detection statement.",
+        "when": "The scorer applies its rule-and-site shortcut."
+      },
+      "target_ac": "ACE-A14"
+    },
+    {
+      "ground": {
+        "reason": "The specified detection fixtures cover totals 4/5, 8/10, 7/10 and 2/5, leaving other permitted totals unpinned.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-12",
+      "lens": "obligation-reduction",
+      "objection": "Detection scoring can reject 5/5 or accept an untested failing total.",
+      "obligation": "O11.2",
+      "scenario": {
+        "expect": "Every criterion passes, but a case detecting five times in five fails its detection side.",
+        "given": "The named fixtures and current locks use the specified passing and failing totals; the scorer mishandles 5/5.",
+        "when": "A new permitted attempt produces five detections."
+      },
+      "target_ac": "ACE-A15"
+    },
+    {
+      "ground": {
+        "reason": "The specified control fixtures cover totals 4/5, 8/10, 7/10 and 2/5, leaving other permitted totals unpinned.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-13",
+      "lens": "obligation-reduction",
+      "objection": "Control scoring can reject 5/5 or accept an untested failing total.",
+      "obligation": "O11.4",
+      "scenario": {
+        "expect": "Every criterion passes, but a control silent five times in five fails its control side.",
+        "given": "The named fixtures and current locks use the specified totals; the scorer mishandles 5/5 silence.",
+        "when": "A new permitted attempt produces five silent control runs."
+      },
+      "target_ac": "ACE-A16"
+    },
+    {
+      "ground": {
+        "reason": "ACE-A51 checks individual panel runs, and ACE-A41 checks the observed P1 lock; neither requires aggregate fixtures covering P1's other permitted outcomes.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-14",
+      "lens": "obligation-reduction",
+      "objection": "P1's aggregate threshold can work for the current record while failing another allowed distribution.",
+      "obligation": "O11.7",
+      "scenario": {
+        "expect": "Every criterion passes, but P1 is rejected when all five panel runs pass.",
+        "given": "The current P1 lock uses four passing panel runs, and individual panel scoring is correct, but aggregate scoring rejects five of five.",
+        "when": "P1 is evaluated with five passing panels."
+      },
+      "target_ac": "ACE-A41"
+    },
+    {
+      "ground": {
+        "reason": "Reporting pending and incomplete does not check that unresolved runs are excluded from miss scoring.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-15",
+      "lens": "obligation-reduction",
+      "objection": "The scorer can mark a case pending while also counting its unresolved run as a miss.",
+      "obligation": "O12.2",
+      "scenario": {
+        "expect": "Every criterion passes, but the unresolved run increments the miss count.",
+        "given": "A fixture has no usable report after two repeats; the scorer correctly emits pending and incomplete.",
+        "when": "The scorer also updates detection statistics."
+      },
+      "target_ac": "ACE-A19"
+    },
+    {
+      "ground": {
+        "reason": "Calibration metadata and comparison compatibility do not pin Claude Opus, the native Agent tool or the prescribed judge prompt file.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-16",
+      "lens": "obligation-reduction",
+      "objection": "A different judge implementation can satisfy every check.",
+      "obligation": "O14.1",
+      "scenario": {
+        "expect": "Every criterion passes, but judgments come from another model through another transport.",
+        "given": "The replacement judge has a resolved ID, matching prompt digests and a passing calibration record.",
+        "when": "The evaluation requests judgments."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "A record showing eighteen agreements does not establish that Scott Hamilton supplied the twenty labels.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-17",
+      "lens": "obligation-reduction",
+      "objection": "Calibration can use labels supplied by another model or evaluator.",
+      "obligation": "O15.2",
+      "scenario": {
+        "expect": "Every criterion passes, but the calibration has no labels from Scott Hamilton.",
+        "given": "A calibration record shows eighteen agreements in twenty using labels generated by another model.",
+        "when": "ACE-A20's record check runs."
+      },
+      "target_ac": "ACE-A20"
+    },
+    {
+      "ground": {
+        "reason": "The record check does not establish that a revised prompt was calibrated on twenty new items.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-18",
+      "lens": "obligation-reduction",
+      "objection": "A judge prompt can be tuned to a failed calibration set and then accepted on that same set.",
+      "obligation": "O15.3",
+      "scenario": {
+        "expect": "Every criterion passes, but the successful recalibration reuses the failed sample.",
+        "given": "A revised prompt reaches eighteen agreements on the original twenty items and records its new digest.",
+        "when": "The scorer accepts the recalibration record."
+      },
+      "target_ac": "ACE-A20"
+    },
+    {
+      "ground": {
+        "reason": "The agreement threshold does not check the required inclusion of mechanical detections in the calibration sample.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-19",
+      "lens": "obligation-reduction",
+      "objection": "Calibration can omit the items intended to test false mechanical detections.",
+      "obligation": "O15.4",
+      "scenario": {
+        "expect": "Every criterion passes, but no mechanical detection appears in the case-task calibration.",
+        "given": "Twenty non-mechanical items produce eighteen agreements and valid metadata.",
+        "when": "The scorer accepts the calibration."
+      },
+      "target_ac": "ACE-A20"
+    },
+    {
+      "ground": {
+        "reason": "Matching reports to a plan and scoring under its thresholds do not establish that the plan existed before dispatch.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-20",
+      "lens": "obligation-reduction",
+      "objection": "An operator can construct the plan after seeing the reports.",
+      "obligation": "O16.1",
+      "scenario": {
+        "expect": "Every criterion passes, but the plan was written after all dispatches.",
+        "given": "Reports have valid configuration and unique response IDs, and a matching plan is subsequently written.",
+        "when": "The scorer checks correspondence and produces locks."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Uniqueness and plan correspondence do not require each response ID to be present and taken from the transport's own metadata.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-21",
+      "lens": "obligation-reduction",
+      "objection": "Reports can use invented response IDs instead of the transport's IDs.",
+      "obligation": "O16.3",
+      "scenario": {
+        "expect": "Every criterion passes, but recorded response IDs do not identify the actual responses.",
+        "given": "Reports retain genuine model metadata but replace response IDs with distinct locally generated values.",
+        "when": "The scorer checks report correspondence and duplicate IDs."
+      },
+      "target_ac": "ACE-A53"
+    },
+    {
+      "ground": {
+        "reason": "Blocking a subsequent attempt with no committed reports does not check that every completed attempt is committed in full.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-22",
+      "lens": "obligation-reduction",
+      "objection": "A final failed attempt can remain uncommitted.",
+      "obligation": "O16.5",
+      "scenario": {
+        "expect": "Every criterion passes, but the last attempt and its reports are absent from git.",
+        "given": "All required baseline attempts and current locks are committed, followed by an additional failed attempt that is not committed.",
+        "when": "No subsequent attempt is requested."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ACE-A21 refuses another attempt only after an attempt and its retest; ACE-A46 forbids a retest below three of five.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-23",
+      "lens": "obligation-reduction",
+      "objection": "A case failing below three of five can receive another attempt without a fingerprint change.",
+      "obligation": "O16.7",
+      "scenario": {
+        "expect": "Every criterion passes, but the planner permits another attempt on the unchanged failed case.",
+        "given": "The first attempt detects twice in five, its reports are committed, and no retest is allowed.",
+        "when": "A second attempt is requested on the same fingerprint."
+      },
+      "target_ac": "ACE-A21"
+    },
+    {
+      "ground": {
+        "reason": "ACE-A48 covers changes to the judge prompt or scorer, but not a judge-model-only change.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-24",
+      "lens": "obligation-reduction",
+      "objection": "A judge model change can leave locks unrescored or trigger new lens dispatches.",
+      "obligation": "O18.2",
+      "scenario": {
+        "expect": "Every criterion passes, but stored reports are not rescored when only the judge model changes.",
+        "given": "Prompt-change and scorer-change fixtures pass; the judge-model-only path retains existing locks unchanged.",
+        "when": "The resolved judge model changes."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ACE-A22 checks lock sets over the same cases, and ACE-A23 does not check differing case populations.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-25",
+      "lens": "obligation-reduction",
+      "objection": "A comparison can report improvement for lock sets sharing no case.",
+      "obligation": "O20.2",
+      "scenario": {
+        "expect": "Every specified comparison check passes, but the disjoint comparison reports improves.",
+        "given": "Two lock sets have matching configuration and judge identity, no pending cases and disjoint case populations.",
+        "when": "The comparison counts new locks in two lenses as gains."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "A registry report saying improves does not establish that its evidence actually comes from the template without the addition and demonstrates the defined gains.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-26",
+      "lens": "obligation-reduction",
+      "objection": "A template addition can pass the registry gate using an unsupported comparison claim.",
+      "obligation": "O21.2",
+      "scenario": {
+        "expect": "Every criterion passes, but the actual baseline has no two-lens gain under the addition.",
+        "given": "Comparison fixtures are correct and the current catalogue is locked, while the registry contains a report claiming improves using unsupported baseline evidence.",
+        "when": "The emitter suite checks the digest and the report's declared result."
+      },
+      "target_ac": "ACE-A24"
+    },
+    {
+      "ground": {
+        "reason": "Current-lock checks do not observe whether the verification child remained open before those locks existed.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-27",
+      "lens": "obligation-reduction",
+      "objection": "The verification child can close before the evaluation is complete.",
+      "obligation": "O23.1",
+      "scenario": {
+        "expect": "Every criterion eventually passes, but the verification child closed while cases lacked current locks.",
+        "given": "The implementation closes the child early and later completes all required evaluation runs.",
+        "when": "The final criteria are checked."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The scoring criteria check pass/fail results without requiring a failing-case identifier in the evaluation failure report.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-28",
+      "lens": "obligation-reduction",
+      "objection": "An evaluation failure can be reported without naming its failing case.",
+      "obligation": "O24.1",
+      "scenario": {
+        "expect": "Every criterion passes, but the failing fixture produces only an anonymous failure result.",
+        "given": "Threshold fixtures fail correctly, and the current evaluation is locked, but failure output omits case IDs.",
+        "when": "A case fails its evaluation."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No criterion observes state preservation across a check.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-29",
+      "lens": "obligation-reduction",
+      "objection": "Checks can mutate evaluation state despite the statement that every check is a read.",
+      "obligation": "O25.1",
+      "scenario": {
+        "expect": "Every criterion passes, but a check updates a persistent evaluation counter.",
+        "given": "The check returns every required result while writing additional state.",
+        "when": "The check runs."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No criterion requires a second check on unchanged input to return the same answer.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-30",
+      "lens": "obligation-reduction",
+      "objection": "A check can change its answer when repeated without an input change.",
+      "obligation": "O25.2",
+      "scenario": {
+        "expect": "Every first-run criterion check passes, but repeating the public check changes its answer.",
+        "given": "Fresh fixture setups pass, while the checker retains invocation-dependent state.",
+        "when": "The same check runs again over unchanged documents and reports."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Outside the criterion text, the document promises a checker and suite, but no independent obligation concerning a successful gate exit. That exit alone establishes neither deliverable.",
+        "rule": "has-basis"
+      },
+      "id": "obligation-reduction-31",
+      "lens": "obligation-reduction",
+      "objection": "The S2.2 gate-exit criterion discharges no inventoried obligation.",
+      "scenario": {
+        "expect": "The gate's exit result has no independently stated artifact obligation to discharge.",
+        "given": "The document's promises concern the checker, its suite and its behaviour.",
+        "when": "The S2.2 continuation checks only whether make content-tests exits 0."
+      },
+      "target_ac": "Continuation S2.2: make content-tests exits 0"
+    },
+    {
+      "ground": {
+        "reason": "A successful gate exit is not an independently promised result outside the criterion text, and does not establish the planning, scoring or judge obligations.",
+        "rule": "has-basis"
+      },
+      "id": "obligation-reduction-32",
+      "lens": "obligation-reduction",
+      "objection": "The S2.3 gate-exit criterion discharges no inventoried obligation.",
+      "scenario": {
+        "expect": "The exit result has no independently stated artifact obligation to discharge.",
+        "given": "The document promises planning, scoring, judgment and their suites.",
+        "when": "The S2.3 continuation checks only whether make content-tests exits 0."
+      },
+      "target_ac": "Continuation S2.3: make content-tests exits 0"
+    },
+    {
+      "ground": {
+        "reason": "A successful gate exit is not an independently promised result outside the criterion text, and does not establish comparison or registry correctness.",
+        "rule": "has-basis"
+      },
+      "id": "obligation-reduction-33",
+      "lens": "obligation-reduction",
+      "objection": "The S2.4 gate-exit criterion discharges no inventoried obligation.",
+      "scenario": {
+        "expect": "The exit result has no independently stated artifact obligation to discharge.",
+        "given": "The document promises comparison behaviour and a registry test.",
+        "when": "The S2.4 continuation checks only whether make content-tests exits 0."
+      },
+      "target_ac": "Continuation S2.4: make content-tests exits 0"
+    },
+    {
+      "ground": {
+        "reason": "A successful gate exit is not an independently promised result outside the criterion text, and does not establish catalogue content or validation.",
+        "rule": "has-basis"
+      },
+      "id": "obligation-reduction-34",
+      "lens": "obligation-reduction",
+      "objection": "The S2.5 gate-exit criterion discharges no inventoried obligation.",
+      "scenario": {
+        "expect": "The exit result has no independently stated artifact obligation to discharge.",
+        "given": "The document promises the catalogue and its prescribed validation.",
+        "when": "The S2.5 continuation checks only whether make content-tests exits 0."
+      },
+      "target_ac": "Continuation S2.5: make content-tests exits 0"
+    },
+    {
+      "ground": {
+        "reason": "ACE-A21 and ACE-D8 refuse a new attempt only once a fingerprint 'has had its attempt and its retest', but ACE-D7 earns a retest only at exactly three of five; a side that fails below three gets no retest, so the refusal condition never becomes true even though ACE-D8 declares such a failed case 'answered only by changing something'.",
+        "rule": "consistency"
+      },
+      "id": "set-consistency-1",
+      "lens": "set-consistency",
+      "objection": "A case that fails at two of five on a side earns no retest, and the criteria then both forbid a further attempt on the unchanged fingerprint (ACE-D8's 'answered only by changing something') and permit one (ACE-A21's refusal triggers only after an attempt AND its retest, and no retest exists).",
+      "scenario": {
+        "expect": "Under ACE-D8's 'a failed case is then answered only by changing something' the planner refuses; under ACE-A21's literal condition (attempt and its retest) it does not, since no retest was ever earned — the two criteria require incompatible verdicts in the same circumstance.",
+        "given": "A case whose current fingerprint has one committed attempt in which its detection side scored two of five, below the retest threshold",
+        "when": "the planner is asked to plan a fresh attempt on the same unchanged fingerprint"
+      },
+      "target_ac": "ACE-A21"
+    },
+    {
+      "ground": {
+        "reason": "ACE-D4 allows a run to be repeated at most twice and ACE-A18 says repeats do not count against the planned run count, while ACE-A53 requires the attempt's reports to match its plan one to one; the criteria never state whether repeated-run reports participate in the one-to-one matching.",
+        "rule": "decision-closure"
+      },
+      "id": "set-consistency-2",
+      "lens": "set-consistency",
+      "objection": "The wording leaves open how the scorer matches reports to a plan when a run was repeated: one reading matches only the final usable report per planned run and accepts the attempt; another reads 'reports' as every committed report under evals/runs/<run-id>/ and refuses the attempt for holding more reports than planned runs.",
+      "scenario": {
+        "expect": "One reading scores the attempt normally (repeats exempt per ACE-A18); the other refuses it because six committed reports face five planned runs, so the same attempt is accepted or refused depending on which reading is taken.",
+        "given": "A planned attempt of five runs per document in which one run's first report was malformed and ACE-D4's repeat produced a second, usable report, with both reports committed under the run directory as ACE-D8 requires",
+        "when": "the scorer checks the attempt's reports against its plan under ACE-A53"
+      },
+      "target_ac": "ACE-A53"
+    },
+    {
+      "ground": {
+        "reason": "ACE-A20 refuses a judgment task whose calibration record names a different prompt digest or lacks a resolved judge model ID, but nothing requires the calibration to have been performed under the same judge model ID as the run. ACE-D5 calibrates a prompt, and ACE-A23 locks comparisons to one judge model ID, yet scoring itself never checks that the calibration measured the judge that is actually ruling.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-1",
+      "lens": "what-if",
+      "objection": "A calibration earned under one resolved judge model is accepted as calibrating a different judge model running the same prompt, so every judgment in the run rests on an evaluator that was never calibrated.",
+      "scenario": {
+        "expect": "the scorer refuses the judgment task, naming the judge model mismatch, which no criterion checks",
+        "given": "a calibration record showing eighteen agreements in twenty, recorded under judge model ID X and prompt digest D",
+        "when": "the scorer scores a run whose judge resolved to model ID Y with the same prompt digest D"
+      },
+      "target_ac": "ACE-A20"
+    },
+    {
+      "ground": {
+        "reason": "ACE-A21 refuses a new attempt only on a fingerprint that has had its attempt and its retest, but a side that passed at four or five of five never earns a retest, so the refusal never triggers for an already-locked case. Re-running a passed case spends the dispatch budget ACE-D7 caps and, under ACE-D8's every-run-counts rule, can only un-lock or duplicate a standing lock; the document neither covers nor rules this out.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-2",
+      "lens": "what-if",
+      "objection": "The planner allows a redundant attempt on a case whose unchanged fingerprint already holds a lock, letting a lucky-fail re-run destabilize the evaluation of record with no gain in evidence.",
+      "scenario": {
+        "expect": "the planner refuses, naming the case's existing current lock, which no criterion checks",
+        "given": "a case holding a current lock from an attempt that passed both sides with no retest, and a tree whose fingerprint for that case is unchanged",
+        "when": "the planner is asked to plan a new attempt on that case"
+      },
+      "target_ac": "ACE-A21"
+    },
+    {
+      "ground": {
+        "reason": "ACE-A17 fixes the ACQ-A27 verdict at 80 percent of the control runs behind a lens's current locks, but a lens whose cases all failed holds no locks and contributes zero control runs, leaving the pooled rate undefined at the empty limit. ACE-A43 requires every lens to pass, so the scorer must still emit a verdict or a report entry (ACE-A49) for that lens, and no criterion says what either holds.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-3",
+      "lens": "what-if",
+      "objection": "The scorer's behavior on an empty pool is unspecified: it may pass vacuously, crash, or omit the lens, and any of those silently corrupts the ACQ-A43 verdict and the pooled-rate report.",
+      "scenario": {
+        "expect": "a defined outcome, such as failing the lens for lack of evidence, which no criterion checks",
+        "given": "a lens whose cases hold no current locks, so zero control runs stand behind them",
+        "when": "the scorer computes the lens's pooled empty-control rate for ACQ-A27"
+      },
+      "target_ac": "ACE-A17"
+    }
+  ],
+  "schema_version": "1",
+  "spec_path": "2026-09-29-acceptance-criteria-evaluation-contract.md",
+  "spec_revision": "sha256:3dc885fbe44b1928ca73a32fa882860c38a56e43347a36e7009e56905da9da0a"
+}
