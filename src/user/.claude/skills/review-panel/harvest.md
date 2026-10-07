@@ -1,8 +1,7 @@
 # Harvesting a round
 
-What to do around dispatching the lenses and writing the verdict. Every rule here exists because
-a round hit the case and the invoker had to improvise; an improvised rule is one nobody can audit
-afterwards.
+What to do around dispatching the lenses and writing the verdict. Each rule settles a case the
+invoker would otherwise improvise, and an improvised rule is one nobody can audit afterwards.
 
 ## The records a round runs on
 
@@ -57,8 +56,7 @@ The `transport` in `contracts.json` is a claim about vendor diversity, not about
 credentials. **Any lens may run on any transport that is actually up.** An `openrouter` lens runs
 through the codex command-line tool when OpenRouter is down; a `codex` lens runs through the
 `openrouter-claude-subagent` skill when the codex credential has expired. Neither direction is the
-exceptional one, and neither transport is the more reliable one — both have been down while the
-other worked.
+exceptional one, because either transport can be down while the other works.
 
 What you may not do is run the lens and say nothing. Whenever a lens runs on something other than
 its declared entry, its verdict entry carries `substitution` naming what it moved off — the
