@@ -85,7 +85,7 @@ Asked of "saving a note stores it and shows it in the list":
 
 ### verification-contract
 
-**Every commitment has a feasible check.** Before implementation, every material commitment has a feasible check at its public interface. The check names its setup, observation, pass/fail rule and required evidence. It names the acceptance authority, which is the rule that decides or the human authorized to judge. It names the completion that waits on the result. It must tell the promise apart from a plausible failure. Mechanical checks are the default.
+**Every criterion's check is feasible and complete.** Before implementation, each criterion names a feasible check at the public interface of what it promises. Whether a commitment has a criterion at all is the coverage rule's question, not this one's. The check names its setup, observation, pass/fail rule and required evidence. It names the acceptance authority, which is the rule that decides or the human authorized to judge. It names the completion that waits on the result. It must tell the promise apart from a plausible failure. Mechanical checks are the default.
 
 ### human-measurement
 
