@@ -532,14 +532,16 @@ def failed_routes(prior: list[dict], reason: str, evidence: str) -> list[dict[st
 
 
 def exhausted(lens: str, why: str, routes: list[dict[str, Any]]) -> Refusal:
-    """The refusal for a dispatch past the bound, carrying halt guidance when every
-    recorded failure was transport-class.
+    """The refusal for a dispatch past the bound, carrying halt guidance when the last
+    failure on every route the lens ran on was a transport error or a dead run.
 
     A lens that ran out of routes and a lens whose reviewer kept producing garbage
     end identically — no entry, an incomplete round — but only the first says
-    anything about the dispatches the round has not made yet.
+    anything about the dispatches the round has not made yet. A route that returned
+    garbage and then died is dead, so only each route's last failure counts.
     """
-    route_only = bool(routes) and all(route["reason"] in ROUTE_FAILURES for route in routes)
+    last = {(route["transport"], route["model"]): route["reason"] for route in routes}
+    route_only = bool(last) and all(reason in ROUTE_FAILURES for reason in last.values())
     if not route_only:
         return Refusal("attempts-exhausted", f"{lens}: {why}")
     rendered = "; ".join(f"{r['transport']}/{r['model']}: {r['error']}" for r in routes)
@@ -564,8 +566,12 @@ def claim(args: argparse.Namespace) -> dict[str, Any]:
     refusal = check_ladder(lens, prior, transport, model, effort, evidence) if (
         reason == DEAD_RUN) else None
     if refusal is not None and refusal.code == "off-ladder":
-        # A claim naming the wrong step spends nothing, so the dispatcher can claim the right one.
-        raise refusal
+        if len(prior) < MAX_ATTEMPTS:
+            # A claim naming the wrong step spends nothing, so the dispatcher can claim the
+            # right one.
+            raise refusal
+        # Past the bound no step is the right one, so the bound refuses the claim instead.
+        refusal = None
     if refusal is None and len(prior) >= MAX_ATTEMPTS:
         refusal = exhausted(
             lens,

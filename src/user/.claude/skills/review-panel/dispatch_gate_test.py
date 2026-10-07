@@ -627,6 +627,30 @@ class TestDeadRunLadder:
         assert answer["halt"]["guidance"]
         assert len(kinds(round_dir, "claim")) == failover_attempt
 
+    def test_a17_a_dead_run_past_the_bound_is_out_of_attempts_not_off_ladder(
+        self, round_dir, capsys
+    ):
+        authorize(round_dir, capsys)
+        authorize(round_dir, capsys, **{"--effort": "medium", "--reason": "dead-run",
+                                        "--evidence": PROXY_LINE})
+        transport_recovery(round_dir, capsys, "503 upstream", **{"--effort": "medium"})
+        answer = refuse(dead_run(round_dir, **{"--effort": "low"}), capsys)
+        assert codes(answer) == ["attempts-exhausted"]
+        assert answer["halt"]["guidance"]
+        assert kinds(round_dir, "refusal")[0]["evidence"] == PROXY_LINE
+
+    def test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output(
+        self, round_dir, capsys
+    ):
+        failover = {"--transport": "openrouter", "--model": "z-ai/glm-5.3", "--effort": "low"}
+        authorize(round_dir, capsys)
+        transport_recovery(round_dir, capsys, "usage limit reached", **failover)
+        authorize(round_dir, capsys, **{"--reason": "unusable-output", "--evidence": "prose",
+                                        **failover})
+        answer = refuse(dead_run(round_dir, **failover), capsys)
+        assert codes(answer) == ["attempts-exhausted"]
+        assert answer["halt"]["guidance"]
+
     def test_a17_a_dead_run_without_evidence_is_refused(self, round_dir, capsys):
         authorize(round_dir, capsys)
         answer = refuse(claim_argv(round_dir, **{"--effort": "medium", "--reason": "dead-run"}),

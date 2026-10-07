@@ -167,8 +167,8 @@ its pin. A retry of the route that just said it is down is not a failover. The g
 
 ### When the gate refuses
 
-A refusal whose every recorded failure was a dead route or a dead run carries halt guidance
-naming each exhausted transport and model with its error. **The round is over.** Abandon every dispatch not
+A refusal carries halt guidance when the last failure on every route the lens ran on was a dead
+route or a dead run. The guidance names each exhausted transport and model with its error. **The round is over.** Abandon every dispatch not
 yet made. Do not retry, do not drop to a lesser model, and do not quietly finish the round with
 the lenses that happened to work. Write the verdict with `verdict: "halted"`, a `halt` block
 carrying every transport failure the round did not recover from, and every undispatched lens in
