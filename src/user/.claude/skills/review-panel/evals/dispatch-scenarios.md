@@ -7,9 +7,13 @@ The key is the authority: the doctrine is judged against the key and never the o
 
 ## How to run them
 
-Run each scenario three times. Each run is a fresh native subagent on the `mid` tier of the
-`anthropic` provider, given only the files the scenario names and the prompt below with the
-scenario's question filled in. Give it nothing else: no conversation history and no other skill.
+Run each scenario three times. Each run is a fresh reader on the `mid` tier of the `anthropic`
+provider, given only the files the scenario names and the prompt below with the scenario's
+question filled in. Give it nothing else: no conversation history, no instruction file, no
+memory and no skill. A headless `claude -p --model sonnet` started in an empty directory with
+`--setting-sources ""`, a replaced `--system-prompt`, `--tools Read,Grep,Glob` and the named
+files reachable through `--add-dir` is such a reader. An Agent-tool subagent is not, because it
+inherits the global instruction files and the memory index.
 A run passes when its answer matches the key on every part the question asks for. A run that
 returns no answer is a failed run, and it is not retried. The scenarios pass when all
 twenty-seven runs pass.
