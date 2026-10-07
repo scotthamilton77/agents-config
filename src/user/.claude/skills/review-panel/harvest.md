@@ -20,7 +20,11 @@ happened; the emitter refuses assertion-shaped evidence and stale heads.
 recommending model, and the decision. Get the recommendation from the dispatch that
 `contracts.json` pins under `pins.staffing_recommender`. That pin names the provider, the tier,
 the effort and the tool grant, and the model is the routing table's cell for that provider and
-tier. The pinned provider sits outside the reviewing session's own vendor family. Interactively,
+tier. The pinned provider sits outside the reviewing session's own vendor family. The
+recommender has no failover seat. A dead run on it, which the ladder below defines, is re-run
+once at the next lower effort the routing table lists for its model. A second dead run, a first
+one at the lowest effort the table lists, or a dead route stops the campaign and asks the human,
+because nothing else can stand in for a staffing decision. Interactively,
 present it to the user and record their edit as the decision; non-interactively, record the
 recommendation and proceed. A sweep round's staffing decision subtracts only from the
 class's frontier seats, decision `sweep-contract`, unbounded by the profile's force ceiling, mid
@@ -31,7 +35,9 @@ sweep exists to compensate. A zero-seat decision with justification is the termi
 
 **The checkpoint record** — due after every second consecutive non-clean round; the emitter
 refuses the next round without it. Dispatch a Fable-high trend analysis over the retained records
-— per-lens finding trends, fix history, severity direction. That dispatch is standing-authorized;
+— per-lens finding trends, fix history, severity direction — at the pin `contracts.json` holds
+under `pins.trend_checkpoint`. A dead run on it gets the one re-run the recommender's does, and
+a failure past that is a dispatch failure. That dispatch is standing-authorized;
 if the authorization is ever withdrawn, the checkpoint resolves as escalate-to-human.
 Record the returned verdict with the evidence it cites; record a dispatch failure as origin
 `dispatch-failure` carrying the escalation verdict — the machine fails toward the human, never
@@ -75,14 +81,13 @@ another.
 - **The effort and the tool grant** are the lens's `effort` and `tools` fields in `round.json`,
   which the emitter copied from its seat's pin. The tools value `read-only-sandbox` means the
   Codex runtime's read-only sandbox. A list names the only tools the OpenRouter launcher is
-  granted; its two git entries are how that reviewer reads the change between two revisions.
+  granted. No grant includes a shell, so that reviewer reads the change from the diff file its
+  prompt names, which the emitter wrote beside the prompt.
 
-A lens whose route died fails over to the other transport's seat at the same tier and scope. Its
-pin is the entry under `pins.lenses.<transport>.<tier>.<scope>` in `contracts.json`, and its
-model is the table's cell for the other provider at that tier. One seat has no pin: the
-OpenRouter `mid` model never reads a whole artifact in one pass. A `codex` lens at `mid` whose
-scope is `full` therefore fails over to the `openrouter` seat at `frontier` and `full`. Failover
-reads `contracts.json` and never re-runs the emitter.
+A lens whose route died fails over to its failover seat: the other transport's seat at the same
+tier and scope. Its pin is the entry under `pins.lenses.<transport>.<tier>.<scope>` in
+`contracts.json`, and its model is the table's cell for the other provider at that tier.
+Failover reads `contracts.json` and never re-runs the emitter.
 
 The routing table is the source of truth for every provider's ids, prices, context windows and
 accepted reasoning efforts. All of them move underneath a remembered pick, because vendors
@@ -91,9 +96,9 @@ reasoning cannot be capped will strand a whole-artifact lens inside a thinking b
 no report at all, burning a full lens latency before the failover starts. A free-hand tool grant
 fails the other way, with an exploratory walk billed at frontier prices.
 
-The gate does not enforce any of this. It accepts and records an unlisted model on purpose, so
-that a deliberate choice is possible and is visible afterwards, and it records no effort and no
-tool grant. The discipline is yours.
+The gate does not enforce the pin. It accepts and records an unlisted model on purpose, so that
+a deliberate choice is possible and is visible afterwards. It records each attempt's effort
+without comparing it to the pin, and it records no tool grant. The discipline is yours.
 
 ## Every dispatch is claimed first
 
@@ -102,7 +107,7 @@ this directory before every dispatch of a lens, the first one included:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
-  --transport codex --model gpt-6.1-sol --reason initial
+  --transport codex --model <model> --effort high --reason initial
 ```
 
 An authorized answer carries the `output_path` this attempt writes its raw output to — one path
@@ -117,8 +122,8 @@ entries for one lens is a validation error, not a fuller record: it double-count
 
 ## A dispatch that came back with no report
 
-Two failures look alike from outside and recover oppositely, so tell them apart before claiming
-again — the reason you declare is what the gate bounds.
+Three failures look alike from outside and recover differently, so tell them apart before
+claiming again — the reason you declare is what the gate bounds.
 
 **The route died** (`transport-error`). What came back describes the *transport*, not the review:
 an HTTP status, an authentication or credit error, a refused connection, a dead broker or session
@@ -127,25 +132,39 @@ this on the body rather than the exit status: a dead route shows up as an exit 1
 provider error, and equally as an exit 0 carrying nothing.
 
 **The reviewer failed** (`unusable-output`). A body came back that is the model's own output, and
-no report survives the ladder below — or the reviewer stalled mid-reasoning. The route worked;
-what came over it is unusable.
+no report survives the tolerance ladder under "Reading a lens report". The route worked; what
+came over it is unusable.
 
-Either way, the next claim declares that reason and the failure verbatim:
+**The run died** (`dead-run`). The model's response ended inside its reasoning and no report
+came back. On the OpenRouter launcher the proxy logs
+`response ends on thinking and contains no text block to promote`; on either transport, an
+attempt your watchdog killed for silence is the same failure. Follow the ladder, one step per
+dead run:
+
+1. The same model, with the same tool grant, at the next lower effort the routing table lists
+   for that model.
+2. The failover seat at its pin, when the table lists no effort below the one that died or the
+   step down also died.
+3. A dead run on the failover seat ends the ladder: the lens is out of attempts and the round
+   halts.
+
+Whatever the failure, the next claim declares its reason and the failure verbatim, the proxy
+line or the watchdog's kill line included:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
-  --transport openrouter --model moonshotai/kimi-k3 \
+  --transport openrouter --model <model> --effort high \
   --reason transport-error --evidence "402 Insufficient credits"
 ```
 
-Declare a route that has not just failed: the failover seat that "Choosing the model, the effort
-and the tools" names, dispatched at its pin. A retry of the route that just said it is down is
-not a failover.
+After a dead route, declare a route that has not just failed: the failover seat, dispatched at
+its pin. A retry of the route that just said it is down is not a failover. The gate refuses a
+`dead-run` claim that is not the ladder's next step, and its refusal names the step it accepts.
 
 ### When the gate refuses
 
-A refusal whose every recorded failure was transport-class carries halt guidance naming each
-exhausted transport and model with its error. **The round is over.** Abandon every dispatch not
+A refusal whose every recorded failure was a dead route or a dead run carries halt guidance
+naming each exhausted transport and model with its error. **The round is over.** Abandon every dispatch not
 yet made. Do not retry, do not drop to a lesser model, and do not quietly finish the round with
 the lenses that happened to work. Write the verdict with `verdict: "halted"`, a `halt` block
 carrying every transport failure the round did not recover from, and every undispatched lens in
