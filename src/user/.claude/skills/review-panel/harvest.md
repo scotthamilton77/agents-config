@@ -213,8 +213,10 @@ uv run dispatch_gate.py ingest --out-dir /tmp/round-1 \
 It walks the tolerance ladder — the whole body as JSON, then a single fenced block, then an object
 found in the body with the surrounding text ignored — and prints the report it recovered. Output
 from a dispatch it never authorized is refused rather than read, so a dispatch that went around
-the gate shows up as a hole in the ledger instead of as a lens entry. A claimed path holding no
-file at all is refused as a transport failure, not a reviewer one: the route wrote nothing.
+the gate shows up as a hole in the ledger instead of as a lens entry. A claimed path holding
+nothing is refused as `no-output`, because the attempt wrote nothing. Claim again with reason
+`dead-run` and the kill line as the evidence when your watchdog killed it for silence, and with
+reason `transport-error` and the route's error otherwise.
 
 Some transports wrap the reviewer's output in their own harness log lines — a banner before it, an
 exit line after it, and command echoes that may themselves contain braces. **Ingest the claimed
