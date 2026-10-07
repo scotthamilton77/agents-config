@@ -128,13 +128,14 @@ _QUALIFIED = re.compile(r"[^\s.]+\.r\d+\.\S+")
 class Refusal(Exception):
     """A typed refusal to emit; carries a stable machine-readable code."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, **details: str) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.details = details
 
     def as_dict(self) -> dict[str, str]:
-        return {"code": self.code, "message": self.message}
+        return {**self.details, "code": self.code, "message": self.message}
 
 
 def load_contracts() -> dict[str, Any]:
@@ -1022,6 +1023,66 @@ def lens_tier(lens: dict, round_no: int) -> str:
     return lens.get("re_review_tier", lens["tier"])
 
 
+def seat_pins(
+    contracts: dict[str, Any], emitting: list[dict], scopes: dict[str, dict],
+    tiers: dict[str, str],
+) -> dict[str, dict]:
+    """Resolve the effort and tool grant each emitted lens is dispatched with, or refuse.
+
+    A seat is the lens's transport, its tier this round and its scope this round. A seat with
+    no pin refuses the whole round before anything is written, because a dispatcher left to
+    pick the effort itself is the failure the pins exist to prevent.
+    """
+    table = contracts.get("pins", {}).get("lenses", {})
+    pins: dict[str, dict] = {}
+    for lens in emitting:
+        name = lens["lens"]
+        seat = (lens["transport"], tiers[name], scopes[name]["scope"])
+        pin = table.get(seat[0], {}).get(seat[1], {}).get(seat[2])
+        if not isinstance(pin, dict) or "effort" not in pin or "tools" not in pin:
+            raise Refusal(
+                "no-seat-pin",
+                f"lens {name!r} occupies the seat {'/'.join(seat)}, which has no pin naming an "
+                "effort and a tool grant; a seat nobody pinned is dispatched free-hand",
+                lens=name, seat="/".join(seat),
+            )
+        pins[name] = {"effort": pin["effort"], "tools": pin["tools"]}
+    return pins
+
+
+def change_diffs(
+    repo_root: str | None, base_sha: str | None, head_sha: str | None,
+    scopes: dict[str, dict], out_dir: Path,
+) -> dict[str, tuple[Path, bytes]]:
+    """Compute, before anything is written, the unified diff each lens reads over its scope.
+
+    A whole-artifact read gets the base to the head, and a delta read gets the head it last
+    judged to the head. The diff goes to a file beside the lens's prompt because a reviewer
+    granted no shell cannot run git, and a lens can fail over to such a seat after emission.
+    A diff that cannot be computed refuses the round, since a prompt pointing at a change
+    nobody can read reviews nothing.
+    """
+    diffs: dict[str, tuple[Path, bytes]] = {}
+    by_start: dict[str, bytes] = {}
+    head = head_sha or "HEAD"
+    for name, entry in scopes.items():
+        start = entry.get("delta_base_sha") or base_sha or ""
+        if start not in by_start:
+            proc = subprocess.run(
+                ["git", "-C", repo_root or ".", "diff", "--end-of-options", start, head],
+                capture_output=True, check=False,
+            )
+            if proc.returncode != 0:
+                raise Refusal(
+                    "unreadable-change",
+                    f"cannot write the change {start}..{head} for lens {name!r}: "
+                    + proc.stderr.decode("utf-8", "replace").strip(),
+                )
+            by_start[start] = proc.stdout
+        diffs[name] = (out_dir / f"{name}.diff", by_start[start])
+    return diffs
+
+
 def _qualified(lens: Any, round_no: Any, item: str) -> str:
     """The id that cites a finding: {lens}.r{round}.{id}, left as written if already in it.
 
@@ -1121,8 +1182,9 @@ def render_prompt(lens: dict, ctx: dict) -> str:
             f"Repository root: {inert(ctx['repo_root'])}\n"
             f"Base commit: {inert(ctx['base_sha'])}\n"
             f"Reviewed head commit: {inert(ctx['head_sha'])}\n"
-            "Resolve the change against the repository and read it directly, along with whatever "
-            "surrounding material your scope requires.\n"
+            f"The change over your scope, as a unified diff: {inert(ctx['diff_paths'][name])}\n"
+            "Read the change from that file, or resolve it against the repository if you can run "
+            "git, and read whatever surrounding material your scope requires.\n"
         ),
         "## Retained categories declared for this round\n",
         (
@@ -1199,21 +1261,27 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
     )
     emitting = [lens for lens in roster if lens["lens"] in scopes]
     tiers = {lens["lens"]: lens_tier(lens, args.round) for lens in emitting}
+    pins = seat_pins(contracts, emitting, scopes, tiers)
+    out_dir = Path(args.out_dir)
+    diffs = change_diffs(args.repo_root, args.base_sha, args.head_sha, scopes, out_dir.resolve())
     ctx = {
         "artifact_class": args.artifact_class, "round": args.round, "acs": acs,
         "target": args.target or "", "repo_root": args.repo_root or "",
         "base_sha": args.base_sha or "", "head_sha": args.head_sha or "",
         "retained": retained, "ledger": ledger, "prior_findings": prior_findings,
         "scopes": scopes, "sweep": bool(args.sweep), "profile": profile,
+        "diff_paths": {name: str(path) for name, (path, _) in diffs.items()},
     }
 
-    out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
     for lens in emitting:
         path = out_dir / f"{lens['lens']}.md"
         path.write_text(render_prompt(lens, ctx), encoding="utf-8")
         written.append(str(path))
+        diff_path, diff = diffs[lens["lens"]]
+        diff_path.write_bytes(diff)
+        written.append(str(diff_path))
     round_meta = {
         "artifact_class": args.artifact_class, "claim_id": args.claim, "round": args.round,
         "base_sha": args.base_sha, "head_sha": args.head_sha, "retained_categories": retained,
@@ -1222,6 +1290,7 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         "lenses": [
             {"lens": lens["lens"], "tier": lens["tier"], "tier_this_round": tiers[lens["lens"]],
              "transport": lens["transport"], "scope_this_round": scopes[lens["lens"]]["scope"],
+             **pins[lens["lens"]],
              **({"delta_base_sha": scopes[lens["lens"]]["delta_base_sha"]}
                 if scopes[lens["lens"]]["scope"] == "delta" else {})}
             for lens in emitting
