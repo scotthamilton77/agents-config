@@ -62,11 +62,9 @@ EXIT_REFUSED = 2
 LEDGER_NAME = "attempts.jsonl"
 
 # Three dispatches per lens per round, at most one of them recovering a reviewer
-# that produced unusable output. Recovery is a chain of attempts that each
-# declare transport AND model, because a model can sit at capacity for the length
-# of a round while another model of the same vendor answers: a single transport
-# flip abandons a live vendor on one saturated model's say-so. A chain with no
-# end is the opposite failure — one lens spending the whole round's budget.
+# that produced unusable output. Every attempt declares transport AND model, so
+# the ledger names the route each attempt ran on and the routes a halt reports as
+# exhausted. Without the bound, one lens could spend the whole round's budget.
 MAX_ATTEMPTS = 3
 MAX_UNUSABLE_RECOVERIES = 1
 
@@ -403,8 +401,7 @@ def check_lens(raw: str | None) -> str:
 def check_route(transport: str | None, model: str | None) -> tuple[str, str]:
     """Both halves, on every attempt, recorded exactly as declared.
 
-    An attempt recorded without its model cannot say which route is exhausted, and
-    a dead vendor and a saturated model recover in opposite directions. Which
+    An attempt recorded without its model cannot say which route is exhausted. Which
     route a lens deserves is not this gate's question: it counts attempts and
     records what ran them, so a route it refused to record would be a dispatch it
     could not bound.

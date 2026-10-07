@@ -120,9 +120,11 @@ attempt's report — and, for a recovery, the `backoff_seconds` to wait first. R
 the directory the reviewer will read: the gate records the working directory it was invoked in,
 and a review of the wrong tree is the failure that leaves no trace of itself.
 
-A refusal (exit 2) ends that lens. However many attempts it took, a lens ends with exactly one
-entry, for the attempt that produced the report, carrying the `substitution` record above. Two
-entries for one lens is a validation error, not a fuller record: it double-counts coverage.
+An `attempts-exhausted` refusal (exit 2) ends that lens. A claim refused as `off-ladder`, or for
+a missing or malformed flag, spends no attempt: correct it and claim again. However many attempts
+it took, a lens ends with exactly one entry, for the attempt that produced the report, carrying
+the `substitution` record above. Two entries for one lens is a validation error, not a fuller
+record: it double-counts coverage.
 
 ## A dispatch that came back with no report
 
@@ -158,7 +160,7 @@ line or the watchdog's kill line included:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
-  --transport openrouter --model <model> --effort high \
+  --transport openrouter --model <model> --effort low \
   --reason transport-error --evidence "402 Insufficient credits"
 ```
 
@@ -179,9 +181,9 @@ carrying every transport failure the round did not recover from, and every undis
 Stopping forfeits the budget already spent. Continuing forfeits that too, and buys a document that
 reads like a review of a change most of the panel never opened.
 
-Any other refusal closes that lens alone: it has **no** entry and the round is incomplete. The
-round is not restarted and the other lenses are not re-run. That is the contract working. Fail
-closed — never write a `clean` entry for a lens that never reported.
+Any other `attempts-exhausted` refusal closes that lens alone: it has **no** entry and the round
+is incomplete. The round is not restarted and the other lenses are not re-run. That is the
+contract working. Fail closed — never write a `clean` entry for a lens that never reported.
 
 ## Say a failover out loud
 
