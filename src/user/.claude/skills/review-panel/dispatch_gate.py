@@ -79,7 +79,7 @@ UNUSABLE_OUTPUT = "unusable-output"
 DEAD_RUN = "dead-run"
 REASONS = (INITIAL, TRANSPORT_ERROR, UNUSABLE_OUTPUT, DEAD_RUN)
 # The failures that leave a lens with no route still able to run it. A lens that runs out of
-# attempts on these alone halts the round; a reviewer that produced garbage does not.
+# attempts halts the round when the last failure on every route it ran on is one of these.
 ROUTE_FAILURES = (TRANSPORT_ERROR, DEAD_RUN)
 
 # Reasoning efforts from least to most. The gate holds no routing table, so it cannot know
