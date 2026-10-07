@@ -65,8 +65,9 @@ Exactly one source flag is given. More than one, or none, refuses as
 `source-conflict`.
 
 Spec and file entries follow spec-lint's entry grammar, joined text included.
-The helper's parser is a marked counterpart of spec-lint's, as LIFE-D1 already
-binds workcli's. The grammar has five rules, and a criteria file follows all
+The helper's parser is a marked counterpart of spec-lint's: each carries a
+marking naming the other, as the lifecycle spec's LIFE-D1 already requires of
+workcli's parser. The grammar has five rules, and a criteria file follows all
 but the second:
 
 1. An entry opens on a line holding, after optional indentation, `- **ID** `
@@ -137,8 +138,9 @@ is a JSON object mapping an ID to `{"observe": …, "pass": …}`, where each fi
 is a string.
 
 The file breaks that shape when it is not JSON, its top level is not an
-object, an entry is not an object, or a field is not a string. The shape rule
-covers every entry, assigned or not.
+object, an entry is not an object, or `observe` or `pass` is present and not
+a string. The shape rule covers every entry, assigned or not, and reads no
+other key.
 
 A field is blank when its key is absent or its string holds only whitespace.
 A missing key therefore makes a criterion unready. It never makes the file
@@ -295,10 +297,10 @@ spec-lint's under `make ci`.
   entry lacking the `observe` or `pass` key has a blank field. Without
   `--checks`, every criterion is unready with the reason `no planned check`.
 - **BRF-A12** `emit` refuses as `malformed-checks` when the checks file is not
-  JSON, its top level is not an object, an entry is not an object, or a field
-  is not a string. An entry that lacks a key is not malformed, and a key
-  other than `observe` and `pass` changes neither section, stderr nor the
-  exit status.
+  JSON, its top level is not an object, an entry is not an object, or
+  `observe` or `pass` is present and not a string. An entry that lacks a key
+  is not malformed, and a key other than `observe` and `pass`, whatever its
+  value, changes neither section, stderr nor the exit status.
 - **BRF-A13** Given a stub facade that answers only `acceptance render` and
   prints criteria, `emit --item`'s criteria section holds exactly the rendered
   criteria, and the helper makes no other facade call.

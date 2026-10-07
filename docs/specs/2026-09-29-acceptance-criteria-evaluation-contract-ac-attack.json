@@ -5,14 +5,14 @@
       "disposition": "accepted",
       "id": "behavioural-outcome-1",
       "rationale": "The case check refuses a validation record whose decision is not an acceptance.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "S2.6",
       "disposition": "accepted",
       "id": "behavioural-outcome-2",
       "rationale": "The S2.6 continuation now requires the comparison to name no regressed case.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "disposition": "rejected",
@@ -34,21 +34,21 @@
       "disposition": "accepted",
       "id": "obligation-reduction-4",
       "rationale": "Same as behavioural-outcome-1; ACE-D2 names the owner as the acceptance authority at validation with the decision recorded.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A13",
       "disposition": "accepted",
       "id": "obligation-reduction-5",
       "rationale": "ACE-D2: the owner confirms at validation that the planted defect is the one ACE-D3 names and that the control carries the no-finding feature; the decision is in the record the case check reads.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A18",
       "disposition": "accepted",
       "id": "obligation-reduction-6",
       "rationale": "ACE-D6 Reads column now names a fresh context; ACE-A18 refuses a run whose isolation differs.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "disposition": "rejected",
@@ -65,28 +65,28 @@
       "disposition": "accepted",
       "id": "obligation-reduction-9",
       "rationale": "Fails at every other count.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A16",
       "disposition": "accepted",
       "id": "obligation-reduction-10",
       "rationale": "Fails at every other count.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A46",
       "disposition": "accepted",
       "id": "obligation-reduction-11",
       "rationale": "The planner plans a retest for every side at three of five.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A52",
       "disposition": "accepted",
       "id": "obligation-reduction-12",
       "rationale": "P1 locks at four or five of five or eight to ten of ten after a retest, and at no other count.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "disposition": "rejected",
@@ -103,21 +103,21 @@
       "disposition": "accepted",
       "id": "obligation-reduction-15",
       "rationale": "A report lacking a response ID refuses the attempt.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A24",
       "disposition": "accepted",
       "id": "obligation-reduction-16",
       "rationale": "The first entry is a constant the suite holds, the template digest at the commit S2.4 lands.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A24",
       "disposition": "accepted",
       "id": "obligation-reduction-17",
       "rationale": "The lock sets an entry names must carry the entry digest and the one before it in their fingerprints.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "disposition": "rejected",
@@ -129,7 +129,7 @@
       "disposition": "accepted",
       "id": "obligation-reduction-19",
       "rationale": "Same as behavioural-outcome-2.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "disposition": "rejected",
@@ -146,35 +146,35 @@
       "disposition": "accepted",
       "id": "set-consistency-1",
       "rationale": "ACE-D7: each lens run inside a P1 panel run enters its own lens pool and is empty when that lens reported empty.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A53",
       "disposition": "accepted",
       "id": "set-consistency-2",
       "rationale": "ACE-D8: the planner writes a retest extension before the retest; usable reports match the planned runs of the attempt and its retest.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A20",
       "disposition": "accepted",
       "id": "what-if-1",
       "rationale": "An absent calibration record refuses the task.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A56",
       "disposition": "accepted",
       "id": "what-if-2",
       "rationale": "A record calibrating a prompt digest an earlier record failed is refused; ACE-D5 recalibrates only after revision.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     },
     {
       "covering_ac": "ACE-A13",
       "disposition": "accepted",
       "id": "what-if-3",
       "rationale": "ACE-D2: the owner reads every objection the validation run returns, and an upheld one on anything amends the pair.",
-      "revision": "sha256:ada66c7bb6963efbc97981130c2149ec5142e7020e7fd54c12d243939798da17"
+      "revision": "sha256:66717e9976c5c86ebd3022fc78f09db2256261e03d304c307bdbd16b9314bbd2"
     }
   ],
   "lenses": [

@@ -30,7 +30,8 @@ Verified at 38bda4ba.
 
 - Lens front matter in `src/user/.claude/skills/ac-attack/lenses/` pins no
   model or effort.
-- PR 791's body records the routing ACE-D6 adopts.
+- The body of PR 791, the first attack campaign run in this repository,
+  records the routing ACE-D6 adopts.
 - No evaluation harness or case exists.
 - The installer prunes `evals/` directories.
 
@@ -60,8 +61,9 @@ and no site.
 One hunk does not prove one defect, and a planted defect can sit beside an
 authored one. So the owner validates a case before its runs count: the case's
 lens runs once over the control, and the owner reads every objection it
-returns, confirms that the planted defect is the one ACE-D3 names, and that
-the control carries the parent's no-finding feature. An objection the owner
+returns, confirms that the planted defect is the one the parent's Given
+clause states (ACE-D3), and that the control carries the parent's no-finding
+feature. An objection the owner
 upholds, on the case's rule or site or on anything else, means the pair
 carries more than its one defect, and the pair is amended. A control-only case is validated by
 one panel run, read whole. The validation record under `evals/cases/<id>/`
@@ -84,7 +86,7 @@ the owner ARO-D1 gives its rule.
 | C5 | ACQ-A5 | `can-fail` | obligation-reduction | ACE-A29 |
 | C6 | ACQ-A6 | `consistency` | set-consistency | ACE-A30 |
 | C7 | ACQ-A7 | `coverage` | obligation-reduction | ACE-A31 |
-| C8 | ACQ-A8; what-if "something missing" | `what-if-questions` | what-if | ACE-A32 |
+| C8 | ACQ-A8; the what-if question "What if something it relies on is missing?" | `what-if-questions` | what-if | ACE-A32 |
 | C9 | ACQ-A9, no verification contract | `verification-contract` | behavioural-outcome | ACE-A33 |
 | C10 | ACQ-A10 | `restraint` | obligation-reduction | ACE-A34 |
 | C11 | ACQ-A14 | `verified-premise` | set-consistency | ACE-A35 |
@@ -94,8 +96,8 @@ the owner ARO-D1 gives its rule.
 | C15 | ACQ-A31, a human check on a mechanically checkable property | `verification-contract` | behavioural-outcome | ACE-A45 |
 | C16 | ACQ-A18; research answer | `document-deliverable` | behavioural-outcome | ACE-A39 |
 | C17 | ACQ-A19 | `has-basis` | obligation-reduction | ACE-A40 |
-| C18 | what-if "fails" | `what-if-questions` | what-if | ACE-A42 |
-| C19 to C21 | what-if "empty or at a limit", "twice or at the same time", "again with nothing changed", one case each | `what-if-questions` | what-if | ACE-A57 to ACE-A59 |
+| C18 | the what-if question "What if it fails?" | `what-if-questions` | what-if | ACE-A42 |
+| C19 to C21 | the what-if questions "What if the input is empty or at a limit?", "What if it runs twice, or at the same time?", "What if it runs again with nothing changed?", one case each | `what-if-questions` | what-if | ACE-A57 to ACE-A59 |
 | C22 | decision document | `document-deliverable` | behavioural-outcome | ACE-A60 |
 | C23 | parent closed before its verification evidence | `one-obligation` | behavioural-outcome | ACE-A61 |
 | C24 | unsupported implementation prescription | `restraint` | obligation-reduction | ACE-A62 |
@@ -148,8 +150,9 @@ detection can be false: an objection can cite the right rule at the right site
 and describe something else. The owner's labels on those items are the check
 on that.
 
-Eighteen of twenty bounds disagreement with
-one evaluator on one sample, and says nothing about documents unlike it.
+An eighteen-of-twenty agreement bounds the judge's disagreement with one
+evaluator on one sample of twenty items. It says nothing about documents
+unlike that sample.
 
 The run record names the judge's resolved model ID and the judge prompt's
 digest. A calibration record names its labeller, its twenty items, and the
@@ -258,8 +261,8 @@ lenses gain a locked case.
 A gain in one lens alone belongs in that lens's own prompt.
 
 ACQ-A23, the parent's rule that the shared template changes only on
-evaluation evidence, admits an addition that carries this spec's. A
-registry under `evals/` is a chain of template digests. Its first entry is the
+evaluation evidence, admits an addition that carries this spec's evaluation
+evidence. A registry under `evals/` is a chain of template digests. Its first entry is the
 template's digest at the commit S2.4 lands, held as a constant in the emitter
 suite. Each later entry names the two committed lock
 sets its comparison read and the report it produced against the entry before

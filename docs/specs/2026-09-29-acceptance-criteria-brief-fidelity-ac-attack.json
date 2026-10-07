@@ -35,7 +35,7 @@
       "disposition": "accepted",
       "id": "obligation-reduction-6",
       "rationale": "No output holds a third section; BRF-D1 says exactly two.",
-      "revision": "sha256:5000864c863e2554099cca6bab44e6a817d318bbaf184deeae554ae8538aeb76"
+      "revision": "sha256:f23b6ea5f62f92cb58ccc7c0966bf64b427278918940634862bd71c6f8762ae1"
     },
     {
       "disposition": "rejected",
@@ -47,14 +47,14 @@
       "disposition": "accepted",
       "id": "obligation-reduction-8",
       "rationale": "Each parser carries a marking naming the other.",
-      "revision": "sha256:5000864c863e2554099cca6bab44e6a817d318bbaf184deeae554ae8538aeb76"
+      "revision": "sha256:f23b6ea5f62f92cb58ccc7c0966bf64b427278918940634862bd71c6f8762ae1"
     },
     {
       "covering_ac": "BRF-A12",
       "disposition": "accepted",
       "id": "obligation-reduction-9",
       "rationale": "An extra key changes neither section, stderr nor exit status.",
-      "revision": "sha256:5000864c863e2554099cca6bab44e6a817d318bbaf184deeae554ae8538aeb76"
+      "revision": "sha256:f23b6ea5f62f92cb58ccc7c0966bf64b427278918940634862bd71c6f8762ae1"
     },
     {
       "disposition": "rejected",
@@ -86,35 +86,35 @@
       "disposition": "accepted",
       "id": "set-consistency-1",
       "rationale": "The preamble now has four conditions, the attestation included.",
-      "revision": "sha256:5000864c863e2554099cca6bab44e6a817d318bbaf184deeae554ae8538aeb76"
+      "revision": "sha256:f23b6ea5f62f92cb58ccc7c0966bf64b427278918940634862bd71c6f8762ae1"
     },
     {
       "covering_ac": "BRF-A8",
       "disposition": "accepted",
       "id": "set-consistency-2",
       "rationale": "BRF-A8 is the without --checks case; BRF-A23 the with.",
-      "revision": "sha256:5000864c863e2554099cca6bab44e6a817d318bbaf184deeae554ae8538aeb76"
+      "revision": "sha256:f23b6ea5f62f92cb58ccc7c0966bf64b427278918940634862bd71c6f8762ae1"
     },
     {
       "covering_ac": "BRF-A9",
       "disposition": "accepted",
       "id": "set-consistency-3",
       "rationale": "The variant requirement holds in the repository.",
-      "revision": "sha256:5000864c863e2554099cca6bab44e6a817d318bbaf184deeae554ae8538aeb76"
+      "revision": "sha256:f23b6ea5f62f92cb58ccc7c0966bf64b427278918940634862bd71c6f8762ae1"
     },
     {
       "covering_ac": "BRF-A27",
       "disposition": "accepted",
       "id": "what-if-1",
       "rationale": "An output without a Form line fails its run (BRF-D8) and is a seeded defect.",
-      "revision": "sha256:5000864c863e2554099cca6bab44e6a817d318bbaf184deeae554ae8538aeb76"
+      "revision": "sha256:f23b6ea5f62f92cb58ccc7c0966bf64b427278918940634862bd71c6f8762ae1"
     },
     {
       "covering_ac": "BRF-A30",
       "disposition": "accepted",
       "id": "what-if-2",
       "rationale": "The scorer is determinate on repeated runs.",
-      "revision": "sha256:5000864c863e2554099cca6bab44e6a817d318bbaf184deeae554ae8538aeb76"
+      "revision": "sha256:f23b6ea5f62f92cb58ccc7c0966bf64b427278918940634862bd71c6f8762ae1"
     }
   ],
   "lenses": [
