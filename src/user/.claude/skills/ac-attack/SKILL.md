@@ -30,19 +30,22 @@ objection cites one of them. A lens marked `workings: required` also returns an 
 by the `workings.schema.json` beside its prompt, and each gap the inventory shows is owed an
 objection.
 
-| Lens | What it attacks |
-| --- | --- |
-| `behavioural-outcome` | Criteria that pin an artifact where the document promises an outcome, bundle separable obligations, or have no way to decide the result. |
-| `obligation-reduction` | Obligations no criterion discharges, and criteria that discharge no obligation, read off an obligation inventory. |
-| `set-consistency` | Criteria that cannot hold together, and wording that admits materially different outcomes. |
-| `what-if` | The standard's what-if questions, asked of each criterion, naming cases no criterion tests. |
+Each lens is defined by the unit it reads, so a rule's owner is the lens whose unit its question
+needs, and two lenses may share ground when one asks about a criterion and the other about the set.
+
+| Lens | Reads | What it attacks |
+| --- | --- | --- |
+| `behavioural-outcome` | One criterion, on its own shape | An artifact checked where an outcome is promised, bundled obligations, or no way to decide the result. |
+| `obligation-reduction` | The set against the document's promises | Obligations no criterion discharges, and criteria that discharge none, read off an inventory. |
+| `set-consistency` | The set against itself | Criteria that cannot hold together, and wording that admits different outcomes. |
+| `what-if` | One criterion, asked what it leaves untested | The standard's what-if questions, naming cases no criterion tests. |
 
 A lens's `tier` names the model capability it needs and `transport` the route its prompt goes
 out on: an `openrouter` lens through the
 `openrouter-claude-subagent` skill, a `codex` lens through the codex command-line tool. When one
 transport is down, run its lenses over the other — the panel has then lost its vendor diversity,
-and blind spots correlate within a vendor. No field records that substitution and the checker
-cannot see it, so say so in your own report to the user or it is lost. One attacker runs per lens,
+and blind spots correlate within a vendor. No field records the substitution, so say so in your
+report or it is lost. One attacker runs per lens,
 alone: asked for everything, one attacker satisfices, returning two holes where a panel returns
 seven.
 
@@ -62,8 +65,7 @@ attacked, and each lens with its tier and transport. `--lens <name>` emits that 
 evaluating one lens; its round file names only that lens, so a record built from it stays
 incomplete. Dispatch the lenses `round.json` names, not
 the files the directory holds — the round file is what says which prompts are this round's. A
-round refuses an out-dir holding a Markdown file it does not write, which catches the
-reused directory for the caller who dispatches it anyway, and catches only Markdown.
+round refuses an out-dir holding a Markdown file it does not write, and catches only Markdown.
 
 Stdout is `{"emitted": true, "prompts": […], "round": …}` — the lens prompts, then the round
 file, which is metadata and not one of them. A refusal is
@@ -110,7 +112,7 @@ can return, and what each one means, is in `errors.md`.
 system this document describes has been claimed. Revising the document is not that. The checker
 reads the record, the document, that declaration, and its own lens registry — read live, so a
 record is judged against the lens set in force now: adding a lens reopens rounds that never faced
-it, while retiring one leaves the rounds it ran in closed, holding coverage they did obtain. It consults no tracker and writes nothing, and over one tree it answers the same way every time — the volume's own answer about whether two spellings differing only in case are one name is part of what it reads, so a tree copied onto a volume that folds case differently is different input.
+it, while retiring one leaves the rounds it ran in closed, holding coverage they did obtain. It consults no tracker and writes nothing, and over one tree it answers the same way every time; a volume that folds case differently is different input.
 
 The record **attests** that the round happened as written; the checker does not verify that it did.
 It can see the document is at the revision an acceptance names, never that the criterion is in it —
