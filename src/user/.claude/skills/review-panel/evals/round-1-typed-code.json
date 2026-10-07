@@ -26,9 +26,7 @@
       "tools": [
         "Read",
         "Grep",
-        "Glob",
-        "Bash(git diff *)",
-        "Bash(git log *)"
+        "Glob"
       ],
       "transport": "openrouter"
     },
