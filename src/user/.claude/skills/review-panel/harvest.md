@@ -78,8 +78,10 @@ another.
 - **The model** is the cell of the `choosing-a-delegate` skill's model routing table for the
   lens's provider and its `tier_this_round` in `round.json`. Transport `codex` is the table's
   provider `openai`, and transport `openrouter` is its provider `openrouter`. The entry's
-  `tier` field and the roster both give the tier the lens declares, which a later round
-  replaces with its re-review tier. Never look the model up by either.
+  `tier` field only repeats the tier the roster declares. After round 1, a lens with a
+  re-review tier runs at that lower tier, and `tier_this_round` says so. An entry reading
+  `"transport": "openrouter"`, `"tier": "frontier"` and `"tier_this_round": "mid"` therefore
+  dispatches the table's `openrouter` model at `mid`.
 - **The effort and the tool grant** are the lens's `effort` and `tools` fields in `round.json`,
   which the emitter copied from its seat's pin. The tools value `read-only-sandbox` means the
   Codex runtime's read-only sandbox. A list names the only tools the OpenRouter launcher is
