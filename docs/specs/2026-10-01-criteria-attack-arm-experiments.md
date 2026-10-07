@@ -184,7 +184,8 @@ The scorer is the evaluation contract's, run over experiment inputs.
   on it, and names no arm as meeting the bar over it.
 - **ARM-A12** The input the scorer assembles for the validity task holds the
   rule text and one objection, for the ground-matching task one objection and
-  one fixture ground with its rationale, and for the incorporation
+  one fixture ground, with its rationale where it is a rejected ground, and
+  for the incorporation
   task one accepted objection with its decision and the result's added and
   changed criteria, each stripped of any field naming a lens, arm or model,
   and nothing else; a verdict that is not yes or no with a reason makes the

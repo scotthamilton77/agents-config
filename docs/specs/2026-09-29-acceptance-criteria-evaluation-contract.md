@@ -193,8 +193,8 @@ control, judged on the control runs for silence.
   retest.
 
 A parent criterion passes only when every case serving it is locked. Requiring
-every case to pass inside one attempt would fail a lens that is right nineteen
-times in twenty about three times in four, on luck alone.
+every case to pass inside one attempt would fail, on luck alone, about three
+attempts in four for a lens that is right nineteen times in twenty.
 
 No rate is averaged across cases. The scorer also reports each lens's pooled
 rates, which decide nothing.

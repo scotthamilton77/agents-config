@@ -15,56 +15,56 @@
       "disposition": "accepted",
       "id": "obligation-reduction-2",
       "rationale": "Isolation joins the fields ARM-A6 checks; the orchestrator arm runs in the authoring context, the subagent arm fresh, both recorded on the dispatch.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A7",
       "disposition": "accepted",
       "id": "obligation-reduction-3",
       "rationale": "A self-check run records the criteria before and after the self-check, and the scorer refuses one lacking both.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A7",
       "disposition": "accepted",
       "id": "obligation-reduction-4",
       "rationale": "Same; isolation under ARM-A6.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A7",
       "disposition": "accepted",
       "id": "obligation-reduction-5",
       "rationale": "A plan whose objection set holds an objection without a decision is refused.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A7",
       "disposition": "accepted",
       "id": "obligation-reduction-6",
       "rationale": "A plan whose arm 2 ledger lacks a rationale is refused.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A10",
       "disposition": "accepted",
       "id": "obligation-reduction-7",
       "rationale": "For arm 3 the adjudication record must hold the held-out objections listed and none adjudicated.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A10",
       "disposition": "accepted",
       "id": "obligation-reduction-8",
       "rationale": "Same.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A2",
       "disposition": "accepted",
       "id": "obligation-reduction-9",
       "rationale": "The report gives the held-out count for arm 3.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "disposition": "rejected",
@@ -86,7 +86,7 @@
       "disposition": "accepted",
       "id": "obligation-reduction-13",
       "rationale": "Inputs are stripped of any field naming a lens, arm or model.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "disposition": "rejected",
@@ -98,42 +98,42 @@
       "disposition": "accepted",
       "id": "set-consistency-1",
       "rationale": "ARM-D2: a held-out objection reaches the adjudicator as a listed repeat, so a seeded wrong rejection listed counts as reaching adjudication for overturnability, while counting in neither repeats nor effort.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A6",
       "disposition": "accepted",
       "id": "set-consistency-2",
       "rationale": "The plan fixes each arm prompt from the emitter at plan time; the scorer compares the run to the plan, not to the emitter later.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A6",
       "disposition": "accepted",
       "id": "what-if-1",
       "rationale": "Same.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A7",
       "disposition": "accepted",
       "id": "what-if-2",
       "rationale": "Usable reports match the plan one to one; a repeat superseded reports match nothing.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A2",
       "disposition": "accepted",
       "id": "what-if-3",
       "rationale": "The held-out count is reported for arm 3.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     },
     {
       "covering_ac": "ARM-A7",
       "disposition": "accepted",
       "id": "what-if-4",
       "rationale": "A plan whose run-id a committed run already holds is refused; ARM-D3 gives one run-id per run.",
-      "revision": "sha256:c07833d79bde6d49042f28ca1af36691ea640a8dd87102db0e73153cfafc0ec1"
+      "revision": "sha256:b2d4740b993ac6bc60c438326219096d13ed578a67b6a6494773958cdda72056"
     }
   ],
   "lenses": [
