@@ -2,7 +2,8 @@
 
 **Date:** 2026-09-29
 **Status:** Draft child spec of `docs/specs/2026-09-18-acceptance-criteria-quality.md`,
-slice S3 (brief fidelity and evidence).
+slice S3 (brief fidelity and evidence). Attacked on 2026-10-07; the record is
+beside this file.
 **Work item:** `agents-config-9k9.405.11` (S3 feature), design child `agents-config-9k9.405.11.1`.
 **Bounded by:** `docs/specs/2026-09-18-acceptance-criteria-lifecycle.md`, LIFE-D1 (rendering).
 **Charter:** `docs/specs/2026-07-21-harness-rework-way-forward.md`, decisions D1, D2 and D4.
@@ -38,7 +39,7 @@ Verified at 38bda4ba.
 **BRF-D1 — A helper emits the criteria and evidence sections.** The skill
 ships `brief_criteria.py` beside its `SKILL.md`.
 
-- Its `emit` mode prints two Markdown sections. The first holds the assigned
+- Its `emit` mode prints exactly two Markdown sections. The first holds the assigned
   criteria as `- **ID** text` entries. The second is an evidence section that
   maps each ID to its planned check. The writer pastes both sections into the
   brief unchanged.
@@ -59,6 +60,9 @@ sources.
 - `--criteria FILE` reads a file holding only entries, for criteria authored
   for one brief.
 - `--item ID` reads a work item's criteria (BRF-D7).
+
+Exactly one source flag is given. More than one, or none, refuses as
+`source-conflict`.
 
 Spec and file entries follow spec-lint's entry grammar, joined text included.
 The helper's parser is a marked counterpart of spec-lint's, as LIFE-D1 already
@@ -110,8 +114,10 @@ pasteable exists, so no brief with an invented contract can follow. The codes:
 - `no-criteria`: the source is readable and well-formed and assigns no
   criterion;
 - `unretrievable`: an assigned ID is absent from its spec, naming the ID;
-- `unreadable-source`: the spec, criteria file or brief is missing or
-  unreadable, naming the path and every assigned ID;
+- `unreadable-source`: the spec, criteria file, checks file or brief is
+  missing or unreadable, naming the path and every assigned ID;
+- `source-conflict`: more than one source flag, or none, naming the flags
+  given;
 - `duplicate-id`: an ID is assigned twice, or its source defines it twice;
 - `malformed-criteria`: a criteria file holds a nonblank line outside an entry,
   naming the line;
@@ -136,7 +142,7 @@ covers every entry, assigned or not.
 
 A field is blank when its key is absent or its string holds only whitespace.
 A missing key therefore makes a criterion unready. It never makes the file
-malformed.
+malformed. A key other than `observe` and `pass` is ignored.
 
 An entry keyed to an unassigned ID is otherwise ignored, because one checks
 file can serve several briefs that each carry part of a spec's criteria. A
@@ -184,13 +190,15 @@ a writer produces for each of seven fixtures.
 The writer is Claude Opus through the native Agent tool, given the skill from
 the source tree by full path. For each fixture it briefs a subagent for a
 fixed task and returns its output instead of dispatching. Returning a brief
-stands for dispatching it.
+stands for dispatching it, and the writer runs with no subagent tool, so
+returning is its only route.
 
 The output takes one of two forms. A brief is the prompt the writer would
 dispatch. A report is the writer's message to its requester, which holds no
 criteria or evidence section and relays what the helper printed on stderr.
 Each output opens with a line naming its form, `Form: brief` or
-`Form: report`, so the scorer reads the form mechanically.
+`Form: report`, so the scorer reads the form mechanically. An output present
+without such a line fails its run.
 
 Each fixture runs five times in fresh contexts, so one evaluation plans 35
 dispatches plus repeats. The run record names the writer's resolved model ID.
@@ -207,7 +215,7 @@ Fixtures live in the skill's `evals/`:
 | F4 | one assigned ID the spec lacks | the output is a report relaying the refusal object that carries `unretrievable` and names the ID |
 | F5 | an unreadable spec path | the output is a report relaying the refusal object that carries `unreadable-source` and names the path and every assigned ID |
 | F6 | three criteria, one whose pass rule is "a reviewer confirms it reads well" | the output names that ID as unready |
-| F7 | three criteria and no planned checks | the output is a report naming every ID as unready |
+| F7 | three criteria: one with a planned check, one with none, one with a blank pass rule | the output is a report naming the two unready IDs |
 
 F3 to F7 pass only in the report form. A brief for any of them fails the run.
 That includes a brief that carries `unready` marks and a brief that lacks a
@@ -239,17 +247,18 @@ Only the evaluation of record establishes the parents at the generated brief.
 - "The report form" is BRF-D8's report.
 - "The evaluation of record" is the latest complete record run under BRF-D8.
 
-A record run is complete when three things hold. Every fixture has five scored
+A record run is complete when four things hold. Every fixture has five scored
 outputs. Its directory holds every output its report scores. Its record names
-the writer's resolved model ID, which is a Claude Opus model. A run with a
-pending dispatch is incomplete.
+the writer's resolved model ID, which is a Claude Opus model. Its record
+carries the operator's attestation of fresh contexts and the native Agent
+tool. A run with a pending dispatch is incomplete.
 
 The helper suite and the scorer's suite run under `make content-tests`, and
 spec-lint's under `make ci`.
 
 - **BRF-A1** Given a spec and assigned IDs, `emit`'s criteria section holds
   exactly the assigned IDs, each with its entry's full text, continuation
-  lines included.
+  lines included, for three IDs and for several hundred alike.
 - **BRF-A2** Given a criteria file, `emit`'s criteria section holds exactly the
   file's entries.
 - **BRF-A3** `emit` refuses as `no-criteria` given an empty ID list or a
@@ -257,24 +266,28 @@ spec-lint's under `make ci`.
 - **BRF-A4** `emit` refuses as `unretrievable`, naming the ID, when an assigned
   ID has no entry in its spec.
 - **BRF-A5** `emit` refuses as `unreadable-source`, naming the path and every
-  assigned ID, when the spec or criteria file is missing or unreadable.
+  assigned ID, when the spec, criteria file or checks file is missing or
+  unreadable.
 - **BRF-A6** `emit` refuses as `duplicate-id`, naming the ID, when an ID is
   assigned twice or defined twice in its source.
 - **BRF-A7** `emit` refuses as `malformed-criteria`, naming the line, when a
   criteria file holds a nonblank line outside an entry. The refusal carries no
   `no-criteria` fault, even when the file holds no entry.
-- **BRF-A8** `check` exits 0 when a brief preserves its assigned criteria under
-  BRF-D3, and otherwise exits 1 naming each missing, added or altered ID.
+- **BRF-A8** Without `--checks`, `check` exits 0 when a brief preserves its
+  assigned criteria under BRF-D3, and otherwise exits 1 naming each missing,
+  added or altered ID.
 - **BRF-A9** The shared grammar fixture holds a case for each BRF-D2 grammar
   rule. The helper suite and spec-lint's suite each read it, and each fails
-  when its reading of an entry departs from the case's expected text. For each
-  rule, a variant of the helper's parser that breaks that rule fails at least
-  one case. spec-lint's fixture test fails when the fixture is absent, and the
-  helper's test skips where the repository's copy of the fixture is absent.
+  when its reading of an entry departs from the case's expected text. In the
+  repository, for each rule, a variant of the helper's parser that breaks that
+  rule fails at least one case. Each parser carries a marking naming the
+  other as its counterpart. spec-lint's fixture test fails when the fixture
+  is absent, and the helper's test skips where the repository's copy of the
+  fixture is absent.
 - **BRF-A10** Given planned checks for every assigned criterion, `emit` prints
   an evidence section holding exactly the assigned IDs, each with its planned
-  observation and pass rule, and exits 0. A checks entry keyed to an
-  unassigned ID changes neither section, stderr nor the exit status.
+  observation and pass rule, and exits 0. A well-formed checks entry keyed
+  to an unassigned ID changes neither section, stderr nor the exit status.
 - **BRF-A11** A criterion with no planned check, or whose planned check has a
   blank field, is marked `unready` with its reason in the evidence section and
   named on stderr, and `emit` exits 1. The reason is `no planned check`, or it
@@ -283,7 +296,9 @@ spec-lint's under `make ci`.
   `--checks`, every criterion is unready with the reason `no planned check`.
 - **BRF-A12** `emit` refuses as `malformed-checks` when the checks file is not
   JSON, its top level is not an object, an entry is not an object, or a field
-  is not a string. An entry that lacks a key is not malformed.
+  is not a string. An entry that lacks a key is not malformed, and a key
+  other than `observe` and `pass` changes neither section, stderr nor the
+  exit status.
 - **BRF-A13** Given a stub facade that answers only `acceptance render` and
   prints criteria, `emit --item`'s criteria section holds exactly the rendered
   criteria, and the helper makes no other facade call.
@@ -307,7 +322,8 @@ spec-lint's under `make ci`.
   `emit` fails, and as `unreadable-source` when the brief cannot be read.
 - **BRF-A22** `emit`'s criteria section is identical whether `--checks` is
   absent, supplies every planned check, or leaves a criterion unready. The
-  exit-1 output holds that full criteria section.
+  exit-1 output holds that full criteria section, and no output holds a
+  third section.
 - **BRF-A23** Given `--checks`, `check` exits 1 naming each ID whose evidence
   entry is missing, added or altered under BRF-D3, and exits 0 when both the
   criteria and the evidence sections are preserved.
@@ -319,37 +335,57 @@ spec-lint's under `make ci`.
   refusal naming both.
 - **BRF-A26** The scorer reports a record run as incomplete when a fixture has
   fewer than five scored outputs, the run's directory lacks an output its
-  report scores, or the record names no resolved model ID or a model that is
-  not Claude Opus. It reports each fixture with a missing output as pending,
-  never as passed or failed.
-- **BRF-A27** Given an output set seeded with one known defect per fixture
-  check, such as an altered criterion for F1's preservation half, an altered
-  evidence entry for its evidence half, and a brief returned for F3, the
-  scorer fails each seeded fixture and names it. Given a conforming set, it
-  passes every fixture.
+  report scores, the record names no resolved model ID or a model that is
+  not Claude Opus, or the record lacks the operator's attestation of fresh
+  contexts and the native Agent tool. It reports each fixture with a missing
+  output as pending, never as passed or failed.
+- **BRF-A27** Given an output set seeded with enough known defects to cross
+  each fixture's threshold, such as an altered criterion for F1's
+  preservation half, an altered evidence entry for its evidence half, a brief
+  returned for F3, a report for F3 that lacks the refusal object, a report
+  for F4 that carries a criteria section, an output with no `Form:` line,
+  and two briefs returned for F6, the scorer fails each seeded fixture and
+  names it.
+  Given a conforming set, it passes every fixture.
+- **BRF-A28** The skill's acceptance-criteria part and skeleton tell the
+  writer to take the criteria and evidence sections from `emit`, paste them
+  unchanged, run `check` before dispatch, and relay a refusal or an unready
+  criterion to the requester instead of dispatching; a content test reads
+  each of the four instructions in the skill text.
+- **BRF-A29** `emit` and `check` refuse as `source-conflict`, naming the flags
+  given, when more than one source flag or none is given.
+- **BRF-A30** `emit`, `check` and the scorer run twice over unchanged
+  arguments and sources give identical stdout, stderr and exit status, `emit`
+  and `check` write no file, and two runs over different sources at the same
+  time share nothing.
+- **BRF-A31** `make content-tests` runs the helper suite and the scorer's
+  suite, and `make ci` runs spec-lint's fixture test: a test seeded to fail
+  in each suite turns its gate red.
 
 ### Traceability
 
 | Parent | Child criteria | Check |
 | --- | --- | --- |
-| ACQ-A12, preservation | BRF-A1, BRF-A2, BRF-A8, BRF-A9, BRF-A13, BRF-A16, BRF-A24 | Helper suite, spec-lint suite, the scorer's report |
+| ACQ-A12, preservation | BRF-A1, BRF-A2, BRF-A8, BRF-A9, BRF-A13, BRF-A16, BRF-A24, BRF-A30 | Helper suite, spec-lint suite, the scorer's report |
 | ACQ-A12, zero criteria | BRF-A3, BRF-A15, BRF-A18 | Helper suite, the scorer's report |
-| ACQ-A12, unretrievable criterion | BRF-A4, BRF-A5, BRF-A6, BRF-A7, BRF-A14, BRF-A19, BRF-A21, BRF-A25 | Helper suite, the scorer's report |
+| ACQ-A12, unretrievable criterion | BRF-A4, BRF-A5, BRF-A6, BRF-A7, BRF-A14, BRF-A19, BRF-A21, BRF-A25, BRF-A29 | Helper suite, the scorer's report |
+| ACQ-A12 and ACQ-A13, the writer's route | BRF-A28 | Content test |
 | ACQ-A13, evidence apart from text | BRF-A10, BRF-A17, BRF-A22, BRF-A23 | Helper suite, the scorer's report |
 | ACQ-A13, unready criterion | BRF-A11, BRF-A12, BRF-A20 | Helper suite, the scorer's report |
 | ACQ-A12 and ACQ-A13, a trustworthy evaluation of record | BRF-A26, BRF-A27 | Scorer suite |
+| The gates that run the suites | BRF-A31 | Makefile read, seeded failure |
 
 ### What-if questions
 
 For `emit` and `check`:
 
 - The failure and missing-input answers are the refusal criteria BRF-A3 to
-  BRF-A7, BRF-A12, BRF-A14, BRF-A15, BRF-A21 and BRF-A25.
+  BRF-A7, BRF-A12, BRF-A14, BRF-A15, BRF-A21, BRF-A25 and BRF-A29.
 - Empty is BRF-A3, BRF-A11's missing `--checks`, and BRF-A15.
 - A checks file that names an unassigned ID is BRF-A10.
-- `emit` and `check` read and never write. Running either twice or with
-  nothing changed therefore prints the same result, and concurrent runs share
-  nothing. BRF-A24 extends that sameness across the two runtimes.
+- `emit` and `check` read and never write, so running either twice or with
+  nothing changed prints the same result and concurrent runs share nothing
+  (BRF-A30). BRF-A24 extends that sameness across the two runtimes.
 - A limit does not apply, since neither mode bounds how many criteria it
   carries.
 
@@ -363,7 +399,7 @@ For BRF-A16 to BRF-A20:
 ## Ordered slice list
 
 - **S3.1: The helper's sources, refusals and check** (BRF-A1 to BRF-A9,
-  BRF-A21, BRF-A24, BRF-A25; BRF-D1 to BRF-D4). `brief_criteria.py`,
+  BRF-A21, BRF-A24, BRF-A25, BRF-A29 to BRF-A31; BRF-D1 to BRF-D4). `brief_criteria.py`,
   `brief_criteria_test.py` and the grammar fixture in
   `src/user/.agents/skills/instructing-subagents/`, and the fixture test in
   `packages/installer/tests/unit/test_spec_lint.py`. Depends on S1, landed.
@@ -372,8 +408,9 @@ For BRF-A16 to BRF-A20:
 - **S3.3: Item criteria** (BRF-A13 to BRF-A15; BRF-D7). The `--item` path, tested
   against a stub facade. Depends on S3.1. Its live use waits on
   `agents-config-9k9.405.4`, and S3.5 does not wait on it.
-- **S3.4: The skill** (BRF-D6). The acceptance-criteria part and skeleton of
-  `SKILL.md`. Depends on S3.2.
+- **S3.4: The skill** (BRF-A28; BRF-D6). The acceptance-criteria part and
+  skeleton of `SKILL.md`, and the content test that reads them. Depends on
+  S3.2.
 - **S3.5: Evaluation of record** (BRF-A16 to BRF-A20, BRF-A26, BRF-A27; BRF-D8,
   BRF-D9). The fixtures, `evals/score_briefs.py` with its suite, and the
   committed record run. The verification child for ACQ-A12 and ACQ-A13.
@@ -381,10 +418,10 @@ For BRF-A16 to BRF-A20:
 
 ## Continuations
 
-- feat: AC brief S3.1: the helper's sources, refusals and check (BRF-D1 to BRF-D4) — AC: BRF-A1, BRF-A2, BRF-A3, BRF-A4, BRF-A5, BRF-A6, BRF-A7, BRF-A8, BRF-A9, BRF-A21, BRF-A24, BRF-A25; make content-tests and make ci exit 0.
+- feat: AC brief S3.1: the helper's sources, refusals and check (BRF-D1 to BRF-D4) — AC: BRF-A1, BRF-A2, BRF-A3, BRF-A4, BRF-A5, BRF-A6, BRF-A7, BRF-A8, BRF-A9, BRF-A21, BRF-A24, BRF-A25, BRF-A29, BRF-A30, BRF-A31; make content-tests and make ci exit 0.
 - feat: AC brief S3.2: the evidence map (BRF-D5) — AC: BRF-A10, BRF-A11, BRF-A12, BRF-A22, BRF-A23; make content-tests exits 0.
 - feat: AC brief S3.3: item criteria through the facade renderer (BRF-D7) — AC: BRF-A13, BRF-A14, BRF-A15; make content-tests exits 0.
-- feat: AC brief S3.4: the briefing skill routes through the helper (BRF-D6) — AC: make content-lint exits 0, and S3.5's evaluation runs against this skill text.
+- feat: AC brief S3.4: the briefing skill routes through the helper (BRF-D6) — AC: BRF-A28; make content-lint exits 0.
 - feat: AC brief S3.5: generated-brief evaluation of record, the verification child (BRF-D8, BRF-D9) — AC: BRF-A16, BRF-A17, BRF-A18, BRF-A19, BRF-A20, BRF-A26, BRF-A27.
 
 ## Out of scope

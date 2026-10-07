@@ -1,0 +1,831 @@
+{
+  "dispositions": [
+    {
+      "covering_ac": "ARM-A8",
+      "disposition": "accepted",
+      "id": "behavioural-outcome-1",
+      "rationale": "The runner write log is the evidence; it names no path outside the run directory.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-1",
+      "rationale": "A case pass or fail is its lock (ACE-D7, ACE-D8), and ARM-A8 compares the locks before and after."
+    },
+    {
+      "covering_ac": "ARM-A7",
+      "disposition": "accepted",
+      "id": "obligation-reduction-2",
+      "rationale": "The plan fixes each arm and its prompt; runs match the plan in arm prompt.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A7",
+      "disposition": "accepted",
+      "id": "obligation-reduction-3",
+      "rationale": "The scorer refuses a plan whose run counts differ from ARM-D1.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A7",
+      "disposition": "accepted",
+      "id": "obligation-reduction-4",
+      "rationale": "The scorer refuses a plan whose panel membership differs.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A7",
+      "disposition": "accepted",
+      "id": "obligation-reduction-5",
+      "rationale": "Arm prompts are planned and matched.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A7",
+      "disposition": "accepted",
+      "id": "obligation-reduction-6",
+      "rationale": "A fixture naming no committed attack record of PR 791 is refused.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A7",
+      "disposition": "accepted",
+      "id": "obligation-reduction-7",
+      "rationale": "Run counts are checked against ARM-D2.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-8",
+      "rationale": "Writing the plan before dispatch rests on the operator, as the decision states; nothing in the committed tree can observe it."
+    },
+    {
+      "covering_ac": "ARM-A7",
+      "disposition": "accepted",
+      "id": "obligation-reduction-9",
+      "rationale": "The scorer refuses a plan omitting a part ARM-D3 fixes.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-10",
+      "rationale": "Committing every run rests on the operator, as the decision states; nothing in the committed tree can observe it."
+    },
+    {
+      "covering_ac": "ARM-A6",
+      "disposition": "accepted",
+      "id": "obligation-reduction-11",
+      "rationale": "Lens prompt digests must equal the contract current fingerprints.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A12",
+      "disposition": "accepted",
+      "id": "obligation-reduction-12",
+      "rationale": "The assembled judge inputs and the verdict shape are pinned.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A12",
+      "disposition": "accepted",
+      "id": "obligation-reduction-13",
+      "rationale": "The judge input holds the named parts and nothing else.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A6",
+      "disposition": "accepted",
+      "id": "obligation-reduction-14",
+      "rationale": "A task without a passing calibration record is refused.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A11",
+      "disposition": "accepted",
+      "id": "obligation-reduction-15",
+      "rationale": "The runner plans no third repeat.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A6",
+      "disposition": "accepted",
+      "id": "set-consistency-1",
+      "rationale": "Each judge task has its own prompt digest and calibration; the panel digest is the contract one.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A10",
+      "disposition": "accepted",
+      "id": "set-consistency-2",
+      "rationale": "ARM-D2: a held-out objection reaches no adjudication and counts in neither repeats nor effort; the report gives the held-out count.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A12",
+      "disposition": "accepted",
+      "id": "what-if-1",
+      "rationale": "A verdict that is not yes or no with a reason makes the report unusable under ARM-A11.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    },
+    {
+      "covering_ac": "ARM-A9",
+      "disposition": "accepted",
+      "id": "what-if-2",
+      "rationale": "An objection in both classes counts once.",
+      "revision": "sha256:c1e9857b35496c22378586faffc8eef51571a7d3bd9132897bea69472ad5e473"
+    }
+  ],
+  "lenses": [
+    {
+      "lens": "behavioural-outcome",
+      "report": "objections"
+    },
+    {
+      "lens": "obligation-reduction",
+      "report": "objections",
+      "workings": {
+        "criteria": [
+          "ARM-A1",
+          "ARM-A2",
+          "ARM-A3",
+          "ARM-A4",
+          "ARM-A5",
+          "ARM-A6",
+          "ARM-A7",
+          "ARM-A8",
+          "ARM-A9",
+          "ARM-A10",
+          "ARM-A11"
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O1.1",
+                "statement": "Experiment scoring does not influence the evaluation of record or change any case's pass or fail."
+              },
+              {
+                "discharged_by": [
+                  "ARM-A8"
+                ],
+                "id": "O1.2",
+                "statement": "The evaluation of record's locks remain unchanged."
+              }
+            ],
+            "source": "Problem statement: 'results are therefore scored apart from it, and they change no case's pass or fail.' ARM-D3: 'the evaluation of record's locks are the same before and after it.'",
+            "statement": "Experiments remain separate from the evaluation of record and preserve its outcomes and locks."
+          },
+          {
+            "id": "O2",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O2.1",
+                "statement": "Each authoring arm uses its prescribed context, inputs, and self-check procedure."
+              }
+            ],
+            "source": "ARM-D1: 'the orchestrator, the orchestrator with a self-check, and a subagent with a self-check'; the orchestrator uses the context holding objections and decisions; the self-check is one read against the named standard rules, with edits before attack; the subagent receives only the document, objections with decisions, and standard in fresh context.",
+            "statement": "The authoring experiment executes the three specified authoring processes."
+          },
+          {
+            "id": "O3",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARM-A7"
+                ],
+                "id": "O3.1",
+                "statement": "Recorded authoring runs match their plan's document revision, objection set, and model."
+              },
+              {
+                "discharged_by": [],
+                "id": "O3.2",
+                "statement": "Each arm actually performs three authoring executions."
+              }
+            ],
+            "source": "ARM-D1: 'Each arm gets one document at a pinned revision and one fixed set of accepted objections with the author's decisions. Each authors three times with one model named in the run plan.'",
+            "statement": "Authoring arms use pinned inputs and the planned model, and each authors three times."
+          },
+          {
+            "id": "O4",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O4.1",
+                "statement": "Every authoring result is attacked exactly once by the full panel."
+              }
+            ],
+            "source": "ARM-D1: 'The full panel attacks each result once in the evaluation contract's ACE-D6 configuration.'",
+            "statement": "Each authoring result receives one full-panel attack."
+          },
+          {
+            "id": "O5",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARM-A9"
+                ],
+                "id": "O5.1",
+                "statement": "The introduced-defect count includes exactly judge-valid objections targeting added or changed criteria and accepted objections left unanswered."
+              }
+            ],
+            "source": "ARM-D1: 'an objection targeting a criterion the arm added or changed that the judge rules valid'; 'an accepted objection the result leaves unanswered.'",
+            "statement": "Introduced defects are counted using the specified two categories."
+          },
+          {
+            "id": "O6",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARM-A1",
+                  "ARM-A11"
+                ],
+                "id": "O6.1",
+                "statement": "The report applies the specified ranking threshold and ranks incomplete arms nowhere."
+              }
+            ],
+            "source": "ARM-D1: 'An arm ranks ahead when, and only when, its three results carry at least three fewer introduced defects in total. A smaller difference is no difference. An arm with fewer than three results ranks nowhere.'",
+            "statement": "Authoring rankings follow the three-result and three-defect rules."
+          },
+          {
+            "id": "O7",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O7.1",
+                "statement": "Each re-attack arm receives its prescribed prompt information; arm 3 performs the specified filtering, repeat listing, ground attribution, and retention."
+              }
+            ],
+            "source": "ARM-D2 lists document only; document with a rejected-ground ledger and rationales; document only with a post-filter that holds matched objections out of adjudication, lists them as repeats with matched grounds, and drops nothing.",
+            "statement": "The re-attack experiment executes the three specified prompt and filtering procedures."
+          },
+          {
+            "id": "O8",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O8.1",
+                "statement": "Every fixture comes from a re-attack round in PR 791's history."
+              },
+              {
+                "discharged_by": [
+                  "ARM-A7"
+                ],
+                "id": "O8.2",
+                "statement": "Every eligible fixture contains at least one ledger-rejected ground with a judge-valid ruling."
+              }
+            ],
+            "source": "ARM-D2: 'Fixtures are re-attack rounds from PR 791's history, each with at least one seeded wrong rejection. A seeded wrong rejection is a ground the judge has ruled valid and the ledger marks rejected.'",
+            "statement": "Fixtures have the required historical provenance and seeded wrong rejections."
+          },
+          {
+            "id": "O9",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O9.1",
+                "statement": "Every re-attack arm executes five full-panel runs per fixture."
+              }
+            ],
+            "source": "ARM-D2: 'Each arm runs the full panel five times per fixture in the evaluation contract's ACE-D6 configuration.'",
+            "statement": "Re-attack arms execute the required number of full-panel runs."
+          },
+          {
+            "id": "O10",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARM-A10"
+                ],
+                "id": "O10.1",
+                "statement": "Per-run repeats, recall, overturnability, and effort follow ARM-D2's definitions, and reports use those values."
+              },
+              {
+                "discharged_by": [
+                  "ARM-A2"
+                ],
+                "id": "O10.2",
+                "statement": "Reports provide each arm's measures per fixture and the specified means, plus run counts for each seeded wrong rejection's overturnability."
+              }
+            ],
+            "source": "ARM-D2 defines repeats, recall, overturnability, and effort per run, then requires measures per fixture, means over fixtures with values, and overturnability counts per seeded wrong rejection.",
+            "statement": "Re-attack measures are calculated and reported as specified."
+          },
+          {
+            "id": "O11",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARM-A3",
+                  "ARM-A11"
+                ],
+                "id": "O11.1",
+                "statement": "The report identifies arm 2 or arm 3 as meeting the bar exactly when all three conditions hold and no fixture is pending."
+              }
+            ],
+            "source": "ARM-D2 requires at most half of arm 1's mean repeats, recall no more than ten percentage points below arm 1, and every seed reaching adjudication in at least four of five runs. ARM-D3: 'an arm with a pending fixture meets no bar.'",
+            "statement": "Candidate arms meet the bar exactly under the specified thresholds and completeness conditions."
+          },
+          {
+            "id": "O12",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARM-A5"
+                ],
+                "id": "O12.1",
+                "statement": "Fixtures without new valid objections have no recall value and are excluded from mean recall; if all lack values, the report declares recall unjudgeable and no arm meets the bar."
+              }
+            ],
+            "source": "ARM-D2 requires means over 'fixtures that have a value' and states: 'When no fixture has a recall value, the report states that the recall condition cannot be judged, and no arm meets the bar.'",
+            "statement": "Missing recall values are excluded, and an entirely unjudgeable recall condition prevents any arm meeting the bar."
+          },
+          {
+            "id": "O13",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARM-A4"
+                ],
+                "id": "O13.1",
+                "statement": "No arm is reported as selected or as the expected default."
+              }
+            ],
+            "source": "ARM-D2: 'The report selects no arm and presumes none.'",
+            "statement": "The re-attack report neither selects nor presumes an arm."
+          },
+          {
+            "id": "O14",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O14.1",
+                "statement": "The plan is written before dispatch."
+              },
+              {
+                "discharged_by": [],
+                "id": "O14.2",
+                "statement": "The plan fixes arm procedures, run counts, and fixtures' seeded wrong rejections with their validity rulings."
+              },
+              {
+                "discharged_by": [
+                  "ARM-A7"
+                ],
+                "id": "O14.3",
+                "statement": "The run set corresponds one to one with the plan in arm, fixture, document revision, objection set, and model; mismatches are refused and identified."
+              }
+            ],
+            "source": "ARM-D3: 'The plan is written before dispatch'; it fixes arms and processes, document revision, objection set, model, fixtures with seeds and validity rulings, and run counts.",
+            "statement": "A plan fixes the experimental design before dispatch, and recorded runs conform to it."
+          },
+          {
+            "id": "O15",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARM-A8"
+                ],
+                "id": "O15.1",
+                "statement": "Experiment writes occur only under evals/experiments/<run-id>/."
+              },
+              {
+                "discharged_by": [],
+                "id": "O15.2",
+                "statement": "Every run is committed with its plan and reports."
+              }
+            ],
+            "source": "ARM-D3: 'Every run is committed with its plan and reports under evals/experiments/<run-id>/, and an experiment writes nowhere else.'",
+            "statement": "Experiment artifacts are confined to their run directory and committed together."
+          },
+          {
+            "id": "O16",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "ARM-A6"
+                ],
+                "id": "O16.1",
+                "statement": "The contract scorer runs over experiment inputs and refuses differences in model, effort, transport, judge model ID, or judge prompt digest, identifying the difference."
+              },
+              {
+                "discharged_by": [],
+                "id": "O16.2",
+                "statement": "The panel uses the evaluation contract's lens configuration, and runs under a different lens configuration do not count."
+              }
+            ],
+            "source": "ARM-D3: 'The scorer, the judge and the lens configuration are the evaluation contract's (ACE-D5, ACE-D6), and a run recorded under another does not count.'",
+            "statement": "Experiments use the evaluation contract's scorer, judge, and lens configuration; runs under another configuration do not count."
+          },
+          {
+            "id": "O17",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O17.1",
+                "statement": "Both tasks receive the specified inputs, ask the specified questions, and return yes or no with a reason."
+              }
+            ],
+            "source": "ARM-D3: validity receives rule text and one objection and asks whether it holds; ground matching receives one objection and one rejected ground with its rationale and asks whether they are the same ground; 'Each returns yes or no with a reason.'",
+            "statement": "The two added judge tasks implement their specified interfaces."
+          },
+          {
+            "id": "O18",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O18.1",
+                "statement": "The judge receives no arm, lens, or model identity."
+              }
+            ],
+            "source": "ARM-D3: 'the judge sees no arm, lens or model.'",
+            "statement": "Judge tasks conceal experiment identities."
+          },
+          {
+            "id": "O19",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O19.1",
+                "statement": "The added validity and ground-matching tasks are calibrated under ACE-D5."
+              }
+            ],
+            "source": "ARM-D3: 'The experiments add two judge tasks, calibrated as ACE-D5 says.'",
+            "statement": "The two added judge tasks undergo the required calibration."
+          },
+          {
+            "id": "O20",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O20.1",
+                "statement": "A run with no usable report is repeated no more than twice."
+              },
+              {
+                "discharged_by": [
+                  "ARM-A11",
+                  "ARM-A1",
+                  "ARM-A3"
+                ],
+                "id": "O20.2",
+                "statement": "An input still missing after two repeats is named pending, excluded from every measure, and prevents the affected arm from ranking or meeting the bar."
+              }
+            ],
+            "source": "ARM-D3: 'A run with no usable report is repeated at most twice'; missing fixtures or results are pending, excluded from every measure and named; affected arms rank nowhere or meet no bar.",
+            "statement": "Unusable reports receive bounded retries, followed by pending treatment when still missing."
+          }
+        ]
+      }
+    },
+    {
+      "lens": "set-consistency",
+      "report": "objections"
+    },
+    {
+      "lens": "what-if",
+      "report": "objections"
+    }
+  ],
+  "objections": [
+    {
+      "ground": {
+        "reason": "ARM-D3 promises that an experiment 'writes nowhere else'. ARM-A8 requires writes only under the experiment directory and unchanged locks before and after, but names no check or required evidence that captures writes during execution. Comparing the locks cannot establish write confinement.",
+        "rule": "verification-contract"
+      },
+      "id": "behavioural-outcome-1",
+      "lens": "behavioural-outcome",
+      "objection": "ARM-A8 lets final artifacts and unchanged locks serve as evidence of isolation without establishing where the experiment actually wrote.",
+      "obligation": "An experiment writes only under evals/experiments/<run-id>/.",
+      "scenario": {
+        "expect": "The before/after lock comparison passes and the committed artifacts occupy the required directory, while write confinement was violated. No named check captures the temporary outside write.",
+        "given": "An experiment commits its plan and reports under the required directory and preserves the locks, but creates and removes a scratch file outside that directory during execution.",
+        "when": "Acceptance inspects the committed artifacts and compares the locks before and after the run."
+      },
+      "target_ac": "ARM-A8"
+    },
+    {
+      "ground": {
+        "reason": "ARM-A8 preserves writes and locks, but no criterion checks whether experiment results influence cases' pass or fail.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-1",
+      "lens": "obligation-reduction",
+      "objection": "Experiment scores can influence the evaluation of record despite the promise that they are scored apart and 'change no case's pass or fail.'",
+      "obligation": "O1.1",
+      "scenario": {
+        "expect": "Every criterion passes and the locks remain unchanged, but a case's computed pass or fail changes because of an experiment result.",
+        "given": "An otherwise conforming experiment whose results the evaluation reader includes when computing case outcomes.",
+        "when": "The experiment runs and the evaluation reader computes the evaluation of record."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The criteria check supplied results and their scoring, without observing the prescribed authoring contexts or self-checks.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-2",
+      "lens": "obligation-reduction",
+      "objection": "Results can be scored under the three arm labels without executing ARM-D1's distinct authoring procedures.",
+      "obligation": "O2.1",
+      "scenario": {
+        "expect": "Every criterion passes, although the self-check arms perform no self-check and the subagent arm receives the orchestrator's full context.",
+        "given": "A matching plan and three results per arm, with correct attack records and scores.",
+        "when": "All three arms author in the same context without the prescribed self-check."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ARM-A1 checks how three supplied results are ranked. ARM-A7 checks correspondence to a plan, without requiring the plan to prescribe three authoring executions.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-3",
+      "lens": "obligation-reduction",
+      "objection": "The experiment can omit the three authoring executions promised by ARM-D1: 'Each authors three times.'",
+      "obligation": "O3.2",
+      "scenario": {
+        "expect": "Every criterion passes and all arms rank nowhere, but each arm has authored only once.",
+        "given": "A plan containing one authoring execution per arm and conforming records for those executions.",
+        "when": "The experiment executes that plan and correctly reports each arm's insufficient results."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Report calculations and configuration checks do not establish that every authoring result received exactly one full-panel attack.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-4",
+      "lens": "obligation-reduction",
+      "objection": "An authoring result can receive a partial-panel attack despite ARM-D1's promise that 'The full panel attacks each result once.'",
+      "obligation": "O4.1",
+      "scenario": {
+        "expect": "Every criterion passes, but some panel lenses never attack the authoring results.",
+        "given": "Matching planned runs using the required configuration fields, with correctly judged and scored reports.",
+        "when": "The runner invokes only one panel member for each authoring result."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ARM-A10 observes adjudication records. It does not check the prompts, filtering, or retained records that produce them.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-5",
+      "lens": "obligation-reduction",
+      "objection": "The re-attack arms can omit their distinguishing procedures. ARM-D2 prescribes document-only prompts, ledger-bearing prompts, and a post-filter that lists held-out repeats with their matched grounds and drops nothing.",
+      "obligation": "O7.1",
+      "scenario": {
+        "expect": "Every criterion passes, although arm 2 receives no ledger and arm 3 deletes matched objections without listing them to the adjudicator.",
+        "given": "Matching planned runs whose surviving adjudication records are scored and reported correctly.",
+        "when": "The runner ignores arm 2's ledger and silently discards arm 3's matched objections."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ARM-A7 checks seeded wrong rejections and plan correspondence, but does not check fixture provenance.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-6",
+      "lens": "obligation-reduction",
+      "objection": "Synthetic fixtures can replace the historical fixtures promised by ARM-D2: 'Fixtures are re-attack rounds from PR 791's history.'",
+      "obligation": "O8.1",
+      "scenario": {
+        "expect": "Every criterion passes, but none of the fixtures comes from PR 791.",
+        "given": "A plan containing synthetic fixtures, each with a judge-valid ground that its ledger marks rejected.",
+        "when": "The experiment runs those fixtures and correctly computes all measures."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ARM-A7 can validate a plan with the wrong run count. ARM-A3 checks the bar, without requiring all arms to execute five full-panel runs per fixture.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-7",
+      "lens": "obligation-reduction",
+      "objection": "The experiment can undersample its fixtures despite ARM-D2's promise that 'Each arm runs the full panel five times per fixture.'",
+      "obligation": "O9.1",
+      "scenario": {
+        "expect": "Every criterion passes and no candidate arm meets the bar, but each arm has run only once per fixture.",
+        "given": "A plan prescribing one complete panel run per arm and fixture, with matching records and correctly calculated reports.",
+        "when": "The experiment executes that plan and reports the resulting measures and bar decisions."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No criterion observes when the plan was written.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-8",
+      "lens": "obligation-reduction",
+      "objection": "The plan can be fitted to completed runs despite ARM-D3's requirement that it be 'written before dispatch.'",
+      "obligation": "O14.1",
+      "scenario": {
+        "expect": "Every criterion passes, including one-to-one plan correspondence, but no plan existed at dispatch.",
+        "given": "Otherwise conforming experiment executions and reports.",
+        "when": "The author writes a matching plan after the executions finish."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ARM-A7 checks run identities and fixture eligibility. It does not check that the plan fixes arm processes, run counts, or the seeded wrong rejections and their validity rulings.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-9",
+      "lens": "obligation-reduction",
+      "objection": "The plan can omit parts of the experimental design that ARM-D3 explicitly requires it to fix.",
+      "obligation": "O14.2",
+      "scenario": {
+        "expect": "Every criterion passes, but the plan contains no arm procedures, explicit run counts, or seed validity rulings.",
+        "given": "A plan listing the identities ARM-A7 compares, with seed rulings held separately in fixture records.",
+        "when": "The scorer checks matching runs and produces correct reports."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ARM-A8 checks write location and lock preservation, without checking that runs, plans, and reports are committed.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-10",
+      "lens": "obligation-reduction",
+      "objection": "Run artifacts can remain uncommitted despite ARM-D3's promise that 'Every run is committed with its plan and reports.'",
+      "obligation": "O15.2",
+      "scenario": {
+        "expect": "Every criterion passes, but the run, plan, and reports remain untracked files.",
+        "given": "A conforming experiment that writes all its artifacts under its run directory.",
+        "when": "The experiment finishes without committing those artifacts."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ARM-A6 checks named model, effort, transport, judge-ID, and judge-prompt fields. It does not check the panel's lens configuration.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-11",
+      "lens": "obligation-reduction",
+      "objection": "A run can use altered lens configuration despite ARM-D3's requirement to use the evaluation contract's configuration and exclude runs recorded under another.",
+      "obligation": "O16.2",
+      "scenario": {
+        "expect": "Every criterion passes and the run counts, although its lens prompts differ from the evaluation contract's.",
+        "given": "Runs with matching plans and unchanged fields enumerated by ARM-A6.",
+        "when": "The full panel runs with substituted lens prompts and the scorer accepts its reports."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The criteria consume judge verdicts without checking the two added tasks' inputs, questions, or yes-or-no responses with reasons.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-12",
+      "lens": "obligation-reduction",
+      "objection": "Judge verdicts can be obtained through tasks that violate ARM-D3's specified validity and ground-matching interfaces.",
+      "obligation": "O17.1",
+      "scenario": {
+        "expect": "Every criterion passes, but the validity task omits the rule text and the matching task omits the earlier rationale; both return bare verdicts without reasons.",
+        "given": "Otherwise conforming runs using the required judge model and prompt digest, with verdict values sufficient for scoring.",
+        "when": "The task adapter supplies incomplete inputs and records responses without reasons."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ARM-A6 checks judge identity and prompt digest, without checking all information supplied to the judge.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-13",
+      "lens": "obligation-reduction",
+      "objection": "The judge can receive experiment identities despite ARM-D3's guarantee that 'the judge sees no arm, lens or model.'",
+      "obligation": "O18.1",
+      "scenario": {
+        "expect": "Every criterion passes, but the judge sees arm, lens, and model names.",
+        "given": "Conforming runs with the required judge prompt digest and correctly scored verdicts.",
+        "when": "The task adapter includes those names in accompanying input metadata."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No criterion checks whether the two added judge tasks have undergone the required calibration.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-14",
+      "lens": "obligation-reduction",
+      "objection": "The added tasks can run without the calibration promised by ARM-D3: 'two judge tasks, calibrated as ACE-D5 says.'",
+      "obligation": "O19.1",
+      "scenario": {
+        "expect": "Every criterion passes, although neither added task has undergone the required calibration.",
+        "given": "A conforming scorer and judge configuration with newly added validity and ground-matching tasks.",
+        "when": "The experiment uses those tasks immediately and correctly scores their verdicts."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "ARM-A11 requires pending treatment after two unsuccessful repeats, but does not prohibit further repeats.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-15",
+      "lens": "obligation-reduction",
+      "objection": "The runner can exceed ARM-D3's limit that an unusable-report run 'is repeated at most twice.'",
+      "obligation": "O20.1",
+      "scenario": {
+        "expect": "Every criterion passes and the input remains correctly reported as pending, but the runner executes a third repeat.",
+        "given": "A run whose initial execution and first two repeats all yield unusable reports.",
+        "when": "The runner marks the input pending, then performs another unsuccessful repeat under the same run identity."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Decision closure: the wording leaves open which judge prompts the digest check covers, and each reading produces a different outcome. ARM-A6 refuses a run whose 'judge prompt digest differs from the evaluation contract's ACE-D5 and ACE-D6', while ARM-D3 has the experiments add two judge tasks (validity, ground-matching) with their own prompts, calibrated only 'as ACE-D5 says'. If the digest covers all judge prompts in the run, the two added tasks make every experiment run's digest differ from ACE-D5/ACE-D6's recorded digest, so the scorer refuses every run and no result can ever exist. If the digest covers only the panel judge prompt from ACE-D6, the new tasks pass unchecked. The criteria do not say which.",
+        "rule": "decision-closure"
+      },
+      "id": "set-consistency-1",
+      "lens": "set-consistency",
+      "objection": "A scorer reading the digest as covering all judge prompts refuses every legitimate experiment run because of the very tasks ARM-D3 mandates; a scorer reading it as covering only the ACE-D6 panel prompt accepts runs whose added-task prompts drift arbitrarily from their calibration. Both readings are licensed by the text.",
+      "scenario": {
+        "expect": "Under one reading the scorer refuses every run, naming the judge prompt digest as the difference, and the experiment can never produce a report; under the other reading the same run is accepted and scored. The acceptance criteria do not decide which verdict is correct.",
+        "given": "An experiment run executed exactly per ARM-D3's plan: the ACE-D6 panel configuration plus the two added judge tasks (validity and ground-matching), whose prompts are not part of ACE-D5/ACE-D6's recorded judge prompt digest.",
+        "when": "The scorer applies ARM-A6's refusal check to the run."
+      },
+      "target_ac": "ARM-A6"
+    },
+    {
+      "ground": {
+        "reason": "Decision closure: 'held out of adjudication and listed to the adjudicator as a repeat' leaves open whether arm 3's matched objections count as 'reaching adjudication', and ARM-D2 defines repeats and effort as counts of objections reaching adjudication. One reading counts held-out-but-listed objections as repeats and effort; the other counts them as neither, making arm 3's repeats structurally zero and its 'at most half of arm 1' condition vacuous, and understating its effort. The two readings produce materially different measures and different bar verdicts for the same runs.",
+        "rule": "decision-closure"
+      },
+      "id": "set-consistency-2",
+      "lens": "set-consistency",
+      "objection": "Arm 3's repeat and effort counts are undefined by the criteria: the same adjudication record yields repeats = 0 (and a trivially met repeats condition) or repeats > 0 depending on whether 'listed to the adjudicator' counts as reaching adjudication, and the report's per-arm comparison against the bar changes accordingly.",
+      "scenario": {
+        "expect": "One scorer reports arm 3's repeats as 0 and effort as only the unfiltered objections, so the repeats condition is met by construction; another reports repeats as the count of listed repeats and effort including them, possibly failing the condition. ARM-A10 and ARM-A3 do not determine which report is correct.",
+        "given": "A fixture run under arm 3 in which the judge matches three new objections to earlier rejected grounds; the post-filter holds the three out of adjudication and lists them to the adjudicator as repeats.",
+        "when": "The scorer computes repeats and effort for the run under ARM-D2's definitions, and the report judges arm 3 against the bar per ARM-A3."
+      },
+      "target_ac": "ARM-A10"
+    },
+    {
+      "ground": {
+        "reason": "The failure-path question applied to the judge tasks: ARM-D3 states each judge task 'returns yes or no with a reason', but no criterion covers a judge response that is neither — unparseable, empty, or both. ARM-A6 polices configuration identity, not verdict well-formedness, and ARM-A11's 'no usable report' is defined per run, not per verdict, so whether one bad match verdict poisons the run, is treated as no-match, or triggers the repeat path is undecided.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-1",
+      "lens": "what-if",
+      "objection": "The criteria let the scorer assign repeats, recall and overturnability counts when a judge task fails to return a yes/no verdict, with no defined treatment, so the same fixture run can score as a repeat or not depending on an unspecified choice.",
+      "scenario": {
+        "expect": "a defined outcome — the malformed verdict invalidates the run's report (routing to ARM-A11's repeat-at-most-twice path) or is treated explicitly as a non-match — which no criterion states",
+        "given": "a fixture run whose adjudication record includes an objection whose ground-matching or validity judge task returned a response that is neither yes nor no",
+        "when": "the scorer computes repeats, recall, overturnability and effort under ARM-A10"
+      },
+      "target_ac": "ARM-A10"
+    },
+    {
+      "ground": {
+        "reason": "The runs-twice question applied to defect classes: ARM-A9 counts 'exactly' two classes of introduced defect, but an accepted objection the result leaves unanswered can also be raised by the attacking panel and ruled valid against a criterion the arm changed, putting one objection in both classes. The document neither says the count is a union (counted once) nor a sum (counted twice), and ARM-D1's ranking turns on an exact three-defect margin, so the double-count case can flip a ranking.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-2",
+      "lens": "what-if",
+      "objection": "The criteria let one objection be counted as two introduced defects, or one, with nothing deciding which, so an authoring arm can rank ahead or not on the same evidence.",
+      "scenario": {
+        "expect": "the objection counted exactly once toward the arm's total, which no criterion pins",
+        "given": "an authoring result that leaves an accepted objection unanswered, where the panel independently raises that same objection and the judge rules it valid against a criterion the arm added or changed",
+        "when": "the scorer counts introduced defects under ARM-A9 and the report ranks arms under ARM-A1"
+      },
+      "target_ac": "ARM-A9"
+    }
+  ],
+  "schema_version": "1",
+  "spec_path": "2026-10-01-criteria-attack-arm-experiments.md",
+  "spec_revision": "sha256:681b1b4ef6697631c68efa9abf5de8d844571872023f919aab0ba2bf52497060"
+}

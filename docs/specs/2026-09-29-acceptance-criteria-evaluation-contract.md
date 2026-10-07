@@ -13,7 +13,8 @@ slice S2 (quality assessment). Attacked on 2026-09-29 and, in this text, on
 S2 owns twenty-seven parent criteria. Six of them govern prompt emission and
 the record check: ACQ-A20, A22, A23, A26, A28 and A29. Those six, and the
 ownership of each rule by one lens, belong to the rule-ownership spec,
-`docs/specs/2026-10-04-criteria-attack-rule-ownership.md`. The other
+`docs/specs/2026-10-04-criteria-attack-rule-ownership.md`, except ACQ-A23's
+clause on template additions, which ACE-D9 decides here. The other
 twenty-one, ACQ-A30 and ACQ-A31 among them, are claims about stochastic
 lenses. The parent's Testing decisions require a fixed evaluation contract to
 judge them. This spec fixes it.
@@ -58,10 +59,11 @@ and no site.
 
 One hunk does not prove one defect, and a planted defect can sit beside an
 authored one. So the owner validates a case before its runs count: the case's
-lens runs once over the control, and the owner reads every objection citing
-the case's rule or its site, and confirms that the planted defect is the one
-ACE-D3 names. An objection the owner upholds means the pair carries more than
-its one defect, and the pair is amended. A control-only case is validated by
+lens runs once over the control, and the owner reads every objection it
+returns, confirms that the planted defect is the one ACE-D3 names, and that
+the control carries the parent's no-finding feature. An objection the owner
+upholds, on the case's rule or site or on anything else, means the pair
+carries more than its one defect, and the pair is amended. A control-only case is validated by
 one panel run, read whole. The validation record under `evals/cases/<id>/`
 holds the run's report, the owner's decision and the digests of the validated
 documents. The case check refuses a case whose record lacks any of the three
@@ -92,15 +94,16 @@ the owner ARO-D1 gives its rule.
 | C15 | ACQ-A31, a human check on a mechanically checkable property | `verification-contract` | behavioural-outcome | ACE-A45 |
 | C16 | ACQ-A18; research answer | `document-deliverable` | behavioural-outcome | ACE-A39 |
 | C17 | ACQ-A19 | `has-basis` | obligation-reduction | ACE-A40 |
-| C18 to C21 | what-if "fails", "empty or at a limit", "twice or at the same time", "again with nothing changed", one case each | `what-if-questions` | what-if | ACE-A42 |
-| C22 | decision document | `document-deliverable` | behavioural-outcome | ACE-A42 |
-| C23 | parent closed before its verification evidence | `one-obligation` | behavioural-outcome | ACE-A42 |
-| C24 | unsupported implementation prescription | `restraint` | obligation-reduction | ACE-A42 |
-| C25 | stochastic threshold chosen after its results | `stochastic-and-window` | behavioural-outcome | ACE-A42 |
-| C26 | a plausible implementation passing every criterion while breaking an in-scope obligation | `sufficiency` | obligation-reduction | ACE-A42 |
-| C27 | human measurement without a protocol | `human-measurement` | behavioural-outcome | ACE-A42 |
+| C18 | what-if "fails" | `what-if-questions` | what-if | ACE-A42 |
+| C19 to C21 | what-if "empty or at a limit", "twice or at the same time", "again with nothing changed", one case each | `what-if-questions` | what-if | ACE-A57 to ACE-A59 |
+| C22 | decision document | `document-deliverable` | behavioural-outcome | ACE-A60 |
+| C23 | parent closed before its verification evidence | `one-obligation` | behavioural-outcome | ACE-A61 |
+| C24 | unsupported implementation prescription | `restraint` | obligation-reduction | ACE-A62 |
+| C25 | stochastic threshold chosen after its results | `stochastic-and-window` | behavioural-outcome | ACE-A63 |
+| C26 | a plausible implementation passing every criterion while breaking an in-scope obligation | `sufficiency` | obligation-reduction | ACE-A64 |
+| C27 | human measurement without a protocol | `human-measurement` | behavioural-outcome | ACE-A65 |
 | C28 | ACQ-A30, a human observer named alone | `human-judgment` | behavioural-outcome | ACE-A44 |
-| C29 | incomplete observation window | `stochastic-and-window` | behavioural-outcome | ACE-A42 |
+| C29 | incomplete observation window | `stochastic-and-window` | behavioural-outcome | ACE-A66 |
 | P1 | ACQ-A21: a spec-authoring document assessed on content, control only | none | full panel | ACE-A41 |
 
 **ACE-D4 — Scoring separates detection from silence.** A run is one fresh
@@ -113,16 +116,17 @@ dispatch of one lens over one document.
 - A control run is silent unless the judge rules that one of its objections
   describes the detection statement. Only an objection citing the case's rule
   or its site goes to the judge. Any other objection leaves the run silent.
-- A control run is empty when the lens reports `empty`, which ACQ-A27 needs.
+- A control run is empty when the lens reports `empty`, which ACQ-A27, the
+  parent's empty-control rate, needs.
 - A P1 panel run is four runs, one per lens, since any lens could wrongly
   demand implementation criteria of the document. A run passes when the judge
   rules that none of its objections demands criteria for the implementation
   the document describes. A panel run passes when all four of its runs pass.
 
 A missing report, or one whose every objection is malformed, is repeated at
-most twice. A run still without a usable report, or holding an objection the
-judge has not ruled on, leaves its case pending and the evaluation incomplete.
-A pending case is never scored as a miss.
+most twice. A run still without a usable report, or holding an objection owed
+a judgment that the judge has not given, leaves its case pending and the
+evaluation incomplete. A pending case is never scored as a miss.
 
 **ACE-D5 — A calibrated judge decides what the scorer cannot place.** The
 judge is Claude Opus through the native Agent tool, with the prompt
@@ -134,7 +138,8 @@ It never sees the lens, the model or the arm.
 
 A judgment task counts only after calibration. The owner, Scott Hamilton,
 labels twenty items for the task, and the judge must agree on eighteen. A
-prompt revised after a failed calibration is calibrated on twenty new items.
+prompt that failed calibration is calibrated again only after revision, on
+twenty new items.
 The experiments' validity and ground-matching tasks are calibrated the same
 way.
 
@@ -155,8 +160,8 @@ prompt digest.
 
 | Lens | Transport | Model | Effort | Reads |
 | --- | --- | --- | --- | --- |
-| behavioural-outcome, obligation-reduction | Codex CLI | `gpt-6.1-sol` | high | its prompt only, from an empty directory |
-| set-consistency, what-if | OpenRouter | `moonshotai/kimi-k3` | low | its prompt only, with no tools |
+| behavioural-outcome, obligation-reduction | Codex CLI | `gpt-6.1-sol` | high | its prompt only, in a fresh context, from an empty directory |
+| set-consistency, what-if | OpenRouter | `moonshotai/kimi-k3` | low | its prompt only, in a fresh context, with no tools |
 
 Evaluating another configuration would judge a panel nobody runs. Kimi K3
 never runs at high effort.
@@ -179,8 +184,10 @@ control, judged on the control runs for silence.
 - A case is locked when it detects and its control holds. P1 is locked when
   at least four of its five panel runs pass, with the same retest.
 - A lens passes ACQ-A27 when at least 80 percent of the control runs behind
-  its cases' current locks, P1's included, are empty. That rate is pooled
-  across the lens's cases, so it is no side and earns no retest.
+  its cases' current locks are empty. Each lens run inside a P1 panel run
+  enters its own lens's pool, and is empty when that lens reported `empty`.
+  The rate is pooled across the lens's cases, so it is no side and earns no
+  retest.
 
 A parent criterion passes only when every case serving it is locked. Requiring
 every case to pass inside one run would fail a lens that is right nineteen
@@ -191,19 +198,24 @@ rates, which decide nothing.
 
 With the retest, a lens detecting half the time passes a side with probability
 0.20, and one detecting nine times in ten passes with 0.96. The thresholds sit
-above the one baseline, PR 785's control false positive, on purpose.
+on purpose above the one baseline there is: the single control false positive
+seen across PR 785's attack rounds.
 
-Locking the whole catalogue from nothing plans 310 lens dispatches, 220 on
-Codex, plus retests and ACE-D4's repeats. The planner refuses a larger plan,
-an experiment's included, unless the plan names the owner's approval. The
+Locking the whole catalogue from nothing plans 310 lens dispatches: the 29
+pair cases at two documents and five runs each make 290, and P1's five panel
+runs of four lenses make 20. The 21 pair cases on the Codex lenses and P1's
+two Codex lenses put 220 of them on Codex. Retests and ACE-D4's repeats come
+on top. The planner refuses a larger plan, an experiment's plan included,
+unless the plan names the owner's approval. The
 owner confirmed the run counts and thresholds on `agents-config-9k9.453`,
 after a pilot in which a Codex run took one to three minutes. Changing a
 threshold amends this spec. A plan fixes its thresholds (ACE-D8), and the
 scorer scores an attempt under the thresholds its plan fixed.
 
 **ACE-D8 — A lock is tied to what produced it.** The planner writes an
-attempt's plan before any dispatch. The plan fixes every dispatch, the
-configuration, the thresholds and the cases. Every attempt is committed with
+attempt's plan before any dispatch, and a retest's extension of it before the
+retest. The plan fixes every dispatch, the configuration, the thresholds and
+the cases. Every attempt is committed with
 its reports under `evals/runs/<run-id>/`, whatever it shows. That rests on the
 operator, since nothing sees a run nobody commits. The planner refuses a new
 attempt while a planned attempt has no committed reports.
@@ -215,10 +227,11 @@ runs one to one, or in which two reports share a response ID. A repeat's
 superseded reports stay committed and match nothing.
 
 A lock records its case's fingerprint. The fingerprint is the digests of the
-prompts emitted for the case's two documents, with ACE-D6's model and effort.
-An emitted prompt holds the lens body, the shared template and the rules the
-lens enforces, so a change to any of them changes the fingerprint. P1's
-fingerprint covers all four lenses.
+prompts emitted for the case's documents, two for a pair case and one for P1,
+with ACE-D6's model and effort. An emitted prompt holds the lens body, the
+shared template and the rules the lens enforces, so a change to any of them
+changes the fingerprint. P1's fingerprint holds its one document's prompt
+from each of the four lenses.
 
 A lock is current while its fingerprint matches the tree. A change voids only
 the locks whose fingerprint it alters, and only those cases run again.
@@ -244,9 +257,11 @@ lenses gain a locked case.
 
 A gain in one lens alone belongs in that lens's own prompt.
 
-ACQ-A23 admits an addition that carries this spec's evaluation evidence. A
+ACQ-A23, the parent's rule that the shared template changes only on
+evaluation evidence, admits an addition that carries this spec's. A
 registry under `evals/` is a chain of template digests. Its first entry is the
-template as this spec finds it. Each later entry names the two committed lock
+template's digest at the commit S2.4 lands, held as a constant in the emitter
+suite. Each later entry names the two committed lock
 sets its comparison read and the report it produced against the entry before
 it. A test pins the current template's digest to the chain's last entry.
 
@@ -266,19 +281,19 @@ checker suites run under `make content-tests`.
   contiguous hunk, or differ from the digests its validation recorded, or
   whose rule its lens does not enforce; a control-only case holding a
   defective document or a site; and a case whose validation record lacks its
-  report, the owner's decision or the digests. It names the case and the
-  fault.
+  report, the owner's decision or the digests, or whose decision is not an
+  acceptance of the recorded documents. It names the case and the fault.
 - **ACE-A14** Given fixture reports and verdicts, the scorer counts a detection
   for an objection citing the case's rule at its site, and for one citing only
   the rule or only the site that the judge matches to the detection statement.
   It counts no other objection, and for a case whose site is `none` it counts
   a detection only on a judge match.
 - **ACE-A15** Given fixture reports, the scorer passes a case's detection at
-  four or five detecting runs of five and, after a retest, at eight of ten. It fails
-  it at seven of ten and at two of five.
+  four or five detecting runs of five and, after a retest, at eight to ten of
+  ten, and fails it at every other count.
 - **ACE-A16** Given fixture reports, the scorer holds a case's control at four
-  or five silent runs of five and, after a retest, at eight of ten. It fails it at
-  seven of ten and at two of five.
+  or five silent runs of five and, after a retest, at eight to ten of ten,
+  and fails it at every other count.
 - **ACE-A17** Given fixture reports, the scorer passes a lens on ACQ-A27 at 80
   percent empty control runs, fails it below, and fails a lens with no control
   run behind a current lock.
@@ -287,12 +302,12 @@ checker suites run under `make content-tests`.
   or planned run count differs from ACE-D6 and ACE-D7, naming the difference. Repeats do not count against the
   planned run count.
 - **ACE-A19** A planned run with no usable report after two repeats, or with an
-  objection the judge has not ruled on, leaves its case pending and counts in
-  no rate, and the scorer reports the evaluation incomplete.
+  objection owed a judgment the judge has not given, leaves its case pending
+  and counts in no rate, and the scorer reports the evaluation incomplete.
 - **ACE-A20** The scorer refuses to score a judgment task whose calibration
-  record shows fewer than eighteen agreements in twenty, names a judge prompt
-  digest or judge model ID other than the run's, or names a labeller other
-  than the owner, naming the reason.
+  record is absent, shows fewer than eighteen agreements in twenty, names a
+  judge prompt digest or judge model ID other than the run's, or names a
+  labeller other than the owner, naming the reason.
 - **ACE-A21** The planner refuses an attempt on a case whose current
   fingerprint already has an attempt, locked, failed or retested, naming the
   case, and
@@ -306,9 +321,11 @@ checker suites run under `make content-tests`.
   configuration, in judge model ID, in judge prompt digest or in the cases
   they cover, or either of which holds a pending case, naming the reason.
 - **ACE-A24** The emitter suite fails when the current template's digest is
-  not the registry's last entry, or when an entry after the first lacks a
-  report saying `improves` that the comparison reproduces from the committed
-  lock sets the entry names, the later set covering every catalogue case.
+  not the registry's last entry, when the first entry is not the suite's
+  constant, or when an entry after the first lacks a report saying `improves`
+  that the comparison reproduces from the committed lock sets the entry
+  names, whose fingerprints carry the entry's digest and the one before it,
+  the later set covering every catalogue case.
 - **ACE-A25** C1 passes in the evaluation of record.
 - **ACE-A26** C2 passes in the evaluation of record.
 - **ACE-A27** C3 passes in the evaluation of record.
@@ -330,9 +347,9 @@ checker suites run under `make content-tests`.
 - **ACE-A43** Every lens passes ACQ-A27 in the evaluation of record.
 - **ACE-A44** C28 passes in the evaluation of record.
 - **ACE-A45** C15 passes in the evaluation of record.
-- **ACE-A46** The planner plans a retest only for a side at three of five and
-  no third repeat of a run, and the scorer judges a retested side on all ten
-  of its runs.
+- **ACE-A46** The planner plans a retest for every side at three of five and
+  for no other, plans no third repeat of a run, and the scorer judges a
+  retested side on all ten of its runs.
 - **ACE-A47** Given locks and a tree in which one case's document or one
   lens's emitted prompt has changed, the scorer reports as void exactly the
   locks whose fingerprint changed, naming each.
@@ -350,20 +367,23 @@ checker suites run under `make content-tests`.
   demands implementation criteria.
 - **ACE-A52** Given fixture reports over a catalogue with passing and failing
   sides, the scorer locks a case only when its detection passes and its
-  control holds, locks P1 at four or five passing panel runs of five, passes
-  a parent only when every case serving it is locked, scores under the
+  control holds, locks P1 at four or five passing panel runs of five or
+  eight to ten of ten after a retest and at no other count, passes a parent
+  only when every case serving it is locked, scores under the
   thresholds the attempt's plan fixed, and averages no rate across cases.
 - **ACE-A53** The scorer refuses an attempt whose usable reports do not match
-  its planned runs one to one, or in which two reports share a response ID,
-  naming the run or the report. A repeat's superseded reports match nothing.
+  the planned runs of the attempt and its retest one to one, or in which a
+  report lacks a response ID or two share one, naming the run or the report.
+  A repeat's superseded reports match nothing.
 - **ACE-A54** The planner refuses a plan of more than 310 dispatches that names
   no owner approval, naming the count.
 - **ACE-A55** The judge input the scorer assembles holds the case's rule text,
   its detection statement and one objection, or for P1 one objection alone,
   and nothing else.
 - **ACE-A56** The scorer refuses a calibration record that shares an item with
-  a failed calibration of an earlier prompt digest, or that holds no
-  mechanical detection for a case task, naming the reason.
+  a failed calibration of an earlier prompt digest, that calibrates a prompt
+  digest an earlier record failed, or that holds no mechanical detection for
+  a case task, naming the reason.
 - **ACE-A57** C19 passes in the evaluation of record.
 - **ACE-A58** C20 passes in the evaluation of record.
 - **ACE-A59** C21 passes in the evaluation of record.
@@ -374,8 +394,10 @@ checker suites run under `make content-tests`.
 - **ACE-A64** C26 passes in the evaluation of record.
 - **ACE-A65** C27 passes in the evaluation of record.
 - **ACE-A66** C29 passes in the evaluation of record.
-- **ACE-A67** The case check, the planner, the scorer and the comparison, run
-  twice over unchanged inputs, answer the same way and write nothing.
+- **ACE-A67** The case check, the scorer and the comparison, run twice over
+  unchanged inputs, answer the same way and write nothing; the planner,
+  asked twice for the same attempt, refuses the second time under ACE-A21
+  and writes no second plan.
 
 ### Traceability
 
@@ -443,7 +465,7 @@ They are not S2 slices.
 - feat: AC evaluation S2.3: planning, scoring and the judge (ACE-D4 to ACE-D8) — AC: ACE-A14, ACE-A15, ACE-A16, ACE-A17, ACE-A18, ACE-A19, ACE-A20, ACE-A21, ACE-A46, ACE-A47, ACE-A48, ACE-A49, ACE-A50, ACE-A51, ACE-A52, ACE-A53, ACE-A54, ACE-A55, ACE-A56, ACE-A67; make content-tests exits 0.
 - feat: AC evaluation S2.4: comparison and the template gate (ACE-D9) — AC: ACE-A22, ACE-A23, ACE-A24; make content-tests exits 0.
 - feat: AC evaluation S2.5: the catalogue (ACE-D3) — AC: the committed catalogue passes the case check; make content-tests exits 0.
-- feat: AC evaluation S2.6: lens mandates (ACE-D9) — AC: a committed baseline attempt on every case, and a lens-level comparison per revised lens.
+- feat: AC evaluation S2.6: lens mandates (ACE-D9) — AC: a committed baseline attempt on every case, and a lens-level comparison per revised lens that names no regressed case.
 - feat: AC evaluation S2.7: evaluation of record, the verification child (ACE-D7) — AC: ACE-A25, ACE-A26, ACE-A27, ACE-A28, ACE-A29, ACE-A30, ACE-A31, ACE-A32, ACE-A33, ACE-A34, ACE-A35, ACE-A36, ACE-A37, ACE-A38, ACE-A39, ACE-A40, ACE-A41, ACE-A42, ACE-A43, ACE-A44, ACE-A45, ACE-A57, ACE-A58, ACE-A59, ACE-A60, ACE-A61, ACE-A62, ACE-A63, ACE-A64, ACE-A65, ACE-A66.
 
 ## Out of scope
