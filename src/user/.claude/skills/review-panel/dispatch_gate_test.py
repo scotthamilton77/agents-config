@@ -599,6 +599,14 @@ class TestDeadRunLadder:
         assert "the failover seat" in message
         assert len(kinds(round_dir, "claim")) == 1
 
+    def test_a17_a_transport_that_is_not_the_failover_seat_is_refused(self, round_dir, capsys):
+        authorize(round_dir, capsys)
+        answer = refuse(dead_run(round_dir, **{"--transport": "openai", "--effort": "low"}),
+                        capsys)
+        assert codes(answer) == ["off-ladder"]
+        assert "the failover seat on openrouter" in answer["errors"][0]["message"]
+        assert len(kinds(round_dir, "claim")) == 1
+
     def test_a17_a_second_step_down_is_refused(self, round_dir, capsys):
         authorize(round_dir, capsys)
         authorize(round_dir, capsys, **{"--effort": "medium", "--reason": "dead-run",
@@ -609,9 +617,13 @@ class TestDeadRunLadder:
         assert "the failover seat" in message
         assert "a lower effort" not in message
 
+    @pytest.mark.parametrize("requested", [
+        {"--transport": "openrouter", "--model": "z-ai/glm-5.3", "--effort": "low"},
+        {"--transport": "codex", "--model": "gpt-5.6-terra", "--effort": "medium"},
+    ], ids=["failover-transport", "starting-transport"])
     @pytest.mark.parametrize("failover_attempt", [2, 3])
     def test_a17_a_dead_run_after_the_failover_is_out_of_attempts(
-        self, round_dir, capsys, failover_attempt
+        self, round_dir, capsys, failover_attempt, requested
     ):
         authorize(round_dir, capsys)
         if failover_attempt == 3:
@@ -619,9 +631,7 @@ class TestDeadRunLadder:
                                             "--evidence": WATCHDOG_LINE})
         authorize(round_dir, capsys, **{"--transport": "openrouter", "--model": "z-ai/glm-5.3",
                                         "--reason": "dead-run", "--evidence": WATCHDOG_LINE})
-        answer = refuse(dead_run(round_dir, **{"--transport": "openrouter",
-                                               "--model": "z-ai/glm-5.3", "--effort": "low"}),
-                        capsys)
+        answer = refuse(dead_run(round_dir, **requested), capsys)
         assert codes(answer) == ["attempts-exhausted"]
         assert "out of attempts" in answer["errors"][0]["message"]
         assert answer["halt"]["guidance"]

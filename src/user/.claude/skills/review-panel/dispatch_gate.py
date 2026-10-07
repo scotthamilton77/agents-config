@@ -217,6 +217,8 @@ def backoff_for(attempt: int) -> int:
 
 ROUND_META_NAME = "round.json"
 OPENROUTER_TRANSPORT = "openrouter"
+# A lens fails over to the other of the two transports, and only to it.
+FAILOVER_TRANSPORT = {"codex": OPENROUTER_TRANSPORT, OPENROUTER_TRANSPORT: "codex"}
 
 # The floor for one openrouter dispatch: a frontier model reserves its full
 # max_tokens against the key's balance up front, whatever it actually returns.
@@ -482,10 +484,12 @@ def check_ladder(
             "attempts for this round.",
             failed_routes(prior, DEAD_RUN, evidence),
         )
-    if transport != start:
+    other = FAILOVER_TRANSPORT.get(start)
+    if transport == other:
         return None
     last = prior[-1]
-    failover = f"the failover seat on a transport other than {start}"
+    failover = (f"the failover seat on {other}" if other else
+                "the failover seat, which only a lens that started on codex or openrouter has")
     asked = f"this claim asks for {transport}/{model} at {effort}"
     if any(record.get("reason") == DEAD_RUN for record in prior):
         return Refusal(
@@ -495,7 +499,8 @@ def check_ladder(
         )
     previous = last.get("effort")
     if (
-        model == last.get("model")
+        transport == start
+        and model == last.get("model")
         and effort in EFFORT_LEVELS
         and previous in EFFORT_LEVELS
         and EFFORT_LEVELS.index(effort) < EFFORT_LEVELS.index(previous)
