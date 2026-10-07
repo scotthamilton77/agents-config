@@ -1063,20 +1063,23 @@ def change_diffs(
     nobody can read reviews nothing.
     """
     diffs: dict[str, tuple[Path, bytes]] = {}
+    by_start: dict[str, bytes] = {}
     head = head_sha or "HEAD"
     for name, entry in scopes.items():
         start = entry.get("delta_base_sha") or base_sha or ""
-        proc = subprocess.run(
-            ["git", "-C", repo_root or ".", "diff", "--end-of-options", start, head],
-            capture_output=True, check=False,
-        )
-        if proc.returncode != 0:
-            raise Refusal(
-                "unreadable-change",
-                f"cannot write the change {start}..{head} for lens {name!r}: "
-                + proc.stderr.decode("utf-8", "replace").strip(),
+        if start not in by_start:
+            proc = subprocess.run(
+                ["git", "-C", repo_root or ".", "diff", "--end-of-options", start, head],
+                capture_output=True, check=False,
             )
-        diffs[name] = (out_dir / f"{name}.diff", proc.stdout)
+            if proc.returncode != 0:
+                raise Refusal(
+                    "unreadable-change",
+                    f"cannot write the change {start}..{head} for lens {name!r}: "
+                    + proc.stderr.decode("utf-8", "replace").strip(),
+                )
+            by_start[start] = proc.stdout
+        diffs[name] = (out_dir / f"{name}.diff", by_start[start])
     return diffs
 
 

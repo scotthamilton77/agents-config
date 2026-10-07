@@ -2358,6 +2358,21 @@ class TestChangeFile:
             assert path.read_bytes() == expected, entry["lens"]
             assert str(path) in (out_dir / f"{entry['lens']}.md").read_text(encoding="utf-8")
 
+    def test_a18_lenses_sharing_a_revision_pair_share_one_diff(self, repo, acs_file, tmp_path,
+                                                               capsys, monkeypatch):
+        real_run = emitter.subprocess.run
+        diffs: list[list[str]] = []
+
+        def counting(cmd, *args, **kwargs):
+            if "diff" in cmd:
+                diffs.append(cmd)
+            return real_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(emitter.subprocess, "run", counting)
+        code, result = run(argv(repo, acs_file, tmp_path / "out"), capsys)
+        assert code == 0, result
+        assert len(diffs) == 1, diffs
+
     def test_a18_two_identical_revisions_write_an_empty_named_file(self, repo, acs_file,
                                                                   tmp_path, capsys):
         out_dir = tmp_path / "out"
