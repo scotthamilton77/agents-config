@@ -36,11 +36,11 @@ The round being dispatched: <the absolute path of the scenario's round record, w
 Question: <the scenario's question>
 ```
 
-The files every scenario gives, as paths from the repository root:
+The files every scenario gives:
 
-- `src/user/.claude/skills/review-panel/harvest.md`
-- `src/user/.claude/skills/review-panel/contracts.json`
-- `src/user/.claude/skills/choosing-a-delegate/references/model-routing.md`
+- this skill's `harvest.md`
+- this skill's `contracts.json`
+- the `choosing-a-delegate` skill's `references/model-routing.md`
 
 Every scenario except 4 and 9 adds one round record from this directory. The emitter wrote both
 records for a `typed-code` pull request. In the round-1 record every lens reads the whole
@@ -56,7 +56,7 @@ The proxy line the dead-run scenarios quote is
 
 ## Scenario 1
 
-- Round record: `src/user/.claude/skills/review-panel/evals/round-2-typed-code.json`
+- Round record: `round-2-typed-code.json` beside this file
 - Question: what model, effort and tools does the `security` lens dispatch with?
 - Key: model `z-ai/glm-5.3`, effort `high`, tools `Read`, `Grep` and `Glob`.
 - Derivation: the round record's `security` entry has transport `openrouter`, which is the
@@ -66,7 +66,7 @@ The proxy line the dead-run scenarios quote is
 
 ## Scenario 2
 
-- Round record: `src/user/.claude/skills/review-panel/evals/round-2-typed-code.json`
+- Round record: `round-2-typed-code.json` beside this file
 - Question: the `correctness` lens's Codex route returned a usage-limit error; what model,
   effort and tools does its next dispatch use?
 - Key: model `moonshotai/kimi-k3`, effort `high`, tools `Read`, `Grep` and `Glob`.
@@ -78,7 +78,7 @@ The proxy line the dead-run scenarios quote is
 
 ## Scenario 3
 
-- Round record: `src/user/.claude/skills/review-panel/evals/round-1-typed-code.json`
+- Round record: `round-1-typed-code.json` beside this file
 - Question: the `test-adequacy` lens's Codex route returned a usage-limit error; what model,
   effort and tools does its next dispatch use?
 - Key: model `z-ai/glm-5.3`, effort `low`, tools `Read`, `Grep` and `Glob`.
@@ -98,7 +98,7 @@ The proxy line the dead-run scenarios quote is
 
 ## Scenario 5
 
-- Round record: `src/user/.claude/skills/review-panel/evals/round-1-typed-code.json`
+- Round record: `round-1-typed-code.json` beside this file
 - Question: what model, effort and tools does the `correctness` lens dispatch with?
 - Key: model `gpt-6.1-sol`, effort `high`, tools the Codex runtime's read-only sandbox.
 - Derivation: the `correctness` entry has transport `codex`, which is the routing table's
@@ -110,7 +110,7 @@ The proxy line the dead-run scenarios quote is
 
 ## Scenario 6
 
-- Round record: `src/user/.claude/skills/review-panel/evals/round-2-typed-code.json`
+- Round record: `round-2-typed-code.json` beside this file
 - Question: the `security` lens's attempt at its pinned effort ended with the proxy line
   `response ends on thinking and contains no text block to promote`; what model, effort and
   tools does its next dispatch use?
@@ -124,7 +124,7 @@ The proxy line the dead-run scenarios quote is
 
 ## Scenario 7
 
-- Round record: `src/user/.claude/skills/review-panel/evals/round-1-typed-code.json`
+- Round record: `round-1-typed-code.json` beside this file
 - Question: the `security` lens's attempt at its pinned effort was ended by the watchdog for
   silence; what model, effort and tools does its next dispatch use?
 - Key: model `gpt-6.1-sol`, effort `high`, tools the Codex runtime's read-only sandbox.
@@ -136,7 +136,7 @@ The proxy line the dead-run scenarios quote is
 
 ## Scenario 8
 
-- Round record: `src/user/.claude/skills/review-panel/evals/round-2-typed-code.json`
+- Round record: `round-2-typed-code.json` beside this file
 - Question: the `security` lens's attempt at its pinned effort and its attempt one effort step
   down both ended with that same proxy line; what model, effort and tools does its next
   dispatch use?
