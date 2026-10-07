@@ -131,9 +131,10 @@ claiming again — the reason you declare is what the gate bounds.
 
 **The route died** (`transport-error`). What came back describes the *transport*, not the review:
 an HTTP status, an authentication or credit error, a refused connection, a dead broker or session
-— or nothing at all, including no output file where one was claimed. The reviewer never ran. Judge
-this on the body rather than the exit status: a dead route shows up as an exit 1 carrying a short
-provider error, and equally as an exit 0 carrying nothing.
+— or nothing at all, including no output file where one was claimed. An attempt your watchdog
+killed for silence leaves nothing too, and it is a dead run. Judge this on the body rather than
+the exit status: a dead route shows up as an exit 1 carrying a short provider error, and equally
+as an exit 0 carrying nothing.
 
 **The reviewer failed** (`unusable-output`). A body came back that is the model's own output, and
 no report survives the tolerance ladder under "Reading a lens report". The route worked; what

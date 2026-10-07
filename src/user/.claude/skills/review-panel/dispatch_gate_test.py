@@ -882,6 +882,7 @@ class TestIngest:
         )
         assert codes(refused) == ["no-output"]
         assert "transport-error" in refused["errors"][0]["message"]
+        assert "dead-run" in refused["errors"][0]["message"]
         assert kinds(round_dir, "outcome")[0]["outcome"] == "no-output"
 
     @pytest.mark.parametrize("body", ["", " \n\t\n"])

@@ -785,8 +785,9 @@ def ingest(args: argparse.Namespace) -> dict[str, Any]:
         raise Refusal(
             "no-output",
             f"the claimed output path {output} holds nothing. Each attempt writes its own path, "
-            "so nothing there means the route wrote nothing and the reviewer never ran: claim "
-            f"again with reason {TRANSPORT_ERROR!r}, carrying the route's error as the evidence",
+            "so nothing there means this attempt wrote nothing. Claim again with reason "
+            f"{DEAD_RUN!r} and the kill line as the evidence when your watchdog killed it for "
+            f"silence, and with reason {TRANSPORT_ERROR!r} and the route's error otherwise",
         )
     try:
         report, recovery = parse_report(body)
