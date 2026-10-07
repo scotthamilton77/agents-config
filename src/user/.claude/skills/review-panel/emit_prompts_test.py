@@ -2222,10 +2222,14 @@ class TestSeatPins:
         code, result = run(flat, capsys)
         assert code == 0, result
         contracts = strict_contracts()
+        roster = {lens["lens"]: lens for lens in CLASSES[artifact_class]["lenses"]}
         entries = meta_of(out_dir_of(flat))["lenses"]
         assert entries
         for entry in entries:
             assert entry["scope_this_round"] == ("delta" if mode == "delta" else "full"), entry
+            declared = roster[entry["lens"]]
+            assert entry["tier_this_round"] == (declared["tier"] if mode == "round-one" else
+                                                declared.get("re_review_tier", declared["tier"]))
             pin = lens_pin(contracts, (entry["transport"], entry["tier_this_round"],
                                        entry["scope_this_round"]))
             assert (entry.get("effort"), entry.get("tools")) == (pin["effort"], pin["tools"]), (
