@@ -1015,14 +1015,10 @@ def resolve_scopes(
     return scopes, skipped, rescope
 
 
-def lens_tier(lens: dict, scope: str) -> str:
-    """A whole-artifact read buys the declared tier in every round; a read of a change buys the
-    declared re_review_tier when the lens names one, else the declared tier stays in force.
-
-    Keying this on the round instead would let a full rescope after round 1 fall to the
-    re-review tier, whose model may be one that never reads a whole artifact.
-    """
-    if scope == "full":
+def lens_tier(lens: dict, round_no: int) -> str:
+    """Round 1 buys the declared tier; a re-review round buys the declared re_review_tier when
+    the lens names one, else the declared tier stays in force."""
+    if round_no < 2:
         return lens["tier"]
     return lens.get("re_review_tier", lens["tier"])
 
@@ -1052,6 +1048,36 @@ def seat_pins(
             )
         pins[name] = {"effort": pin["effort"], "tools": pin["tools"]}
     return pins
+
+
+def change_diffs(
+    repo_root: str | None, base_sha: str | None, head_sha: str | None,
+    scopes: dict[str, dict], out_dir: Path,
+) -> dict[str, tuple[Path, bytes]]:
+    """Compute, before anything is written, the unified diff each lens reads over its scope.
+
+    A whole-artifact read gets the base to the head, and a delta read gets the head it last
+    judged to the head. The diff goes to a file beside the lens's prompt because a reviewer
+    granted no shell cannot run git, and a lens can fail over to such a seat after emission.
+    A diff that cannot be computed refuses the round, since a prompt pointing at a change
+    nobody can read reviews nothing.
+    """
+    diffs: dict[str, tuple[Path, bytes]] = {}
+    head = head_sha or "HEAD"
+    for name, entry in scopes.items():
+        start = entry.get("delta_base_sha") or base_sha or ""
+        proc = subprocess.run(
+            ["git", "-C", repo_root or ".", "diff", "--end-of-options", start, head],
+            capture_output=True, check=False,
+        )
+        if proc.returncode != 0:
+            raise Refusal(
+                "unreadable-change",
+                f"cannot write the change {start}..{head} for lens {name!r}: "
+                + proc.stderr.decode("utf-8", "replace").strip(),
+            )
+        diffs[name] = (out_dir / f"{name}.diff", proc.stdout)
+    return diffs
 
 
 def _qualified(lens: Any, round_no: Any, item: str) -> str:
@@ -1153,8 +1179,9 @@ def render_prompt(lens: dict, ctx: dict) -> str:
             f"Repository root: {inert(ctx['repo_root'])}\n"
             f"Base commit: {inert(ctx['base_sha'])}\n"
             f"Reviewed head commit: {inert(ctx['head_sha'])}\n"
-            "Resolve the change against the repository and read it directly, along with whatever "
-            "surrounding material your scope requires.\n"
+            f"The change over your scope, as a unified diff: {inert(ctx['diff_paths'][name])}\n"
+            "Read the change from that file, or resolve it against the repository if you can run "
+            "git, and read whatever surrounding material your scope requires.\n"
         ),
         "## Retained categories declared for this round\n",
         (
@@ -1230,23 +1257,28 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         args.repo_root, args.head_sha, args.last_full_head,
     )
     emitting = [lens for lens in roster if lens["lens"] in scopes]
-    tiers = {lens["lens"]: lens_tier(lens, scopes[lens["lens"]]["scope"]) for lens in emitting}
+    tiers = {lens["lens"]: lens_tier(lens, args.round) for lens in emitting}
     pins = seat_pins(contracts, emitting, scopes, tiers)
+    out_dir = Path(args.out_dir)
+    diffs = change_diffs(args.repo_root, args.base_sha, args.head_sha, scopes, out_dir.resolve())
     ctx = {
         "artifact_class": args.artifact_class, "round": args.round, "acs": acs,
         "target": args.target or "", "repo_root": args.repo_root or "",
         "base_sha": args.base_sha or "", "head_sha": args.head_sha or "",
         "retained": retained, "ledger": ledger, "prior_findings": prior_findings,
         "scopes": scopes, "sweep": bool(args.sweep), "profile": profile,
+        "diff_paths": {name: str(path) for name, (path, _) in diffs.items()},
     }
 
-    out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
     for lens in emitting:
         path = out_dir / f"{lens['lens']}.md"
         path.write_text(render_prompt(lens, ctx), encoding="utf-8")
         written.append(str(path))
+        diff_path, diff = diffs[lens["lens"]]
+        diff_path.write_bytes(diff)
+        written.append(str(diff_path))
     round_meta = {
         "artifact_class": args.artifact_class, "claim_id": args.claim, "round": args.round,
         "base_sha": args.base_sha, "head_sha": args.head_sha, "retained_categories": retained,
