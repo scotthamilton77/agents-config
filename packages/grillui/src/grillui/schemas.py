@@ -352,9 +352,28 @@ STATUS_PHASES = frozenset(
 # accepted and closed. The `composing` entry opens each task whole -- id,
 # target, gesture, basis, mode and seat -- and every later entry names it by id
 # with the phase it ended in, so a restarted backend reads every task's state
-# back off the log alone.
+# back off the log alone. The entry a turn's document lands as names the tasks
+# that turn carries the same way, each by id, because what the document may
+# change without the human's apply is decided by which decisions those tasks
+# weigh -- and the replay can only read that off the entry itself.
 TASKS_KEY = "tasks"
 IMPACT_MODE = "impact"
+# What a retry's task is opened with beside the rest of a task's description:
+# the id of the failed task it retries. A retry is the failed task's ruling
+# asked for again, so the board names the failure it is retrying, and a reader
+# of the log can follow one decision's rulings from the first through each
+# retry without inferring the chain from timing.
+RETRIES_KEY = "retries"
+# What marks the entry a map-doctor turn lands as. The doctor carries no task,
+# and every structural change it sends waits for the human, a new decision
+# included -- so the replay, which decides what lands, has to read that off the
+# entry itself. An entry written before the key existed carries none and
+# replays exactly as it always did.
+REASSESS_KEY = "reassess"
+# What a pre-ruling's task is opened with: the option it was computed for. The
+# key's presence is the whole marker, and a task carrying it holds no lock, so
+# there is no blocker for a retry to release.
+OPTION_KEY = "option"
 
 # The sequence of the `composing` entry a `replied` or `error` closes. Map turns
 # run concurrently, so "the latest announcement on the channel" names the wrong
@@ -582,6 +601,19 @@ class Answer(Strict):
     text: str | None = None
 
 
+class Failure(Strict):
+    """Why an impact task ended without a ruling, as the board names it.
+
+    `cause` is the lane's own account of the turn that failed, `seat` the tier
+    that was weighing it, and `at` when the turn closed. They are what the human
+    needs to decide whether to retry: what went wrong, on which seat, and when.
+    """
+
+    cause: str
+    seat: str
+    at: str
+
+
 class Waiting(Strict):
     """The impact task holding a decision off the frontier, as the board names it.
 
@@ -589,12 +621,30 @@ class Waiting(Strict):
     started it, `seat` the tier weighing it, and `start` when that tier was
     announced. The four are what the human is owed while they wait: which
     gesture, which seat, and since when.
+
+    `failed` is set once the task has ended without a ruling. The decision
+    stays waiting -- nothing unlocks on inaction -- and the failure is what the
+    board offers the retry against. `retries` names the failed task this one
+    retries, where it is a retry.
     """
 
     task: str
     gesture: int
     seat: str
     start: str
+    failed: Failure | None = None
+    retries: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_absent_failure(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        """A task that is still weighing, and is no retry, carries neither key,
+        so a board whose rulings are all in flight keeps the bytes it always
+        had."""
+        dumped: dict[str, object] = handler(self)
+        for key in ("failed", "retries"):
+            if dumped.get(key) is None:
+                dumped.pop(key, None)
+        return dumped
 
 
 class Decision(Strict):
@@ -950,6 +1000,12 @@ class HistoryEntry(Strict):
     composing a cause out of `prereqs`. Each is absent where there is no such
     fact: a move nobody proposed carries no proposer, and one no ruling produced
     carries no verdict.
+
+    `task` is the impact task whose result landed the change without anyone's
+    apply. It is a separate fact from `proposed_by` rather than another value of
+    it: the one says an agent's change waited and a human let it in, and the
+    other says a ruling the human was waiting on changed its own decision
+    directly. A reader who saw both under one name could not tell which.
     """
 
     seq: int
@@ -959,6 +1015,7 @@ class HistoryEntry(Strict):
     why: str
     proposed_by: str | None = None
     verdict: RulingKind | None = None
+    task: str | None = None
 
     @model_serializer(mode="wrap")
     def _without_absent_optionals(
@@ -968,7 +1025,7 @@ class HistoryEntry(Strict):
         of the record cannot mistake "nobody proposed this" for "the proposer
         was not written down"."""
         dumped: dict[str, object] = handler(self)
-        for key in ("proposed_by", "verdict"):
+        for key in ("proposed_by", "verdict", "task"):
             if dumped.get(key) is None:
                 dumped.pop(key, None)
         return dumped
@@ -1161,6 +1218,11 @@ class MootnessObligation(Strict):
     impact tasks are keyed by that sequence and their target, so a turn reads
     which of its own tasks a later gesture superseded off the log by it, at the
     moment its reply lands.
+
+    `opened` is the part of `ids` that no option marked: the decisions an answer
+    in the human's own words opened. The turn is told which those are, because
+    a mark is the map author's prediction that a decision changes, and these
+    carry no prediction either way.
     """
 
     target: str
@@ -1168,6 +1230,7 @@ class MootnessObligation(Strict):
     ids: list[str] = Field(min_length=1)
     cause: Literal["answer", "invalidate"] = "answer"
     gesture: int | None = None
+    opened: list[str] = Field(default_factory=list)
 
 
 class Ruling(Strict):
@@ -1252,6 +1315,17 @@ class DispatchContext(Strict):
     about the tool rather than about the plan -- and it is the one dispatch for
     which the answer is worth its bytes, since every other agent here is
     grilling a design and would only be carrying it.
+
+    `tasks` names the impact tasks this turn carries, and `custom_text` says the
+    turn answers the human's own words. `backpressure` rides every dispatch that
+    weighs the board against a settlement -- either of those turns, and the
+    doctor -- and is the paragraph its brief opens on that. It is
+    recorded here rather than only in the composed brief so a reader of the
+    dispatch record can see that the turn was told.
+
+    `scope` rides a retry's dispatch and no other: the failed decision and
+    every decision resting on it. The retry may change nothing outside it, and
+    the turn is told so here rather than left to find out from the refusal.
     """
 
     agent: str
@@ -1265,6 +1339,10 @@ class DispatchContext(Strict):
     catch_up: list[CatchUpEntry] = Field(default_factory=list)
     help_reference: str | None = None
     mootness: MootnessObligation | None = None
+    tasks: list[str] = Field(default_factory=list)
+    custom_text: bool = False
+    backpressure: str | None = None
+    scope: list[str] = Field(default_factory=list)
 
 
 class DoctorState(Strict):
@@ -1277,6 +1355,30 @@ class DoctorState(Strict):
     """
 
     outstanding: bool
+
+
+class RetryRequest(Strict):
+    """The human asking for a failed ruling to be taken again, by its task.
+
+    `epoch` is the tenure the page last read, refused on a mismatch the way a
+    write is: a task id read off another process's board names a failure this
+    process may already have moved past.
+    """
+
+    task: str
+    epoch: str
+
+
+class RetryState(Strict):
+    """Whether a retry press started a retry.
+
+    False is an answer rather than an error. The task may already have been
+    retried by an earlier press, or superseded by an answer that started a
+    fresh ruling, and either way the page's next read of the board shows what
+    is holding the decision now.
+    """
+
+    started: bool
 
 
 class ClaimRequest(Strict):
@@ -1412,6 +1514,11 @@ class QueueGesturePayload(Payload):
     log, authored by the agent that wrote them, and the appender resolves them
     out of the queue -- so a page cannot apply something that was never
     proposed, and the sole-author rule survives the human's gesture.
+
+    An apply may also carry `by_preference: true`, saying the page's own switch
+    made the gesture for the human. It is an extra key like any other payload
+    content, accepted and kept on the entry, and nothing on the backend reads it:
+    the replay is the same whichever way the apply was made.
     """
 
     pending: list[str] = Field(min_length=1)
@@ -1477,6 +1584,20 @@ def _fold_payload_problem(payload: Mapping[str, Any]) -> str | None:
     return None
 
 
+# The fields a revise changes. A revise supplying none of them would change
+# nothing and still read as a change: it is queued or folded like one, and a
+# decision held while its ruling was weighed would come back claiming a new
+# shape it does not have. So the document gate refuses it, and the refusal says
+# where a disagreement with no change behind it belongs, because that is what
+# a seat sending one was trying to say.
+REVISE_FIELDS = ("short", "title", "body", "prereqs", "options")
+EMPTY_REVISE = (
+    "'revise' payload: a revise must supply at least one of "
+    + ", ".join(f"`{name}`" for name in REVISE_FIELDS)
+    + "; a `why` with no change behind it belongs in an `informational` on that decision"
+)
+
+
 def update_problem(update: Mapping[str, Any]) -> str | None:
     """Why the appender would refuse this update, or None where it would take it.
 
@@ -1493,7 +1614,8 @@ def update_problem(update: Mapping[str, Any]) -> str | None:
     and the answer an agent settles with is checked against the board there,
     which this reader does not have. It asks the smaller question a boardless
     reader can -- whether an answer is carried at all -- and leaves whether the
-    option is one the decision offers to the appender.
+    option is one the decision offers to the appender. It also refuses a revise
+    that supplies nothing to change, which the appender's shape takes.
     """
     kind = update.get("kind")
     if not isinstance(kind, str):
@@ -1503,6 +1625,8 @@ def update_problem(update: Mapping[str, Any]) -> str | None:
     problem = payload_problem(kind, update)
     if problem is not None:
         return problem
+    if kind == "revise" and all(update.get(name) is None for name in REVISE_FIELDS):
+        return EMPTY_REVISE
     if kind not in ANSWER_KINDS and "answer" not in update:
         return None
     refused = answer_problem(update.get("answer"), None)

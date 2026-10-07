@@ -635,7 +635,7 @@ def test_escalating_one_thread_leaves_every_other_channel_on_the_fast_tier(
             **{TRANSFER_FLAG: True},
         ),
         turn_event("thread-turn", OTHER, "ordinary", turns=[{"text": "and on restart?"}]),
-        human_answer("map-turn"),
+        turn_event("answer", MAP_CHANNEL, "map-turn", target=NODE, answer={"option": "a"}),
     )
 
     assert composing(log) == {MINE: "heavy", OTHER: "fast", MAP_CHANNEL: "fast"}

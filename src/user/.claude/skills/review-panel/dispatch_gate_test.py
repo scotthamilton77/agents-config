@@ -82,6 +82,7 @@ def claim_argv(round_dir: Path, **overrides: Any) -> list[str]:
         "--lens": "correctness",
         "--transport": "codex",
         "--model": "gpt-5.6-terra",
+        "--effort": "high",
         "--reason": "initial",
     }
     args.update(overrides)
@@ -536,6 +537,145 @@ class TestBounds:
         assert authorize(round_dir, capsys, **{"--lens": "security"})["attempt"] == 1
 
 
+PROXY_LINE = "response ends on thinking and contains no text block to promote"
+WATCHDOG_LINE = "watchdog: no output for 600s, killed pid 4242"
+
+
+def dead_run(round_dir: Path, **overrides: Any) -> list[str]:
+    return claim_argv(round_dir, **{"--reason": "dead-run", "--evidence": PROXY_LINE,
+                                    **overrides})
+
+
+def open_on_openrouter(round_dir: Path, capsys) -> None:
+    """A pinned first attempt on OpenRouter reading a change at its pinned effort."""
+    authorize(round_dir, capsys, **{"--transport": "openrouter", "--model": "z-ai/glm-5.3",
+                                    "--effort": "high"})
+
+
+class TestDeadRunLadder:
+    """A dead run steps down once on the same model, then fails over, then stops."""
+
+    def test_a17_a_claim_without_an_effort_is_refused(self, round_dir, capsys):
+        answer = refuse(claim_argv(round_dir, **{"--effort": None}), capsys)
+        assert codes(answer) == ["no-effort"]
+        assert not kinds(round_dir, "claim")
+
+    def test_a17_a_claim_line_carries_its_effort_reason_and_evidence(self, round_dir, capsys):
+        open_on_openrouter(round_dir, capsys)
+        authorize(round_dir, capsys, **{"--transport": "openrouter", "--model": "z-ai/glm-5.3",
+                                        "--effort": "low", "--reason": "dead-run",
+                                        "--evidence": PROXY_LINE})
+        first, second = kinds(round_dir, "claim")
+        assert first["effort"] == "high"
+        assert (second["effort"], second["reason"], second["evidence"]) == (
+            "low", "dead-run", PROXY_LINE)
+
+    def test_a17_a_step_down_on_the_same_model_is_accepted(self, round_dir, capsys):
+        open_on_openrouter(round_dir, capsys)
+        answer = authorize(round_dir, capsys, **{
+            "--transport": "openrouter", "--model": "z-ai/glm-5.3", "--effort": "low",
+            "--reason": "dead-run", "--evidence": WATCHDOG_LINE})
+        assert answer["attempt"] == 2
+
+    def test_a17_the_other_transport_is_accepted(self, round_dir, capsys):
+        open_on_openrouter(round_dir, capsys)
+        answer = authorize(round_dir, capsys, **{
+            "--transport": "codex", "--model": "gpt-6.1-sol", "--effort": "medium",
+            "--reason": "dead-run", "--evidence": PROXY_LINE})
+        assert answer["transport"] == "codex"
+
+    @pytest.mark.parametrize("model,effort", [
+        ("z-ai/glm-5.3", "high"), ("z-ai/glm-5.3", "max"), ("moonshotai/kimi-k3", "low"),
+    ], ids=["same-effort", "higher-effort", "other-model"])
+    def test_a17_any_other_step_on_the_starting_transport_is_refused(
+        self, round_dir, capsys, model, effort
+    ):
+        open_on_openrouter(round_dir, capsys)
+        answer = refuse(dead_run(round_dir, **{"--transport": "openrouter", "--model": model,
+                                               "--effort": effort}), capsys)
+        assert codes(answer) == ["off-ladder"]
+        message = answer["errors"][0]["message"]
+        assert "a lower effort on openrouter/z-ai/glm-5.3" in message
+        assert "the failover seat" in message
+        assert len(kinds(round_dir, "claim")) == 1
+
+    def test_a17_a_transport_that_is_not_the_failover_seat_is_refused(self, round_dir, capsys):
+        authorize(round_dir, capsys)
+        answer = refuse(dead_run(round_dir, **{"--transport": "openai", "--effort": "low"}),
+                        capsys)
+        assert codes(answer) == ["off-ladder"]
+        assert "the failover seat on openrouter" in answer["errors"][0]["message"]
+        assert len(kinds(round_dir, "claim")) == 1
+
+    def test_a17_a_second_step_down_is_refused(self, round_dir, capsys):
+        authorize(round_dir, capsys)
+        authorize(round_dir, capsys, **{"--effort": "medium", "--reason": "dead-run",
+                                        "--evidence": PROXY_LINE})
+        answer = refuse(dead_run(round_dir, **{"--effort": "low"}), capsys)
+        assert codes(answer) == ["off-ladder"]
+        message = answer["errors"][0]["message"]
+        assert "the failover seat" in message
+        assert "a lower effort" not in message
+
+    @pytest.mark.parametrize("requested", [
+        {"--transport": "openrouter", "--model": "z-ai/glm-5.3", "--effort": "low"},
+        {"--transport": "codex", "--model": "gpt-5.6-terra", "--effort": "medium"},
+    ], ids=["failover-transport", "starting-transport"])
+    @pytest.mark.parametrize("failover_attempt", [2, 3])
+    def test_a17_a_dead_run_after_the_failover_is_out_of_attempts(
+        self, round_dir, capsys, failover_attempt, requested
+    ):
+        authorize(round_dir, capsys)
+        if failover_attempt == 3:
+            authorize(round_dir, capsys, **{"--effort": "medium", "--reason": "dead-run",
+                                            "--evidence": WATCHDOG_LINE})
+        authorize(round_dir, capsys, **{"--transport": "openrouter", "--model": "z-ai/glm-5.3",
+                                        "--reason": "dead-run", "--evidence": WATCHDOG_LINE})
+        answer = refuse(dead_run(round_dir, **requested), capsys)
+        assert codes(answer) == ["attempts-exhausted"]
+        assert "out of attempts" in answer["errors"][0]["message"]
+        assert answer["halt"]["guidance"]
+        assert len(kinds(round_dir, "claim")) == failover_attempt
+
+    def test_a17_a_dead_run_past_the_bound_is_out_of_attempts_not_off_ladder(
+        self, round_dir, capsys
+    ):
+        authorize(round_dir, capsys)
+        authorize(round_dir, capsys, **{"--effort": "medium", "--reason": "dead-run",
+                                        "--evidence": PROXY_LINE})
+        transport_recovery(round_dir, capsys, "503 upstream", **{"--effort": "medium"})
+        answer = refuse(dead_run(round_dir, **{"--effort": "low"}), capsys)
+        assert codes(answer) == ["attempts-exhausted"]
+        assert answer["halt"]["guidance"]
+        assert kinds(round_dir, "refusal")[0]["evidence"] == PROXY_LINE
+
+    def test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output(
+        self, round_dir, capsys
+    ):
+        failover = {"--transport": "openrouter", "--model": "z-ai/glm-5.3", "--effort": "low"}
+        authorize(round_dir, capsys)
+        transport_recovery(round_dir, capsys, "usage limit reached", **failover)
+        authorize(round_dir, capsys, **{"--reason": "unusable-output", "--evidence": "prose",
+                                        **failover})
+        answer = refuse(dead_run(round_dir, **failover), capsys)
+        assert codes(answer) == ["attempts-exhausted"]
+        assert answer["halt"]["guidance"]
+
+    def test_a17_a_dead_run_without_evidence_is_refused(self, round_dir, capsys):
+        authorize(round_dir, capsys)
+        answer = refuse(claim_argv(round_dir, **{"--effort": "medium", "--reason": "dead-run"}),
+                        capsys)
+        assert codes(answer) == ["no-failure-evidence"]
+
+    def test_a17_every_refusal_code_is_documented(self):
+        source = GATE_PATH.read_text(encoding="utf-8")
+        raised = set(re.findall(r'Refusal\(\s*"([a-z-]+)"', source))
+        raised |= set(re.findall(r'"code": "([a-z-]+)"', source))
+        documented = set(re.findall(r"^\s+([a-z]+(?:-[a-z]+)+)\s+—", gate.__doc__, re.MULTILINE))
+        assert {"no-effort", "off-ladder", "attempts-exhausted"} <= raised
+        assert raised <= documented, sorted(raised - documented)
+
+
 class TestIngest:
     """AC7/AC8: the tolerance ladder in code, and output nobody claimed."""
 
@@ -752,6 +892,7 @@ class TestIngest:
         )
         assert codes(refused) == ["no-output"]
         assert "transport-error" in refused["errors"][0]["message"]
+        assert "dead-run" in refused["errors"][0]["message"]
         assert kinds(round_dir, "outcome")[0]["outcome"] == "no-output"
 
     @pytest.mark.parametrize("body", ["", " \n\t\n"])

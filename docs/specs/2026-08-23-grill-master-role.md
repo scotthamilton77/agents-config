@@ -557,13 +557,13 @@ legend or reverts it.
 ### 5.6 Escalating on what a transcript condition cannot see
 
 **GUI-D48 — The map channel escalates on three triggers that need no human text, each with
-its own persistence.** GUI-D35's policy and GUI-D12's conditions reach every channel, the
-map's included, through the note riding an answer: the note is a human turn, so a note
-meeting a condition fires, and under `autonomous` writes its own `transferred` entry. That
-is the map's only human-text route, and it is thin — the human's other gestures there, an
+its own persistence.** GUI-D35's policy and GUI-D12's conditions reach the thread channels
+and not the map's first rung. The map's only human-text route is the note riding an answer,
+and every answer carrying one is composed by the expert from the start (PND-D4 of
+`docs/specs/2026-08-30-grilling-board-pending-analysis.md`), so no first-rung turn there reads it. The human's other gestures there, an
 apply and a dismiss, carry no text for a condition to read, and nobody selects *expert*
 on a seat toggle for an agent they never talk to. The three triggers below are what a transcript
-condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note.
+condition cannot see. GUI-D48 owns those three; PND-D4 owns the note.
 
 1. **Hand-up** (the lane's "press"), per gesture. A reply leaving a named decision unruled,
    or a document still invalid after its one retry, is re-asked on the expert seat for that
@@ -586,7 +586,7 @@ condition cannot see. GUI-D48 owns those three; GUI-D12 and GUI-D35 own the note
    entry to undo.
 3. **The distrust signal**, per session and sticky. Apply and dismiss are the human's only
    gestures on the map channel that carry no text — the note riding an answer is the exception,
-   and GUI-D12 reads it — so a dismissal is the one way they say, wordlessly, that the seat's
+   and the expert weighs it — so a dismissal is the one way they say, wordlessly, that the seat's
    proposal was wrong. One per-session counter counts two events as the same signal: the human
    dismissing a first-rung seat's proposal, and a hand-up (trigger 1). At the second
    signal the backend writes a policy `transferred` status entry on the map channel — GUI-D35's
@@ -733,10 +733,11 @@ carries the replacement; *suspect* names what would settle it.
 - **GUI-A101.** Changes: "a fast tier that rules on neither decision is followed by an
   expert turn on the same gesture whose recorded dispatch names both ... and a fast tier
   that rules `stands` on both, each with a why, is followed by no expert turn".
-- **GUI-A103.** Changes: "a reply ruling on each named id — an `invalidate` queued for one
-  and `stands` with a why for the other — leaves the expert untouched, the human unsaid
-  to, the invalidate in the queue and the standing decision on the frontier under a notice
-  targeted at it".
+- **GUI-A103.** Changes: "a reply ruling on each named id — an `invalidate` for one and
+  `stands` with a why for the other — leaves the expert untouched, the human unsaid to, the
+  invalidate landed on its own target with a history line naming the impact task (PND-D3 of
+  `docs/specs/2026-08-30-grilling-board-pending-analysis.md`), and the standing decision on the
+  frontier under a notice targeted at it".
 - **GUI-A109.** Changes: "the expert proposes nothing and rules nothing" in place of
   "proposes nothing either".
 - **GUI-D46's map seat (`gpt-5.6-luna` at `medium`).** Suspect by design in both

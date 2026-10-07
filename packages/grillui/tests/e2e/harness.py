@@ -280,6 +280,16 @@ class Session:
     def script_claude(self, *turns: Mapping[str, Any]) -> None:
         _write_script(self.scratch, "claude", turns)
 
+    def release(self, name: str) -> None:
+        """Let a CLI turn scripted to `hold` under this name finish.
+
+        The shim waits for a file rather than a signal, because it is a process
+        of its own that the backend started and nothing here holds a handle to.
+        A held turn nobody releases runs into the backend's turn timeout, which
+        a scenario shortens through the session's own request-timeout setting.
+        """
+        (self.scratch / f"release-{name}").write_text("", encoding="utf-8")
+
     def codex_calls(self) -> list[dict[str, Any]]:
         return _read_calls(self.scratch, "codex")
 

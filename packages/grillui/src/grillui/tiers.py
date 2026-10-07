@@ -118,6 +118,14 @@ DEFAULT_MAP_TRANSPORT = CODEX_TRANSPORT
 DEFAULT_MAP_MODEL = "gpt-5.6-luna"
 DEFAULT_MAP_EFFORT = "medium"
 
+# The effort the expert weighs an impact task at. It is its own setting rather
+# than the heavy effort, because the heavy effort is what the human pays for when
+# they move a channel to the expert, and a task is not that: it is a ruling the
+# human is waiting on before they can answer. The expert read the board at
+# medium already when its efforts were measured against each other, and the
+# deeper settings only made the wait longer.
+DEFAULT_TASK_EFFORT = "medium"
+
 # What each model can hold, in tokens, captured 2026-08-22: the Claude figures
 # from the bundled `claude-api` reference's model table, the Gemini one from
 # Google's published input-token window for that model. A table of numbers
@@ -165,6 +173,7 @@ HEAVY_EFFORT_ENV = "GRILLUI_HEAVY_EFFORT"
 MAP_TRANSPORT_ENV = "GRILLUI_MAP_TRANSPORT"
 MAP_MODEL_ENV = "GRILLUI_MAP_MODEL"
 MAP_EFFORT_ENV = "GRILLUI_MAP_EFFORT"
+TASK_EFFORT_ENV = "GRILLUI_TASK_EFFORT"
 ESCALATION_POLICY_ENV = "GRILLUI_ESCALATION_POLICY"
 FAST_CONTEXT_LIMIT_ENV = "GRILLUI_FAST_CONTEXT_LIMIT"
 HEAVY_CONTEXT_LIMIT_ENV = "GRILLUI_HEAVY_CONTEXT_LIMIT"
@@ -319,6 +328,7 @@ class TierConfig:
     map_transport: str = DEFAULT_MAP_TRANSPORT
     map_model: str = DEFAULT_MAP_MODEL
     map_effort: str = DEFAULT_MAP_EFFORT
+    task_effort: str = DEFAULT_TASK_EFFORT
     escalation_policy: str = DEFAULT_ESCALATION_POLICY
     fast_context_limit: int | None = None
     heavy_context_limit: int | None = None
@@ -336,6 +346,8 @@ class TierConfig:
             raise UnknownEffortError(self.heavy_effort)
         if self.map_effort not in EFFORT_LEVELS:
             raise UnknownEffortError(self.map_effort, MAP_EFFORT_ENV)
+        if self.task_effort not in EFFORT_LEVELS:
+            raise UnknownEffortError(self.task_effort, TASK_EFFORT_ENV)
         if self.map_transport not in TRANSPORTS:
             raise UnknownTransportError(self.map_transport)
         if self.escalation_policy not in ESCALATION_POLICIES:
@@ -361,6 +373,7 @@ class TierConfig:
             map_transport=source.get(MAP_TRANSPORT_ENV) or DEFAULT_MAP_TRANSPORT,
             map_model=source.get(MAP_MODEL_ENV) or DEFAULT_MAP_MODEL,
             map_effort=source.get(MAP_EFFORT_ENV) or DEFAULT_MAP_EFFORT,
+            task_effort=source.get(TASK_EFFORT_ENV) or DEFAULT_TASK_EFFORT,
             escalation_policy=source.get(ESCALATION_POLICY_ENV) or DEFAULT_ESCALATION_POLICY,
             fast_context_limit=_limit(source, FAST_CONTEXT_LIMIT_ENV),
             heavy_context_limit=_limit(source, HEAVY_CONTEXT_LIMIT_ENV),
@@ -1059,7 +1072,17 @@ SUPERSEDE_CONFLICT_RULE = (
 REASSESS_RULE = (
     "The human called for a full reassessment: go over every decision and everything in the "
     "queue above, say what no longer holds, and send the updates that fix it. Their board is "
-    "frozen until you answer, so do it in this turn."
+    "frozen until you answer, so do it in this turn. Every change you send waits for the human "
+    "to apply it, a new decision included: nothing in this turn lands on the board by itself."
+)
+
+# What a retried ruling is briefed with. It is a rule of its own beside the one
+# a reply in the wrong shape is retried with, and the two are never the same text.
+NODE_RETRY_RULE = (
+    "An earlier turn owed this ruling and failed before it landed, and the human has asked for "
+    "it again. Rule on it over the board as it stands now. Change nothing outside the decisions "
+    "named above: a change to any other decision is refused, and the refusal costs you your "
+    "turn."
 )
 
 CATCH_UP_RULE = (
@@ -1433,7 +1456,17 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
                 ]
             ),
             *(["## The map doctor", REASSESS_RULE] if context.reassess else []),
+            *(
+                [
+                    "## A retry of a failed ruling",
+                    f"This turn may change only {', '.join(context.scope)}.",
+                    NODE_RETRY_RULE,
+                ]
+                if context.scope
+                else []
+            ),
             *_mootness_section(context.mootness),
+            *([context.backpressure] if context.backpressure else []),
             "## Your turn",
             MAP_CLOSING if context.agent == GRILL_MASTER else THREAD_CLOSING,
         ]
@@ -1504,9 +1537,23 @@ def _mootness_section(obligation: MootnessObligation | None) -> list[str]:
             f"offering {them} again -- a dead prereq holds nothing.",
             MOOTNESS_RESTING_RULE,
         ]
+    # The decisions the human's own words opened are told apart from the marked
+    # ones, because the rule below reads a mark as the map author predicting a
+    # change. No author predicted anything about these.
+    marked = [one for one in obligation.ids if one not in obligation.opened]
+    said = f"The human answered {obligation.target} with {obligation.answer!r}."
+    if marked:
+        said += (
+            f" That option names {', '.join(marked)}, and the board is still offering "
+            f"{'it' if len(marked) == 1 else 'them'}."
+        )
+    if obligation.opened:
+        said += (
+            f" Their own words open {', '.join(obligation.opened)}, which no option marked, so "
+            f"`stands` is as ordinary a verdict there as the other two."
+        )
     return [
         "## The obligation section: what the answer you are replying to puts in question",
-        f"The human answered {obligation.target} with {obligation.answer!r}. That option "
-        f"names {named}, and the board is still offering {them}.",
+        said,
         MOOTNESS_OBLIGATION_RULE,
     ]

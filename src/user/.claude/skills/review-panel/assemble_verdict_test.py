@@ -150,7 +150,8 @@ class Round:
             _, transport, model = ROUTES[lens]
             code, answer = run_json(gate.main, [
                 "claim", "--out-dir", str(out_dir), "--lens", lens,
-                "--transport", transport, "--model", model, "--reason", "initial",
+                "--transport", transport, "--model", model, "--effort", "high",
+                "--reason", "initial",
             ])
             assert code == 0, answer
 
@@ -424,7 +425,7 @@ class TestSubstitutionAndVendors:
         directory = round1.clone(dest / "swapped")
         code, _ = run_json(gate.main, [
             "claim", "--out-dir", str(directory), "--lens", "security",
-            "--transport", "codex", "--model", "gpt-5.6-sol",
+            "--transport", "codex", "--model", "gpt-5.6-sol", "--effort", "high",
             "--reason", "transport-error", "--evidence", "402 Insufficient credits",
         ])
         assert code == 0
@@ -448,7 +449,7 @@ class TestSubstitutionAndVendors:
             overrides[lens] = {"vendor": "openai", "transport": "codex", "model": "gpt-5.6-sol"}
             code, _ = run_json(gate.main, [
                 "claim", "--out-dir", str(directory), "--lens", lens,
-                "--transport", "codex", "--model", "gpt-5.6-sol",
+                "--transport", "codex", "--model", "gpt-5.6-sol", "--effort", "high",
                 "--reason", "transport-error", "--evidence", "openrouter returned 402",
             ])
             assert code == 0

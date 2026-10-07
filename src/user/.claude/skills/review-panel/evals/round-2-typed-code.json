@@ -1,0 +1,88 @@
+{
+  "artifact_class": "typed-code",
+  "base_sha": "b6334cded95b07105f7a3c0d8f21c626fe98be75",
+  "checkpoints": [],
+  "claim_id": "pr-42",
+  "full_rescope": {
+    "forced": false,
+    "last_full_head": "9166680df901f87992ac26ec5a844f1072bdf4d8",
+    "net_growth": 1
+  },
+  "head_sha": "7666be0b10dd9eabfd85ec57136bba04cb98b2f1",
+  "lenses": [
+    {
+      "delta_base_sha": "9166680df901f87992ac26ec5a844f1072bdf4d8",
+      "effort": "high",
+      "lens": "correctness",
+      "scope_this_round": "delta",
+      "tier": "frontier",
+      "tier_this_round": "frontier",
+      "tools": "read-only-sandbox",
+      "transport": "codex"
+    },
+    {
+      "delta_base_sha": "9166680df901f87992ac26ec5a844f1072bdf4d8",
+      "effort": "high",
+      "lens": "security",
+      "scope_this_round": "delta",
+      "tier": "frontier",
+      "tier_this_round": "mid",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "transport": "openrouter"
+    },
+    {
+      "delta_base_sha": "9166680df901f87992ac26ec5a844f1072bdf4d8",
+      "effort": "medium",
+      "lens": "test-adequacy",
+      "scope_this_round": "delta",
+      "tier": "mid",
+      "tier_this_round": "mid",
+      "tools": "read-only-sandbox",
+      "transport": "codex"
+    },
+    {
+      "delta_base_sha": "9166680df901f87992ac26ec5a844f1072bdf4d8",
+      "effort": "medium",
+      "lens": "simplification-efficiency",
+      "scope_this_round": "delta",
+      "tier": "mid",
+      "tier_this_round": "mid",
+      "tools": "read-only-sandbox",
+      "transport": "codex"
+    },
+    {
+      "delta_base_sha": "9166680df901f87992ac26ec5a844f1072bdf4d8",
+      "effort": "medium",
+      "lens": "documentation-quality",
+      "scope_this_round": "delta",
+      "tier": "mid",
+      "tier_this_round": "mid",
+      "tools": "read-only-sandbox",
+      "transport": "codex"
+    }
+  ],
+  "prior_dispositions": [
+    {
+      "disposition": "fixed",
+      "evidence": "tests/test_reader.py::test_trailing now passes and failed before the fix",
+      "id": "f1",
+      "lens": "correctness",
+      "round": 1
+    }
+  ],
+  "profile": {
+    "type": "typed-code"
+  },
+  "retained_categories": [],
+  "round": 2,
+  "skipped_empty_delta": [],
+  "staffing_record": {
+    "digest": "sha256:ae7b3cf5c718f3f8ffd63f208d55b9bc3578ec396f469eca25d2f56bc1e4b780",
+    "path": "staffing.json"
+  },
+  "sweep": false
+}

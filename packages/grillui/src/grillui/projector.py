@@ -82,19 +82,32 @@ where "at arrival" is a fact rather than a guess.
 | `unsettle`, `invalidate` | always queued: undermining a decision is the human's call |
 | `informational`, `elicit-alert` | land, and queue as the notices they are |
 
+An impact task's result is the exception, in both directions. The entry names
+the tasks its turn carried, and a change to one of their targets lands as it
+arrives -- an `invalidate` too -- unless it would overwrite an answer; the
+history line names the task, and `proposed_by` stays unset, because no apply
+landed it. Everything else the result proposes waits, an `add-node` included:
+the human bought a ruling on the decisions the answer put in question, not a
+rewrite of the rest of the map. The map doctor's entry is held to the same rule
+with no target of its own, so every structural change it sends waits for the
+human: a reassessment of the whole map is the turn whose reach nobody bought.
+
 A queued proposal locks the decision it targets out of the frontier, so nobody
 answers a question that has a change waiting on it, and it holds its update's
 bytes until the human applies them -- `apply` puts them on the board as one
 gesture the human authored, `dismiss` ends them having changed nothing. Both
 name queue entries by id, so what lands is what the agent wrote.
 
-**A decision a ruling in flight may move is waiting.** A marked answer starts
-one impact task per decision it puts in question, recorded on the lane's
-status entries. While a task started by a gesture is live, or has failed
+**A decision a ruling in flight may move is waiting.** An answer starts one
+impact task per decision it puts in question, whether its option marked that
+decision or the human's own words on it opened that decision. The tasks are
+recorded on the lane's status entries. While a task started by a gesture is live, or has failed
 without a result, its target carries a `waiting` field naming the task, and
 the frontier skips it exactly as it skips a locked one. A task ends in one of
 four phases: `replied` and `superseded` are final, `error` holds the decision
-until a later gesture supersedes it, and `composing` is live. Reading the
+until a later gesture or the human's retry supersedes it, and `composing` is
+live. A failed task's `waiting` field names the failure -- its cause, its seat
+and when -- because that is what the human retries against. Reading the
 phases off the log rather than out of process memory is what lets a fresh
 backend show the same wait the dead one showed.
 
@@ -135,9 +148,12 @@ from grillui.schemas import (
     FOLD_SHAPED,
     FROM_THREAD_KEY,
     IMPACT_MODE,
+    OPTION_KEY,
     PENDING_KEY,
     PROPOSABLE_KINDS,
     PROPOSED_ANSWER_KEY,
+    REASSESS_KEY,
+    RETRIES_KEY,
     RULING_STANDS,
     RULINGS_KEY,
     SESSION_START_KIND,
@@ -160,6 +176,7 @@ from grillui.schemas import (
     CatchUpEntry,
     ConvergedProposal,
     Decision,
+    Failure,
     FoldedThreadStub,
     HistoryEntry,
     Image1,
@@ -204,6 +221,11 @@ class Task:
     `start` and `epoch` are the opening entry's: when the seat was announced,
     and which process announced it. A task opened by a process that has since
     died will never be closed by it, and the epoch is how a successor tells.
+
+    `mode` is what kind of weighing the task is, which a retry repeats. `option`
+    is set on a pre-ruling, the option it was computed for. `retries` names the
+    failed task this one retries. `failed` is how the task ended where it ended
+    without a ruling, read off the entry that closed its turn.
     """
 
     id: str
@@ -213,6 +235,10 @@ class Task:
     start: str
     epoch: str
     phase: str
+    mode: str = IMPACT_MODE
+    option: str | None = None
+    retries: str | None = None
+    failed: Failure | None = None
 
     @property
     def holds(self) -> bool:
@@ -269,6 +295,7 @@ def _run(entries: Sequence[LogEntry]) -> _Board:
     board = _Board()
     for entry in entries:
         board.seq = entry.seq
+        own = _own_targets(board, entry)
         if entry.kind in FOLD_SHAPED:
             # The gesture is one entry, so there is no state in which half of it
             # landed: either the log has it and every sub-update applies, or it
@@ -277,14 +304,65 @@ def _run(entries: Sequence[LogEntry]) -> _Board:
             for index, update in enumerate(_updates(entry)):
                 key = f"{entry.idempotency_key}#{index}"
                 origin = origins[index] if index < len(origins) else None
-                _apply(board, entry, str(update.get("kind")), update, key, origin)
+                _apply(board, entry, str(update.get("kind")), update, key, origin, own)
         else:
-            _apply(board, entry, entry.kind, entry.payload, entry.idempotency_key)
+            _apply(board, entry, entry.kind, entry.payload, entry.idempotency_key, own=own)
         if entry.kind in {APPLY_KIND, DISMISS_KIND}:
             _clear(board, entry)
         if entry.kind == STATUS_KIND:
             _fold_tasks(board, entry)
     return board
+
+
+def _own_targets(board: _Board, entry: LogEntry) -> dict[str, str] | None:
+    """The decisions this entry's own impact tasks weigh, each with its task,
+    or None where the entry is no task's result.
+
+    An agent's entry names the tasks its turn carried. Only a task still live
+    counts: one a later gesture superseded has no result left to land, and
+    its target belongs to the task that took it over.
+
+    The map doctor's entry weighs no decision of its own, so it owns none, and
+    under the task-result rule every structural change it carries waits for
+    the human, a new decision included.
+    """
+    raw = entry.payload.get(TASKS_KEY)
+    if entry.actor == "human" or entry.kind == STATUS_KIND:
+        return None
+    if entry.payload.get(REASSESS_KEY) is True:
+        return {}
+    if not isinstance(raw, list):
+        return None
+    return {
+        task.target: task.id
+        for item in _named(raw)
+        if (task := board.tasks.get(item["id"])) is not None
+        and task.phase == STATUS_PHASE_COMPOSING
+    }
+
+
+def resulted_tasks(entries: Sequence[LogEntry]) -> set[str]:
+    """Every impact task whose result is on the log, by id.
+
+    A result is an agent's entry naming the tasks it answers. It is the one
+    fact a restarted backend has that a turn finished its work, since the
+    turn's closing entry is a separate append the process may not have lived
+    to write.
+    """
+    return {
+        item["id"]
+        for entry in entries
+        if entry.actor != "human" and entry.kind != STATUS_KIND
+        for item in _named(entry.payload.get(TASKS_KEY))
+    }
+
+
+def _named(raw: object) -> list[Mapping[str, Any]]:
+    return [
+        item
+        for item in (raw if isinstance(raw, list) else [])
+        if isinstance(item, Mapping) and isinstance(item.get("id"), str)
+    ]
 
 
 def impact_tasks(entries: Sequence[LogEntry]) -> dict[str, Task]:
@@ -342,6 +420,13 @@ def _fold_tasks(board: _Board, entry: LogEntry) -> None:
             _record_drop(board, entry, known)
         elif known.phase not in _FINAL_PHASES:
             known.phase = phase
+            # The turn's own closing entry is the failure's record: its detail
+            # is the lane's account of each seat that failed, and its time is
+            # when the human was left holding a decision nothing was weighing.
+            if phase == STATUS_PHASE_ERROR:
+                known.failed = Failure(
+                    cause=_text(entry.payload, "detail"), seat=known.seat, at=entry.timestamp
+                )
 
 
 def _open_task(board: _Board, entry: LogEntry, name: str, item: Mapping[str, object]) -> None:
@@ -353,8 +438,18 @@ def _open_task(board: _Board, entry: LogEntry, name: str, item: Mapping[str, obj
         or not isinstance(seat, str)
     ):
         return
+    mode, option, retries = item.get("mode"), item.get(OPTION_KEY), item.get(RETRIES_KEY)
     board.tasks[name] = Task(
-        name, target, gesture, seat, entry.timestamp, entry.epoch, STATUS_PHASE_COMPOSING
+        name,
+        target,
+        gesture,
+        seat,
+        entry.timestamp,
+        entry.epoch,
+        STATUS_PHASE_COMPOSING,
+        mode=mode if isinstance(mode, str) else IMPACT_MODE,
+        option=option if isinstance(option, str) else None,
+        retries=retries if isinstance(retries, str) else None,
     )
 
 
@@ -475,7 +570,12 @@ def replay(epoch: str, entries: Sequence[LogEntry]) -> Image2:
         held = board.decisions.get(task.target)
         if held is not None and task.holds:
             held.waiting = Waiting(
-                task=task.id, gesture=task.gesture, seat=task.seat, start=task.start
+                task=task.id,
+                gesture=task.gesture,
+                seat=task.seat,
+                start=task.start,
+                failed=task.failed,
+                retries=task.retries,
             )
     frontier = [
         node.id
@@ -505,6 +605,7 @@ def _apply(
     payload: Mapping[str, object],
     key: str,
     origin: str | None = None,
+    own: Mapping[str, str] | None = None,
 ) -> None:
     """One update against the board, whether it arrived alone or inside a fold.
 
@@ -520,9 +621,13 @@ def _apply(
     one. The apply carries the authoring agent's own bytes and the human's own
     actor, so without it the record of a change an agent proposed and a human
     let land is indistinguishable from one the human wrote themselves.
+
+    `own` is the targets of the impact tasks this entry is the result of, each
+    with its task, where it is one. What lands on one of them is recorded as
+    that task's.
     """
     _supersede(board, entry, payload)
-    if _proposes(board, entry.actor, kind, payload):
+    if _proposes(board, entry.actor, kind, payload, own):
         _queue(board, entry, kind, payload, key)
         return
     if entry.actor == "human":
@@ -552,7 +657,9 @@ def _apply(
         _append_turns(board, entry)
     elif kind in THREAD_GESTURE_KINDS:
         _set_thread_state(board, entry, kind)
-    _record_history(board, entry, kind, payload, origin)
+    target = payload.get("target")
+    task = own.get(target) if own and isinstance(target, str) else None
+    _record_history(board, entry, kind, payload, origin, task)
 
 
 def _updates(entry: LogEntry) -> list[Mapping[str, object]]:
@@ -921,7 +1028,13 @@ def _notice(
     board.author_of[key] = entry.actor
 
 
-def _proposes(board: _Board, actor: str, kind: str, payload: Mapping[str, object]) -> bool:
+def _proposes(
+    board: _Board,
+    actor: str,
+    kind: str,
+    payload: Mapping[str, object],
+    own: Mapping[str, str] | None = None,
+) -> bool:
     """Whether this update waits for the human instead of landing now.
 
     Read against the board as it stands at this point in the walk, which is what
@@ -935,12 +1048,20 @@ def _proposes(board: _Board, actor: str, kind: str, payload: Mapping[str, object
     answer the board already carries? Undermining a decision is never asked, it
     is always the human's, because the point of an unsettle is that the answer
     it withdraws is one somebody committed to.
+
+    An impact task's result is held to a narrower rule. It was bought to weigh
+    its own targets, so a change to one of those lands -- an invalidate
+    included -- unless it would overwrite an answer, and everything else it
+    proposes waits, a new decision included. `own` carries those targets, and
+    is None for every entry that is no task's result.
     """
     if actor == "human" or kind not in PROPOSABLE_KINDS:
         return False
-    if kind in {"unsettle", "invalidate"}:
+    if own is not None and (kind == "add-node" or payload.get("target") not in own):
         return True
-    if kind not in {"revise", "settle"}:
+    if kind == "unsettle" or (kind == "invalidate" and own is None):
+        return True
+    if kind not in {"revise", "settle", "invalidate"}:
         return False
     node = board.node(payload)
     return node is not None and node.answer is not None
@@ -1230,6 +1351,7 @@ def _record_history(
     kind: str,
     payload: Mapping[str, object],
     origin: str | None = None,
+    task: str | None = None,
 ) -> None:
     """History is keyed by decision id, so an entry naming a node the board
     does not hold contributes none: image 2 crosses whole, and a phantom key
@@ -1261,6 +1383,7 @@ def _record_history(
             why=_text(payload, "why") or (ruled[1] if ruled else ""),
             proposed_by=board.author_of.get(origin) if origin else None,
             verdict=ruled[0] if ruled else None,
+            task=task,
         )
     )
 

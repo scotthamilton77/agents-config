@@ -5,9 +5,13 @@
 """Launch an Antigravity CLI (agy) run as a full worker or as a fresh-context review lens.
 
 Usage:
-  agy_run.py worker --model ID --timeout SECONDS -p PROMPT
-  agy_run.py lens   --repo PATH --base BASE [--rev REV] --model ID
+  agy_run.py worker --model MODEL [--effort LEVEL] --timeout SECONDS -p PROMPT
+  agy_run.py lens   --repo PATH --base BASE [--rev REV] --model MODEL [--effort LEVEL]
                     [--timeout SECONDS] [--keep-snapshot] -p PROMPT
+
+--model and --effort reach agy unchanged. agy resolves the pair to a model variant
+and refuses a pairing it does not offer, which this launcher reports as a refused
+invocation. Without --effort the model is passed alone, so a full variant id runs.
 
 A worker runs agy in the current directory with the real home, so the user's and
 the repository's instruction files load as they do for any first-class session.
@@ -35,7 +39,8 @@ Exit codes:
       reason=unread for a lens that called no tool). Re-brief, or move to another route.
   75  the route did not serve the run (reason=error, no-route, timeout, signal,
       home-unproven or no-result). Fail over to the next route or model.
-  78  the launcher refused the invocation. Fix it; do not fail over.
+  78  the launcher refused the invocation, or agy refused the model and effort it
+      was given. Fix it; do not fail over.
 Any other exit is a launcher defect reported with a traceback. Treat it as 78.
 """
 
@@ -97,6 +102,9 @@ _POLL_S = 0.05
 # agy reports its own print timeout and its API failures on stderr, one per line.
 _PRINT_TIMEOUT_NOTICE = re.compile(r"^\[agy\] print timeout", re.MULTILINE)
 _AGY_ERROR_LINE = re.compile(r"^AGY_ERROR:", re.MULTILINE)
+# agy prints this before any turn when it will not run the model and effort it was
+# given. The caller chose the pairing, so it is a refused invocation and not a dead route.
+_AGY_SELECTION_REFUSED = re.compile(r"^error: invalid model selection", re.MULTILINE)
 
 # The signals the launcher received during the current run. The handler only
 # appends here, because anything heavier would run in the middle of whatever code
@@ -140,6 +148,12 @@ def _seconds(text: str) -> int:
     return int(text)
 
 
+# The launcher keeps no list of models or levels: agy owns which pairings exist,
+# and its own refusal names the levels a model has.
+_MODEL_HELP = "the agy model, passed to agy unchanged"
+_EFFORT_HELP = "the effort level, passed to agy unchanged; agy resolves the model and the level to a variant"
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog=_PROG,
@@ -151,16 +165,17 @@ def _parser() -> argparse.ArgumentParser:
     modes = parser.add_subparsers(dest="mode", required=True)
     worker = modes.add_parser(
         "worker",
-        usage=f"{_PROG} worker --model ID --timeout SECONDS -p PROMPT",
+        usage=f"{_PROG} worker --model MODEL [--effort LEVEL] --timeout SECONDS -p PROMPT",
         help="run agy in the current directory with the real home",
         allow_abbrev=False,
     )
-    worker.add_argument("--model", required=True, help="the full agy model id, which also carries the effort")
+    worker.add_argument("--model", required=True, help=_MODEL_HELP)
+    worker.add_argument("--effort", help=_EFFORT_HELP)
     worker.add_argument("--timeout", required=True, type=_seconds, help="seconds before the run is stopped")
     lens = modes.add_parser(
         "lens",
         usage=(
-            f"{_PROG} lens --repo PATH --base BASE [--rev REV] --model ID [--timeout SECONDS] [--keep-snapshot] -p PROMPT"
+            f"{_PROG} lens --repo PATH --base BASE [--rev REV] --model MODEL [--effort LEVEL] [--timeout SECONDS] [--keep-snapshot] -p PROMPT"
         ),
         help="run agy read-only over a snapshot of one revision",
         allow_abbrev=False,
@@ -168,7 +183,8 @@ def _parser() -> argparse.ArgumentParser:
     lens.add_argument("--repo", required=True, type=Path, help="the repository under review")
     lens.add_argument("--base", required=True, help="the revision the change is compared with, from its merge base")
     lens.add_argument("--rev", default="HEAD", help="the revision to snapshot (default HEAD)")
-    lens.add_argument("--model", required=True, help="the full agy model id, which also carries the effort")
+    lens.add_argument("--model", required=True, help=_MODEL_HELP)
+    lens.add_argument("--effort", help=_EFFORT_HELP)
     lens.add_argument(
         "--timeout",
         type=_seconds,
@@ -189,7 +205,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     if "-p" in argv:
         at = argv.index("-p")
         flags, rest = argv[:at], argv[at + 1 :]
-    # These two refusals come before the parser so their message carries the
+    # This refusal comes before the parser so its message carries the
     # remedy, where the parser would only call the flag unrecognized.
     for element in flags:
         name = element.split("=", 1)[0]
@@ -197,11 +213,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             raise _Refused(
                 f"{name} is refused: this launcher defines no permission bypass and no sandbox flag. "
                 f"To let a worker run more commands unattended, widen permissions.allow in {AGY_SETTINGS}."
-            )
-        if name == "--effort":
-            raise _Refused(
-                "--effort is refused: agy carries the effort in the model id, "
-                "so pass the id that names it, for example gemini-3.8-flash-high."
             )
     args = _parser().parse_args(flags)
     if not rest:
@@ -223,7 +234,7 @@ def refuse_model(model: str) -> str | None:
     if model.startswith("claude-"):
         return (
             f"--model {model} is refused: a Claude model runs natively in the harness that launched this run. "
-            "Run it there, or pass an agy model id such as gemini-3.8-flash-high."
+            "Run it there, or pass an agy model such as gemini-3.8-flash with --effort."
         )
     return None
 
@@ -251,15 +262,20 @@ def trusted_workspace(cwd: Path, settings: Path) -> bool:
     return False
 
 
-def build_worker_argv(model: str, timeout_s: int, prompt: str) -> list[str]:
+def _effort_argv(effort: str | None) -> list[str]:
+    """Return the --effort pair for agy, or nothing when the caller named no level."""
+    return [] if effort is None else ["--effort", effort]
+
+
+def build_worker_argv(model: str, timeout_s: int, prompt: str, effort: str | None = None) -> list[str]:
     """Return agy's command line for a worker: accept-edits mode, stream-json output, agy's own timeout."""
     return [
         "agy", "-p", prompt, "--model", model, "--output-format", "stream-json",
-        "--print-timeout", f"{timeout_s}s", "--mode", "accept-edits",
+        "--print-timeout", f"{timeout_s}s", "--mode", "accept-edits", *_effort_argv(effort),
     ]  # fmt: skip
 
 
-def build_lens_argv(model: str, timeout_s: int, prompt: str) -> list[str]:
+def build_lens_argv(model: str, timeout_s: int, prompt: str, effort: str | None = None) -> list[str]:
     """Return agy's command line for a lens: the read-only agent, plan mode, stream-json output.
 
     It never carries --disable-slash-commands, because agy turns plan mode off
@@ -267,7 +283,7 @@ def build_lens_argv(model: str, timeout_s: int, prompt: str) -> list[str]:
     """
     return [
         "agy", "--agent", LENS_AGENT, "--mode", "plan", "--model", model, "-p", prompt,
-        "--output-format", "stream-json", "--print-timeout", f"{timeout_s}s",
+        "--output-format", "stream-json", "--print-timeout", f"{timeout_s}s", *_effort_argv(effort),
     ]  # fmt: skip
 
 
@@ -655,7 +671,9 @@ def classify(exit_code: int, events: list[dict], stderr_text: str, timed_out: bo
     When several causes hold, the highest decides: a timeout (the watchdog or
     agy's own print-timeout notice), then an error (a non-zero exit, a status
     other than SUCCESS, or an AGY_ERROR line), then a missing result event, then
-    a denied action, then an empty response. A timed-out run is never reported
+    a denied action, then an empty response. One error is the caller's and not
+    the route's: agy refusing the model and effort it was given, which returns
+    the refused-invocation exit with no reason line. A timed-out run is never reported
     as agy's error, and a result beside an error is never a usable output. A
     signal to the launcher outranks all of these, and run_agy applies it.
     """
@@ -666,6 +684,9 @@ def classify(exit_code: int, events: list[dict], stderr_text: str, timed_out: bo
             result = event["result"]
     if timed_out or _PRINT_TIMEOUT_NOTICE.search(stderr_text):
         reason = "timeout"
+    elif exit_code != 0 and _AGY_SELECTION_REFUSED.search(stderr_text):
+        _say("agy refused the model and effort it was given, and its message above says what it accepts.")
+        return Outcome(EXIT_CONFIG, None, "", ledger)
     elif exit_code != 0 or _AGY_ERROR_LINE.search(stderr_text) or (result and result.get("status") != "SUCCESS"):
         reason = "error"
     elif result is None:
@@ -837,7 +858,7 @@ def _worker(
             f"Remedy: add this directory or an ancestor of it to trustedWorkspaces in {settings}. "
             "Use an absolute path, because a relative entry trusts nothing."
         )
-    argv = build_worker_argv(args.model, args.timeout, args.prompt)
+    argv = build_worker_argv(args.model, args.timeout, args.prompt, args.effort)
     return run_agy(argv, cwd, os.environ, args.timeout, spawn, clock)
 
 
@@ -855,7 +876,7 @@ def _lens(
     outcome = prove_home(home, real_home, args.repo, env)
     if outcome is None:
         prompt = lens_preamble(args.repo, args.base, args.rev, snapshot, renamed, start) + args.prompt
-        outcome = run_agy(build_lens_argv(args.model, args.timeout, prompt), snapshot, env, args.timeout, spawn, clock)
+        outcome = run_agy(build_lens_argv(args.model, args.timeout, prompt, args.effort), snapshot, env, args.timeout, spawn, clock)
     # A lens that answered without a single tool call read nothing, not even the
     # diff, so its answer is not a review. The check applies only to a run that
     # would otherwise succeed, which ranks it below every other cause. A worker
