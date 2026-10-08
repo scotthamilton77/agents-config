@@ -203,9 +203,10 @@ Each output opens with a line naming its form, `Form: brief` or
 without such a line fails its run.
 
 Each fixture runs five times in fresh contexts, so one attempt on every
-fixture plans 35 dispatches, plus repeats and retests. The attempt's record
-names the writer's resolved model ID. The outputs cannot show a fresh context
-or the native Agent tool, so the operator attests both in the record.
+fixture plans 35 dispatches, plus the repeats and retests defined below. The
+attempt's record names the writer's resolved model ID. The outputs cannot show
+a fresh context or the native Agent tool, so the operator attests both in the
+record.
 
 Fixtures live in the skill's `evals/`:
 
@@ -224,7 +225,7 @@ That includes a brief that carries `unready` marks and a brief that lacks a
 criteria section.
 
 `evals/score_briefs.py` scores the outputs mechanically, and scores F1's and
-F2's two halves separately.
+F2's preservation and evidence separately.
 
 A run with no output is repeated at most twice. It is then left pending and
 never scored as failed. The repeat limit is an operator procedure, because no
@@ -235,22 +236,24 @@ and scores nothing. The scorer refuses a record naming more than five runs
 for a fixture or for its retest.
 
 A fixture is locked on its own runs, under the evaluation contract's rule
-(ACE-D7, ACE-D8). F1 and F2 each have two sides, preservation and evidence.
-Every other fixture has one. A side passes when at least four of its five
-runs pass. A side at three of five gets one retest of five more runs and
-passes at eight of the ten. No run is discarded. A side below three fails. A
-fixture is locked when every side passes.
+(ACE-D7, ACE-D8). F1 and F2 each have two sides, preservation and evidence,
+also called halves. Every other fixture has one. A side passes when at least
+four of its five runs pass. A side at three of five gets one retest of five
+more runs and passes at eight of the ten. No run is discarded. A side below
+three fails. A fixture is locked when every side passes.
 
 One threshold serves every fixture. Five runs cannot tell a writer right
 ninety-nine times in a hundred from one right every time, so a stricter
 threshold on F1 to F5 and F7, on the ground that the helper decides their
-outputs, measures nothing the uniform one does not.
-The writer pastes what the helper prints, and a writer that pastes wrong once
-in a hundred fails thirty runs at five of five about one time in four, on luck
-alone. F6's threshold is the same four of five. The scope sentence it serves
-is measured by five runs, never proved by them. A failed run behind a lock is
-committed and read like any other, and a defect it shows is answered by
-changing the skill, which voids the lock and runs the fixture again.
+outputs, measures nothing the uniform one does not. The writer pastes what the
+helper prints. Under a five-of-five threshold on those six fixtures, a writer
+that pastes wrong once in a hundred fails at least one of their thirty runs
+about one time in four, on luck alone. F6's threshold is the same four of
+five. The scope's rule that a criterion without a feasible planned check is
+reported unready is measured by five runs, never proved by them. A failed run
+behind a lock is committed and read like any other, and a defect it shows is
+answered by changing the skill, which voids the lock and runs the fixture
+again.
 
 A lock records its fixture's fingerprint: the digest of every file the writer
 is given, which is the skill directory without `evals/`, the digest of the
@@ -264,11 +267,11 @@ A fingerprint gets one attempt, plus the retest a side at three of five earns.
 An attempt counts against its fingerprint once committed, complete or not. An
 incomplete attempt is completed in place: its pending runs are repeated under
 the limit above and its record amended, and it is never replaced. A run still
-pending after its repeats leaves the fixture unlocked until a change voids
-the attempt. The scorer refuses a second attempt recording a fingerprint it
-has already seen, whether the earlier locked, failed or stayed incomplete, so
-a failed fixture is answered only by changing something, and a locked one is
-not re-rolled.
+pending after its repeats leaves the fixture unlocked until a change to its
+fingerprint voids the attempt. The scorer refuses a second attempt recording a
+fingerprint it has already seen, whether the earlier locked, failed or stayed
+incomplete, so a failed fixture is answered only by changing something, and a
+locked one is not re-rolled.
 
 An attempt is committed under `evals/runs/<run-id>/` with its outputs, its
 record and its report, whatever it shows, and a retest's five runs beside the
@@ -293,9 +296,10 @@ five scored outputs, and five more when a side earned a retest. The attempt's
 directory holds every output its report scores. Its record names the writer's
 resolved model ID, which is a Claude Opus model, and the fixture's
 fingerprint. Its record carries the operator's attestation of fresh contexts
-and the native Agent tool. A fixture with a pending dispatch is incomplete and
-cannot lock. A fixture whose earned retest has fewer than five runs is awaiting
-it (BRF-A32), which is neither incomplete nor locked.
+and the native Agent tool. A fixture with a pending dispatch among its first
+five runs is incomplete and cannot lock. A fixture whose earned retest has
+fewer than five runs, pending ones included, is awaiting it (BRF-A32), which is
+neither incomplete nor locked.
 
 The helper suite and the scorer's suite run under `make content-tests`, and
 spec-lint's under `make ci`.

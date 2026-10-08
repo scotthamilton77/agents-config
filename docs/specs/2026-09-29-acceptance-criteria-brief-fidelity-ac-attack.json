@@ -49,7 +49,7 @@
       "covering_ac": "BRF-A27",
       "disposition": "accepted",
       "id": "obligation-reduction-9",
-      "revision": "sha256:dd13177dfdcb9c5402592f254427a1ae67c0082b6a2285f269e93ea4915ae987"
+      "revision": "sha256:11241d3e6e0c330e42b9180f87fabd007fdf87ff6ff7da60f3e0c8eb1daebffd"
     },
     {
       "disposition": "rejected",
@@ -65,7 +65,7 @@
       "covering_ac": "BRF-A33",
       "disposition": "accepted",
       "id": "obligation-reduction-12",
-      "revision": "sha256:dd13177dfdcb9c5402592f254427a1ae67c0082b6a2285f269e93ea4915ae987"
+      "revision": "sha256:11241d3e6e0c330e42b9180f87fabd007fdf87ff6ff7da60f3e0c8eb1daebffd"
     },
     {
       "disposition": "rejected",
@@ -91,25 +91,25 @@
       "covering_ac": "BRF-A27",
       "disposition": "accepted",
       "id": "set-consistency-1",
-      "revision": "sha256:dd13177dfdcb9c5402592f254427a1ae67c0082b6a2285f269e93ea4915ae987"
+      "revision": "sha256:11241d3e6e0c330e42b9180f87fabd007fdf87ff6ff7da60f3e0c8eb1daebffd"
     },
     {
       "covering_ac": "BRF-A32",
       "disposition": "accepted",
       "id": "set-consistency-2",
-      "revision": "sha256:dd13177dfdcb9c5402592f254427a1ae67c0082b6a2285f269e93ea4915ae987"
+      "revision": "sha256:11241d3e6e0c330e42b9180f87fabd007fdf87ff6ff7da60f3e0c8eb1daebffd"
     },
     {
       "covering_ac": "BRF-A35",
       "disposition": "accepted",
       "id": "what-if-1",
-      "revision": "sha256:dd13177dfdcb9c5402592f254427a1ae67c0082b6a2285f269e93ea4915ae987"
+      "revision": "sha256:11241d3e6e0c330e42b9180f87fabd007fdf87ff6ff7da60f3e0c8eb1daebffd"
     },
     {
       "covering_ac": "BRF-A34",
       "disposition": "accepted",
       "id": "what-if-2",
-      "revision": "sha256:dd13177dfdcb9c5402592f254427a1ae67c0082b6a2285f269e93ea4915ae987"
+      "revision": "sha256:11241d3e6e0c330e42b9180f87fabd007fdf87ff6ff7da60f3e0c8eb1daebffd"
     }
   ],
   "lenses": [
