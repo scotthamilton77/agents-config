@@ -196,8 +196,10 @@ stands for dispatching it, and the writer runs with no subagent tool, so
 returning is its only route.
 
 The output takes one of two forms. A brief is the prompt the writer would
-dispatch. A report is the writer's message to its requester, which holds no
-criteria or evidence section and relays what the helper printed on stderr.
+dispatch. A report is the writer's message to its requester. It holds no
+criteria or evidence section. It relays what the helper printed on stderr,
+and it names the IDs the writer itself judged unready under BRF-D5, whichever
+of the two exist.
 Each output opens with a line naming its form, `Form: brief` or
 `Form: report`, so the scorer reads the form mechanically. An output present
 without such a line fails its run.
@@ -233,7 +235,8 @@ output shows a retry. The attempt's record names the output that counts for
 each of a fixture's five runs, and for each of a retest's five. An output the
 record does not name, such as a repeated run's late arrival, stays committed
 and scores nothing. The scorer refuses a record naming more than five runs
-for a fixture or for its retest.
+for a fixture or for its retest, and that fixture is incomplete until the
+record is amended to name five.
 
 A fixture is locked on its own runs, under the evaluation contract's rule
 (ACE-D7, ACE-D8). F1 and F2 each have two sides, preservation and evidence,
@@ -261,7 +264,7 @@ fixture's own files, and the writer's resolved model ID. A lock is current
 while its fingerprint matches the tree. A change voids only the locks whose
 fingerprint it alters, and only those fixtures run again. A change to the
 scorer dispatches no writer: the stored outputs are rescored, and a lock
-stands when its fixture still passes.
+stands when its fixture still passes and falls when it does not.
 
 A fingerprint gets one attempt, plus the retest a side at three of five earns.
 An attempt counts against its fingerprint once committed, complete or not. An
@@ -391,8 +394,8 @@ spec-lint's under `make ci`.
   evidence entries for its evidence half, briefs returned for F3, reports for
   F3 that lack the refusal object, reports for F4 that carry a criteria
   section, outputs with no `Form:` line, and briefs returned for F6, the
-  scorer fails each seeded side and names its fixture. Given a conforming
-  set, it locks every fixture.
+  scorer fails each seeded side and names its fixture. Given a set in which
+  every side has four or five passing runs of five, it locks every fixture.
 - **BRF-A28** The skill's acceptance-criteria part and skeleton tell the
   writer to take the criteria and evidence sections from `emit`, paste them
   unchanged, run `check` before dispatch, and relay a refusal or an unready
@@ -418,14 +421,17 @@ spec-lint's under `make ci`.
   as not current and leaves the fixture out of the evaluation of record.
   Given one whose fingerprint matches and whose stored runs still pass under
   the current scorer, it reports the lock as current and counts it, whatever
-  changed outside its fingerprint.
+  changed outside its fingerprint. Given one whose fingerprint matches but
+  whose stored runs no longer pass under the current scorer, it reports the
+  lock as fallen and leaves the fixture out.
 - **BRF-A34** Given two committed attempts recording the same fingerprint, the
   scorer scores the earlier and reports the later as refused, whether the
   earlier locked, failed or is incomplete.
 - **BRF-A35** Given a record naming six outputs for one fixture's five runs, or
-  six for its retest, the scorer refuses the attempt and names the fixture.
-  Given a sixth output in the directory that the record does not name, it
-  scores the named five and reports the fixture on them alone.
+  six for its retest, the scorer refuses the attempt, names the fixture and
+  reports it as incomplete. Given a sixth output in the directory that the
+  record does not name, it scores the named five and reports the fixture on
+  them alone.
 
 ### Traceability
 
