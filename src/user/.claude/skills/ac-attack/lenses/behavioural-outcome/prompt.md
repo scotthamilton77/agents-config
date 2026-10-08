@@ -2,7 +2,7 @@
 tier: frontier
 transport: codex
 standard: acceptance-criteria
-enforces: [observable-obligation, document-deliverable, one-obligation, verification-contract]
+enforces: [observable-obligation, document-deliverable, one-obligation, verification-contract, human-measurement, human-judgment, pending-until-performed, stochastic-and-window]
 ---
 You are reviewing how each acceptance criterion in the document states and verifies its obligation.
 

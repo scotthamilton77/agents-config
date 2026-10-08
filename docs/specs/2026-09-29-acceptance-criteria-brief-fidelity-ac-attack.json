@@ -1,0 +1,1085 @@
+{
+  "dispositions": [
+    {
+      "disposition": "rejected",
+      "id": "behavioural-outcome-1",
+      "rationale": "The skill text is the deliverable of S3.4 and BRF-A28 judges it by content; the writer behaviour is what F1 to F7 score under BRF-A16 to BRF-A20, and neither claims the other."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-1",
+      "rationale": "The evaluation claims fidelity over its seven fixtures as the stochastic rule allows; the per-brief guard is check (BRF-A8, BRF-A23), which BRF-A28 makes the skill require before every dispatch."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-2",
+      "rationale": "Same: evidence fidelity in any brief is what check --checks decides (BRF-A23)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-3",
+      "rationale": "The writer sees one refusal shape whatever the code; F3 to F5 sample the refusal sources, and BRF-A28 reads the relay instruction in the skill."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-4",
+      "rationale": "F6 four of five is the threshold fixed in advance for the one fixture only the writer judgment decides; its alignment with the evaluation contract run rule is follow-on work recorded on the PR."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-5",
+      "rationale": "The installer stages the skill directory whole; the evaluation runs the skill from source by full path (BRF-D8)."
+    },
+    {
+      "covering_ac": "BRF-A22",
+      "disposition": "accepted",
+      "id": "obligation-reduction-6",
+      "rationale": "No output holds a third section; BRF-D1 says exactly two.",
+      "revision": "sha256:5e0356788141afa8ba2cf872b680e41f72b777341b9d40c4d94d3501929f1ed7"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-7",
+      "rationale": "Several hundred is the limit case the standard asks for; no bound cannot be tested to ten thousand and beyond, and BRF-D2 states none exists."
+    },
+    {
+      "covering_ac": "BRF-A9",
+      "disposition": "accepted",
+      "id": "obligation-reduction-8",
+      "rationale": "Each parser carries a marking naming the other.",
+      "revision": "sha256:5e0356788141afa8ba2cf872b680e41f72b777341b9d40c4d94d3501929f1ed7"
+    },
+    {
+      "covering_ac": "BRF-A12",
+      "disposition": "accepted",
+      "id": "obligation-reduction-9",
+      "rationale": "An extra key changes neither section, stderr nor exit status.",
+      "revision": "sha256:5e0356788141afa8ba2cf872b680e41f72b777341b9d40c4d94d3501929f1ed7"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-10",
+      "rationale": "The helper is stdlib-only and its suite runs where no tracker storage exists; a second resolver is a code-review read."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-11",
+      "rationale": "content-lint measures every deployed skill body against its cap and fails the gate above it."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-12",
+      "rationale": "The attestation is the record; the tree cannot observe the execution it attests (BRF-D8)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-13",
+      "rationale": "BRF-D8 states the repeat limit is an operator procedure because no output shows a retry."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-14",
+      "rationale": "Committing every record run rests on the operator, as the decision states; nothing in the committed tree can observe it."
+    },
+    {
+      "covering_ac": "BRF-A26",
+      "disposition": "accepted",
+      "id": "set-consistency-1",
+      "rationale": "The preamble now has four conditions, the attestation included.",
+      "revision": "sha256:5e0356788141afa8ba2cf872b680e41f72b777341b9d40c4d94d3501929f1ed7"
+    },
+    {
+      "covering_ac": "BRF-A8",
+      "disposition": "accepted",
+      "id": "set-consistency-2",
+      "rationale": "BRF-A8 is the without --checks case; BRF-A23 the with.",
+      "revision": "sha256:5e0356788141afa8ba2cf872b680e41f72b777341b9d40c4d94d3501929f1ed7"
+    },
+    {
+      "covering_ac": "BRF-A9",
+      "disposition": "accepted",
+      "id": "set-consistency-3",
+      "rationale": "The variant requirement holds in the repository.",
+      "revision": "sha256:5e0356788141afa8ba2cf872b680e41f72b777341b9d40c4d94d3501929f1ed7"
+    },
+    {
+      "covering_ac": "BRF-A27",
+      "disposition": "accepted",
+      "id": "what-if-1",
+      "rationale": "An output without a Form line fails its run (BRF-D8) and is a seeded defect.",
+      "revision": "sha256:5e0356788141afa8ba2cf872b680e41f72b777341b9d40c4d94d3501929f1ed7"
+    },
+    {
+      "covering_ac": "BRF-A30",
+      "disposition": "accepted",
+      "id": "what-if-2",
+      "rationale": "The scorer is determinate on repeated runs.",
+      "revision": "sha256:5e0356788141afa8ba2cf872b680e41f72b777341b9d40c4d94d3501929f1ed7"
+    }
+  ],
+  "lenses": [
+    {
+      "lens": "behavioural-outcome",
+      "report": "objections"
+    },
+    {
+      "lens": "obligation-reduction",
+      "report": "objections",
+      "workings": {
+        "criteria": [
+          "BRF-A1",
+          "BRF-A2",
+          "BRF-A3",
+          "BRF-A4",
+          "BRF-A5",
+          "BRF-A6",
+          "BRF-A7",
+          "BRF-A8",
+          "BRF-A9",
+          "BRF-A10",
+          "BRF-A11",
+          "BRF-A12",
+          "BRF-A13",
+          "BRF-A14",
+          "BRF-A15",
+          "BRF-A16",
+          "BRF-A17",
+          "BRF-A18",
+          "BRF-A19",
+          "BRF-A20",
+          "BRF-A21",
+          "BRF-A22",
+          "BRF-A23",
+          "BRF-A24",
+          "BRF-A25",
+          "BRF-A26",
+          "BRF-A27",
+          "BRF-A28",
+          "BRF-A29",
+          "BRF-A30",
+          "BRF-A31"
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A16"
+                ],
+                "id": "O1.1",
+                "statement": "The five scored F1 outputs and five scored F2 outputs preserve their assigned criteria."
+              },
+              {
+                "discharged_by": [],
+                "id": "O1.2",
+                "statement": "Other generated dispatch briefs, including item-based briefs, preserve their assigned criteria."
+              }
+            ],
+            "source": "Scope: \"A dispatch brief must carry exactly the criteria assigned to the work.\" BRF-D3: \"Its criteria section holds exactly the assigned IDs. Each ID's text equals its source text after runs of whitespace collapse to one space.\"",
+            "statement": "Generated dispatch briefs preserve exactly their assigned criterion IDs and source words, allowing whitespace changes and ignoring order."
+          },
+          {
+            "id": "O2",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A17"
+                ],
+                "id": "O2.1",
+                "statement": "The scored F1 and F2 outputs preserve their evidence mappings."
+              },
+              {
+                "discharged_by": [],
+                "id": "O2.2",
+                "statement": "Other generated dispatch briefs preserve the assigned evidence mappings separately from criterion text."
+              }
+            ],
+            "source": "Scope: \"It must map each criterion to its planned check, apart from the criterion's text.\" BRF-D3: \"Each ID's entry equals the entry emit prints for it from the same plan after runs of whitespace collapse to one space.\"",
+            "statement": "Generated briefs carry evidence apart from criterion text and preserve each criterion's planned check."
+          },
+          {
+            "id": "O3",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A18",
+                  "BRF-A19"
+                ],
+                "id": "O3.1",
+                "statement": "The scored F3, F4 and F5 outputs are reports relaying the specified refusal details."
+              },
+              {
+                "discharged_by": [],
+                "id": "O3.2",
+                "statement": "The writer also reports and refrains from dispatching in other refusal cases, including duplicate IDs, malformed inputs, source conflicts and render failures."
+              }
+            ],
+            "source": "Scope: \"It must refuse when it cannot.\" BRF-D4: \"The skill tells the writer to relay a refusal to its requester and dispatch nothing.\"",
+            "statement": "When criteria cannot be faithfully supplied, the writer relays the refusal to its requester and dispatches nothing."
+          },
+          {
+            "id": "O4",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A20"
+                ],
+                "id": "O4.1",
+                "statement": "All five scored F7 outputs and at least four scored F6 outputs are reports naming the specified unready IDs."
+              },
+              {
+                "discharged_by": [],
+                "id": "O4.2",
+                "statement": "The remaining F6 output and other missing, blank or infeasible-check cases also report unready criteria without dispatch."
+              }
+            ],
+            "source": "Scope: \"A criterion without a feasible planned check is reported unready.\" BRF-D5: \"the skill tells the writer not to dispatch a brief with an unready criterion.\"",
+            "statement": "Criteria without feasible planned checks are reported unready, and briefs containing unready criteria are not dispatched."
+          },
+          {
+            "id": "O5",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O5.1",
+                "statement": "brief_criteria.py ships beside the deployed SKILL.md."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.2",
+                "statement": "emit prints exactly two Markdown sections, for criteria and evidence."
+              }
+            ],
+            "source": "BRF-D1: \"The skill ships brief_criteria.py beside its SKILL.md.\" \"Its emit mode prints two Markdown sections.\"",
+            "statement": "The skill ships its helper beside SKILL.md, and emit supplies exactly the two promised Markdown sections."
+          },
+          {
+            "id": "O6",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A1"
+                ],
+                "id": "O6.1",
+                "statement": "Spec-based emission preserves exactly the assigned IDs and full texts for the stated three-ID and several-hundred-ID cases."
+              },
+              {
+                "discharged_by": [],
+                "id": "O6.2",
+                "statement": "Spec-based emission also preserves complete assignments beyond the stated cardinality cases without imposing a limit."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A2"
+                ],
+                "id": "O6.3",
+                "statement": "Criteria-file emission preserves exactly the file's entries."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A13"
+                ],
+                "id": "O6.4",
+                "statement": "Item-based emission preserves exactly the facade renderer's criteria."
+              }
+            ],
+            "source": "BRF-D2: \"The helper reads criteria from three sources.\" \"--spec PATH --ids ID,... reads the named entries\"; \"--criteria FILE reads a file holding only entries\"; \"--item ID reads a work item's criteria.\" What-if questions: \"neither mode bounds how many criteria it carries.\"",
+            "statement": "The helper emits the complete assigned criteria from each supported source without a criterion-count limit."
+          },
+          {
+            "id": "O7",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A1",
+                  "BRF-A2",
+                  "BRF-A9"
+                ],
+                "id": "O7.1",
+                "statement": "The helper reads entries according to the five grammar rules, including joined continuation text and the criteria-file exception to the heading rule."
+              },
+              {
+                "discharged_by": [],
+                "id": "O7.2",
+                "statement": "The helper parser carries the required counterpart marking."
+              }
+            ],
+            "source": "BRF-D2: \"Spec and file entries follow spec-lint's entry grammar, joined text included. The helper's parser is a marked counterpart of spec-lint's.\" The five rules cover entry opening, acceptance-criteria section boundaries, continuation joining, entry termination and fenced-code exclusion.",
+            "statement": "The helper follows the specified entry grammar and is marked as a counterpart of spec-lint's parser."
+          },
+          {
+            "id": "O8",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A9"
+                ],
+                "id": "O8.1",
+                "statement": "Both suites read the shared cases and fail on departures from expected readings; each rule-breaking helper variant fails a case; absence fails spec-lint's test and skips the helper's test."
+              }
+            ],
+            "source": "BRF-D2: \"One fixture keeps the two readings from drifting apart unseen.\" \"it holds a case for each rule, and both suites read it.\" \"spec-lint's fixture test fails when the fixture is absent. Only the helper's test skips then\".",
+            "statement": "A shared fixture checks both parser readings and exposes breaks of every grammar rule, with the specified absent-fixture treatment."
+          },
+          {
+            "id": "O9",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A29"
+                ],
+                "id": "O9.1",
+                "statement": "emit and check refuse absent or multiple source flags, naming the flags given."
+              }
+            ],
+            "source": "BRF-D2: \"Exactly one source flag is given. More than one, or none, refuses as source-conflict.\" BRF-D1: check compares the brief with its source.",
+            "statement": "Both modes require exactly one source flag and refuse conflicting or absent source selections."
+          },
+          {
+            "id": "O10",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A8"
+                ],
+                "id": "O10.1",
+                "statement": "check accepts preserved criteria and otherwise names every missing, added or altered criterion ID."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A23"
+                ],
+                "id": "O10.2",
+                "statement": "With --checks, check accepts only preserved criteria and evidence and names every missing, added or altered evidence ID."
+              }
+            ],
+            "source": "BRF-D1: \"Its check mode compares a written brief with the source, and with the plan when given --checks.\" BRF-D3 defines preservation by exact IDs and whitespace-normalized text, without comparing order.",
+            "statement": "check distinguishes preserved criteria and, when supplied a plan, preserved evidence from missing, added or altered entries."
+          },
+          {
+            "id": "O11",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A3",
+                  "BRF-A15"
+                ],
+                "id": "O11.1",
+                "statement": "Empty spec assignments, blank criteria files and criterion-free item rendering refuse as no-criteria."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A4",
+                  "BRF-A25"
+                ],
+                "id": "O11.2",
+                "statement": "Absent assigned spec IDs refuse as unretrievable and name the IDs."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A5",
+                  "BRF-A21"
+                ],
+                "id": "O11.3",
+                "statement": "Missing or unreadable source inputs refuse as unreadable-source with the required path and assigned IDs."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A6"
+                ],
+                "id": "O11.4",
+                "statement": "Repeated assigned or source-defined IDs refuse as duplicate-id and name the IDs."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A7"
+                ],
+                "id": "O11.5",
+                "statement": "Nonblank criteria-file lines outside entries refuse as malformed-criteria, name the lines and do not also produce no-criteria."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A12"
+                ],
+                "id": "O11.6",
+                "statement": "Malformed checks refuse as malformed-checks."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A14"
+                ],
+                "id": "O11.7",
+                "statement": "Unavailable or failed rendering refuses as render-failed, naming the item and cause."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A21"
+                ],
+                "id": "O11.8",
+                "statement": "check mirrors emit's shared-source refusals and refuses an unreadable brief."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A25"
+                ],
+                "id": "O11.9",
+                "statement": "One refusal reports every detected fault in readable sources, including both of two absent IDs."
+              }
+            ],
+            "source": "BRF-D4: \"emit prints nothing on stdout and one JSON object on stderr naming each fault, and exits 2.\" The listed codes define empty assignments, absent IDs, unreadable inputs, duplicates, malformed criteria, malformed checks and failed item rendering.",
+            "statement": "Source failures produce the specified refusal protocol and fault details."
+          },
+          {
+            "id": "O12",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A12"
+                ],
+                "id": "O12.1",
+                "statement": "Invalid JSON, invalid top-level or entry types and invalid field types are rejected across assigned and unassigned entries."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A11",
+                  "BRF-A12"
+                ],
+                "id": "O12.2",
+                "statement": "Missing observe or pass keys are blank fields rather than malformed input; whitespace-only strings are blank."
+              },
+              {
+                "discharged_by": [],
+                "id": "O12.3",
+                "statement": "Additional keys are ignored rather than affecting processing or output."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A10"
+                ],
+                "id": "O12.4",
+                "statement": "Well-formed unassigned entries change neither section, stderr nor exit status."
+              }
+            ],
+            "source": "BRF-D5: \"The shape rule covers every entry, assigned or not.\" \"A missing key therefore makes a criterion unready. It never makes the file malformed.\" \"A key other than observe and pass is ignored.\" \"An entry keyed to an unassigned ID is otherwise ignored\".",
+            "statement": "Checks files obey the specified shape, blank-field rules and rules for ignored entries and keys."
+          },
+          {
+            "id": "O13",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A10"
+                ],
+                "id": "O13.1",
+                "statement": "Complete checks produce exactly the assigned evidence IDs with planned observations and pass rules and exit 0."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A11"
+                ],
+                "id": "O13.2",
+                "statement": "Missing checks and blank fields produce the specified unready marks and reasons, name every unready ID on stderr and exit 1; absent --checks marks every ID unready."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A22"
+                ],
+                "id": "O13.3",
+                "statement": "The full criteria section is identical with absent, complete or incomplete checks."
+              }
+            ],
+            "source": "BRF-D5: \"The evidence section holds exactly the assigned IDs.\" It supplies observation and pass rule or unready with the closed reasons. \"When any criterion is unready, emit still prints both sections, names each unready ID on stderr, and exits 1.\" \"The criteria section is the same whether --checks is absent, complete or leaves a criterion unready.\"",
+            "statement": "emit produces a complete evidence map, marks missing or blank planned checks unready, and preserves its criteria section across check availability."
+          },
+          {
+            "id": "O14",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A24"
+                ],
+                "id": "O14.1",
+                "statement": "Both modes produce the same stdout, stderr and exit status under python3 without importable third-party packages and under uv run."
+              }
+            ],
+            "source": "BRF-D1: \"The helper uses the standard library only, so it runs under uv run or python3 on every supported tool.\"",
+            "statement": "The helper runs without third-party packages and behaves identically under python3 and uv run."
+          },
+          {
+            "id": "O15",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A30"
+                ],
+                "id": "O15.1",
+                "statement": "Repeated unchanged executions produce identical outputs and status, write no files and share nothing across concurrent different-source executions."
+              }
+            ],
+            "source": "What-if questions: \"emit and check read and never write, so running either twice or with nothing changed prints the same result and concurrent runs share nothing\".",
+            "statement": "Both modes are read-only, deterministic for unchanged inputs and independent under concurrent execution."
+          },
+          {
+            "id": "O16",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A13"
+                ],
+                "id": "O16.1",
+                "statement": "The helper obtains rendered item criteria and makes no other facade call."
+              },
+              {
+                "discharged_by": [],
+                "id": "O16.2",
+                "statement": "The helper never independently resolves the item's acceptance field."
+              }
+            ],
+            "source": "BRF-D7: \"--item runs work acceptance render ID and reads its acceptance-criteria section. It never resolves an item's acceptance field itself, since that would be a third resolver of LIFE-D1.\"",
+            "statement": "Item criteria come exclusively through the facade renderer rather than another acceptance-field resolver."
+          },
+          {
+            "id": "O17",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A28"
+                ],
+                "id": "O17.1",
+                "statement": "The skill text instructs writers to use emit, paste both sections unchanged, run check before dispatch and report refusals or unready criteria instead of dispatching."
+              }
+            ],
+            "source": "BRF-D6: \"Criteria and evidence come from emit, pasted unchanged, and check runs before dispatch. A refusal or an unready criterion is reported to the requester.\"",
+            "statement": "The skill's acceptance-criteria guidance and skeleton contain the prescribed helper workflow."
+          },
+          {
+            "id": "O18",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O18.1",
+                "statement": "The rewritten skill remains within its applicable token caps."
+              }
+            ],
+            "source": "BRF-D6: \"Content-lint's token caps apply.\"",
+            "statement": "The rewritten skill complies with content-lint's token caps."
+          },
+          {
+            "id": "O19",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A16",
+                  "BRF-A17"
+                ],
+                "id": "O19.1",
+                "statement": "F1 and F2 meet their preservation and evidence thresholds."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A18",
+                  "BRF-A19"
+                ],
+                "id": "O19.2",
+                "statement": "F3 through F5 meet their specified refusal-report thresholds."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A20"
+                ],
+                "id": "O19.3",
+                "statement": "F6 and F7 meet their specified unready-report thresholds."
+              }
+            ],
+            "source": "BRF-D8 defines F1 through F7, five runs per fixture, separate F1/F2 preservation and evidence scores, five-of-five thresholds for F1 through F5 and F7, and four-of-five for F6.",
+            "statement": "The evaluation of record meets the fixed fixture counts, observations and thresholds."
+          },
+          {
+            "id": "O20",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O20.1",
+                "statement": "The actual writer uses Claude Opus through the native Agent tool, the source skill by full path, fixed fixture tasks, no subagent tool and fresh contexts."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A26"
+                ],
+                "id": "O20.2",
+                "statement": "The record names a resolved Claude Opus model ID and contains operator attestations of fresh contexts and the native Agent tool."
+              }
+            ],
+            "source": "BRF-D8: \"The writer is Claude Opus through the native Agent tool, given the skill from the source tree by full path.\" It uses a fixed task, no subagent tool and fresh contexts. \"The run record names the writer's resolved model ID.\" \"the operator attests both in the run record.\"",
+            "statement": "The evaluation uses the prescribed writer protocol and records its model and operator attestations."
+          },
+          {
+            "id": "O21",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A16",
+                  "BRF-A17",
+                  "BRF-A18",
+                  "BRF-A19",
+                  "BRF-A20",
+                  "BRF-A27"
+                ],
+                "id": "O21.1",
+                "statement": "The evaluation and scorer distinguish compliant briefs and reports and reject the specified wrong-form or malformed-report outputs."
+              }
+            ],
+            "source": "BRF-D8: \"Each output opens with a line naming its form, Form: brief or Form: report\"; a report \"holds no criteria or evidence section and relays what the helper printed on stderr.\"",
+            "statement": "Evaluation outputs use mechanically distinguishable brief and report forms, with reports containing no criteria or evidence section."
+          },
+          {
+            "id": "O22",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A26"
+                ],
+                "id": "O22.1",
+                "statement": "Missing outputs leave their fixtures pending and the record incomplete, never passed or failed."
+              },
+              {
+                "discharged_by": [],
+                "id": "O22.2",
+                "statement": "A no-output run is repeated at most twice before being left pending."
+              }
+            ],
+            "source": "BRF-D8: \"A run with no output is repeated at most twice. It is then left pending and never scored as failed. The repeat limit is an operator procedure\".",
+            "statement": "Missing outputs receive bounded retries and then remain pending rather than being scored as failures."
+          },
+          {
+            "id": "O23",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A26"
+                ],
+                "id": "O23.1",
+                "statement": "A complete run directory contains every output its report scores."
+              },
+              {
+                "discharged_by": [],
+                "id": "O23.2",
+                "statement": "Every record run, including unsuccessful or incomplete runs, is committed with its outputs and report under the specified run directory."
+              }
+            ],
+            "source": "BRF-D8: \"A record run is committed under evals/runs/<run-id>/ with its outputs and report, whatever it shows. That rests on the operator.\"",
+            "statement": "Run records retain their outputs and reports and are committed regardless of outcome."
+          },
+          {
+            "id": "O24",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A27"
+                ],
+                "id": "O24.1",
+                "statement": "The scorer passes conforming output sets and fails and names fixtures whose seeded defects cross their thresholds, including separate preservation and evidence defects."
+              },
+              {
+                "discharged_by": [
+                  "BRF-A26"
+                ],
+                "id": "O24.2",
+                "statement": "The scorer rejects incomplete records with deficient scored-output counts, missing scored files, missing or invalid model IDs or missing attestations."
+              }
+            ],
+            "source": "BRF-D8: \"evals/score_briefs.py scores the outputs mechanically, and scores F1's and F2's two halves separately.\" What-if questions: \"A failure names the fixture\".",
+            "statement": "The mechanical scorer applies fixture pass rules and thresholds, separates preservation from evidence and identifies failing fixtures."
+          },
+          {
+            "id": "O25",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A31"
+                ],
+                "id": "O25.1",
+                "statement": "make content-tests executes the helper and scorer suites, and make ci executes spec-lint's fixture test; seeded suite failures make their gates fail."
+              }
+            ],
+            "source": "BRF-D9: \"The helper suites establish the mechanism.\" Ordered slices assign the helper and scorer suites and spec-lint fixture test. Continuations require make content-tests and make ci for S3.1 and make content-tests for S3.2 and S3.3.",
+            "statement": "The verification gates execute the suites relevant to the slice."
+          },
+          {
+            "id": "O26",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "BRF-A16",
+                  "BRF-A17",
+                  "BRF-A18",
+                  "BRF-A19",
+                  "BRF-A20"
+                ],
+                "id": "O26.1",
+                "statement": "The slice's acceptance requires evaluation-of-record results at the generated-brief boundary in addition to helper verification."
+              }
+            ],
+            "source": "BRF-D9: \"S3.5 is the verification child for ACQ-A12 and ACQ-A13\" and \"Only the evaluation of record establishes the parents at the generated brief.\"",
+            "statement": "Parent verification depends on the generated-brief evaluation rather than helper-suite success alone."
+          }
+        ]
+      }
+    },
+    {
+      "lens": "set-consistency",
+      "report": "objections"
+    },
+    {
+      "lens": "what-if",
+      "report": "objections"
+    }
+  ],
+  "objections": [
+    {
+      "ground": {
+        "reason": "BRF-D6 promises that criteria and evidence come from emit and that check runs before dispatch. BRF-A28 verifies only that the skill text contains those instructions. That check observes the prompt rather than the writer's promised behaviour.",
+        "rule": "observable-obligation"
+      },
+      "id": "behavioural-outcome-1",
+      "lens": "behavioural-outcome",
+      "objection": "BRF-A28 accepts instructions that the writer does not follow. The generated-brief evaluation does not establish helper use either: F1 and F2 check the returned sections, so manually copied sections can pass.",
+      "obligation": "Route the writer through emit and run check before dispatch.",
+      "scenario": {
+        "expect": "The content test passes because all four instructions are present, while the writer dispatches without running emit or check. Correctly copied sections also pass F1 and F2.",
+        "given": "A skill containing all four instructions required by BRF-A28, whose writer manually copies accurate criteria and evidence and skips the helper.",
+        "when": "BRF-A28's content test reads the skill, and the generated-brief evaluation scores the writer's returned brief."
+      },
+      "target_ac": "BRF-A28"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A16 observes preservation in F1 and F2. Those fixtures do not cover briefs sourced from work items or other dispatches.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-1",
+      "lens": "obligation-reduction",
+      "objection": "The evaluated briefs can preserve their criteria while other dispatched briefs change or omit assigned criteria.",
+      "obligation": "O1.2",
+      "scenario": {
+        "expect": "Every criterion's check passes, but the dispatched item-based brief omits an assigned criterion.",
+        "given": "The helper is correct and every recorded fixture meets its threshold.",
+        "when": "The writer produces a brief using --item and drops one rendered criterion."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A17 observes evidence mapping in F1 and F2. Helper correctness and instructions in the skill do not establish evidence fidelity in other generated briefs.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-2",
+      "lens": "obligation-reduction",
+      "objection": "A dispatched brief outside the evaluated fixtures can misassociate criteria and planned checks.",
+      "obligation": "O2.2",
+      "scenario": {
+        "expect": "Every criterion's check passes, but the dispatched brief assigns one criterion another criterion's planned check.",
+        "given": "F1 and F2 preserve their evidence, and the helper and skill satisfy their criteria.",
+        "when": "The writer creates an item-based brief with correct criteria but swaps two evidence entries."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A18 and BRF-A19 cover the evaluated zero-criteria, absent-ID and unreadable-spec cases. They do not cover the writer's response to the other committed refusal cases.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-3",
+      "lens": "obligation-reduction",
+      "objection": "The writer can dispatch after an uncovered refusal instead of relaying it.",
+      "obligation": "O3.2",
+      "scenario": {
+        "expect": "Every criterion's check passes, but the writer dispatches an invented brief after a malformed-checks refusal.",
+        "given": "The helper correctly refuses malformed checks, and F3 through F5 produce compliant reports.",
+        "when": "A later assignment supplies malformed checks and the writer ignores the refusal."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A20 permits one failing F6 output and samples only the specified infeasible and missing-check cases. It does not discharge the unconditional commitment to report an unready criterion and dispatch nothing.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-4",
+      "lens": "obligation-reduction",
+      "objection": "The evaluation can pass while the writer dispatches a brief containing an infeasible planned check.",
+      "obligation": "O4.2",
+      "scenario": {
+        "expect": "Every criterion's check passes, including F6 at four of five, while the fifth F6 output dispatches the unready criterion.",
+        "given": "Four F6 outputs are compliant reports and every other fixture meets its threshold.",
+        "when": "The fifth F6 run returns a brief accepting the infeasible pass rule."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The criteria exercise the source helper and skill text. None checks that the helper ships beside the deployed skill.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-5",
+      "lens": "obligation-reduction",
+      "objection": "The source implementation can pass while the installed skill lacks its helper.",
+      "obligation": "O5.1",
+      "scenario": {
+        "expect": "Every criterion's check passes, but the deployed skill cannot invoke brief_criteria.py beside SKILL.md.",
+        "given": "The source helper, suites and evaluation are compliant, but deployment excludes the helper file.",
+        "when": "A writer uses the deployed skill."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The criteria require criteria and evidence sections, but none excludes additional sections in emit's output.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-6",
+      "lens": "obligation-reduction",
+      "objection": "emit can produce more than the two promised Markdown sections.",
+      "obligation": "O5.2",
+      "scenario": {
+        "expect": "Every criterion's check passes, but emit prints three Markdown sections.",
+        "given": "emit produces correct criteria and evidence sections.",
+        "when": "emit also appends a Diagnostics section that does not affect either checked section."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A1 explicitly checks three IDs and several hundred. Those cardinalities do not establish the stated absence of a limit for spec-based emission.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-7",
+      "lens": "obligation-reduction",
+      "objection": "Spec-based emission can truncate larger assignments while passing the stated cardinality checks.",
+      "obligation": "O6.2",
+      "scenario": {
+        "expect": "Every criterion's check passes, but emit omits assigned spec criteria beyond its internal limit.",
+        "given": "Spec emission preserves three and several hundred criteria; file and item emission remain unrestricted. Evidence emission and check correctly handle all assigned IDs.",
+        "when": "emit receives a spec assignment of ten thousand IDs and truncates only its criteria section."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A9 checks fixture agreement and rule-breaking variants. It does not check the required counterpart marking.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-8",
+      "lens": "obligation-reduction",
+      "objection": "The helper parser can implement the grammar without being marked as spec-lint's counterpart.",
+      "obligation": "O7.2",
+      "scenario": {
+        "expect": "Every criterion's check passes, but the helper parser has no counterpart marking.",
+        "given": "Both parsers agree on the fixture and every required parser variant fails a case.",
+        "when": "The helper parser is delivered without the required marking."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A12 establishes that additional keys do not make an entry malformed. It does not establish that those keys are ignored.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-9",
+      "lens": "obligation-reduction",
+      "objection": "An additional key can affect output without causing a malformed-checks refusal.",
+      "obligation": "O12.3",
+      "scenario": {
+        "expect": "Every criterion's check passes, but adding an otherwise ignored key changes stderr.",
+        "given": "An assigned entry contains valid observe and pass strings.",
+        "when": "A string-valued metadata key is added and emit prints a warning about it while preserving both sections and exiting 0."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A13 checks rendered criteria and facade calls. It does not observe whether the helper independently resolves an item's acceptance field.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-10",
+      "lens": "obligation-reduction",
+      "objection": "The helper can contain a third resolver while making only the permitted facade call.",
+      "obligation": "O16.2",
+      "scenario": {
+        "expect": "Every criterion's check passes, but the helper independently resolves the item's acceptance field.",
+        "given": "The helper calls acceptance render and emits exactly its criteria.",
+        "when": "The helper also reads and resolves the stored acceptance field for an internal comparison."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A28 checks four instructions in the skill text. No criterion observes compliance with the applicable token caps.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-11",
+      "lens": "obligation-reduction",
+      "objection": "The rewritten skill can exceed its token cap while containing every required instruction.",
+      "obligation": "O18.1",
+      "scenario": {
+        "expect": "Every criterion's check passes, but the skill exceeds content-lint's applicable token cap.",
+        "given": "The skill contains the four required instructions and produces compliant evaluated outputs.",
+        "when": "The rewrite adds enough additional text to exceed the cap."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A26 observes the recorded model ID and operator attestations. Those artifact properties do not establish the actual execution protocol.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-12",
+      "lens": "obligation-reduction",
+      "objection": "A record can pass without its outputs having been produced under the required writer conditions.",
+      "obligation": "O20.1",
+      "scenario": {
+        "expect": "Every criterion's check passes, but the evaluation reuses contexts instead of running in fresh contexts.",
+        "given": "The record contains compliant outputs, a Claude Opus model ID and the required operator attestation.",
+        "when": "The actual writer execution reuses contexts despite the recorded attestation."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A26 checks pending and incomplete treatment. No criterion observes how many times a no-output dispatch was repeated.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-13",
+      "lens": "obligation-reduction",
+      "objection": "The operator can exceed the two-repeat limit while producing compliant scorer results.",
+      "obligation": "O22.2",
+      "scenario": {
+        "expect": "Every criterion's check passes, but a no-output dispatch has been repeated three times.",
+        "given": "A separate complete evaluation of record passes, and the scorer correctly marks the no-output attempt pending.",
+        "when": "The operator retries the missing dispatch three times before leaving it pending."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A26 checks files present in a run directory. None checks that run records, outputs and reports are committed, including unsuccessful or incomplete runs.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-14",
+      "lens": "obligation-reduction",
+      "objection": "Compliant records can remain uncommitted, and unsuccessful records can be discarded.",
+      "obligation": "O23.2",
+      "scenario": {
+        "expect": "Every criterion's check passes, but the complete record remains untracked and an unsuccessful run is not committed.",
+        "given": "The latest complete run exists under evals/runs with all required outputs and a passing report.",
+        "when": "Verification finishes without committing that run or an earlier unsuccessful run."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The preamble defines a complete record run by exactly three conditions (five scored outputs per fixture, directory holds every scored output, record names a Claude Opus model ID), but BRF-A26 also makes the run incomplete when the operator's attestation of fresh contexts and the native Agent tool is absent. The two definitions disagree on whether the attestation is a completeness condition.",
+        "rule": "consistency"
+      },
+      "id": "set-consistency-1",
+      "lens": "set-consistency",
+      "objection": "A run can be simultaneously 'complete' by the preamble's three-condition definition (and therefore the evaluation of record against which BRF-A16 to BRF-A20 are judged) and 'incomplete' by BRF-A26 (and therefore excluded). The criteria do not agree on which runs count as the evaluation of record.",
+      "scenario": {
+        "expect": "the preamble's three conditions all hold, so the run is complete and is the evaluation of record; BRF-A26 requires the scorer to report the same run as incomplete, so it cannot be the evaluation of record",
+        "given": "a record run in which every fixture has five scored outputs, the run directory holds every output its report scores, and the record names a resolved Claude Opus model ID, but the record carries no operator attestation of fresh contexts and the native Agent tool",
+        "when": "the run is judged for completeness against the preamble definition and against BRF-A26"
+      },
+      "target_ac": "BRF-A26"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A8 is unconditional: check exits 0 when a brief preserves its assigned criteria, and otherwise exits 1. BRF-A23 states that given --checks, check exits 1 when an evidence entry is missing, added or altered. When the criteria are preserved but the evidence is altered, BRF-A8's stated condition for exit 0 holds while BRF-A23 requires exit 1 for the same invocation.",
+        "rule": "consistency"
+      },
+      "id": "set-consistency-2",
+      "lens": "set-consistency",
+      "objection": "The exit status of `check --checks` on a brief with intact criteria and altered evidence is pinned to two different values, so an implementation cannot satisfy both criteria in that circumstance.",
+      "scenario": {
+        "expect": "BRF-A8, read as written, requires exit 0 because the criteria are preserved; BRF-A23 requires exit 1 naming the altered evidence ID",
+        "given": "a brief whose criteria section preserves every assigned criterion under BRF-D3, and a checks file whose evidence entry for one assigned ID the brief's evidence section alters",
+        "when": "`check --checks` runs over that brief"
+      },
+      "target_ac": "BRF-A8"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A9 requires, for each grammar rule, that a variant of the helper's parser breaking that rule fails at least one fixture case, and separately requires the helper's fixture test to skip where the repository's copy of the fixture is absent. The wording leaves open whether the variant-failure requirement applies in the pruned environment: there the test skips, so a rule-breaking variant fails nothing and the suite passes green.",
+        "rule": "decision-closure"
+      },
+      "id": "set-consistency-3",
+      "lens": "set-consistency",
+      "objection": "The decision left open is whether the per-rule variant check is a repository-only property or also binds the installed-environment run. One reading lets a broken parser ship undetected wherever the suite runs with evals/ pruned; the other makes the skip behaviour and the variant requirement irreconcilable in that environment.",
+      "scenario": {
+        "expect": "under the unconditional reading the variant must fail at least one case, but the fixture test skips so no case fails; under the repository-scoped reading the suite passes and the broken parser is undetected",
+        "given": "the helper suite running in an installed environment where the installer has pruned evals/, with a variant of the helper's parser that breaks grammar rule 1",
+        "when": "the suite is judged against BRF-A9"
+      },
+      "target_ac": "BRF-A9"
+    },
+    {
+      "ground": {
+        "reason": "BRF-D8 makes the scorer read each output's form mechanically from its opening line, and BRF-A26/BRF-A27 classify only the missing-output and known-defect cases. No criterion or decision states what the scorer does with an output that is present but opens with no `Form:` line or an unrecognized one: it is neither reported pending (the output exists) nor shown to fail, so the document neither covers nor rules out the case.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-1",
+      "lens": "what-if",
+      "objection": "The criteria let through a scorer whose handling of a present-but-unparseable output is undefined: the same run directory could be scored passed, failed, or pending depending on an implementation choice nothing pins, and the evaluation of record would silently depend on it.",
+      "scenario": {
+        "expect": "the document implies the output should be classified (failed, or pending like a missing output), but no criterion checks either treatment",
+        "given": "a record-run directory where one fixture's output file exists but its first line is missing, malformed, or names a form other than `brief` or `report`",
+        "when": "the operator runs `evals/score_briefs.py` over the run"
+      },
+      "target_ac": "BRF-A27"
+    },
+    {
+      "ground": {
+        "reason": "BRF-A30 pins repeat-run and concurrent-run determinism for `emit` and `check` only, and the scorer is the third mechanical component whose verdict the evaluation of record rests on. No criterion asks what happens when the scorer runs twice over an unchanged run directory, so a non-deterministic scorer (e.g., one sensitive to directory iteration order) breaks no stated criterion.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-2",
+      "lens": "what-if",
+      "objection": "The criteria let through a scorer that gives different verdicts on two identical runs over the same outputs, which would undermine the 'evaluation of record' the whole slice exists to make trustworthy.",
+      "scenario": {
+        "expect": "the document implies both runs should report the same per-fixture verdicts and the same complete/incomplete judgment, but no criterion checks it",
+        "given": "a fixed record-run directory with its outputs and report",
+        "when": "`evals/score_briefs.py` runs twice with nothing changed"
+      },
+      "target_ac": "none"
+    }
+  ],
+  "schema_version": "1",
+  "spec_path": "2026-09-29-acceptance-criteria-brief-fidelity.md",
+  "spec_revision": "sha256:26e69e8467fda9711204f9ad37985da670dad403ad48615aaeb436153276a5e5"
+}

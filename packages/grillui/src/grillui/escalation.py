@@ -429,8 +429,9 @@ def judgment_class(
     is a judgment the first rung has no standing to make.
 
     The fourth class is the gesture that leaves the board offering decisions its
-    own answer moved -- an option whose mark resolves to one still live, or an
-    applied invalidate that stranded a dependent. It is the obligation the next
+    own answer moved -- an option whose mark resolves to one still live, an
+    answer in the human's own words that opened one, or an applied invalidate
+    that stranded a dependent. It is the obligation the next
     turn owes, asked for here rather than restated: a class drawn wider than the
     obligation would send the expert a turn with nothing to rule on, and one
     drawn narrower would leave the first rung a ruling it was passed over for.
@@ -621,10 +622,16 @@ def mootness_obligation(
 
 
 def _answer_obligation(image: Image2, answered: LogEntry) -> MootnessObligation | None:
-    """The decisions the option the human took named, still standing.
+    """The decisions the option the human took named, and the decisions an
+    answer in their own words opened, still standing.
 
-    The same fact the page pre-marked on hover, which is why nothing here is
-    inferred from prose and nothing is a model's reading of a rule.
+    The marks are the same fact the page pre-marked on hover, which is why
+    nothing here is inferred from prose and nothing is a model's reading of a
+    rule. The human's own words are different: no author predicted what a note
+    or a free answer does to the board, so every decision the answer opens is
+    weighed against it before anyone may answer that decision. A decision the
+    answer did not open still has a gate shut, and the words reach it when its
+    last gate opens.
     """
     target = answered.payload.get("target")
     answer = answered.payload.get(ANSWER_KIND)
@@ -633,18 +640,82 @@ def _answer_obligation(image: Image2, answered: LogEntry) -> MootnessObligation 
     decision = next((one for one in image.decisions if one.id == target), None)
     taken = None if decision is None else answer.get("option")
     option = next((one for one in (decision.options if decision else []) if one.id == taken), None)
-    if option is None or not option.puts_in_question:
-        return None
-    standing = _still_standing(image, option.puts_in_question)
+    note = answer.get("text")
+    said = note if isinstance(note, str) and note else None
+    marked = (option.puts_in_question if option else None) or []
+    opened = [] if said is None else _opened(image, target)
+    standing = _still_standing(image, [*marked, *opened])
     if not standing:
         return None
-    note = answer.get("text")
     return MootnessObligation(
         target=target,
-        answer=note if isinstance(note, str) and note else option.text,
+        answer=said or (option.text if option else ""),
         ids=standing,
+        opened=[one for one in standing if one in opened and one not in marked],
         gesture=answered.seq,
     )
+
+
+def retry_obligation(
+    image: Image2, entries: Sequence[LogEntry], gesture: int, target: str
+) -> MootnessObligation | None:
+    """What a retry of a failed ruling owes: that one decision, ruled again on
+    the answer that first put it in question, as the board now stands.
+
+    The answer is read back off the log at the gesture the failed task names,
+    so the turn is told the same rationale the first run was. The obligation is
+    narrowed to the one decision, because the rest of that answer's targets
+    are other tasks' business. The caller keys it to the retry's own start, so
+    the retry's task is the one a later answer can supersede.
+
+    Nothing where the answer no longer puts that decision in question at all,
+    which leaves nothing for a retry to rule on.
+    """
+    answered = next((one for one in entries if one.seq == gesture), None)
+    owed = None if answered is None else _answer_obligation(image, answered)
+    if owed is None or target not in owed.ids:
+        return None
+    return owed.model_copy(
+        update={"ids": [target], "opened": [one for one in owed.opened if one == target]}
+    )
+
+
+def subtree(image: Image2, root: str) -> list[str]:
+    """This decision and every decision resting on it, directly or not, in
+    board order.
+
+    Resting is either gate a decision has: a prereq, or the fog rule naming
+    what it waits on. Both make a decision's question depend on the root's
+    answer, so a ruling on the root may have to move either kind.
+    """
+    inside = {root}
+    grew = True
+    while grew:
+        grew = False
+        for one in image.decisions:
+            if one.id not in inside and (
+                inside.intersection(one.prereqs) or one.fog_until in inside
+            ):
+                inside.add(one.id)
+                grew = True
+    return [one.id for one in image.decisions if one.id in inside]
+
+
+def _opened(image: Image2, answered: str) -> list[str]:
+    """The decisions the answer to this one opened: gated on it, by a prereq or
+    by fog, and with every gate now clear.
+
+    Read off the board after the answer landed, so the answered decision is
+    already settled and a fog it lifted has already lifted.
+    """
+    cleared = {one.id for one in image.decisions if one.status in DEAD_STATUSES}
+    return [
+        one.id
+        for one in image.decisions
+        if one.status == "open"
+        and (answered in one.prereqs or one.fog_until == answered)
+        and all(p in cleared for p in one.prereqs)
+    ]
 
 
 def _resting_obligation(image: Image2, gesture: LogEntry) -> MootnessObligation | None:

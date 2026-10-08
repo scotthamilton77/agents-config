@@ -1685,10 +1685,12 @@ Each criterion is mechanically checkable and convertible to a red test.
   prior context — produces a complete terminal result.
 - **GUI-A33** A fast-tier reply that meets a GUI-D12 condition carries escalation
   recommendation metadata that reaches the page, and the page highlights that channel's
-  way to the expert: the *Proceed with expert* action on an open thread, and the seat
-  toggle's *expert* option on the map; a reply meeting none carries no such metadata and
-  leaves both unhighlighted. A parked or closed thread renders no such action (GUI-U33),
-  so a reply that lands on one highlights nothing.
+  way to the expert, the *Proceed with expert* action on an open thread; a reply meeting
+  none carries no such metadata and leaves it unhighlighted. A parked or closed thread
+  renders no such action (GUI-U33), so a reply that lands on one highlights nothing. The
+  map's first rung never reads the human's own words, because every map answer carrying
+  them is composed by the expert from the start (PND-D4 of
+  `docs/specs/2026-08-30-grilling-board-pending-analysis.md`), so no map reply meets a condition and nothing on the map is lit by one.
 - **GUI-A34** Selecting *expert* on a channel's seat toggle forces the next turn on that
   channel to the heavy tier, and the heavy dispatch contains the channel's accumulated
   thread rather than only the last message; the log attributes the turn to the heavy tier;
@@ -2018,9 +2020,11 @@ Each criterion is mechanically checkable and convertible to a red test.
   for.
 - **GUI-A103** Neither an obligation already met nor one never created buys a second turn: a
   reply ruling on each named id, each verdict credited by the update the same document
-  carries — an `invalidate` queued for one and `stands` with a why for the other — takes one
-  turn and no more, says nothing to the human, and leaves the invalidate in the queue and the
-  standing decision on the frontier under an informational targeted at it; and an answer on
+  carries — an `invalidate` for one and `stands` with a why for the other — takes one turn
+  and no more, says nothing to the human, lands the invalidate on its own target with a
+  history line naming the impact task (PND-D3 of
+  `docs/specs/2026-08-30-grilling-board-pending-analysis.md`), and leaves the standing decision
+  on the frontier under an informational targeted at it; and an answer on
   an option carrying no `puts_in_question` stays on the first-rung seat, producing a dispatch
   with no obligation, no expert turn and no notice.
 - **GUI-A106** In a browser, against a running backend: on a board whose one open decision

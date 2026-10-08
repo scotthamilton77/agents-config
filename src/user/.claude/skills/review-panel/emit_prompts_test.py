@@ -1547,6 +1547,56 @@ class TestDispositions:
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "untransferable-blocking"
 
+    @staticmethod
+    def _prose_located_round(tmp_path, repo, acs_file, entry, where="evidence",
+                             located="docs/routing.md"):
+        """Round 1's mechanical finding sits in a file the lens itself named, in its claim
+        or in its evidence, with the other field left as the fixture wrote it."""
+        verdict = verdict_round1(repo)
+        verdict["findings"][0][where] = (
+            f"{located}:12 credits the gate with a refusal the gate does not make")
+        head = repo.write_lines(4, "fix.txt")
+        prior = write_json(tmp_path / "verdict-1.json", verdict)
+        ledger = write_json(tmp_path / "dispositions.json", [
+            {"round": 1, "id": "f1", "disposition": "fixed", **entry},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        out_dir = tmp_path / "round-2"
+        flat = argv(repo, acs_file, out_dir, **{"--round": "2", "--head-sha": head})
+        return flat + ["--prior-verdict", str(prior), "--disposition", str(ledger)], out_dir
+
+    @pytest.mark.parametrize("where", ["claim", "evidence"])
+    def test_b6_a_fix_located_in_prose_by_the_lens_names_the_file_not_a_test(
+            self, repo, acs_file, tmp_path, capsys, where):
+        """A typed-code lens reading the surrounding repository can find a defect in a
+        Markdown file; its fix is a prose edit, and the disposition names the file the
+        lens's own claim or evidence located it in instead of a test."""
+        flat, out_dir = self._prose_located_round(tmp_path, repo, acs_file, {
+            "artifact": "docs/routing.md", "evidence": "the sentence is rewritten; doc-lint exit 0"},
+            where=where)
+        code, result = run(flat, capsys)
+        assert code == 0 and result["emitted"] is True
+        ledger = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))["prior_dispositions"]
+        assert ledger[0]["artifact"] == "docs/routing.md"
+
+    @pytest.mark.parametrize("entry, located", [
+        ({"artifact": "docs/other.md", "evidence": "the sentence is rewritten; doc-lint exit 0"},
+         "docs/routing.md"),
+        ({"artifact": "src/reader.py", "evidence": "the sentence is rewritten; doc-lint exit 0"},
+         "src/reader.py"),
+        ({"artifact": "docs/routing.md", "evidence": " "}, "docs/routing.md"),
+    ])
+    def test_b6_a_prose_location_the_lens_did_not_name_does_not_excuse_the_test(
+            self, repo, acs_file, tmp_path, capsys, entry, located):
+        """The file must be one the finding itself spells out, must be Markdown, and the
+        evidence must still say what was done: a fixer cannot relocate a code defect into
+        prose by naming a file the lens never mentioned, and a code file the lens did name
+        is still code. Each case fails exactly one of the three conditions."""
+        flat, _ = self._prose_located_round(tmp_path, repo, acs_file, entry, located=located)
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "unsupported-fix"
+        assert "'artifact'" in result["errors"][0]["message"]
+
     def test_b6_a_typed_code_fix_names_the_test_that_shows_it(self, repo, acs_file, tmp_path,
                                                               capsys):
         """On typed code a fix is checkable, so a bare "fixed" claim is as inadmissible as a
@@ -1850,7 +1900,10 @@ class TestPreconditions:
         run(argv(repo, acs_file, tmp_path / "one"), capsys)
         run(argv(repo, acs_file, tmp_path / "two"), capsys)
         first, second = prompts(tmp_path / "one"), prompts(tmp_path / "two")
-        assert first == second
+        # Each prompt names the change file in its own output directory, so the two runs
+        # differ in that path and nowhere else.
+        one, two = str((tmp_path / "one").resolve()), str((tmp_path / "two").resolve())
+        assert first == {lens: text.replace(two, one) for lens, text in second.items()}
 
     def test_refusal_exits_cleanly_from_the_command_line(self, repo, acs_file, tmp_path):
         """A refusal is typed JSON on stdout with exit 2, never a traceback."""
@@ -1904,6 +1957,492 @@ class TestSurface:
     def test_the_triviality_boundary_is_one_named_constant(self):
         """The fix-dispatch side reads this same constant, so the boundary has one home."""
         assert emitter.TRIVIALITY_BOUNDARY == 40
+
+
+# The routing table lives in a sibling skill of the source tree. Only these tests read it; the
+# emitter never does, so a deployed panel runs whether or not that skill is installed beside it.
+ROUTING_TABLE_PATH = (
+    HERE / ".." / "choosing-a-delegate" / "references" / "model-routing.md"
+).resolve()
+PROVIDER_OF = {"codex": "openai", "openrouter": "openrouter"}
+OTHER_TRANSPORT = {"codex": "openrouter", "openrouter": "codex"}
+READ_TOOLS = {"Read", "Grep", "Glob"}
+CODEX_SANDBOX = "read-only-sandbox"
+EFFORT_TOKENS = ("low", "medium", "high", "xhigh", "max")
+ROLES = ("staffing_recommender", "trend_checkpoint")
+ALL_SEATS = {
+    (transport, tier, scope)
+    for transport in OTHER_TRANSPORT for tier in ("frontier", "mid") for scope in ("full", "delta")
+}
+OPENROUTER_LENS = {
+    "typed-code": "security",
+    "spec-code": "contract-only-boundary",
+    "spec": "ac-testability",
+    "prose": "global-consistency",
+}
+# Every lens's declared tier and re-review tier, as the rosters on the default branch declare
+# them. Moving a lens between transports must leave all of these alone.
+DECLARED_TIERS = {
+    "typed-code": {
+        "correctness": ("frontier", None), "security": ("frontier", "mid"),
+        "test-adequacy": ("mid", None), "simplification-efficiency": ("mid", None),
+        "documentation-quality": ("mid", None),
+    },
+    "spec-code": {
+        "interface-quality": ("frontier", None), "contract-only-boundary": ("mid", None),
+        "pinning-adequacy": ("mid", None),
+    },
+    "spec": {
+        "internal-consistency-decidability": ("frontier", None),
+        "ac-testability": ("frontier", "mid"), "completeness-vs-scope": ("frontier", None),
+        "architectural-fit": ("frontier", "mid"), "clarity-standalone-concision": ("mid", None),
+    },
+    "prose": {
+        "internal-consistency": ("frontier", None), "global-consistency": ("frontier", "mid"),
+        "standalone-read": ("mid", None),
+    },
+}
+PINNED_EFFORT = {
+    ("openrouter", "frontier", "full"): "low", ("openrouter", "mid", "full"): "low",
+    ("openrouter", "frontier", "delta"): "high", ("openrouter", "mid", "delta"): "high",
+    ("codex", "frontier", "full"): "high", ("codex", "frontier", "delta"): "high",
+    ("codex", "mid", "full"): "medium", ("codex", "mid", "delta"): "medium",
+}
+CLASS_PROFILE = {
+    "typed-code": "typed-code", "spec-code": "spec-code", "spec": "spec",
+    "prose": "general-docs",
+}
+
+
+def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict:
+    keys = [key for key, _ in pairs]
+    duplicated = sorted({key for key in keys if keys.count(key) > 1})
+    assert not duplicated, f"contracts.json declares a key twice: {duplicated}"
+    return dict(pairs)
+
+
+def strict_contracts() -> dict:
+    """The shipped contracts file, read so that a key declared twice fails instead of
+    silently keeping the last value."""
+    return json.loads(CONTRACTS_PATH.read_text(encoding="utf-8"),
+                      object_pairs_hook=_no_duplicate_keys)
+
+
+def _markdown_table(text: str, heading: str) -> list[list[str]]:
+    """The rows of the first table under a heading, header row first, separator dropped."""
+    lines = text.splitlines()
+    start = lines.index(heading)
+    rows: list[list[str]] = []
+    for line in lines[start + 1:]:
+        if line.startswith("## "):
+            break
+        if line.startswith("|"):
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if not all(set(cell) <= set("-: ") for cell in cells):
+                rows.append(cells)
+        elif rows:
+            break
+    assert rows, f"no table under {heading!r}"
+    return rows
+
+
+def _backticked(cell: str) -> list[str]:
+    return re.findall(r"`([^`]+)`", cell)
+
+
+def routing_table() -> tuple[dict[str, dict[str, str]], dict[str, list[str]]]:
+    """Parse the tier grid and the models table: the model each provider names per tier, and
+    the efforts each model accepts. A missing or unparseable table fails the caller."""
+    text = ROUTING_TABLE_PATH.read_text(encoding="utf-8")
+    grid_rows = _markdown_table(text, "## Pick by tier")
+    providers = [_backticked(cell)[0] for cell in grid_rows[0][1:]]
+    grid: dict[str, dict[str, str]] = {provider: {} for provider in providers}
+    for row in grid_rows[1:]:
+        tier = _backticked(row[0])[0]
+        for provider, cell in zip(providers, row[1:]):
+            names = _backticked(cell)
+            if names:
+                grid[provider][tier] = names[0]
+    model_rows = _markdown_table(text, "## Models")
+    efforts: dict[str, list[str]] = {}
+    for row in model_rows[1:]:
+        efforts[_backticked(row[1])[0]] = [
+            token for token in _backticked(row[-1]) if token in EFFORT_TOKENS
+        ]
+    assert grid and efforts, "the routing table parsed to nothing"
+    return grid, efforts
+
+
+def emission_seats(contracts: dict) -> set[tuple[str, str, str]]:
+    """Every seat some lens can occupy at emission. Round 1 reads the whole artifact at the
+    declared tier; a later round runs at the re-review tier when the lens names one, and reads
+    either the change or, after a rescope or in a sweep, the whole artifact."""
+    seats = set()
+    for contract in contracts["classes"].values():
+        for lens in contract["lenses"]:
+            later = lens.get("re_review_tier", lens["tier"])
+            seats |= {(lens["transport"], lens["tier"], "full"),
+                      (lens["transport"], later, "full"), (lens["transport"], later, "delta")}
+    return seats
+
+
+def failover_seat(seat: tuple[str, str, str]) -> tuple[str, str, str]:
+    """The other transport's seat at the same tier and scope."""
+    transport, tier, scope = seat
+    return (OTHER_TRANSPORT[transport], tier, scope)
+
+
+def lens_pin(contracts: dict, seat: tuple[str, str, str]) -> dict | None:
+    transport, tier, scope = seat
+    return contracts["pins"]["lenses"].get(transport, {}).get(tier, {}).get(scope)
+
+
+def all_lens_pins(contracts: dict) -> list[tuple[tuple[str, str, str], dict]]:
+    return [
+        ((transport, tier, scope), pin)
+        for transport, tiers in contracts["pins"]["lenses"].items()
+        for tier, scopes in tiers.items()
+        for scope, pin in scopes.items()
+    ]
+
+
+def grant_is_read_only(tools: Any) -> bool:
+    """The Codex read-only sandbox, or a non-empty list of tools that only read.
+
+    A Bash grant is never read-only, however narrow its prefix: git diff writes its output to
+    any path its --output option names.
+    """
+    if tools == CODEX_SANDBOX:
+        return True
+    return isinstance(tools, list) and bool(tools) and set(tools) <= READ_TOOLS
+
+
+def strip_fences(text: str) -> str:
+    """Drop every fenced block, backtick or tilde, of any fence length."""
+    kept: list[str] = []
+    fence: str | None = None
+    for line in text.splitlines():
+        marker = re.match(r"\s*(`{3,}|~{3,})", line)
+        if fence is None and marker:
+            fence = marker.group(1)
+            continue
+        if fence is not None:
+            if line.strip().startswith(fence) and set(line.strip()) <= set(fence[0]):
+                fence = None
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def class_round(tmp_path, repo: Repo, acs: Path, artifact_class: str, mode: str,
+                **overrides: Any) -> list[str]:
+    """Argv for one round of a class. `round-one` staffs the whole roster. `delta` is round 2
+    after a clean round 1 in which every lens reported, so every lens reads the change since
+    then. `sweep` is that same round 2 as the terminal sweep over the frontier seats, each
+    reading the whole artifact."""
+    roster = [lens["lens"] for lens in CLASSES[artifact_class]["lenses"]]
+    staffed = roster
+    if mode == "sweep":
+        staffed = emitter.frontier_seats(CLASSES[artifact_class]["lenses"])
+    staffing = write_json(
+        tmp_path / f"staffing-{artifact_class}-{mode}.json",
+        staffing_record(staffed, roster,
+                        **({"decision": "sweep-contract"} if mode == "sweep" else {})))
+    out_dir = tmp_path / f"{artifact_class}-{mode}"
+    fields = {"--class": artifact_class, "--artifact-type": CLASS_PROFILE[artifact_class],
+              "--staffing": str(staffing)}
+    if mode == "round-one":
+        return argv(repo, acs, out_dir, **{**fields, **overrides})
+    prior = write_json(tmp_path / f"verdict-{artifact_class}-{mode}-1.json", verdict_doc(
+        repo, 1, repo.head, roster, [], artifact_class=artifact_class))
+    head = repo.write_lines(4, f"fix-{artifact_class}-{mode}.txt")
+    flat = argv(repo, acs, out_dir, **{**fields, "--round": "2", "--head-sha": head, **overrides})
+    return flat + ["--prior-verdict", str(prior)] + (["--sweep"] if mode == "sweep" else [])
+
+
+def out_dir_of(flat: list[str]) -> Path:
+    return Path(flat[flat.index("--out-dir") + 1])
+
+
+def entries_of(out_dir: Path) -> dict[str, dict]:
+    return {entry["lens"]: entry for entry in meta_of(out_dir)["lenses"]}
+
+
+def diff_of(repo: Repo, start: str, end: str) -> bytes:
+    return subprocess.run(["git", "-C", str(repo.root), "diff", start, end],
+                          capture_output=True, check=True).stdout
+
+
+class TestSeatPins:
+    @pytest.mark.parametrize("artifact_class", sorted(OPENROUTER_LENS))
+    def test_a1_each_class_routes_one_named_lens_through_openrouter(self, artifact_class):
+        """One OpenRouter seat per class keeps the second vendor without paying for two."""
+        lenses = strict_contracts()["classes"][artifact_class]["lenses"]
+        routed = {lens["lens"]: lens["transport"] for lens in lenses}
+        assert [name for name, transport in routed.items() if transport == "openrouter"] == [
+            OPENROUTER_LENS[artifact_class]]
+        assert all(transport in ("codex", "openrouter") for transport in routed.values())
+
+    def test_a1_every_class_is_named(self):
+        assert sorted(strict_contracts()["classes"]) == sorted(OPENROUTER_LENS)
+
+    @pytest.mark.parametrize("artifact_class", sorted(DECLARED_TIERS))
+    def test_a2_every_lens_keeps_its_declared_tiers(self, artifact_class):
+        lenses = strict_contracts()["classes"][artifact_class]["lenses"]
+        declared = {lens["lens"]: (lens["tier"], lens.get("re_review_tier")) for lens in lenses}
+        assert declared == DECLARED_TIERS[artifact_class]
+
+    def test_a4_every_reachable_seat_resolves_to_exactly_one_pin(self):
+        """Each seat a roster can put a lens in, and each seat a failover lands on, has one
+        pin carrying an effort and a tool grant."""
+        contracts = strict_contracts()
+        reachable = emission_seats(contracts)
+        reachable |= {failover_seat(seat) for seat in reachable}
+        assert reachable == ALL_SEATS
+        for seat in sorted(reachable):
+            pin = lens_pin(contracts, seat)
+            assert isinstance(pin, dict), f"no pin for {seat}"
+            assert pin.get("effort") and pin.get("tools"), seat
+
+    @pytest.mark.parametrize("role", ROLES)
+    def test_a4_the_recommender_and_checkpoint_pins_name_a_filled_grid_cell(self, role):
+        grid, _ = routing_table()
+        pin = strict_contracts()["pins"][role]
+        assert pin.get("effort") and pin.get("tools")
+        assert grid[pin["provider"]].get(pin["tier"]), (pin["provider"], pin["tier"])
+
+    def test_a5_every_pinned_effort_is_one_its_model_accepts(self):
+        grid, efforts = routing_table()
+        contracts = strict_contracts()
+        pins = [(PROVIDER_OF[transport], tier, pin)
+                for (transport, tier, _), pin in all_lens_pins(contracts)]
+        pins += [(contracts["pins"][role]["provider"], contracts["pins"][role]["tier"],
+                  contracts["pins"][role]) for role in ROLES]
+        for provider, tier, pin in pins:
+            model = grid[provider][tier]
+            assert pin["effort"] in efforts[model], (provider, tier, model, pin["effort"])
+
+    def test_a6_every_lens_pin_has_its_stated_effort(self):
+        contracts = strict_contracts()
+        assert {seat: lens_pin(contracts, seat)["effort"] for seat in ALL_SEATS} == PINNED_EFFORT
+
+    def test_a7_no_pin_grants_a_tool_that_writes(self):
+        """A reviewer reads content its dispatcher does not trust, so no run can write. An
+        OpenRouter seat reads the change from the file the emitter writes, so it needs Read."""
+        contracts = strict_contracts()
+        grants = [(seat, pin["tools"]) for seat, pin in all_lens_pins(contracts)]
+        grants += [((role,), contracts["pins"][role]["tools"]) for role in ROLES]
+        for where, tools in grants:
+            assert grant_is_read_only(tools), (where, tools)
+        openrouter = [pin["tools"] for (transport, _, _), pin in all_lens_pins(contracts)
+                      if transport == "openrouter"]
+        assert len(openrouter) == 4
+        assert all("Read" in tools for tools in openrouter), openrouter
+        assert contracts["pins"]["staffing_recommender"]["tools"] == CODEX_SANDBOX
+
+    @pytest.mark.parametrize("tools", [
+        [], ["Grep"], ["Read", "Write"], ["Read", "Edit"], ["Read", "Bash(git diff *)"],
+        ["Read", "Bash"], "workspace-write", None,
+    ])
+    def test_a7_a_writing_or_empty_grant_is_not_read_only(self, tools):
+        assert not grant_is_read_only(tools) or "Read" not in tools
+
+    def test_a8_contracts_name_no_model(self):
+        _, efforts = routing_table()
+        models = set(efforts)
+
+        def strings(value: Any):
+            if isinstance(value, str):
+                yield value
+            elif isinstance(value, dict):
+                for item in value.values():
+                    yield from strings(item)
+            elif isinstance(value, list):
+                for item in value:
+                    yield from strings(item)
+
+        named = sorted(set(strings(strict_contracts())) & models)
+        assert not named, named
+
+    @pytest.mark.parametrize("mode", ["round-one", "delta", "sweep"])
+    @pytest.mark.parametrize("artifact_class", sorted(CLASSES))
+    def test_a9_the_round_record_names_each_lens_pin(self, repo, acs_file, tmp_path, capsys,
+                                                     artifact_class, mode):
+        flat = class_round(tmp_path, repo, acs_file, artifact_class, mode)
+        code, result = run(flat, capsys)
+        assert code == 0, result
+        contracts = strict_contracts()
+        roster = {lens["lens"]: lens for lens in CLASSES[artifact_class]["lenses"]}
+        entries = meta_of(out_dir_of(flat))["lenses"]
+        assert entries
+        for entry in entries:
+            assert entry["scope_this_round"] == ("delta" if mode == "delta" else "full"), entry
+            declared = roster[entry["lens"]]
+            assert entry["tier_this_round"] == (declared["tier"] if mode == "round-one" else
+                                                declared.get("re_review_tier", declared["tier"]))
+            pin = lens_pin(contracts, (entry["transport"], entry["tier_this_round"],
+                                       entry["scope_this_round"]))
+            assert (entry.get("effort"), entry.get("tools")) == (pin["effort"], pin["tools"]), (
+                entry)
+
+    def test_a9_security_reads_whole_at_low_and_a_change_at_high(self, repo, acs_file, tmp_path,
+                                                                 capsys):
+        run(argv(repo, acs_file, tmp_path / "round-1"), capsys)
+        assert entries_of(tmp_path / "round-1")["security"]["effort"] == "low"
+        flat, out_dir = round2(tmp_path, repo, acs_file, SETTLED)
+        run(flat, capsys)
+        assert entries_of(out_dir)["security"]["scope_this_round"] == "delta"
+        assert entries_of(out_dir)["security"]["effort"] == "high"
+
+    @pytest.mark.parametrize("seat,artifact_class,mode,first_lens", [
+        (("codex", "frontier", "full"), "typed-code", "round-one", "correctness"),
+        (("openrouter", "frontier", "full"), "typed-code", "round-one", "security"),
+        (("codex", "mid", "full"), "typed-code", "round-one", "test-adequacy"),
+        (("openrouter", "mid", "full"), "spec-code", "round-one", "contract-only-boundary"),
+        (("codex", "frontier", "delta"), "typed-code", "delta", "correctness"),
+        (("openrouter", "mid", "delta"), "typed-code", "delta", "security"),
+        (("codex", "mid", "delta"), "typed-code", "delta", "test-adequacy"),
+    ])
+    def test_a10_a_seat_with_no_pin_refuses_the_round(self, repo, acs_file, tmp_path, capsys,
+                                                      monkeypatch, seat, artifact_class, mode,
+                                                      first_lens):
+        """Every pin a lens occupies at emission is removed in turn; the round refuses before
+        writing anything, naming the first lens in the seat and the seat itself. The one seat
+        left out, OpenRouter at frontier reading a change, is reached only by failover."""
+        assert emission_seats(CONTRACTS) == ALL_SEATS - {("openrouter", "frontier", "delta")}
+        document = copy.deepcopy(CONTRACTS)
+        transport, tier, scope = seat
+        del document["pins"]["lenses"][transport][tier][scope]
+        monkeypatch.setattr(emitter, "CONTRACTS_PATH",
+                            write_json(tmp_path / "contracts.json", document))
+        flat = class_round(tmp_path, repo, acs_file, artifact_class, mode)
+        code, result = run(flat, capsys)
+        assert code == 2 and result["emitted"] is False
+        error = result["errors"][0]
+        assert error["code"] == "no-seat-pin"
+        assert error["lens"] == first_lens
+        assert error["seat"] == "/".join(seat)
+        out_dir = out_dir_of(flat)
+        assert not out_dir.exists() or not any(out_dir.iterdir())
+
+    def test_a10_the_last_lens_in_the_roster_also_refuses(self, repo, acs_file, tmp_path,
+                                                          capsys, monkeypatch):
+        """The refusal does not depend on where in the roster the unpinned lens sits."""
+        document = copy.deepcopy(CONTRACTS)
+        del document["pins"]["lenses"]["codex"]["mid"]["full"]
+        monkeypatch.setattr(emitter, "CONTRACTS_PATH",
+                            write_json(tmp_path / "contracts.json", document))
+        staffed = ["correctness", "security", "documentation-quality"]
+        staffing = write_json(tmp_path / "last.json", staffing_record(staffed))
+        out_dir = tmp_path / "out"
+        code, result = run(argv(repo, acs_file, out_dir, **{"--staffing": str(staffing)}),
+                           capsys)
+        assert code == 2
+        assert result["errors"][0]["lens"] == "documentation-quality"
+        assert result["errors"][0]["seat"] == "codex/mid/full"
+        assert not out_dir.exists() or not any(out_dir.iterdir())
+
+    def test_a11_two_emissions_write_identical_round_records(self, repo, acs_file, tmp_path,
+                                                            capsys):
+        run(argv(repo, acs_file, tmp_path / "one"), capsys)
+        run(argv(repo, acs_file, tmp_path / "two"), capsys)
+        assert ((tmp_path / "one" / "round.json").read_bytes()
+                == (tmp_path / "two" / "round.json").read_bytes())
+
+    def test_a11_every_lens_entry_keeps_its_existing_fields(self, repo, acs_file, tmp_path,
+                                                            capsys):
+        flat, out_dir = round2(tmp_path, repo, acs_file, SETTLED)
+        run(flat, capsys)
+        meta = meta_of(out_dir)
+        assert set(meta) == {
+            "artifact_class", "claim_id", "round", "base_sha", "head_sha",
+            "retained_categories", "profile", "staffing_record", "sweep", "checkpoints",
+            "skipped_empty_delta", "full_rescope", "lenses", "prior_dispositions",
+        }
+        for entry in meta["lenses"]:
+            assert {"lens", "tier", "tier_this_round", "transport", "scope_this_round"} <= set(
+                entry)
+            assert ("delta_base_sha" in entry) == (entry["scope_this_round"] == "delta")
+
+    def test_a12_the_emitter_runs_without_the_routing_table(self, repo, acs_file, tmp_path):
+        """The routing table is read by tests alone; a panel installed without the
+        delegate-choosing skill beside it still emits."""
+        copy_dir = tmp_path / "isolated" / "skills" / "review-panel"
+        copy_dir.mkdir(parents=True)
+        for name in ("emit_prompts.py", "contracts.json"):
+            (copy_dir / name).write_bytes((HERE / name).read_bytes())
+        assert not (copy_dir.parent / "choosing-a-delegate").exists()
+        proc = subprocess.run(
+            [sys.executable, str(copy_dir / "emit_prompts.py"),
+             *argv(repo, acs_file, tmp_path / "out")],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert json.loads(proc.stdout)["emitted"] is True
+        assert "effort" in meta_of(tmp_path / "out")["lenses"][0]
+
+    @pytest.mark.parametrize("path", [HERE / "harvest.md", SKILL_PATH], ids=lambda p: p.name)
+    def test_a14_the_panel_prose_names_no_backticked_effort(self, path):
+        """An effort a sentence names is a free-hand pick waiting to happen; the round record
+        carries the pinned one."""
+        prose = strip_fences(path.read_text(encoding="utf-8"))
+        found = [token for token in EFFORT_TOKENS if f"`{token}`" in prose]
+        assert not found, found
+
+    def test_a14_fence_stripping_keeps_prose_and_drops_blocks(self):
+        text = "keep `high` here\n```bash\n--effort `low`\n```\n~~~~\n`max`\n~~~~\nend\n"
+        assert strip_fences(text) == "keep `high` here\nend"
+
+
+class TestChangeFile:
+    @pytest.mark.parametrize("mode", ["round-one", "delta", "sweep"])
+    def test_a18_every_prompt_names_a_diff_of_its_scope_beside_it(self, repo, acs_file,
+                                                                  tmp_path, capsys, mode):
+        """An OpenRouter seat has no shell, so the change reaches it only as this file."""
+        flat = class_round(tmp_path, repo, acs_file, "typed-code", mode)
+        code, result = run(flat, capsys)
+        assert code == 0, result
+        out_dir = out_dir_of(flat)
+        meta = meta_of(out_dir)
+        for entry in meta["lenses"]:
+            path = (out_dir / f"{entry['lens']}.diff").resolve()
+            start = entry.get("delta_base_sha", meta["base_sha"])
+            expected = diff_of(repo, start, meta["head_sha"])
+            assert expected, "the fixture must hold a change for the comparison to mean anything"
+            assert path.read_bytes() == expected, entry["lens"]
+            assert str(path) in (out_dir / f"{entry['lens']}.md").read_text(encoding="utf-8")
+
+    def test_a18_lenses_sharing_a_revision_pair_share_one_diff(self, repo, acs_file, tmp_path,
+                                                               capsys, monkeypatch):
+        real_run = emitter.subprocess.run
+        diffs: list[list[str]] = []
+
+        def counting(cmd, *args, **kwargs):
+            if "diff" in cmd:
+                diffs.append(cmd)
+            return real_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(emitter.subprocess, "run", counting)
+        code, result = run(argv(repo, acs_file, tmp_path / "out"), capsys)
+        assert code == 0, result
+        assert len(diffs) == 1, diffs
+
+    def test_a18_two_identical_revisions_write_an_empty_named_file(self, repo, acs_file,
+                                                                  tmp_path, capsys):
+        out_dir = tmp_path / "out"
+        code, result = run(argv(repo, acs_file, out_dir, **{"--head-sha": repo.base}), capsys)
+        assert code == 0, result
+        for lens in TYPED_CODE_LENSES:
+            path = (out_dir / f"{lens}.diff").resolve()
+            assert path.read_bytes() == b""
+            assert str(path) in (out_dir / f"{lens}.md").read_text(encoding="utf-8")
+
+    def test_a18_an_unknown_revision_refuses_the_round(self, repo, acs_file, tmp_path, capsys):
+        out_dir = tmp_path / "out"
+        code, result = run(argv(repo, acs_file, out_dir, **{"--head-sha": "f" * 40}), capsys)
+        assert code == 2 and result["emitted"] is False
+        assert result["errors"][0]["code"] == "unreadable-change"
+        assert not out_dir.exists() or not any(out_dir.iterdir())
 
 
 if __name__ == "__main__":

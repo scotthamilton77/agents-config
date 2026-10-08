@@ -7,7 +7,8 @@
 
 Usage: uv run dispatch_gate.py preflight --out-dir <dir>
        uv run dispatch_gate.py claim --lens <name> --transport <name> --model <name>
-           --reason initial|transport-error|unusable-output [--evidence <verbatim>]
+           --effort <level>
+           --reason initial|transport-error|unusable-output|dead-run [--evidence <verbatim>]
            [--out-dir <dir>]
        uv run dispatch_gate.py ingest --output <path> [--out-dir <dir>]
 
@@ -18,6 +19,24 @@ cannot spend another by asking again. Run preflight once, before the round's
 first claim: it checks whether the openrouter dispatches round.json plans can
 be afforded, and refuses loudly on a shortfall instead of a lens dying
 mid-round.
+
+Refusal codes, each carried in an error object beside its message:
+    attempts-exhausted              — the lens has spent its dispatches for this round
+    gate-failure                    — an unexpected fault, still reported as JSON
+    insufficient-openrouter-credit  — the key cannot cover the round's planned dispatches
+    no-effort                       — a claim named no --effort
+    no-failure-evidence             — a recovery claim carried no --evidence
+    no-lens                         — no --lens, or one that is not a plain name
+    no-openrouter-key               — openrouter dispatches are planned and no key is set
+    no-output                       — the claimed output path holds no report
+    no-output-path                  — ingest named no --output
+    no-round-meta                   — round.json is absent or carries no lens list
+    no-route-declaration            — a claim named no --transport or no --model
+    off-ladder                      — a dead-run claim names a step the ladder does not take
+    unclaimed-attempt               — ingest named output no claim was authorized for
+    unknown-reason                  — a reason outside the closed set, or out of order
+    unparseable-output              — the output yields no report past the tolerance ladder
+    unreadable-ledger               — the attempt ledger cannot be read or does not parse
 """
 
 from __future__ import annotations
@@ -43,11 +62,9 @@ EXIT_REFUSED = 2
 LEDGER_NAME = "attempts.jsonl"
 
 # Three dispatches per lens per round, at most one of them recovering a reviewer
-# that produced unusable output. Recovery is a chain of attempts that each
-# declare transport AND model, because a model can sit at capacity for the length
-# of a round while another model of the same vendor answers: a single transport
-# flip abandons a live vendor on one saturated model's say-so. A chain with no
-# end is the opposite failure — one lens spending the whole round's budget.
+# that produced unusable output. Every attempt declares transport AND model, so
+# the ledger names the route each attempt ran on and the routes a halt reports as
+# exhausted. Without the bound, one lens could spend the whole round's budget.
 MAX_ATTEMPTS = 3
 MAX_UNUSABLE_RECOVERIES = 1
 
@@ -59,7 +76,15 @@ BACKOFF_SECONDS = (15, 30)
 INITIAL = "initial"
 TRANSPORT_ERROR = "transport-error"
 UNUSABLE_OUTPUT = "unusable-output"
-REASONS = (INITIAL, TRANSPORT_ERROR, UNUSABLE_OUTPUT)
+DEAD_RUN = "dead-run"
+REASONS = (INITIAL, TRANSPORT_ERROR, UNUSABLE_OUTPUT, DEAD_RUN)
+# The failures that leave a lens with no route still able to run it. A lens that runs out of
+# attempts halts the round when the last failure on every route it ran on is one of these.
+ROUTE_FAILURES = (TRANSPORT_ERROR, DEAD_RUN)
+
+# Reasoning efforts from least to most. The gate holds no routing table, so it cannot know
+# which levels a model lists; it only knows which way is down.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max", "ultra")
 
 # A lens name becomes a filename under the round directory, so it carries no
 # separator and no traversal.
@@ -128,7 +153,8 @@ CODEX_SHAPES = (
 )
 
 HALT_GUIDANCE = (
-    "Every route this lens ran on died in transport. The round is over: abandon every dispatch "
+    "Every route this lens ran on died, in transport or inside the model's reasoning. The round "
+    "is over: abandon every dispatch "
     "not yet made, write the verdict halted with these routes and their errors verbatim in the "
     "halt block, and lead the operator report with them, ahead of any finding."
 )
@@ -228,6 +254,8 @@ def backoff_for(attempt: int) -> int:
 
 ROUND_META_NAME = "round.json"
 OPENROUTER_TRANSPORT = "openrouter"
+# A lens fails over to the other of the two transports, and only to it.
+FAILOVER_TRANSPORT = {"codex": OPENROUTER_TRANSPORT, OPENROUTER_TRANSPORT: "codex"}
 
 # The floor for one openrouter dispatch: a frontier model reserves its full
 # max_tokens against the key's balance up front, whatever it actually returns.
@@ -412,8 +440,7 @@ def check_lens(raw: str | None) -> str:
 def check_route(transport: str | None, model: str | None) -> tuple[str, str]:
     """Both halves, on every attempt, recorded exactly as declared.
 
-    An attempt recorded without its model cannot say which route is exhausted, and
-    a dead vendor and a saturated model recover in opposite directions. Which
+    An attempt recorded without its model cannot say which route is exhausted. Which
     route a lens deserves is not this gate's question: it counts attempts and
     records what ran them, so a route it refused to record would be a dispatch it
     could not bound.
@@ -446,7 +473,9 @@ def check_reason(raw: str | None, attempt: int) -> str:
             "unknown-reason",
             f"the lens has already been dispatched, so this attempt declares what failed: "
             f"{TRANSPORT_ERROR!r} when the route died and the reviewer never ran, "
-            f"{UNUSABLE_OUTPUT!r} when the route worked and the body is unusable",
+            f"{UNUSABLE_OUTPUT!r} when the route worked and the body is unusable, "
+            f"{DEAD_RUN!r} when the run ended inside the model's reasoning or was killed for "
+            "silence",
         )
     return raw
 
@@ -462,6 +491,63 @@ def check_evidence(raw: str | None, reason: str) -> str:
             "things of whoever reads the round, and only one of them can be acted on",
         )
     return raw or ""
+
+
+def check_effort(raw: str | None) -> str:
+    effort = (raw or "").strip()
+    if not effort:
+        raise Refusal(
+            "no-effort",
+            "every dispatch declares --effort, the reasoning effort it runs at; an attempt "
+            "recorded without one leaves a dead run no way to say which step comes next",
+        )
+    return effort
+
+
+def check_ladder(
+    lens: str, prior: list[dict], transport: str, model: str, effort: str, evidence: str
+) -> Refusal | None:
+    """Refuse a dead-run claim the ladder does not take, naming the step it does take.
+
+    After a dead run the ladder takes one step down on the same model, then the other
+    transport, and ends there. A different model on the same transport is a free-hand pick,
+    and a second step down spends the attempt the failover seat needs.
+    """
+    start = prior[0].get("transport")
+    if any(record.get("transport") != start for record in prior):
+        return exhausted(
+            lens,
+            "the ladder ends at the failover seat and this lens has run there, so it is out of "
+            "attempts for this round.",
+            failed_routes(prior, DEAD_RUN, evidence),
+        )
+    other = FAILOVER_TRANSPORT.get(start)
+    if transport == other:
+        return None
+    last = prior[-1]
+    failover = (f"the failover seat on {other}" if other else
+                "the failover seat, which only a lens that started on codex or openrouter has")
+    asked = f"this claim asks for {transport}/{model} at {effort}"
+    if any(record.get("reason") == DEAD_RUN for record in prior):
+        return Refusal(
+            "off-ladder",
+            f"{lens}: the ladder takes one step down on the starting transport and this lens has "
+            f"taken it, so the gate accepts next only {failover}; {asked}",
+        )
+    previous = last.get("effort")
+    if (
+        transport == start
+        and model == last.get("model")
+        and effort in EFFORT_LEVELS
+        and previous in EFFORT_LEVELS
+        and EFFORT_LEVELS.index(effort) < EFFORT_LEVELS.index(previous)
+    ):
+        return None
+    return Refusal(
+        "off-ladder",
+        f"{lens}: after a dead run the gate accepts next a lower effort on "
+        f"{start}/{last.get('model')} than {previous}, or {failover}; {asked}",
+    )
 
 
 def failed_routes(prior: list[dict], reason: str, evidence: str) -> list[dict[str, Any]]:
@@ -485,20 +571,22 @@ def failed_routes(prior: list[dict], reason: str, evidence: str) -> list[dict[st
 
 
 def exhausted(lens: str, why: str, routes: list[dict[str, Any]]) -> Refusal:
-    """The refusal for a dispatch past the bound, carrying halt guidance when every
-    recorded failure was transport-class.
+    """The refusal for a dispatch past the bound, carrying halt guidance when the last
+    failure on every route the lens ran on was a transport error or a dead run.
 
     A lens that ran out of routes and a lens whose reviewer kept producing garbage
     end identically — no entry, an incomplete round — but only the first says
-    anything about the dispatches the round has not made yet.
+    anything about the dispatches the round has not made yet. A route that returned
+    garbage and then died is dead, so only each route's last failure counts.
     """
-    transport_only = bool(routes) and all(route["reason"] == TRANSPORT_ERROR for route in routes)
-    if not transport_only:
+    last = {(route["transport"], route["model"]): route["reason"] for route in routes}
+    route_only = bool(last) and all(reason in ROUTE_FAILURES for reason in last.values())
+    if not route_only:
         return Refusal("attempts-exhausted", f"{lens}: {why}")
     rendered = "; ".join(f"{r['transport']}/{r['model']}: {r['error']}" for r in routes)
     return Refusal(
         "attempts-exhausted",
-        f"{lens}: {why} Every route it ran on died in transport — {rendered}",
+        f"{lens}: {why} Every route it ran on died — {rendered}",
         halt={"guidance": HALT_GUIDANCE, "exhausted_routes": routes},
     )
 
@@ -509,19 +597,29 @@ def claim(args: argparse.Namespace) -> dict[str, Any]:
     transport, model = check_route(args.transport, args.model)
     path = ledger_path(args.out_dir)
     prior = claims_for(read_ledger(path), lens)
+    effort = check_effort(args.effort)
     attempt = len(prior) + 1
     reason = check_reason(args.reason, attempt)
     evidence = check_evidence(args.evidence, reason)
 
-    refusal = None
-    if len(prior) >= MAX_ATTEMPTS:
+    refusal = check_ladder(lens, prior, transport, model, effort, evidence) if (
+        reason == DEAD_RUN) else None
+    if refusal is not None and refusal.code == "off-ladder":
+        if len(prior) < MAX_ATTEMPTS:
+            # A claim naming the wrong step spends nothing, so the dispatcher can claim the
+            # right one.
+            raise refusal
+        # Past the bound no step is the right one, so the bound refuses the claim instead.
+        refusal = None
+    if refusal is None and len(prior) >= MAX_ATTEMPTS:
         refusal = exhausted(
             lens,
             f"{len(prior)} dispatches is the bound for one lens in one round.",
             failed_routes(prior, reason, evidence),
         )
     elif (
-        reason == UNUSABLE_OUTPUT
+        refusal is None
+        and reason == UNUSABLE_OUTPUT
         and sum(1 for r in prior if r.get("reason") == UNUSABLE_OUTPUT) >= MAX_UNUSABLE_RECOVERIES
     ):
         refusal = exhausted(
@@ -553,6 +651,7 @@ def claim(args: argparse.Namespace) -> dict[str, Any]:
         "attempt": attempt,
         "transport": transport,
         "model": model,
+        "effort": effort,
         "cwd": str(Path.cwd()),
         "reason": reason,
         "output_path": str(output_path_for(args.out_dir, lens, attempt)),
@@ -806,8 +905,9 @@ def ingest(args: argparse.Namespace) -> dict[str, Any]:
         raise Refusal(
             "no-output",
             f"the claimed output path {output} holds nothing. Each attempt writes its own path, "
-            "so nothing there means the route wrote nothing and the reviewer never ran: claim "
-            f"again with reason {TRANSPORT_ERROR!r}, carrying the route's error as the evidence",
+            "so nothing there means this attempt wrote nothing. Claim again with reason "
+            f"{DEAD_RUN!r} and the kill line as the evidence when your watchdog killed it for "
+            f"silence, and with reason {TRANSPORT_ERROR!r} and the route's error otherwise",
         )
     try:
         report, recovery = parse_report(body)
@@ -844,6 +944,7 @@ def build_parser() -> argparse.ArgumentParser:
     claim_parser.add_argument("--lens")
     claim_parser.add_argument("--transport")
     claim_parser.add_argument("--model")
+    claim_parser.add_argument("--effort")
     claim_parser.add_argument("--reason")
     claim_parser.add_argument("--evidence")
     claim_parser.add_argument(

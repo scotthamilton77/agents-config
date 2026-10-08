@@ -92,7 +92,7 @@ def test_each_channel_takes_its_turn_on_the_seat_the_session_configured(
     assert control.count() == 1, f"{control.count()} map transfer controls"
     assert control.inner_text().strip() == "expert", control.inner_text()
 
-    answer(page, "d1", "a", "Append-only log, for recovery.")
+    answer(page, "d1", "a")
     session.settled()
     start_thread(page, "d2", ASKED)
     session.settled()

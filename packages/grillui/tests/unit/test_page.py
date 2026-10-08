@@ -82,13 +82,15 @@ from grillui.schemas import (
 )
 
 # The routes the page is allowed to touch, and what each one is for. The board
-# is the first two; the third is how anything reaches the log; the last two are
-# controls -- whether a reassessment is in flight, and which window this session
-# belongs to -- and both are properties of the process rather than of the board.
+# is the first two; the third is how anything reaches the log; the doctor and
+# the claim are controls -- whether a reassessment is in flight, and which
+# window this session belongs to -- and both are properties of the process
+# rather than of the board. The retry is a control too: it asks for a failed
+# ruling again, and what it leaves on the log is the lane's own.
 # A further board read here would be a second answer to what the board says.
 BOARD_READS = {"/state", "/updates"}
 CONTROL_PATHS = {"/doctor"}
-WRITE_PATHS = {"/events", "/doctor", "/claim"}
+WRITE_PATHS = {"/events", "/doctor", "/retry", "/claim"}
 
 # A thread channel: anything that is not the map. The page mints these itself,
 # since a channel is a name rather than a claim.

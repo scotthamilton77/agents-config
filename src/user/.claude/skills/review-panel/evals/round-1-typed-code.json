@@ -1,0 +1,73 @@
+{
+  "artifact_class": "typed-code",
+  "base_sha": "b6334cded95b07105f7a3c0d8f21c626fe98be75",
+  "checkpoints": [],
+  "claim_id": "pr-42",
+  "full_rescope": {
+    "forced": false
+  },
+  "head_sha": "9166680df901f87992ac26ec5a844f1072bdf4d8",
+  "lenses": [
+    {
+      "effort": "high",
+      "lens": "correctness",
+      "scope_this_round": "full",
+      "tier": "frontier",
+      "tier_this_round": "frontier",
+      "tools": "read-only-sandbox",
+      "transport": "codex"
+    },
+    {
+      "effort": "low",
+      "lens": "security",
+      "scope_this_round": "full",
+      "tier": "frontier",
+      "tier_this_round": "frontier",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "transport": "openrouter"
+    },
+    {
+      "effort": "medium",
+      "lens": "test-adequacy",
+      "scope_this_round": "full",
+      "tier": "mid",
+      "tier_this_round": "mid",
+      "tools": "read-only-sandbox",
+      "transport": "codex"
+    },
+    {
+      "effort": "medium",
+      "lens": "simplification-efficiency",
+      "scope_this_round": "full",
+      "tier": "mid",
+      "tier_this_round": "mid",
+      "tools": "read-only-sandbox",
+      "transport": "codex"
+    },
+    {
+      "effort": "medium",
+      "lens": "documentation-quality",
+      "scope_this_round": "full",
+      "tier": "mid",
+      "tier_this_round": "mid",
+      "tools": "read-only-sandbox",
+      "transport": "codex"
+    }
+  ],
+  "prior_dispositions": [],
+  "profile": {
+    "type": "typed-code"
+  },
+  "retained_categories": [],
+  "round": 1,
+  "skipped_empty_delta": [],
+  "staffing_record": {
+    "digest": "sha256:ae7b3cf5c718f3f8ffd63f208d55b9bc3578ec396f469eca25d2f56bc1e4b780",
+    "path": "staffing.json"
+  },
+  "sweep": false
+}

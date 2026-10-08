@@ -1,8 +1,7 @@
 # Harvesting a round
 
-What to do around dispatching the lenses and writing the verdict. Every rule here exists because
-a round hit the case and the invoker had to improvise; an improvised rule is one nobody can audit
-afterwards.
+What to do around dispatching the lenses and writing the verdict. Each rule settles a case the
+invoker would otherwise improvise, and an improvised rule is one nobody can audit afterwards.
 
 ## The records a round runs on
 
@@ -17,8 +16,14 @@ head SHA it ran at. Produce it by running the profile's gates and recording what
 happened; the emitter refuses assertion-shaped evidence and stale heads.
 
 **The staffing record** — the staffed subset, a rationale per excluded roster lens, the
-recommending model, and the decision. Get the recommendation from a foreign mid-tier model — the
-routing table's mid tier, outside the reviewing session's own vendor family. Interactively,
+recommending model, and the decision. Get the recommendation from the dispatch that
+`contracts.json` pins under `pins.staffing_recommender`. That pin names the provider, the tier,
+the effort and the tool grant, and the model is the routing table's cell for that provider and
+tier. The pinned provider sits outside the reviewing session's own vendor family. The
+recommender has no failover seat. A dead run on it, which the ladder below defines, is re-run
+once at the next lower effort the routing table lists for its model. A second dead run, a first
+one at the lowest effort the table lists, or a dead route stops the campaign and asks the human,
+because nothing else can stand in for a staffing decision. Interactively,
 present it to the user and record their edit as the decision; non-interactively, record the
 recommendation and proceed. A sweep round's staffing decision subtracts only from the
 class's frontier seats, decision `sweep-contract`, unbounded by the profile's force ceiling, mid
@@ -29,7 +34,9 @@ sweep exists to compensate. A zero-seat decision with justification is the termi
 
 **The checkpoint record** — due after every second consecutive non-clean round; the emitter
 refuses the next round without it. Dispatch a Fable-high trend analysis over the retained records
-— per-lens finding trends, fix history, severity direction. That dispatch is standing-authorized;
+— per-lens finding trends, fix history, severity direction — at the pin `contracts.json` holds
+under `pins.trend_checkpoint`. A dead run on it gets the one re-run the recommender's does, and
+a failure past that is a dispatch failure. That dispatch is standing-authorized;
 if the authorization is ever withdrawn, the checkpoint resolves as escalate-to-human.
 Record the returned verdict with the evidence it cites; record a dispatch failure as origin
 `dispatch-failure` carrying the escalation verdict — the machine fails toward the human, never
@@ -49,8 +56,7 @@ The `transport` in `contracts.json` is a claim about vendor diversity, not about
 credentials. **Any lens may run on any transport that is actually up.** An `openrouter` lens runs
 through the codex command-line tool when OpenRouter is down; a `codex` lens runs through the
 `openrouter-claude-subagent` skill when the codex credential has expired. Neither direction is the
-exceptional one, and neither transport is the more reliable one — both have been down while the
-other worked.
+exceptional one, because either transport can be down while the other works.
 
 What you may not do is run the lens and say nothing. Whenever a lens runs on something other than
 its declared entry, its verdict entry carries `substitution` naming what it moved off — the
@@ -58,22 +64,43 @@ declared transport, the model the displaced attempt ran on, or both when both ch
 reason, and, when the swap was forced rather than chosen, the dead route's error verbatim in
 `transport_error`. A round that lost diversity silently is indistinguishable from one that kept it.
 
-## Choosing the model
+## Choosing the model, the effort and the tools
 
-No lens declares a model. `contracts.json` carries the lens rosters and the profile table —
-never a model; the model is the dispatcher's to pick, every time.
+No lens declares a model. `contracts.json` carries the lens rosters, the profile table and the
+seat pins, and never a model. A lens's seat in a round is its transport, its tier this round and
+its scope this round. A pin is the effort and the tool grant that seat is dispatched with. You
+pick none of the three values yourself. Start from the lens's entry in this round's `round.json`,
+never from the roster: the roster gives the tier a lens declares, and a later round may run it at
+another.
 
-Pick it by the lens's tier and transport from the `choosing-a-delegate` skill's model routing
-table, not from memory, and pick the effort for the lens's scope from the model's accepted list.
-That table is the source of truth for every provider's ids, prices, context windows and accepted
-reasoning efforts, and all of them move underneath a remembered pick: vendors reprice and retire
-models without notice. Two failures follow from picking free-hand, and the second is the
-expensive one — a model whose reasoning cannot be capped will strand a whole-artifact lens inside
-a thinking block and return no report at all, burning a full lens latency before the failover
-starts. The OpenRouter launcher skill names which of its models those are; a whole-artifact lens must not be routed to one.
+- **The model** is the cell of the `choosing-a-delegate` skill's model routing table for the
+  lens's provider and its `tier_this_round` in `round.json`. Transport `codex` is the table's
+  provider `openai`, and transport `openrouter` is its provider `openrouter`. The entry's
+  `tier` field only repeats the tier the roster declares. After round 1, a lens with a
+  re-review tier runs at that lower tier, and `tier_this_round` says so. An entry reading
+  `"transport": "openrouter"`, `"tier": "frontier"` and `"tier_this_round": "mid"` therefore
+  dispatches the table's `openrouter` model at `mid`.
+- **The effort and the tool grant** are the lens's `effort` and `tools` fields in `round.json`,
+  which the emitter copied from its seat's pin. The tools value `read-only-sandbox` means the
+  Codex runtime's read-only sandbox. A list names the only tools the OpenRouter launcher is
+  granted. No grant includes a shell, so that reviewer reads the change from the diff file its
+  prompt names, which the emitter wrote beside the prompt.
 
-The gate does not enforce any of this: it accepts and records an unlisted model on purpose, so
-that a deliberate choice is possible and is visible afterwards. The discipline is yours.
+A lens whose route died fails over to its failover seat: the other transport's seat at the same
+tier and scope. Its pin is the entry under `pins.lenses.<transport>.<tier>.<scope>` in
+`contracts.json`, and its model is the table's cell for the other provider at that tier.
+Failover reads `contracts.json` and never re-runs the emitter.
+
+The routing table is the source of truth for every provider's ids, prices, context windows and
+accepted reasoning efforts. All of them move underneath a remembered pick, because vendors
+reprice and retire models without notice. A free-hand effort fails expensively. A model whose
+reasoning cannot be capped will strand a whole-artifact lens inside a thinking block and return
+no report at all, burning a full lens latency before the failover starts. A free-hand tool grant
+fails the other way, with an exploratory walk billed at frontier prices.
+
+The gate does not enforce the pin. It accepts and records an unlisted model on purpose, so that
+a deliberate choice is possible and is visible afterwards. It records each attempt's effort
+without comparing it to the pin, and it records no tool grant. The discipline is yours.
 
 ## Every dispatch is claimed first
 
@@ -82,7 +109,7 @@ this directory before every dispatch of a lens, the first one included:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
-  --transport codex --model gpt-6.1-sol --reason initial
+  --transport codex --model <model> --effort high --reason initial
 ```
 
 An authorized answer carries the `output_path` this attempt writes its raw output to — one path
@@ -114,42 +141,58 @@ uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens criteria-holes \
 The waiver is recorded on the claim and reads back out of the ledger. Declaring it for a lens that
 did get tools buys a clean entry nobody checked, which is the thing this gate exists to refuse.
 
-A refusal (exit 2) ends that lens. However many attempts it took, a lens ends with exactly one
-entry, for the attempt that produced the report, carrying the `substitution` record above. Two
-entries for one lens is a validation error, not a fuller record: it double-counts coverage.
+An `attempts-exhausted` refusal (exit 2) ends that lens. A claim refused as `off-ladder`, or for
+a missing or malformed flag, spends no attempt: correct it and claim again. However many attempts
+it took, a lens ends with exactly one entry, for the attempt that produced the report, carrying
+the `substitution` record above. Two entries for one lens is a validation error, not a fuller
+record: it double-counts coverage.
 
 ## A dispatch that came back with no report
 
-Two failures look alike from outside and recover oppositely, so tell them apart before claiming
-again — the reason you declare is what the gate bounds.
+Three failures look alike from outside and recover differently, so tell them apart before
+claiming again — the reason you declare is what the gate bounds.
 
 **The route died** (`transport-error`). What came back describes the *transport*, not the review:
 an HTTP status, an authentication or credit error, a refused connection, a dead broker or session
-— or nothing at all, including no output file where one was claimed. The reviewer never ran. Judge
-this on the body rather than the exit status: a dead route shows up as an exit 1 carrying a short
-provider error, and equally as an exit 0 carrying nothing.
+— or nothing at all, including no output file where one was claimed. An attempt your watchdog
+killed for silence leaves nothing too, and it is a dead run. Judge this on the body rather than
+the exit status: a dead route shows up as an exit 1 carrying a short provider error, and equally
+as an exit 0 carrying nothing.
 
 **The reviewer failed** (`unusable-output`). A body came back that is the model's own output, and
-no report survives the ladder below — or the reviewer stalled mid-reasoning. The route worked;
-what came over it is unusable.
+no report survives the tolerance ladder under "Reading a lens report". The route worked; what
+came over it is unusable.
 
-Either way, the next claim declares that reason and the failure verbatim:
+**The run died** (`dead-run`). The model's response ended inside its reasoning and no report
+came back. On the OpenRouter launcher the proxy logs
+`response ends on thinking and contains no text block to promote`; on either transport, an
+attempt your watchdog killed for silence is the same failure. Follow the ladder, one step per
+dead run:
+
+1. The same model, with the same tool grant, at the next lower effort the routing table lists
+   for that model.
+2. The failover seat at its pin, when the table lists no effort below the one that died or the
+   step down also died.
+3. A dead run on the failover seat ends the ladder: the lens is out of attempts and the round
+   halts.
+
+Whatever the failure, the next claim declares its reason and the failure verbatim, the proxy
+line or the watchdog's kill line included:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
-  --transport openrouter --model moonshotai/kimi-k3 \
+  --transport openrouter --model <model> --effort low \
   --reason transport-error --evidence "402 Insufficient credits"
 ```
 
-Declare a route that has not just failed. A model can sit at capacity for the length of a round
-while another model of the same vendor answers, so the alternative to a dead route is another
-transport **or** another model on it — and a retry of the route that just said it is down is
-neither.
+After a dead route, declare a route that has not just failed: the failover seat, dispatched at
+its pin. A retry of the route that just said it is down is not a failover. The gate refuses a
+`dead-run` claim that is not the ladder's next step, and its refusal names the step it accepts.
 
 ### When the gate refuses
 
-A refusal whose every recorded failure was transport-class carries halt guidance naming each
-exhausted transport and model with its error. **The round is over.** Abandon every dispatch not
+An `attempts-exhausted` refusal carries halt guidance when the last failure on every route the
+lens ran on was a dead route or a dead run. The guidance names each exhausted transport and model with its error. **The round is over.** Abandon every dispatch not
 yet made. Do not retry, do not drop to a lesser model, and do not quietly finish the round with
 the lenses that happened to work. Write the verdict with `verdict: "halted"`, a `halt` block
 carrying every transport failure the round did not recover from, and every undispatched lens in
@@ -159,9 +202,9 @@ carrying every transport failure the round did not recover from, and every undis
 Stopping forfeits the budget already spent. Continuing forfeits that too, and buys a document that
 reads like a review of a change most of the panel never opened.
 
-Any other refusal closes that lens alone: it has **no** entry and the round is incomplete. The
-round is not restarted and the other lenses are not re-run. That is the contract working. Fail
-closed — never write a `clean` entry for a lens that never reported.
+Any other `attempts-exhausted` refusal closes that lens alone: it has **no** entry and the round
+is incomplete. The round is not restarted and the other lenses are not re-run. That is the
+contract working. Fail closed — never write a `clean` entry for a lens that never reported.
 
 ## Say a failover out loud
 
@@ -191,8 +234,10 @@ uv run dispatch_gate.py ingest --out-dir /tmp/round-1 \
 It walks the tolerance ladder — the whole body as JSON, then a single fenced block, then an object
 found in the body with the surrounding text ignored — and prints the report it recovered. Output
 from a dispatch it never authorized is refused rather than read, so a dispatch that went around
-the gate shows up as a hole in the ledger instead of as a lens entry. A claimed path holding no
-file at all is refused as a transport failure, not a reviewer one: the route wrote nothing.
+the gate shows up as a hole in the ledger instead of as a lens entry. A claimed path holding
+nothing is refused as `no-output`, because the attempt wrote nothing. Claim again with reason
+`dead-run` and the kill line as the evidence when your watchdog killed it for silence, and with
+reason `transport-error` and the route's error otherwise.
 
 Some transports wrap the reviewer's output in their own harness log lines — a banner before it, an
 exit line after it, and command echoes that may themselves contain braces. **Ingest the claimed
