@@ -30,8 +30,10 @@ Refusal codes, each carried in an error object beside its message:
     no-openrouter-key               — openrouter dispatches are planned and no key is set
     no-output                       — the claimed output path holds no report
     no-output-path                  — ingest named no --output
+    no-read-evidence                — a clean report whose retained stderr records no read
     no-round-meta                   — round.json is absent or carries no lens list
     no-route-declaration            — a claim named no --transport or no --model
+    no-stderr-capture               — a clean report with no retained stderr to read
     off-ladder                      — a dead-run claim names a step the ladder does not take
     unclaimed-attempt               — ingest named output no claim was authorized for
     unknown-reason                  — a reason outside the closed set, or out of order

@@ -135,7 +135,7 @@ with no tool grant. The invoker knows it before dispatching, so the claim declar
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens criteria-holes \
-  --transport codex --model gpt-5.6-sol --reason initial --target-inline
+  --transport codex --model <model> --effort medium --reason initial --target-inline
 ```
 
 The waiver is recorded on the claim and reads back out of the ledger. Declaring it for a lens that

@@ -1051,6 +1051,18 @@ class TestReadEvidence:
         assert answer["stderr_path"] in refused["errors"][0]["message"]
         assert kinds(round_dir, "outcome")[0]["outcome"] == "unread"
 
+    def test_a_clean_report_whose_retained_stderr_does_not_parse_is_refused(
+        self, round_dir, capsys
+    ):
+        """A capture the gate cannot read as text shows no read, so it is the same refusal
+        as a capture recording none: the evidence of a read is what is missing."""
+        answer = authorize(round_dir, capsys)
+        output = write_output(answer, json.dumps(REPORT), stderr=None)
+        Path(answer["stderr_path"]).write_bytes(b"\xff\xfe\x00\x80 not utf-8 \xc3\x28\n")
+        refused = refuse(ingest_argv(round_dir, output), capsys)
+        assert codes(refused) == ["no-read-evidence"]
+        assert kinds(round_dir, "outcome")[0]["outcome"] == "unread"
+
     def test_the_codex_refusal_names_both_recorded_shapes(self, round_dir, capsys):
         """A runner on a third entry point learns from the refusal what to retain."""
         answer = authorize(round_dir, capsys)
