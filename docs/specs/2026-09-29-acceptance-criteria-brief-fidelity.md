@@ -378,10 +378,10 @@ spec-lint's under `make ci`.
   refusal naming both.
 - **BRF-A26** The scorer reports a fixture as incomplete, never as locked or
   failed, when its attempt has fewer than five scored outputs, when the
-  attempt's directory lacks an output its record names, when the record names no resolved model ID, a
-  model that is not Claude Opus, or no fingerprint, or when the record lacks
-  the operator's attestation of fresh contexts and the native Agent tool. It
-  names each missing output as pending.
+  attempt's directory lacks an output its record names, when the record names
+  no resolved model ID, a model that is not Claude Opus, or no fingerprint, or
+  when the record lacks the operator's attestation of fresh contexts and the
+  native Agent tool. It names each missing output as pending.
 - **BRF-A27** Given an output set seeded with three failed runs on each side
   of each fixture, such as altered criteria for F1's preservation half, altered
   evidence entries for its evidence half, briefs returned for F3, reports for
@@ -403,7 +403,6 @@ spec-lint's under `make ci`.
 - **BRF-A31** `make content-tests` runs the helper suite and the scorer's
   suite, and `make ci` runs spec-lint's fixture test: a test seeded to fail
   in each suite turns its gate red.
-
 - **BRF-A32** Given an attempt in which one side has exactly two failed runs
   of five and fewer than five retest runs committed, the scorer reports that
   fixture as awaiting a retest, neither locked, failed nor incomplete. Given
