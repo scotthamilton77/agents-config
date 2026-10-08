@@ -408,16 +408,17 @@ spec-lint's under `make ci`.
   suite, and `make ci` runs spec-lint's fixture test: a test seeded to fail
   in each suite turns its gate red.
 - **BRF-A32** Given an attempt in which one side has exactly two failed runs
-  of five and fewer than five retest runs committed, the scorer reports that
-  fixture as awaiting a retest, neither locked, failed nor incomplete. Given
-  the retest's five runs, it locks the fixture when all five pass on that side
-  and fails it when any does not.
+  of five, every other side passes, and fewer than five retest runs are
+  committed, the scorer reports that fixture as awaiting a retest, neither
+  locked, failed nor incomplete. Given the retest's five runs, it locks the
+  fixture when all five pass on that side and fails it when any does not.
 - **BRF-A33** Given a committed lock whose recorded fingerprint differs from
   the one the scorer computes from the skill directory without `evals/`, the
   fixture's own files and the recorded model ID, the scorer reports the lock
   as not current and leaves the fixture out of the evaluation of record.
-  Given one whose fingerprint matches, it reports the lock as current and
-  counts it, whatever changed elsewhere.
+  Given one whose fingerprint matches and whose stored runs still pass under
+  the current scorer, it reports the lock as current and counts it, whatever
+  changed outside its fingerprint.
 - **BRF-A34** Given two committed attempts recording the same fingerprint, the
   scorer scores the earlier and reports the later as refused, whether the
   earlier locked, failed or is incomplete.
