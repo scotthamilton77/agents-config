@@ -270,11 +270,11 @@ A fingerprint gets one attempt, plus the retest a side at three of five earns.
 An attempt counts against its fingerprint once committed, complete or not. An
 incomplete attempt is completed in place: its pending runs are repeated under
 the limit above and its record amended, and it is never replaced. A run still
-pending after its repeats leaves the fixture unlocked until a change to its
-fingerprint voids the attempt. The scorer refuses a second attempt recording a
-fingerprint it has already seen, whether the earlier locked, failed or stayed
-incomplete, so a failed fixture is answered only by changing something, and a
-locked one is not re-rolled.
+pending after its repeats leaves the fixture unlocked until a change alters
+its fingerprint, and the new fingerprint gets an attempt of its own. The
+scorer refuses a second attempt recording a fingerprint it has already seen,
+whether the earlier locked, failed or stayed incomplete, so a failed fixture
+is answered only by changing something, and a locked one is not re-rolled.
 
 An attempt is committed under `evals/runs/<run-id>/` with its outputs, its
 record and its report, whatever it shows, and a retest's five runs beside the
