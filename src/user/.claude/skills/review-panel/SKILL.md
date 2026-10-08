@@ -9,7 +9,7 @@ admission:
 
 A round is a panel of single-lens reviewers. This skill routes: it resolves the target to a
 profile, checks its gates ran, staffs the round, fans out one reviewer per staffed lens,
-and assembles the reports into the round verdict — it holds no lens expertise.
+and assembles the reports into the round verdict.
 Lens sets, mandates, tiers, transports, and the profile table are data in
 `contracts.json`; every mandate states what makes an instance worth reporting.
 
@@ -63,7 +63,7 @@ and undispositioned ones still block. `--sweep` flies under its own staffing dec
 blocking-only, ledger loaded — subtract-only from the class's frontier seats, unbounded by the
 profile ceiling, a target-shaped rationale per subtraction (looking clean justifies nothing); a
 justified zero-seat decision is the terminal record. A class with no frontier seat
-escalates to the human. A clean, complete full round 1 that retained every frontier seat is
+escalates to the human. A clean, complete round 1 that retained every frontier seat is
 terminal directly.
 
 ## Emitting the prompts
@@ -93,9 +93,10 @@ unsound: an unsynced base, a missing gate or checkpoint, broken staffing, a ledg
 
 Every earlier mechanical finding needs a disposition: `fixed`, `rebutted`, `advisory-deferred`, or
 `transferred`. `rebutted` requires evidence; `fixed` on a typed-code mechanical finding requires
-evidence naming the test and the fails-without/passes-with observation; `transferred` moves a
-pre-existing, non-blocking finding out, carrying the provenance basis and the work item that
-inherits it — a blocking finding is not transferable. A finding indicting the criteria themselves
+evidence naming the test and the fails-without/passes-with observation, or names as `artifact`
+a Markdown file the finding itself names, and evidence; `transferred` moves a
+pre-existing, non-blocking finding out, carrying its provenance basis and the inheriting work
+item; a blocking one is not transferable. A finding indicting the criteria
 assembles the round `halted` with the upstream-defect reason; emission refuses to resume until
 the indicted artifact changes.
 

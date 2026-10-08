@@ -162,7 +162,9 @@ CLAUSES = (
         "A code fix names the test that fails without it and passes with it, and says you saw "
         "both. That observation is what the disposition records: on typed code, `fixed` with no "
         "test named in its evidence is refused exactly as a bare rebuttal is. Write the test "
-        "first, watch it fail, then fix.",
+        "first, watch it fail, then fix. A finding the lens located in a Markdown file is the "
+        "one exception: its disposition names that file as `artifact`, spelled as the finding "
+        "spells it, with evidence saying what was done.",
     ),
     (
         "Replacement-first for prose",

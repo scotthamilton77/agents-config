@@ -878,6 +878,22 @@ def load_dispositions(path: str | None) -> list[dict]:
     return value
 
 
+def located_in_prose(entry: dict, finding: dict) -> bool:
+    """True when the disposition names a Markdown artifact the finding itself locates.
+
+    A typed-code round's lenses read the surrounding repository and can return a true
+    finding about a prose file; its fix is a prose edit with no test to name. The
+    disposition says so by naming the file as ``artifact``, and the claim is checked
+    against the lens's own words rather than taken from the fixer: the path must appear in
+    the finding's claim or evidence, so a fixer cannot relocate a code defect into prose.
+    """
+    artifact = entry.get("artifact")
+    if not isinstance(artifact, str) or not artifact.endswith(".md"):
+        return False
+    located = f"{finding.get('claim') or ''}\n{finding.get('evidence') or ''}"
+    return artifact in located
+
+
 def build_ledger(
     prior_findings: list[dict], dispositions: list[dict], artifact_class: str
 ) -> list[dict]:
@@ -889,6 +905,7 @@ def build_ledger(
     from re-raising them too.
     """
     lens_of = {(f.get("round"), f.get("id")): f.get("lens") for f in prior_findings}
+    finding_of = {(f.get("round"), f.get("id")): f for f in prior_findings}
     type_of = {(f.get("round"), f.get("id")): f.get("type") for f in prior_findings}
     required = {
         (f.get("round"), f.get("id")) for f in prior_findings if f.get("type") == "mechanical"
@@ -908,13 +925,17 @@ def build_ledger(
                 "inside this campaign",
             )
         if disposition == "fixed" and mechanical and artifact_class == "typed-code":
-            if "test" not in evidence.lower():
+            in_prose = located_in_prose(entry, finding_of.get(key, {}))
+            if ("test" not in evidence.lower() and not in_prose) or not evidence.strip():
                 raise Refusal(
                     "unsupported-fix",
                     f"finding {key[1]} from round {key[0]} is marked fixed with no test named in "
                     "its evidence; on typed code a fix is checkable, so it names the test and the "
                     'fails-without/passes-with observation. The check is the word "test" in the '
-                    "evidence, a deliberately mechanical proxy for that naming",
+                    "evidence, a deliberately mechanical proxy for that naming. A finding the "
+                    "lens located in a Markdown file is the exception: name that file as "
+                    "'artifact', exactly as the finding's claim or evidence spells it, with "
+                    "evidence saying what was done",
                 )
         record = {"round": key[0], "id": key[1], "lens": lens_of.get(key),
                   "disposition": disposition}
@@ -922,6 +943,8 @@ def build_ledger(
             record["evidence"] = evidence
         if work_item:
             record["work_item"] = work_item
+        if disposition == "fixed" and located_in_prose(entry, finding_of.get(key, {})):
+            record["artifact"] = entry["artifact"]
         ledger.append(record)
         required.discard(key)
     if required:

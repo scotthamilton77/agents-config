@@ -66,17 +66,18 @@ mechanical with no evidence. Only an advisory may carry it; it keeps the demotio
 
 ### Prior disposition
 
-An entry carries `round`, the finding `id`, a `disposition`, and where required `evidence` and
-`work_item`. `disposition` is `fixed`, `rebutted`, `advisory-deferred`, or `transferred`.
+An entry carries `round`, the finding `id`, a `disposition`, and where required `evidence`,
+`work_item` or `artifact`. `disposition` is `fixed`, `rebutted`, `advisory-deferred`, or
+`transferred`.
 
 `evidence` is required and non-blank for `rebutted`, and for `fixed` when `artifact_class` is
-`typed-code`, where it names the test and the fails-without/passes-with observation. Classes with
-no test gate leave it optional on `fixed`.
+`typed-code`, where it names the test and the fails-without/passes-with observation, or the entry
+carries `artifact`, the Markdown file the finding itself names, when the fix is prose. Other
+classes leave it optional on `fixed`.
 
 `transferred` moves a pre-existing, non-blocking defect out of the campaign, and requires both
-`evidence` carrying the provenance basis — a base-side reference showing the defect predates the
-change — and `work_item`, the id it was filed as. Either half alone lets a live defect leave
-unowned. `work_item` is optional on the other dispositions.
+`evidence` carrying the provenance basis — a base-side reference predating the change — and
+`work_item`. Either half alone lets a live defect leave unowned.
 
 ### Halt
 
