@@ -202,10 +202,10 @@ Each output opens with a line naming its form, `Form: brief` or
 `Form: report`, so the scorer reads the form mechanically. An output present
 without such a line fails its run.
 
-Each fixture runs five times in fresh contexts, so one evaluation plans 35
-dispatches plus repeats. The run record names the writer's resolved model ID.
-The outputs cannot show a fresh context or the native Agent tool, so the
-operator attests both in the run record.
+Each fixture runs five times in fresh contexts, so one attempt on every
+fixture plans 35 dispatches, plus repeats and retests. The attempt's record
+names the writer's resolved model ID. The outputs cannot show a fresh context
+or the native Agent tool, so the operator attests both in the record.
 
 Fixtures live in the skill's `evals/`:
 
@@ -230,14 +230,41 @@ A run with no output is repeated at most twice. It is then left pending and
 never scored as failed. The repeat limit is an operator procedure, because no
 output shows a retry.
 
-The thresholds differ by fixture. F1 to F5 and F7 pass at five runs of five.
-The helper decides those outputs, so any failed run is a pasted-wrong or
-invented contract. F6 passes at four of five, because only the writer's
-judgment can find that check infeasible.
+A fixture is locked on its own runs, under the evaluation contract's rule
+(ACE-D7, ACE-D8). F1 and F2 each have two sides, preservation and evidence.
+Every other fixture has one. A side passes when at least four of its five
+runs pass. A side at three of five gets one retest of five more runs and
+passes at eight of the ten. No run is discarded. A side below three fails. A
+fixture is locked when every side passes.
 
-A record run is committed under `evals/runs/<run-id>/` with its outputs and
-report, whatever it shows. That rests on the operator. Changing a run count or
-threshold amends this spec.
+One threshold serves every fixture. Five runs cannot tell a writer right
+ninety-nine times in a hundred from one right every time, so a stricter
+threshold on F1 to F5 and F7, on the ground that the helper decides their
+outputs, measures nothing the uniform one does not.
+The writer pastes what the helper prints, and a writer that pastes wrong once
+in a hundred fails thirty runs at five of five about one time in four, on luck
+alone. F6's threshold is the same four of five. The scope sentence it serves
+is measured by five runs, never proved by them. A failed run behind a lock is
+committed and read like any other, and a defect it shows is answered by
+changing the skill, which voids the lock and runs the fixture again.
+
+A lock records its fixture's fingerprint: the digest of every file the writer
+is given, which is the skill directory without `evals/`, the digest of the
+fixture's own files, and the writer's resolved model ID. A lock is current
+while its fingerprint matches the tree. A change voids only the locks whose
+fingerprint it alters, and only those fixtures run again. A change to the
+scorer dispatches no writer: the stored outputs are rescored, and a lock
+stands when its fixture still passes.
+
+A fingerprint gets one attempt, plus the retest a side at three of five earns.
+The scorer refuses a second attempt recording a fingerprint it has already
+scored, whether the fixture locked or failed, so a failed fixture is answered
+only by changing something, and a locked one is not re-rolled.
+
+An attempt is committed under `evals/runs/<run-id>/` with its outputs, its
+record and its report, whatever it shows, and a retest's five runs beside the
+attempt they extend. That rests on the operator. The evaluation of record is
+the set of current locks. Changing a run count or threshold amends this spec.
 
 **BRF-D9 — Verification ownership.** S3.5 is the verification child for ACQ-A12
 and ACQ-A13, as ACQ-D2 requires. The helper suites establish the mechanism.
@@ -247,13 +274,18 @@ Only the evaluation of record establishes the parents at the generated brief.
 
 - "Refuses as X" means the BRF-D4 refusal carrying code X.
 - "The report form" is BRF-D8's report.
-- "The evaluation of record" is the latest complete record run under BRF-D8.
+- "The evaluation of record" is BRF-D8's set of current locks. A fixture
+  "passes in the evaluation of record" when it holds a current lock, and a
+  side passes there when it passes under BRF-D8's threshold and retest on the
+  runs behind that lock.
 
-A record run is complete when four things hold. Every fixture has five scored
-outputs. Its directory holds every output its report scores. Its record names
-the writer's resolved model ID, which is a Claude Opus model. Its record
-carries the operator's attestation of fresh contexts and the native Agent
-tool. A run with a pending dispatch is incomplete.
+An attempt is complete for a fixture when four things hold. The fixture has
+five scored outputs, and five more when a side earned a retest. The attempt's
+directory holds every output its report scores. Its record names the writer's
+resolved model ID, which is a Claude Opus model, and the fixture's
+fingerprint. Its record carries the operator's attestation of fresh contexts
+and the native Agent tool. A fixture with a pending dispatch is incomplete and
+cannot lock.
 
 The helper suite and the scorer's suite run under `make content-tests`, and
 spec-lint's under `make ci`.
@@ -334,20 +366,20 @@ spec-lint's under `make ci`.
 - **BRF-A25** One refusal names every fault the helper detects in the sources
   it can read. Given two assigned IDs absent from their spec, `emit` prints one
   refusal naming both.
-- **BRF-A26** The scorer reports a record run as incomplete when a fixture has
-  fewer than five scored outputs, the run's directory lacks an output its
-  report scores, the record names no resolved model ID or a model that is
-  not Claude Opus, or the record lacks the operator's attestation of fresh
-  contexts and the native Agent tool. It reports each fixture with a missing
-  output as pending, never as passed or failed.
-- **BRF-A27** Given an output set seeded with enough known defects to cross
-  each fixture's threshold, such as an altered criterion for F1's
-  preservation half, an altered evidence entry for its evidence half, a brief
-  returned for F3, a report for F3 that lacks the refusal object, a report
-  for F4 that carries a criteria section, an output with no `Form:` line,
-  and two briefs returned for F6, the scorer fails each seeded fixture and
-  names it.
-  Given a conforming set, it passes every fixture.
+- **BRF-A26** The scorer reports a fixture as incomplete, never as locked or
+  failed, when its attempt has fewer than five scored outputs or a retest it
+  earned has fewer than five more, when the attempt's directory lacks an
+  output its report scores, when the record names no resolved model ID, a
+  model that is not Claude Opus, or no fingerprint, or when the record lacks
+  the operator's attestation of fresh contexts and the native Agent tool. It
+  names each missing output as pending.
+- **BRF-A27** Given an output set seeded with two failed runs on each side of
+  each fixture, such as altered criteria for F1's preservation half, altered
+  evidence entries for its evidence half, briefs returned for F3, reports for
+  F3 that lack the refusal object, reports for F4 that carry a criteria
+  section, outputs with no `Form:` line, and briefs returned for F6, the
+  scorer fails each seeded side and names its fixture. Given a conforming
+  set, it locks every fixture.
 - **BRF-A28** The skill's acceptance-criteria part and skeleton tell the
   writer to take the criteria and evidence sections from `emit`, paste them
   unchanged, run `check` before dispatch, and relay a refusal or an unready
@@ -363,6 +395,18 @@ spec-lint's under `make ci`.
   suite, and `make ci` runs spec-lint's fixture test: a test seeded to fail
   in each suite turns its gate red.
 
+- **BRF-A32** Given an attempt in which one side has exactly two failed runs
+  of five and no retest committed, the scorer reports that fixture as awaiting
+  a retest, neither locked nor failed. Given the retest's five runs, it locks
+  the fixture when all five pass on that side and fails it when any does not.
+- **BRF-A33** Given a committed lock whose recorded fingerprint differs from
+  the one the scorer computes from the skill directory without `evals/`, the
+  fixture's own files and the recorded model ID, the scorer reports the lock
+  as not current and leaves the fixture out of the evaluation of record.
+- **BRF-A34** Given two committed attempts recording the same fingerprint, the
+  scorer scores the earlier and reports the later as refused, whether the
+  earlier locked or failed.
+
 ### Traceability
 
 | Parent | Child criteria | Check |
@@ -373,7 +417,7 @@ spec-lint's under `make ci`.
 | ACQ-A12 and ACQ-A13, the writer's route | BRF-A28 | Content test |
 | ACQ-A13, evidence apart from text | BRF-A10, BRF-A17, BRF-A22, BRF-A23 | Helper suite, the scorer's report |
 | ACQ-A13, unready criterion | BRF-A11, BRF-A12, BRF-A20 | Helper suite, the scorer's report |
-| ACQ-A12 and ACQ-A13, a trustworthy evaluation of record | BRF-A26, BRF-A27 | Scorer suite |
+| ACQ-A12 and ACQ-A13, a trustworthy evaluation of record | BRF-A26, BRF-A27, BRF-A32, BRF-A33, BRF-A34 | Scorer suite |
 | The gates that run the suites | BRF-A31 | Makefile read, seeded failure |
 
 ### What-if questions
@@ -393,8 +437,11 @@ For `emit` and `check`:
 For BRF-A16 to BRF-A20:
 
 - A failure names the fixture (BRF-A27).
-- A missing output leaves its fixture pending and the run incomplete
+- A missing output leaves its fixture pending and its attempt incomplete
   (BRF-A26).
+- A side at three of five waits on its retest (BRF-A32).
+- A lock the tree no longer matches is not current (BRF-A33), and a second
+  attempt on an unchanged fingerprint is refused (BRF-A34).
 - Each fixture is fixed, so empty applies only where F3 and F7 test it.
 
 ## Ordered slice list
@@ -412,9 +459,10 @@ For BRF-A16 to BRF-A20:
 - **S3.4: The skill** (BRF-A28; BRF-D6). The acceptance-criteria part and
   skeleton of `SKILL.md`, and the content test that reads them. Depends on
   S3.2.
-- **S3.5: Evaluation of record** (BRF-A16 to BRF-A20, BRF-A26, BRF-A27; BRF-D8,
-  BRF-D9). The fixtures, `evals/score_briefs.py` with its suite, and the
-  committed record run. The verification child for ACQ-A12 and ACQ-A13.
+- **S3.5: Evaluation of record** (BRF-A16 to BRF-A20, BRF-A26, BRF-A27,
+  BRF-A32 to BRF-A34; BRF-D8, BRF-D9). The fixtures, `evals/score_briefs.py`
+  with its suite, and the committed attempts that lock every fixture. The
+  verification child for ACQ-A12 and ACQ-A13.
   Depends on S3.4.
 
 ## Continuations
@@ -423,7 +471,7 @@ For BRF-A16 to BRF-A20:
 - feat: AC brief S3.2: the evidence map (BRF-D5) — AC: BRF-A10, BRF-A11, BRF-A12, BRF-A22, BRF-A23; make content-tests exits 0.
 - feat: AC brief S3.3: item criteria through the facade renderer (BRF-D7) — AC: BRF-A13, BRF-A14, BRF-A15; make content-tests exits 0.
 - feat: AC brief S3.4: the briefing skill routes through the helper (BRF-D6) — AC: BRF-A28; make content-lint exits 0.
-- feat: AC brief S3.5: generated-brief evaluation of record, the verification child (BRF-D8, BRF-D9) — AC: BRF-A16, BRF-A17, BRF-A18, BRF-A19, BRF-A20, BRF-A26, BRF-A27.
+- feat: AC brief S3.5: generated-brief evaluation of record, the verification child (BRF-D8, BRF-D9) — AC: BRF-A16, BRF-A17, BRF-A18, BRF-A19, BRF-A20, BRF-A26, BRF-A27, BRF-A32, BRF-A33, BRF-A34.
 
 ## Out of scope
 

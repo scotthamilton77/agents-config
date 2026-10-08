@@ -31,3 +31,6 @@
 - BRF-A29 | open
 - BRF-A30 | open
 - BRF-A31 | open
+- BRF-A32 | open
+- BRF-A33 | open
+- BRF-A34 | open
