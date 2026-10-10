@@ -237,8 +237,9 @@ found in the body with the surrounding text ignored — and prints the report it
 from a dispatch it never authorized is refused rather than read, so a dispatch that went around
 the gate shows up as a hole in the ledger instead of as a lens entry. A claimed path holding
 nothing is refused as `no-output`, because the attempt wrote nothing. Claim again with reason
-`dead-run` when your watchdog killed it for silence or the proxy logged its thinking-only line, with
-that line as the evidence, and with reason `transport-error` and the route's error otherwise.
+`dead-run` when your watchdog killed it for silence or the launcher's own skill says the response
+ended inside the model's reasoning, with that signal as the evidence, and with reason
+`transport-error` and the route's error otherwise.
 
 Some transports wrap the reviewer's output in their own harness log lines — a banner before it, an
 exit line after it, and command echoes that may themselves contain braces. **Ingest the claimed
