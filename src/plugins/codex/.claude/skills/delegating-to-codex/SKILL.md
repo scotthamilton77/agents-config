@@ -9,7 +9,10 @@ admission:
 
 # Delegating to Codex
 
-Reach Codex by dispatching the `codex-rescue` agent through the Agent tool.
+Work that may write, such as a fix or an implementation, goes to the
+`codex-rescue` agent, which you dispatch with the Agent tool. A run that only
+reads, such as a review or a second opinion, is the read-only run below, which
+you start from your own shell.
 This skill addresses the caller. If you *are* the `codex-rescue` agent, the
 dispatch has already happened: reach Codex through your own runtime, as your
 agent definition says, and do not dispatch another `codex-rescue` — a rescue
@@ -68,9 +71,41 @@ home, where `auth.json` lives; pointed elsewhere, requests go out with no
 credential and `401 Missing bearer` from `api.openai.com/v1/responses` is the
 fingerprint. Hold the companion path in a variable of another name.
 
-## What this skill does not decide
+## The read-only run
 
-Whether a run may write, and how the prompt and the effort level reach Codex,
-belong to the plugin runtime's own contract. Follow that contract where it
-speaks. This skill adds the model and the effort level you chose for the task, and
-nothing else.
+Run the plugin's companion script with its `task` command and no `--write`.
+Without that flag Codex runs in a read-only sandbox, where it cannot write a
+file, so never ask it to write its report. Your shell redirects stdout into the
+report file instead, and writes the pid of the process it launched to a file:
+
+```bash
+COMPANION="$(ls ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs | sort -V | tail -n 1)"
+node "$COMPANION" task --model <model> --effort <level> --prompt-file <brief> \
+  > <report> 2> <log> & echo $! > <pidfile>; wait $!
+```
+
+Give the Bash call a timeout of about 1,500,000 ms. A whole-spec read on the
+frontier tier has run 24 to 28 minutes, so a call can outlive that timeout and
+be moved to the background. The run is not dead then. It keeps writing to your
+files, and starting a second run only pays twice. Wait until the pid in
+`<pidfile>` has exited, then read the report: the run is finished only when
+that process is gone. Check at intervals of a minute or so, with
+`kill -0 "$(cat <pidfile>)"`, for up to 45 minutes, then stop it.
+
+To stop a run, signal that pid: `kill -TERM "$(cat <pidfile>)"`. Never select
+the process by name, because another agent's Codex run on this machine has the
+same name. A run you stopped yourself is over; do not start it elsewhere.
+
+How the run ended, read from the exit status, or from the log when the call was
+moved to the background:
+
+| What you see | Outcome |
+|---|---|
+| Exit `0`, the report in `<report>`, `[codex] Turn completed.` in `<log>` | Usable output. |
+| Exit `0`, and `<report>` holds `Codex did not return a final message.` or a reply that is not the report you asked for | The run produced unusable output. Re-brief, or try another model. |
+| Exit `1`, with a `[codex] Codex error:` line or a turn that ended other than `Turn completed.` | The provider did not serve the run. `You've hit your usage limit` in that line means the subscription is spent, and repeating the run fails the same way. |
+| Exit `1`, with `Codex CLI is not installed…` | The provider did not serve the run. |
+| Exit `1`, with one line in `<log>` and no `[codex]` line at all | The companion refused the invocation. Fix the command. |
+
+The model and the effort reach Codex as `--model` and `--effort`, chosen as the
+section above says.

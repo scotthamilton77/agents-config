@@ -60,6 +60,19 @@ fails at dispatch or silently routes somewhere you did not intend.
 If the provider you want is absent, say so and offer the one that is present. Do not
 substitute a same-vendor delegate and describe it as a second opinion.
 
+## How a run ends
+
+Every launcher reports one of four outcomes, and each launcher's own skill says
+which of its signals means which:
+
+- **Usable output.** The run returned what it was asked for.
+- **The launcher refused the invocation.** Nothing ran. The fix is in the
+  command or its setup, and another provider would refuse it too.
+- **The provider did not serve the run.** The provider failed, or a clock or a
+  signal ended the run first. Another provider can serve it.
+- **The run produced unusable output.** The provider served the run, but what
+  came back cannot be used. A new brief or another model is the remedy.
+
 ## Two things that bite
 
 **A Codex rescue dispatch defaults to write-capable.** Its sandbox permits edits unless
@@ -68,7 +81,7 @@ want a critique and not a patch, say so in the request text — the default is n
 you want for a second opinion.
 
 **A review round's transports are already decided.** When a review contract declares a
-transport per lens, that declaration is the vendor-diversity plan for the round. This
+transport per reviewer, that declaration is the vendor-diversity plan for the round. This
 skill governs dispatch where nothing has declared one; it does not override a round that
 has.
 
