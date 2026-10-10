@@ -135,7 +135,7 @@ record, and that is honest — a document lens reading text quoted inline, or a 
 with no tool grant. The invoker knows it before dispatching, so the claim declares it:
 
 ```bash
-uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens criteria-holes \
+uv run <skill-dir>/dispatch_gate.py claim --out-dir /tmp/round-1 --lens criteria-holes \
   --transport codex --model <model> --effort medium --reason initial --target-inline
 ```
 
@@ -181,7 +181,7 @@ Whatever the failure, the next claim declares its reason and the failure verbati
 line or the watchdog's kill line included:
 
 ```bash
-uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
+uv run <skill-dir>/dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
   --transport openrouter --model <model> --effort low \
   --reason transport-error --evidence "402 Insufficient credits"
 ```
@@ -228,7 +228,7 @@ Models violate an exact-output contract in predictable, harmless ways, so a repo
 the gate rather than by eye:
 
 ```bash
-uv run dispatch_gate.py ingest --out-dir /tmp/round-1 \
+uv run <skill-dir>/dispatch_gate.py ingest --out-dir /tmp/round-1 \
   --output /tmp/round-1/correctness.attempt-1.out
 ```
 
@@ -317,7 +317,7 @@ fixer's work reaches the branch. A fix moves the head, and a verdict is only pos
 head it judged — post late and the round's record is stranded off the commit it speaks about.
 
 ```bash
-uv run prgroom_version.py --repo-root <repo-root>
+uv run <skill-dir>/prgroom_version.py --repo-root <repo-root>
 prgroom post-verdict <pr> --verdict <path> --criteria <path>
 ```
 
