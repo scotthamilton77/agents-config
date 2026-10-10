@@ -1,0 +1,2543 @@
+{
+  "dispositions": [
+    {
+      "covering_ac": "CR-L16",
+      "disposition": "accepted",
+      "id": "behavioural-outcome-1",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-P8",
+      "disposition": "accepted",
+      "id": "behavioural-outcome-2",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-P12",
+      "disposition": "accepted",
+      "id": "behavioural-outcome-3",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-W10",
+      "disposition": "accepted",
+      "id": "behavioural-outcome-4",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-G2",
+      "disposition": "accepted",
+      "id": "behavioural-outcome-5",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L1",
+      "disposition": "accepted",
+      "id": "obligation-reduction-1",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-2",
+      "rationale": "A renderer that returns cached prose for a new record is an invented implementation defect, not an in-scope failure the document names; CR-R7 pins determinism and the golden fixtures pin the mapping from record to output. An unsupported implementation prescription earns no criterion (restraint)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-3",
+      "rationale": "CR-D1's non-drift claim is about facts the two artifacts share, each of which is one record field rendered twice; the decision's wording now says so. Agreement of meaning between two author-written prose fields is not mechanically decidable and is the author's and the rewrite pass's (restraint)."
+    },
+    {
+      "covering_ac": "CR-R1",
+      "disposition": "accepted",
+      "id": "obligation-reduction-4",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L10",
+      "disposition": "accepted",
+      "id": "obligation-reduction-5",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-R1",
+      "disposition": "accepted",
+      "id": "obligation-reduction-6",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L10",
+      "disposition": "accepted",
+      "id": "obligation-reduction-7",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L7",
+      "disposition": "accepted",
+      "id": "obligation-reduction-8",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L12",
+      "disposition": "accepted",
+      "id": "obligation-reduction-9",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L12",
+      "disposition": "accepted",
+      "id": "obligation-reduction-10",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-R3",
+      "disposition": "accepted",
+      "id": "obligation-reduction-11",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L14",
+      "disposition": "accepted",
+      "id": "obligation-reduction-12",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L13",
+      "disposition": "accepted",
+      "id": "obligation-reduction-13",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-14",
+      "rationale": "Whether the prose carries the promised content is a judgment no check over the record can decide; the form, length and required references are pinned and the content is the author's, read in review as today (restraint, can-fail)."
+    },
+    {
+      "covering_ac": "CR-L13",
+      "disposition": "accepted",
+      "id": "obligation-reduction-15",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L13",
+      "disposition": "accepted",
+      "id": "obligation-reduction-16",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L2",
+      "disposition": "accepted",
+      "id": "obligation-reduction-17",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-18",
+      "rationale": "Section 3.4 assigns this writing rule to the author and the rewrite pass and says the lint enforces only what it can decide. The rule is not mechanically decidable, and CR-W8 is the human-judgment criterion over the applied prose with a recorded basis per rule. A criterion for an undecidable rule earns none (restraint)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-19",
+      "rationale": "Section 3.4 assigns this writing rule to the author and the rewrite pass and says the lint enforces only what it can decide. The rule is not mechanically decidable, and CR-W8 is the human-judgment criterion over the applied prose with a recorded basis per rule. A criterion for an undecidable rule earns none (restraint)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-20",
+      "rationale": "Section 3.4 assigns this writing rule to the author and the rewrite pass and says the lint enforces only what it can decide. The rule is not mechanically decidable, and CR-W8 is the human-judgment criterion over the applied prose with a recorded basis per rule. A criterion for an undecidable rule earns none (restraint)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-21",
+      "rationale": "Section 3.4 assigns this writing rule to the author and the rewrite pass and says the lint enforces only what it can decide. The rule is not mechanically decidable, and CR-W8 is the human-judgment criterion over the applied prose with a recorded basis per rule. A criterion for an undecidable rule earns none (restraint)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-22",
+      "rationale": "Section 3.4 assigns this writing rule to the author and the rewrite pass and says the lint enforces only what it can decide. The rule is not mechanically decidable, and CR-W8 is the human-judgment criterion over the applied prose with a recorded basis per rule. A criterion for an undecidable rule earns none (restraint)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-23",
+      "rationale": "A phrase list is the whole of what a lint can decide about document commentary; CR-L7 names the list as the skill's, and section 3.4 holds the author and the rewrite pass to the rule beyond it, judged under CR-W8 (restraint)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-24",
+      "rationale": "Section 3.4 assigns this writing rule to the author and the rewrite pass and says the lint enforces only what it can decide. The rule is not mechanically decidable, and CR-W8 is the human-judgment criterion over the applied prose with a recorded basis per rule. A criterion for an undecidable rule earns none (restraint)."
+    },
+    {
+      "covering_ac": "CR-L10",
+      "disposition": "accepted",
+      "id": "obligation-reduction-25",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-26",
+      "rationale": "Whether the prose carries the promised content is a judgment no check over the record can decide; the form, length and required references are pinned and the content is the author's, read in review as today (restraint, can-fail)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-27",
+      "rationale": "Whether the prose carries the promised content is a judgment no check over the record can decide; the form, length and required references are pinned and the content is the author's, read in review as today (restraint, can-fail)."
+    },
+    {
+      "covering_ac": "CR-G1",
+      "disposition": "accepted",
+      "id": "obligation-reduction-28",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L17",
+      "disposition": "accepted",
+      "id": "obligation-reduction-29",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-30",
+      "rationale": "How many scripts implement the renderer is an implementation prescription, not an observable obligation; the golden fixtures and CR-L17 pin the behaviour. Restraint."
+    },
+    {
+      "covering_ac": "CR-P1",
+      "disposition": "accepted",
+      "id": "obligation-reduction-31",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-C1",
+      "disposition": "accepted",
+      "id": "obligation-reduction-32",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-C4",
+      "disposition": "accepted",
+      "id": "obligation-reduction-33",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-C2",
+      "disposition": "accepted",
+      "id": "obligation-reduction-34",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-C6",
+      "disposition": "accepted",
+      "id": "obligation-reduction-35",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-P6",
+      "disposition": "accepted",
+      "id": "obligation-reduction-36",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-C8",
+      "disposition": "accepted",
+      "id": "obligation-reduction-37",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-38",
+      "rationale": "publish calls gh with the ambient credential, the author's login; the reviewing App's token is reached only through prgroom's own code, which this skill neither imports nor invokes. Which account is logged in is a property of the session, not of the skill, and CR-D8 records the split (restraint)."
+    },
+    {
+      "covering_ac": "CR-G3",
+      "disposition": "accepted",
+      "id": "obligation-reduction-39",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-W1",
+      "disposition": "accepted",
+      "id": "obligation-reduction-40",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-W2",
+      "disposition": "accepted",
+      "id": "obligation-reduction-41",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-W4",
+      "disposition": "accepted",
+      "id": "obligation-reduction-42",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-43",
+      "rationale": "The meaning check is the author's by CR-D6, which says the script cannot tell a reported check from a verified claim; CR-W8 is the human-judgment criterion that records that check against the fixtures with a basis per rule. A mechanical criterion for an undecidable check earns none (restraint)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-44",
+      "rationale": "CR-W9 makes the record admit one application per author revision; how many times an agent dispatches an editor before applying is agent behaviour outside the artifacts, which no check over them can decide (observable-obligation, restraint)."
+    },
+    {
+      "covering_ac": "CR-W11",
+      "disposition": "accepted",
+      "id": "obligation-reduction-45",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-46",
+      "rationale": "Slice W's item takes a dependency edge on agents-config-9k9.486 at minting, as section 7 now states, so the tracker refuses to make it ready before the ruling; that is the gate, and it is the tracker's, not a criterion of this spec (restraint)."
+    },
+    {
+      "covering_ac": "CR-W10",
+      "disposition": "accepted",
+      "id": "obligation-reduction-47",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-48",
+      "rationale": "The escalation rule is a policy the owner applies to the series the record carries (CR-W10); applying it is an owner decision outside the artifacts, which no check over them can decide (observable-obligation, restraint)."
+    },
+    {
+      "covering_ac": "CR-L16",
+      "disposition": "accepted",
+      "id": "obligation-reduction-49",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-50",
+      "rationale": "The admit-request gate is the repository's standing rule for any new skill, recorded on the slice's work item as slice L's preamble states; a criterion restating a standing rule the tracker already evidences earns none (restraint)."
+    },
+    {
+      "covering_ac": "CR-G2",
+      "disposition": "accepted",
+      "id": "obligation-reduction-51",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-G3",
+      "disposition": "accepted",
+      "id": "obligation-reduction-52",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-G3",
+      "disposition": "accepted",
+      "id": "obligation-reduction-53",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-54",
+      "rationale": "This is a process commitment held by the tracker's slice items, the delivery contract and the owner's merge instruction, not a behaviour of the system this spec describes; no check over the artifacts can decide it (observable-obligation, restraint)."
+    },
+    {
+      "disposition": "rejected",
+      "id": "obligation-reduction-55",
+      "rationale": "This is a process commitment held by the tracker's slice items, the delivery contract and the owner's merge instruction, not a behaviour of the system this spec describes; no check over the artifacts can decide it (observable-obligation, restraint)."
+    },
+    {
+      "covering_ac": "CR-W9",
+      "disposition": "accepted",
+      "id": "set-consistency-1",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-C5",
+      "disposition": "accepted",
+      "id": "set-consistency-2",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-P9",
+      "disposition": "accepted",
+      "id": "set-consistency-3",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-C7",
+      "disposition": "accepted",
+      "id": "what-if-1",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-P3",
+      "disposition": "accepted",
+      "id": "what-if-2",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "disposition": "rejected",
+      "id": "what-if-3",
+      "rationale": "The premise does not hold: CR-P9 has publish write the live head into pr.head_sha, and CR-P11 digests every group but record, so a head advance changes the digest and a rerun of publish posts a new revision carrying head B; merge then compares against that revision."
+    },
+    {
+      "covering_ac": "CR-R1",
+      "disposition": "accepted",
+      "id": "what-if-4",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-C3",
+      "disposition": "accepted",
+      "id": "what-if-5",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-L3",
+      "disposition": "accepted",
+      "id": "what-if-6",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    },
+    {
+      "covering_ac": "CR-P14",
+      "disposition": "accepted",
+      "id": "what-if-7",
+      "revision": "sha256:be246758f366135cbc25a237ddfc84a34f09d96fc6a7e88ac72a014ced39ce17"
+    }
+  ],
+  "lenses": [
+    {
+      "lens": "behavioural-outcome",
+      "report": "objections"
+    },
+    {
+      "lens": "obligation-reduction",
+      "report": "objections",
+      "workings": {
+        "criteria": [
+          "CR-L1",
+          "CR-L2",
+          "CR-L3",
+          "CR-L4",
+          "CR-L5",
+          "CR-L6",
+          "CR-L7",
+          "CR-L8",
+          "CR-L9",
+          "CR-L10",
+          "CR-L11",
+          "CR-L12",
+          "CR-L13",
+          "CR-L14",
+          "CR-L15",
+          "CR-L16",
+          "CR-R1",
+          "CR-R2",
+          "CR-R3",
+          "CR-R4",
+          "CR-R5",
+          "CR-R6",
+          "CR-R7",
+          "CR-R8",
+          "CR-X1",
+          "CR-X2",
+          "CR-X3",
+          "CR-X4",
+          "CR-X5",
+          "CR-X6",
+          "CR-X7",
+          "CR-X8",
+          "CR-C1",
+          "CR-C2",
+          "CR-C3",
+          "CR-C4",
+          "CR-C5",
+          "CR-C6",
+          "CR-P1",
+          "CR-P2",
+          "CR-P3",
+          "CR-P4",
+          "CR-P5",
+          "CR-P6",
+          "CR-P7",
+          "CR-P8",
+          "CR-P9",
+          "CR-P10",
+          "CR-P11",
+          "CR-P12",
+          "CR-P13",
+          "CR-W1",
+          "CR-W2",
+          "CR-W3",
+          "CR-W4",
+          "CR-W5",
+          "CR-W6",
+          "CR-W7",
+          "CR-W8",
+          "CR-W9",
+          "CR-W10",
+          "CR-G1",
+          "CR-G2",
+          "CR-G3"
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-L1"
+                ],
+                "id": "O1.1",
+                "statement": "The four example records validate, and the tested missing groups, unknown fields and incorrect gate exit-status type are rejected with the field identified."
+              },
+              {
+                "discharged_by": [
+                  "CR-R6"
+                ],
+                "id": "O1.2",
+                "statement": "Rendering the tested lint-invalid record emits nothing and reports the lint failure."
+              },
+              {
+                "discharged_by": [
+                  "CR-L8"
+                ],
+                "id": "O1.3",
+                "statement": "Init creates a schema-valid record identifying unfinished author fields and preserves an existing record on the tested rerun."
+              },
+              {
+                "discharged_by": [],
+                "id": "O1.4",
+                "statement": "Schema validation also rejects malformed nested values and unknown nested fields outside the tested examples."
+              },
+              {
+                "discharged_by": [],
+                "id": "O1.5",
+                "statement": "Records outside the supplied fixtures supply the content of every rendered artifact."
+              },
+              {
+                "discharged_by": [],
+                "id": "O1.6",
+                "statement": "The PR body and commit message make consistent substantive claims."
+              }
+            ],
+            "source": "CR-D1: 'holds everything the three artifacts say'; 'rendered from it by one script'; 'the commit message and the body cannot drift apart.' Section 5 defines the record's nested fields.",
+            "statement": "A schema-validated JSON record supplies the three artifacts and prevents their factual claims from drifting."
+          },
+          {
+            "id": "O2",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-R1",
+                  "CR-R7"
+                ],
+                "id": "O2.1",
+                "statement": "The four feat fixtures produce the exact contracted golden bodies, prescribed headings and tested one-pager limit; repeat and equivalent-reserialization renders are identical."
+              },
+              {
+                "discharged_by": [
+                  "CR-R1"
+                ],
+                "id": "O2.2",
+                "statement": "The checked docs and chore fixtures produce their contracted bodies without Criteria or a blast-radius fold."
+              },
+              {
+                "discharged_by": [
+                  "CR-L10"
+                ],
+                "id": "O2.3",
+                "statement": "The tested feat, fix, refactor, perf, test, docs, chore and spec records enforce their criteria-group requirements."
+              },
+              {
+                "discharged_by": [],
+                "id": "O2.4",
+                "statement": "Fix, refactor, perf and test rendering carries every required section."
+              },
+              {
+                "discharged_by": [],
+                "id": "O2.5",
+                "statement": "Build, ci, style and revert use the chore variant."
+              },
+              {
+                "discharged_by": [],
+                "id": "O2.6",
+                "statement": "Spec rendering shows the items the spec will mint as its blast radius and renders its Criteria section as the attack-status line."
+              },
+              {
+                "discharged_by": [],
+                "id": "O2.7",
+                "statement": "Docs and chore records containing multiple risk rows still produce exactly the required one-row Risk table or are refused."
+              },
+              {
+                "discharged_by": [],
+                "id": "O2.8",
+                "statement": "Bodies produced from other valid records contain no JSON or machine-content fold."
+              }
+            ],
+            "source": "Section 3: 'The three templates below are the contract.' Section 3.1 defines the body, says it carries no JSON or machine-content fold, and defines the type variants.",
+            "statement": "PR bodies follow the contracted template and commit-type variants while keeping machine content outside the human body."
+          },
+          {
+            "id": "O3",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-L3"
+                ],
+                "id": "O3.1",
+                "statement": "The tested subject violations are refused, including excessive length, invalid type, absent or tracker-shaped component, and an absent or incorrect short id; the tested 100-character valid subject passes."
+              },
+              {
+                "discharged_by": [
+                  "CR-L12"
+                ],
+                "id": "O3.2",
+                "statement": "The tested records enforce nonempty why, change and verification fields totaling 80–150 words, or an absent body with a trivial reason."
+              },
+              {
+                "discharged_by": [
+                  "CR-R3"
+                ],
+                "id": "O3.3",
+                "statement": "Fixture outputs carry the human work-item line, ordered labels and exactly the three parseable trailers with the record's work-item value and tool-specific session key."
+              },
+              {
+                "discharged_by": [
+                  "CR-R4"
+                ],
+                "id": "O3.4",
+                "statement": "Fixture commits omit tables, details, fences and HTML comments, and the tested commit-prose markup cases are refused."
+              },
+              {
+                "discharged_by": [],
+                "id": "O3.5",
+                "statement": "Why contains two or three sentences and Change contains three or four."
+              },
+              {
+                "discharged_by": [],
+                "id": "O3.6",
+                "statement": "The complete rendered nontrivial body, including its human work-item line and labels, remains within 80–150 words."
+              },
+              {
+                "discharged_by": [],
+                "id": "O3.7",
+                "statement": "A trivial commit renders without the optional prose body while retaining all required trailers."
+              }
+            ],
+            "source": "Section 3.2 defines the subject, human work-item line, Why/Change/Verification sections, sentence counts, 80–150-word body, trailer paragraph and trivial exception.",
+            "statement": "Commit messages follow the subject, body and trailer contract, including the trivial-change variant."
+          },
+          {
+            "id": "O4",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-R5"
+                ],
+                "id": "O4.1",
+                "statement": "The tested outcomes render as three prefixed lines, and a missing commit produces no trailing parenthesis."
+              },
+              {
+                "discharged_by": [
+                  "CR-L13"
+                ],
+                "id": "O4.2",
+                "statement": "The tested reply length boundaries, missing Deferred tracker id and listed campaign-status phrases fail lint."
+              },
+              {
+                "discharged_by": [
+                  "CR-L14"
+                ],
+                "id": "O4.3",
+                "statement": "A tested fixed finding requires a reply entry, while rebutted, deferred and transferred findings do not require one."
+              },
+              {
+                "discharged_by": [],
+                "id": "O4.4",
+                "statement": "Each finding that changed code or prose has exactly one reply, including changed findings marked Superseded."
+              },
+              {
+                "discharged_by": [],
+                "id": "O4.5",
+                "statement": "The Change text contains one or two sentences."
+              },
+              {
+                "discharged_by": [],
+                "id": "O4.6",
+                "statement": "Replies substantiate their outcomes and verification, including showing a superseded target is gone and giving evidence for a rejection."
+              },
+              {
+                "discharged_by": [],
+                "id": "O4.7",
+                "statement": "A rejected finding receives a thread reply only when a reviewer asks."
+              },
+              {
+                "discharged_by": [],
+                "id": "O4.8",
+                "statement": "A Deferred reply names the actual item inheriting the finding."
+              }
+            ],
+            "source": "Section 3.3 defines the three lines, allowed outcomes, word range, one-reply rule, rejection routing, deferral inheritor and outcome evidence.",
+            "statement": "Review replies follow the contracted form, support their outcomes and are used according to finding disposition."
+          },
+          {
+            "id": "O5",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-L2"
+                ],
+                "id": "O5.1",
+                "statement": "The tested author-written identifier shapes require a gloss at first record-level use, including the tested cross-field and verification-entry cases."
+              },
+              {
+                "discharged_by": [
+                  "CR-L6"
+                ],
+                "id": "O5.2",
+                "statement": "Summary sentence counts outside three through five fail at the tested boundaries."
+              },
+              {
+                "discharged_by": [
+                  "CR-L7"
+                ],
+                "id": "O5.3",
+                "statement": "Listed commentary phrases in rewritable fields fail lint, with the tested fenced exception."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.4",
+                "statement": "Every identifier class, including sections and generated references, is glossed on first use in each independently read artifact."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.5",
+                "statement": "House terms are defined at first appearance or replaced with common words."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.6",
+                "statement": "Prose presents problem, change and remaining work in order without narrating its drafting history."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.7",
+                "statement": "Sentences contain one clause."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.8",
+                "statement": "Numbers are followed by explanations of their meaning."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.9",
+                "statement": "Verbs carry the actions in the specified prose."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.10",
+                "statement": "Document commentary beyond the listed lint phrases is absent from the specified prose regions."
+              },
+              {
+                "discharged_by": [],
+                "id": "O5.11",
+                "statement": "Caveats appear as Heads-up rows rather than clauses elsewhere."
+              }
+            ],
+            "source": "Section 3.4: checks 1–7 apply to summary, Heads-up, Risk and Changes; the first four also apply below the fold. 'The lint enforces the ones it can. The author and the rewrite pass hold the rest.'",
+            "statement": "Artifact prose satisfies the seven writing checks in their stated regions."
+          },
+          {
+            "id": "O6",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-L10"
+                ],
+                "id": "O6.1",
+                "statement": "The tested true reach flag requires both sources, while the tested false flag permits their absence."
+              },
+              {
+                "discharged_by": [],
+                "id": "O6.2",
+                "statement": "The reach flag reflects the change's actual package reach."
+              },
+              {
+                "discharged_by": [],
+                "id": "O6.3",
+                "statement": "The diagrams represent the actual outward impact, label its kinds and mark the changed task steps."
+              }
+            ],
+            "source": "Section 3.1 requires diagrams for changes reaching outside their package and specifies outward reach, impact-labelled edges and changed task steps.",
+            "statement": "Changes reaching outside their package carry accurate blast-radius and affected-flow diagrams."
+          },
+          {
+            "id": "O7",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-L4",
+                  "CR-L11"
+                ],
+                "id": "O7.1",
+                "statement": "The tested empty Heads-up and Discovered lists and empty Risk table fail; solitary None. entries pass and mixed None. lists fail."
+              },
+              {
+                "discharged_by": [
+                  "CR-L5"
+                ],
+                "id": "O7.2",
+                "statement": "The tested filed and in-flight rows require their item or PR references and nonempty reasons."
+              },
+              {
+                "discharged_by": [],
+                "id": "O7.3",
+                "statement": "An in-flight row states what this PR communicated to the other PR."
+              }
+            ],
+            "source": "Section 3.1 specifies None. entries, a Risk table, and Discovered work columns; an in-flight row states what this PR told the other PR.",
+            "statement": "Empty sections are explicit and discovered-work rows provide their required references, reasons and communication content."
+          },
+          {
+            "id": "O8",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-L9"
+                ],
+                "id": "O8.1",
+                "statement": "Staged shared trees contain the skill, schema, templates and script for every supported tool, and content gates discover its suite."
+              },
+              {
+                "discharged_by": [],
+                "id": "O8.2",
+                "statement": "The skill is actually available in every supported tool before wiring lands."
+              },
+              {
+                "discharged_by": [],
+                "id": "O8.3",
+                "statement": "Shipped reference-template content expresses the contracted artifact forms."
+              },
+              {
+                "discharged_by": [],
+                "id": "O8.4",
+                "statement": "One script beside the templates implements rendering of the three artifacts."
+              }
+            ],
+            "source": "Section 3 says the templates ship as reference files. CR-D4 places the skill in the shared tree and the one piece of code beside its templates. Section 7 requires deployment before wiring.",
+            "statement": "The shared change-record skill ships its contracted reference assets and consolidated implementation to every supported tool."
+          },
+          {
+            "id": "O9",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-L15"
+                ],
+                "id": "O9.1",
+                "statement": "The tested edited and unstamped generated groups fail lint with the group named."
+              },
+              {
+                "discharged_by": [],
+                "id": "O9.2",
+                "statement": "Generated content actually comes from its designated generators and source systems rather than manually authored, restamped content."
+              }
+            ],
+            "source": "CR-D5: generated sections are written from tracker and GitHub sources, 'never typed by the agent.' Section 5 says each generated group carries its generator's digest.",
+            "statement": "Generated groups remain generator-owned and carry integrity stamps."
+          },
+          {
+            "id": "O10",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-X1"
+                ],
+                "id": "O10.1",
+                "statement": "The tested ancestry chain follows parent fields, including a conflicting dotted prefix."
+              },
+              {
+                "discharged_by": [
+                  "CR-X2"
+                ],
+                "id": "O10.2",
+                "statement": "The tested owning-item children receive done, this PR, in flight and open scope statuses."
+              },
+              {
+                "discharged_by": [
+                  "CR-X3"
+                ],
+                "id": "O10.3",
+                "statement": "The tested merged child PRs appear with title glosses, and the closed unmerged PR is excluded."
+              },
+              {
+                "discharged_by": [
+                  "CR-X4"
+                ],
+                "id": "O10.4",
+                "statement": "An unknown tested work item is reported without changing the record."
+              },
+              {
+                "discharged_by": [
+                  "CR-X5"
+                ],
+                "id": "O10.5",
+                "statement": "The tested discovered-from items produce filed rows with tracker reasons while preserving author-written not-filed and in-flight rows."
+              },
+              {
+                "discharged_by": [
+                  "CR-X6"
+                ],
+                "id": "O10.6",
+                "statement": "Unchanged generator inputs produce byte-identical records on the tested reruns and preserve the author's slice line."
+              },
+              {
+                "discharged_by": [
+                  "CR-X7"
+                ],
+                "id": "O10.7",
+                "statement": "The tested minimal owning item produces one scope row and explicit none values for builds-on and concurrent."
+              },
+              {
+                "discharged_by": [
+                  "CR-X8"
+                ],
+                "id": "O10.8",
+                "statement": "The tested other open PR sharing a path appears in concurrent with its title, while a nonoverlapping PR is excluded."
+              }
+            ],
+            "source": "CR-D5 specifies parent-field ancestry and generated context and filed discoveries; section 3.1 defines scope, builds-on and concurrent; section 5 assigns ownership.",
+            "statement": "Context and discovered generators derive the promised tracker and GitHub facts while preserving author-owned content."
+          },
+          {
+            "id": "O11",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-C1",
+                  "CR-C4"
+                ],
+                "id": "O11.1",
+                "statement": "The captured two-page campaign produces expected reviewer rows and distinct-id counts, excludes issue comments, and skips the tested invalid or foreign-author envelopes."
+              },
+              {
+                "discharged_by": [
+                  "CR-C2"
+                ],
+                "id": "O11.2",
+                "statement": "The captured findings retain first round, id, claim, latest disposition and an author-reply commit when supplied."
+              },
+              {
+                "discharged_by": [
+                  "CR-C3"
+                ],
+                "id": "O11.3",
+                "statement": "The tested absence of envelopes produces an empty campaign and a confidence warning without mixing None. with other Heads-up entries."
+              },
+              {
+                "discharged_by": [
+                  "CR-C5"
+                ],
+                "id": "O11.4",
+                "statement": "The tested clean, advisory-only, mechanical and halted cases produce the required terminal SHA or warning."
+              },
+              {
+                "discharged_by": [
+                  "CR-C6"
+                ],
+                "id": "O11.5",
+                "statement": "The tested unchanged campaign source produces a byte-identical record on rerun."
+              },
+              {
+                "discharged_by": [],
+                "id": "O11.6",
+                "statement": "Campaign generation includes envelope-bearing reviews beyond two pages."
+              },
+              {
+                "discharged_by": [],
+                "id": "O11.7",
+                "statement": "Terminal-clean judgment calls the canonical review-verdict validator and completeness rule rather than reconstructing them."
+              },
+              {
+                "discharged_by": [],
+                "id": "O11.8",
+                "statement": "Disposition reasons are carried from envelopes into the campaign's rendered findings."
+              },
+              {
+                "discharged_by": [],
+                "id": "O11.9",
+                "statement": "Superseded remains the author's selection and is neither invented nor overwritten by campaign generation."
+              }
+            ],
+            "source": "CR-D7 defines envelope sources, counts, disposition mapping, fix commits, author-chosen Superseded and validator delegation. Sections 3.1 and 3.3 require finding reasons.",
+            "statement": "Campaign generation uses the reviewing App's valid verdict envelopes, preserves their substantive dispositions and delegates terminal-clean judgment."
+          },
+          {
+            "id": "O12",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-P1"
+                ],
+                "id": "O12.1",
+                "statement": "First publication creates revision 1 with marker and folded record, updates the body pointer and records local comment metadata."
+              },
+              {
+                "discharged_by": [
+                  "CR-P2",
+                  "CR-P3"
+                ],
+                "id": "O12.2",
+                "statement": "The tested later and identical-content publications preserve prior comments without editing or deleting them."
+              },
+              {
+                "discharged_by": [
+                  "CR-P4",
+                  "CR-P10"
+                ],
+                "id": "O12.3",
+                "statement": "The tested stale pointer and body-render mismatch fail PR lint, while agreement passes."
+              },
+              {
+                "discharged_by": [
+                  "CR-P5",
+                  "CR-P10"
+                ],
+                "id": "O12.4",
+                "statement": "The tested interleaving, revisions 9 and 10, and tied revisions select the current comment by integer revision and then comment id."
+              },
+              {
+                "discharged_by": [
+                  "CR-P9"
+                ],
+                "id": "O12.5",
+                "statement": "Publication records the PR's live head SHA."
+              },
+              {
+                "discharged_by": [
+                  "CR-P11"
+                ],
+                "id": "O12.6",
+                "statement": "The tested canonical digest ignores key order and the record group and responds to other content changes."
+              },
+              {
+                "discharged_by": [
+                  "CR-P12"
+                ],
+                "id": "O12.7",
+                "statement": "The tested dry run prints the proposed comment and body without GitHub writes."
+              },
+              {
+                "discharged_by": [
+                  "CR-P13"
+                ],
+                "id": "O12.8",
+                "statement": "Slice P's own PR has an observed published record and rendered-body pointer."
+              }
+            ],
+            "source": "CR-D2 specifies revision comments and body pointers; section 5 specifies marker and canonical digest; section 7 requires slice P to publish its own record.",
+            "statement": "Publication maintains marked append-only record history, an identifiable current rendering and canonical digests."
+          },
+          {
+            "id": "O13",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-P6"
+                ],
+                "id": "O13.1",
+                "statement": "The tested oversized record comment and oversized body including Decisions are refused before writes with the size named."
+              },
+              {
+                "discharged_by": [],
+                "id": "O13.2",
+                "statement": "An otherwise valid artifact exactly at the cap remains publishable."
+              }
+            ],
+            "source": "CR-D2: 'Each GitHub comment has the same 65,536-character cap as the body' and the human artifact receives 'the whole budget.'",
+            "statement": "Publication respects each artifact's 65,536-character budget before writing."
+          },
+          {
+            "id": "O14",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-R2",
+                  "CR-P4"
+                ],
+                "id": "O14.1",
+                "statement": "The tested complex block is carried byte-for-byte at its template position; no block produces no Decisions heading, and PR lint compares rendering with the current block."
+              },
+              {
+                "discharged_by": [
+                  "CR-R8"
+                ],
+                "id": "O14.2",
+                "statement": "The tested missing and reversed sentinel cases refuse without output instead of taking the no-block path."
+              }
+            ],
+            "source": "Section 3.1: 'carried byte-for-byte when present; never authored.' CR-D8 repeats preservation on every render.",
+            "statement": "The bot-owned Decisions block is preserved rather than authored or silently discarded."
+          },
+          {
+            "id": "O15",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-P2",
+                  "CR-P7"
+                ],
+                "id": "O15.1",
+                "statement": "Across the checked publication cases, writes are limited to record-comment creation and PR-body editing, with no comment edit, deletion or review write."
+              },
+              {
+                "discharged_by": [],
+                "id": "O15.2",
+                "statement": "Other pipeline commands make no prohibited GitHub writes or edits, apart from the separately specified authorized merge."
+              },
+              {
+                "discharged_by": [],
+                "id": "O15.3",
+                "statement": "Actual record comments and author replies are posted under the author's account."
+              }
+            ],
+            "source": "CR-D8: 'never writes a review comment'; 'never edits a comment it did not post'; permitted writes are record comments and PR body updates; record comments and replies use the author's account.",
+            "statement": "The pipeline respects GitHub write boundaries and account ownership."
+          },
+          {
+            "id": "O16",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-P8"
+                ],
+                "id": "O16.1",
+                "statement": "The checked merge call supplies the newest record's rendered subject and body through the required gh arguments."
+              },
+              {
+                "discharged_by": [
+                  "CR-P8"
+                ],
+                "id": "O16.2",
+                "statement": "The tested missing-record and PR-lint-failure cases refuse before merging."
+              },
+              {
+                "discharged_by": [
+                  "CR-P9"
+                ],
+                "id": "O16.3",
+                "statement": "The tested live-head mismatches against the published record or terminal campaign SHA refuse with the SHAs identified."
+              },
+              {
+                "discharged_by": [],
+                "id": "O16.4",
+                "statement": "The actual resulting squash commit has the rendered subject and body without branch-message concatenation or repeated trailers."
+              }
+            ],
+            "source": "CR-D3 specifies explicit rendered merge messages under COMMIT_MESSAGES; the body is never the squash body. Section 5 records head SHA at publication.",
+            "statement": "An instructed squash merge uses the current record's rendered commit message and refuses stale or invalid publication state."
+          },
+          {
+            "id": "O17",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-W1",
+                  "CR-W3"
+                ],
+                "id": "O17.1",
+                "statement": "Fixture requests expose exactly the schema-marked editable fields, their current text and digests, the record digest and writing checks; filed reasons are excluded."
+              },
+              {
+                "discharged_by": [],
+                "id": "O17.2",
+                "statement": "The editor also receives the complete protected factual record."
+              },
+              {
+                "discharged_by": [],
+                "id": "O17.3",
+                "statement": "The response interface supports a question for a section that cannot be rewritten without inventing a fact."
+              }
+            ],
+            "source": "CR-D6 says the editor receives the whole record, editable fields and writing checks and may return a section question. Section 5 defines x-rewritable fields.",
+            "statement": "The rewrite editor receives factual context and a schema-derived editable interface that permits questions without inventing facts."
+          },
+          {
+            "id": "O18",
+            "kind": "failure",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-W2",
+                  "CR-W3"
+                ],
+                "id": "O18.1",
+                "statement": "The tested stale record digest, stale section digest, malformed response, mixed-order response and nonrewritable field refuse without mutation."
+              },
+              {
+                "discharged_by": [
+                  "CR-W4"
+                ],
+                "id": "O18.2",
+                "statement": "The seeded protected-value kinds are preserved or refused with the value named."
+              },
+              {
+                "discharged_by": [],
+                "id": "O18.3",
+                "statement": "Subject type, component and bracketed id remain unchanged under prose application, including an ordinary component string."
+              }
+            ],
+            "source": "CR-D6 requires refusal of stale, malformed and out-of-allowlist responses and changed protected values; subject type, component and bracketed id are protected.",
+            "statement": "Unsafe rewrite responses are refused without changing the record or its protected values."
+          },
+          {
+            "id": "O19",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-W7"
+                ],
+                "id": "O19.1",
+                "statement": "The editor instruction artifact states the output contract and three semantic prohibitions."
+              },
+              {
+                "discharged_by": [
+                  "CR-W8"
+                ],
+                "id": "O19.2",
+                "statement": "For the four fixtures, the owner records section judgments, writing-check bases and revisions, corrects rejected sections and counts corrections."
+              },
+              {
+                "discharged_by": [],
+                "id": "O19.3",
+                "statement": "Accepted replacements on actual records preserve claim strength, exceptions, deferred work and criterion meaning."
+              }
+            ],
+            "source": "CR-D6 makes meaning the author's check and requires inspection for strengthened claims, dropped exceptions and erased deferred work; criterion obligations are protected.",
+            "statement": "Author acceptance preserves meaning, qualifications, deferred work and criterion obligations."
+          },
+          {
+            "id": "O20",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-W5"
+                ],
+                "id": "O20.1",
+                "statement": "The tested pruned response changes only accepted sections, produces a lint-passing result and records revision and old/new section digests."
+              },
+              {
+                "discharged_by": [
+                  "CR-W6"
+                ],
+                "id": "O20.2",
+                "statement": "Reapplying the tested response is refused without mutation."
+              },
+              {
+                "discharged_by": [
+                  "CR-W9"
+                ],
+                "id": "O20.3",
+                "statement": "The tested fresh second application against the same editing revision is refused."
+              },
+              {
+                "discharged_by": [],
+                "id": "O20.4",
+                "statement": "The workflow does not retry the editor repeatedly before its single application."
+              }
+            ],
+            "source": "CR-D6 requires pruning before application, 'One pass, no retry loop,' and revision history as the audit.",
+            "statement": "Rewrite application follows author selection, leaves an audit and is bounded to one pass."
+          },
+          {
+            "id": "O21",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-W7"
+                ],
+                "id": "O21.1",
+                "statement": "The four recorded fixture runs use Codex with gpt-6-luna at low effort and return structurally valid responses."
+              },
+              {
+                "discharged_by": [],
+                "id": "O21.2",
+                "statement": "Ordinary initial rewrite dispatches use that model and effort until the specified escalation policy changes them."
+              },
+              {
+                "discharged_by": [],
+                "id": "O21.3",
+                "statement": "Slice W begins only after the owner's ruling is recorded on the decision item."
+              }
+            ],
+            "source": "CR-D6 specifies Codex, gpt-6-luna at low effort and the recorded ruling before W starts. Section 7 includes four recorded runs.",
+            "statement": "Rewrite dispatch starts on the specified model and effort and waits for the owner's prerequisite ruling."
+          },
+          {
+            "id": "O22",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-W10"
+                ],
+                "id": "O22.1",
+                "statement": "The tested entry records proposal, author-pruning and application counts, exposing the pruning portion of author intervention."
+              },
+              {
+                "discharged_by": [],
+                "id": "O22.2",
+                "statement": "Each real-PR rewrite entry also records the author's complete correction count, including manual corrections."
+              },
+              {
+                "discharged_by": [],
+                "id": "O22.3",
+                "statement": "The two specified ten-PR comparisons cause the required low-to-medium and subsequent model escalation when improvement is absent."
+              }
+            ],
+            "source": "CR-D6 adopts the author's correction count per PR in each rewrite entry and specifies comparisons between PRs one–five and six–ten, followed by effort and model changes.",
+            "statement": "Real-PR correction measurements are recorded and drive the specified ten-PR escalation policy."
+          },
+          {
+            "id": "O23",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-L9",
+                  "CR-L16"
+                ],
+                "id": "O23.1",
+                "statement": "The suite is discovered and runs with the prescribed restricted PATH; the unshimmed executable sentinel fails."
+              },
+              {
+                "discharged_by": [],
+                "id": "O23.2",
+                "statement": "Suite execution also avoids network access through the interpreter or other routes outside PATH lookup."
+              }
+            ],
+            "source": "Section 6 says content-tests discovers the adjacent test file, work and gh shims replay recorded output, and 'no suite reaches the network.'",
+            "statement": "The skill suite is discovered and uses recorded dependencies without reaching the network."
+          },
+          {
+            "id": "O24",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O24.1",
+                "statement": "The admission gate, verdict placement, container admission record and prerequisite timing are established."
+              }
+            ],
+            "source": "Slice L introduction: 'The admit-request gate runs on the skill before this slice opens,' its verdict is recorded on the slice work item, and the admission record is on the container.",
+            "statement": "Skill admission precedes opening slice L and has the promised tracker records."
+          },
+          {
+            "id": "O25",
+            "kind": "result",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-G1"
+                ],
+                "id": "O25.1",
+                "statement": "Review-panel's dispositions section contains the one-sentence reply-form instruction and its existing suites pass."
+              },
+              {
+                "discharged_by": [
+                  "CR-G2"
+                ],
+                "id": "O25.2",
+                "statement": "The root delivery-contract section contains the checked change-record, lint and merge names and passes doc-lint."
+              },
+              {
+                "discharged_by": [],
+                "id": "O25.3",
+                "statement": "The root pointer is an operative sentence connecting the record to PR-body sourcing, lint to pre-creation checking and merge to instructed merges."
+              }
+            ],
+            "source": "Scope requires one sentence each in review-panel and root AGENTS.md; CR-D3 puts merge in the delivery contract; CR-D9 identifies the pointers as the initial enforcement.",
+            "statement": "The two wiring pointers establish the new artifact and delivery workflow."
+          },
+          {
+            "id": "O26",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [
+                  "CR-G3"
+                ],
+                "id": "O26.1",
+                "statement": "Observed settings are PR_TITLE and BLANK after five consecutive qualifying first-parent squash commits with parseable Work-item trailers."
+              },
+              {
+                "discharged_by": [],
+                "id": "O26.2",
+                "statement": "The operative merge instruction lands before the settings change."
+              },
+              {
+                "discharged_by": [],
+                "id": "O26.3",
+                "statement": "The settings change is the last act after every other slice is complete."
+              }
+            ],
+            "source": "CR-D3 requires five qualifying merges, the delivery-contract update first and the setting change as the whole spec's last act. Section 7 places G last.",
+            "statement": "The squash-setting transition happens only after its evidence and rollout prerequisites."
+          },
+          {
+            "id": "O27",
+            "kind": "guarantee",
+            "parts": [
+              {
+                "discharged_by": [],
+                "id": "O27.1",
+                "statement": "Each of the seven named slices is delivered as its own PR."
+              },
+              {
+                "discharged_by": [],
+                "id": "O27.2",
+                "statement": "Owner verification stays within the stated surface and command budget and includes X's live comparison."
+              }
+            ],
+            "source": "Section 6: 'Seven slices, each one pull request,' vetted by reading one script, schema or golden set and running one command. Section 7 assigns X one live run against the spec's item.",
+            "statement": "Delivery retains the promised incremental slices and bounded owner-verification work."
+          }
+        ]
+      }
+    },
+    {
+      "lens": "set-consistency",
+      "report": "objections"
+    },
+    {
+      "lens": "what-if",
+      "report": "objections"
+    }
+  ],
+  "objections": [
+    {
+      "ground": {
+        "reason": "Section 6 promises that 'no suite reaches the network'. CR-L16 checks a restricted PATH and a deliberately unshimmed call. Those checks establish executable lookup behaviour, but cannot detect network requests made directly by the interpreter.",
+        "rule": "observable-obligation"
+      },
+      "id": "behavioural-outcome-1",
+      "lens": "behavioural-outcome",
+      "objection": "The suite can pass the isolation check while reaching the network.",
+      "scenario": {
+        "expect": "The suite and sentinel checks pass, while the direct network request occurs.",
+        "given": "A suite uses the required PATH and shims, but also makes a successful HTTP request through the interpreter.",
+        "when": "CR-L16's runner executes the suite and its deliberately unshimmed sentinel call."
+      },
+      "target_ac": "CR-L16"
+    },
+    {
+      "ground": {
+        "reason": "CR-P8 promises that merge, given a PR number, produces that PR's merge commit with the rendered message. Its check records the merge call's subject and body-file content. It names no assertion on the target PR or resulting commit.",
+        "rule": "verification-contract"
+      },
+      "id": "behavioural-outcome-2",
+      "lens": "behavioural-outcome",
+      "objection": "Correct message arguments can pass the check while the command merges a different PR.",
+      "scenario": {
+        "expect": "The subject and body-file assertions pass, while PR A remains unmerged and PR B receives A's message.",
+        "given": "A merge implementation reads PR A's newest record and supplies its rendered subject and body, but passes PR B to gh pr merge.",
+        "when": "CR-P8's shim records and checks the subject and body-file content."
+      },
+      "target_ac": "CR-P8"
+    },
+    {
+      "ground": {
+        "reason": "CR-P12 promises that publish --dry-run prints the record comment and PR body without writing to GitHub. Its named check requires an empty shim call log, which does not establish that either preview was printed.",
+        "rule": "verification-contract"
+      },
+      "id": "behavioural-outcome-3",
+      "lens": "behavioural-outcome",
+      "objection": "A silent dry run can pass while providing no preview.",
+      "scenario": {
+        "expect": "The empty-call-log check passes, while stdout contains neither the record comment nor the rendered body.",
+        "given": "A publish implementation handles --dry-run by returning successfully before generating or printing anything.",
+        "when": "CR-P12's suite runs the dry run and checks the shim's call log."
+      },
+      "target_ac": "CR-P12"
+    },
+    {
+      "ground": {
+        "reason": "CR-D6 promises the author's correction count per PR in each rewrite entry. CR-W10 claims its proposed, pruned and applied counts make that correction series readable. Its check asserts only proposed 3, pruned 1 and applied 2. It defines no correspondence between those counters and corrections to proposal text.",
+        "rule": "verification-contract"
+      },
+      "id": "behavioural-outcome-4",
+      "lens": "behavioural-outcome",
+      "objection": "The recorded counters can pass without preserving the correction count needed for the model-effort comparison.",
+      "scenario": {
+        "expect": "The counters pass as 3, 1 and 2, while the comments cannot distinguish PRs requiring different numbers of author corrections.",
+        "given": "An author prunes one of three replacements and corrects the wording of the two retained replacements before applying them. The record stores only proposed, pruned and applied counts.",
+        "when": "CR-W10's counter check runs and the correction series is read from the published record comments."
+      },
+      "target_ac": "CR-W10"
+    },
+    {
+      "ground": {
+        "reason": "CR-G2 requires the delivery contract to prescribe the record as the body source, lint before gh pr create, and merge for instructed merges. Its test asserts only that the three names are present, followed by doc-lint. Those observations cannot distinguish the required instructions from instructions prescribing different behaviour.",
+        "rule": "verification-contract"
+      },
+      "id": "behavioural-outcome-5",
+      "lens": "behavioural-outcome",
+      "objection": "A delivery contract can pass the keyword check while directing authors to bypass the required workflow.",
+      "scenario": {
+        "expect": "The name-presence test and doc-lint pass, while the contract does not prescribe the required source, ordering or merge command.",
+        "given": "A contract retains all three names and valid references, but calls the change record optional, places lint after gh pr create, and mentions merge as an unused alternative.",
+        "when": "CR-G2's test checks for the three names and doc-lint checks the references."
+      },
+      "target_ac": "CR-G2"
+    },
+    {
+      "ground": {
+        "reason": "CR-L1 checks one incorrect nested value type and one unknown nested field. It does not check the remaining nested validation cases.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-1",
+      "lens": "obligation-reduction",
+      "objection": "O1.4 remains uncovered. Section 4, CR-D1 promises a record 'validated by a JSON Schema'; section 5 defines typed fields throughout the record.",
+      "obligation": "O1.4",
+      "scenario": {
+        "expect": "All criteria pass, but lint accepts a malformed nested value.",
+        "given": "The validator handles the tested gate exit-status error but accepts an object as a reply's change text.",
+        "when": "An author lints a record containing that object."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Golden outputs establish rendering for the supplied fixtures. They do not establish that other records supply every artifact's content.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-2",
+      "lens": "obligation-reduction",
+      "objection": "O1.5 remains uncovered. CR-D1 says the record 'holds everything the three artifacts say' and that each artifact is rendered from it.",
+      "obligation": "O1.5",
+      "scenario": {
+        "expect": "All criteria pass, but the commit message contains cached fixture prose rather than the new record's prose.",
+        "given": "The renderer reproduces every checked fixture but uses cached commit text for an unfamiliar work item.",
+        "when": "The author renders a new record."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The checks validate separate prose fields and protected tokens. No check compares the substantive claims made by the PR body and commit message.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-3",
+      "lens": "obligation-reduction",
+      "objection": "O1.6 remains uncovered. CR-D1 promises that 'the commit message and the body cannot drift apart.'",
+      "obligation": "O1.6",
+      "scenario": {
+        "expect": "All criteria pass, but the two artifacts make contradictory claims.",
+        "given": "A schema-valid record says in its summary that a command refuses missing input and says in commit.change that it supplies a default.",
+        "when": "The record is linted and rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L10 checks criteria-group requirements for these types. CR-R1 exercises complete bodies only for feat, docs and chore.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-4",
+      "lens": "obligation-reduction",
+      "objection": "O2.4 remains uncovered. Section 3.1 says a 'fix, refactor, perf or test PR carries every section.'",
+      "obligation": "O2.4",
+      "scenario": {
+        "expect": "All criteria pass, but the fix body omits Where this fits and Review campaign.",
+        "given": "The renderer implements the checked feat, docs and chore branches and sends fix records through a shortened fallback.",
+        "when": "A valid fix record is rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Neither the type-specific lint checks nor the renderer fixtures exercise these four aliases.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-5",
+      "lens": "obligation-reduction",
+      "objection": "O2.5 remains uncovered. Section 3.1 says 'build, ci, style and revert take the chore variant.'",
+      "obligation": "O2.5",
+      "scenario": {
+        "expect": "All criteria pass, but the build record is rejected for lacking Criteria or rendered with the full feat layout.",
+        "given": "The implementation recognizes chore directly but does not normalize build, ci, style or revert.",
+        "when": "An author processes a build record."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L10 checks the spec criteria field's form. No rendering check exercises the spec variant or its distinct blast radius.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-6",
+      "lens": "obligation-reduction",
+      "objection": "O2.6 remains uncovered. Section 3.1 promises that a spec PR's blast radius is 'the items the spec will mint' and its Criteria section is one attack-status line.",
+      "obligation": "O2.6",
+      "scenario": {
+        "expect": "All criteria pass, but the body lacks the minted-item blast radius and renders Criteria as a normal table.",
+        "given": "A valid spec record contains the required attack-status line and describes several implementation continuations.",
+        "when": "The renderer uses its ordinary feature template for that record."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L4 requires at least one risk row. The docs and chore fixtures do not test a record containing multiple risk rows.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-7",
+      "lens": "obligation-reduction",
+      "objection": "O2.7 remains uncovered. Section 3.1 requires a docs or chore PR to carry 'a one-row Risk table.'",
+      "obligation": "O2.7",
+      "scenario": {
+        "expect": "All criteria pass, but the docs body contains a three-row Risk table.",
+        "given": "Lint accepts a docs record with three risk rows, and the checked docs fixture contains only one.",
+        "when": "The three-row record is rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The golden files establish the absence of machine content in those outputs. No check rejects or removes machine content from other body inputs.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-8",
+      "lens": "obligation-reduction",
+      "objection": "O2.8 remains uncovered. Section 3.1 says the body 'carries no JSON and no fold of machine content.'",
+      "obligation": "O2.8",
+      "scenario": {
+        "expect": "All criteria pass, but the human PR body contains a collapsed JSON record.",
+        "given": "An otherwise valid record includes a machine-content fold in design_notes, which is not a commit prose field.",
+        "when": "The renderer inserts that field into the body."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L12 checks nonempty sections and their combined word count. It does not check either section's sentence count.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-9",
+      "lens": "obligation-reduction",
+      "objection": "O3.5 remains uncovered. Section 3.2 specifies 'Two or three sentences' for Why and 'Three or four sentences' for Change.",
+      "obligation": "O3.5",
+      "scenario": {
+        "expect": "All criteria pass, but Why has one sentence and Change has eight.",
+        "given": "A commit record has all three prose sections and a combined length of 110 words.",
+        "when": "The record is linted and rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L12 measures why, change and verification in total. CR-R3 adds a human work-item line and labels without checking the resulting body's word count.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-10",
+      "lens": "obligation-reduction",
+      "objection": "O3.6 remains uncovered. Section 3.2 says 'The body is 80 to 150 words.'",
+      "obligation": "O3.6",
+      "scenario": {
+        "expect": "All criteria pass, but the rendered commit body exceeds 150 words.",
+        "given": "The three commit prose fields total 150 words, and the work-item gloss adds another sentence.",
+        "when": "The renderer adds the required first body line and section labels."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L12 checks admission of a trivial record. CR-R3 exercises outputs containing the nontrivial body and does not check the trivial rendering branch.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-11",
+      "lens": "obligation-reduction",
+      "objection": "O3.7 remains uncovered. Section 3.2 says 'A trivial change may omit the body; the trailers stay.'",
+      "obligation": "O3.7",
+      "scenario": {
+        "expect": "All criteria pass, but the trivial commit output omits its attribution and session trailers.",
+        "given": "A record has commit.trivial with a reason and no prose body.",
+        "when": "The renderer takes its unchecked trivial branch."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L14 requires an entry for a fixed finding. It checks neither uniqueness nor changed findings recorded as Superseded.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-12",
+      "lens": "obligation-reduction",
+      "objection": "O4.4 remains uncovered. Section 3.3 requires 'One reply' on each finding that changed code or prose.",
+      "obligation": "O4.4",
+      "scenario": {
+        "expect": "All criteria pass, but one fixed finding gets duplicate replies and a prose-changing superseded finding gets none.",
+        "given": "The record contains two reply entries for a fixed finding and no entry for a finding superseded by a design rewrite.",
+        "when": "The author lints and uses the reply output."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Reply word counts and line prefixes do not constrain the number of sentences in Change.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-13",
+      "lens": "obligation-reduction",
+      "objection": "O4.5 remains uncovered. Section 3.3 requires Change to explain what is different 'in one or two sentences.'",
+      "obligation": "O4.5",
+      "scenario": {
+        "expect": "All criteria pass, but the Change line contains five sentences.",
+        "given": "A reply has an allowed outcome, all required fields and 65 words.",
+        "when": "It is linted and rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The outcome and format checks do not inspect the target's existence or the evidence supporting the chosen outcome.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-14",
+      "lens": "obligation-reduction",
+      "objection": "O4.6 remains uncovered. Section 3.3 says a Superseded reply 'shows it is gone' and a Rejected reply 'gives evidence, never a bare disagreement.'",
+      "obligation": "O4.6",
+      "scenario": {
+        "expect": "All criteria pass, but a Superseded reply claims removal while the target remains, or a Rejected reply supplies only disagreement.",
+        "given": "Reply prose meets the word range and structural rules but supplies no evidence for its outcome.",
+        "when": "The reply is rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L14 allows rebutted findings to have no reply; it does not check that a rejection reply is used only after a reviewer asks.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-15",
+      "lens": "obligation-reduction",
+      "objection": "O4.7 remains uncovered. Section 3.3 says a rejection 'gets no reply unless a reviewer asks on the thread.'",
+      "obligation": "O4.7",
+      "scenario": {
+        "expect": "All criteria pass, but unsolicited rejection replies appear on the PR.",
+        "given": "The author routinely posts rendered Rejected replies, and no reviewer has requested them.",
+        "when": "The author dispositions a rejected finding."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L13 checks for a tracker-id token. It does not establish that the named item inherits the finding.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-16",
+      "lens": "obligation-reduction",
+      "objection": "O4.8 remains uncovered. Section 3.3 says 'A deferral names the item that inherits the finding.'",
+      "obligation": "O4.8",
+      "scenario": {
+        "expect": "All criteria pass, but the reply names an unrelated item and the finding has no inheriting item.",
+        "given": "A Deferred reply contains a glossed tracker id belonging to unrelated work.",
+        "when": "The reply is linted and rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L2 checks selected identifier shapes at first use in the record. It does not check first use separately in each rendered artifact or identifiers introduced by generators.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-17",
+      "lens": "obligation-reduction",
+      "objection": "O5.4 remains uncovered. Writing check 1 says every work item, criterion, decision, section and PR number 'carries a gloss on first use.'",
+      "obligation": "O5.4",
+      "scenario": {
+        "expect": "All criteria pass, but a reply's first mention of an identifier is unexplained.",
+        "given": "An identifier is glossed in summary and used bare in a reply, so its record-level first use passes lint.",
+        "when": "A reader opens only that reply."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Identifier gloss checks do not inspect house terminology. CR-W8 permits each fixture judgment to rest on a selected writing check.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-18",
+      "lens": "obligation-reduction",
+      "objection": "O5.5 remains uncovered. Writing check 1 says every house term is 'defined where it first appears or replaced with a common word.'",
+      "obligation": "O5.5",
+      "scenario": {
+        "expect": "All criteria pass, but a new PR uses unexplained house terminology.",
+        "given": "The prose contains terms such as terminal-clean and admission record without definitions, while all identifier tokens are glossed.",
+        "when": "The body is linted and rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L6 counts summary sentences. No check establishes their order or excludes narrative history on new records.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-19",
+      "lens": "obligation-reduction",
+      "objection": "O5.6 remains uncovered. Writing check 2 requires 'Problem, then change, then what remains' and 'No history of how the text got here.'",
+      "obligation": "O5.6",
+      "scenario": {
+        "expect": "All criteria pass, but the summary narrates drafting history and omits the remaining work.",
+        "given": "A four-sentence summary begins with implementation chronology and ends with another historical detail.",
+        "when": "The record is linted and rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Neither word counts nor sentence counts establish the number of clauses in a sentence.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-20",
+      "lens": "obligation-reduction",
+      "objection": "O5.7 remains uncovered. Writing check 3 requires 'One clause per sentence.'",
+      "obligation": "O5.7",
+      "scenario": {
+        "expect": "All criteria pass, but the prose contains sentences with several clauses.",
+        "given": "A new summary meets its sentence-count limits while joining multiple claims and caveats in each sentence.",
+        "when": "The author lints and renders it."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Protecting number tokens during rewriting does not establish that their significance is explained.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-21",
+      "lens": "obligation-reduction",
+      "objection": "O5.8 remains uncovered. Writing check 4 requires 'Say the number, then what it means.'",
+      "obligation": "O5.8",
+      "scenario": {
+        "expect": "All criteria pass, but an unexplained count leaves the reader unable to interpret the claim.",
+        "given": "A change description states a count without explaining what was counted or why it matters.",
+        "when": "The record is rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No check assesses this writing requirement on ordinary authored records.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-22",
+      "lens": "obligation-reduction",
+      "objection": "O5.9 remains uncovered. Writing check 5 requires 'Verbs do the work.'",
+      "obligation": "O5.9",
+      "scenario": {
+        "expect": "All criteria pass, but Changes consists of nominalized phrases that obscure the action.",
+        "given": "The prose uses phrases such as 'the implementation of the provision of validation' while satisfying structural limits.",
+        "when": "The author lints and renders the record."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L7 recognizes listed phrases in rewritable fields. The document prohibits commentary more generally in the specified prose regions.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-23",
+      "lens": "obligation-reduction",
+      "objection": "O5.10 remains uncovered. Writing check 6 says 'No commentary about the document.'",
+      "obligation": "O5.10",
+      "scenario": {
+        "expect": "All criteria pass, but the prose describes the document instead of the change.",
+        "given": "A prose field uses an unlisted phrase such as 'The following paragraphs provide an account of the implementation.'",
+        "when": "Lint checks its phrase list."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The checks require a Heads-up list but do not establish that caveats elsewhere were moved into it.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-24",
+      "lens": "obligation-reduction",
+      "objection": "O5.11 remains uncovered. Writing check 7 says 'A caveat is a Heads-up row, not a clause.'",
+      "obligation": "O5.11",
+      "scenario": {
+        "expect": "All criteria pass, but a limitation is buried in Changes while Heads-up says None.",
+        "given": "A record places a qualifying exception inside a change sentence and has an explicit None. Heads-up entry.",
+        "when": "The record is linted and rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L10 conditions diagram requirements on an author-supplied flag. No check establishes that the flag matches the change's actual reach.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-25",
+      "lens": "obligation-reduction",
+      "objection": "O6.2 remains uncovered. Section 3.1 requires diagrams 'when the change reaches outside its own package.'",
+      "obligation": "O6.2",
+      "scenario": {
+        "expect": "All criteria pass, but a change affecting another package is published without diagrams.",
+        "given": "An otherwise valid feat record falsely sets risk.reaches_outside_package to false.",
+        "when": "The record is linted and rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Checking for two sources does not establish their represented reach, impact labels or changed task steps.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-26",
+      "lens": "obligation-reduction",
+      "objection": "O6.3 remains uncovered. Section 3.1 requires a reach graph with edges 'labelled by kind of impact' and an affected task flow 'with the changed steps marked.'",
+      "obligation": "O6.3",
+      "scenario": {
+        "expect": "All criteria pass, but the diagrams omit an affected consumer and mark no changed steps.",
+        "given": "A record contains two syntactically acceptable Mermaid strings and a true reach flag.",
+        "when": "The body is rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L5 checks the PR reference and a nonempty reason. It does not check the required content of an in-flight row.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-27",
+      "lens": "obligation-reduction",
+      "objection": "O7.3 remains uncovered. Section 3.1 says an in-flight row's 'what it is' states 'what this PR told the other PR.'",
+      "obligation": "O7.3",
+      "scenario": {
+        "expect": "All criteria pass, but the row only describes the other PR and records no communication from this PR.",
+        "given": "An in-flight row has a valid PR reference and nonempty reason.",
+        "when": "The record is linted and rendered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L9 observes staging and suite discovery. It does not observe deployment into the tools' live configuration directories.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-28",
+      "lens": "obligation-reduction",
+      "objection": "O8.2 remains uncovered. CR-D4 says the skill follows agents 'to every tool'; section 7 says the wiring points at a skill that 'must already be deployed.'",
+      "obligation": "O8.2",
+      "scenario": {
+        "expect": "All criteria pass, but an active tool cannot load the skill when the wiring lands.",
+        "given": "All staged trees contain the skill, but its live deployment has not occurred.",
+        "when": "The wiring slice is delivered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The staging listing establishes template-file presence. Golden rendering checks do not establish those reference files' content.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-29",
+      "lens": "obligation-reduction",
+      "objection": "O8.3 remains uncovered. Section 3 says 'The three templates below are the contract' and 'The skill ships them as reference files.'",
+      "obligation": "O8.3",
+      "scenario": {
+        "expect": "All criteria pass, but the shipped reference templates describe an obsolete artifact form.",
+        "given": "The renderer produces the correct golden outputs while the staged template files contain different headings and trailer instructions.",
+        "when": "An agent reads the skill's reference templates."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The criteria check a script's presence and command outputs, but do not check the promised consolidation of the implementation.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-30",
+      "lens": "obligation-reduction",
+      "objection": "O8.4 remains uncovered. CR-D1 says the artifacts are rendered 'by one script'; CR-D4 says 'The one piece of code lives beside the templates it serves.'",
+      "obligation": "O8.4",
+      "scenario": {
+        "expect": "All criteria pass, but separate implementations govern the three artifacts.",
+        "given": "A staged wrapper delegates body, commit and reply rendering to separate scripts that reproduce all tested outputs.",
+        "when": "The skill is delivered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Digest agreement establishes that content matches its stamp. It does not establish that the designated generator produced the content.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-31",
+      "lens": "obligation-reduction",
+      "objection": "O9.2 remains uncovered. CR-D5 says generated sections are written from tracker and GitHub sources, 'never typed by the agent.'",
+      "obligation": "O9.2",
+      "scenario": {
+        "expect": "All criteria pass, but generated ancestry and campaign data are manually invented.",
+        "given": "An author supplies generated-group content and recomputes matching digests without running the generators.",
+        "when": "Lint checks the stamps."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-C1 exercises two review pages. That check also passes an implementation that always stops after its second page.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-32",
+      "lens": "obligation-reduction",
+      "objection": "O11.6 remains uncovered. CR-D7 computes campaign data from the verdict envelopes of 'each submitted pull request review.'",
+      "obligation": "O11.6",
+      "scenario": {
+        "expect": "All criteria pass, but the third page's rounds and findings are missing.",
+        "given": "A PR has envelope-bearing reviews on three pages, and the generator reads at most two.",
+        "when": "Campaign generation runs."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The fixtures exercise selected validation outcomes. No check observes delegation to the canonical validator instead of a local reconstruction.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-33",
+      "lens": "obligation-reduction",
+      "objection": "O11.7 remains uncovered. CR-D7 says 'the script calls that validator and re-derives nothing.'",
+      "obligation": "O11.7",
+      "scenario": {
+        "expect": "All criteria pass, but a round rejected by the canonical completeness rule supplies the terminal SHA.",
+        "given": "The generator locally approximates completeness and matches every checked fixture, but misses another completeness requirement.",
+        "when": "It processes a round violating that requirement."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-C2 checks claim, latest disposition and commit. It does not check extraction of the disposition reason.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-34",
+      "lens": "obligation-reduction",
+      "objection": "O11.8 remains uncovered. Section 3.3 says the campaign table renders dispositions 'with their reasons'; section 3.1 includes a reason column.",
+      "obligation": "O11.8",
+      "scenario": {
+        "expect": "All criteria pass, but a rejection's reason is absent from the generated campaign.",
+        "given": "A verdict envelope contains a rejection and its evidence-based reason, while the generator extracts only the fields asserted by CR-C2.",
+        "when": "Campaign generation and rendering run."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-R5 can render Superseded, but no campaign check establishes preservation of the author's selection or prevents automatic selection.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-35",
+      "lens": "obligation-reduction",
+      "objection": "O11.9 remains uncovered. CR-D7 says 'Superseded is chosen by the author in the record and never by the script.'",
+      "obligation": "O11.9",
+      "scenario": {
+        "expect": "All criteria pass, but campaign generation overwrites the author's Superseded selection.",
+        "given": "The author has marked a finding Superseded, and the generator unconditionally replaces it with the envelope's fixed disposition.",
+        "when": "Campaign generation runs again."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-P6 checks oversized inputs. It does not check acceptance at the stated capacity.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-36",
+      "lens": "obligation-reduction",
+      "objection": "O13.2 remains uncovered. CR-D2 gives each artifact a '65,536-character cap' and says the human artifact receives the whole budget.",
+      "obligation": "O13.2",
+      "scenario": {
+        "expect": "All criteria pass, but a valid artifact exactly at the cap is refused.",
+        "given": "The size guard rejects lengths greater than or equal to 65,536, and all passing fixtures are shorter.",
+        "when": "Publish receives a body exactly 65,536 characters long."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-P7 inspects publish's call logs. It does not constrain writes made by the other subcommands.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-37",
+      "lens": "obligation-reduction",
+      "objection": "O15.2 remains uncovered. CR-D8 says the pipeline 'never writes a review comment' and limits its GitHub writes to record publication and body setting, apart from the separately specified merge.",
+      "obligation": "O15.2",
+      "scenario": {
+        "expect": "All criteria pass, but campaign refresh posts a review comment.",
+        "given": "Publish obeys its checked write boundary, while campaign has an additional untested notification write.",
+        "when": "Campaign refresh runs on a PR."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Recording an issue-comment creation call does not establish the authenticated account under which GitHub executes it.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-38",
+      "lens": "obligation-reduction",
+      "objection": "O15.3 remains uncovered. CR-D8 says 'The record comment and the replies post from the author's account.'",
+      "obligation": "O15.3",
+      "scenario": {
+        "expect": "All criteria pass, but the record comment is attributed to a bot account.",
+        "given": "The CLI is authenticated as a bot, and all shim-based publication checks succeed.",
+        "when": "The author invokes publish."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-P8 observes command arguments and a body file. CR-G3 observes only a Work-item trailer in real commits, not equality with the rendered message.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-39",
+      "lens": "obligation-reduction",
+      "objection": "O16.4 remains uncovered. CR-D3 promises that the pipeline 'produces clean merge commits under the current COMMIT_MESSAGES setting.'",
+      "obligation": "O16.4",
+      "scenario": {
+        "expect": "All criteria pass, but a resulting squash commit contains extra branch-message text or repeated attribution trailers.",
+        "given": "Shim calls supply the expected subject and body, and the five observed commits contain Work-item trailers, but no check compares their complete messages with their records.",
+        "when": "The resulting squash commit on main is inspected."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-W1 checks editable sections, digests and writing checks. It does not check inclusion of the protected portions of the record.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-40",
+      "lens": "obligation-reduction",
+      "objection": "O17.2 remains uncovered. CR-D6 says the editor 'receives the whole record.'",
+      "obligation": "O17.2",
+      "scenario": {
+        "expect": "All criteria pass, but the editor receives no verification facts or campaign context.",
+        "given": "Extract-prose emits exactly the editable fields and required digests, omitting the rest of the record.",
+        "when": "The rewrite request is dispatched."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No response fixture or application check exercises the permitted question form.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-41",
+      "lens": "obligation-reduction",
+      "objection": "O17.3 remains uncovered. CR-D6 allows the editor to 'return a question for a section it cannot rewrite without inventing a fact.'",
+      "obligation": "O17.3",
+      "scenario": {
+        "expect": "All criteria pass, but the valid question is rejected as a malformed response.",
+        "given": "The response schema accepts only replacement entries, and the four model fixtures contain no questions.",
+        "when": "The editor returns a section question instead of inventing a fact."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-W4's seeded token kinds do not explicitly check an ordinary component string. Lint can accept a changed component because both values are structurally valid.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-42",
+      "lens": "obligation-reduction",
+      "objection": "O18.3 remains uncovered. CR-D6 says the commit subject's 'type, component and bracketed id are not' editable.",
+      "obligation": "O18.3",
+      "scenario": {
+        "expect": "All criteria pass, but applying prose changes the subject's component.",
+        "given": "A replacement preserves feat and the bracketed tracker id but changes the plain component from installer to review-panel.",
+        "when": "Apply-prose accepts the structurally valid replacement and lint accepts the resulting subject."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-W7 checks instruction text and structural validity. CR-W8 judges fixture prose using writing checks. Neither establishes the three semantic safeguards on actual accepted replacements.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-43",
+      "lens": "obligation-reduction",
+      "objection": "O19.3 remains uncovered. CR-D6 requires the author to check for 'a strengthened claim, a dropped exception or erased deferred work'; it also protects criterion obligations.",
+      "obligation": "O19.3",
+      "scenario": {
+        "expect": "All criteria pass, but accepted prose strengthens the evidence claim and removes an exception.",
+        "given": "A replacement keeps all protected tokens but changes 'the gate reported exit 0 for this fixture' to 'the change is verified' and deletes an unnumbered qualification.",
+        "when": "The author accepts the replacement after checking its writing style."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-W9 limits applications. It does not count editor dispatches before the author applies a response.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-44",
+      "lens": "obligation-reduction",
+      "objection": "O20.4 remains uncovered. CR-D6 says 'One pass, no retry loop.'",
+      "obligation": "O20.4",
+      "scenario": {
+        "expect": "All criteria pass, but the author runs a repeated editor loop.",
+        "given": "The author dispatches five rewrite attempts against one unchanged revision and applies only the last.",
+        "when": "The rewrite workflow runs."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "Four recorded fixture runs establish their model and effort. No check observes the dispatch configuration used for ordinary PRs.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-45",
+      "lens": "obligation-reduction",
+      "objection": "O21.2 remains uncovered. CR-D6 specifies 'a Codex dispatch, starting on gpt-6-luna at low effort.'",
+      "obligation": "O21.2",
+      "scenario": {
+        "expect": "All criteria pass, but the first real PR dispatch uses a different model or effort.",
+        "given": "The four recorded evaluations use the required settings, while the production dispatch configuration uses another default.",
+        "when": "The author runs the rewrite pass on the first real PR."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-W7's check records four runs. It does not require evidence of the owner's ruling or establish that slice W started after it.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-46",
+      "lens": "obligation-reduction",
+      "objection": "O21.3 remains uncovered. CR-D6 says 'slice W does not start until' the owner's ruling is recorded on the decision item.",
+      "obligation": "O21.3",
+      "scenario": {
+        "expect": "All criteria pass, but slice W began before the required ruling.",
+        "given": "The implementation and evaluations are completed first, and the decision item receives a ruling afterward.",
+        "when": "The completed slice is checked against its criteria."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-W10 records proposed, pruned and applied counts. CR-W8 records fixture corrections in an evidence row. Neither records all author corrections per real PR in each rewrite entry.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-47",
+      "lens": "obligation-reduction",
+      "objection": "O22.2 remains uncovered. CR-D6 adopts 'the author's correction count per PR, which each rewrite entry records.'",
+      "obligation": "O22.2",
+      "scenario": {
+        "expect": "All criteria pass, but the record omits the author's manual corrections.",
+        "given": "An author applies two proposals and then makes six manual prose corrections; the entry stores only proposed, pruned and applied counts.",
+        "when": "The correction series is read from record comments."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No criterion evaluates either ten-PR comparison or observes the resulting model or effort transition.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-48",
+      "lens": "obligation-reduction",
+      "objection": "O22.3 remains uncovered. CR-D6 requires a first-ten-PR comparison, a step to medium when corrections do not improve, and the next comparison's step to gpt-6.1-sol.",
+      "obligation": "O22.3",
+      "scenario": {
+        "expect": "All criteria pass, but the rewrite policy remains at low effort despite the specified escalation condition.",
+        "given": "The correction mean for PRs six to ten is at least the mean for PRs one to five.",
+        "when": "The eleventh real PR starts its rewrite pass."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-L16 prevents unshimmed executable lookup through PATH. It does not prevent network access through the interpreter or an absolute executable path.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-49",
+      "lens": "obligation-reduction",
+      "objection": "O23.2 remains uncovered. Section 6 promises 'no suite reaches the network.'",
+      "obligation": "O23.2",
+      "scenario": {
+        "expect": "All criteria pass, but a suite contacts GitHub directly.",
+        "given": "The runner uses the required restricted PATH, while a test imports an HTTP client and contacts a live endpoint.",
+        "when": "Content-tests runs."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No criterion observes the admission verdict, its tracker location or its timing relative to opening slice L.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-50",
+      "lens": "obligation-reduction",
+      "objection": "O24.1 remains uncovered. Slice L's introduction requires the admit-request gate before the slice opens and its verdict on the slice's work item.",
+      "obligation": "O24.1",
+      "scenario": {
+        "expect": "All criteria pass, but the skill ships without the required admission verdict.",
+        "given": "The skill has mechanically acceptable front matter and passes content-lint, but the admission gate was never run or recorded.",
+        "when": "Slice L is delivered."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-G2 asserts that three names occur in the delivery-contract section. It does not assert their operative relationship or the promised one-sentence pointer.",
+        "rule": "sufficiency"
+      },
+      "id": "obligation-reduction-51",
+      "lens": "obligation-reduction",
+      "objection": "O25.3 remains uncovered. Scope requires a root pointer; CR-D3 says the merge command is 'written into the delivery contract first'; CR-D9 makes the pointers the initial enforcement.",
+      "obligation": "O25.3",
+      "scenario": {
+        "expect": "All criteria pass, but the delivery contract does not direct authors to use the record, lint before PR creation, or use the merge subcommand.",
+        "given": "The section mentions change record, lint and merge in a nonoperative note spread across several sentences.",
+        "when": "CR-G2's name-presence test and doc-lint run."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-G3 dates the setting change after five merges. It does not date the delivery-contract update before that change.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-52",
+      "lens": "obligation-reduction",
+      "objection": "O26.2 remains uncovered. CR-D3 says 'the merge command is written into the delivery contract first.'",
+      "obligation": "O26.2",
+      "scenario": {
+        "expect": "All criteria pass, but BLANK becomes live before sessions receive the delivery instruction.",
+        "given": "Five qualifying merges have occurred, and the owner flips the settings before the root contract update lands.",
+        "when": "The contract update lands later and the final evidence is checked."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The settings check establishes the five-merge condition, but not completion of the remaining slices before the flip.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-53",
+      "lens": "obligation-reduction",
+      "objection": "O26.3 remains uncovered. CR-D3 says the squash settings change 'only as the last act of the whole spec'; section 7 places G last.",
+      "obligation": "O26.3",
+      "scenario": {
+        "expect": "All criteria pass eventually, but the repository setting changes before the whole spec is complete.",
+        "given": "P and five qualifying merges are complete while W remains unfinished.",
+        "when": "The owner flips the settings, then finishes W afterward."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "The criteria check outputs and evidence, not the number or boundaries of delivery PRs.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-54",
+      "lens": "obligation-reduction",
+      "objection": "O27.1 remains uncovered. Section 6 promises 'Seven slices, each one pull request.'",
+      "obligation": "O27.1",
+      "scenario": {
+        "expect": "All criteria pass, but the work is delivered as one combined PR.",
+        "given": "A single PR implements all seven slices, including P's self-publication and the required evidence.",
+        "when": "The complete criterion set is evaluated."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "No criterion checks the promised review surface or requires the live context comparison described for the owner.",
+        "rule": "coverage"
+      },
+      "id": "obligation-reduction-55",
+      "lens": "obligation-reduction",
+      "objection": "O27.2 remains uncovered. Section 6 limits owner vetting to one script, schema or golden set and one command; section 7 assigns X 'one live run against this spec's own item.'",
+      "obligation": "O27.2",
+      "scenario": {
+        "expect": "All criteria pass, but owner verification requires several separate programs and no live tracker comparison is performed.",
+        "given": "The implementation passes the replay suites while distributing verification across multiple commands.",
+        "when": "The owner vets and accepts slice X using only recorded fixtures."
+      },
+      "target_ac": "none"
+    },
+    {
+      "ground": {
+        "reason": "CR-W5 requires every applied response to bump the record's revision, so after a successful pass the latest rewrite entry names the base revision, one behind the current one. CR-W9's refusal condition, which fires only when the latest entry names the current revision, can then never hold, yet its own check requires the second application to be refused. The rule statement, the bump and the check cannot all hold together.",
+        "rule": "consistency"
+      },
+      "id": "set-consistency-1",
+      "lens": "set-consistency",
+      "objection": "The rewrite-pass admission rule is dead as written. CR-W9 says each rewrite entry records the base revision the application was made against, and refuses a second application only when the latest entry names the record's current revision. CR-W5's apply bumps the revision, so after a successful pass the entry names the base, never the current revision, and the refusal can never fire. The criterion's check then demands a refusal no stated rule produces.",
+      "scenario": {
+        "expect": "CR-W5 and CR-W9's entry rule require the response to apply and bump again, because the latest entry names 4 and not the current revision 5. CR-W9's check requires the same input to be refused. The set demands both verdicts on one response, and an implementer must invent a semantics the text does not state, such as recording the resulting revision instead of the base.",
+        "given": "A record at revision 5 after one applied rewrite pass. The latest rewrite entry records base revision 4, and CR-W5's bump moved the record to 5.",
+        "when": "apply-prose receives a fresh, structurally valid response whose record and section digests match the revision-5 record."
+      },
+      "target_ac": "CR-W9"
+    },
+    {
+      "ground": {
+        "reason": "CR-C5 omits the replace-the-None. clause that CR-C3 states for its own case, so the set leaves the join-or-replace decision open. Under the join reading the generator's own output fails CR-L11, and CR-C5's check cases never exercise the None. heads_up state that would settle it.",
+        "rule": "decision-closure"
+      },
+      "id": "set-consistency-2",
+      "lens": "set-consistency",
+      "objection": "CR-C5 adds a heads_up row when the latest round is not terminal-clean, but unlike CR-C3 for the no-envelope case it never says whether that row replaces the single None. entry. The join reading makes the campaign generator emit a record that CR-L11 fails: None. beside another entry.",
+      "scenario": {
+        "expect": "Read as a join, the record holds None. beside the new row and CR-L11 fails it, so the tool ships a record its own lint rejects. Read as a replace, parallel to CR-C3, the record is lint-clean. The wording admits both outcomes, and the decision it blocks is whether the generator must always replace the None. entry or may join it.",
+        "given": "A record whose heads_up holds the single None. entry, and a campaign whose latest round carries a mechanical finding, so the terminal sha is empty per CR-C5.",
+        "when": "The campaign generator writes the heads_up row saying the latest round is not terminal-clean."
+      },
+      "target_ac": "CR-C5"
+    },
+    {
+      "ground": {
+        "reason": "CR-P9 keys a merge refusal on a comparison whose empty case the set defines (CR-C5's empty terminal sha) but never covers, and gates it on a presence test the set never defines for the empty campaign CR-C3 describes. Each reading gives the merge command different reach, and no other criterion decides between them.",
+        "rule": "decision-closure"
+      },
+      "id": "set-consistency-3",
+      "lens": "set-consistency",
+      "objection": "CR-P9 makes merge refuse when the live head differs from the campaign's terminal sha when a campaign is present, but CR-C5 makes an empty terminal sha a normal state and CR-C3 makes an empty campaign a normal state. What a comparison against an empty sha means, and whether an empty campaign counts as present, decide whether an unreviewed or not-yet-clean PR can merge.",
+      "scenario": {
+        "expect": "Reading the comparison literally, the empty terminal sha differs from the live head and merge refuses, so no PR merges before a terminal-clean round exists. Reading the comparison as skipped when the field is empty, or the empty campaign as not present, merge proceeds on a head no round accepted. The two readings produce opposite verdicts on one merge.",
+        "given": "A PR whose campaign holds one halted round. The terminal sha field is empty per CR-C5, and the live head equals the record's head sha.",
+        "when": "The author runs merge on the PR."
+      },
+      "target_ac": "CR-P9"
+    },
+    {
+      "ground": {
+        "reason": "The criteria test the caveat row being added and the None. entry being replaced (CR-C3, CR-C5), and a second run only over unchanged comments (CR-C6). No criterion runs campaign twice over changed comments to test that a row the generator added is removed when the condition that justified it clears.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-1",
+      "lens": "what-if",
+      "objection": "A campaign-written heads_up caveat survives the condition that justified it, so the published one-pager carries a false caveat. The heads_up group is not a generated group and its entries are x-rewritable, so the generator cannot even find its own row by wording to remove it.",
+      "scenario": {
+        "expect": "the stale caveat row is gone from heads_up and the terminal sha is set. No criterion checks the row's removal, so the body can assert both 'Terminal-clean at <sha>' and the stale caveat saying the latest round is not terminal-clean.",
+        "given": "a record whose heads_up holds the campaign-written row saying the latest round is not terminal-clean, written by an earlier run over a campaign whose latest round was not clean",
+        "when": "campaign runs again over new comments whose latest envelope is terminal-clean"
+      },
+      "target_ac": "CR-C5"
+    },
+    {
+      "ground": {
+        "reason": "The criteria test publish's happy paths (CR-P1, CR-P2) and its unchanged-record no-op (CR-P3), but never a failure between the comment create and the body edit. The no-op rule then fires on the retry, because the record's digest equals the comment the failed run just created, so the failure path has no recovery.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-2",
+      "lens": "what-if",
+      "objection": "A publish interrupted between its two writes leaves the PR body permanently stale: the retry makes no write on digest equality, lint --pr stays red, and no shipped command re-sets the body.",
+      "scenario": {
+        "expect": "the body is rewritten to the current render naming revision n. Instead CR-P3 makes the rerun a no write, the body still names the older revision, and nothing repairs it short of editing record content to change the digest.",
+        "given": "a PR where publish created the record comment at revision n but the body edit failed before running, so the body still names revision n−1 or names no record comment",
+        "when": "the author reruns publish with the unchanged record"
+      },
+      "target_ac": "CR-P3"
+    },
+    {
+      "ground": {
+        "reason": "The digest is computed over the record with the record group removed (CR-P11), and the head sha at publish lives in that group (section 5), so a head advance alone leaves the digest unchanged. The no-op rule is tested only as 'nothing changed', never against a head advance.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-3",
+      "lens": "what-if",
+      "objection": "A head advance with no digest-visible record edit makes publish a permanent no-op while the newest comment's stamped head goes stale, so the merge gate refuses on a head mismatch the pipeline provides no path to clear.",
+      "scenario": {
+        "expect": "a new revision comment recording head B, or a defined reconciliation between the stamped head and the live one. Instead no comment is written, the newest comment still records head A, CR-P9's merge refuses naming the mismatch, and every rerun no-ops again.",
+        "given": "a published PR whose newest record comment was stamped at head A and whose head has since advanced to B, with no edit to the record's content",
+        "when": "the author reruns publish and then attempts merge"
+      },
+      "target_ac": "CR-P3"
+    },
+    {
+      "ground": {
+        "reason": "The render criteria cover the feat, docs and chore variants only: six fixtures, all of those types. The spec variant is this repository's routine type, and section 3.1 does not define the form its blast radius takes, so the variant's renderer path is untested.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-4",
+      "lens": "what-if",
+      "objection": "A renderer that ignores the spec variant entirely passes every render criterion, so spec pull requests get bodies no criterion governs.",
+      "scenario": {
+        "expect": "a spec-variant body, with the one-line Criteria and a blast radius naming the minted items, matching a golden file. No criterion renders a spec fixture, and a renderer that emits the feat form for one passes all of slice R.",
+        "given": "a record of type spec, whose criteria group is the single line naming whether the criteria were attacked and where the record is, and whose blast radius is the items the spec will mint",
+        "when": "render produces the PR body"
+      },
+      "target_ac": "CR-R1"
+    },
+    {
+      "ground": {
+        "reason": "CR-C4's fixture always leaves a remaining valid envelope after the skips, and CR-C3's row fires on the zero-envelope state, so the case where every envelope is skipped falls between the two criteria with no test and no pinned outcome.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-5",
+      "lens": "what-if",
+      "objection": "The all-envelopes-skipped case renders a false 'no review round has run' caveat on a PR that ran review rounds, and the empty campaign leaves the merge gate's terminal-sha check unarmed.",
+      "scenario": {
+        "expect": "a caveat that names what was skipped rather than asserting no round ran, or a pinned refusal. Instead the row says no review round has run, the stderr naming reaches only the author, and CR-P9's campaign check does not arm because the campaign is empty.",
+        "given": "a PR whose only submitted reviews by the reviewing App carry envelopes that the review-verdict validator rejects, for example a schema version the skill no longer accepts",
+        "when": "campaign runs over those reviews"
+      },
+      "target_ac": "CR-C3"
+    },
+    {
+      "ground": {
+        "reason": "The change's type and component are held twice, once in the pr group and once as the protected segments of the commit subject, and no criterion compares the two, so the same fact recorded twice is allowed to disagree.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-6",
+      "lens": "what-if",
+      "objection": "Lint accepts a record whose commit subject disagrees with the record's own type and component, so the PR body and the commit message, the two artifacts CR-D1 says cannot drift because they render from one record, disagree.",
+      "scenario": {
+        "expect": "a refusal naming the disagreement between the subject's type or component and the record's pr.type or pr.component. No criterion checks it, the body takes the docs variant with no Criteria section, and the merge commit's subject says feat.",
+        "given": "a record whose pr.type is docs and whose pr.component is review-panel, with a commit subject 'feat(installer): …' of otherwise valid form",
+        "when": "lint validates the record and render produces the body and the commit message"
+      },
+      "target_ac": "CR-L3"
+    },
+    {
+      "ground": {
+        "reason": "The document governs the PR body only as publish's output. The body that gh pr create needs, before any record comment exists, is neither specified nor tested, and the render's pointer line cannot name a comment that has not been posted.",
+        "rule": "what-if-questions"
+      },
+      "id": "what-if-7",
+      "lens": "what-if",
+      "objection": "The PR opens with a body no criterion governs, and if publish is forgotten the ungoverned body is the one the owner reads and the merge carries.",
+      "scenario": {
+        "expect": "a defined creation-time body, either the render without the pointer line or a named stub, that the checks tie to the record. The document names the record as the body's source and lint as the check before gh pr create, but no criterion pins what the body says between creation and the first publish.",
+        "given": "a record that passes lint, and no pull request yet",
+        "when": "the author creates the PR with gh pr create, before any record comment exists"
+      },
+      "target_ac": "none"
+    }
+  ],
+  "schema_version": "1",
+  "spec_path": "2026-10-10-change-record.md",
+  "spec_revision": "sha256:c5cf2ac1daf234edd818be6adb78906f45c62e1a24641884d9704ec030eb0d01"
+}

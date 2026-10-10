@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Change-record mock, round 2: PRs 846, 843, 839, 838</title>
+<style>
+  :root { --fg:#1f2328; --muted:#59636e; --line:#d1d9e0; --bg:#fff; --soft:#f6f8fa; --accent:#0969da; --warn:#9a6700; --warnbg:#fff8c5; --warnline:#d4a72c; --ok:#1a7f37; --okbg:#dafbe1; --bad:#cf222e; --badbg:#ffebe9; --infer:#8250df; --chg:#bc4c00; --chgbg:#fff1e5; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e6edf3; --muted:#9198a1; --line:#3d444d; --bg:#0d1117; --soft:#161b22; --accent:#4493f8; --warn:#d29922; --warnbg:#2b2612; --warnline:#9e6a03; --ok:#3fb950; --okbg:#12261e; --bad:#f85149; --badbg:#2d1214; --infer:#ab7df8; --chg:#f0883e; --chgbg:#2b1a0e; } }
+  * { box-sizing:border-box }
+  body { margin:0; font:15px/1.55 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg) }
+  nav { position:sticky; top:0; background:var(--bg); border-bottom:1px solid var(--line); padding:10px 24px; display:flex; gap:18px; flex-wrap:wrap; z-index:2; font-size:14px }
+  nav a { color:var(--accent); text-decoration:none }
+  main { max-width:940px; margin:0 auto; padding:24px }
+  .intro { background:var(--soft); border:1px solid var(--line); border-radius:8px; padding:16px 20px; margin-bottom:32px; font-size:14px }
+  article.pr { border:1px solid var(--line); border-radius:8px; margin:0 0 48px; overflow:hidden }
+  .prhead { padding:16px 20px; border-bottom:1px solid var(--line); background:var(--soft) }
+  .prhead h1 { font-size:21px; margin:0 0 6px; font-weight:600 }
+  .prhead .meta { color:var(--muted); font-size:13px }
+  .prhead .was { margin-top:10px; font-size:13px; color:var(--muted); border-left:3px solid var(--line); padding-left:10px }
+  .prbody { padding:20px }
+  .prbody h2 { font-size:17px; margin:26px 0 8px; padding-bottom:4px; border-bottom:1px solid var(--line); font-weight:600 }
+  .prbody h3 { font-size:15px; margin:18px 0 6px; font-weight:600 }
+  .prbody p { margin:0 0 12px }
+  .prbody ul { margin:0 0 12px; padding-left:22px }
+  .prbody li { margin:3px 0 }
+  table { border-collapse:collapse; width:100%; margin:8px 0 14px; font-size:13.5px }
+  th, td { border:1px solid var(--line); padding:6px 9px; text-align:left; vertical-align:top }
+  th { background:var(--soft); font-weight:600 }
+  td.n { text-align:right; white-space:nowrap }
+  code { font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--soft); padding:1px 5px; border-radius:4px }
+  pre { background:var(--soft); border:1px solid var(--line); border-radius:6px; padding:10px 12px; overflow:auto; font-size:12.5px; line-height:1.45 }
+  pre code { background:none; padding:0 }
+  .crumb { font:13px ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre; line-height:1.6; margin:0 0 8px }
+  .crumb .g { color:var(--muted); font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif }
+  .crumb .me { color:var(--accent); font-weight:600 }
+  details { border:1px solid var(--line); border-radius:6px; margin:10px 0 12px; background:var(--soft) }
+  summary { cursor:pointer; padding:8px 14px; font-weight:600; font-size:14px; user-select:none }
+  summary span { font-weight:400; color:var(--muted); font-size:13px; margin-left:8px }
+  details > div { padding:6px 16px 12px; background:var(--bg); border-top:1px solid var(--line) }
+  details.evid { margin-top:22px }
+  .fold { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px; letter-spacing:.04em; text-transform:uppercase; margin:28px 0 0 }
+  .fold::before, .fold::after { content:""; flex:1; border-top:1px dashed var(--line) }
+  .footer { margin-top:22px; padding-top:12px; border-top:1px solid var(--line); color:var(--muted); font-size:13px }
+  .inf { color:var(--infer); font-size:11px; vertical-align:super; margin-left:2px; cursor:help; text-decoration:none }
+  .headsup { background:var(--warnbg); border:1px solid var(--warnline); border-radius:6px; padding:10px 16px 10px 32px; margin:8px 0 12px }
+  .headsup li { margin:4px 0 }
+  .pill { display:inline-block; padding:0 7px; border-radius:10px; font-size:12px; font-weight:600; white-space:nowrap }
+  .fixed { background:var(--okbg); color:var(--ok) } .def { background:var(--warnbg); color:var(--warn) } .sup { background:var(--soft); color:var(--muted); border:1px solid var(--line) } .rej { background:var(--badbg); color:var(--bad) }
+  /* diagrams */
+  .reach { display:grid; grid-template-columns: 1fr 1fr; gap:10px 28px; align-items:start; margin:10px 0 }
+  .reach .hub { grid-column:1 / span 2; justify-self:center; background:var(--chgbg); border:2px solid var(--chg); border-radius:8px; padding:8px 16px; font-weight:600; text-align:center }
+  .reach .arm { border:1px solid var(--line); border-radius:6px; padding:8px 12px; background:var(--soft); font-size:13.5px; position:relative }
+  .reach .arm b { display:block; font-size:14px }
+  .reach .arm .kind { display:inline-block; font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:3px }
+  .reach .arm.hot { border-color:var(--chg) }
+  .reach .arm.warn { border-color:var(--warnline) }
+  .flow { display:flex; flex-wrap:wrap; align-items:stretch; gap:6px; margin:10px 0 }
+  .flow .st { border:1px solid var(--line); border-radius:6px; padding:6px 10px; font-size:13px; background:var(--soft); min-width:110px; flex:1 }
+  .flow .st.chg { border:2px solid var(--chg); background:var(--chgbg) }
+  .flow .st.new { border:2px dashed var(--chg); background:var(--chgbg) }
+  .flow .st small { display:block; color:var(--muted); font-size:11.5px; margin-top:2px }
+  .flow .ar { align-self:center; color:var(--muted) }
+  .legend { font-size:12px; color:var(--muted); margin:4px 0 10px }
+  .legend i { display:inline-block; width:12px; height:12px; vertical-align:-2px; margin:0 4px 0 10px; border-radius:3px }
+  .reply { border-left:3px solid var(--line); padding:4px 12px; margin:10px 0; font-size:14px }
+  .reply b { display:inline-block; min-width:96px }
+</style>
+</head>
+<body>
+<nav>
+  <a href="#intro">How to read this</a>
+  <a href="#pr846">#846 attack panel rule</a>
+  <a href="#pr843">#843 reviewer pins</a>
+  <a href="#pr839">#839 model inventory lint</a>
+  <a href="#pr838">#838 grilling board expert</a>
+</nav>
+<main>
+
+<section class="intro" id="intro">
+  <p><b>What this is.</b> The same four pull requests as the round-1 mock, rewritten to the round-2 shape in <code>git-doc-templates-proposal-v2.md</code>. #843 carries the full review-campaign record, because it is the one PR of the four that had review rounds. Content comes from the PR bodies, the tracker (walked with <code>work show</code>), the posted verdicts and the author's replies. Where a statement had to be inferred rather than copied, it carries a <span style="color:var(--infer)">ⁱ</span>. Hover it for the reason.</p>
+  <p><b>What is new in this round.</b> A yellow <b>Heads-up</b> box under the summary. Risk as a four-column table with a blast-radius diagram behind it. An expandable scope breakdown under <b>Where this fits</b>. A review-campaign table with every finding behind it. A proposed commit message in each PR's fold. Rewritten replies in the Outcome / Change / Verification form. Plainer sentences throughout.</p>
+  <p class="legend">Diagram colours: <i style="background:var(--chgbg);border:2px solid var(--chg)"></i> changed in this PR &nbsp; <i style="background:var(--chgbg);border:2px dashed var(--chg)"></i> new in this PR &nbsp; <i style="background:var(--soft);border:1px solid var(--warnline)"></i> strained, not changed &nbsp; <i style="background:var(--soft);border:1px solid var(--line)"></i> touched or read only</p>
+</section>
+
+<!-- ============================================================ PR 846 -->
+<article class="pr" id="pr846">
+  <div class="prhead">
+    <h1>feat(acceptance-criteria): stop the attack panel filing coverage gaps under the wrong rule [9k9.405.14]</h1>
+    <div class="meta">#846 · merged 2026-10-07 · +14 / −12 · 2 files</div>
+    <div class="was"><b>Was:</b> feat(9k9.405.14): the verification-contract rule judges a criterion's check; coverage alone asks whether a commitment has one</div>
+  </div>
+  <div class="prbody">
+
+<p>The standard for acceptance criteria has two rules that asked the same question, so the panel that attacks a criteria set reported the same gap twice, under two names. One rule's opening sentence now asks only about the check a criterion names. The other rule keeps the question of whether a commitment has a criterion at all. On the pilot document a clean control now gets an empty report in 9 of 10 runs, up from 2 of 10. Detection of the planted defect stays at 10 of 10. Nothing else in the standard or the panel changes.</p>
+
+<h2>Heads-up</h2>
+<ul class="headsup">
+  <li>No review-panel round ran on this PR. The pilot measurement is its review.</li>
+  <li>The run records behind the numbers are under an untracked scratch directory on the author's machine, not in the repository.</li>
+  <li>Every attack record's fingerprint changes, because the rule text is part of each emitted prompt. Earlier records cannot be compared to new ones byte for byte.</li>
+</ul>
+
+<h2>Where this fits</h2>
+<div class="crumb">agents-config-9k9            <span class="g">Harness rework (milestone)</span>
+└ agents-config-9k9.405      <span class="g">one acceptance-criteria standard, attacked before any work is claimed against it</span>
+  └ <span class="me">agents-config-9k9.405.14</span>  <span class="g">this PR</span></div>
+<p>Builds on the pilot that measured the panel (agents-config-9k9.453, the attack-budget decision, closed). Concurrent: #837 and #836, which give every rule in the standard exactly one owning reviewer.</p>
+<details><summary>Scope of the owning item <span>agents-config-9k9.405</span></summary><div>
+<table>
+  <tr><th>Part</th><th>What it covers</th><th>Status</th></tr>
+  <tr><td>The standard</td><td>what a criterion and a criteria set must satisfy</td><td>deployed</td></tr>
+  <tr><td>The attack panel</td><td>reviewers that object to a criteria set before work is claimed against it</td><td>deployed</td></tr>
+  <tr><td>Evaluation contract (.405.10, .405.11)</td><td>how to measure that the panel catches planted defects, and that briefs preserve their contract</td><td>spec merged as #807; harness not built</td></tr>
+  <tr><td>Rule ownership (.405.13)</td><td>every rule has one owning reviewer</td><td>#836 spec, #837 implementation, both merged</td></tr>
+  <tr><td><b>This PR (.405.14)</b></td><td>the two overlapping rules ask different questions</td><td>merged</td></tr>
+</table>
+</div></details>
+
+<h2>Risk</h2>
+<table>
+  <tr><th>What could go wrong</th><th>Who or what is exposed</th><th>How we know it did not</th><th>What to do if it did</th></tr>
+  <tr><td>The panel stops objecting to a criterion that has no check at all, because the question moved and no rule picked it up.<a class="inf" title="Inferred from what the PR says the old sentence used to catch.">ⁱ</a></td><td>Every spec attacked with the deployed standard, in every project.</td><td>10 of 10 defective-document runs still objected to the planted criterion under the right rule.</td><td>Revert.</td></tr>
+  <tr><td>The empty-control gain is noise, not the rule change.</td><td>The owner, who would believe the panel is quieter than it is.</td><td>Ten runs per document, same model and effort, prompts emitted from each version of the standard; the only control objection left cites a flaw the test document has in both versions.</td><td>Re-run the pilot with the records in the repository.</td></tr>
+</table>
+<details><summary>Blast radius</summary><div>
+<div class="reach">
+  <div class="hub">acceptance-criteria standard · one sentence</div>
+  <div class="arm hot"><span class="kind">behaviour change</span><b>ac-attack panel prompts</b>every emitted prompt carries the new sentence; fingerprints change</div>
+  <div class="arm"><span class="kind">read only</span><b>ac-attack lens table</b>gains a column; no lens is re-assigned</div>
+  <div class="arm"><span class="kind">deployed to</span><b>every project with the standard installed</b>Claude, Codex, Antigravity, OpenCode</div>
+  <div class="arm"><span class="kind">record</span><b>agents-config-9k9.453 pilot</b>case two re-run and recorded there</div>
+</div>
+<div class="flow">
+  <div class="st">Spec drafted</div><div class="ar">→</div>
+  <div class="st">Criteria written</div><div class="ar">→</div>
+  <div class="st chg">Attack panel runs<small>prompts carry the new rule text</small></div><div class="ar">→</div>
+  <div class="st">Objections recorded</div><div class="ar">→</div>
+  <div class="st">Work claimed</div>
+</div>
+</div></details>
+
+<h2>Changes</h2>
+<ul>
+  <li><b>The rule.</b> <code>verification-contract</code> opened with "every material commitment has a feasible check". That sentence contains the <code>coverage</code> rule's question. It now opens by judging each criterion's own check, and says that whether a commitment has a criterion at all belongs to <code>coverage</code>.</li>
+  <li><b>The lens table.</b> The attack skill's table of reviewers gains a column naming what each reviewer reads: one criterion on its own, the whole set against the document, the set against itself, or one criterion asked what it leaves untested. That is what decides which reviewer owns a rule. Two other sentences were shortened to stay under the skill's token cap.</li>
+</ul>
+
+<h2>Discovered work</h2>
+<table>
+  <tr><th>Item</th><th>Status</th><th>What it is</th><th>Why not in this PR</th></tr>
+  <tr><td>agents-config-9k9.453</td><td>updated</td><td>the attack-budget decision; the case-two re-run is recorded on it</td><td>the measurement belongs to the pilot that asked for it</td></tr>
+  <tr><td>not filed</td><td>—</td><td>the pilot's run records live outside the repository</td><td>the evaluation contract (#807) decides where records of record live; this PR does not pre-empt it<a class="inf" title="The PR names the location; the reason it was not filed is inferred.">ⁱ</a></td></tr>
+</table>
+
+<div class="fold">fold</div>
+
+<h2>Verification</h2>
+<ul>
+  <li><code>make ci</code>: exit 0, run standalone from the worktree root at the merged head.</li>
+  <li>Not run: a review-panel round. See Heads-up.</li>
+</ul>
+<table>
+  <tr><th></th><th>Rule as it was</th><th>Rule as amended</th></tr>
+  <tr><td>Defective runs objecting to the planted criterion under the planted rule</td><td class="n">10 of 10</td><td class="n">10 of 10</td></tr>
+  <tr><td>Defective runs with objections elsewhere</td><td class="n">10 of 10</td><td class="n">1 of 10</td></tr>
+  <tr><td>Control runs returning an empty report</td><td class="n">2 of 10</td><td class="n">9 of 10</td></tr>
+</table>
+<p>Ten fresh Codex runs (<code>gpt-6.1-sol</code>, high) per document on the pilot's case two: an eight-criterion document with one planted defect and a corrected control.</p>
+
+<h2>Criteria</h2>
+<table>
+  <tr><th>Criterion</th><th>What it promises</th><th>Evidence</th></tr>
+  <tr><td>A1</td><td>The rule judges whether each criterion names a feasible, complete check, and sends the has-a-criterion question to coverage</td><td>the rule text</td></tr>
+  <tr><td>A2</td><td>The attack skill states what each reviewer reads, beside the lens table</td><td>the new column</td></tr>
+  <tr><td>A3</td><td>At least 8 of 10 control runs come back empty, and at least 8 of 10 defective runs object to the planted criterion</td><td>the table above: 9 of 10 and 10 of 10</td></tr>
+  <tr><td>A4</td><td>The content gate passes</td><td><code>make content-tests</code> inside <code>make ci</code></td></tr>
+</table>
+
+<details><summary>Proposed commit message</summary><div>
+<pre><code>feat(acceptance-criteria): stop the attack panel filing coverage gaps under the wrong rule [9k9.405.14]
+
+Work item agents-config-9k9.405.14, two overlapping rules in the criteria standard.
+
+Why
+Two rules in the acceptance-criteria standard asked the same question, so
+the attack panel reported every missing check twice, under two names. On a
+clean control document, only 2 of 10 runs came back empty.
+
+Change
+The verification-contract rule now opens by judging the check each
+criterion names. Whether a commitment has a criterion at all stays with
+the coverage rule. The attack skill's table of reviewers names what each
+one reads, which is what decides rule ownership.
+
+Verification
+make ci exit 0. On the pilot's case two, ten runs per document: control
+empty 9 of 10 (was 2 of 10), planted defect detected 10 of 10 (unchanged).
+No review-panel round ran.
+
+Work-item: agents-config-9k9.405.14
+Co-authored-by: Claude Fable 5.1 &lt;noreply@anthropic.com&gt;
+Claude-Session: https://claude.ai/code/session_018CLkTLjLQ2ohANDFQ9qi41</code></pre>
+</div></details>
+
+<div class="footer">🤖 Generated with Claude Code · session_018CLkTLjLQ2ohANDFQ9qi41</div>
+  </div>
+</article>
+
+<!-- ============================================================ PR 843 -->
+<article class="pr" id="pr843">
+  <div class="prhead">
+    <h1>feat(review-panel): pin each reviewer's effort and tools as data, and bound recovery from a run that dies [9k9.408]</h1>
+    <div class="meta">#843 · merged 2026-10-07 · +1282 / −84 · 24 commits · 8 review rounds</div>
+    <div class="was"><b>Was:</b> feat(9k9.408): every review seat's effort and tool grant is pinned in the panel's own data</div>
+  </div>
+  <div class="prbody">
+
+<p>The agent running a review round used to choose each reviewer's effort level and tool access itself, and avoided one model for whole-document reads on a belief no run record supported. The panel's configuration file now holds effort and tools for every reviewer slot, and each round records what it used. Every reviewer receives the change as a diff file, so a reviewer with no shell can still read it. A run that dies mid-reasoning follows a fixed recovery sequence: retry one effort step lower, then on the other provider, then stop the round. During this PR's own review the model the old belief distrusted finished 20 whole-document reads in 20. The panel does not yet check that a run actually used its pinned effort.</p>
+
+<h2>Heads-up</h2>
+<ul class="headsup">
+  <li>The gates ran with the system bash first on PATH. The Homebrew bash on the author's machine hangs one hook test that the system bash passes.</li>
+  <li>The code reviewers' clean sweep judged commit <code>e399db1d</code>. Five prose-only commits followed it. The prose reviewers' sweep judged the final head <code>5bc9e856</code>.</li>
+  <li>The raw outputs of the 27 doctrine-reading scenarios are in a local corpus outside the repository. The PR reports the result and cites the location.</li>
+  <li>The approving review is a bot attestation of the head commit. No human reviewed this PR before merge.</li>
+  <li>The gate records a run's pinned effort but does not verify the run used it.</li>
+</ul>
+
+<h2>Where this fits</h2>
+<div class="crumb">agents-config-9k9        <span class="g">Harness rework (milestone)</span>
+└ <span class="me">agents-config-9k9.408</span>  <span class="g">review-panel routing: pin model, effort and tools per reviewer slot, as an interim cost control</span>
+    <span class="g">this PR: slice A of three, under the item's 2026-10-07 restatement</span></div>
+<p>Builds on #803 (one routing table names the model behind each provider and tier; item 9k9.457). Concurrent: #777 (lets a prose fix count as evidence in a mixed code review; it edits the panel's skill file, which is at its token cap) and #774 (slice C, the read-evidence gate, merged the day after).</p>
+<details><summary>Scope of the owning item <span>agents-config-9k9.408</span></summary><div>
+<table>
+  <tr><th>Slice</th><th>What it covers</th><th>Status</th></tr>
+  <tr><td>Original claim, before 2026-10-07</td><td>route mid-tier models away from whole-document reads</td><td>superseded: the belief had no run record behind it; its one review round's findings were resolved by the restatement</td></tr>
+  <tr><td><b>A</b></td><td>effort and tool pins per reviewer slot; the diff file; the dead-run recovery sequence</td><td><b>this PR</b></td></tr>
+  <tr><td>B</td><td>the same pins for the criteria attack panel (<code>ac-attack</code>)</td><td>not started</td></tr>
+  <tr><td>C</td><td>a clean report is refused unless the reviewer's activity log shows it opened the change</td><td>#774, merged 2026-10-08</td></tr>
+</table>
+</div></details>
+
+<h2>Risk</h2>
+<table>
+  <tr><th>What could go wrong</th><th>Who or what is exposed</th><th>How we know it did not</th><th>What to do if it did</th></tr>
+  <tr><td>A reviewer is dispatched at an effort or with tools it cannot work with.</td><td>Every review round in every project with the deployed skill.</td><td>Tests check that every slot has a pin and that the round record copies it. This PR's own round 1 ran every reviewer at its pin, on two vendors, with no substitution.</td><td>Edit the pin in <code>contracts.json</code>. Posted rounds stand.</td></tr>
+  <tr><td>A run that dies is retried outside the sequence, or a fourth attempt is allowed and the round never stops.</td><td>Review spend, and a round that looks finished with one reviewer never having read the change.</td><td>Gate tests cover each step. Both of these were real bugs found in review rounds 1 and 2, reproduced, and fixed with a failing-then-passing test each.</td><td>Revert. A round in flight restarts, because its attempts ledger gained a field.<a class="inf" title="Inferred: the gate records effort per claim, so a ledger written by the new gate does not read under the old one.">ⁱ</a></td></tr>
+  <tr><td>The written doctrine sends whoever runs a round by hand down the wrong path.</td><td>Any agent or human dispatching a round from the doctrine file.</td><td>Nine written situations were answered by a model given only the doctrine files and nothing else. All 27 answers (three runs each) matched the expected dispatch.</td><td>Edit <code>harvest.md</code>. No code changes.</td></tr>
+  <tr><td>A reviewer without a shell cannot see the change, because its diff file is missing or covers the wrong scope.</td><td>The OpenRouter reviewers, one per artifact class.</td><td>Tests on the diff file's content, on an empty change and on an unknown revision. A diff git cannot compute refuses the round before anything is dispatched.</td><td>Revert.</td></tr>
+</table>
+<details><summary>Blast radius</summary><div>
+<p class="legend">Architecture reach. Edges say what kind of effect this PR has on each area.</p>
+<div class="reach">
+  <div class="hub">review-panel skill · contracts.json, emit_prompts.py, dispatch_gate.py, harvest.md</div>
+  <div class="arm hot"><span class="kind">behaviour change</span><b>Codex reviewer route</b>effort pinned per slot; dead-run sequence; receives a diff file</div>
+  <div class="arm hot"><span class="kind">behaviour change</span><b>OpenRouter reviewer route</b>effort and tools pinned; no shell grant; receives a diff file</div>
+  <div class="arm"><span class="kind">reads</span><b>model routing table</b>(choosing-a-delegate) names the model for each provider and tier; unchanged</div>
+  <div class="arm warn"><span class="kind">strained</span><b>review-verdict schema</b>has no halt reason for a round stopped by dead runs; deferred advisory</div>
+  <div class="arm"><span class="kind">unchanged</span><b>prgroom</b>posts verdicts and attests heads; reads nothing new</div>
+  <div class="arm hot"><span class="kind">deployed to</span><b>every project with the panel installed</b>Claude Code only; the panel is a Claude skill</div>
+</div>
+<p class="legend">Task flow: one review round. Marked steps change.</p>
+<div class="flow">
+  <div class="st">Author claims a round</div><div class="ar">→</div>
+  <div class="st chg">Emitter writes prompts<small>+ one diff file per reviewer; refuses if a slot has no pin</small></div><div class="ar">→</div>
+  <div class="st chg">Gate claim<small>records effort; refuses off-sequence</small></div><div class="ar">→</div>
+  <div class="st">Reviewer runs</div><div class="ar">→</div>
+  <div class="st new">Run died?<small>step down → other provider → halt</small></div><div class="ar">→</div>
+  <div class="st">Ingest report</div><div class="ar">→</div>
+  <div class="st">Assemble and post verdict</div><div class="ar">→</div>
+  <div class="st">Fix dispatch</div>
+</div>
+<details><summary>Mermaid source <span>what the PR body would carry</span></summary><div>
+<pre><code>```mermaid
+graph LR
+  P[review-panel skill] -->|effort pinned, dead-run ladder, diff file| CX[Codex reviewer route]
+  P -->|effort + tools pinned, no shell, diff file| OR[OpenRouter reviewer route]
+  P -.reads.-> RT[model routing table]
+  P -->|halt reason missing: deferred| VS[review-verdict schema]
+  P -->|deployed to| ALL[every project with the panel]
+```
+```mermaid
+flowchart LR
+  a[Author claims round] --> b[Emitter writes prompts + diff files]:::chg --> c[Gate claim records effort]:::chg --> d[Reviewer runs]
+  d --> e{Run died?}:::new -->|step down / other provider / halt| d
+  e -->|no| f[Ingest] --> g[Assemble, post verdict] --> h[Fix dispatch]
+  classDef chg stroke-width:3px
+  classDef new stroke-dasharray: 5 5,stroke-width:3px
+```</code></pre>
+</div></details>
+</div></details>
+
+<h2>Changes</h2>
+<ul>
+  <li><b>Pins.</b> <code>contracts.json</code> gains one pin per reviewer slot: eight slots by provider, tier and read scope, plus the staffing recommender and the trend checkpoint. OpenRouter reads a whole document at <code>low</code> and a diff at <code>high</code>. Codex frontier slots run at <code>high</code>, mid slots at <code>medium</code>. No pin names a model. The routing table does that.</li>
+  <li><b>Tool grants.</b> Every grant is the Codex read-only sandbox, or a list drawn from Read, Grep and Glob. No reviewer gets a shell pattern, because <code>git diff --output=&lt;path&gt;</code> writes a file.</li>
+  <li><b>The change as a file.</b> The emitter writes <code>&lt;reviewer&gt;.diff</code> beside each prompt, over that reviewer's scope for the round. Reviewers sharing a revision pair share one computed diff.</li>
+  <li><b>Round record.</b> Each reviewer entry gains <code>effort</code> and <code>tools</code> copied from its pin. A slot with no pin refuses the round and writes nothing.</li>
+  <li><b>Rosters.</b> Each artifact class keeps exactly one OpenRouter reviewer. Four reviewers move to Codex. Declared tiers do not change.</li>
+  <li><b>Recovery sequence, in the gate.</b> <code>dispatch_gate.py claim</code> takes <code>--effort</code> and records it. A run that died may be claimed again only as the same model one effort step lower, or as the other provider at the same tier and scope. Anything else is refused and costs no attempt. Three attempts, then the round halts with guidance.</li>
+  <li><b>Doctrine.</b> <code>harvest.md</code> states the sequence, the failover slot, the diff file and the claim form. Nine scenarios with expected answers check that a reader holding only those files reaches the right dispatch.</li>
+</ul>
+<details><summary>Design notes</summary><div>
+<p>The earlier design routed the OpenRouter mid-tier model away from whole-document reads. That constraint had no run record behind it, and the only recorded reads of that shape on that model had finished. A constraint stated without its variables cannot be scoped or falsified, so the design no longer encodes it. A slot that names a model runs that model. The recovery sequence answers for a death when one happens, and records every attempt.</p>
+<p>Rejected: letting the dispatcher pick a fallback model freely. That hides the cost decision in a prompt and leaves no record. Rejected: a shell grant restricted by a command prefix. Both <code>git diff</code> and <code>git log</code> accept <code>--output</code>, so a prefix pattern is not read-only.</p>
+</div></details>
+
+<h2>Discovered work</h2>
+<table>
+  <tr><th>Item</th><th>Status</th><th>What it is</th><th>Why not in this PR</th></tr>
+  <tr><td>agents-config-9k9.408, slice B</td><td>remaining</td><td>the same pins for the criteria attack panel</td><td>a different skill with its own configuration file</td></tr>
+  <tr><td>#774</td><td>in flight, informed</td><td>slice C, the read-evidence gate; it adds two fields to the claim record this PR reshaped</td><td>it checks a reviewer read what it was handed; this PR only hands it over</td></tr>
+  <tr><td>#777</td><td>in flight, informed</td><td>edits the panel's skill file, which is at its token cap</td><td>the one sentence naming the diff file waits for #777 so two PRs do not fight over the cap</td></tr>
+  <tr><td>not filed</td><td>—</td><td>the gate does not compare the effort a run used against its pin</td><td>no consumer asks for it yet; the pin is in the round record for a later gate to read<a class="inf" title="The PR names the exclusion; the reason is inferred.">ⁱ</a></td></tr>
+  <tr><td>advisory, deferred</td><td>on 9k9.408 notes</td><td>the acceptance says "fresh native subagent"; the committed reader protocol is a headless isolated process</td><td>a wording defect in the criteria; needs an acceptance restatement</td></tr>
+  <tr><td>advisory, deferred</td><td>on 9k9.408 notes</td><td>the verdict schema has no halt reason for a round stopped by dead runs</td><td>a schema change in <code>review-verdict</code>, a shared skill with its own tests</td></tr>
+</table>
+
+<div class="fold">fold</div>
+
+<h2>Verification</h2>
+<ul>
+  <li><code>make ci</code>, <code>make doc-lint</code>, <code>make content-lint</code>: exit 0, standalone from the worktree root at <code>5bc9e856</code>, system bash first on PATH (see Heads-up).</li>
+  <li>Not run: none.</li>
+</ul>
+
+<h3>Review campaign</h3>
+<p>Claim <code>9k9.408-r2</code>. Two circuits, code and prose. Terminal-clean at <code>5bc9e856</code>. One earlier round on 2026-10-04 ran under the original claim before the restatement; its three findings are listed last.</p>
+<table>
+  <tr><th>Reviewer</th><th>Model</th><th>Rounds</th><th class="n">Findings</th><th class="n">Fixed</th><th class="n">Rejected</th><th class="n">Deferred</th></tr>
+  <tr><td colspan="7" style="background:var(--soft)"><b>Code circuit</b> · rounds 1–2 findings, 3 clean, 4 sweep clean</td></tr>
+  <tr><td>correctness</td><td>gpt-6.1-sol via Codex</td><td>1, 2, 3, 4</td><td class="n">3</td><td class="n">3</td><td class="n">0</td><td class="n">0</td></tr>
+  <tr><td>security</td><td>Kimi K3 (r1), GLM 5.3 (r2, r4) via OpenRouter</td><td>1, 2, 4</td><td class="n">0</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+  <tr><td>test-adequacy</td><td>gpt-6.1-sol via Codex</td><td>1, 2, 3</td><td class="n">3</td><td class="n">3</td><td class="n">0</td><td class="n">0</td></tr>
+  <tr><td>simplification-efficiency</td><td>gpt-6.1-sol via Codex</td><td>1, 2</td><td class="n">1</td><td class="n">1</td><td class="n">0</td><td class="n">0</td></tr>
+  <tr><td>documentation-quality</td><td>gpt-6.1-sol via Codex</td><td>1, 2, 3</td><td class="n">6</td><td class="n">6</td><td class="n">0</td><td class="n">0</td></tr>
+  <tr><td colspan="7" style="background:var(--soft)"><b>Prose circuit</b> · round 1 findings, 2 clean, 3 sweep clean</td></tr>
+  <tr><td>internal-consistency</td><td>gpt-6.1-sol via Codex</td><td>1, 2, 3</td><td class="n">2</td><td class="n">2</td><td class="n">0</td><td class="n">0</td></tr>
+  <tr><td>global-consistency</td><td>Kimi K3 (r1), GLM 5.3 (r2, r3) via OpenRouter</td><td>1, 2, 3</td><td class="n">4 <span class="kv">(1 blocking, 3 advisory)</span></td><td class="n">2</td><td class="n">0</td><td class="n">2</td></tr>
+  <tr><td>standalone-read</td><td>gpt-6.1-sol via Codex</td><td>1, 2</td><td class="n">2</td><td class="n">2</td><td class="n">0</td><td class="n">0</td></tr>
+  <tr><td colspan="7" style="background:var(--soft)"><b>Original claim</b> · one round, 2026-10-04, head <code>2659f7f3</code></td></tr>
+  <tr><td>security, test-adequacy, documentation-quality</td><td>Kimi K3; gpt-6.1-sol</td><td>1</td><td class="n">3</td><td class="n">2</td><td class="n">0</td><td class="n">1 superseded</td></tr>
+  <tr><th>Total</th><th></th><th>8 rounds</th><th class="n">24</th><th class="n">21</th><th class="n">0</th><th class="n">3</th></tr>
+</table>
+<p>The trend checkpoint after code round 2 ruled continue. Approval is <code>pr-hater[bot]</code>'s attestation of <code>5bc9e856</code>.</p>
+
+<details><summary>Findings by round <span>24 findings, each with its disposition and commit</span></summary><div>
+<table>
+  <tr><th>Round</th><th>Id</th><th>Finding, in plain words</th><th>Disposition</th><th>Reason or evidence</th><th>Commit</th></tr>
+  <tr><td colspan="6" style="background:var(--soft)"><b>Code round 1</b> · head <code>f801613c</code> · 10 findings</td></tr>
+  <tr><td>C1</td><td>correctness.r1.f1</td><td>A fourth dead-run claim slipped past the three-attempt limit. It was refused as off-sequence instead of as exhausted, with no halt guidance and no ledger entry.</td><td><span class="pill fixed">Fixed</span></td><td>Reproduced. New test failed without the change, passes with it. A mutant restoring the old behaviour fails only this test.</td><td><code>75bb090c</code></td></tr>
+  <tr><td>C1</td><td>correctness.r1.f2</td><td>A dead run on the failover provider lost its halt guidance when an earlier attempt had returned garbage instead of dying.</td><td><span class="pill fixed">Fixed</span></td><td>Reproduced. Halt now fires when the last failure on every route was a death or a transport error. Test failed without, passes with.</td><td><code>75bb090c</code></td></tr>
+  <tr><td>C1</td><td>test-adequacy.r1.f1</td><td>No test pinned which tier a later whole-document read uses. A reviewer could be sent to the wrong model in a sweep and every test would pass.</td><td><span class="pill fixed">Fixed</span></td><td>Confirmed with a mutant that passed all 219 emitter tests. The round-record test now asserts each reviewer's tier against the roster first.</td><td><code>7774cae8</code></td></tr>
+  <tr><td>C1</td><td>test-adequacy.r1.f2</td><td>The doctrine-reading scenarios were answered by readers that had extra context, so passing did not prove the doctrine files alone suffice.</td><td><span class="pill fixed">Fixed</span></td><td>Re-ran all 27 reads on headless readers in an empty directory with only the five named files. An isolation trial confirmed the readers saw no instruction files. 27 of 27 matched.</td><td><code>6643c534</code></td></tr>
+  <tr><td>C1</td><td>simplification-efficiency.r1.f1</td><td>The same diff was recomputed and buffered once per reviewer sharing a revision pair.</td><td><span class="pill fixed">Fixed</span></td><td>Instrumented: 5 git diff calls became 1. Test asserts the count; failed without, passes with.</td><td><code>cdd53cc1</code></td></tr>
+  <tr><td>C1</td><td>documentation-quality.r1.f1</td><td>The doctrine's failover example used effort <code>high</code>; the pin for that slot is <code>low</code>.</td><td><span class="pill fixed">Fixed</span></td><td>Example corrected to <code>--effort low</code>, read against the pin. No test covers an example command.</td><td><code>a55b0e4d</code></td></tr>
+  <tr><td>C1</td><td>documentation-quality.r1.f2</td><td>The doctrine said every refusal ends the reviewer. An off-sequence refusal costs nothing and may be corrected, so following the text abandoned a recoverable reviewer.</td><td><span class="pill fixed">Fixed</span></td><td>Sentence replaced to distinguish an exhausted refusal from a correctable one. Gate test confirms a refused claim writes nothing.</td><td><code>a55b0e4d</code></td></tr>
+  <tr><td>C1</td><td>documentation-quality.r1.f3</td><td>The empty-output guidance said the reviewer never ran. A run the watchdog killed also leaves nothing, and is a death, not a transport error.</td><td><span class="pill fixed">Fixed</span></td><td>Doctrine and the gate's message both name the watchdog case. Ingest test gained an assertion; failed without, passes with.</td><td><code>837f8a4c</code></td></tr>
+  <tr><td>C1</td><td>documentation-quality.r1.f4</td><td>A code comment still argued for swapping to another model on the same provider, which the pinned failover design forbids.</td><td><span class="pill fixed">Fixed</span></td><td>Comment and docstring rewritten to describe only the pinned failover.</td><td><code>a55b0e4d</code></td></tr>
+  <tr><td>C1</td><td>documentation-quality.r1.f5</td><td>The exhaustion helper's docstring limited halt guidance to transport failures, which no longer matched the code.</td><td><span class="pill fixed">Fixed</span></td><td>Docstring updated with the halt change.<a class="inf" title="No separate reply was posted for f5; the verdict for round 2 carries it as fixed, and the commit is inferred from the fix to f1 and f2.">ⁱ</a></td><td><code>75bb090c</code></td></tr>
+  <tr><td colspan="6" style="background:var(--soft)"><b>Code round 2</b> · head <code>6643c534</code> · 3 findings</td></tr>
+  <tr><td>C2</td><td>correctness.r2.f1</td><td>The gate accepted any different provider string as a failover. A claim naming a provider that is not the failover slot spent an attempt, and the real failover was then refused as exhausted.</td><td><span class="pill fixed">Fixed</span></td><td>Reproduced. Failover now accepted only onto the paired provider; step-down requires the starting provider. Test failed without, passes with; a mutant dropping the guard fails it.</td><td><code>56130d01</code></td></tr>
+  <tr><td>C2</td><td>test-adequacy.r2.f1</td><td>No test pinned exhaustion when a claim tries to return to the starting provider after failover.</td><td><span class="pill fixed">Fixed</span></td><td>Test parameterised over both requested providers and both attempt positions. Two of four cases fail against the reviewer's mutant; all pass against the fix.</td><td><code>56130d01</code></td></tr>
+  <tr><td>C2</td><td>documentation-quality.r2.f1</td><td>A comment implied that one earlier garbage output stops a round from ever halting. The rule is per route, last failure.</td><td><span class="pill fixed">Fixed</span></td><td>Comment replaced to match the helper. The behaviour stays pinned by the round-1 test.</td><td><code>e399db1d</code></td></tr>
+  <tr><td colspan="6" style="background:var(--soft)"><b>Code rounds 3 and 4</b> · head <code>e399db1d</code> · clean</td></tr>
+  <tr><td colspan="6" style="background:var(--soft)"><b>Prose round 1</b> · head <code>e399db1d</code> · 8 findings, 3 advisory</td></tr>
+  <tr><td>P1</td><td>internal-consistency.r1.f1</td><td>Two passages gave opposite instructions after an off-sequence claim: one said retry, the other said halt.</td><td><span class="pill fixed">Fixed</span></td><td>Only an exhausted refusal carries halt guidance; the off-sequence sentence stays. Each case now has one sentence.</td><td><code>78c49400</code></td></tr>
+  <tr><td>P1</td><td>internal-consistency.r1.f2</td><td>A run the watchdog killed, leaving no file, was classified two different ways in two sections.</td><td><span class="pill fixed">Fixed</span></td><td>The stale sentence now restates the gate's own message: claim it as a death with the kill line, or as a transport error otherwise.</td><td><code>0fd61251</code></td></tr>
+  <tr><td>P1</td><td>global-consistency.r1.f1</td><td>Same defect as the previous row, seen from the reviewer that checks the document against the rest of the change.</td><td><span class="pill fixed">Fixed</span></td><td>Fixed once with internal-consistency.r1.f2.</td><td><code>0fd61251</code></td></tr>
+  <tr><td>P1</td><td>global-consistency.r1.f2 <span class="kv">advisory</span></td><td>The acceptance criterion says the scenarios run on "a fresh native subagent". The committed protocol uses a headless isolated process and rules the Agent tool out.</td><td><span class="pill def">Deferred</span></td><td>A wording defect in the criteria, not the code. Recorded on the item's notes for the next acceptance restatement.</td><td>—</td></tr>
+  <tr><td>P1</td><td>global-consistency.r1.f3 <span class="kv">advisory</span></td><td>The deployed scenario file told its reader to open files by repository-relative paths, which resolve to nothing once the skill is installed elsewhere.</td><td><span class="pill fixed">Fixed</span></td><td>The scenarios now name their files relative to the skill.</td><td><code>5bc9e856</code></td></tr>
+  <tr><td>P1</td><td>global-consistency.r1.f4 <span class="kv">advisory</span></td><td>The round can now halt because of dead runs, but the verdict schema's only halt reason for a route death is defined as a transport failure.</td><td><span class="pill def">Deferred</span></td><td>A schema change in the shared <code>review-verdict</code> skill. Recorded on the item's notes.</td><td>—</td></tr>
+  <tr><td>P1</td><td>standalone-read.r1.f1</td><td>The doctrine's introduction narrated past improvisation a deployed reader cannot resolve.</td><td><span class="pill fixed">Fixed</span></td><td>Episode removed; the present-tense rationale stays.</td><td><code>e43ccecc</code></td></tr>
+  <tr><td>P1</td><td>standalone-read.r1.f2</td><td>The transport section narrated past outages without a resolvable reference.</td><td><span class="pill fixed">Fixed</span></td><td>Same treatment.</td><td><code>e43ccecc</code></td></tr>
+  <tr><td colspan="6" style="background:var(--soft)"><b>Prose rounds 2 and 3</b> · head <code>5bc9e856</code> · clean</td></tr>
+  <tr><td colspan="6" style="background:var(--soft)"><b>Original claim, round 1</b> · 2026-10-04 · head <code>2659f7f3</code> · 3 findings</td></tr>
+  <tr><td>O1</td><td>security.r1.f1</td><td>The shell grant <code>Bash(git diff *)</code> is not read-only: <code>--output</code> writes a file, and the prefix also matches a shell redirect.</td><td><span class="pill fixed">Fixed</span></td><td>The restated design grants no shell pattern to any reviewer; the diff arrives as a file instead.<a class="inf" title="No reply was posted on this thread. The disposition is read from the restated design in the PR body; the commit is the one that removed the grant.">ⁱ</a></td><td><code>d292ea73</code></td></tr>
+  <tr><td>O1</td><td>test-adequacy.r1.f1</td><td>Tests could accept a Codex reviewer using its re-review tier for a whole-document read.</td><td><span class="pill sup">Superseded</span></td><td>The scope-keyed tier rule and its tests were deleted in the restatement. The existing tier rule and its three tests on <code>main</code> decide this.</td><td><code>4b799fc1</code></td></tr>
+  <tr><td>O1</td><td>documentation-quality.r1.f1</td><td>Test docstrings described re-review pricing as a consequence of the round number alone.</td><td><span class="pill fixed">Fixed</span></td><td>Docstrings follow the tier rule as restated.<a class="inf" title="No reply was posted on this thread; the fix is inferred from the restatement commit.">ⁱ</a></td><td><code>4b799fc1</code></td></tr>
+</table>
+</div></details>
+
+<details><summary>Review replies, rewritten <span>three of the fifteen, one per outcome kind</span></summary><div>
+<div class="reply"><b>Outcome:</b> Fixed.<br><b>Change:</b> A fourth dead-run claim now meets the attempt-limit refusal, with halt guidance and a ledger entry. An off-sequence claim is refused only while attempts remain. (<code>75bb090c</code>)<br><b>Verification:</b> <code>test_a17_a_dead_run_past_the_bound_is_out_of_attempts_not_off_ladder</code> failed before the change and passes after. Restoring the old unconditional refusal makes only that test fail.</div>
+<div class="reply"><b>Outcome:</b> Superseded.<br><b>Change:</b> The restated design deletes the scope-keyed tier rule this finding challenged, and its tests with it. The tier rule on <code>main</code> stands unchanged. (<code>4b799fc1</code>)<br><b>Verification:</b> The three existing tier tests (declared tier in round one, re-review tier later, declared tier when no re-review tier is set) pass on the branch. No scope-keyed test remains.</div>
+<div class="reply"><b>Outcome:</b> Deferred to agents-config-9k9.408 notes (the owning item).<br><b>Change:</b> None here. The verdict schema's halt reasons do not name a halt caused by dead runs. That is a change to the shared <code>review-verdict</code> skill, which has its own tests and review.<br><b>Verification:</b> The finding is advisory and does not block. The schema reads <code>transport-failure</code> for this case until the follow-on lands.</div>
+</div></details>
+
+<h2>Criteria</h2>
+<p>A1 to A18 of the restated acceptance on agents-config-9k9.408. Grouped here; the per-criterion list is on the item.</p>
+<table>
+  <tr><th>Criteria</th><th>What they promise</th><th>Evidence</th></tr>
+  <tr><td>A1 to A12</td><td>every slot has a pin; the round record carries it; a missing pin refuses the round; no grant can write</td><td><code>emit_prompts_test.py</code>, pin and round-record cases</td></tr>
+  <tr><td>A13</td><td>a reader holding only the doctrine files reaches the pinned dispatch, the failover slot and each recovery step</td><td>nine scenarios, three isolated reads each, 27 of 27 on the key at <code>5bc9e856</code></td></tr>
+  <tr><td>A14, A17</td><td>the recovery sequence: one step down, then the other provider, then halt; off-sequence claims refused at no cost</td><td><code>dispatch_gate_test.py::TestDeadRunLadder</code></td></tr>
+  <tr><td>A15</td><td>a live round runs every reviewer on the routing table's model at its pin, on two vendors</td><td>this PR's own code round 1</td></tr>
+  <tr><td>A16</td><td>no file outside the panel's own tree changes</td><td>the changed-files list</td></tr>
+  <tr><td>A18</td><td>every reviewer receives a diff file over its scope</td><td><code>emit_prompts_test.py::TestChangeFile</code></td></tr>
+</table>
+
+<details><summary>Proposed commit message</summary><div>
+<pre><code>feat(review-panel): pin each reviewer's effort and tools as data, and bound recovery from a run that dies [9k9.408]
+
+Work item agents-config-9k9.408, predictable reviewer settings, as an interim cost control.
+
+Why
+The agent running a review round chose each reviewer's effort and tool
+access itself, and avoided one model for whole-document reads on a belief
+no run record supported. Review cost and coverage were unpredictable.
+
+Change
+The panel's configuration holds effort and tools for every reviewer slot,
+and each round records what it used. Every reviewer receives the change as
+a diff file. A run that dies mid-reasoning retries one effort step lower,
+then on the other provider, then halts the round. Models still come from
+the shared routing table.
+
+Verification
+make ci, doc-lint and content-lint exit 0 at 5bc9e856. 27 of 27 isolated
+doctrine reads matched the key. Code and prose review circuits both reached
+a clean sweep. The gate does not yet check a run used its pinned effort.
+
+Work-item: agents-config-9k9.408
+Co-authored-by: Claude Fable 5.1 &lt;noreply@anthropic.com&gt;
+Claude-Session: https://claude.ai/code/session_0117EMqtBiXVaPuAeWFr7LbY</code></pre>
+</div></details>
+
+<div class="footer">🤖 Generated with Claude Code · session_0117EMqtBiXVaPuAeWFr7LbY</div>
+  </div>
+</article>
+
+<!-- ============================================================ PR 839 -->
+<article class="pr" id="pr839">
+  <div class="prhead">
+    <h1>feat(choosing-a-delegate): fail the content gate when any file names a model the routing table does not list [9k9.458.3]</h1>
+    <div class="meta">#839 · merged 2026-10-07 · +360 / −6 · 2 files</div>
+    <div class="was"><b>Was:</b> feat(9k9.458.3): a lint keeps the routing table the only model inventory</div>
+  </div>
+  <div class="prbody">
+
+<p>The routing table in the delegation skill is meant to be the only place a model id lives, so that changing a model is one edit. Nothing enforced that, and stale ids had crept into other skills before. A new test suite now reads every Markdown file under <code>src/</code> and fails the content gate on a model id the table does not list, on any other table that names one, or on a routing table that has grown a column or a third table. Adding one unlisted id to a skill makes <code>make ci</code> exit 2 and name the file and line. The Anthropic aliases such as <code>sonnet</code> are not caught, by design.</p>
+
+<h2>Heads-up</h2>
+<ul class="headsup">
+  <li>No review-panel round ran on this PR.</li>
+  <li>A table row that names only an Anthropic alias (<code>opus</code>, <code>sonnet</code>, <code>haiku</code>, <code>fable</code>) passes the lint. The spec defines ids per vendor naming scheme and an alias is not one.</li>
+</ul>
+
+<h2>Where this fits</h2>
+<div class="crumb">agents-config-9k9              <span class="g">Harness rework (milestone)</span>
+└ agents-config-9k9.458          <span class="g">delegation skills and rules read as one coherent system (spec)</span>
+  └ agents-config-9k9.458.2      <span class="g">implementation of that spec</span>
+    └ <span class="me">agents-config-9k9.458.3</span>  <span class="g">this PR: slice A</span></div>
+<p>Builds on #803 (the routing table itself; item 9k9.457) and #805 (the delegation-coherence spec). Concurrent: #834 and #835 (slice D, the agy launcher takes model and effort as two flags).</p>
+<details><summary>Scope of the owning item <span>agents-config-9k9.458.2</span></summary><div>
+<table>
+  <tr><th>Slice</th><th>What it covers</th><th>Status</th></tr>
+  <tr><td><b>A</b></td><td>a lint keeps the routing table the only model inventory</td><td><b>this PR</b></td></tr>
+  <tr><td>B, C</td><td>the delegation rule and skills cite the table instead of carrying their own model lists</td><td>open<a class="inf" title="Slice letters B and C are inferred from the spec's slice plan; their status was not read.">ⁱ</a></td></tr>
+  <tr><td>D</td><td>the agy launcher passes model and effort through unchanged</td><td>#835, merged</td></tr>
+</table>
+</div></details>
+
+<h2>Risk</h2>
+<table>
+  <tr><th>What could go wrong</th><th>Who or what is exposed</th><th>How we know it did not</th><th>What to do if it did</th></tr>
+  <tr><td>A false positive: the lint rejects a word that is not a model id, and blocks every PR until the pattern is fixed.</td><td>Anyone opening a PR in this repository.</td><td>Patterns are case-sensitive and need the vendor prefix. One control case per vendor scheme passes. The real tree lints clean at 94 files.</td><td>Delete the test file. Nothing ships from it.</td></tr>
+  <tr><td>A false negative: a stale model id ships in a skill.</td><td>Every project with the skill installed, which is today's behaviour.</td><td>34 cases, all failing against a stub lint and passing at head. A live check: one unlisted id appended to a skill made <code>make ci</code> exit 2 naming the line.</td><td>Add the pattern. The alias gap is accepted and recorded above.</td></tr>
+</table>
+
+<h2>Changes</h2>
+<ul>
+  <li><b>The lint</b> is a PEP 723 pytest suite beside the delegation skill. The content gate discovers it by its <code>*_test.py</code> name, and <code>.installignore</code> keeps it out of the deploy. It fails when a file names an unlisted id, a table row outside the routing table names any id, the tier grid or models table changes shape, the file holds a third table, or the table is absent or empty.</li>
+  <li><b>Id patterns</b> are one case-sensitive pattern per vendor scheme: <code>claude-…</code>, <code>gpt-…</code>, <code>gemini-…</code>, <code>google/gemini-…</code>, <code>moonshotai/kimi-…</code>, <code>z-ai/glm-…</code>. A family name in prose such as "GPT-6" is not an id.</li>
+  <li><b>The Providers table became a list.</b> The lint allows two tables in the routing file. The Providers table was a third, so each row became one sentence with the same three facts.</li>
+</ul>
+
+<h2>Discovered work</h2>
+<table>
+  <tr><th>Item</th><th>Status</th><th>What it is</th><th>Why not in this PR</th></tr>
+  <tr><td>not filed</td><td>—</td><td>a table row naming only an Anthropic alias is not caught</td><td>the spec defines ids per vendor scheme; catching aliases is a spec amendment first</td></tr>
+</table>
+
+<div class="fold">fold</div>
+
+<h2>Verification</h2>
+<ul>
+  <li><code>make ci</code>: exit 0, standalone from the worktree root at the merged head. <code>content-tests: 20 suite(s) passed</code>.</li>
+  <li>Live check: appending <code>Dispatch the review to gpt-7-nova.</code> to a skill made <code>make content-tests</code> exit 2 with <code>SKILL.md:82: names model id gpt-7-nova, which the routing table does not list</code>. Reverted after.</li>
+  <li>Not run: a review-panel round.</li>
+</ul>
+
+<h2>Criteria</h2>
+<table>
+  <tr><th>Criterion</th><th>What it promises</th><th>Evidence</th></tr>
+  <tr><td>DEL-A1</td><td>an unlisted id anywhere under <code>src/</code> fails, naming file and id</td><td>12 cases, one invented and one version-bumped id per vendor; a depth case; a listed-id control; the live check above</td></tr>
+  <tr><td>DEL-A2</td><td>the landed tree passes</td><td><code>test_del_a2_landed_tree_passes</code>, 94 files; it failed before the Providers edit on "a third table"</td></tr>
+  <tr><td>DEL-A3</td><td>a fenced example with a listed id fails once its row is removed</td><td>one fixture case</td></tr>
+  <tr><td>DEL-A4</td><td>an <code>evals/</code> directory is not read</td><td>two cases at different depths</td></tr>
+  <tr><td>DEL-A5</td><td>an absent or empty routing table fails, naming it</td><td>two cases</td></tr>
+  <tr><td>DEL-A6</td><td>a table row elsewhere naming a listed id fails; the same id in prose passes</td><td>four row shapes plus the prose control</td></tr>
+  <tr><td>DEL-A7</td><td>the routing table keeps its two tables and their columns</td><td>four cases</td></tr>
+</table>
+
+<details><summary>Proposed commit message</summary><div>
+<pre><code>feat(choosing-a-delegate): fail the content gate when any file names a model the routing table does not list [9k9.458.3]
+
+Work item agents-config-9k9.458.3, the routing table is the only model inventory.
+
+Why
+The routing table is meant to be the only place a model id lives, so a
+model change is one edit. Nothing enforced it, and stale ids had crept
+into other skills.
+
+Change
+A pytest suite beside the delegation skill reads every Markdown file under
+src/ and fails on an unlisted model id, on a table elsewhere that names
+one, or on a routing table that has changed shape. The Providers table in
+the routing file becomes a list, because the lint allows two tables there.
+
+Verification
+make ci exit 0 at the merged head, 20 content suites. 34 cases fail
+against a stub lint and pass at head. One unlisted id appended to a skill
+made the gate exit 2 naming the line. Anthropic aliases are not caught.
+
+Work-item: agents-config-9k9.458.3
+Co-authored-by: Claude Opus &lt;noreply@anthropic.com&gt;</code></pre>
+</div></details>
+
+<div class="footer">🤖 Generated with Claude Code</div>
+  </div>
+</article>
+
+<!-- ============================================================ PR 838 -->
+<article class="pr" id="pr838">
+  <div class="prhead">
+    <h1>feat(grillui): send every answer typed in the human's own words to the expert seat [9k9.315.14]</h1>
+    <div class="meta">#838 · merged 2026-10-07 · +281 / −83 · production diff +50 / −14 across 4 files</div>
+    <div class="was"><b>Was:</b> feat(9k9.315.14): every answer in the human's own words is weighed by the expert, whether or not it opens anything</div>
+  </div>
+  <div class="prbody">
+
+<p>The grilling board has two seats that compose replies: a fast first rung and a slower expert. A typed answer used to reach the expert only when it opened or changed a decision. Now any answer carrying a note or free text goes to the expert, whether or not anything depends on it. When nothing does, no impact task is recorded and nothing waits. This closes slice S2 of the pending-analysis spec by following its decision PND-D4 as written. The code for the map's prose escalation conditions is now unreachable but still present.</p>
+
+<h2>Heads-up</h2>
+<ul class="headsup">
+  <li>No review-panel round ran on this PR.</li>
+  <li>The map's prose escalation conditions (commitment, irreducible trade-off, several decisions at once) can no longer fire on the map. Their code is still there. Threads still use them.</li>
+  <li>Thirteen existing tests changed their vehicle or channel. Their assertions did not change. One browser test was moved and renamed.</li>
+</ul>
+
+<h2>Where this fits</h2>
+<div class="crumb">agents-config-9k9            <span class="g">Harness rework (milestone)</span>
+└ agents-config-9k9.315      <span class="g">grilling board: pending analysis, impact tasks, terminal review (spec)</span>
+  └ <span class="me">agents-config-9k9.315.14</span>  <span class="g">this PR: the last item of slice S2</span></div>
+<p>Builds on #829 through #833 (the rest of S2: answers hold what they open, rulings move their own decision, failed seats hand their obligation up). Concurrent: none.</p>
+<details><summary>Scope of the owning item <span>agents-config-9k9.315</span></summary><div>
+<table>
+  <tr><th>Slice</th><th>What it covers</th><th>Status</th></tr>
+  <tr><td>S1</td><td>pending analysis: a decision a ruling may move waits until the ruling lands</td><td>#808, merged</td></tr>
+  <tr><td><b>S2</b></td><td>impact tasks: what an answer opens, who weighs it, at what effort; seat failures</td><td>#829–#833 merged; <b>this PR closes it</b></td></tr>
+  <tr><td>S3</td><td>the terminal review phase</td><td>not started<a class="inf" title="Inferred from the parent item's title; the slice letter was not read.">ⁱ</a></td></tr>
+</table>
+</div></details>
+
+<h2>Risk</h2>
+<table>
+  <tr><th>What could go wrong</th><th>Who or what is exposed</th><th>How we know it did not</th><th>What to do if it did</th></tr>
+  <tr><td>A typed answer is weighed at the wrong effort: the human waits on the heavy seat for a trivial note, or gets a shallow read on a channel they moved to the expert on purpose.</td><td>The human in a grilling session.</td><td>Five new unit tests pin the three-way effort rule, including the policy-moved channel and the human-moved channel. Four of them failed before the change.</td><td>Revert. The three spec amendments revert with it, since they state the new behaviour.</td></tr>
+  <tr><td>An answer with no text on an unmarked option changes route.</td><td>Every ordinary option pick.</td><td>An existing test pins that it records no task and goes where it did before.</td><td>Revert.</td></tr>
+</table>
+<details><summary>Blast radius</summary><div>
+<div class="reach">
+  <div class="hub">grillui · lane.py, dispatch.py, drivers.py, schemas.py</div>
+  <div class="arm hot"><span class="kind">behaviour change</span><b>expert seat driver</b>picks effort from task, human-moved or policy-moved state</div>
+  <div class="arm hot"><span class="kind">behaviour change</span><b>map channel</b>typed answers skip the first rung</div>
+  <div class="arm"><span class="kind">unchanged</span><b>thread channels</b>keep the prose escalation conditions</div>
+  <div class="arm warn"><span class="kind">dead code</span><b>map prose escalation conditions</b>unreachable; not removed here</div>
+  <div class="arm"><span class="kind">prose</span><b>grilling UI spec, three passages</b>now say the expert weighs the note</div>
+</div>
+<div class="flow">
+  <div class="st">Human answers on the map</div><div class="ar">→</div>
+  <div class="st chg">Typed text?<small>yes → expert, always</small></div><div class="ar">→</div>
+  <div class="st chg">Pick effort<small>task → task effort; human-moved → heavy; else task effort</small></div><div class="ar">→</div>
+  <div class="st">Expert composes reply</div><div class="ar">→</div>
+  <div class="st">Impact task recorded, if anything is downstream</div>
+</div>
+</div></details>
+
+<h2>Changes</h2>
+<ul>
+  <li><b>Routing.</b> A human answer with a note or free text always goes to the expert. An answer with no text on an unmarked option goes where it did before. Every such dispatch carries the backpressure paragraph.</li>
+  <li><b>Effort rule.</b> A turn with an impact task runs at the task effort. A typed turn with no task runs at the task effort on a channel the human has not moved to the expert. The same turn runs at the heavy effort on a channel the human moved themselves. A channel the policy moved counts as not moved by the human.</li>
+  <li><b>Spec text.</b> Three passages in the grilling UI spec (GUI-A33, GUI-D48 and its third trigger) now say the expert weighs the note, each citing PND-D4.</li>
+  <li><b>Tests.</b> Thirteen existing tests use an option pick instead of a typed note, or run on a thread instead of the map. One browser test moved to a thread and was renamed; its evidence row was re-pointed.</li>
+</ul>
+
+<h2>Discovered work</h2>
+<table>
+  <tr><th>Item</th><th>Status</th><th>What it is</th><th>Why not in this PR</th></tr>
+  <tr><td>not filed</td><td>—</td><td>remove the map's unreachable prose escalation conditions and the page's map-toggle highlight</td><td>dead-code removal is separate work; keeping it out holds this diff to the behaviour change<a class="inf" title="The PR says pruning is separate work and names no item; whether one was filed is not stated.">ⁱ</a></td></tr>
+</table>
+
+<div class="fold">fold</div>
+
+<h2>Verification</h2>
+<ul>
+  <li><code>make ci</code>: exit 0, standalone from the worktree root at the merged head, spec-lint included.</li>
+  <li><code>make e2e-grillui</code>: exit 0, 97 passed.</li>
+  <li>An AST scan confirmed no module-level name is defined twice in any touched file.</li>
+  <li>Not run: a review-panel round.</li>
+</ul>
+<p><b>Evidence ledger.</b> In the pending-analysis evidence file, PND-A2 goes from open to twelve test rows and PND-A11 from open to four. In the grilling UI evidence file, the GUI-A33 row points to the renamed browser test. No other row cited a moved test.</p>
+
+<h2>Criteria</h2>
+<table>
+  <tr><th>Criterion</th><th>What it promises</th><th>Evidence</th></tr>
+  <tr><td>PND-A2</td><td>custom text with nothing downstream goes to the expert, records no task, and nothing waits</td><td><code>test_pnd_a2_custom_text_that_opens_nothing_is_still_weighed_by_the_expert</code>, two cases; red before</td></tr>
+  <tr><td>PND-A2, rule 2</td><td>at the task effort on a channel the human has not moved, including a policy-moved one</td><td>two tests; the first was red before, the policy-moved case pins behaviour that already held</td></tr>
+  <tr><td>PND-A2, rule 3</td><td>custom text keeps the heavy effort on a channel the human moved</td><td>one parametrised test plus an unchanged assertion in the transfer suite; red before, it ran at medium</td></tr>
+  <tr><td>PND-A2, rule 1</td><td>a task turn runs at the task effort on a human-moved channel</td><td>one test; pins behaviour no test covered before</td></tr>
+  <tr><td>PND-A11</td><td>backpressure rides every custom-text dispatch</td><td>one parametrised test; red before, there was no expert dispatch</td></tr>
+</table>
+
+<details><summary>Proposed commit message</summary><div>
+<pre><code>feat(grillui): send every answer typed in the human's own words to the expert seat [9k9.315.14]
+
+Work item agents-config-9k9.315.14, last item of slice S2, pending analysis.
+
+Why
+A typed answer reached the expert seat only when it opened or changed a
+decision. A note that opened nothing was read by the fast first rung,
+which the spec's decision PND-D4 says should never read the human's words.
+
+Change
+Any answer carrying a note or free text goes to the expert. With nothing
+downstream, no impact task is recorded and nothing waits. Effort follows
+one rule: a task turn runs at the task effort; a typed turn runs at the
+task effort unless the human moved the channel to the expert, where it
+keeps the heavy effort. Three spec passages now say the same.
+
+Verification
+make ci exit 0, spec-lint included. make e2e-grillui 97 passed. Five new
+unit tests pin the effort rule; four were red before. The map's prose
+escalation conditions are now unreachable and their code is not removed.
+
+Work-item: agents-config-9k9.315.14
+Co-authored-by: Claude Fable 5.1 &lt;noreply@anthropic.com&gt;
+Claude-Session: https://claude.ai/code/session_01PbsEMZWoDMTXQ2jMMP1XFV</code></pre>
+</div></details>
+
+<div class="footer">🤖 Generated with Claude Code · session_01PbsEMZWoDMTXQ2jMMP1XFV</div>
+  </div>
+</article>
+
+</main>
+</body>
+</html>
