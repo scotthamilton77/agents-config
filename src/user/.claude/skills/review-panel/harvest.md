@@ -175,8 +175,8 @@ dead run:
 2. The failover seat at its pin, when the table lists no effort below the one that died or the
    step down also died.
 3. A dead run on the failover seat ends the ladder: the lens is out of attempts, and the round
-   halts when the last failure on every route the lens ran on was a dead route, which the gate's
-   refusal says.
+   halts when the last failure on every route the lens ran on was a dead route or a dead run,
+   which the gate's refusal says.
 
 Whatever the failure, the next claim declares its reason and the failure verbatim, the proxy
 line or the watchdog's kill line included:
