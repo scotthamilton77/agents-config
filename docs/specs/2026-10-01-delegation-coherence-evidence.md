@@ -16,14 +16,50 @@ The audit in section 3 supports the decisions and establishes no criterion.
 - DEL-B5 | open
 - DEL-B6 | open
 - DEL-B7 | open
-- DEL-C1 | open
-- DEL-C2 | open
-- DEL-C3 | open
+- DEL-C1 | probe: docs/specs/delegation-coherence-scenarios-c.md::C1a
+- DEL-C1 | probe: docs/specs/delegation-coherence-scenarios-c.md::C1b
+- DEL-C1 | probe: docs/specs/delegation-coherence-scenarios-c.md::C1c
+- DEL-C1 | probe: docs/specs/delegation-coherence-scenarios-c.md::C1d
+- DEL-C2 | probe: docs/specs/delegation-coherence-scenarios-c.md::C2a
+- DEL-C2 | probe: docs/specs/delegation-coherence-scenarios-c.md::C2b
+- DEL-C2 | probe: docs/specs/delegation-coherence-scenarios-c.md::C2c
+- DEL-C2 | probe: docs/specs/delegation-coherence-scenarios-c.md::C2d
+- DEL-C2 | probe: docs/specs/delegation-coherence-scenarios-c.md::C2e
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::C1c
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::X2
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::X3
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::X4
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::X5
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O1
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O2
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O3
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O4
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O5
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O6
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O7
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A1
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A2
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A3
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A4
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A5
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A6
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A7
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H1
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H2
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H3
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H4
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H5
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H6
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::K1
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::K2
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::K3
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::K4
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::K5
 - DEL-C4 | open
 - DEL-C5 | open
-- DEL-C6 | open
+- DEL-C6 | probe: docs/specs/delegation-coherence-scenarios-c.md::C6
 - DEL-C7 | open
-- DEL-C8 | open
+- DEL-C8 | probe: docs/specs/delegation-coherence-scenarios-c.md::C8
 - DEL-C9 | open
 - DEL-G1 | open
 - DEL-G2 | open

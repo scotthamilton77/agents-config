@@ -535,4 +535,181 @@ not earlier than the recorded exit time.
 
 ## Runs
 
-Filled in after the runs.
+Every run was a fresh native subagent pinned to `sonnet`, given the prompt
+above and nothing else, on 2026-10-10. A reader's prompt was handed to it as
+a file it was told to read first. The C6 and C8 stubs ran under `/tmp` and
+were not committed.
+
+The baseline ran once per scenario where the old prose could inform it,
+against the skill prose as it stood before the prose change. The agy
+scenarios have no baseline, because slice C leaves that skill unchanged. C8
+has no baseline, because the live wait is the costly part of the run and the
+old prose taught no collection at all. The baseline failed C2b, C2c, C2e, O4
+and K4. Several other baselines passed because the reader inferred the
+answer from the closed answer set or from the launcher scripts in the skill
+directory.
+
+C1d's three answers name the pid through the pid file that the skill's
+command writes, which the input says holds 48213. That command signals 48213
+and no other process, and it selects nothing by name, so it meets the key.
+C6's three commands each wrote the pid file and the prompt file as the skill
+teaches. Each one left the fixed report in the named file, and each recorded
+invocation was `task --model gpt-6.1-sol --effort medium --prompt-file …`
+with no `--write`. In C8 every stub exited at epoch 1791658823, and every
+answer was given after that.
+
+| Scenario | Run | Prose | Answer | Key | Result |
+| --- | --- | --- | --- | --- | --- |
+| C1a | baseline | before | `ANSWER: USABLE` | USABLE | pass |
+| C1a | 1 | after | `ANSWER: USABLE` | USABLE | pass |
+| C1a | 2 | after | `ANSWER: USABLE` | USABLE | pass |
+| C1a | 3 | after | `ANSWER: USABLE` | USABLE | pass |
+| C1b | baseline | before | `ANSWER: RUNNING` | RUNNING | pass |
+| C1b | 1 | after | `ANSWER: RUNNING` | RUNNING | pass |
+| C1b | 2 | after | `ANSWER: RUNNING` | RUNNING | pass |
+| C1b | 3 | after | `ANSWER: RUNNING` | RUNNING | pass |
+| C1c | baseline | before | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| C1c | 1 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| C1c | 2 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| C1c | 3 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| C1d | baseline | before | `COMMAND: kill 48213` | signals pid 48213 only, no name match | pass |
+| C1d | 1 | after | `COMMAND: kill -TERM "$(cat <pidfile>)"` | signals pid 48213 only, no name match | pass |
+| C1d | 2 | after | `COMMAND: kill -TERM "$(cat <pidfile>)"` | signals pid 48213 only, no name match | pass |
+| C1d | 3 | after | `COMMAND: kill -TERM "$(cat <pidfile>)"` | signals pid 48213 only, no name match | pass |
+| C2a | baseline | before | `FLAGS: --timeout and --idle-timeout` | `--timeout`, `--idle-timeout` | pass |
+| C2a | 1 | after | `FLAGS: --timeout and --idle-timeout` | `--timeout`, `--idle-timeout` | pass |
+| C2a | 2 | after | `FLAGS: --timeout and --idle-timeout` | `--timeout`, `--idle-timeout` | pass |
+| C2a | 3 | after | `FLAGS: --timeout and --idle-timeout` | `--timeout`, `--idle-timeout` | pass |
+| C2b | baseline | before | `unknown (no bound documented)` | exit 75; `[run] reason=timeout`, `[run] reason=idle`; ends the child process group | fail |
+| C2b | 1 | after | `TIMEOUT: exit=75 line=[run] reason=timeout / IDLE: exit=75 line=[run] reason=idle / ACTION: SIGTERM to the child's whole process group, SIGKILL five seconds later, then closes the proxy` | exit 75; `[run] reason=timeout`, `[run] reason=idle`; ends the child process group | pass |
+| C2b | 2 | after | `TIMEOUT: exit=75 line=[run] reason=timeout / IDLE: exit=75 line=[run] reason=idle / ACTION: ends the child's whole process group, SIGTERM then SIGKILL five seconds later, then closes the proxy` | exit 75; `[run] reason=timeout`, `[run] reason=idle`; ends the child process group | pass |
+| C2b | 3 | after | `TIMEOUT: exit=75 line=[run] reason=timeout / IDLE: exit=75 line=[run] reason=idle / ACTION: SIGTERM to the child's whole process group, SIGKILL five seconds later, closes the proxy` | exit 75; `[run] reason=timeout`, `[run] reason=idle`; ends the child process group | pass |
+| C2c | baseline | before | `not documented` | SIGTERM or SIGINT to the launcher; exit 75, `[run] reason=signal` | fail |
+| C2c | 1 | after | `SIGNAL: SIGTERM TO: the launcher's own process, the node run.js process (SIGINT also works) / REPORTS: exit=75 line=[run] reason=signal` | SIGTERM or SIGINT to the launcher; exit 75, `[run] reason=signal` | pass |
+| C2c | 2 | after | `SIGNAL: SIGTERM TO: the launcher's own process, the node run.js process (SIGINT also works) / REPORTS: exit=75 line=[run] reason=signal` | SIGTERM or SIGINT to the launcher; exit 75, `[run] reason=signal` | pass |
+| C2c | 3 | after | `SIGNAL: SIGTERM TO: the launcher's own node run.js process (not the child or the proxy; SIGINT also works) / REPORTS: exit=75 line=[run] reason=signal` | SIGTERM or SIGINT to the launcher; exit 75, `[run] reason=signal` | pass |
+| C2d | 1 | after | `EFFORT: low` | `low` | pass |
+| C2d | 2 | after | `EFFORT: low` | `low` | pass |
+| C2d | 3 | after | `EFFORT: low` | `low` | pass |
+| C2e | baseline | before | `not recorded in the skill files` | 4 to 9 minutes; 27 minutes | fail |
+| C2e | 1 | after | `INLINE: 4 to 9 minutes / REPO: 27 minutes` | 4 to 9 minutes; 27 minutes | pass |
+| C2e | 2 | after | `INLINE: 4 to 9 minutes / REPO: 27 minutes` | 4 to 9 minutes; 27 minutes | pass |
+| C2e | 3 | after | `INLINE: 4 to 9 minutes / REPO: 27 minutes` | 4 to 9 minutes; 27 minutes | pass |
+| C6 | baseline | before | `node <stub> task --model gpt-6.1-sol --effort medium "…" > report.json; report file held the fixed report; argv task, no --write: pass` | fixed report in the named file; argv `task`, no `--write` | pass |
+| C6 | 1 | after | `reader command: node "$COMPANION" task --model gpt-6.1-sol --effort medium --prompt-file brief.txt > report.json 2> run.log & echo $! > run.pid; wait $! / ran: exit 0, report.json = fixed report, argv [task, --model, gpt-6.1-sol, --effort, medium, --prompt-file, …], no --write` | fixed report in the named file; argv `task`, no `--write` | pass |
+| C6 | 2 | after | `same form (pid file, prompt file); ran: exit 0, report.json = fixed report, argv [task, --model, gpt-6.1-sol, --effort, medium, --prompt-file, …], no --write` | fixed report in the named file; argv `task`, no `--write` | pass |
+| C6 | 3 | after | `same form; ran: exit 0, report.json = fixed report, argv [task, --model, gpt-6.1-sol, --effort, medium, --prompt-file, …], no --write` | fixed report in the named file; argv `task`, no `--write` | pass |
+| C8 | 1 | after | `REPORT holds c8-a268f719d5d9fb3d; PROCESS: exited; ANSWERED_AT 1791658828, stub exited 1791658823` | the run token, `PROCESS: exited`, answered at or after the recorded exit | pass |
+| C8 | 2 | after | `REPORT holds c8-df678a2f8d319025; PROCESS: exited; ANSWERED_AT 1791658828, stub exited 1791658823` | the run token, `PROCESS: exited`, answered at or after the recorded exit | pass |
+| C8 | 3 | after | `REPORT holds c8-64a617f77c7afecd; PROCESS: exited; ANSWERED_AT 1791658858, stub exited 1791658823` | the run token, `PROCESS: exited`, answered at or after the recorded exit | pass |
+| X2 | baseline | before | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X2 | 1 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X2 | 2 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X2 | 3 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X3 | baseline | before | `ANSWER: REFUSED` | REFUSED | pass |
+| X3 | 1 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| X3 | 2 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| X3 | 3 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| X4 | baseline | before | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X4 | 1 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X4 | 2 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X4 | 3 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X5 | baseline | before | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| X5 | 1 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| X5 | 2 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| X5 | 3 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O1 | 1 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| O1 | 2 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| O1 | 3 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| O2 | baseline | before | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O2 | 1 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O2 | 2 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O2 | 3 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O3 | baseline | before | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O3 | 1 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O3 | 2 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O3 | 3 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O4 | baseline | before | `ANSWER: UNUSABLE` | NOT-SERVED | fail |
+| O4 | 1 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O4 | 2 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O4 | 3 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O5 | baseline | before | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O5 | 1 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O5 | 2 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O5 | 3 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O6 | baseline | before | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O6 | 1 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O6 | 2 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O6 | 3 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O7 | baseline | before | `ANSWER: REFUSED` | REFUSED | pass |
+| O7 | 1 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| O7 | 2 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| O7 | 3 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| A1 | 1 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| A1 | 2 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| A1 | 3 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| A2 | 1 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| A2 | 2 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| A2 | 3 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| A3 | 1 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| A3 | 2 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| A3 | 3 | after | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| A4 | 1 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| A4 | 2 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| A4 | 3 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| A5 | 1 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| A5 | 2 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| A5 | 3 | after | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| A6 | 1 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| A6 | 2 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| A6 | 3 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| A7 | 1 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| A7 | 2 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| A7 | 3 | after | `ANSWER: REFUSED` | REFUSED | pass |
+| H1 | baseline | before | `ANSWER: INGEST` | INGEST | pass |
+| H1 | 1 | after | `ANSWER: INGEST` | INGEST | pass |
+| H1 | 2 | after | `ANSWER: INGEST` | INGEST | pass |
+| H1 | 3 | after | `ANSWER: INGEST` | INGEST | pass |
+| H2 | baseline | before | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
+| H2 | 1 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
+| H2 | 2 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
+| H2 | 3 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
+| H3 | baseline | before | `ANSWER: transport-error` | transport-error | pass |
+| H3 | 1 | after | `ANSWER: transport-error` | transport-error | pass |
+| H3 | 2 | after | `ANSWER: transport-error` | transport-error | pass |
+| H3 | 3 | after | `ANSWER: transport-error` | transport-error | pass |
+| H4 | baseline | before | `ANSWER: unusable-output` | unusable-output | pass |
+| H4 | 1 | after | `ANSWER: unusable-output` | unusable-output | pass |
+| H4 | 2 | after | `ANSWER: unusable-output` | unusable-output | pass |
+| H4 | 3 | after | `ANSWER: unusable-output` | unusable-output | pass |
+| H5 | baseline | before | `ANSWER: STOP` | STOP | pass |
+| H5 | 1 | after | `ANSWER: STOP` | STOP | pass |
+| H5 | 2 | after | `ANSWER: STOP` | STOP | pass |
+| H5 | 3 | after | `ANSWER: STOP` | STOP | pass |
+| H6 | baseline | before | `ANSWER: transport-error` | transport-error | pass |
+| H6 | 1 | after | `ANSWER: transport-error` | transport-error | pass |
+| H6 | 2 | after | `ANSWER: transport-error` | transport-error | pass |
+| H6 | 3 | after | `ANSWER: transport-error` | transport-error | pass |
+| K1 | baseline | before | `ANSWER: INGEST` | INGEST | pass |
+| K1 | 1 | after | `ANSWER: INGEST` | INGEST | pass |
+| K1 | 2 | after | `ANSWER: INGEST` | INGEST | pass |
+| K1 | 3 | after | `ANSWER: INGEST` | INGEST | pass |
+| K2 | baseline | before | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
+| K2 | 1 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
+| K2 | 2 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
+| K2 | 3 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
+| K3 | baseline | before | `ANSWER: transport-error` | transport-error | pass |
+| K3 | 1 | after | `ANSWER: transport-error` | transport-error | pass |
+| K3 | 2 | after | `ANSWER: transport-error` | transport-error | pass |
+| K3 | 3 | after | `ANSWER: transport-error` | transport-error | pass |
+| K4 | baseline | before | `ANSWER: INGEST` | unusable-output | fail |
+| K4 | 1 | after | `ANSWER: unusable-output` | unusable-output | pass |
+| K4 | 2 | after | `ANSWER: unusable-output` | unusable-output | pass |
+| K4 | 3 | after | `ANSWER: unusable-output` | unusable-output | pass |
+| K5 | baseline | before | `ANSWER: STOP` | STOP | pass |
+| K5 | 1 | after | `ANSWER: STOP` | STOP | pass |
+| K5 | 2 | after | `ANSWER: STOP` | STOP | pass |
+| K5 | 3 | after | `ANSWER: STOP` | STOP | pass |
+
+All 120 runs on the changed prose returned the keyed answer: 3 for each of
+the 40 scenarios. DEL-C1, DEL-C2, DEL-C3, DEL-C6 and DEL-C8 pass.
