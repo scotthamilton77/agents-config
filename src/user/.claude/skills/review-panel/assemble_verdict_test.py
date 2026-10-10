@@ -286,6 +286,39 @@ class TestRoundTrip:
 
 
 class TestCoverage:
+    def test_a_lens_whose_every_ingest_was_refused_is_not_covered(self, round1, dest, tmp_path):
+        """The gate refuses a clean report from a reviewer that never opened the target and
+        records the attempt as unread. A report file beside that attempt is the refused output
+        under another name, so the lens fails coverage as a silent one does."""
+        round_dir = round1.clone(tmp_path / "round-unread")
+        lens = round1.staffed()[0]
+        with (round_dir / "attempts.jsonl").open("a", encoding="utf-8") as ledger:
+            ledger.write(json.dumps({
+                "kind": "outcome", "lens": lens, "attempt": 1, "outcome": "unread",
+                "code": "no-read-evidence", "output_path": str(round_dir / f"{lens}.attempt-1.out"),
+                "timestamp": "2026-10-10T00:00:00+00:00",
+            }) + "\n")
+        code, answer, out = assemble(round1, dest, round_dir=round_dir)
+        assert code == 2
+        assert answer["errors"][0]["code"] == "incomplete-round"
+        assert lens in answer["errors"][0]["message"]
+        assert "unread" in answer["errors"][0]["message"]
+        assert not out.exists()
+
+    def test_a_refused_ingest_followed_by_a_parsed_one_is_covered(self, round1, dest, tmp_path):
+        round_dir = round1.clone(tmp_path / "round-recovered")
+        lens = round1.staffed()[0]
+        with (round_dir / "attempts.jsonl").open("a", encoding="utf-8") as ledger:
+            for attempt, outcome in ((1, "unread"), (2, "parsed")):
+                ledger.write(json.dumps({
+                    "kind": "outcome", "lens": lens, "attempt": attempt, "outcome": outcome,
+                    "output_path": str(round_dir / f"{lens}.attempt-{attempt}.out"),
+                    "timestamp": "2026-10-10T00:00:00+00:00",
+                }) + "\n")
+        code, answer, out = assemble(round1, dest, round_dir=round_dir)
+        assert code == 0, answer
+        assert out.exists()
+
     def test_b11_a_staffed_lens_with_no_report_refuses(self, round1, dest):
         """Fail closed: silence is incompleteness, never a clean lens."""
         flags = round1.reports(dest)

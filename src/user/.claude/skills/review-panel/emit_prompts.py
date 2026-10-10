@@ -1076,34 +1076,44 @@ def seat_pins(
 def change_diffs(
     repo_root: str | None, base_sha: str | None, head_sha: str | None,
     scopes: dict[str, dict], out_dir: Path,
-) -> dict[str, tuple[Path, bytes]]:
-    """Compute, before anything is written, the unified diff each lens reads over its scope.
+) -> dict[str, tuple[Path, bytes, list[str]]]:
+    """Compute, before anything is written, the change each lens reads over its scope: the
+    unified diff, and the repository-relative paths it touches.
 
     A whole-artifact read gets the base to the head, and a delta read gets the head it last
     judged to the head. The diff goes to a file beside the lens's prompt because a reviewer
     granted no shell cannot run git, and a lens can fail over to such a seat after emission.
-    A diff that cannot be computed refuses the round, since a prompt pointing at a change
-    nobody can read reviews nothing.
+    The paths go into the prompt itself, because a reviewer holding only file-reading tools
+    cannot turn two revisions into the files to open, and one that cannot find the target
+    tends to answer clean rather than say so. A change that cannot be computed refuses the
+    round, since a prompt pointing at a change nobody can read reviews nothing.
     """
-    diffs: dict[str, tuple[Path, bytes]] = {}
-    by_start: dict[str, bytes] = {}
+    diffs: dict[str, tuple[Path, bytes, list[str]]] = {}
+    by_start: dict[str, tuple[bytes, list[str]]] = {}
     head = head_sha or "HEAD"
     for name, entry in scopes.items():
         start = entry.get("delta_base_sha") or base_sha or ""
         if start not in by_start:
-            proc = subprocess.run(
-                ["git", "-C", repo_root or ".", "diff", "--end-of-options", start, head],
-                capture_output=True, check=False,
-            )
-            if proc.returncode != 0:
-                raise Refusal(
-                    "unreadable-change",
-                    f"cannot write the change {start}..{head} for lens {name!r}: "
-                    + proc.stderr.decode("utf-8", "replace").strip(),
-                )
-            by_start[start] = proc.stdout
-        diffs[name] = (out_dir / f"{name}.diff", by_start[start])
+            diff = _git_change(repo_root, start, head, name, [])
+            names = _git_change(repo_root, start, head, name, ["--name-only"])
+            by_start[start] = (diff, names.decode("utf-8", "replace").split())
+        diff, paths = by_start[start]
+        diffs[name] = (out_dir / f"{name}.diff", diff, paths)
     return diffs
+
+
+def _git_change(repo_root: str | None, start: str, head: str, name: str, flags: list[str]) -> bytes:
+    proc = subprocess.run(
+        ["git", "-C", repo_root or ".", "diff", *flags, "--end-of-options", start, head],
+        capture_output=True, check=False,
+    )
+    if proc.returncode != 0:
+        raise Refusal(
+            "unreadable-change",
+            f"cannot write the change {start}..{head} for lens {name!r}: "
+            + proc.stderr.decode("utf-8", "replace").strip(),
+        )
+    return proc.stdout
 
 
 def _qualified(lens: Any, round_no: Any, item: str) -> str:
@@ -1148,6 +1158,16 @@ def _render_ledger(ledger: list[dict]) -> str:
         for item in ledger
     ]
     return "\n".join(lines) + "\n"
+
+
+def _render_changed_paths(paths: list[str]) -> str:
+    """The files the change touches, one per line, relative to the repository root."""
+    if not paths:
+        return "No file changed over your scope.\n"
+    return (
+        "Files changed over your scope, relative to the repository root:\n"
+        + "".join(f"- {inert(path)}\n" for path in paths)
+    )
 
 
 def _mandate_heading(profile: dict) -> str:
@@ -1206,8 +1226,10 @@ def render_prompt(lens: dict, ctx: dict) -> str:
             f"Base commit: {inert(ctx['base_sha'])}\n"
             f"Reviewed head commit: {inert(ctx['head_sha'])}\n"
             f"The change over your scope, as a unified diff: {inert(ctx['diff_paths'][name])}\n"
-            "Read the change from that file, or resolve it against the repository if you can run "
-            "git, and read whatever surrounding material your scope requires.\n"
+            f"{_render_changed_paths(ctx['changed_paths'][name])}"
+            "Read the change from that file, open the changed files by the paths listed, or "
+            "resolve the change against the repository if you can run git, and read whatever "
+            "surrounding material your scope requires.\n"
         ),
         "## Retained categories declared for this round\n",
         (
@@ -1293,7 +1315,8 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         "base_sha": args.base_sha or "", "head_sha": args.head_sha or "",
         "retained": retained, "ledger": ledger, "prior_findings": prior_findings,
         "scopes": scopes, "sweep": bool(args.sweep), "profile": profile,
-        "diff_paths": {name: str(path) for name, (path, _) in diffs.items()},
+        "diff_paths": {name: str(path) for name, (path, _, _) in diffs.items()},
+        "changed_paths": {name: paths for name, (_, _, paths) in diffs.items()},
     }
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1302,7 +1325,7 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         path = out_dir / f"{lens['lens']}.md"
         path.write_text(render_prompt(lens, ctx), encoding="utf-8")
         written.append(str(path))
-        diff_path, diff = diffs[lens["lens"]]
+        diff_path, diff, _ = diffs[lens["lens"]]
         diff_path.write_bytes(diff)
         written.append(str(diff_path))
     round_meta = {

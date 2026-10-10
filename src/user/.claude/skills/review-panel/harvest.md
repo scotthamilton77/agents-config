@@ -262,7 +262,9 @@ that quotes these patterns cannot vouch for the reviewer that was sent to read i
 
 A clean report with nothing recorded is **unread** — its own refusal, and neither a transport
 failure nor an unparseable body. Re-dispatch the lens with reason `unusable-output`. A findings
-report is never refused this way: it names what it found, and what it found is the evidence.
+report is never refused this way: it names what it found, and what it found is the evidence. The
+assembler reads these outcomes: a lens whose every ingest the gate refused has no report, and a
+report file written beside a refused attempt does not cover it.
 
 Past the ladder the output is **unparseable**: the lens has no entry and the round is incomplete
 unless it is re-dispatched with reason `unusable-output`. Tolerance stops there on purpose.
