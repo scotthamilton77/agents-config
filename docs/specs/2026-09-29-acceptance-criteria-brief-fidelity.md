@@ -250,9 +250,10 @@ passes.
 One rule serves every fixture, F6 included. The contract passes a side at four
 of five and sends only a three-of-five side on to a second five. This
 evaluation sends a four-of-five side on as well, because a brief is cheap to
-score: nine sides at five Opus dispatches each, with about one side in five
-going to its second five for a writer right nineteen times in twenty, is some
-55 dispatches, where the contract's 29 cases on Codex cannot afford the same.
+score: seven fixtures at five Opus dispatches each, with about one side in
+five going on to its second five for a writer right nineteen times in twenty,
+is some 45 dispatches, where the contract's 29 cases on Codex cannot afford
+the same.
 The second stage buys discrimination. A writer that pastes wrong one time in
 five locks a side about seven times in ten under this rule and eight in ten
 under the contract's, and a writer right nineteen times in twenty locks a side
