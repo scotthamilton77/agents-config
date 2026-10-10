@@ -255,8 +255,9 @@ applies to the retained stderr, and it never accepts
 the prompt's own report schema, so an echoed prompt yields the reviewer's report or nothing. The
 target under review sits inside the echoed prompt, so a target that plants a marker line and a
 report-shaped object of its own still sits before the boundary and cannot pose as the report. A
-finding that quotes that marker shares its line with the report around it, so a reviewer may cite
-the marker freely.
+finding may quote the marker inside its text, where it shares its line with the JSON around it; a
+marker alone on a line anywhere in the output moves the boundary, which is why the completion
+contract asks for one JSON object and nothing else.
 
 A **clean** report is checked against the attempt's retained stderr before it is accepted, because
 a reviewer that answers clean without opening the change costs the round a lens while looking like
