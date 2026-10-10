@@ -38,7 +38,7 @@ gate = _load_gate()
 
 REPORT = {"lens": "correctness", "verdict": "clean", "findings": []}
 
-# What a transport replaying the prompt on stdout puts in front of the reviewer's own
+# What a transport replaying the prompt into a capture puts in front of the reviewer's own
 # output: the prompt's report schema, and the marker the prompt closes with.
 PROMPT_ECHO = (
     "# Review round 1 - correctness\n\n"
@@ -989,6 +989,9 @@ class TestIngest:
             ["ingest", "--out-dir", str(round_dir), "--output", answer["output_path"]], capsys
         )
         assert codes(refused) == ["no-output"]
+        # The refusal states the same two dead-run cases the doctrine and check_reason give.
+        message = refused["errors"][0]["message"]
+        assert "ended inside the model's reasoning" in message and "watchdog" in message
         assert "transport-error" in refused["errors"][0]["message"]
         assert "dead-run" in refused["errors"][0]["message"]
         assert kinds(round_dir, "outcome")[0]["outcome"] == "no-output"
