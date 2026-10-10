@@ -176,8 +176,9 @@ Key: `--timeout` and `--idle-timeout`, in either order.
 ### C2b: what an expiry does
 
 ```text
-When each of those two bounds expires, what does the launcher do to the run,
-and what does it report? Reply with exactly three lines:
+A run is launched with both of the launcher's flags that bound how long a
+run may last. When each of those bounds expires, what does the launcher do to
+the run, and what does it report? Reply with exactly three lines:
 `TIMEOUT: exit=<code> line=<the stderr line it prints>`
 `IDLE: exit=<code> line=<the stderr line it prints>`
 `ACTION: <what the launcher does to the running run>`
