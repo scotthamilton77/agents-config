@@ -1050,10 +1050,14 @@ def test_an_observed_row_with_trailing_tokens_is_refused() -> None:
 def test_only_an_exact_level_two_evidence_heading_is_an_inline_ledger() -> None:
     """`### Evidence` or `## Evidence of need` is some other section. It is not
     refused as an inline ledger, and its rows discharge nothing, so the spec is
-    reported as lacking its sidecar."""
+    reported as lacking its sidecar. The section sits above the manifest, since
+    below it a `###` heading stays inside the manifest and its rows would be
+    read as follow-on bullets."""
     path = Path("docs/specs/2026-07-25-example.md")
     for heading in ("### Evidence", "## Evidence of need"):
-        text = f"{_SPEC_HEAD}\n{heading}\n\n- AC1 | open\n- AC2 | open\n"
+        text = _SPEC_HEAD.replace(
+            "## Continuations", f"{heading}\n\n- AC1 | open\n- AC2 | open\n\n## Continuations"
+        )
         violations = lint_spec_text(path, text)
         assert len(violations) == 1, heading
         assert "no evidence sidecar" in violations[0].reason, heading
@@ -1256,3 +1260,109 @@ def test_a3_an_inline_ledger_is_refused_in_a_spec_without_usable_criteria(
     assert len(inline_findings) == 1
     assert inline_findings[0].file == spec
     assert "2026-07-25-example-evidence.md" in inline_findings[0].reason
+
+
+# --- The follow-on manifest's grammar ---------------------------------------
+#
+# `work deliver --spec` reads a merged spec's follow-on section and refuses one
+# it cannot parse. These cases pin that the lint refuses the same spec before
+# merge, at the line the author has to change, in words that state the form.
+
+_CRITERIA = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+"""
+
+_ITEM_FORM = "- <noun>: <title> — AC: <acceptance>"
+
+
+def _manifest_findings(text: str) -> list[Violation]:
+    """The violations a spec draws, leaving out the evidence-ledger rule that
+    any spec carrying a manifest also owes."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    return [v for v in lint_spec_text(path, text) if "evidence" not in v.reason]
+
+
+@pytest.mark.parametrize(
+    "heading",
+    ["## 7. Continuations", "### Continuations", "## continuations", "## Continuations (minted)"],
+    ids=["numbered", "too-deep", "lowercase", "qualified"],
+)
+def test_a_follow_on_heading_other_than_the_exact_one_fails_at_its_line(heading: str) -> None:
+    """The facade finds the section by one exact line, so any other heading
+    that names the section leaves it nothing to read after merge."""
+    text = f"{_CRITERIA}\n{heading}\n\n- feat: Do the thing — AC: AC1\n"
+    violations = _manifest_findings(text)
+    assert len(violations) == 1
+    assert violations[0].line == 7
+    assert "'## Continuations'" in violations[0].reason
+    assert ":7:" in format_violation(violations[0])
+
+
+def test_a_bullet_without_the_ac_separator_fails_at_its_line_stating_the_form() -> None:
+    text = f"{_CRITERIA}\n## Continuations\n\n- feat: Do the thing. AC: AC1\n"
+    violations = _manifest_findings(text)
+    assert len(violations) == 1
+    assert violations[0].line == 9
+    assert _ITEM_FORM in violations[0].reason
+
+
+def test_a_bullet_naming_a_noun_the_facade_does_not_accept_fails_naming_the_nouns() -> None:
+    """An alias is refused as well: the facade stores the bullet as written and
+    accepts only the canonical spelling of each noun."""
+    text = f"{_CRITERIA}\n## Continuations\n\n- feat: First — AC: AC1\n- bug: Second — AC: AC1\n"
+    violations = _manifest_findings(text)
+    assert len(violations) == 1
+    assert violations[0].line == 10
+    assert _ITEM_FORM in violations[0].reason
+    assert "bugfix" in violations[0].reason
+
+
+def test_a_wrapped_well_formed_manifest_passes() -> None:
+    text = (
+        f"{_CRITERIA}\n## Continuations\n\nProse before the bullets is ignored.\n\n"
+        "- feat: Do the thing\n  across two lines — AC: AC1\n- chore: Tidy up — AC: AC1\n"
+    )
+    assert _manifest_findings(text) == []
+
+
+def test_a_section_holding_only_the_none_bullet_passes() -> None:
+    text = f"{_CRITERIA}\n## Continuations\n\n- none — the change leaves no follow-on work\n"
+    assert _manifest_findings(text) == []
+
+
+@pytest.mark.parametrize(
+    ("body", "line"),
+    [
+        ("Prose only.\n", 7),
+        ("- none — nothing\n- feat: Something — AC: AC1\n", 9),
+        ("- feat: Same — AC: AC1\n- chore: Same — AC: AC1\n", 10),
+        ("- just a remark\n", 9),
+        ("- feat:  — AC: AC1\n", 9),
+    ],
+    ids=["no-bullets", "none-beside-items", "duplicate-title", "not-an-item", "empty-title"],
+)
+def test_every_other_manifest_the_facade_refuses_fails_too(body: str, line: int) -> None:
+    text = f"{_CRITERIA}\n## Continuations\n\n{body}"
+    violations = _manifest_findings(text)
+    assert len(violations) == 1
+    assert violations[0].line == line
+
+
+def test_the_grammar_is_checked_in_a_spec_without_usable_criteria() -> None:
+    """The criteria checks stop early on such a spec, and an undeliverable
+    manifest is still named beside what is missing."""
+    text = "# A spec\n\n## 3. Continuations\n\n- feat: Do — AC: AC1\n"
+    violations = lint_spec_text(Path("docs/specs/2026-07-25-example.md"), text)
+    assert [v.line for v in violations if v.line is not None] == [3]
+
+
+def test_a_named_exception_is_not_read_for_the_grammar() -> None:
+    """A spec whose follow-on work shipped before the check existed is named
+    as an exception rather than re-headed, because the exact heading would
+    newly owe an evidence ledger for work already delivered."""
+    text = f"{_CRITERIA}\n## 11. Continuations\n\n- feat: Do the thing — AC: AC1\n"
+    path = Path("docs/specs/2026-09-27-delegating-to-agy.md")
+    assert [v for v in lint_spec_text(path, text) if v.line is not None] == []
