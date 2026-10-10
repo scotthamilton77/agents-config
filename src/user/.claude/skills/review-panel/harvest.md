@@ -245,11 +245,15 @@ path exactly as the transport wrote it.** The ladder reads past that wrapper, so
 first buys nothing and edits the evidence: a body trimmed by hand is no longer what the route
 returned, and the ledger records the trimmed version as the reviewer's.
 
-A transport may also replay the whole prompt on stdout ahead of the reviewer's output. The ladder
-reads only what follows the line holding nothing but the prompt's closing untrusted-content marker,
-and it never accepts the prompt's own report schema, so an echoed prompt yields the reviewer's
-report or nothing. A finding that quotes that marker shares its line with the report around it, so
-a reviewer may cite the marker freely.
+A transport may also replay the whole prompt ahead of the reviewer's output. The Codex
+command-line tool does, in the transcript it writes to stderr; its stdout carries the final message
+alone. The ladder reads only what follows the **last** line holding nothing but the prompt's closing
+untrusted-content marker, the same boundary the read-evidence check below uses, and it never accepts
+the prompt's own report schema, so an echoed prompt yields the reviewer's report or nothing. The
+target under review sits inside the echoed prompt, so a target that plants a marker line and a
+report-shaped object of its own still sits before the boundary and cannot pose as the report. A
+finding that quotes that marker shares its line with the report around it, so a reviewer may cite
+the marker freely.
 
 A **clean** report is checked against the attempt's retained stderr before it is accepted, because
 a reviewer that answers clean without opening the change costs the round a lens while looking like
