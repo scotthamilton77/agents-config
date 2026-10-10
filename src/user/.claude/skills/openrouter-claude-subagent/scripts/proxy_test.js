@@ -848,10 +848,25 @@ test("denies the large GPT tiers this transport does not carry", () => {
   assert.equal(isDeniedModel("gpt-6-luna"), true, "every GPT-6 tier has its own transport");
 });
 
-test("exempts the -mini GPT variants, which are cheap and not what the denial guards", () => {
-  assert.equal(isDeniedModel("openai/gpt-5.6-mini"), false);
-  assert.equal(isDeniedModel("openai/gpt-5.5-mini-high"), false);
-  assert.equal(isDeniedModel("gpt-5.6-minimal"), true, "the exemption is the segment `mini`, not the letters");
+test("DEL-F1: denies every gpt- id, the -mini variants included", () => {
+  assert.equal(isDeniedModel("openai/gpt-5.6-mini"), true);
+  assert.equal(isDeniedModel("openai/gpt-5.5-mini"), true);
+  assert.equal(isDeniedModel("openai/gpt-5.5-mini-high"), true);
+  assert.equal(isDeniedModel("gpt-5.6-minimal"), true);
+  assert.equal(isDeniedModel("openai/gpt-4.1-nano"), true, "no GPT tier is too small to be refused");
+});
+
+test("DEL-F1: denies every Gemini id, with or without a vendor prefix, in any case", () => {
+  assert.equal(isDeniedModel("google/gemini-3.8-flash"), true);
+  assert.equal(isDeniedModel("gemini-3.1-pro"), true);
+  assert.equal(isDeniedModel("Google/Gemini-3.8-Flash"), true, "case must not be a way around it");
+  assert.equal(isDeniedModel("google/gemini-3.8-flash:free"), true);
+});
+
+test("DEL-F1: the instruction lifts the refusal for GPT and Gemini and never for Claude", () => {
+  assert.equal(isDeniedModel("openai/gpt-5.6-mini", true), false);
+  assert.equal(isDeniedModel("google/gemini-3.8-flash", true), false);
+  assert.equal(isDeniedModel("anthropic/claude-opus-5", true), true);
 });
 
 test("no -mini spelling exempts a Claude model, which never belongs on this transport", () => {
@@ -865,7 +880,6 @@ test("an OpenRouter :variant suffix is not a way around the denylist", () => {
 
 test("leaves the models this transport exists to reach alone", () => {
   assert.equal(isDeniedModel("moonshotai/kimi-k3"), false);
-  assert.equal(isDeniedModel("google/gemini-3.5-flash"), false);
   assert.equal(isDeniedModel("z-ai/glm-5.2"), false);
 });
 
@@ -935,6 +949,23 @@ test("with no pin configured the denylist still applies and nothing else does", 
   assert.equal(screenModel("moonshotai/kimi-k3", null).decision, "forward");
   assert.equal(screenModel("anything/at-all", null).decision, "forward");
   assert.equal(screenModel("anthropic/claude-opus-5", null).decision, "deny-denylist");
+});
+
+const REFUSED_UNLESS_INSTRUCTED = ["openai/gpt-5.6-mini", "google/gemini-3.8-flash"];
+
+test("DEL-F5: screenModel refuses a GPT or Gemini model without the instruction, pin or no pin", () => {
+  for (const model of REFUSED_UNLESS_INSTRUCTED) {
+    assert.equal(screenModel(model, model).decision, "deny-denylist", model);
+    assert.equal(screenModel(model, null).decision, "deny-denylist", model);
+  }
+});
+
+test("screenModel forwards a GPT or Gemini model under the instruction, and the pin still applies", () => {
+  for (const model of REFUSED_UNLESS_INSTRUCTED) {
+    assert.deepEqual(screenModel(model, model, true), { decision: "forward" }, model);
+    assert.equal(screenModel(model, "moonshotai/kimi-k3", true).decision, "deny-pin", model);
+  }
+  assert.equal(screenModel("anthropic/claude-opus-5", "anthropic/claude-opus-5", true).decision, "deny-denylist");
 });
 
 test("describeModel separates a body that named no model from one that named an empty one", () => {
@@ -1271,6 +1302,52 @@ test("with another upstream origin, a completion reaches it and leaves the same 
   } finally {
     await viaStandIn.close();
     await viaOpenRouter.close();
+    await standIn.close();
+  }
+});
+
+// ─── The user's instruction ────────────────────────────────────────
+
+for (const model of REFUSED_UNLESS_INSTRUCTED) {
+  for (const pinnedModel of [model, null]) {
+    test(`DEL-F5: a proxy started without the instruction refuses ${model} ${pinnedModel ? "pinned to it" : "with no pin"}`, async () => {
+      const standIn = await startStandIn(answerAtOnce);
+      const logs = [];
+      const proxy = await start({ port: 0, pinnedModel, log: (m) => logs.push(m), upstream: standIn.url });
+      try {
+        const raw = await rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify({ model, messages: [] })).response;
+        assert.match(raw, /^HTTP\/1\.1 403\b/);
+        assert.deepEqual(
+          logs.filter((line) => line.startsWith("model-ledger")),
+          [`model-ledger POST /api/v1/messages model=${model} decision=deny-denylist`],
+        );
+        assert.deepEqual(standIn.requests, [], "a refused model must cost nothing upstream");
+      } finally {
+        await proxy.close();
+        await standIn.close();
+      }
+    });
+  }
+}
+
+test("an instructed proxy marks every ledger line and keeps decision=forward a whole token", async () => {
+  const model = "google/gemini-3.8-flash";
+  const standIn = await startStandIn(answerAtOnce);
+  const logs = [];
+  const proxy = await start({
+    port: 0, pinnedModel: model, userInstructed: true, log: (m) => logs.push(m), upstream: standIn.url,
+  });
+  try {
+    await rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify({ model, messages: [] })).response;
+    await rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify({ model: "some/other", messages: [] })).response;
+    const ledger = logs.filter((line) => line.startsWith("model-ledger")).map((line) => line.split(" "));
+    assert.equal(ledger.length, 2);
+    assert.ok(ledger[0].includes("decision=forward"), ledger[0].join(" "));
+    assert.ok(ledger[1].includes("decision=deny-pin"), ledger[1].join(" "));
+    for (const tokens of ledger) assert.ok(tokens.includes("user-instructed"), tokens.join(" "));
+    assert.deepEqual(standIn.requests, ["/api/v1/messages"]);
+  } finally {
+    await proxy.close();
     await standIn.close();
   }
 });

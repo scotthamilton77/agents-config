@@ -168,22 +168,22 @@ function stripDeferredTools(body) {
 // approved and swaps out the point of view it was launched to provide.
 //
 // Two independent checks close that. The pin refuses any model but the one
-// this run was launched with. The denylist refuses a small set of models
-// outright, whatever the pin says, because they are served properly by other
-// transports and have no business arriving here at all.
+// this run was launched with. The denylist refuses whole model families,
+// whatever the pin says, because they are served by other transports and
+// have no business arriving here unless the user sent them.
 
-/** Model families this transport never carries, matched as slug prefixes.
- *  Claude models run natively in the harness that launches these runs, and the
- *  large GPT tiers have their own vendor transport; reaching either one from
- *  here means something upstream misrouted. A literal list is the point — it
- *  needs revisiting when the model roster moves, and a clever pattern would
- *  hide that. */
-const DENIED_MODEL_PREFIXES = ["claude", "gpt-5.5", "gpt-5.6", "gpt-6"];
-
-/** Prefixes above whose `-mini` variants stay reachable: they are cheap enough
- *  to be worth having, and are not what the denial is protecting against.
- *  `claude` is absent on purpose — no Claude model belongs on this transport. */
-const MINI_EXEMPT_PREFIXES = ["gpt-5.5", "gpt-5.6"];
+/** Model families this transport refuses, matched as slug prefixes. Claude
+ *  models run natively in the harness that launches these runs, so nothing
+ *  lifts their refusal. GPT and Gemini models have launchers of their own on
+ *  the user's subscriptions, so they run here only when the user instructed
+ *  the run, which the launcher records with `--user-instructed`. A literal
+ *  list is the point: it needs revisiting when the model roster moves, and a
+ *  clever pattern would hide that. */
+const DENIED_FAMILIES = [
+  { prefix: "claude", name: "Claude", liftable: false },
+  { prefix: "gpt-", name: "GPT", liftable: true },
+  { prefix: "gemini", name: "Gemini", liftable: true },
+];
 
 /** Reduce a routing id to its bare model slug. Ids arrive as `vendor/slug`,
  *  sometimes with an OpenRouter `:variant` suffix, and the vendor prefix must
@@ -194,14 +194,18 @@ function modelSlug(model) {
   return slug.split(":")[0];
 }
 
-/** True when this model is refused outright, pin or no pin. */
-function isDeniedModel(model) {
+/** The refused family this model belongs to, or null when it belongs to none. */
+function deniedFamily(model) {
   const slug = modelSlug(model);
-  if (!slug) return false;
-  const matched = DENIED_MODEL_PREFIXES.find((p) => slug.startsWith(p));
-  if (!matched) return false;
-  if (!MINI_EXEMPT_PREFIXES.includes(matched)) return true;
-  return !slug.split("-").includes("mini");
+  if (!slug) return null;
+  return DENIED_FAMILIES.find((f) => slug.startsWith(f.prefix)) || null;
+}
+
+/** True when this model is refused, pin or no pin. The user's instruction
+ *  lifts the refusal for the families that allow it and for no other. */
+function isDeniedModel(model, userInstructed = false) {
+  const family = deniedFamily(model);
+  return family !== null && !(family.liftable && userInstructed);
 }
 
 /** The gate applies to completion requests only — those are the requests that
@@ -230,10 +234,12 @@ function pinAdvice(requested, pinned) {
 }
 
 function deniedAdvice(requested, pinned) {
+  const why = deniedFamily(requested).liftable
+    ? "GPT and Gemini models run on this transport only when the user instructed the run, " +
+      "and this run was not launched on such an instruction."
+    : "Claude models run natively in the harness that launched this run, never here.";
   return (
-    `${requested} is not reachable over this transport, by design and not by accident: Claude ` +
-    "models run natively in the harness that launched this run, and the large GPT tiers run " +
-    "through their own vendor transport. Nothing here can route to it. " +
+    `${requested} is not reachable over this transport. ${why} ` +
     (pinned ? `This run is pinned to ${pinned}. ` : "") +
     "Carry on in your own context, or delegate with the model field left out so the work runs " +
     "on the same model this run does."
@@ -244,9 +250,11 @@ function deniedAdvice(requested, pinned) {
  *  @param {*} model The `model` field as it appeared in the body; `undefined`
  *    when the body carried none, or when the body did not parse as JSON.
  *  @param {string|null} pinnedModel The model this run was launched with.
+ *  @param {boolean} [userInstructed] Whether the user instructed this run,
+ *    which lifts the refusal of the GPT and Gemini families.
  *  @returns {{decision: "forward"|"deny-pin"|"deny-denylist", message?: string}} */
-function screenModel(model, pinnedModel) {
-  if (isDeniedModel(model)) {
+function screenModel(model, pinnedModel, userInstructed = false) {
+  if (isDeniedModel(model, userInstructed)) {
     return { decision: "deny-denylist", message: deniedAdvice(String(model), pinnedModel) };
   }
   if (!pinnedModel) return { decision: "forward" };
@@ -491,7 +499,7 @@ function createSSEFixer(res, log = defaultLog) {
 
 // ─── HTTP proxy ────────────────────────────────────────────────────
 
-function proxyRequest(clientReq, clientRes, { log, pinnedModel, onForward, upstream }) {
+function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, onForward, upstream }) {
   // The request target must not be able to choose the upstream host. In
   // absolute-form (RFC 9112 §3.2.2) `new URL(target, base)` ignores the base
   // entirely, so `GET http://elsewhere/x` would send this request — carrying
@@ -692,12 +700,16 @@ function proxyRequest(clientReq, clientRes, { log, pinnedModel, onForward, upstr
     } catch { /* pass non-JSON bodies through unmodified */ }
 
     if (isCompletionPath(targetUrl.pathname)) {
-      const verdict = screenModel(model, pinnedModel);
+      const verdict = screenModel(model, pinnedModel, userInstructed);
       // One line, one write: this ledger is the record a later billing
       // question gets read against, and an interleaved half-line is no record.
+      // The instruction mark is a separate trailing token, so that an audit
+      // can see which runs the user sent here and a reader matching the whole
+      // token `decision=forward` still matches.
       log(
         `model-ledger ${clientReq.method} ${targetUrl.pathname} ` +
-        `model=${describeModel(model)} decision=${verdict.decision}`
+        `model=${describeModel(model)} decision=${verdict.decision}` +
+        (userInstructed ? " user-instructed" : "")
       );
       if (verdict.decision !== "forward") {
         clientReq.resume();
@@ -738,6 +750,10 @@ function proxyRequest(clientReq, clientRes, { log, pinnedModel, onForward, upstr
  * @param {string|null} [opts.pinnedModel] The one model completion requests
  *   may name. Left unset the pin is off and only the denylist applies, which
  *   is the right shape for a proxy started outside a launched run.
+ * @param {boolean} [opts.userInstructed] Whether the user instructed this
+ *   run. It lifts the refusal of the GPT and Gemini families and marks every
+ *   ledger line, so a launcher sets it only when the instruction is what
+ *   admitted the run.
  * @param {() => void} [opts.onForward] Called each time a completion request
  *   is forwarded upstream, which is how a launcher measures idleness.
  * @param {string|null} [opts.upstream] Origin to dial instead of OpenRouter,
@@ -750,6 +766,7 @@ function start({
   host = "127.0.0.1",
   log = defaultLog,
   pinnedModel = null,
+  userInstructed = false,
   onForward = () => {},
   upstream = null,
 } = {}) {
@@ -759,7 +776,7 @@ function start({
   // too. A failed request must never be able to end the session.
   const server = http.createServer((req, res) => {
     try {
-      proxyRequest(req, res, { log, pinnedModel, onForward, upstream });
+      proxyRequest(req, res, { log, pinnedModel, userInstructed, onForward, upstream });
     } catch (err) {
       log(`request handler error: ${err.message}`);
       if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain" });
@@ -788,8 +805,9 @@ module.exports = {
   start,
   // The launcher refuses a denied model before it binds a listener, so it
   // shares this proxy's list rather than keeping a second one in step.
-  isDeniedModel,
+  deniedFamily,
   // Exported for tests.
+  isDeniedModel,
   screenModel,
   isCompletionPath,
   modelSlug,
