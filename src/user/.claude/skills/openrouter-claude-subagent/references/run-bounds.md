@@ -37,12 +37,18 @@ launcher owns both.
 
 ## Read how it ended
 
+Read the rows in order; the first that matches decides.
+
 | What you see | Outcome | Your move |
 |---|---|---|
-| Exit `0`, the child's result on stdout | Usable output. | Use it. |
+| `[proxy] WARNING: response ends on thinking` or `on redacted_thinking`, `and contains no text block to promote`, and the result holds no answer, whatever the exit | The run produced unusable output. | The reply ended inside the model's thinking. Lower the effort, or move to another model. |
+| Exit `0`, and the child's result on stdout holds an answer | Usable output. | Use it. |
 | Exit `78`, with a `[run]` line naming what was refused or is missing: a flag, a clock value, a model, the API key, the `claude` binary | The launcher refused the invocation. | Fix the invocation. Another provider would not repair it. |
-| A `[proxy] model-ledger` line with `decision=deny-pin` or `decision=deny-denylist` | The launcher refused the invocation. | A request named a model this run may not use. Fix the model id or the brief. |
+| Every `[proxy] model-ledger` line carries `decision=deny-pin` or `decision=deny-denylist`, and the child exits non-zero | The launcher refused the invocation. | The run's own model id was refused. Fix the model id. |
 | Exit `75`, with `[run] reason=timeout` or `[run] reason=idle` | The provider did not serve the run. | Move to another provider or model, quoting the reason line. |
 | Exit `75`, with `[run] reason=signal` | The provider did not serve the run. | After a signal you sent yourself, stop. |
-| The child's non-zero exit, with `[proxy] upstream <status> …` on stderr, such as `402` for spent credits | The provider did not serve the run. | Move to another provider, quoting the upstream line. |
-| `[proxy] WARNING: response ends on thinking and contains no text block to promote`, and no answer | The run produced unusable output. | The reply ended inside the model's thinking. Lower the effort, or move to another model. |
+| Any other non-zero exit, such as the child's `1` with a `[proxy]` error line: `upstream <status> …` (`402` for spent credits), `upstream request error`, `upstream response error`, `upstream request timeout`, or `upstream stream ended without message_stop` | The provider did not serve the run. | Move to another provider, quoting the line. |
+
+A `decision=deny-pin` or `decision=deny-denylist` line among forwarded requests
+is not an ending. The proxy refused one nested request for a model this run may
+not use, and the run goes on to one of the endings above.

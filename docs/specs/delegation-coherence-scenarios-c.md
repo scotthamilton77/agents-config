@@ -127,8 +127,9 @@ limit, so its three runs count for both criteria.
 
 ```text
 You started a read-only run with the command the skill gives. The Bash call
-returned exit status 1 after 3 seconds. The report file is empty. The stderr
-capture file holds:
+returned exit status 1 after 3 seconds. The report file holds one line:
+`You've hit your usage limit. Upgrade to Pro (https://openai.com/chatgpt/pricing) or try again at 4:12 PM.`
+The stderr capture file holds:
 
 [codex] Starting Codex task thread.
 [codex] Thread ready (thr_7f2a).
@@ -233,19 +234,22 @@ plugin's `scripts/codex-companion.mjs` with `scripts/lib/codex.mjs` and
 | Id | Launcher | Signal | Outcome | Emitted by |
 | --- | --- | --- | --- | --- |
 | X0 | Codex | exit 0, the report on stdout, `[codex] Turn completed.` on stderr | usable output | `runForegroundCommand`; the progress line in `lib/codex.mjs` |
-| X1 | Codex | exit 1, `[codex] Codex error: You've hit your usage limit…` on stderr | the provider did not serve the run | the `error` notification's progress line; exit from `buildResultStatus` |
-| X2 | Codex | exit 1, another `[codex] Codex error:` line, or a turn ending other than `[codex] Turn completed.` | the provider did not serve the run | the same, and the `turn/completed` progress line |
-| X3 | Codex | exit 1, stderr one line with no `[codex]` prefix, such as `Provide a prompt, a prompt file, piped stdin, or use --resume-last.` | the launcher refused the invocation | the `main().catch` handler |
-| X4 | Codex | exit 1, `Codex CLI is not installed or is missing required runtime support…` | the provider did not serve the run | `ensureCodexAvailable`, through `main().catch` |
+| X1 | Codex | exit 1, `[codex] Codex error: You've hit your usage limit…` on stderr, the same message on stdout | the provider did not serve the run | the `error` notification's progress line; exit from `buildResultStatus` |
+| X2 | Codex | exit 1, another `[codex] Codex error:` line, or a turn ending other than `[codex] Turn completed.`; the error on stdout | the provider did not serve the run | the same, the `turn/completed` progress line, and `renderTaskResult` printing the failure message |
+| X3 | Codex | exit 1, no `[codex]` line, and the companion's complaint about its own arguments: `Missing value for …`, `Unsupported reasoning effort …`, `Provide a prompt…`, `A prompt is required…`, `Choose either …`, `Unknown subcommand …`, or an `ENOENT` for the prompt file | the launcher refused the invocation | `parseArgs`, `normalizeReasoningEffort`, `requireTaskRequest`, `handleTask`, `main`, through the `main().catch` handler |
+| X4 | Codex | exit 1, no `[codex]` line, and any other message, such as `Codex CLI is not installed or is missing required runtime support…` | the provider did not serve the run | `ensureCodexAvailable`, through `main().catch` |
+| X6 | Codex | exit 1, no `[codex]` line, `codex app-server exited unexpectedly (exit 1).` | the provider did not serve the run | `lib/app-server.mjs`, through `main().catch` |
 | X5 | Codex | exit 0, stdout `Codex did not return a final message.`, or a reply that is not the report asked for | the run produced unusable output | `renderTaskResult` |
-| O0 | OpenRouter | the child's exit 0, its result on stdout | usable output | `main` returns the child's code |
+| O0 | OpenRouter | the child's exit 0, its result on stdout holding an answer | usable output | `main` returns the child's code |
 | O1 | OpenRouter | exit 78, a `[run]` line naming what was refused: a missing flag, a bad clock value, a refused model, an unset key | the launcher refused the invocation | `EXIT_CONFIG_ERROR` paths in `main` |
 | O2 | OpenRouter | exit 75, `[run] reason=timeout` | the provider did not serve the run | `supervise`, `EXIT_ROUTE` |
 | O3 | OpenRouter | exit 75, `[run] reason=idle` | the provider did not serve the run | `supervise`, `EXIT_ROUTE` |
 | O4 | OpenRouter | exit 75, `[run] reason=signal` | the provider did not serve the run; after a signal the caller sent, the caller stops | `supervise`, `EXIT_ROUTE` |
-| O5 | OpenRouter | the child's non-zero exit, with `[proxy] upstream <status> …` on stderr | the provider did not serve the run | the child's code; the proxy's upstream error line |
-| O6 | OpenRouter | `[proxy] WARNING: response ends on thinking and contains no text block to promote`, no report | the run produced unusable output | the proxy's stream repair |
-| O7 | OpenRouter | a `[proxy] model-ledger` line with `decision=deny-pin` or `decision=deny-denylist` | the launcher refused the invocation | `screenModel` and its ledger line |
+| O5 | OpenRouter | any other non-zero exit, such as the child's `1` with a `[proxy]` error line: `upstream <status> …`, `upstream request error`, `upstream response error`, `upstream request timeout`, `upstream stream ended without message_stop` | the provider did not serve the run | the child's code; the proxy's upstream lines |
+| O6 | OpenRouter | `[proxy] WARNING: response ends on thinking and contains no text block to promote`, no answer, whatever the exit | the run produced unusable output | the proxy's stream repair |
+| O8 | OpenRouter | the child's `1` with `[proxy] upstream request timeout` | the provider did not serve the run | the proxy's upstream timeout |
+| O9 | OpenRouter | `[proxy] WARNING: response ends on redacted_thinking and contains no text block to promote`, no answer | the run produced unusable output | the proxy's stream repair |
+| O7 | OpenRouter | every `[proxy] model-ledger` line carries `decision=deny-pin` or `decision=deny-denylist`, and the child exits non-zero | the launcher refused the invocation | `screenModel` and its ledger line |
 | A0 | agy | exit 0 | usable output | `EXIT_OK` |
 | A1 | agy | exit 70, `[agy-run] reason=empty` | the run produced unusable output | `EXIT_UNUSABLE` |
 | A2 | agy | exit 70, `[agy-run] reason=denied` | the run produced unusable output | `EXIT_UNUSABLE` |
@@ -264,14 +268,44 @@ Cross-check findings, script by script:
   exit code the script returns (0, 70, 75, 78) is documented, and the skill
   documents no signal the script does not emit.
 - `run.js` returns 78, 75 with `timeout`, `idle` or `signal`, or the
-  child's own exit code. Each is a row above. The proxy's upstream error
-  line, its thinking-block warning and its ledger decisions are the proxy's
-  own stderr lines, documented as rows O5 to O7.
+  child's own exit code. Each is a row above. Its `[run]` lines are the 78
+  messages (row O1), the reason lines (rows O2 to O4), and
+  `proxy listening on`, which marks a start and no ending. The skill's table
+  is read in order, and its first matching row decides, so a thinking-only
+  reply with exit 0 is O6 and never O0.
+- `proxy.js` writes these `[proxy]` lines, each cross-checked:
+  - `upstream <status> …`, `upstream request error`, `upstream response
+    error`, `upstream request timeout` and `upstream stream ended without
+    message_stop` are named in the skill's "any other non-zero exit" row (O5,
+    O8).
+  - `response ends on <type> and contains no text block to promote` is
+    named for both block types the proxy treats as reasoning, `thinking` and
+    `redacted_thinking` (O6, O9).
+  - A `model-ledger` line with `decision=deny-pin` or `deny-denylist` is an
+    ending only when every ledger line of the run carries one (O7). A single
+    denied nested request among forwarded ones is not an ending, and the
+    skill says so.
+  - `refused: unparseable request target`, `refused: request target names
+    <host>`, `refused: request body exceeds <n> bytes`, `request adjudication
+    error`, `client request error` and `request handler error` answer one
+    request from the child with an HTTP error. The skill does not name them.
+    Its generic "any other non-zero exit" row maps the child's resulting exit
+    to the provider not serving the run, because each one means the proxy
+    could not carry the request to OpenRouter.
+  - `reordered: …` and the `WARNING` lines about a duplicate
+    `content_block_start` or a delta for an unstarted index record a repair
+    the proxy made to a stream it still delivers. They are not endings, and
+    the skill does not name them.
 - `codex-companion.mjs` returns 0, or 1 for a failed turn and for any error
   its `main` catches. It has no reason line of its own; its stderr carries
   `[codex]` progress lines. An unknown flag is not refused: the companion
   folds it into the prompt text, so "unknown flag refused" is a signal the
-  script does not emit, and no skill documents it.
+  script does not emit, and no skill documents it. A failed turn prints its
+  error message on stdout, so the report file holds it (`renderTaskResult`).
+  An error `main` catches prints one stderr line with no `[codex]` prefix. The
+  skill maps the companion's checks of its own arguments to a refusal (X3)
+  and every other such line to the provider not serving the run (X4, X6),
+  which includes a dead `codex app-server`.
 
 ### Launcher scenarios
 
@@ -284,8 +318,9 @@ and the run produced unusable output is `UNUSABLE`.
 
 ```text
 You started a read-only run with the command the skill gives. The Bash call
-returned exit status 1 after 9 seconds. The report file is empty. The stderr
-capture file ends:
+returned exit status 1 after 9 seconds. The report file holds one line:
+`unexpected status 401 Unauthorized: Missing bearer or basic authentication in header`
+The stderr capture file ends:
 
 [codex] Codex error: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header
 [codex] Turn failed.
@@ -327,6 +362,18 @@ file is `[codex] Turn completed.`
 ```
 
 Key: `ANSWER: UNUSABLE`.
+
+#### X6 (skill `codex`)
+
+```text
+You started a read-only run with the command the skill gives. The Bash call
+returned exit status 1 after 2 seconds. The report file is empty. The stderr
+capture file holds one line:
+
+codex app-server exited unexpectedly (exit 1).
+```
+
+Key: `ANSWER: NOT-SERVED`.
 
 #### O1 (skill `openrouter`)
 
@@ -384,12 +431,31 @@ Key: `ANSWER: UNUSABLE`.
 #### O7 (skill `openrouter`)
 
 ```text
-The launcher exited 1. Its stderr holds:
+The launcher exited 1. Every `model-ledger` line on its stderr reads:
 [proxy] model-ledger POST /api/v1/messages model=z-ai/glm-5.3[1m] decision=deny-pin
 Its stdout holds the harness's error result naming a 403.
 ```
 
 Key: `ANSWER: REFUSED`.
+
+#### O8 (skill `openrouter`)
+
+```text
+The launcher exited 1. Its stderr ends:
+[proxy] upstream request timeout
+Its stdout holds the harness's error result naming the timeout.
+```
+
+Key: `ANSWER: NOT-SERVED`.
+
+#### O9 (skill `openrouter`)
+
+```text
+The launcher exited 0. The result on stdout carries no text. Its stderr holds:
+[proxy] WARNING: response ends on redacted_thinking and contains no text block to promote
+```
+
+Key: `ANSWER: UNUSABLE`.
 
 #### A1 (skill `agy`)
 
@@ -713,3 +779,66 @@ answer was given after that.
 
 All 120 runs on the changed prose returned the keyed answer: 3 for each of
 the 40 scenarios. DEL-C1, DEL-C2, DEL-C3, DEL-C6 and DEL-C8 pass.
+
+### Reruns after the outcome tables were made exclusive
+
+The Codex and OpenRouter ending tables were rewritten so that every row matches
+a distinct set of endings. Every scenario keyed on those tables ran three more
+times against the rewritten prose on 2026-10-10, each a fresh native subagent
+pinned to `sonnet`. C1c and X2 now record that the report file holds the
+companion's error message, which the companion prints on stdout for a failed
+turn. O7 now records that every ledger line was denied. X6, O8 and O9 are new
+scenarios for signals the rewritten tables name. The keys are unchanged.
+
+| Scenario | Run | Answer | Key | Result |
+| --- | --- | --- | --- | --- |
+| C1a | 1 | `ANSWER: USABLE` | USABLE | pass |
+| C1a | 2 | `ANSWER: USABLE` | USABLE | pass |
+| C1a | 3 | `ANSWER: USABLE` | USABLE | pass |
+| C1c | 1 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| C1c | 2 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| C1c | 3 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X2 | 1 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X2 | 2 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X2 | 3 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X3 | 1 | `ANSWER: REFUSED` | REFUSED | pass |
+| X3 | 2 | `ANSWER: REFUSED` | REFUSED | pass |
+| X3 | 3 | `ANSWER: REFUSED` | REFUSED | pass |
+| X4 | 1 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X4 | 2 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X4 | 3 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X5 | 1 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| X5 | 2 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| X5 | 3 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| X6 | 1 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X6 | 2 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| X6 | 3 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O1 | 1 | `ANSWER: REFUSED` | REFUSED | pass |
+| O1 | 2 | `ANSWER: REFUSED` | REFUSED | pass |
+| O1 | 3 | `ANSWER: REFUSED` | REFUSED | pass |
+| O2 | 1 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O2 | 2 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O2 | 3 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O3 | 1 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O3 | 2 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O3 | 3 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O4 | 1 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O4 | 2 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O4 | 3 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O5 | 1 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O5 | 2 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O5 | 3 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O6 | 1 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O6 | 2 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O6 | 3 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O7 | 1 | `ANSWER: REFUSED` | REFUSED | pass |
+| O7 | 2 | `ANSWER: REFUSED` | REFUSED | pass |
+| O7 | 3 | `ANSWER: REFUSED` | REFUSED | pass |
+| O8 | 1 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O8 | 2 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O8 | 3 | `ANSWER: NOT-SERVED` | NOT-SERVED | pass |
+| O9 | 1 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O9 | 2 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O9 | 3 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+
+All 48 reruns returned the keyed answer.

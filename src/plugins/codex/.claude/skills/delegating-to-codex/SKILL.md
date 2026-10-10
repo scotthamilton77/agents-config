@@ -103,9 +103,9 @@ moved to the background:
 |---|---|
 | Exit `0`, the report in `<report>`, `[codex] Turn completed.` in `<log>` | Usable output. |
 | Exit `0`, and `<report>` holds `Codex did not return a final message.` or a reply that is not the report you asked for | The run produced unusable output. Re-brief, or try another model. |
-| Exit `1`, with a `[codex] Codex error:` line or a turn that ended other than `Turn completed.` | The provider did not serve the run. `You've hit your usage limit` in that line means the subscription is spent, and repeating the run fails the same way. |
-| Exit `1`, with `Codex CLI is not installed…` | The provider did not serve the run. |
-| Exit `1`, with one line in `<log>` and no `[codex]` line at all | The companion refused the invocation. Fix the command. |
+| Exit `1`, with a `[codex] Codex error:` line or a turn that ended other than `Turn completed.`; `<report>` holds the same error | The provider did not serve the run. `You've hit your usage limit` in that line means the subscription is spent, and repeating the run fails the same way. |
+| Exit `1`, no `[codex]` line, and the companion's complaint about its own arguments: `Missing value for …`, `Unsupported reasoning effort …`, `Provide a prompt…`, `A prompt is required…`, `Choose either …`, `Unknown subcommand …`, or an `ENOENT` for the prompt file | The companion refused the invocation. Fix the command. |
+| Exit `1`, no `[codex]` line, and any other message, such as `Codex CLI is not installed…` or `codex app-server exited unexpectedly …` | The provider did not serve the run. |
 
 The model and the effort reach Codex as `--model` and `--effort`, chosen as the
 section above says.
