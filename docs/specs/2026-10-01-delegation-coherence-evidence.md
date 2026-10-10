@@ -1,6 +1,6 @@
 # Evidence
 
-All criteria describe future implementation; their evidence is open. The audit in section 3 supports the decisions and establishes no criterion.
+The audit in section 3 supports the decisions and establishes no criterion.
 
 - DEL-A1 | open
 - DEL-A2 | open
@@ -40,9 +40,12 @@ All criteria describe future implementation; their evidence is open. The audit i
 - DEL-V4 | open
 - DEL-V5 | open
 - DEL-V6 | open
-- DEL-F1 | open
-- DEL-F2 | open
-- DEL-F3 | open
-- DEL-F4 | open
-- DEL-F5 | open
-- DEL-F6 | open
+- DEL-F1 | test: src/user/.claude/skills/openrouter-claude-subagent/scripts/run_test.js::DEL-F1
+- DEL-F1 | test: src/user/.claude/skills/openrouter-claude-subagent/scripts/proxy_test.js::DEL-F1
+- DEL-F2 | test: src/user/.claude/skills/openrouter-claude-subagent/scripts/run_test.js::DEL-F2
+- DEL-F3 | test: src/user/.claude/skills/openrouter-claude-subagent/scripts/run_test.js::DEL-F3
+- DEL-F4 | test: src/user/.claude/skills/openrouter-claude-subagent/scripts/run_test.js::DEL-F4
+- DEL-F5 | test: src/user/.claude/skills/openrouter-claude-subagent/scripts/proxy_test.js::DEL-F5
+- DEL-F6 | probe: docs/specs/delegation-coherence-scenarios-f6.md::F6a
+- DEL-F6 | probe: docs/specs/delegation-coherence-scenarios-f6.md::F6b
+- DEL-F6 | probe: docs/specs/delegation-coherence-scenarios-f6.md::F6c

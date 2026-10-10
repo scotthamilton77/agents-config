@@ -52,12 +52,12 @@ The launcher pins the run to the one model you named, three ways:
   message says what to do instead — carry on unaided, or delegate with the
   model field left out — because an API error is the only channel back to
   whatever asked.
-- **Denylist.** Claude models and the large GPT tiers are refused outright,
-  pin or no pin: they are served properly elsewhere, so arriving here means
-  something misrouted. The `-mini` variants of GPT-5.5 and GPT-5.6 are exempt,
-  and no GPT-6 id is. The launcher exits
-  `78` before binding a listener when `--model` names one; the proxy refuses
-  them too, so neither layer depends on the other.
+- **Denylist.** Claude models, every GPT model and every Gemini model are
+  refused, pin or no pin: each is served by its own transport, so arriving
+  here means something misrouted. `--user-instructed` lifts the refusal for
+  GPT and Gemini on the run it is passed to, and never for Claude. The
+  launcher exits `78` before binding a listener when `--model` names a refused
+  model; the proxy refuses them too, so neither layer depends on the other.
 
 Alias redirection also covers the background chores the harness runs on the
 cheap alias, which would otherwise bill the model you named. `run.js` switches
@@ -66,8 +66,11 @@ those off with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`. Note the semantics:
 switch, not a boolean, so there is no way to spell "off" except by unsetting it.
 
 Every completion request leaves one line on stderr naming the method, path,
-model, and decision (`forward`, `deny-pin`, or `deny-denylist`). When a bill
-looks wrong later, that ledger is the record to read.
+model, and decision (`forward`, `deny-pin`, or `deny-denylist`). When
+`--user-instructed` admitted the run, each line ends with one more token,
+`user-instructed`, so an audit can tell which runs the user sent here. On a
+model the launcher does not refuse, the flag leaves no mark. When a bill looks
+wrong later, that ledger is the record to read.
 
 The gate applies to requests that generate a reply. A request that only
 measures a payload — counting its tokens — is forwarded without being checked

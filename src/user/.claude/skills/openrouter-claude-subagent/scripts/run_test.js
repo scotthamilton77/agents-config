@@ -400,16 +400,66 @@ test("main() refuses a denied model named without its vendor prefix too", async 
   assert.equal(code, EXIT_CONFIG_ERROR);
 });
 
-test("main() still accepts the -mini tiers the denylist exempts", async () => {
-  // Reaching proxy.start is the pass condition here — the stub throwing is
-  // proof the model cleared both refusals, and it costs no listener.
-  await assert.rejects(
-    mainWithoutProxy([
-      "--model", "openai/gpt-5.6-mini", "--effort", "low", "--permission-mode", "dontAsk",
-      "--allowedTools", "Read", "-p", "task",
-    ]),
-    /proxy\.start was reached/,
-  );
+// ─── GPT and Gemini need the user's instruction; Claude never runs ──
+
+/** VALID_ARGV on `model`, with `extra` launcher flags in front. */
+const argvFor = (model, extra = []) => [...extra, "--model", model, ...VALID_ARGV.slice(2)];
+
+const GPT_SPELLINGS = [
+  "openai/gpt-5.6-sol",
+  "gpt-6-luna",
+  "openai/gpt-5.5-mini",
+  "openai/gpt-5.6-mini",
+  "gpt-5.6-mini",
+  "openai/gpt-5.6-mini:nitro",
+  "OpenAI/GPT-5.5-Mini",
+];
+const GEMINI_SPELLINGS = [
+  "google/gemini-3.8-flash",
+  "gemini-3.1-pro",
+  "google/gemini-3.8-flash:free",
+  "Google/Gemini-3.8-Flash",
+];
+const CLAUDE_SPELLINGS = [
+  "anthropic/claude-opus-5",
+  "claude-sonnet-5",
+  "anthropic/claude-opus-5:beta",
+  "Anthropic/Claude-Opus-5",
+];
+
+for (const [family, spellings] of [["GPT", GPT_SPELLINGS], ["Gemini", GEMINI_SPELLINGS]]) {
+  for (const model of spellings) {
+    test(`DEL-F1: ${model} exits 78 before the proxy binds, naming ${family} and the flag that lifts it`, async () => {
+      const { result, stderr } = await captureStderr(() => mainWithoutProxy(argvFor(model)));
+      assert.equal(result, EXIT_CONFIG_ERROR);
+      assert.match(stderr, new RegExp(`\\b${family}\\b`));
+      assert.match(stderr, /--user-instructed\b/);
+    });
+  }
+}
+
+for (const model of CLAUDE_SPELLINGS) {
+  test(`DEL-F1: ${model} exits 78 before the proxy binds, naming Claude and no flag`, async () => {
+    const { result, stderr } = await captureStderr(() => mainWithoutProxy(argvFor(model)));
+    assert.equal(result, EXIT_CONFIG_ERROR);
+    assert.match(stderr, /\bClaude\b/);
+    assert.doesNotMatch(stderr, /--user-instructed/);
+  });
+
+  test(`DEL-F3: ${model} with --user-instructed still exits 78 before the proxy binds`, async () => {
+    const { result, stderr } = await captureStderr(() =>
+      mainWithoutProxy(argvFor(model, ["--user-instructed"])),
+    );
+    assert.equal(result, EXIT_CONFIG_ERROR);
+    assert.match(stderr, /\bClaude\b/);
+    assert.doesNotMatch(stderr, /--user-instructed/);
+  });
+}
+
+test("a prompt that reads --user-instructed lifts nothing", async () => {
+  const argv = argvFor("google/gemini-3.8-flash").slice(0, -1).concat("--user-instructed");
+  const { result } = await captureStderr(() => mainWithoutProxy(argv));
+  assert.equal(result, EXIT_CONFIG_ERROR);
 });
 
 // ─── The prompt is not a source of flags ───────────────────────────
@@ -1054,3 +1104,63 @@ test("DEL-B6: a signal and an expiry on one tick report reason=signal", async ()
     await assertEndedFor("signal", r, 10000);
   });
 });
+
+// ─── An instructed run, end to end ─────────────────────────────────
+
+/** Sends two completions for the model the run is pinned to and one for
+ *  another model through the proxy, records the statuses, and exits 0. */
+const SEND_COMPLETIONS = `
+const send = (model) => new Promise((resolve) => {
+  const req = require("http").request(process.env.ANTHROPIC_BASE_URL + "/v1/messages", {
+    method: "POST", headers: { "content-type": "application/json" },
+  }, (res) => { res.resume(); res.on("end", () => resolve(res.statusCode)); });
+  req.end(JSON.stringify({ model, messages: [] }));
+});
+(async () => {
+  const pinned = process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+  record({ statuses: [await send(pinned), await send(pinned), await send("some/other")] });
+  process.exit(0);
+})();`;
+
+const ledgerLines = (stderr) => stderr.split("\n").filter((line) => line.includes("model-ledger"));
+
+/** Run `launcherArgv` with the completion-sending fake to its own exit, and
+ *  return what the child received, the exit code and the proxy's ledger. */
+async function observeRun(launcherArgv) {
+  let seen;
+  await withRun(launcherArgv, SEND_COMPLETIONS, async ({ run, clock, child, upstream }) => {
+    await tickUntilSettled(clock, run);
+    assert.equal(run.error, undefined);
+    seen = {
+      child: normalise(child),
+      statuses: child.statuses,
+      code: run.code,
+      forwarded: upstream.requests,
+      ledger: ledgerLines(run.stderr),
+    };
+  });
+  return seen;
+}
+
+for (const model of ["openai/gpt-5.6-mini", "google/gemini-3.8-flash"]) {
+  test(`DEL-F2: --user-instructed starts the run on ${model} and every ledger line carries the mark`, async () => {
+    const seen = await observeRun(argvFor(model, ["--user-instructed"]));
+    assert.equal(seen.code, 0);
+    assert.deepEqual(seen.child.argv, argvFor(model), "the flag is the launcher's and never reaches the child");
+    assert.equal(seen.child.env.ANTHROPIC_DEFAULT_SONNET_MODEL, model);
+    assert.deepEqual(seen.statuses, [200, 200, 403]);
+    assert.equal(seen.forwarded, 2);
+    assert.equal(seen.ledger.length, 3);
+    for (const line of seen.ledger) assert.ok(line.split(" ").includes("user-instructed"), line);
+    for (const line of seen.ledger.slice(0, 2)) assert.ok(line.split(" ").includes("decision=forward"), line);
+  });
+}
+
+for (const model of ["vendor/model", "moonshotai/kimi-k3"]) {
+  test(`DEL-F4: --user-instructed on ${model} changes no argv, environment, exit code or ledger`, async () => {
+    const without = await observeRun(argvFor(model));
+    const withFlag = await observeRun(argvFor(model, ["--user-instructed"]));
+    assert.equal(without.ledger.length, 3);
+    assert.deepEqual(withFlag, without);
+  });
+}

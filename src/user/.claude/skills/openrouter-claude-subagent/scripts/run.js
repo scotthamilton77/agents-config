@@ -12,6 +12,10 @@
 // closes the proxy, prints `[run] reason=timeout|idle|signal` on stderr and
 // exits 75.
 //
+// The launcher refuses every Claude model. It refuses every GPT and Gemini
+// model too, unless `--user-instructed` says the user instructed this run to
+// use it; that flag is the launcher's own and never reaches the child.
+//
 // The proxy runs in-process rather than as a spawned sibling on purpose: the
 // listener dies with this process no matter how it dies. A spawn-plus-trap
 // design only cleans up if the wrapper survives long enough to run the trap,
@@ -21,7 +25,7 @@
 // Usage:
 //   node run.js --model <id> --effort <level> --permission-mode dontAsk \
 //               --allowedTools Read Grep [--timeout SECONDS] \
-//               [--idle-timeout SECONDS] -p "<prompt>"
+//               [--idle-timeout SECONDS] [--user-instructed] -p "<prompt>"
 //
 // All four of those flags are required — see REQUIRED_FLAGS for why each one
 // is refused rather than defaulted. Everything else is passed through verbatim.
@@ -84,20 +88,31 @@ function configArgv(argv) {
   return out;
 }
 
-/** The launcher's own flags, each mapped to the key it sets. They bound the
+/** The launcher's clock flags, each mapped to the key it sets. They bound the
  *  run in seconds and are never passed on to the child. */
 const CLOCK_FLAGS = { "--timeout": "timeoutMs", "--idle-timeout": "idleMs" };
 
-/** Take the clock flags out of argv, accepting both `--flag v` and `--flag=v`.
+/** The launcher's record that the user instructed this run. It takes no
+ *  value and is never passed on to the child. */
+const USER_INSTRUCTED_FLAG = "--user-instructed";
+
+/** Take the launcher's own flags out of argv, accepting both `--flag v` and
+ *  `--flag=v` for the clock flags.
  *
  *  The prompt's value is copied through untouched, so task text that happens
- *  to read `--timeout 5` stays task text and bounds nothing.
+ *  to read `--timeout 5` or `--user-instructed` stays task text and changes
+ *  nothing.
  *
- *  @returns {{argv: string[], timeoutMs?: number, idleMs?: number}|{error: string}} */
-function takeClockFlags(argv) {
-  const out = { argv: [] };
+ *  @returns {{argv: string[], timeoutMs?: number, idleMs?: number,
+ *    userInstructed: boolean}|{error: string}} */
+function takeLauncherFlags(argv) {
+  const out = { argv: [], userInstructed: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (arg === USER_INSTRUCTED_FLAG) {
+      out.userInstructed = true;
+      continue;
+    }
     const [name, inline] = arg.split(/=(.*)/s, 2);
     if (!Object.hasOwn(CLOCK_FLAGS, name)) {
       out.argv.push(arg);
@@ -178,6 +193,24 @@ function resolveModel(argv) {
     };
   }
   return { model };
+}
+
+/** The message a refused model gets. It names the flag only for a family the
+ *  flag can admit, since naming it for Claude would invite a retry that
+ *  cannot succeed. */
+function refusal(model, family) {
+  if (!family.liftable) {
+    return (
+      `${model} is a Claude model, and this launcher never runs one: Claude models ` +
+      "run natively in the harness that launched this run."
+    );
+  }
+  return (
+    `${model} is a ${family.name} model. This launcher runs a GPT or Gemini model only ` +
+    `when the user instructed this run to use it, and ${USER_INSTRUCTED_FLAG} records ` +
+    "that instruction. Without it, dispatch through the model's own launcher, or name " +
+    "a model from another vendor."
+  );
 }
 
 /** Build the child environment. The launcher owns every variable that decides
@@ -330,12 +363,12 @@ async function main(launcherArgv, deps = {}) {
   } = deps;
 
   // Before the proxy binds anything: a bad invocation should cost no listener.
-  const clock = takeClockFlags(launcherArgv);
-  if (clock.error) {
-    process.stderr.write(`[run] ${clock.error}\n`);
+  const launcher = takeLauncherFlags(launcherArgv);
+  if (launcher.error) {
+    process.stderr.write(`[run] ${launcher.error}\n`);
     return EXIT_CONFIG_ERROR;
   }
-  const argv = clock.argv;
+  const argv = launcher.argv;
 
   const argvError = validateArgv(argv);
   if (argvError) {
@@ -350,13 +383,12 @@ async function main(launcherArgv, deps = {}) {
   }
   const model = resolved.model;
 
-  if (proxy.isDeniedModel(model)) {
-    process.stderr.write(
-      `[run] ${model} is not reachable over this transport, by design and not by ` +
-      "accident: Claude models run natively in the harness that launched this run, " +
-      "and the large GPT tiers run through their own vendor transport. Dispatch " +
-      "through the transport that serves it, or name a model from another vendor.\n"
-    );
+  const family = proxy.deniedFamily(model);
+  // The flag counts only where it admits a run. On any other model it leaves
+  // no mark, so a ledger line saying the user instructed a run is never noise.
+  const userInstructed = Boolean(family?.liftable && launcher.userInstructed);
+  if (family && !userInstructed) {
+    process.stderr.write(`[run] ${refusal(model, family)}\n`);
     return EXIT_CONFIG_ERROR;
   }
 
@@ -364,6 +396,7 @@ async function main(launcherArgv, deps = {}) {
   const { port, close } = await startProxy({
     port: 0,
     pinnedModel: model,
+    userInstructed,
     onForward: () => { forwardedAt = now(); },
   });
   const proxyUrl = `http://127.0.0.1:${port}`;
@@ -393,8 +426,8 @@ async function main(launcherArgv, deps = {}) {
     // The idle clock starts with the child, not with the proxy.
     forwardedAt = now();
     const outcome = await supervise(child, {
-      timeoutMs: clock.timeoutMs,
-      idleMs: clock.idleMs,
+      timeoutMs: launcher.timeoutMs,
+      idleMs: launcher.idleMs,
       lastForward: () => forwardedAt,
       now,
       every,
