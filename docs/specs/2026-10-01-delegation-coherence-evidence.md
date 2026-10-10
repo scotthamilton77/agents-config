@@ -40,6 +40,7 @@ The audit in section 3 supports the decisions and establishes no criterion.
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O7
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O8
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O9
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::O10
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A1
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A2
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A3
@@ -49,10 +50,10 @@ The audit in section 3 supports the decisions and establishes no criterion.
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::A7
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H1
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H2
-- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H3
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H3a
+- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H3b
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H4
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H5
-- DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::H6
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::K1
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::K2
 - DEL-C3 | probe: docs/specs/delegation-coherence-scenarios-c.md::K3

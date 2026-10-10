@@ -152,13 +152,13 @@ record: it double-counts coverage.
 Three failures look alike from outside and recover differently, so tell them apart before
 claiming again — the reason you declare is what the gate bounds.
 
-The launcher's own skill says which of four outcomes the run ended in. Usable output is ingested,
-below, and the dispatch claims nothing further. A refused invocation is yours to fix; it says
-nothing about the provider or the reviewer. A run the provider did not serve is `transport-error`,
-the launcher's own clock included. Unusable output is `unusable-output`, except the two signals the
-dead-run ladder below owns, a response that ended inside the model's reasoning and a run your
-watchdog killed for silence, which are `dead-run`. A run you stopped on purpose ends there with no
-claim.
+The launcher's own skill says which of four outcomes the run ended in. Usable output is ingested
+under "Reading a lens report", whose read-evidence check may still send it back. A refused
+invocation is yours to fix; it says nothing about the provider or the reviewer. A run the provider
+did not serve is `transport-error`, the launcher's own clock included. Unusable output is
+`unusable-output`, except the two signals the dead-run ladder below owns, a response that ended
+inside the model's reasoning and a run your watchdog killed for silence, which are `dead-run`. A
+run you stopped on purpose ends there with no claim.
 
 **The route died** (`transport-error`). What came back describes the *transport*, not the review:
 an HTTP status, an authentication or credit error, a refused connection, a dead broker or session

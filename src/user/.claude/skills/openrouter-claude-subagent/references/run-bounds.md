@@ -42,7 +42,8 @@ Read the rows in order; the first that matches decides.
 | What you see | Outcome | Your move |
 |---|---|---|
 | `[proxy] WARNING: response ends on thinking` or `on redacted_thinking`, `and contains no text block to promote`, and the result holds no answer, whatever the exit | The run produced unusable output. | The reply ended inside the model's thinking. Lower the effort, or move to another model. |
-| Exit `0`, and the child's result on stdout holds an answer | Usable output. | Use it. |
+| Exit `0`, and the child's result on stdout holds the answer you asked for | Usable output. | Use it. |
+| Exit `0`, and the result is not the answer you asked for | The run produced unusable output. | Re-brief, or move to another model. |
 | Exit `78`, with a `[run]` line naming what was refused or is missing: a flag, a clock value, a model, the API key, the `claude` binary | The launcher refused the invocation. | Fix the invocation. Another provider would not repair it. |
 | Every `[proxy] model-ledger` line carries `decision=deny-pin` or `decision=deny-denylist`, and the child exits non-zero | The launcher refused the invocation. | The run's own model id was refused. Fix the model id. |
 | Exit `75`, with `[run] reason=timeout` or `[run] reason=idle` | The provider did not serve the run. | Move to another provider or model, quoting the reason line. |

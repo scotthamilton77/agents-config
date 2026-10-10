@@ -240,7 +240,8 @@ plugin's `scripts/codex-companion.mjs` with `scripts/lib/codex.mjs` and
 | X4 | Codex | exit 1, no `[codex]` line, and any other message, such as `Codex CLI is not installed or is missing required runtime support…` | the provider did not serve the run | `ensureCodexAvailable`, through `main().catch` |
 | X6 | Codex | exit 1, no `[codex]` line, `codex app-server exited unexpectedly (exit 1).` | the provider did not serve the run | `lib/app-server.mjs`, through `main().catch` |
 | X5 | Codex | exit 0, stdout `Codex did not return a final message.`, or a reply that is not the report asked for | the run produced unusable output | `renderTaskResult` |
-| O0 | OpenRouter | the child's exit 0, its result on stdout holding an answer | usable output | `main` returns the child's code |
+| O0 | OpenRouter | the child's exit 0, its result on stdout holding the answer asked for | usable output | `main` returns the child's code |
+| O10 | OpenRouter | the child's exit 0, its result not the answer asked for | the run produced unusable output | `main` returns the child's code |
 | O1 | OpenRouter | exit 78, a `[run]` line naming what was refused: a missing flag, a bad clock value, a refused model, an unset key | the launcher refused the invocation | `EXIT_CONFIG_ERROR` paths in `main` |
 | O2 | OpenRouter | exit 75, `[run] reason=timeout` | the provider did not serve the run | `supervise`, `EXIT_ROUTE` |
 | O3 | OpenRouter | exit 75, `[run] reason=idle` | the provider did not serve the run | `supervise`, `EXIT_ROUTE` |
@@ -257,14 +258,19 @@ plugin's `scripts/codex-companion.mjs` with `scripts/lib/codex.mjs` and
 | A4 | agy | exit 75 with its `[agy-run] reason=` line | the provider did not serve the run | `EXIT_ROUTE` |
 | A5 | agy | exit 75, `[agy-run] reason=signal` | the provider did not serve the run; after a signal the caller sent, the caller stops | `EXIT_ROUTE` |
 | A6 | agy | exit 78, an `agy_run.py:` line naming what was refused | the launcher refused the invocation | `EXIT_CONFIG` |
-| A7 | agy | any other exit, with a Python traceback | treated as exit 78: the launcher refused the invocation | an uncaught exception |
+| A7 | agy | any other exit, with a Python traceback raised before any turn ran | treated as exit 78: the launcher refused the invocation | an uncaught exception |
 
 Cross-check findings, script by script:
 
 - `agy_run.py` emits six reasons with exit 75: `error`, `no-route`,
   `timeout`, `signal`, `home-unproven` and `no-result`. The agy skill names
   `signal` and covers the other five with its generic exit-75 row, which
-  says the `reason=` line names the cause. Row A4 is that generic row. Every
+  says the `reason=` line names the cause. Row A4 is that generic row. A
+  traceback can also be raised after a turn ran, for example while the
+  launcher writes a finished response. That is not a refusal. The skill's
+  generic row names any other exit a launcher defect, to treat as `78` and
+  report rather than fail over; a worker's edits from the turn remain in the
+  checkout. Row A7 covers only a traceback raised before any turn ran. Every
   exit code the script returns (0, 70, 75, 78) is documented, and the skill
   documents no signal the script does not emit.
 - `run.js` returns 78, 75 with `timeout`, `idle` or `signal`, or the
@@ -457,6 +463,16 @@ The launcher exited 0. The result on stdout carries no text. Its stderr holds:
 
 Key: `ANSWER: UNUSABLE`.
 
+#### O10 (skill `openrouter`)
+
+```text
+The launcher exited 0. Your prompt asked for a JSON object of findings. The
+result on stdout holds three paragraphs of prose and no JSON object. Its
+stderr holds no `[proxy] WARNING` line.
+```
+
+Key: `ANSWER: UNUSABLE`.
+
 #### A1 (skill `agy`)
 
 ```text
@@ -513,7 +529,8 @@ Key: `ANSWER: REFUSED`.
 #### A7 (skill `agy`)
 
 ```text
-The launcher exited 1. Its stderr ends with a Python traceback:
+The launcher exited 1 before any turn ran: its stderr holds no `[agy-run]`
+ledger line and no output from agy, and ends with a Python traceback:
 Traceback (most recent call last):
   File "agy_run.py", line 612, in _lens
 KeyError: 'response'
@@ -523,19 +540,20 @@ Key: `ANSWER: REFUSED`.
 
 ### Caller scenarios
 
-Prompt K. `<FILE>` is the harvest file for H1 to H6 and the `ac-attack`
-skill file for K1 to K5. The `<INPUT>` names the lens: `correctness` for
+Prompt K. `<FILE>` is the harvest file for H1 to H5 and the `ac-attack`
+skill file for K1 to K5. Each caller skill has five scenarios. Harvest's H3
+has two captured inputs, H3a and H3b, each run three times. The `<INPUT>` names the lens: `correctness` for
 harvest, `what-if` for `ac-attack`.
 
 | Scenario | Captured input | Key |
 | --- | --- | --- |
 | H1, K1 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: usable output. | `INGEST` |
 | H2, K2 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the launcher refused the invocation. | `FIX-INVOCATION` |
-| H3, K3 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the provider did not serve the run. | `transport-error` |
+| H3a, K3 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the provider did not serve the run. | `transport-error` |
 | H4 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the run produced unusable output. The reply was prose in place of the report the prompt asked for, and the response did not end inside the model's reasoning. | `unusable-output` |
 | K4 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the run produced unusable output. | `unusable-output` |
 | H5, K5 | You dispatched the `<lens>` lens. The user then told you to abandon this dispatch, so you sent the run a signal to end it. Its launcher's own skill says what its ending means: the provider did not serve the run. | `STOP` |
-| H6 | You dispatched the `<lens>` lens through a launcher with an idle limit. The run forwarded nothing for that long, so the launcher ended it. Its launcher's own skill says what its ending means: the provider did not serve the run. | `transport-error` |
+| H3b | You dispatched the `<lens>` lens through a launcher with an idle limit. The run forwarded nothing for that long, so the launcher ended it. Its launcher's own skill says what its ending means: the provider did not serve the run. | `transport-error` |
 
 ## DEL-C6: the read-only run command against a stub
 
@@ -582,7 +600,7 @@ with stdout to `<DIR>/report.json`, stderr to `<DIR>/run.log` and its pid in
 ```text
 You are a coding agent working in a user's session. The only skill you hold is
 `delegating-to-codex`, and its files are under <SKILL_DIR>. Read
-<SKILL_DIR>/SKILL.md and nothing outside <SKILL_DIR>.
+<SKILL_DIR>/SKILL.md. Outside <SKILL_DIR>, read only the files under <DIR>.
 
 You launched a read-only Codex run with this command, from <DIR>:
 
@@ -741,10 +759,10 @@ answer was given after that.
 | H2 | 1 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
 | H2 | 2 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
 | H2 | 3 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
-| H3 | baseline | before | `ANSWER: transport-error` | transport-error | pass |
-| H3 | 1 | after | `ANSWER: transport-error` | transport-error | pass |
-| H3 | 2 | after | `ANSWER: transport-error` | transport-error | pass |
-| H3 | 3 | after | `ANSWER: transport-error` | transport-error | pass |
+| H3a | baseline | before | `ANSWER: transport-error` | transport-error | pass |
+| H3a | 1 | after | `ANSWER: transport-error` | transport-error | pass |
+| H3a | 2 | after | `ANSWER: transport-error` | transport-error | pass |
+| H3a | 3 | after | `ANSWER: transport-error` | transport-error | pass |
 | H4 | baseline | before | `ANSWER: unusable-output` | unusable-output | pass |
 | H4 | 1 | after | `ANSWER: unusable-output` | unusable-output | pass |
 | H4 | 2 | after | `ANSWER: unusable-output` | unusable-output | pass |
@@ -753,10 +771,10 @@ answer was given after that.
 | H5 | 1 | after | `ANSWER: STOP` | STOP | pass |
 | H5 | 2 | after | `ANSWER: STOP` | STOP | pass |
 | H5 | 3 | after | `ANSWER: STOP` | STOP | pass |
-| H6 | baseline | before | `ANSWER: transport-error` | transport-error | pass |
-| H6 | 1 | after | `ANSWER: transport-error` | transport-error | pass |
-| H6 | 2 | after | `ANSWER: transport-error` | transport-error | pass |
-| H6 | 3 | after | `ANSWER: transport-error` | transport-error | pass |
+| H3b | baseline | before | `ANSWER: transport-error` | transport-error | pass |
+| H3b | 1 | after | `ANSWER: transport-error` | transport-error | pass |
+| H3b | 2 | after | `ANSWER: transport-error` | transport-error | pass |
+| H3b | 3 | after | `ANSWER: transport-error` | transport-error | pass |
 | K1 | baseline | before | `ANSWER: INGEST` | INGEST | pass |
 | K1 | 1 | after | `ANSWER: INGEST` | INGEST | pass |
 | K1 | 2 | after | `ANSWER: INGEST` | INGEST | pass |
@@ -849,7 +867,7 @@ All 48 reruns returned the keyed answer.
 Harvest's mapping paragraph names the two signals its dead-run ladder owns
 inside the unusable-output clause. H4's captured input now says the unusable
 output did not end inside the model's reasoning; H5's input is a stop the
-caller chose on purpose. H4, H5 and H6 ran three times each against that text
+caller chose on purpose. H4, H5 and H3b ran three times each against that text
 on 2026-10-10, each a fresh native subagent pinned to `sonnet`. No `ac-attack`
 sentence changed, so K1 to K5 did not rerun.
 
@@ -861,6 +879,36 @@ sentence changed, so K1 to K5 did not rerun.
 | H5 | 1 | `ANSWER: STOP` | STOP | pass |
 | H5 | 2 | `ANSWER: STOP` | STOP | pass |
 | H5 | 3 | `ANSWER: STOP` | STOP | pass |
-| H6 | 1 | `ANSWER: transport-error` | transport-error | pass |
-| H6 | 2 | `ANSWER: transport-error` | transport-error | pass |
-| H6 | 3 | `ANSWER: transport-error` | transport-error | pass |
+| H3b | 1 | `ANSWER: transport-error` | transport-error | pass |
+| H3b | 2 | `ANSWER: transport-error` | transport-error | pass |
+| H3b | 3 | `ANSWER: transport-error` | transport-error | pass |
+
+### Reruns after round 2 of review
+
+On 2026-10-10 these ran three times each, each a fresh native subagent pinned to
+`sonnet`.
+- O10 is new: it covers the OpenRouter row for an exit-0 result that is not
+  the answer asked for.
+- A7's captured input now says the traceback came before any turn ran.
+- H1 reran because harvest's mapping now defers usable output to the
+  read-evidence check.
+- C8's prompt now lets the reader read the scenario's run directory, and C8
+  reran against fresh stubs. Each stub exited at epoch 1791663585.
+
+H3's two captured inputs keep their inputs and keys under the names H3a and
+H3b, so they did not rerun.
+
+| Scenario | Run | Answer | Key | Result |
+| --- | --- | --- | --- | --- |
+| O10 | 1 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O10 | 2 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| O10 | 3 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
+| A7 | 1 | `ANSWER: REFUSED` | REFUSED | pass |
+| A7 | 2 | `ANSWER: REFUSED` | REFUSED | pass |
+| A7 | 3 | `ANSWER: REFUSED` | REFUSED | pass |
+| H1 | 1 | `ANSWER: INGEST` | INGEST | pass |
+| H1 | 2 | `ANSWER: INGEST` | INGEST | pass |
+| H1 | 3 | `ANSWER: INGEST` | INGEST | pass |
+| C8 | 1 | `REPORT` holds c8-e71d23a9df13abb8; `PROCESS: exited`; answered 1791663592 | run token, exited, after the exit | pass |
+| C8 | 2 | `REPORT` holds c8-fb55fa505ba7fddf; `PROCESS: exited`; answered 1791663588 | run token, exited, after the exit | pass |
+| C8 | 3 | `REPORT` holds c8-654622c86dd03ba0; `PROCESS: exited`; answered 1791663587 | run token, exited, after the exit | pass |
