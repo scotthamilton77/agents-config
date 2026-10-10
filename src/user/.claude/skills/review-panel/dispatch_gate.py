@@ -111,7 +111,8 @@ ENCLOSED_NEXT = frozenset(",]}")
 NEXT_NON_SPACE_RE = re.compile(r"\S")
 
 # The marker the reviewer prompt closes its fenced data with. A transport that replays the
-# prompt on stdout puts the prompt's own report schema in front of the reviewer's output, so
+# prompt in a capture (the Codex command-line tool does, in the transcript it writes to stderr)
+# puts the prompt's own report schema and the target in front of the reviewer's output, so
 # everything up to this marker is prompt rather than anything a lens wrote.
 PROMPT_END_MARKER = "<<<END UNTRUSTED CONTENT>>>"
 
@@ -911,8 +912,9 @@ def ingest(args: argparse.Namespace) -> dict[str, Any]:
             "no-output",
             f"the claimed output path {output} holds nothing. Each attempt writes its own path, "
             "so nothing there means this attempt wrote nothing. Claim again with reason "
-            f"{DEAD_RUN!r} and the kill line as the evidence when your watchdog killed it for "
-            f"silence, and with reason {TRANSPORT_ERROR!r} and the route's error otherwise",
+            f"{DEAD_RUN!r} when your watchdog killed it for silence or the launcher's own skill "
+            "says the response ended inside the model's reasoning, with that signal as the "
+            f"evidence, and with reason {TRANSPORT_ERROR!r} and the route's error otherwise",
         )
     try:
         report, recovery = parse_report(body)
