@@ -404,8 +404,8 @@ spec-lint's under `make ci`.
   F3 that lack the refusal object, reports for F4 that carry a criteria
   section, outputs with no `Form:` line, and briefs returned for F6, the
   scorer fails each seeded side and names its fixture. Given a set in which
-  every side passes all five of its runs, it locks every fixture on five runs
-  a side.
+  every side passes all five of its runs, under a record that BRF-A26 finds
+  complete, it locks every fixture on five runs a side.
 - **BRF-A28** The skill's acceptance-criteria part and skeleton tell the
   writer to take the criteria and evidence sections from `emit`, paste them
   unchanged, run `check` before dispatch, and relay a refusal or an unready
