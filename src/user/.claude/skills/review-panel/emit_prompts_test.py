@@ -402,8 +402,8 @@ class TestPromptContent:
         assert code == 0
         prompt = prompts(out_dir_of(flat))["ac-testability"]
         mandate = prompt.split("## How to review")[0]
-        assert "the reviewed artifact's own acceptance criteria" in mandate
-        assert "never your subject" in mandate
+        assert "the reviewed artifact's own acceptance criteria, read from the change" in mandate
+        assert "the standard you judge against and never your subject" in mandate
 
     def test_b8_mandate_source_reaches_the_prompt_heading(self, repo, acs_file, tmp_path, capsys):
         """A profile whose mandates come from an existing discipline says so where the lens
