@@ -19,7 +19,7 @@ The cost lands on the one person this harness is meant to free. The prime direct
 
 In scope: the template for each of the three artifacts; a JSON change record that is the single source each artifact renders from; a schema and a lint over that record; generators that fill the record's factual sections from the tracker and from GitHub; publication of the record as an append-only PR comment with the body rendered from it; a merge command that supplies the rendered commit message; a bounded rewrite pass over the record's prose fields on a cheaper model; the repository squash settings; one sentence each in the `review-panel` skill and the root `AGENTS.md` pointing at the new skill.
 
-Out of scope: a commit or PR hook that enforces the lint. The skill is adopted first and a hook is added only if lint failures are observed on merged PRs after ten PRs; that observation is recorded in section 8 as not filed. Also out: Claude Code's attribution settings; a commitlint configuration; the verdict envelope's own format; PRs opened by Dependabot or release bots, which the templates leave untouched; the ordering of comments GitHub displays.
+Out of scope: a commit or PR hook that enforces the lint. The skill is adopted first and a hook is added only if lint failures are observed on merged PRs after ten PRs; the hook is minted from the Continuations manifest and deferred on minting, with that trigger in its description. Also out: Claude Code's attribution settings; a commitlint configuration; the verdict envelope's own format; PRs opened by Dependabot or release bots, which the templates leave untouched; the ordering of comments GitHub displays.
 
 ## 3. The artifacts
 
@@ -186,11 +186,11 @@ The campaign table and the findings list are computed from the verdict envelopes
 
 ### CR-D8. The pipeline never writes a review comment and never edits a comment it did not post
 
-The verdict envelopes and the author's replies stay where they are. The script's only GitHub writes are creating a record comment and setting the PR body. The prgroom Decisions block inside the body is carried byte-for-byte on every render. This holds by construction, so nothing a future change does to the templates can disturb a verdict.
+The verdict envelopes and the author's replies stay where they are. The script's only GitHub writes are creating a record comment and setting the PR body. The prgroom Decisions block inside the body is carried byte-for-byte on every render. This holds by construction, so nothing a future change does to the templates can disturb a verdict. The record comment and the replies post from the author's account, as replies do today, and verdicts post from the bot; the split the agent-comment-authorship spec settled is unchanged.
 
 ### CR-D9. No hook until drift is observed
 
-The skill, its lint and the one-sentence pointers in `review-panel` and the root `AGENTS.md` are the whole enforcement for the first ten merged PRs. A pre-commit or pre-PR hook is a second mechanism and is added only on the observation that merged PRs fail the lint after the skill is in place. The observation and its threshold are recorded in section 8.
+The skill, its lint and the one-sentence pointers in `review-panel` and the root `AGENTS.md` are the whole enforcement for the first ten merged PRs. A pre-commit or pre-PR hook is a second mechanism and is added only on the observation that merged PRs fail the lint after the skill is in place. The hook is minted deferred from the Continuations manifest, and its description carries the observation and its threshold.
 
 ## 5. The record
 
@@ -222,7 +222,7 @@ Seven slices, each one pull request, each small enough that the owner can vet it
 
 ### Slice L: the skill, the schema, `init` and `lint`
 
-What the owner vets: the skill text, the schema, the four example records, and `lint` run over them.
+What the owner vets: the skill text, the schema, the four example records, and `lint` run over them. The `admit-request` gate runs on the skill before this slice opens, and its verdict is recorded on the slice's work item; the admission record is on `agents-config-9k9.484`.
 
 - **CR-L1** A record missing any required field group, or carrying a field the schema does not define, fails `lint` with the field named; each of the four example records built from pull requests 838, 839, 843 and 846 passes. Check: suite, one case per required group removed, one unknown top-level field, one unknown nested field, and the four fixtures.
 - **CR-L2** A rewritable field whose text names a tracker id, criterion id, decision id or PR number with no gloss on that id's first use in the record fails `lint`, naming the field and the id; the same id glossed on first use and bare on a later use passes. Check: suite, one case per id shape (a dotted tracker id, a hyphenated criterion id, a bare `D16`, a `#843`), each as a failing bare first use and a passing glossed first use, and one case where the first use is in `summary` and the later bare use is in `changes`.
@@ -318,13 +318,6 @@ Slices X and C are independent and may run in parallel. Slice P needs L and R. S
 
 The first PR to use the pipeline end to end is slice P's own, which publishes its record with the tool it ships.
 
-## 8. Owner decisions pending
-
-- The `admit-request` verdict on the `change-record` skill. The admission record is on `agents-config-9k9.484`; the gate runs when slice L opens.
-- The squash settings change (CR-G3) is a repository setting only the owner changes, and it waits for the five-merge observation.
-- Whether the record comment and replies post from the author's account, as replies do today. The spec assumes yes.
-- Not filed: a pre-commit or pre-PR hook enforcing the record lint. File it only if, among the first ten PRs merged after slice G lands, any merged PR's body fails `lint --pr`; the count is read from those PRs' record comments.
-
 ## Continuations
 
 - feat: The change-record skill, its schema, the record lint and the init stub — AC: CR-L1, CR-L2, CR-L3, CR-L4, CR-L5, CR-L6, CR-L7, CR-L8, CR-L9
@@ -334,3 +327,4 @@ The first PR to use the pipeline end to end is slice P's own, which publishes it
 - feat: Publish posts the record as a marked append-only comment, renders the body from it, and merge supplies the commit message — AC: CR-P1, CR-P2, CR-P3, CR-P4, CR-P5, CR-P6, CR-P7, CR-P8
 - feat: The rewrite pass proposes per-section prose replacements that the author accepts or prunes — AC: CR-W1, CR-W2, CR-W3, CR-W4, CR-W5, CR-W6, CR-W7, CR-W8
 - chore: The review-panel skill, the root AGENTS.md and the squash settings point at the change record — AC: CR-G1, CR-G2, CR-G3
+- feat: A commit or PR hook enforces the record lint, deferred on minting — AC: Deferred with `work defer` as soon as it is minted. Opened only when, among the first ten PRs merged after the wiring slice lands, a merged PR's body fails `lint --pr`, read from those PRs' record comments. Criteria are written and attacked then, before any work starts.
