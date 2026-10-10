@@ -74,7 +74,7 @@
       "covering_ac": "BRF-A32",
       "disposition": "accepted",
       "id": "obligation-reduction-12",
-      "revision": "sha256:1f7f45a695d74a190ea2f265e3bc78622e135de1fcbac874693320515654f465"
+      "revision": "sha256:e3be14105f929a60db57333d18ff155774ae6415c4d06e312ef4bdb402233d27"
     },
     {
       "disposition": "rejected",
@@ -85,7 +85,7 @@
       "covering_ac": "BRF-A35",
       "disposition": "accepted",
       "id": "obligation-reduction-14",
-      "revision": "sha256:1f7f45a695d74a190ea2f265e3bc78622e135de1fcbac874693320515654f465"
+      "revision": "sha256:e3be14105f929a60db57333d18ff155774ae6415c4d06e312ef4bdb402233d27"
     },
     {
       "disposition": "rejected",
@@ -111,19 +111,19 @@
       "covering_ac": "BRF-A20",
       "disposition": "accepted",
       "id": "set-consistency-1",
-      "revision": "sha256:1f7f45a695d74a190ea2f265e3bc78622e135de1fcbac874693320515654f465"
+      "revision": "sha256:e3be14105f929a60db57333d18ff155774ae6415c4d06e312ef4bdb402233d27"
     },
     {
       "covering_ac": "BRF-A9",
       "disposition": "accepted",
       "id": "set-consistency-2",
-      "revision": "sha256:1f7f45a695d74a190ea2f265e3bc78622e135de1fcbac874693320515654f465"
+      "revision": "sha256:e3be14105f929a60db57333d18ff155774ae6415c4d06e312ef4bdb402233d27"
     },
     {
       "covering_ac": "BRF-A27",
       "disposition": "accepted",
       "id": "what-if-1",
-      "revision": "sha256:1f7f45a695d74a190ea2f265e3bc78622e135de1fcbac874693320515654f465"
+      "revision": "sha256:e3be14105f929a60db57333d18ff155774ae6415c4d06e312ef4bdb402233d27"
     },
     {
       "disposition": "rejected",

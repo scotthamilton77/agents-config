@@ -437,12 +437,13 @@ spec-lint's under `make ci`.
   suite, and `make ci` runs spec-lint's fixture test: a test seeded to fail
   in each suite turns its gate red.
 - **BRF-A32** Given an attempt under a record that BRF-A26 finds complete, in
-  which one side has three or four passing runs of five, every other side
-  passes, and fewer than five further runs are named, the scorer reports that
-  fixture as awaiting its second five, neither locked, failed nor incomplete. Given the second five, it locks the
-  fixture when the side's passing runs across the ten reach eight, so a side
-  at three needs all five and a side at four needs four, and fails it when
-  they do not.
+  which at least one side has three or four passing runs of five, no side has
+  fewer, and fewer than five further runs are named, the scorer reports that
+  fixture as awaiting its second five, neither locked, failed nor incomplete,
+  whether one side or both of F1's or F2's earned it. Given the second five,
+  it locks the fixture when every such side's passing runs across the ten
+  reach eight, so a side at three needs all five and a side at four needs
+  four, and fails it when any does not.
 - **BRF-A33** Given a committed lock whose recorded fingerprint differs from
   the one the scorer computes from the skill directory without `evals/`, the
   `acceptance-criteria` skill directory, the fixture's own files and the
@@ -459,9 +460,11 @@ spec-lint's under `make ci`.
 - **BRF-A35** Given a record naming six counting outputs for one fixture's five
   runs, or six for its second five, or two for one run, the scorer refuses the
   attempt, names the fixture and reports it as incomplete. Given an output in
-  the directory that the record neither counts nor marks superseded, it
-  refuses likewise. Given a late output the record marks superseded beside the
-  five it counts, it scores the five and reports the fixture on them alone.
+  the directory that the record neither counts nor marks superseded, or a
+  counting output that names no run or a run other than the one the record
+  counts it for, it refuses likewise. Given a late output the record marks
+  superseded beside the five it counts, it scores the five and reports the
+  fixture on them alone.
 
 ### Traceability
 
