@@ -19,7 +19,7 @@ The cost lands on the one person this harness is meant to free. The prime direct
 
 In scope: the template for each of the three artifacts; a JSON change record that is the single source each artifact renders from; a schema and a lint over that record; generators that fill the record's factual sections from the tracker and from GitHub; publication of the record as an append-only PR comment with the body rendered from it; a merge command that supplies the rendered commit message; a bounded rewrite pass over the record's prose fields on a cheaper model; the repository squash settings; one sentence each in the `review-panel` skill and the root `AGENTS.md` pointing at the new skill.
 
-Out of scope: a commit or PR hook that enforces the lint. The skill is adopted first and a hook is added only if lint failures are observed on merged PRs after ten PRs; that observation is recorded in the Continuations section as not filed. Also out: Claude Code's attribution settings; a commitlint configuration; the verdict envelope's own format; PRs opened by Dependabot or release bots, which the templates leave untouched; the ordering of comments GitHub displays.
+Out of scope: a commit or PR hook that enforces the lint. The skill is adopted first and a hook is added only if lint failures are observed on merged PRs after ten PRs; that observation is recorded in section 8 as not filed. Also out: Claude Code's attribution settings; a commitlint configuration; the verdict envelope's own format; PRs opened by Dependabot or release bots, which the templates leave untouched; the ordering of comments GitHub displays.
 
 ## 3. The artifacts
 
@@ -190,7 +190,7 @@ The verdict envelopes and the author's replies stay where they are. The script's
 
 ### CR-D9. No hook until drift is observed
 
-The skill, its lint and the one-sentence pointers in `review-panel` and the root `AGENTS.md` are the whole enforcement for the first ten merged PRs. A pre-commit or pre-PR hook is a second mechanism and is added only on the observation that merged PRs fail the lint after the skill is in place. The observation and its threshold are recorded in Continuations.
+The skill, its lint and the one-sentence pointers in `review-panel` and the root `AGENTS.md` are the whole enforcement for the first ten merged PRs. A pre-commit or pre-PR hook is a second mechanism and is added only on the observation that merged PRs fail the lint after the skill is in place. The observation and its threshold are recorded in section 8.
 
 ## 5. The record
 
@@ -323,6 +323,7 @@ The first PR to use the pipeline end to end is slice P's own, which publishes it
 - The `admit-request` verdict on the `change-record` skill. The admission record is on `agents-config-9k9.484`; the gate runs when slice L opens.
 - The squash settings change (CR-G3) is a repository setting only the owner changes, and it waits for the five-merge observation.
 - Whether the record comment and replies post from the author's account, as replies do today. The spec assumes yes.
+- Not filed: a pre-commit or pre-PR hook enforcing the record lint. File it only if, among the first ten PRs merged after slice G lands, any merged PR's body fails `lint --pr`; the count is read from those PRs' record comments.
 
 ## Continuations
 
@@ -333,5 +334,3 @@ The first PR to use the pipeline end to end is slice P's own, which publishes it
 - feat: Publish posts the record as a marked append-only comment, renders the body from it, and merge supplies the commit message — AC: CR-P1, CR-P2, CR-P3, CR-P4, CR-P5, CR-P6, CR-P7, CR-P8
 - feat: The rewrite pass proposes per-section prose replacements that the author accepts or prunes — AC: CR-W1, CR-W2, CR-W3, CR-W4, CR-W5, CR-W6, CR-W7, CR-W8
 - chore: The review-panel skill, the root AGENTS.md and the squash settings point at the change record — AC: CR-G1, CR-G2, CR-G3
-
-Not filed: a pre-commit or pre-PR hook enforcing the record lint. File it only if, among the first ten PRs merged after slice G lands, any merged PR's body fails `lint --pr`; the count is read from those PRs' record comments.
