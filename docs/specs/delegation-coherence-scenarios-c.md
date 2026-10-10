@@ -532,7 +532,8 @@ harvest, `what-if` for `ac-attack`.
 | H1, K1 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: usable output. | `INGEST` |
 | H2, K2 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the launcher refused the invocation. | `FIX-INVOCATION` |
 | H3, K3 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the provider did not serve the run. | `transport-error` |
-| H4, K4 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the run produced unusable output. | `unusable-output` |
+| H4 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the run produced unusable output. The reply was prose in place of the report the prompt asked for, and the response did not end inside the model's reasoning. | `unusable-output` |
+| K4 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the run produced unusable output. | `unusable-output` |
 | H5, K5 | You dispatched the `<lens>` lens. The user then told you to abandon this dispatch, so you sent the run a signal to end it. Its launcher's own skill says what its ending means: the provider did not serve the run. | `STOP` |
 | H6 | You dispatched the `<lens>` lens through a launcher with an idle limit. The run forwarded nothing for that long, so the launcher ended it. Its launcher's own skill says what its ending means: the provider did not serve the run. | `transport-error` |
 
@@ -842,3 +843,24 @@ scenarios for signals the rewritten tables name. The keys are unchanged.
 | O9 | 3 | `ANSWER: UNUSABLE` | UNUSABLE | pass |
 
 All 48 reruns returned the keyed answer.
+
+### Reruns after harvest's mapping named the dead-run refinement
+
+Harvest's mapping paragraph names the two signals its dead-run ladder owns
+inside the unusable-output clause. H4's captured input now says the unusable
+output did not end inside the model's reasoning; H5's input is a stop the
+caller chose on purpose. H4, H5 and H6 ran three times each against that text
+on 2026-10-10, each a fresh native subagent pinned to `sonnet`. No `ac-attack`
+sentence changed, so K1 to K5 did not rerun.
+
+| Scenario | Run | Answer | Key | Result |
+| --- | --- | --- | --- | --- |
+| H4 | 1 | `ANSWER: unusable-output` | unusable-output | pass |
+| H4 | 2 | `ANSWER: unusable-output` | unusable-output | pass |
+| H4 | 3 | `ANSWER: unusable-output` | unusable-output | pass |
+| H5 | 1 | `ANSWER: STOP` | STOP | pass |
+| H5 | 2 | `ANSWER: STOP` | STOP | pass |
+| H5 | 3 | `ANSWER: STOP` | STOP | pass |
+| H6 | 1 | `ANSWER: transport-error` | transport-error | pass |
+| H6 | 2 | `ANSWER: transport-error` | transport-error | pass |
+| H6 | 3 | `ANSWER: transport-error` | transport-error | pass |
