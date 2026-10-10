@@ -253,8 +253,10 @@ each have two sides, preservation and evidence, also called halves. Every
 other fixture has one. A side runs five times. When all five pass, the side
 passes. When three or four of the five pass, the side gets a second five, and
 it passes when at least eight of its ten runs pass. When two or fewer pass,
-the side fails. No run is discarded. A fixture is locked when every side
-passes.
+the side fails. A second five adds to its side's first five, which are never
+discarded. A side that passed on its first five stays passed, and a second
+five counts only toward the sides that earned it. A fixture is locked when
+every side passes.
 
 One rule serves every fixture, F6 included. The contract passes a side at four
 of five and sends only a three-of-five side on to a second five. This
@@ -262,18 +264,18 @@ evaluation sends a four-of-five side on as well, because a brief is cheap to
 score. Seven fixtures at five Opus dispatches each make 35 dispatches. For a
 writer right nineteen times in twenty, about one side in five goes on to its
 second five, so an attempt costs some 45 dispatches. The contract's 29 cases
-on Codex cannot afford a second five that often. The second stage buys
-discrimination. A writer that pastes wrong one time in five locks a side about
-seven times in ten under this rule and eight in ten under the contract's, and
-a writer right nineteen times in twenty locks a side ninety-nine times in a
-hundred under both. Ten runs still cannot tell a writer right ninety-nine
-times in a hundred from one right every time. The helper decides the outputs
-of F1 to F5 and F7, but a stricter threshold on those fixtures would still
-measure nothing more. The scope's rule that a criterion without a feasible
-planned check is reported unready is measured by these runs, never proved by
-them. A failed run behind a lock is committed and read like any other, and a
-defect it shows is answered by changing the skill, which voids the lock and
-runs the fixture again.
+plan 310 lens dispatches before any second five, 220 of them on Codex, so it
+cannot afford a second five that often. The second stage buys discrimination.
+A writer that pastes wrong one time in five locks a side about seven times in
+ten under this rule and eight in ten under the contract's, and a writer right
+nineteen times in twenty locks a side ninety-nine times in a hundred under
+both. Ten runs still cannot tell a writer right ninety-nine times in a hundred
+from one right every time. The helper decides the outputs of F1 to F5 and F7,
+but a stricter threshold on those fixtures would still measure nothing more.
+The scope's rule that a criterion without a feasible planned check is reported
+unready is measured by these runs, never proved by them. A failed run behind a
+lock is committed and read like any other, and a defect it shows is answered
+by changing the skill, which voids the lock and runs the fixture again.
 
 A lock records its fixture's fingerprint: the digest of every file the writer
 is given, which is the skill directory without `evals/` together with the
@@ -297,10 +299,10 @@ failed fixture is answered only by changing something, and a locked one is not
 re-rolled.
 
 An attempt is committed under `evals/runs/<run-id>/` with its outputs, its
-record and its report, whatever it shows, and a second five is committed
-beside the attempt it extends. That rests on the operator. The evaluation of
-record is the set of current locks. Changing a run count or threshold amends
-this spec.
+record and the scorer's report on it, whatever it shows, and a second five is
+committed beside the attempt it extends. That rests on the operator. The
+evaluation of record is the set of current locks. Changing a run count or
+threshold amends this spec.
 
 **BRF-D9 — Verification ownership.** S3.5 is the verification child for ACQ-A12
 and ACQ-A13, as ACQ-D2 requires. The helper suites establish the mechanism.
@@ -317,14 +319,14 @@ Only the evaluation of record establishes the parents at the generated brief.
 
 An attempt is complete for a fixture when four things hold. The fixture has
 five scored outputs, and five more when a side earned a second five. The
-attempt's directory holds every output its report scores. Its record names the
-writer's resolved model ID, which equals the configured model, and the
-fixture's fingerprint. Its record carries the operator's attestation of fresh
-contexts and the native Agent tool. A fixture with a pending dispatch among
-its first five runs is incomplete and cannot lock. A fixture whose earned
-second five has fewer than five runs named is awaiting it (BRF-A32), which is
-neither incomplete nor locked; a named output the directory lacks, or a record
-fault, makes the attempt incomplete first.
+attempt's directory holds every output the scorer's report on it scores. Its
+record names the writer's resolved model ID, which equals the configured
+model, and the fixture's fingerprint. Its record carries the operator's
+attestation of fresh contexts and the native Agent tool. A fixture with a
+pending dispatch among its first five runs is incomplete and cannot lock. A
+fixture whose earned second five has fewer than five runs named is awaiting it
+(BRF-A32), which is neither incomplete nor locked; a named output the
+directory lacks, or a record fault, makes the attempt incomplete first.
 
 The helper suite and the scorer's suite run under `make content-tests`, and
 spec-lint's under `make ci`.
