@@ -195,12 +195,11 @@ a writer produces for each of seven fixtures.
 
 The writer is a Claude Opus model through the native Agent tool, given the
 skill from the source tree by full path. The scorer holds the writer's model
-ID as a constant, its configured model, and an attempt's record must name
-that ID as the one the writer resolved to. Changing the configured model
-amends this spec. For each fixture it briefs a subagent for a
-fixed task and returns its output instead of dispatching. Returning a brief
-stands for dispatching it, and the writer runs with no subagent tool, so
-returning is its only route.
+ID as a constant, its configured model, and an attempt's record must name that
+ID as the one the writer resolved to. Changing the configured model amends
+this spec. For each fixture it briefs a subagent for a fixed task and returns
+its output instead of dispatching. Returning a brief stands for dispatching
+it, and the writer runs with no subagent tool, so returning is its only route.
 
 The output takes one of two forms. A brief is the prompt the writer would
 dispatch. A report is the writer's message to its requester. It holds no
@@ -279,11 +278,11 @@ runs the fixture again.
 A lock records its fixture's fingerprint: the digest of every file the writer
 is given, which is the skill directory without `evals/` together with the
 `acceptance-criteria` skill directory the skill sends the writer to, the
-digest of the fixture's own files, and the configured model ID. A lock is current
-while its fingerprint matches the tree and its stored runs still pass under
-the current scorer. A change voids only the locks whose fingerprint it alters,
-and only those fixtures run again. A change to the scorer dispatches no
-writer: the stored outputs are rescored, and a lock stands when its fixture
+digest of the fixture's own files, and the configured model ID. A lock is
+current while its fingerprint matches the tree and its stored runs still pass
+under the current scorer. A change voids only the locks whose fingerprint it
+alters, and only those fixtures run again. A change to the scorer dispatches
+no writer: the stored outputs are rescored, and a lock stands when its fixture
 still passes and falls when it does not.
 
 A fingerprint gets one attempt, plus the second five a side at three or four
@@ -320,12 +319,12 @@ An attempt is complete for a fixture when four things hold. The fixture has
 five scored outputs, and five more when a side earned a second five. The
 attempt's directory holds every output its report scores. Its record names the
 writer's resolved model ID, which equals the configured model, and the
-fixture's fingerprint. Its record carries the operator's attestation of fresh contexts
-and the native Agent tool. A fixture with a pending dispatch among its first
-five runs is incomplete and cannot lock. A fixture whose earned second five
-has fewer than five runs named is awaiting it (BRF-A32), which is neither
-incomplete nor locked; a named output the directory lacks, or a record fault,
-makes the attempt incomplete first.
+fixture's fingerprint. Its record carries the operator's attestation of fresh
+contexts and the native Agent tool. A fixture with a pending dispatch among
+its first five runs is incomplete and cannot lock. A fixture whose earned
+second five has fewer than five runs named is awaiting it (BRF-A32), which is
+neither incomplete nor locked; a named output the directory lacks, or a record
+fault, makes the attempt incomplete first.
 
 The helper suite and the scorer's suite run under `make content-tests`, and
 spec-lint's under `make ci`.
@@ -418,10 +417,10 @@ spec-lint's under `make ci`.
   evidence entries for its evidence half, briefs returned for F3, reports for
   F3 that lack the refusal object, reports for F4 that carry a criteria
   section, outputs with no `Form:` line or one naming another form, and
-  briefs returned for F6, the
-  scorer fails each seeded side and names its fixture. Given a set in which
-  every side passes all five of its runs, under a record that BRF-A26 finds
-  complete, it locks every fixture on five runs a side.
+  briefs returned for F6, the scorer fails each seeded side and names its
+  fixture. Given a set in which every side passes all five of its runs, under
+  a record that BRF-A26 finds complete, it locks every fixture on five runs a
+  side.
 - **BRF-A28** The skill's acceptance-criteria part and skeleton tell the
   writer to take the criteria and evidence sections from `emit`, paste them
   unchanged, run `check` before dispatch, and relay a refusal or an unready
@@ -447,8 +446,8 @@ spec-lint's under `make ci`.
 - **BRF-A33** Given a committed lock whose recorded fingerprint differs from
   the one the scorer computes from the skill directory without `evals/`, the
   `acceptance-criteria` skill directory, the fixture's own files and the
-  configured model ID, the scorer reports the lock
-  as not current and leaves the fixture out of the evaluation of record.
+  configured model ID, the scorer reports the lock as not current and leaves
+  the fixture out of the evaluation of record.
   Given one whose fingerprint matches and whose stored runs still pass under
   the current scorer, it reports the lock as current and counts it, whatever
   changed outside its fingerprint. Given one whose fingerprint matches but
