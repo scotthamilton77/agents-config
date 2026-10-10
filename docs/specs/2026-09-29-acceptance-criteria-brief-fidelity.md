@@ -197,9 +197,8 @@ returning is its only route.
 
 The output takes one of two forms. A brief is the prompt the writer would
 dispatch. A report is the writer's message to its requester. It holds no
-criteria or evidence section. It relays what the helper printed on stderr,
-and it names the IDs the writer itself judged unready under BRF-D5, whichever
-of the two exist.
+criteria or evidence section. It relays anything the helper printed on
+stderr, and it names any IDs the writer itself judged unready under BRF-D5.
 Each output opens with a line naming its form, `Form: brief` or
 `Form: report`, so the scorer reads the form mechanically. An output present
 without such a line fails its run.
@@ -239,7 +238,7 @@ for a fixture or for its second five, and that fixture is incomplete until the
 record is amended to name five.
 
 A fixture is locked on its own runs, under the evaluation contract's rule
-(ACE-D7, ACE-D8), with a second stage the contract does not run. F1 and F2
+(ACE-D7, ACE-D8), with a second stage wider than the contract's. F1 and F2
 each have two sides, preservation and evidence, also called halves. Every
 other fixture has one. A side runs five times. When all five pass, the side
 passes. When three or four of the five pass, the side gets a second five, and
@@ -250,29 +249,30 @@ passes.
 One rule serves every fixture, F6 included. The contract passes a side at four
 of five and sends only a three-of-five side on to a second five. This
 evaluation sends a four-of-five side on as well, because a brief is cheap to
-score: seven fixtures at five Opus dispatches each, with about one side in
-five going on to its second five for a writer right nineteen times in twenty,
-is some 45 dispatches, where the contract's 29 cases on Codex cannot afford
-the same.
-The second stage buys discrimination. A writer that pastes wrong one time in
-five locks a side about seven times in ten under this rule and eight in ten
-under the contract's, and a writer right nineteen times in twenty locks a side
-ninety-nine times in a hundred under both. Ten runs still cannot tell a writer
-right ninety-nine times in a hundred from one right every time, so no
-threshold on F1 to F5 and F7 stricter than this, on the ground that the helper
-decides their outputs, measures anything more. The scope's rule that a
-criterion without a feasible planned check is reported unready is measured by
-these runs, never proved by them. A failed run behind a lock is committed and
-read like any other, and a defect it shows is answered by changing the skill,
-which voids the lock and runs the fixture again.
+score. Seven fixtures at five Opus dispatches each make 35 dispatches. For a
+writer right nineteen times in twenty, about one side in five goes on to its
+second five, so an attempt costs some 45 dispatches. The contract's 29 cases
+on Codex cannot afford a second five that often. The second stage buys
+discrimination. A writer that pastes wrong one time in five locks a side about
+seven times in ten under this rule and eight in ten under the contract's, and
+a writer right nineteen times in twenty locks a side ninety-nine times in a
+hundred under both. Ten runs still cannot tell a writer right ninety-nine
+times in a hundred from one right every time. The helper decides the outputs
+of F1 to F5 and F7, but a stricter threshold on those fixtures would still
+measure nothing more. The scope's rule that a criterion without a feasible
+planned check is reported unready is measured by these runs, never proved by
+them. A failed run behind a lock is committed and read like any other, and a
+defect it shows is answered by changing the skill, which voids the lock and
+runs the fixture again.
 
 A lock records its fixture's fingerprint: the digest of every file the writer
 is given, which is the skill directory without `evals/`, the digest of the
 fixture's own files, and the writer's resolved model ID. A lock is current
-while its fingerprint matches the tree. A change voids only the locks whose
-fingerprint it alters, and only those fixtures run again. A change to the
-scorer dispatches no writer: the stored outputs are rescored, and a lock
-stands when its fixture still passes and falls when it does not.
+while its fingerprint matches the tree and its stored runs still pass under
+the current scorer. A change voids only the locks whose fingerprint it alters,
+and only those fixtures run again. A change to the scorer dispatches no
+writer: the stored outputs are rescored, and a lock stands when its fixture
+still passes and falls when it does not.
 
 A fingerprint gets one attempt, plus the second five a side at three or four
 of five earns. An attempt counts against its fingerprint once committed,
@@ -286,9 +286,10 @@ failed fixture is answered only by changing something, and a locked one is not
 re-rolled.
 
 An attempt is committed under `evals/runs/<run-id>/` with its outputs, its
-record and its report, whatever it shows, and a second five beside the
-attempt it extends. That rests on the operator. The evaluation of record is
-the set of current locks. Changing a run count or threshold amends this spec.
+record and its report, whatever it shows, and a second five is committed
+beside the attempt it extends. That rests on the operator. The evaluation of
+record is the set of current locks. Changing a run count or threshold amends
+this spec.
 
 **BRF-D9 — Verification ownership.** S3.5 is the verification child for ACQ-A12
 and ACQ-A13, as ACQ-D2 requires. The helper suites establish the mechanism.
