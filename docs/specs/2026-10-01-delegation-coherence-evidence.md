@@ -1,6 +1,6 @@
 # Evidence
 
-All criteria describe future implementation; their evidence is open. The audit in section 3 supports the decisions and establishes no criterion.
+The audit in section 3 supports the decisions and establishes no criterion.
 
 - DEL-A1 | open
 - DEL-A2 | open
