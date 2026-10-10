@@ -70,4 +70,29 @@ Key: `ANSWER: NO`.
 
 ## Runs
 
-Not yet run.
+Every run was a fresh native subagent pinned to `sonnet`, given the prompt
+above and nothing else, on 2026-10-10.
+
+The baseline ran once per scenario against the skill prose as it stood
+before the prose change, with the launcher already carrying the flag. F6b
+failed its key there: the reader read "a cheap Gemini pass" as the user's
+instruction and passed the flag.
+
+| Scenario | Run | Prose | Answer | Key | Result |
+| --- | --- | --- | --- | --- | --- |
+| F6a | baseline | before | `ANSWER: YES` | YES | pass |
+| F6b | baseline | before | `ANSWER: YES` | NO | fail |
+| F6c | baseline | before | `ANSWER: NO` | NO | pass |
+| F6a | 1 | after | `ANSWER: YES` | YES | pass |
+| F6a | 2 | after | `ANSWER: YES` | YES | pass |
+| F6a | 3 | after | `ANSWER: YES` | YES | pass |
+| F6b | 1 | after | `ANSWER: NO` | NO | pass |
+| F6b | 2 | after | `ANSWER: NO` | NO | pass |
+| F6b | 3 | after | `ANSWER: NO` | NO | pass |
+| F6c | 1 | after | `ANSWER: NO` | NO | pass |
+| F6c | 2 | after | `ANSWER: NO` | NO | pass |
+| F6c | 3 | after | `ANSWER: NO` | NO | pass |
+
+All nine runs on the changed prose returned the keyed answer, so DEL-F6
+passes. Each F6a run's command named `google/gemini-3.8-flash` and carried
+`--user-instructed`. Each F6b and F6c run issued no command.
