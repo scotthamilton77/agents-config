@@ -390,6 +390,21 @@ class TestPromptContent:
         assert "names the misreading the comment causes" in mandate
         assert "without an observed victim" in mandate
 
+    def test_spec_ac_testability_judges_the_reviewed_artifacts_own_criteria(
+        self, repo, acs_file, tmp_path, capsys
+    ):
+        """On a spec target the testability lens's subject is the reviewed artifact's own
+        criteria, and the round's criteria file is the standard it judges against. A prompt
+        that names only "the criteria" sends the lens to the round's file, which is the one
+        artifact on a spec target that is not the spec."""
+        flat = class_round(tmp_path, repo, acs_file, "spec", "round-one")
+        code, _ = run(flat, capsys)
+        assert code == 0
+        prompt = prompts(out_dir_of(flat))["ac-testability"]
+        mandate = prompt.split("## How to review")[0]
+        assert "the reviewed artifact's own acceptance criteria" in mandate
+        assert "never your subject" in mandate
+
     def test_b8_mandate_source_reaches_the_prompt_heading(self, repo, acs_file, tmp_path, capsys):
         """A profile whose mandates come from an existing discipline says so where the lens
         reads its mandate; a profile without one gets the plain heading."""

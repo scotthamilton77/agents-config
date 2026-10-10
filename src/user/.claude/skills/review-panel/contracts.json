@@ -76,8 +76,8 @@
         },
         {
           "lens": "ac-testability",
-          "mandate": "Judge whether each acceptance criterion can be converted into one or more tests that fail before the work and pass after it. Name the failing test that is impossible to write.",
-          "acs_hint": "the criteria themselves, judged as testable claims",
+          "mandate": "Judge whether each acceptance criterion the reviewed artifact states can be converted into one or more tests that fail before the work and pass after it. Your subject is the reviewed artifact's own acceptance criteria, read from the change; the round's criteria in the fenced section below are the standard you judge against and never your subject, and a finding names the artifact's criterion by its own ID. Name the failing test that is impossible to write.",
+          "acs_hint": "the round's criteria as the standard; the subject is the reviewed artifact's own criteria, judged as testable claims",
           "tier": "frontier",
           "re_review_tier": "mid",
           "transport": "openrouter"
