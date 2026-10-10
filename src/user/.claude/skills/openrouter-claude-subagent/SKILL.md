@@ -48,11 +48,17 @@ aliases, still lands there. Anything outside that vocabulary is refused with an
 error explaining the alternative, including an agent type pinned to a specific
 vendor model id and a request that names no model at all. Claude models are
 refused outright, pin or no pin: they belong in the harness you are already
-running. The launcher also refuses the GPT-5.5, GPT-5.6 and GPT-6 tiers, the
-`-mini` variants of 5.5 and 5.6 excepted. A GPT or Gemini model runs on this
-launcher only when the user has explicitly instructed it for the run at hand;
-each has its own subscription launcher, and a spent quota or a dead launcher
-there is a reason to ask the user, never to reroute on your own.
+running. The launcher also refuses every GPT and every Gemini model unless the
+run carries `--user-instructed`.
+
+Pass `--user-instructed` only when the user told you to run this run on that
+GPT or Gemini model through OpenRouter. Asking for a Gemini or GPT model, or
+for a cheap run, is not that instruction: those models have their own
+subscription launchers, the Codex and agy skills, and the request goes there.
+An instruction covers the run it was given for, so a later run needs its own.
+A spent quota or a dead launcher is a reason to ask the user, never to reroute
+here on your own. The flag never admits a Claude model, and on any other model
+it changes nothing.
 
 `references/proxy-contract.md` covers what the proxy repairs, why the tool
 grant is limited to what you pass, and what to re-verify when the Claude Code
@@ -96,9 +102,9 @@ routes work to a model that may be repriced or retired, and re-deriving a
 1. Classify the task by the table's tiers.
 2. Take that tier's `openrouter` model, unless the user said "cheap" (one
    tier down) or "best"/"most capable" (one tier up).
-3. A Gemini or GPT model is never your pick on this launcher. It runs here
-   only when the user explicitly instructed it for this run, and the Gemini
-   row exists for that case.
+3. A Gemini or GPT model is never your pick on this launcher, even when the
+   user names one. It runs here only on the instruction that
+   `--user-instructed` records, and the Gemini row exists for that case.
 4. A user-named `vendor/model-id` absent from the table is unverified: look it
    up in the catalog endpoint the table names, say what you found and where,
    and ask before using it.
