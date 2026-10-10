@@ -2,8 +2,15 @@
 // Launcher for an OpenRouter-backed `claude` subagent.
 //
 // Starts the SSE-repair proxy IN-PROCESS on a kernel-assigned port, spawns
-// `claude` against it, forwards every CLI argument through, and exits with
-// the child's status.
+// `claude` against it, forwards every CLI argument but its own clock flags
+// through, and exits with the child's status.
+//
+// The clock flags bound the run. `--timeout SECONDS` ends it that long after
+// the child starts. `--idle-timeout SECONDS` ends it once that long passes
+// with no completion request forwarded upstream. A SIGTERM or SIGINT to the
+// launcher ends it too. Each of these ends the child's whole process group,
+// closes the proxy, prints `[run] reason=timeout|idle|signal` on stderr and
+// exits 75.
 //
 // The proxy runs in-process rather than as a spawned sibling on purpose: the
 // listener dies with this process no matter how it dies. A spawn-plus-trap
@@ -13,7 +20,8 @@
 //
 // Usage:
 //   node run.js --model <id> --effort <level> --permission-mode dontAsk \
-//               --allowedTools Read Grep -p "<prompt>"
+//               --allowedTools Read Grep [--timeout SECONDS] \
+//               [--idle-timeout SECONDS] -p "<prompt>"
 //
 // All four of those flags are required — see REQUIRED_FLAGS for why each one
 // is refused rather than defaulted. Everything else is passed through verbatim.
@@ -24,6 +32,19 @@ const proxy = require("./proxy.js");
 
 /** Launcher-level failure (bad config), distinct from any `claude` exit code. */
 const EXIT_CONFIG_ERROR = 78;
+
+/** The launcher ended the run before the child finished: a clock expired or
+ *  the launcher was signalled. A `[run] reason=` line on stderr says which. */
+const EXIT_ROUTE = 75;
+
+/** How often the run is checked on. It bounds how late an expiry, a signal or
+ *  the child's exit is noticed. */
+const POLL_MS = 100;
+
+/** How long the child's process group has to exit after SIGTERM before it is
+ *  sent SIGKILL. Short enough that a run ends within ten seconds of the
+ *  moment the launcher decides to end it. */
+const KILL_GRACE_MS = 5000;
 
 /** Flags this launcher refuses to run without, each as its accepted spellings.
  *
@@ -59,6 +80,39 @@ function configArgv(argv) {
   for (let i = 0; i < argv.length; i++) {
     out.push(argv[i]);
     if (argv[i] === "-p" || argv[i] === "--print") i++;
+  }
+  return out;
+}
+
+/** The launcher's own flags, each mapped to the key it sets. They bound the
+ *  run in seconds and are never passed on to the child. */
+const CLOCK_FLAGS = { "--timeout": "timeoutMs", "--idle-timeout": "idleMs" };
+
+/** Take the clock flags out of argv, accepting both `--flag v` and `--flag=v`.
+ *
+ *  The prompt's value is copied through untouched, so task text that happens
+ *  to read `--timeout 5` stays task text and bounds nothing.
+ *
+ *  @returns {{argv: string[], timeoutMs?: number, idleMs?: number}|{error: string}} */
+function takeClockFlags(argv) {
+  const out = { argv: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const [name, inline] = arg.split(/=(.*)/s, 2);
+    if (!Object.hasOwn(CLOCK_FLAGS, name)) {
+      out.argv.push(arg);
+      if ((arg === "-p" || arg === "--print") && i + 1 < argv.length) out.argv.push(argv[++i]);
+      continue;
+    }
+    const value = inline ?? argv[++i];
+    if (value === undefined) {
+      return { error: `${name} was given no value. It takes a number of seconds.` };
+    }
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      return { error: `${name} was given ${JSON.stringify(value)}, which is not a positive number of seconds.` };
+    }
+    out[CLOCK_FLAGS[name]] = seconds * 1000;
   }
   return out;
 }
@@ -178,8 +232,111 @@ function resolveExitCode(code, signal) {
   return 128 + (signals[signal] || 0);
 }
 
-async function main(argv) {
+// A group signal fails in two harmless ways. ESRCH means every process in the
+// group is gone. EPERM is what macOS answers for a group whose remaining members
+// have exited but are not yet reaped, and a member this launcher may not signal
+// is beyond its reach either way. Both mean there is nothing left to stop.
+
+function signalGroup(pid, signal) {
+  try {
+    process.kill(-pid, signal);
+  } catch { /* the group is already gone */ }
+}
+
+function groupAlive(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Watch the child until it exits on its own or the launcher ends it.
+ *
+ *  Every decision is taken on a tick, so the order of precedence is fixed
+ *  whatever order the events arrived in: the child's own exit, then a signal
+ *  to the launcher, then the timeout, then the idle timeout. Ending the child
+ *  means SIGTERM to its whole process group, then SIGKILL to whatever is left
+ *  once KILL_GRACE_MS has passed. The run counts as ended only when the child
+ *  has exited and nothing remains in its group.
+ *
+ *  @returns {Promise<{code: number}|{reason: string}>} */
+function supervise(child, { timeoutMs, idleMs, lastForward, now, every }) {
+  return new Promise((resolve, reject) => {
+    const startedAt = now();
+    let exitCode = null;
+    let signalled = false;
+    let ending = null;
+
+    const onSignal = () => { signalled = true; };
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
+    const stopTicking = every(tick);
+    const settle = (fn, value) => {
+      stopTicking();
+      process.off("SIGINT", onSignal);
+      process.off("SIGTERM", onSignal);
+      fn(value);
+    };
+
+    child.on("exit", (code, signal) => { exitCode = resolveExitCode(code, signal); });
+    child.on("error", (err) => {
+      settle(reject, err.code === "ENOENT" ? new Error("`claude` was not found on PATH.") : err);
+    });
+
+    function expiry(t) {
+      if (signalled) return "signal";
+      if (timeoutMs && t >= startedAt + timeoutMs) return "timeout";
+      if (idleMs && t >= lastForward() + idleMs) return "idle";
+      return null;
+    }
+
+    function tick() {
+      const t = now();
+      if (ending) {
+        if (exitCode !== null && !groupAlive(child.pid)) return settle(resolve, { reason: ending.reason });
+        if (!ending.killed && t - ending.since >= KILL_GRACE_MS) {
+          signalGroup(child.pid, "SIGKILL");
+          ending.killed = true;
+        }
+        return;
+      }
+      if (exitCode !== null) return settle(resolve, { code: exitCode });
+      const reason = expiry(t);
+      if (reason) {
+        ending = { reason, since: t, killed: false };
+        signalGroup(child.pid, "SIGTERM");
+      }
+    }
+  });
+}
+
+/** Run one launch to its end and return the launcher's exit code.
+ *
+ *  `deps` replaces the parts of the outside world a test needs to control:
+ *  `now` reads the clock in milliseconds, `every(fn)` calls `fn` once per tick
+ *  and returns a function that stops it, `env` is the environment the child
+ *  is built from, and `startProxy` starts the proxy. */
+async function main(launcherArgv, deps = {}) {
+  const {
+    now = () => performance.now(),
+    every = (fn) => {
+      const timer = setInterval(fn, POLL_MS);
+      return () => clearInterval(timer);
+    },
+    env: parentEnv = process.env,
+    startProxy = proxy.start,
+  } = deps;
+
   // Before the proxy binds anything: a bad invocation should cost no listener.
+  const clock = takeClockFlags(launcherArgv);
+  if (clock.error) {
+    process.stderr.write(`[run] ${clock.error}\n`);
+    return EXIT_CONFIG_ERROR;
+  }
+  const argv = clock.argv;
+
   const argvError = validateArgv(argv);
   if (argvError) {
     process.stderr.write(`[run] ${argvError}\n`);
@@ -203,12 +360,17 @@ async function main(argv) {
     return EXIT_CONFIG_ERROR;
   }
 
-  const { port, close } = await proxy.start({ port: 0, pinnedModel: model });
+  let forwardedAt;
+  const { port, close } = await startProxy({
+    port: 0,
+    pinnedModel: model,
+    onForward: () => { forwardedAt = now(); },
+  });
   const proxyUrl = `http://127.0.0.1:${port}`;
 
   let env;
   try {
-    env = buildChildEnv(process.env, proxyUrl, model);
+    env = buildChildEnv(parentEnv, proxyUrl, model);
   } catch (err) {
     process.stderr.write(`[run] ${err.message}\n`);
     await close();
@@ -222,28 +384,25 @@ async function main(argv) {
     // stdout is passed straight through: it carries the JSON result and must
     // not be contaminated by proxy logging, which goes to stderr.
     stdio: "inherit",
+    // Its own process group, so that ending the run reaches every process
+    // the child started and not only the child itself.
+    detached: true,
   });
 
-  // Forward interactive signals so the child shuts down before this process
-  // does, rather than being orphaned against a proxy that is about to vanish.
-  const forward = (sig) => child.kill(sig);
-  process.on("SIGINT", forward);
-  process.on("SIGTERM", forward);
-
   try {
-    return await new Promise((resolve, reject) => {
-      child.on("error", (err) => {
-        reject(
-          err.code === "ENOENT"
-            ? new Error("`claude` was not found on PATH.")
-            : err
-        );
-      });
-      child.on("exit", (code, signal) => resolve(resolveExitCode(code, signal)));
+    // The idle clock starts with the child, not with the proxy.
+    forwardedAt = now();
+    const outcome = await supervise(child, {
+      timeoutMs: clock.timeoutMs,
+      idleMs: clock.idleMs,
+      lastForward: () => forwardedAt,
+      now,
+      every,
     });
+    if (outcome.reason === undefined) return outcome.code;
+    process.stderr.write(`[run] reason=${outcome.reason}\n`);
+    return EXIT_ROUTE;
   } finally {
-    process.off("SIGINT", forward);
-    process.off("SIGTERM", forward);
     await close();
   }
 }
@@ -264,4 +423,5 @@ module.exports = {
   buildChildEnv,
   resolveExitCode,
   EXIT_CONFIG_ERROR,
+  EXIT_ROUTE,
 };

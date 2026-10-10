@@ -491,7 +491,7 @@ function createSSEFixer(res, log = defaultLog) {
 
 // ─── HTTP proxy ────────────────────────────────────────────────────
 
-function proxyRequest(clientReq, clientRes, log, pinnedModel = null) {
+function proxyRequest(clientReq, clientRes, { log, pinnedModel, onForward, upstream }) {
   // The request target must not be able to choose the upstream host. In
   // absolute-form (RFC 9112 §3.2.2) `new URL(target, base)` ignores the base
   // entirely, so `GET http://elsewhere/x` would send this request — carrying
@@ -538,7 +538,10 @@ function proxyRequest(clientReq, clientRes, log, pinnedModel = null) {
   headers["host"] = TARGET.hostname;
 
   const wantSSE = isStreamingRequest(clientReq.headers);
-  const proto = targetUrl.protocol === "https:" ? https : http;
+  // The address dialed. It is OpenRouter unless the proxy was started with
+  // another upstream, and the request itself never chooses it.
+  const dial = upstream ? new URL(upstream) : targetUrl;
+  const proto = dial.protocol === "https:" ? https : http;
 
   // Nothing is dialed until the body has been read and adjudicated. A refused
   // request must not open an upstream connection at all: the whole point of
@@ -608,8 +611,8 @@ function proxyRequest(clientReq, clientRes, log, pinnedModel = null) {
   /** Open the upstream connection and send the adjudicated body. */
   function dialUpstream(body) {
     proxyReq = proto.request({
-      hostname: targetUrl.hostname,
-      port: targetUrl.port || (targetUrl.protocol === "https:" ? 443 : 80),
+      hostname: dial.hostname,
+      port: dial.port || (dial.protocol === "https:" ? 443 : 80),
       path: targetUrl.pathname + targetUrl.search,
       method: clientReq.method,
       headers,
@@ -701,6 +704,7 @@ function proxyRequest(clientReq, clientRes, log, pinnedModel = null) {
         refuse(clientRes, verdict.message);
         return;
       }
+      onForward();
     }
 
     dialUpstream(body);
@@ -709,6 +713,13 @@ function proxyRequest(clientReq, clientRes, log, pinnedModel = null) {
   clientReq.on("error", (err) => {
     log(`client request error: ${err.message}`);
     if (proxyReq) proxyReq.destroy();
+  });
+
+  // A client that goes away mid-response leaves nobody to read the rest.
+  // Keeping the upstream open would bill for tokens nobody receives, and an
+  // open upstream socket keeps the process alive after its run has ended.
+  clientRes.on("close", () => {
+    if (proxyReq && !clientRes.writableFinished) proxyReq.destroy();
   });
 }
 
@@ -727,16 +738,28 @@ function proxyRequest(clientReq, clientRes, log, pinnedModel = null) {
  * @param {string|null} [opts.pinnedModel] The one model completion requests
  *   may name. Left unset the pin is off and only the denylist applies, which
  *   is the right shape for a proxy started outside a launched run.
+ * @param {() => void} [opts.onForward] Called each time a completion request
+ *   is forwarded upstream, which is how a launcher measures idleness.
+ * @param {string|null} [opts.upstream] Origin to dial instead of OpenRouter,
+ *   such as a local stand-in under test. The ledger and the request-target
+ *   checks still name OpenRouter.
  * @returns {Promise<{ port: number, close: () => Promise<void> }>}
  */
-function start({ port = 0, host = "127.0.0.1", log = defaultLog, pinnedModel = null } = {}) {
+function start({
+  port = 0,
+  host = "127.0.0.1",
+  log = defaultLog,
+  pinnedModel = null,
+  onForward = () => {},
+  upstream = null,
+} = {}) {
   // The parse guard in proxyRequest covers the one throw we know about. This
   // covers the ones we don't: because the proxy shares a process with the
   // launcher, an unhandled throw here would kill the running claude child
   // too. A failed request must never be able to end the session.
   const server = http.createServer((req, res) => {
     try {
-      proxyRequest(req, res, log, pinnedModel);
+      proxyRequest(req, res, { log, pinnedModel, onForward, upstream });
     } catch (err) {
       log(`request handler error: ${err.message}`);
       if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain" });

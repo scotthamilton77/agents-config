@@ -449,3 +449,608 @@ test("a prompt cannot smuggle in a model of its own", () => {
 test("a legitimate prompt that merely mentions a flag still validates", () => {
   assert.equal(validateArgv([...VALID_ARGV.slice(0, -1), "explain the --effort flag"]), null);
 });
+
+// ─── Fake children ─────────────────────────────────────────────────
+//
+// The launcher spawns `claude` from PATH, so each test below writes a fake
+// `claude` into a fresh directory and puts that directory first on PATH. The
+// fake records its pid, argv and environment to `record.json` beside itself,
+// which is how a test learns the proxy port and which process group to watch.
+
+const fs = require("node:fs");
+const os = require("node:os");
+const { spawn } = require("node:child_process");
+
+const RUN_JS = path.join(__dirname, "run.js");
+
+/** Write a fake `claude` whose body runs `behaviour` and return its directory.
+ *  The preamble gives the body a `record(extra)` helper, and SIGUSR2 makes the
+ *  fake exit with code 3 so a test can end it on its own terms. */
+function fakeClaude(behaviour) {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "run-test-"));
+  fs.writeFileSync(
+    path.join(bin, "claude"),
+    `#!/usr/bin/env node
+const fs = require("fs"), path = require("path"), { spawn } = require("child_process");
+function record(extra = {}) {
+  const file = path.join(__dirname, "record.json");
+  fs.writeFileSync(file + ".tmp", JSON.stringify({
+    pid: process.pid, argv: process.argv.slice(2), env: process.env, ...extra,
+  }));
+  fs.renameSync(file + ".tmp", file);
+}
+process.on("SIGUSR2", () => process.exit(3));
+${behaviour}
+`,
+    { mode: 0o755 },
+  );
+  return bin;
+}
+
+/** A fake that records what it was given and exits 0 at once. */
+const RECORD_AND_EXIT = "record(); process.exit(0);";
+
+/** The environment a launch under test inherits: nothing from the machine
+ *  running the suite, so a recorded environment is the same everywhere. */
+function launchEnv(bin, extra = {}) {
+  return {
+    HOME: "/home/fixture",
+    OPENROUTER_API_KEY: "sk-or-fixture",
+    ...extra,
+    PATH: `${bin}:${path.dirname(process.execPath)}`,
+  };
+}
+
+/** Wait for the fake child's record, which it writes once it is running. */
+async function readRecord(bin, timeoutMs = 5000) {
+  const file = path.join(bin, "record.json");
+  const stop = Date.now() + timeoutMs;
+  while (Date.now() < stop) {
+    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, "utf8"));
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error("the fake child never wrote its record");
+}
+
+/** Run the launcher as its own process and resolve with its exit and stderr.
+ *  It leads a process group of its own, so a test can kill everything it
+ *  started without knowing the shape of the tree. */
+function launch(argv, env) {
+  const proc = spawn(process.execPath, [RUN_JS, ...argv], {
+    env,
+    stdio: ["ignore", "ignore", "pipe"],
+    detached: true,
+  });
+  let stderr = "";
+  proc.stderr.on("data", (c) => { stderr += c; });
+  const done = new Promise((resolve) => {
+    proc.on("close", (code, signal) => resolve({ code, signal, stderr }));
+  });
+  return { proc, done };
+}
+
+/** What a child received, with the values that differ run to run replaced by
+ *  placeholders: the kernel-assigned proxy port, and the PATH that points at a
+ *  fresh temporary directory. macOS adds `__CF_USER_TEXT_ENCODING` to every
+ *  process it starts, keyed to the user running the suite, and the launcher
+ *  never sets it, so it is left out. */
+function normalise(record) {
+  const env = { ...record.env, PATH: "<PATH>" };
+  env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.replace(/:\d+$/, ":<PORT>");
+  delete env.__CF_USER_TEXT_ENCODING;
+  return { argv: record.argv, env };
+}
+
+/** Launch with a recording fake child and return what that child received. */
+async function childLaunch(argv, extraEnv = {}) {
+  const bin = fakeClaude(RECORD_AND_EXIT);
+  const { done } = launch(argv, launchEnv(bin, extraEnv));
+  const result = await done;
+  assert.equal(result.code, 0, result.stderr);
+  return normalise(await readRecord(bin));
+}
+
+// ─── With no clock flag, the child's launch is unchanged ───────────
+//
+// Recorded from the launcher as it stood before it gained its clock, by
+// running each input below through it with the recording fake child.
+
+const PRE_CLOCK_LAUNCHES = [
+  {
+    argv: [
+      "--model", "vendor/model", "--effort", "low", "--permission-mode", "dontAsk",
+      "--allowedTools", "Read", "Grep", "-p", "task",
+    ],
+    extraEnv: {},
+    child: {
+      argv: [
+        "--model", "vendor/model", "--effort", "low", "--permission-mode", "dontAsk",
+        "--allowedTools", "Read", "Grep", "-p", "task",
+      ],
+      env: {
+        HOME: "/home/fixture",
+        OPENROUTER_API_KEY: "sk-or-fixture",
+        PATH: "<PATH>",
+        CLAUDE_CONFIG_DIR: "/home/fixture/.claude_openrouter",
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:<PORT>",
+        ANTHROPIC_AUTH_TOKEN: "sk-or-fixture",
+        ANTHROPIC_API_KEY: "",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "vendor/model",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "vendor/model",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "vendor/model",
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "vendor/model",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      },
+    },
+  },
+  {
+    argv: [
+      "--model=moonshotai/kimi-k3", "--effort=medium", "--permission-mode=dontAsk",
+      "--allowed-tools=Read", "--output-format", "json", "-p", "review this",
+    ],
+    extraEnv: {
+      ANTHROPIC_API_KEY: "sk-ant-inherited",
+      CLAUDE_CONFIG_DIR_OPENROUTER: "/custom/config",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "anthropic/claude-sonnet-5",
+    },
+    child: {
+      argv: [
+        "--model=moonshotai/kimi-k3", "--effort=medium", "--permission-mode=dontAsk",
+        "--allowed-tools=Read", "--output-format", "json", "-p", "review this",
+      ],
+      env: {
+        HOME: "/home/fixture",
+        OPENROUTER_API_KEY: "sk-or-fixture",
+        ANTHROPIC_API_KEY: "",
+        CLAUDE_CONFIG_DIR_OPENROUTER: "/custom/config",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "moonshotai/kimi-k3",
+        PATH: "<PATH>",
+        CLAUDE_CONFIG_DIR: "/custom/config",
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:<PORT>",
+        ANTHROPIC_AUTH_TOKEN: "sk-or-fixture",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "moonshotai/kimi-k3",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "moonshotai/kimi-k3",
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "moonshotai/kimi-k3",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      },
+    },
+  },
+  {
+    // The prompt names both clock flags, and it is task text, not flags.
+    argv: [
+      "--model", "z-ai/glm-5", "--effort", "high", "--permission-mode", "dontAsk",
+      "--allowedTools", "Read", "--print", "--timeout 30 --idle-timeout=5",
+    ],
+    extraEnv: { LANG: "C" },
+    child: {
+      argv: [
+        "--model", "z-ai/glm-5", "--effort", "high", "--permission-mode", "dontAsk",
+        "--allowedTools", "Read", "--print", "--timeout 30 --idle-timeout=5",
+      ],
+      env: {
+        HOME: "/home/fixture",
+        OPENROUTER_API_KEY: "sk-or-fixture",
+        LANG: "C",
+        PATH: "<PATH>",
+        CLAUDE_CONFIG_DIR: "/home/fixture/.claude_openrouter",
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:<PORT>",
+        ANTHROPIC_AUTH_TOKEN: "sk-or-fixture",
+        ANTHROPIC_API_KEY: "",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "z-ai/glm-5",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "z-ai/glm-5",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "z-ai/glm-5",
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "z-ai/glm-5",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      },
+    },
+  },
+];
+
+PRE_CLOCK_LAUNCHES.forEach(({ argv, extraEnv, child }, i) => {
+  test(`DEL-B4: with no clock flag the child receives the recorded pre-clock argv and environment (input ${i + 1})`, async () => {
+    assert.deepEqual(await childLaunch(argv, extraEnv), child);
+  });
+});
+
+// ─── The clock flags refuse a value that bounds nothing ────────────
+
+/** Run `fn` with everything written to stderr captured, and return both. */
+async function captureStderr(fn) {
+  const realWrite = process.stderr.write;
+  let text = "";
+  process.stderr.write = (chunk) => {
+    text += chunk;
+    return true;
+  };
+  try {
+    return { result: await fn(), stderr: text };
+  } finally {
+    process.stderr.write = realWrite;
+  }
+}
+
+const BAD_CLOCK_VALUES = [
+  ["a non-numeric value", (flag) => [flag, "soon"]],
+  ["a zero value", (flag) => [flag, "0"]],
+  ["a negative value", (flag) => [flag, "-5"]],
+  ["no value", (flag) => [flag]],
+];
+
+for (const flag of ["--timeout", "--idle-timeout"]) {
+  for (const [label, given] of BAD_CLOCK_VALUES) {
+    test(`DEL-B5: ${flag} with ${label} exits 78 before the proxy binds, naming the flag`, async () => {
+      // The flag goes last, so "no value" really is the end of argv.
+      const { result, stderr } = await captureStderr(() =>
+        mainWithoutProxy([...VALID_ARGV, ...given(flag)]),
+      );
+      assert.equal(result, EXIT_CONFIG_ERROR);
+      assert.match(stderr, new RegExp(`\\[run\\] ${flag}\\b`));
+    });
+  }
+}
+
+// ─── The clock flags never reach the child ─────────────────────────
+
+const WITH_CLOCK_FLAGS = [
+  ["--timeout", ["--timeout", "600"]],
+  ["--idle-timeout", ["--idle-timeout=300"]],
+  ["both clock flags", ["--idle-timeout", "300", "--timeout=600"]],
+];
+
+for (const [label, flags] of WITH_CLOCK_FLAGS) {
+  test(`DEL-B7: with ${label}, the child receives what it receives without them`, async () => {
+    const [before, after] = [VALID_ARGV.slice(0, 4), VALID_ARGV.slice(4)];
+    const withFlags = await childLaunch([...before, ...flags, ...after]);
+    const without = await childLaunch(VALID_ARGV);
+    assert.deepEqual(withFlags, without);
+  });
+}
+
+// ─── Runs on a hand-driven clock ───────────────────────────────────
+//
+// main() reads time through `now` and checks on the run through the tick it
+// hands to `every`. A test owns both, so it decides exactly what the clock
+// reads when each tick is processed. Process deaths still happen on the real
+// clock, so each hand-fired tick is followed by a short real pause.
+
+const http = require("node:http");
+const { EXIT_ROUTE } = require("./run.js");
+
+/** Keeps the fake alive until something ends it. */
+const STAY = "setInterval(() => {}, 1 << 30);";
+/** Makes the fake ignore both signals a launcher would end it with. */
+const IGNORE_SIGNALS = 'process.on("SIGTERM", () => {}); process.on("SIGINT", () => {});';
+/** Starts a grandchild in the fake's own process group that ignores both
+ *  signals, and records only once the grandchild has said it is ready. */
+const WITH_GRANDCHILD = `
+const grandchild = spawn(process.execPath, ["-e",
+  'process.on("SIGTERM", () => {}); process.on("SIGINT", () => {}); process.stdout.write("ready"); setInterval(() => {}, 1 << 30);'],
+  { stdio: ["ignore", "pipe", "ignore"] });
+grandchild.stdout.once("data", () => record({ grandchild: grandchild.pid }));
+${STAY}`;
+/** Sends one streaming completion through the proxy and holds the response
+ *  open, recording once the first upstream bytes have reached it. */
+const HOLD_UPSTREAM = `
+const req = require("http").request(process.env.ANTHROPIC_BASE_URL + "/v1/messages", {
+  method: "POST", headers: { "content-type": "application/json", accept: "text/event-stream" },
+}, (res) => res.once("data", () => record()));
+req.end(JSON.stringify({ model: "vendor/model", messages: [], stream: true }));
+${STAY}`;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function manualClock() {
+  const clock = { t: 0, tick: null };
+  clock.now = () => clock.t;
+  clock.every = (fn) => {
+    clock.tick = fn;
+    return () => { clock.tick = null; };
+  };
+  return clock;
+}
+
+/** Set the clock to `t`, process one tick, and give real processes a moment. */
+async function tickAt(clock, t) {
+  clock.t = t;
+  if (clock.tick) clock.tick();
+  await sleep(30);
+}
+
+/** Start main() in-process against the fake in `bin`, capturing its stderr. */
+function startRun(launcherArgv, bin, clock, upstream) {
+  const run = { settled: false, code: undefined, stderr: "" };
+  const realWrite = process.stderr.write;
+  process.stderr.write = (chunk) => {
+    run.stderr += chunk;
+    return true;
+  };
+  run.done = main(launcherArgv, {
+    now: clock.now,
+    every: clock.every,
+    env: launchEnv(bin),
+    startProxy: (opts) => proxy.start({ ...opts, upstream }),
+  }).then(
+    (code) => { run.code = code; },
+    (err) => { run.error = err; },
+  ).finally(() => {
+    process.stderr.write = realWrite;
+    run.settled = true;
+  });
+  return run;
+}
+
+/** Advance the clock a quarter second per tick until the run settles, and
+ *  return what the clock read when it did. Gives up fifteen seconds past the
+ *  start, which is past every bound these tests assert. */
+async function tickUntilSettled(clock, run) {
+  const giveUpAt = clock.t + 15000;
+  while (!run.settled && clock.t < giveUpAt) await tickAt(clock, clock.t + 250);
+  return clock.t;
+}
+
+/** True once no process is left in the group the child leads. */
+function groupGone(pid) {
+  try {
+    process.kill(-pid, 0);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** Resolve true if a TCP connect to the port is refused. */
+function connectRefused(port) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: "127.0.0.1" });
+    socket.on("error", (err) => resolve(err.code === "ECONNREFUSED"));
+    socket.on("connect", () => { socket.destroy(); resolve(false); });
+  });
+}
+
+const proxyPort = (record) => Number(record.env.ANTHROPIC_BASE_URL.match(/:(\d+)$/)[1]);
+
+/** A stand-in for OpenRouter. Held, it opens a streaming response and never
+ *  ends it; otherwise it answers each request at once. */
+async function startUpstream({ held = false } = {}) {
+  const upstream = { requests: 0, closed: false };
+  const server = http.createServer((req, res) => {
+    upstream.requests++;
+    req.resume();
+    if (!held) return res.end("{}");
+    req.socket.on("close", () => { upstream.closed = true; });
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    // OpenAI-format, so the proxy passes it through rather than holding the
+    // stream back for repair.
+    res.write('data: {"id":"held"}\n\n');
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  upstream.url = `http://127.0.0.1:${server.address().port}`;
+  upstream.close = () => {
+    server.closeAllConnections();
+    return new Promise((r) => server.close(r));
+  };
+  return upstream;
+}
+
+/** A fake that is running and ready to be watched, until something ends it. */
+const RUNNING = `record(); ${STAY}`;
+
+/** Start a run on a hand-driven clock, hand it to `body`, and afterwards end
+ *  whatever the body left running. */
+async function withRun(launcherArgv, behaviour, body, { held = false } = {}) {
+  const upstream = await startUpstream({ held });
+  const bin = fakeClaude(behaviour);
+  const clock = manualClock();
+  const run = startRun(launcherArgv, bin, clock, upstream.url);
+  try {
+    const child = await readRecord(bin);
+    await body({ run, clock, child, upstream });
+  } finally {
+    if (!run.settled && fs.existsSync(path.join(bin, "record.json"))) {
+      signalGroupOf(await readRecord(bin), "SIGKILL");
+      await tickUntilSettled(clock, run);
+    }
+    if (run.settled) await run.done;
+    await upstream.close();
+  }
+}
+
+function signalGroupOf(child, signal) {
+  try { process.kill(-child.pid, signal); } catch { /* already gone */ }
+}
+
+/** Assert the launcher ended the run for `reason` within ten seconds of the
+ *  tick at `expiryAt`, leaving no process in the child's group and no proxy. */
+async function assertEndedFor(reason, { run, clock, child }, expiryAt) {
+  const endedAt = await tickUntilSettled(clock, run);
+  assert.ok(endedAt - expiryAt <= 10000, `the run ended ${endedAt - expiryAt} ms after expiry`);
+  assert.equal(run.error, undefined);
+  assert.equal(run.code, EXIT_ROUTE);
+  assert.match(run.stderr, new RegExp(`^\\[run\\] reason=${reason}$`, "m"));
+  assert.ok(groupGone(child.pid), "a process in the child's group survived");
+  assert.ok(await connectRefused(proxyPort(child)), "the proxy is still listening");
+}
+
+/** Assert the run ended with the child's own exit code and no reason line. */
+async function assertOwnExit(code, { run, clock }) {
+  await tickUntilSettled(clock, run);
+  assert.equal(run.error, undefined);
+  assert.equal(run.code, code);
+  assert.doesNotMatch(run.stderr, /reason=/);
+}
+
+/** End the fake with its own exit code 3, and wait until the launcher can
+ *  have seen it go. */
+async function childExitsOnItsOwn(child) {
+  process.kill(child.pid, "SIGUSR2");
+  while (!groupGone(child.pid)) await sleep(10);
+  await sleep(100);
+}
+
+const B1_CHILDREN = [
+  ["a compliant child", RUNNING],
+  ["a child that ignores SIGTERM", IGNORE_SIGNALS + RUNNING],
+  ["a child that started a child of its own in the group", WITH_GRANDCHILD],
+  ["a run whose upstream response is still open", HOLD_UPSTREAM],
+];
+
+for (const [label, behaviour] of B1_CHILDREN) {
+  test(`DEL-B1: --timeout ends ${label} within ten seconds of the expiry tick`, async () => {
+    const held = behaviour === HOLD_UPSTREAM;
+    await withRun(["--timeout", "30", ...VALID_ARGV], behaviour, async (r) => {
+      await tickAt(r.clock, 29999);
+      assert.equal(r.run.settled, false, "the run ended before its timeout");
+
+      await tickAt(r.clock, 30000);
+      await assertEndedFor("timeout", r, 30000);
+      if (held) {
+        await sleep(200);
+        assert.ok(r.upstream.closed, "the upstream response is still open, which keeps the launcher alive");
+      }
+    }, { held });
+  });
+}
+
+/** Wait for a launched launcher to exit. If it is still running `ms` later,
+ *  kill it and the child's group, so a launcher that never ends fails the
+ *  test instead of hanging the suite. */
+async function exitWithin(launched, child, ms) {
+  let timer;
+  const late = new Promise((resolve) => { timer = setTimeout(resolve, ms, null); });
+  const result = await Promise.race([launched.done, late]);
+  clearTimeout(timer);
+  if (result) return result;
+  signalGroupOf(launched.proc, "SIGKILL");
+  signalGroupOf(child, "SIGKILL");
+  throw new Error(`the launcher was still running ${ms} ms later`);
+}
+
+test("DEL-B1: on the real clock, --timeout 1 ends the run and the launcher exits 75", async () => {
+  const bin = fakeClaude(WITH_GRANDCHILD);
+  const startedAt = Date.now();
+  const launched = launch(["--timeout", "1", ...VALID_ARGV], launchEnv(bin));
+  const child = await readRecord(bin);
+  const result = await exitWithin(launched, child, 15000);
+  const elapsed = Date.now() - startedAt;
+  assert.ok(elapsed >= 1000, `the launcher exited after ${elapsed} ms, before its timeout`);
+  assert.ok(elapsed <= 11000, `the launcher exited ${elapsed - 1000} ms after its timeout`);
+  assert.equal(result.code, EXIT_ROUTE);
+  assert.match(result.stderr, /^\[run\] reason=timeout$/m);
+  assert.ok(groupGone(child.pid), "a process in the child's group survived");
+});
+
+// ─── The idle timeout ──────────────────────────────────────────────
+
+/** Send one completion request through the proxy, as the child would. */
+function forwardCompletion(child) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(`${child.env.ANTHROPIC_BASE_URL}/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    }, (res) => { res.resume(); res.on("end", resolve); });
+    req.on("error", reject);
+    req.end(JSON.stringify({ model: "vendor/model", messages: [] }));
+  });
+}
+
+test("DEL-B2: a run that forwards no completion request for M seconds ends with reason=idle", async () => {
+  await withRun(["--idle-timeout", "10", ...VALID_ARGV], RUNNING, async (r) => {
+    await tickAt(r.clock, 9999);
+    assert.equal(r.run.settled, false, "the run ended before it had been idle for M seconds");
+    await tickAt(r.clock, 10000);
+    await assertEndedFor("idle", r, 10000);
+  });
+});
+
+test("DEL-B2: a run that forwards a request every M minus one seconds is not ended by the idle timeout", async () => {
+  await withRun(["--idle-timeout", "10", ...VALID_ARGV], RUNNING, async (r) => {
+    for (let t = 1000; t <= 40000; t += 1000) {
+      r.clock.t = t;
+      if (t % 9000 === 0) await forwardCompletion(r.child);
+      await tickAt(r.clock, t);
+    }
+    assert.equal(r.upstream.requests, 4, "the scripted requests did not all reach the upstream");
+    assert.equal(r.run.settled, false, "the idle timeout ended a run that kept forwarding");
+    await childExitsOnItsOwn(r.child);
+    await assertOwnExit(3, r);
+  });
+});
+
+test("DEL-B2: a run that forwards one request and then none for M seconds is ended", async () => {
+  await withRun(["--idle-timeout", "10", ...VALID_ARGV], RUNNING, async (r) => {
+    r.clock.t = 5000;
+    await forwardCompletion(r.child);
+    await tickAt(r.clock, 14999);
+    assert.equal(r.run.settled, false, "the idle clock did not restart at the forwarded request");
+    await tickAt(r.clock, 15000);
+    await assertEndedFor("idle", r, 15000);
+  });
+});
+
+// ─── Both flags, and the child's own exit ──────────────────────────
+
+test("DEL-B3: with both flags, an idle timeout that expires first decides the reason", async () => {
+  await withRun(["--timeout", "30", "--idle-timeout", "10", ...VALID_ARGV], RUNNING, async (r) => {
+    await tickAt(r.clock, 10000);
+    await assertEndedFor("idle", r, 10000);
+  });
+});
+
+test("DEL-B3: with both flags, a timeout that expires first decides the reason", async () => {
+  await withRun(["--timeout", "10", "--idle-timeout", "30", ...VALID_ARGV], RUNNING, async (r) => {
+    await tickAt(r.clock, 10000);
+    await assertEndedFor("timeout", r, 10000);
+  });
+});
+
+test("DEL-B3: when both flags expire on one tick the reason is timeout", async () => {
+  await withRun(["--timeout", "10", "--idle-timeout", "10", ...VALID_ARGV], RUNNING, async (r) => {
+    await tickAt(r.clock, 10000);
+    await assertEndedFor("timeout", r, 10000);
+  });
+});
+
+test("DEL-B3: a child that exits on its own before an expiry yields its own exit code and no reason line", async () => {
+  await withRun(["--timeout", "10", "--idle-timeout", "10", ...VALID_ARGV], RUNNING, async (r) => {
+    r.clock.t = 5000;
+    await childExitsOnItsOwn(r.child);
+    await tickAt(r.clock, 5000);
+    await assertOwnExit(3, r);
+  });
+});
+
+test("DEL-B3: a child that exits on the same tick as an expiry yields its own exit code and no reason line", async () => {
+  await withRun(["--timeout", "10", "--idle-timeout", "10", ...VALID_ARGV], RUNNING, async (r) => {
+    r.clock.t = 10000;
+    await childExitsOnItsOwn(r.child);
+    await tickAt(r.clock, 10000);
+    await assertOwnExit(3, r);
+  });
+});
+
+// ─── A signal to the launcher ──────────────────────────────────────
+
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  test(`DEL-B6: ${signal} to the launcher ends a child that ignores it, grandchild included, and exits 75`, async () => {
+    const bin = fakeClaude(IGNORE_SIGNALS + WITH_GRANDCHILD);
+    const launched = launch(VALID_ARGV, launchEnv(bin));
+    const child = await readRecord(bin);
+    const signalledAt = Date.now();
+    launched.proc.kill(signal);
+    const result = await exitWithin(launched, child, 15000);
+    const elapsed = Date.now() - signalledAt;
+    assert.ok(elapsed <= 10000, `the launcher exited ${elapsed} ms after the signal`);
+    assert.equal(result.code, EXIT_ROUTE);
+    assert.match(result.stderr, /^\[run\] reason=signal$/m);
+    assert.ok(groupGone(child.pid), "a process in the child's group survived");
+  });
+}
+
+test("DEL-B6: a signal and an expiry on one tick report reason=signal", async () => {
+  await withRun(["--timeout", "10", ...VALID_ARGV], RUNNING, async (r) => {
+    r.clock.t = 10000;
+    process.emit("SIGTERM", "SIGTERM");
+    await tickAt(r.clock, 10000);
+    await assertEndedFor("signal", r, 10000);
+  });
+});
