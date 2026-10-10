@@ -17,6 +17,8 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -124,6 +126,29 @@ def catalogue(evals: Path) -> list[dict[str, Any]]:
     return build(evals)
 
 
+@pytest.fixture
+def registry(monkeypatch, tmp_path: Path) -> Path:
+    """A copy of the lens directories the record checker's registry reader reads instead."""
+    lenses = tmp_path / "lenses"
+    shutil.copytree(check.check_record.LENSES_DIR, lenses)
+    monkeypatch.setattr(check.check_record, "LENSES_DIR", lenses)
+    # The reader caches the registry for the life of a run, so a copy is read only once the
+    # cache is empty, and the next test reads the real registry again once it is emptied after.
+    check.check_record.declared_registry.cache_clear()
+    yield lenses
+    check.check_record.declared_registry.cache_clear()
+
+
+def standard_text() -> str:
+    return next(path for path in check.check_record.STANDARD_CANDIDATES
+                if path.is_file()).read_text(encoding="utf-8")
+
+
+def snapshot(root: Path) -> dict[str, bytes]:
+    return {str(path.relative_to(root)): path.read_bytes()
+            for path in sorted(root.rglob("*")) if path.is_file()}
+
+
 # The table, as the check reads it from the contract.
 
 def test_the_contract_table_reads_as_thirty_cases_with_ranges_expanded():
@@ -159,6 +184,28 @@ def test_a_missing_manifest_is_unusable(evals, capsys):
     assert faults(result) == [(None, "no-manifest")]
 
 
+def test_an_unreadable_contract_is_unusable(evals, catalogue, tmp_path, capsys):
+    code, result = run(evals, capsys, "--contract", str(tmp_path / "absent.md"))
+    assert code == 2
+    assert faults(result) == [(None, "bad-contract")]
+
+
+def test_a_missing_standard_is_unusable(evals, catalogue, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(check.check_record, "STANDARD_CANDIDATES", (tmp_path / "absent.md",))
+    code, result = run(evals, capsys)
+    assert code == 2
+    assert faults(result) == [(None, "no-standard")]
+
+
+def test_a_registry_the_record_checker_refuses_is_unusable(evals, catalogue, registry, capsys):
+    shutil.rmtree(registry / "what-if")
+    (registry / "what-if").mkdir()
+    (registry / "what-if" / "prompt.md").write_text("no front matter\n", encoding="utf-8")
+    code, result = run(evals, capsys)
+    assert code == 2
+    assert faults(result) == [(None, "no-lenses")]
+
+
 # A well-formed catalogue.
 
 def test_a_complete_well_formed_validated_catalogue_passes(evals, catalogue, capsys):
@@ -184,6 +231,18 @@ def test_two_runs_over_one_tree_print_byte_identical_output(evals, catalogue):
     assert json.loads(first.stdout)["errors"]
 
 
+def test_a_run_leaves_the_tree_as_it_found_it(evals, catalogue, tmp_path):
+    # Bytecode goes under the prefix at its source's own path, so a module of this repository
+    # compiled by the run shows up there whether or not a cache already sits beside its source.
+    prefix = tmp_path / "bytecode"
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONDONTWRITEBYTECODE"}
+    before = snapshot(evals)
+    subprocess.run([sys.executable, str(CHECK_PATH), "--evals", str(evals)],
+                   env={**env, "PYTHONPYCACHEPREFIX": str(prefix)}, capture_output=True, check=False)
+    assert snapshot(evals) == before
+    assert not list((prefix / HERE.parent.relative_to(HERE.anchor)).rglob("*.pyc"))
+
+
 # ACE-A11: every rule the standard holds has a case.
 
 def test_ace_a11_a_catalogue_missing_one_rule_is_refused_naming_the_rule(evals, tmp_path, capsys):
@@ -203,6 +262,14 @@ def test_ace_a11_an_empty_catalogue_is_refused_naming_every_rule(evals, capsys):
     write_manifest(evals, [])
     uncovered = [fault for fault in refused(evals, capsys) if fault[1] == "uncovered-rule"]
     assert sorted(rule for rule, _ in uncovered) == sorted(check.check_record.standard_rules())
+
+
+def test_ace_a11_a_rule_the_standard_gains_is_refused_until_a_case_serves_it(
+        evals, catalogue, tmp_path, capsys, monkeypatch):
+    standard = tmp_path / "SKILL.md"
+    standard.write_text(standard_text() + "\n### a-rule-the-standard-gained\n", encoding="utf-8")
+    monkeypatch.setattr(check.check_record, "STANDARD_CANDIDATES", (standard,))
+    assert refused(evals, capsys) == [("a-rule-the-standard-gained", "uncovered-rule")]
 
 
 # ACE-A12: the catalogue follows the table.
@@ -243,6 +310,17 @@ def test_ace_a13_a_case_missing_a_manifest_field_is_refused(evals, catalogue, ca
     assert field in result["errors"][0]["message"]
 
 
+@pytest.mark.parametrize(("field", "expected"), [
+    ("rule", [("C2", "malformed-field")]),
+    ("id", [("C2", "missing-case"), ("the case at position 1", "malformed-field")]),
+])
+def test_ace_a13_a_case_whose_field_is_not_a_string_is_refused_naming_it(
+        evals, catalogue, capsys, field, expected):
+    entry_of(catalogue, "C2")[field] = ["C2"]
+    write_manifest(evals, catalogue)
+    assert sorted(refused(evals, capsys)) == expected
+
+
 def test_ace_a13_a_case_missing_its_id_is_refused_naming_its_position(evals, catalogue, capsys):
     del catalogue[0]["id"]
     write_manifest(evals, catalogue)
@@ -265,6 +343,20 @@ def test_ace_a13_a_pair_case_missing_a_document_is_refused(evals, catalogue, cap
     assert refused(evals, capsys) == [("C4", "missing-document")]
 
 
+def test_ace_a13_a_document_gone_before_it_is_read_is_a_missing_document(
+        evals, catalogue, capsys, monkeypatch):
+    gone = evals / "cases" / "C4" / "control.md"
+    read_bytes = Path.read_bytes
+
+    def vanish(path: Path) -> bytes:
+        if path == gone:
+            raise FileNotFoundError(path)
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", vanish)
+    assert refused(evals, capsys) == [("C4", "missing-document")]
+
+
 def test_ace_a13_a_pair_case_with_identical_documents_is_refused(evals, catalogue, capsys):
     case_dir = evals / "cases" / "C5"
     (case_dir / "control.md").write_text(DEFECTIVE, encoding="utf-8")
@@ -281,10 +373,13 @@ def test_ace_a13_a_pair_case_differing_in_two_hunks_is_refused(evals, catalogue,
     assert refused(evals, capsys) == [("C5", "more-than-one-hunk")]
 
 
+@pytest.mark.parametrize(("document", "text"), [
+    ("control.md", CONTROL.replace("fails", "is refused")),
+    ("defective.md", DEFECTIVE.replace("is good", "is fine")),
+], ids=["control", "defective"])
 def test_ace_a13_a_pair_case_whose_documents_moved_off_their_digests_is_refused(
-        evals, catalogue, capsys):
-    (evals / "cases" / "C6" / "control.md").write_text(CONTROL.replace("fails", "is refused"),
-                                                       encoding="utf-8")
+        evals, catalogue, capsys, document, text):
+    (evals / "cases" / "C6" / document).write_text(text, encoding="utf-8")
     assert refused(evals, capsys) == [("C6", "digest-mismatch")]
 
 
@@ -295,6 +390,18 @@ def test_ace_a13_a_pair_case_whose_lens_does_not_enforce_its_rule_is_refused(
     add_case(evals, harvested)
     write_manifest(evals, [*catalogue, harvested])
     assert refused(evals, capsys) == [("H1", "rule-not-enforced")]
+
+
+def test_ace_a13_rule_ownership_follows_the_lens_front_matter(evals, catalogue, registry, capsys):
+    # The same case the refusal above names passes once the lens's own front matter takes the rule.
+    prompt = registry / "what-if" / "prompt.md"
+    prompt.write_text(prompt.read_text(encoding="utf-8").replace(
+        "enforces: [what-if-questions]", "enforces: [what-if-questions, observable-obligation]"),
+        encoding="utf-8")
+    harvested = {**manifest_entry(TABLE[0]), "id": "H1", "lens": "what-if"}
+    add_case(evals, harvested)
+    write_manifest(evals, [*catalogue, harvested])
+    assert run(evals, capsys) == (0, {"errors": [], "passed": True})
 
 
 def test_ace_a13_a_control_only_case_holding_a_defective_document_is_refused(

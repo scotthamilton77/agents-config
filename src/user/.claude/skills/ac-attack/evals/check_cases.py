@@ -176,8 +176,13 @@ def document_faults(case: dict[str, Any], case_dir: Path,
     """What is wrong with a well-formed case's documents and its validation record."""
     control_only = case["rule"] == CONTROL_ONLY
     names = (CONTROL,) if control_only else (DEFECTIVE, CONTROL)
-    held = {name: (case_dir / name).read_bytes()
-            for name in (DEFECTIVE, CONTROL) if (case_dir / name).is_file()}
+    held = {}
+    for name in (DEFECTIVE, CONTROL):
+        # A document that cannot be read, absent or gone before the read, is one the case lacks.
+        try:
+            held[name] = (case_dir / name).read_bytes()
+        except OSError:
+            pass
     faults = [("missing-document", f"holds no {name} in its directory")
               for name in names if name not in held]
     if control_only:
@@ -251,11 +256,13 @@ def check(evals: Path, table: list[dict[str, Any]], rules: set[str],
     def refuse(case: str, code: str, message: str) -> None:
         errors.append({"case": case, "code": code, "message": f"case {case} {message}"})
 
+    # Only a string can name a rule or a case; any other value is a malformed field, refused below.
     stated = [case for case in cases if isinstance(case, dict)]
+    covered = {case.get("rule") for case in stated if isinstance(case.get("rule"), str)}
     errors.extend({"rule": rule, "code": "uncovered-rule",
                    "message": f"no case serves the rule {rule!r}, which the standard holds"}
-                  for rule in sorted(rules - {case.get("rule") for case in stated}))
-    ids = {case.get("id") for case in stated}
+                  for rule in sorted(rules - covered))
+    ids = {case.get("id") for case in stated if isinstance(case.get("id"), str)}
     for row in table:
         if row["id"] not in ids:
             refuse(row["id"], "missing-case", "is listed in the catalogue table and the manifest "
