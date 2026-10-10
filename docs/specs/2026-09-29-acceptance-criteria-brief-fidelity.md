@@ -189,8 +189,11 @@ Until `agents-config-9k9.405.4` ships the verb, `--item` refuses as
 **BRF-D8 — The generated-brief evaluation.** The evaluation scores the output
 a writer produces for each of seven fixtures.
 
-The writer is Claude Opus through the native Agent tool, given the skill from
-the source tree by full path. For each fixture it briefs a subagent for a
+The writer is a Claude Opus model through the native Agent tool, given the
+skill from the source tree by full path. The scorer holds the writer's model
+ID as a constant, its configured model, and an attempt's record must name
+that ID as the one the writer resolved to. Changing the configured model
+amends this spec. For each fixture it briefs a subagent for a
 fixed task and returns its output instead of dispatching. Returning a brief
 stands for dispatching it, and the writer runs with no subagent tool, so
 returning is its only route.
@@ -230,12 +233,16 @@ F2's preservation and evidence separately.
 
 A run with no output is repeated at most twice. It is then left pending and
 never scored as failed. The repeat limit is an operator procedure, because no
-output shows a retry. The attempt's record names the output that counts for
-each of a fixture's five runs, and for each of a second five. An output the
-record does not name, such as a repeated run's late arrival, stays committed
-and scores nothing. The scorer refuses a record naming more than five runs
-for a fixture or for its second five, and that fixture is incomplete until the
-record is amended to name five.
+output shows a retry. A repeat is dispatched only for a run that has produced
+no output. Each output names its run. The attempt's record names, for each of
+a fixture's five runs and each of a second five, the one output that counts.
+When a repeated run's earlier dispatch delivers late, that output stays
+committed and the record marks it superseded, naming the output that counts
+for its run. The scorer refuses a record naming more than one counting output
+for a run, or more than five runs for a fixture or for its second five, and
+it refuses an attempt whose directory holds an output the record neither
+counts nor marks superseded. A fixture behind a refused record is incomplete
+until the record is amended.
 
 A fixture is locked on its own runs, under the evaluation contract's rule
 (ACE-D7, ACE-D8), with a second stage wider than the contract's. F1 and F2
@@ -266,8 +273,9 @@ defect it shows is answered by changing the skill, which voids the lock and
 runs the fixture again.
 
 A lock records its fixture's fingerprint: the digest of every file the writer
-is given, which is the skill directory without `evals/`, the digest of the
-fixture's own files, and the writer's resolved model ID. A lock is current
+is given, which is the skill directory without `evals/` together with the
+`acceptance-criteria` skill directory the skill sends the writer to, the
+digest of the fixture's own files, and the configured model ID. A lock is current
 while its fingerprint matches the tree and its stored runs still pass under
 the current scorer. A change voids only the locks whose fingerprint it alters,
 and only those fixtures run again. A change to the scorer dispatches no
@@ -307,12 +315,13 @@ Only the evaluation of record establishes the parents at the generated brief.
 An attempt is complete for a fixture when four things hold. The fixture has
 five scored outputs, and five more when a side earned a second five. The
 attempt's directory holds every output its report scores. Its record names the
-writer's resolved model ID, which is a Claude Opus model, and the fixture's
-fingerprint. Its record carries the operator's attestation of fresh contexts
+writer's resolved model ID, which equals the configured model, and the
+fixture's fingerprint. Its record carries the operator's attestation of fresh contexts
 and the native Agent tool. A fixture with a pending dispatch among its first
 five runs is incomplete and cannot lock. A fixture whose earned second five
-has fewer than five runs, pending ones included, is awaiting it (BRF-A32),
-which is neither incomplete nor locked.
+has fewer than five runs named is awaiting it (BRF-A32), which is neither
+incomplete nor locked; a named output the directory lacks, or a record fault,
+makes the attempt incomplete first.
 
 The helper suite and the scorer's suite run under `make content-tests`, and
 spec-lint's under `make ci`.
@@ -396,9 +405,10 @@ spec-lint's under `make ci`.
 - **BRF-A26** The scorer reports a fixture as incomplete, never as locked or
   failed, when its attempt has fewer than five scored outputs, when the
   attempt's directory lacks an output its record names, when the record names
-  no resolved model ID, a model that is not Claude Opus, or no fingerprint, or
-  when the record lacks the operator's attestation of fresh contexts and the
-  native Agent tool. It names each missing output as pending.
+  no resolved model ID, one other than the configured model, or no
+  fingerprint, or when the record lacks the operator's attestation of fresh
+  contexts and the native Agent tool. It names each missing output as
+  pending. These hold whatever stage the fixture's sides are at.
 - **BRF-A27** Given an output set seeded with three failed runs on each side
   of each fixture, such as altered criteria for F1's preservation half, altered
   evidence entries for its evidence half, briefs returned for F3, reports for
@@ -421,16 +431,17 @@ spec-lint's under `make ci`.
 - **BRF-A31** `make content-tests` runs the helper suite and the scorer's
   suite, and `make ci` runs spec-lint's fixture test: a test seeded to fail
   in each suite turns its gate red.
-- **BRF-A32** Given an attempt in which one side has three or four passing
-  runs of five, every other side passes, and fewer than five further runs are
-  committed, the scorer reports that fixture as awaiting its second five,
-  neither locked, failed nor incomplete. Given the second five, it locks the
+- **BRF-A32** Given an attempt under a record that BRF-A26 finds complete, in
+  which one side has three or four passing runs of five, every other side
+  passes, and fewer than five further runs are named, the scorer reports that
+  fixture as awaiting its second five, neither locked, failed nor incomplete. Given the second five, it locks the
   fixture when the side's passing runs across the ten reach eight, so a side
   at three needs all five and a side at four needs four, and fails it when
   they do not.
 - **BRF-A33** Given a committed lock whose recorded fingerprint differs from
   the one the scorer computes from the skill directory without `evals/`, the
-  fixture's own files and the recorded model ID, the scorer reports the lock
+  `acceptance-criteria` skill directory, the fixture's own files and the
+  configured model ID, the scorer reports the lock
   as not current and leaves the fixture out of the evaluation of record.
   Given one whose fingerprint matches and whose stored runs still pass under
   the current scorer, it reports the lock as current and counts it, whatever
@@ -440,11 +451,12 @@ spec-lint's under `make ci`.
 - **BRF-A34** Given two committed attempts recording the same fingerprint, the
   scorer scores the earlier and reports the later as refused, whether the
   earlier locked, failed or is incomplete.
-- **BRF-A35** Given a record naming six outputs for one fixture's five runs, or
-  six for its second five, the scorer refuses the attempt, names the fixture and
-  reports it as incomplete. Given a sixth output in the directory that the
-  record does not name, it scores the named five and reports the fixture on
-  them alone.
+- **BRF-A35** Given a record naming six counting outputs for one fixture's five
+  runs, or six for its second five, or two for one run, the scorer refuses the
+  attempt, names the fixture and reports it as incomplete. Given an output in
+  the directory that the record neither counts nor marks superseded, it
+  refuses likewise. Given a late output the record marks superseded beside the
+  five it counts, it scores the five and reports the fixture on them alone.
 
 ### Traceability
 
@@ -481,7 +493,7 @@ For BRF-A16 to BRF-A20:
 - A side at three or four of five waits on its second five (BRF-A32).
 - A lock the tree no longer matches is not current (BRF-A33), and a second
   attempt on an unchanged fingerprint is refused (BRF-A34).
-- A sixth output is an over-limit the record either refuses or ignores
+- An output the record neither counts nor marks superseded is a refusal
   (BRF-A35).
 - Each fixture is fixed, so empty applies only where F3 and F7 test it.
 
