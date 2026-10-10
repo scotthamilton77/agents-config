@@ -286,23 +286,31 @@ class TestRoundTrip:
 
 
 class TestCoverage:
-    def test_a_lens_whose_every_ingest_was_refused_is_not_covered(self, round1, dest, tmp_path):
-        """The gate refuses a clean report from a reviewer that never opened the target and
-        records the attempt as unread. A report file beside that attempt is the refused output
-        under another name, so the lens fails coverage as a silent one does."""
-        round_dir = round1.clone(tmp_path / "round-unread")
+    @pytest.mark.parametrize("outcomes", [
+        ("unread",), ("unparseable",), ("no-output",), ("unread", "unparseable", "no-output"),
+    ], ids=lambda o: "+".join(o))
+    def test_a_lens_whose_every_ingest_was_refused_is_not_covered(self, round1, dest, tmp_path,
+                                                                 outcomes):
+        """The gate records every ingest it refuses: unread for a clean report from a reviewer
+        that never opened the target, unparseable and no-output for the others. A report file
+        beside a refused attempt is the refused output under another name, and a second refused
+        attempt is no more coverage than the first, so the lens fails as a silent one does."""
+        round_dir = round1.clone(tmp_path / "round-refused")
         lens = round1.staffed()[0]
         with (round_dir / "attempts.jsonl").open("a", encoding="utf-8") as ledger:
-            ledger.write(json.dumps({
-                "kind": "outcome", "lens": lens, "attempt": 1, "outcome": "unread",
-                "code": "no-read-evidence", "output_path": str(round_dir / f"{lens}.attempt-1.out"),
-                "timestamp": "2026-10-10T00:00:00+00:00",
-            }) + "\n")
+            for attempt, outcome in enumerate(outcomes, start=1):
+                ledger.write(json.dumps({
+                    "kind": "outcome", "lens": lens, "attempt": attempt, "outcome": outcome,
+                    "output_path": str(round_dir / f"{lens}.attempt-{attempt}.out"),
+                    "timestamp": "2026-10-10T00:00:00+00:00",
+                }) + "\n")
         code, answer, out = assemble(round1, dest, round_dir=round_dir)
         assert code == 2
         assert answer["errors"][0]["code"] == "incomplete-round"
-        assert lens in answer["errors"][0]["message"]
-        assert "unread" in answer["errors"][0]["message"]
+        message = answer["errors"][0]["message"]
+        assert lens in message
+        for attempt, outcome in enumerate(outcomes, start=1):
+            assert f"attempt {attempt} {outcome}" in message
         assert not out.exists()
 
     def test_a_refused_ingest_followed_by_a_parsed_one_is_covered(self, round1, dest, tmp_path):

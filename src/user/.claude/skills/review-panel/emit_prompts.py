@@ -1076,9 +1076,9 @@ def seat_pins(
 def change_diffs(
     repo_root: str | None, base_sha: str | None, head_sha: str | None,
     scopes: dict[str, dict], out_dir: Path,
-) -> dict[str, tuple[Path, bytes, list[str]]]:
+) -> dict[str, tuple[Path, bytes, list[str], str]]:
     """Compute, before anything is written, the change each lens reads over its scope: the
-    unified diff, and the repository-relative paths it touches.
+    unified diff, the repository-relative paths it touches, and the revision it starts from.
 
     A whole-artifact read gets the base to the head, and a delta read gets the head it last
     judged to the head. The diff goes to a file beside the lens's prompt because a reviewer
@@ -1088,17 +1088,20 @@ def change_diffs(
     tends to answer clean rather than say so. A change that cannot be computed refuses the
     round, since a prompt pointing at a change nobody can read reviews nothing.
     """
-    diffs: dict[str, tuple[Path, bytes, list[str]]] = {}
+    diffs: dict[str, tuple[Path, bytes, list[str], str]] = {}
     by_start: dict[str, tuple[bytes, list[str]]] = {}
     head = head_sha or "HEAD"
     for name, entry in scopes.items():
         start = entry.get("delta_base_sha") or base_sha or ""
         if start not in by_start:
             diff = _git_change(repo_root, start, head, name, [])
-            names = _git_change(repo_root, start, head, name, ["--name-only"])
-            by_start[start] = (diff, names.decode("utf-8", "replace").split())
+            # NUL-delimited, so a path holding a space or a character git would otherwise
+            # quote and escape arrives as the one literal path the reviewer has to open.
+            names = _git_change(repo_root, start, head, name, ["--name-only", "-z"])
+            paths = [n.decode("utf-8", "replace") for n in names.split(b"\0") if n]
+            by_start[start] = (diff, paths)
         diff, paths = by_start[start]
-        diffs[name] = (out_dir / f"{name}.diff", diff, paths)
+        diffs[name] = (out_dir / f"{name}.diff", diff, paths, start)
     return diffs
 
 
@@ -1225,7 +1228,9 @@ def render_prompt(lens: dict, ctx: dict) -> str:
             f"Repository root: {inert(ctx['repo_root'])}\n"
             f"Base commit: {inert(ctx['base_sha'])}\n"
             f"Reviewed head commit: {inert(ctx['head_sha'])}\n"
-            f"The change over your scope, as a unified diff: {inert(ctx['diff_paths'][name])}\n"
+            f"Your scope starts at commit: {inert(ctx['scope_starts'][name])}\n"
+            f"The change over your scope, from that commit to the reviewed head, as a unified "
+            f"diff: {inert(ctx['diff_paths'][name])}\n"
             f"{_render_changed_paths(ctx['changed_paths'][name])}"
             "Read the change from that file, open the changed files by the paths listed, or "
             "resolve the change against the repository if you can run git, and read whatever "
@@ -1315,8 +1320,9 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         "base_sha": args.base_sha or "", "head_sha": args.head_sha or "",
         "retained": retained, "ledger": ledger, "prior_findings": prior_findings,
         "scopes": scopes, "sweep": bool(args.sweep), "profile": profile,
-        "diff_paths": {name: str(path) for name, (path, _, _) in diffs.items()},
-        "changed_paths": {name: paths for name, (_, _, paths) in diffs.items()},
+        "diff_paths": {name: str(path) for name, (path, _, _, _) in diffs.items()},
+        "changed_paths": {name: paths for name, (_, _, paths, _) in diffs.items()},
+        "scope_starts": {name: start for name, (_, _, _, start) in diffs.items()},
     }
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1325,7 +1331,7 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         path = out_dir / f"{lens['lens']}.md"
         path.write_text(render_prompt(lens, ctx), encoding="utf-8")
         written.append(str(path))
-        diff_path, diff, _ = diffs[lens["lens"]]
+        diff_path, diff, _, _ = diffs[lens["lens"]]
         diff_path.write_bytes(diff)
         written.append(str(diff_path))
     round_meta = {
