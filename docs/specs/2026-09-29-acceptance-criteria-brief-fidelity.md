@@ -205,10 +205,10 @@ Each output opens with a line naming its form, `Form: brief` or
 without such a line fails its run.
 
 Each fixture runs five times in fresh contexts, so one attempt on every
-fixture plans 35 dispatches, plus the repeats and second fives defined below. The
-attempt's record names the writer's resolved model ID. The outputs cannot show
-a fresh context or the native Agent tool, so the operator attests both in the
-record.
+fixture plans 35 dispatches, plus the repeats and second fives defined below.
+The attempt's record names the writer's resolved model ID. The outputs cannot
+show a fresh context or the native Agent tool, so the operator attests both in
+the record.
 
 Fixtures live in the skill's `evals/`:
 
@@ -274,15 +274,15 @@ scorer dispatches no writer: the stored outputs are rescored, and a lock
 stands when its fixture still passes and falls when it does not.
 
 A fingerprint gets one attempt, plus the second five a side at three or four
-of five earns.
-An attempt counts against its fingerprint once committed, complete or not. An
-incomplete attempt is completed in place: its pending runs are repeated under
-the limit above and its record amended, and it is never replaced. A run still
-pending after its repeats leaves the fixture unlocked until a change alters
-its fingerprint, and the new fingerprint gets an attempt of its own. The
-scorer refuses a second attempt recording a fingerprint it has already seen,
-whether the earlier locked, failed or stayed incomplete, so a failed fixture
-is answered only by changing something, and a locked one is not re-rolled.
+of five earns. An attempt counts against its fingerprint once committed,
+complete or not. An incomplete attempt is completed in place: its pending runs
+are repeated under the limit above and its record amended, and it is never
+replaced. A run still pending after its repeats leaves the fixture unlocked
+until a change alters its fingerprint, and the new fingerprint gets an attempt
+of its own. The scorer refuses a second attempt recording a fingerprint it has
+already seen, whether the earlier locked, failed or stayed incomplete, so a
+failed fixture is answered only by changing something, and a locked one is not
+re-rolled.
 
 An attempt is committed under `evals/runs/<run-id>/` with its outputs, its
 record and its report, whatever it shows, and a second five beside the
@@ -304,9 +304,8 @@ Only the evaluation of record establishes the parents at the generated brief.
 
 An attempt is complete for a fixture when four things hold. The fixture has
 five scored outputs, and five more when a side earned a second five. The
-attempt's
-directory holds every output its report scores. Its record names the writer's
-resolved model ID, which is a Claude Opus model, and the fixture's
+attempt's directory holds every output its report scores. Its record names the
+writer's resolved model ID, which is a Claude Opus model, and the fixture's
 fingerprint. Its record carries the operator's attestation of fresh contexts
 and the native Agent tool. A fixture with a pending dispatch among its first
 five runs is incomplete and cannot lock. A fixture whose earned second five
