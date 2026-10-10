@@ -32,7 +32,8 @@ Verified at 38bda4ba.
 - spec-lint reads a criterion as a `- **ID** text` entry under an
   acceptance-criteria heading, with wrapped continuation lines joined by single
   spaces (`packages/installer/src/installer/core/spec_lint.py`).
-- The installer prunes every `evals/` directory (`.installignore`).
+- The installer prunes every `evals/` directory and every `*_test.py` or
+  `test_*.py` file (`.installignore`).
 
 ## Decisions
 
@@ -164,8 +165,11 @@ When any criterion is unready, `emit` still prints both sections, names each
 unready ID on stderr, and exits 1. The criteria section is the same whether
 `--checks` is absent, complete or leaves a criterion unready.
 
-Whether a stated check is feasible is the writer's judgment, which code cannot
-make. The evaluation measures it (BRF-D8), and the skill tells the writer not
+Those reasons are the helper's. The writer adds one of its own: whether a
+stated check is feasible is the writer's judgment, which code cannot make, and
+a criterion whose planned check the writer judges infeasible is unready too,
+reported to the requester in the writer's words and never dispatched. The
+evaluation measures that judgment (BRF-D8), and the skill tells the writer not
 to dispatch a brief with an unready criterion.
 
 **BRF-D6 — The skill routes the writer through the helper.** S3.4 rewrites the
@@ -204,7 +208,7 @@ criteria or evidence section. It relays anything the helper printed on
 stderr, and it names any IDs the writer itself judged unready under BRF-D5.
 Each output opens with a line naming its form, `Form: brief` or
 `Form: report`, so the scorer reads the form mechanically. An output present
-without such a line fails its run.
+without such a line, or whose line names any other form, fails its run.
 
 Each fixture runs five times in fresh contexts, so one attempt on every
 fixture plans 35 dispatches, plus the repeats and second fives defined below.
@@ -413,7 +417,8 @@ spec-lint's under `make ci`.
   of each fixture, such as altered criteria for F1's preservation half, altered
   evidence entries for its evidence half, briefs returned for F3, reports for
   F3 that lack the refusal object, reports for F4 that carry a criteria
-  section, outputs with no `Form:` line, and briefs returned for F6, the
+  section, outputs with no `Form:` line or one naming another form, and
+  briefs returned for F6, the
   scorer fails each seeded side and names its fixture. Given a set in which
   every side passes all five of its runs, under a record that BRF-A26 finds
   complete, it locks every fixture on five runs a side.
