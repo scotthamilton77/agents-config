@@ -111,7 +111,8 @@ ENCLOSED_NEXT = frozenset(",]}")
 NEXT_NON_SPACE_RE = re.compile(r"\S")
 
 # The marker the reviewer prompt closes its fenced data with. A transport that replays the
-# prompt on stdout puts the prompt's own report schema in front of the reviewer's output, so
+# prompt in a capture (the Codex command-line tool does, in the transcript it writes to stderr)
+# puts the prompt's own report schema and the target in front of the reviewer's output, so
 # everything up to this marker is prompt rather than anything a lens wrote.
 PROMPT_END_MARKER = "<<<END UNTRUSTED CONTENT>>>"
 
@@ -734,13 +735,13 @@ def parse_report(body: str) -> tuple[dict, str]:
     Tolerance stops at the end of this ladder on purpose — reconstructing a
     report from prose makes the harvester the reviewer, and nothing downstream
     can tell the difference. It stops short of the prompt as well: a transport
-    that replays the prompt on stdout offers the prompt's own report schema as
-    the earliest object in the body. Everything up to the line the prompt closes
-    with is therefore prompt, and the schema is refused at every rung.
+    that replays the prompt offers the prompt's own report schema as the
+    earliest object in the body, and the target under review sits inside that
+    prompt. Only what follows the prompt's last closing marker is the reviewer's,
+    the same boundary the read-evidence scan uses, and the schema is refused at
+    every rung.
     """
-    prompt_end = PROMPT_END_RE.search(body)
-    if prompt_end is not None:
-        body = body[prompt_end.end():]
+    body = after_prompt(body)
     document = _as_object(body)
     if document is not None and not _is_template(document):
         return document, "whole-body"
@@ -762,13 +763,16 @@ def parse_report(body: str) -> tuple[dict, str]:
     )
 
 
-def evidence_after_prompt(text: str) -> str:
-    """The part of a retained capture that the reviewer's own run wrote.
+def after_prompt(text: str) -> str:
+    """The part of a capture that the reviewer's own run wrote: what follows the prompt.
 
-    Both transports echo the prompt, and the target under review sits inside it, so a
-    target quoting these patterns would otherwise supply the very evidence it is quoted
-    in. Only what follows the prompt's last closing marker counts. A capture holding no
-    marker echoed no prompt and counts whole.
+    The Codex command-line tool replays the prompt in the transcript it writes to stderr,
+    and the target under review sits inside that prompt. A target holding a marker line
+    of its own would move a cut at the first marker to wherever the target chose, so the
+    cut is at the last marker-only line: everything the reviewer wrote comes after the
+    prompt. Both the report parser and the read-evidence scan cut here, so a capture is
+    divided the same way whichever stream it came from. A capture holding no marker
+    echoed no prompt and counts whole.
     """
     markers = list(PROMPT_END_RE.finditer(text))
     return text[markers[-1].end():] if markers else text
@@ -780,7 +784,7 @@ def reads_recorded(transport: str, text: str) -> int | None:
     A transport this gate cannot count is reported rather than judged: refusing every
     clean report on an unrecognized transport would end rounds the evidence never spoke to.
     """
-    body = evidence_after_prompt(text)
+    body = after_prompt(text)
     if transport == OPENROUTER_TRANSPORT:
         forwards = len(OPENROUTER_FORWARD_RE.findall(body))
         return max(forwards - OPENROUTER_FORWARDS_WITHOUT_TOOLS, 0)
@@ -908,8 +912,9 @@ def ingest(args: argparse.Namespace) -> dict[str, Any]:
             "no-output",
             f"the claimed output path {output} holds nothing. Each attempt writes its own path, "
             "so nothing there means this attempt wrote nothing. Claim again with reason "
-            f"{DEAD_RUN!r} and the kill line as the evidence when your watchdog killed it for "
-            f"silence, and with reason {TRANSPORT_ERROR!r} and the route's error otherwise",
+            f"{DEAD_RUN!r} when your watchdog killed it for silence or the launcher's own skill "
+            "says the response ended inside the model's reasoning, with that signal as the "
+            f"evidence, and with reason {TRANSPORT_ERROR!r} and the route's error otherwise",
         )
     try:
         report, recovery = parse_report(body)

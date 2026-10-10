@@ -104,11 +104,12 @@ without comparing it to the pin, and it records no tool grant. The discipline is
 
 ## Every dispatch is claimed first
 
-The gate authorizes each dispatch, records it, and refuses the ones past the bound. Run it from
-this directory before every dispatch of a lens, the first one included:
+The gate authorizes each dispatch, records it, and refuses the ones past the bound. Run it before
+every dispatch of a lens, the first one included, from the directory the reviewer will read, naming
+the script by its path:
 
 ```bash
-uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
+uv run <skill-dir>/dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
   --transport codex --model <model> --effort high --reason initial
 ```
 
@@ -134,7 +135,7 @@ record, and that is honest — a document lens reading text quoted inline, or a 
 with no tool grant. The invoker knows it before dispatching, so the claim declares it:
 
 ```bash
-uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens criteria-holes \
+uv run <skill-dir>/dispatch_gate.py claim --out-dir /tmp/round-1 --lens criteria-holes \
   --transport codex --model <model> --effort medium --reason initial --target-inline
 ```
 
@@ -180,7 +181,7 @@ Whatever the failure, the next claim declares its reason and the failure verbati
 line or the watchdog's kill line included:
 
 ```bash
-uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
+uv run <skill-dir>/dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
   --transport openrouter --model <model> --effort low \
   --reason transport-error --evidence "402 Insufficient credits"
 ```
@@ -227,7 +228,7 @@ Models violate an exact-output contract in predictable, harmless ways, so a repo
 the gate rather than by eye:
 
 ```bash
-uv run dispatch_gate.py ingest --out-dir /tmp/round-1 \
+uv run <skill-dir>/dispatch_gate.py ingest --out-dir /tmp/round-1 \
   --output /tmp/round-1/correctness.attempt-1.out
 ```
 
@@ -236,8 +237,9 @@ found in the body with the surrounding text ignored — and prints the report it
 from a dispatch it never authorized is refused rather than read, so a dispatch that went around
 the gate shows up as a hole in the ledger instead of as a lens entry. A claimed path holding
 nothing is refused as `no-output`, because the attempt wrote nothing. Claim again with reason
-`dead-run` and the kill line as the evidence when your watchdog killed it for silence, and with
-reason `transport-error` and the route's error otherwise.
+`dead-run` when your watchdog killed it for silence or the launcher's own skill says the response
+ended inside the model's reasoning, with that signal as the evidence, and with reason
+`transport-error` and the route's error otherwise.
 
 Some transports wrap the reviewer's output in their own harness log lines — a banner before it, an
 exit line after it, and command echoes that may themselves contain braces. **Ingest the claimed
@@ -245,11 +247,17 @@ path exactly as the transport wrote it.** The ladder reads past that wrapper, so
 first buys nothing and edits the evidence: a body trimmed by hand is no longer what the route
 returned, and the ledger records the trimmed version as the reviewer's.
 
-A transport may also replay the whole prompt on stdout ahead of the reviewer's output. The ladder
-reads only what follows the line holding nothing but the prompt's closing untrusted-content marker,
-and it never accepts the prompt's own report schema, so an echoed prompt yields the reviewer's
-report or nothing. A finding that quotes that marker shares its line with the report around it, so
-a reviewer may cite the marker freely.
+A transport may also replay the whole prompt ahead of the reviewer's output. The Codex
+command-line tool does, in the transcript it writes to stderr; its stdout carries the final message
+alone. The ladder reads only what follows the **last** line of the claimed output holding nothing but
+the prompt's closing untrusted-content marker, the same boundary the read-evidence check below
+applies to the retained stderr, and it never accepts
+the prompt's own report schema, so an echoed prompt yields the reviewer's report or nothing. The
+target under review sits inside the echoed prompt, so a target that plants a marker line and a
+report-shaped object of its own still sits before the boundary and cannot pose as the report. A
+finding may quote the marker inside its text, where it shares its line with the JSON around it; a
+marker alone on a line anywhere in the output moves the boundary, which is why the completion
+contract asks for one JSON object and nothing else.
 
 A **clean** report is checked against the attempt's retained stderr before it is accepted, because
 a reviewer that answers clean without opening the change costs the round a lens while looking like
@@ -257,7 +265,7 @@ its best one. What counts as a read depends on the transport. On `openrouter` th
 logs one line per API turn, and a run that called no tool forwards a single request, so anything
 above one forward is a read. On `codex` both entry points count: the plugin job runner tags each
 tool line with `[codex] `, and the command-line tool opens each call with a bare `exec` line and
-reports the result beneath it. Only what follows the prompt's closing marker counts, so a target
+reports the result beneath it. Only what follows the prompt's last closing marker counts, so a target
 that quotes these patterns cannot vouch for the reviewer that was sent to read it.
 
 A clean report with nothing recorded is **unread** — its own refusal, and neither a transport
@@ -309,12 +317,12 @@ fixer's work reaches the branch. A fix moves the head, and a verdict is only pos
 head it judged — post late and the round's record is stranded off the commit it speaks about.
 
 ```bash
-uv run prgroom_version.py --repo-root <repo-root>
+uv run <skill-dir>/prgroom_version.py --repo-root <repo-root>
 prgroom post-verdict <pr> --verdict <path> --criteria <path>
 ```
 
-The check runs first, every round, from this directory like the round's other scripts — which is
-why it names the reviewed repository rather than reading the working directory. prgroom is installed
+The check runs first, every round, and names the reviewed repository rather than reading the
+working directory, so it answers the same from wherever the round's scripts are run. prgroom is installed
 onto PATH by a human-run installer, so a fix that landed in the repository is not necessarily in the
 tool: the check compares the installed release with the one that repository builds, and refuses when
 the installed one is older, absent, or will not report a version. A refusal is a stop, not a
