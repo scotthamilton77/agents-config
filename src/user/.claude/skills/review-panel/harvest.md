@@ -54,7 +54,7 @@ indictment already names the remediation.
 
 The `transport` in `contracts.json` is a claim about vendor diversity, not about today's
 credentials. **Any lens may run on any transport that is actually up.** An `openrouter` lens runs
-through the codex command-line tool when OpenRouter is down; a `codex` lens runs through the
+as the Codex delegation skill's read-only run when OpenRouter is down; a `codex` lens runs through the
 `openrouter-claude-subagent` skill when the codex credential has expired. Neither direction is the
 exceptional one, because either transport can be down while the other works.
 
@@ -152,20 +152,25 @@ record: it double-counts coverage.
 Three failures look alike from outside and recover differently, so tell them apart before
 claiming again — the reason you declare is what the gate bounds.
 
+The launcher's own skill says which of four outcomes the run ended in. Usable output is ingested
+under "Reading a lens report", whose read-evidence check may still send it back. A refused
+invocation is yours to fix; it says nothing about the provider or the reviewer. A run the provider
+did not serve is `transport-error`, the launcher's own clock included. Unusable output is
+`unusable-output`, except the two signals the dead-run ladder below owns, a response that ended
+inside the model's reasoning and a run your watchdog killed for silence, which are `dead-run`. A
+run you stopped on purpose ends there with no claim.
+
 **The route died** (`transport-error`). What came back describes the *transport*, not the review:
 an HTTP status, an authentication or credit error, a refused connection, a dead broker or session
 — or nothing at all, including no output file where one was claimed. An attempt your watchdog
-killed for silence leaves nothing too, and it is a dead run. Judge this on the body rather than
-the exit status: a dead route shows up as an exit 1 carrying a short provider error, and equally
-as an exit 0 carrying nothing.
+killed for silence leaves nothing too, and it is a dead run.
 
 **The reviewer failed** (`unusable-output`). A body came back that is the model's own output, and
 no report survives the tolerance ladder under "Reading a lens report". The route worked; what
 came over it is unusable.
 
 **The run died** (`dead-run`). The model's response ended inside its reasoning and no report
-came back. On the OpenRouter launcher the proxy logs
-`response ends on thinking and contains no text block to promote`; on either transport, an
+came back. The launcher's own skill names the signal that marks it; on either transport, an
 attempt your watchdog killed for silence is the same failure. Follow the ladder, one step per
 dead run:
 

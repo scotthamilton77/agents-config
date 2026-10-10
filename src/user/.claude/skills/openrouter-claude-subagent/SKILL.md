@@ -1,6 +1,6 @@
 ---
 name: openrouter-claude-subagent
-description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT mini tiers), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex, and not for the Claude models this launcher refuses. A GPT or Gemini model runs here only on the user's explicit instruction; their own launchers are the Codex and agy skills. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with a Write grant scoped to that one path.
+description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT mini tiers), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex, and not for the Claude models this launcher refuses. A GPT or Gemini model runs here only on the user's explicit instruction; their own launchers are the Codex and agy skills. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with an `Edit(<path>)` grant scoped to that one path.
 admission:
   provides: A nested Claude Code harness whose model traffic is repointed at a non-Anthropic model, plus the stream repair that makes the reply actually arrive — so a task runs on another vendor's weights while keeping this harness's tool loop, permission system, and file editing.
   cost: A local proxy process for the life of each nested run, and an OpenRouter API key the user must supply and pay against. Node must be installed, and the model routing table needs a refresh whenever OpenRouter reprices or retires a model.
@@ -63,6 +63,9 @@ it changes nothing.
 `references/proxy-contract.md` covers what the proxy repairs, why the tool
 grant is limited to what you pass, and what to re-verify when the Claude Code
 CLI changes.
+
+Read `references/run-bounds.md` before a run you must bound, stop or judge:
+it gives the clock flags, how to end a run early, and what each ending means.
 
 ## Step 1 — Tool permissions (safety gate, always runs)
 
