@@ -1,0 +1,3 @@
+Outcome: ${replies[].outcome}.
+Change: ${replies[].change} (${replies[].commit})
+Verification: ${replies[].verification}
