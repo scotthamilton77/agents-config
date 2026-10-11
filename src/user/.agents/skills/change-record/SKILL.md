@@ -15,65 +15,33 @@ Every change is described in the pull request body, in the commit message, and i
 
 The author writes most of the record. Three parts hold facts that are copied and never composed. `where_this_fits` comes from the tracker and from GitHub. `campaign` comes from the posted review verdicts. The filed rows of `discovered` come from the tracker. Nothing in this skill fills those parts, so take their facts from the tracker's and GitHub's own output. Each part carries a stamp over its content, and `references/lint-rules.md` shows how to set it. The `record` group is bookkeeping the author leaves alone.
 
-Start a record with `init`, and check it with `lint` before writing from it. From this skill's directory:
+## The script
+
+Run the script from this skill's directory. `references/commands.md` gives each subcommand's arguments, its output and its exit statuses.
 
 ```bash
-uv run scripts/change_record.py init --type feat --component NAME --work-item ID path/to/record.json
-uv run scripts/change_record.py lint [--pr NUMBER] path/to/record.json
+uv run scripts/change_record.py init --type feat --component NAME --work-item ID record.json
+uv run scripts/change_record.py lint [--pr NUMBER] record.json
+uv run scripts/change_record.py render body record.json --output body.md
+uv run scripts/change_record.py render commit record.json
+uv run scripts/change_record.py render reply record.json --finding ID
 ```
 
-`init` leaves the author's fields empty and never replaces a file. `lint` then names each empty field.
-
-Stdout is JSON: `{"valid": true}`, or `{"valid": false, "errors": [{"code", "path", "message"}, …]}`. `path` names the field at fault and `code` names the rule it broke. Exit 0 valid, 1 invalid, 2 unreadable or unparseable.
-
-`lint` checks structure against the schema first, under the code `schema`. Once the structure is valid, it checks the rules a program can decide. They cover the glosses, stated emptiness, the lengths the templates below give, the groups each commit type carries, one reply for each fixed finding, the stamps, and the phrases that `references/lint-phrases.json` lists. `references/lint-rules.md` lists each rule under its code and says how `lint` counts and matches. With `--pr`, `lint` also checks the record's reach flag against the pull request's changed paths, which it reads through `gh`.
+- `init` starts a record with the author's fields empty. It never replaces a file.
+- `lint` checks the record against the schema, then against the writing rules a program can decide. It names each fault by field and by rule. `references/lint-rules.md` lists every rule under its code and says how `lint` counts and matches. With `--pr` it also checks the record's reach flag against the pull request's changed paths.
+- `render` fills one artifact's template from the record. It runs `lint` first and writes nothing for a record that fails. It never calls GitHub. When the pull request already has a body, pass that body with `--existing-body`, because another tool may keep a decisions block there and `render` carries it over.
 
 ## The three artifacts
 
-`render` fills a template file under `references/` from the record, so each template is the exact form of its artifact:
+Each artifact has a template under `references/`: `pr-body.md`, `commit-message.txt` and `review-reply.txt`. `render` fills those files, so a template is the exact form of its artifact. `references/artifacts.md` gives the rules for what each artifact says, and how to read a template. Read it before filling a record, because `lint` holds the record to most of those rules.
 
-```bash
-uv run scripts/change_record.py render body record.json --output body.md
-uv run scripts/change_record.py render commit record.json
-uv run scripts/change_record.py render reply record.json --finding <finding id>
-```
-
-`render` runs `lint` first. A record that fails gets the lint result on stderr, exit 1, and nothing written. The artifact goes to stdout, or to the file `--output` names. `render` never calls GitHub. When the pull request already has a body, save it to a file and pass `--existing-body`. Another tool may keep a decisions block in that body, and `render` carries the block over unchanged.
-
-In a template, `${a.b}` stands for the record field at that path. A line whose slot passes through a list, written `[]`, appears once per entry. The lines between `{{#a.b}}` and `{{/a.b}}` appear only when the record holds a value there. Text in parentheses around a slot is left out when the record has nothing for that slot.
-
-### The pull request body: `references/pr-body.md`
-
-The body is for a human and carries no JSON. Everything above the horizontal rule is a one-pager of at most 400 words. Everything below is evidence a reader opens on purpose.
-
-- **Summary.** It has no heading. It gives the problem, then what is true now, then what remains, in three to five sentences.
-- **Heads-up.** Anything that should lower a reader's confidence, one sentence each. Write `None.` when there is nothing.
-- **Where this fits.** The author writes one line, saying which slice of its parent item this pull request is. The rest comes from the tracker and from GitHub.
-- **Discovered work.** A row is filed and names its tracker item, or is not filed, or is in flight and names the other pull request. An in-flight row says what this pull request told the other one. Write a single `None.` row when nothing was found.
-- **Verification.** Each gate with its exit status and where it ran, then what was not run and why.
-
-What each commit type carries:
+The body is for a human and carries no JSON. Everything above its horizontal rule is a one-pager of at most 400 words. Everything below is evidence a reader opens on purpose. What each commit type carries:
 
 | Type | Sections |
 | --- | --- |
 | `feat`, `fix`, `refactor`, `perf`, `test` | Every section. The blast-radius diagrams appear only when the change reaches outside its own package. |
 | `spec` | Every section. The blast radius is the items the spec will mint. Criteria is one line saying whether the criteria were attacked and where the attack record is. |
 | `docs`, `chore`, `build`, `ci`, `style`, `revert` | Heads-up, a one-row Risk table, Changes, Discovered work and Verification. No Criteria. |
-
-### The commit message: `references/commit-message.txt`
-
-- The subject is `<type>(<component>): <what is true after this merges> [<short id>]`, at most 100 characters. The component is the thing a reader would search for. A tracker id is never the component. The short id is the work item's id without its project prefix.
-- The work item appears twice. The first body line names it in a sentence for the human. The `Work-item` trailer names it for git, which reads trailers only from the last paragraph.
-- Why is two or three sentences and Change is three or four. Why, Change and Verification total 80 to 150 words. A trivial change omits all three and keeps the work-item line and the trailers.
-- The trailers are `Work-item`, `Co-authored-by` and one session trailer whose key the authoring tool defines. Nothing else is a trailer.
-- The message carries no table, `<details>` fold, fenced block or HTML comment.
-
-### The review reply: `references/review-reply.txt`
-
-- One reply goes on each finding that changed code or prose. It is 40 to 90 words, and its Change line is one or two sentences ending with the commit when there is one. Its entry names the finding by `claim_id`, `artifact_class` and `finding_id` together.
-- The outcome is Fixed, Superseded, Rejected or Deferred. Superseded means the finding's target no longer exists because the design was restated, and the reply shows it is gone. A deferral names the item that inherits the finding.
-- A rejection gets a reply only when a reviewer asks on the thread. That reply gives the evidence against the finding.
-- Campaign status is stated once, in the body's Verification section, and never in a reply.
 
 ## Writing checks
 
