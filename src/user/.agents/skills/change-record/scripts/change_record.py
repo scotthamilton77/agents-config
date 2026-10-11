@@ -602,11 +602,14 @@ def _reach(record: dict[str, Any], changed: list[str]) -> Iterator[dict[str, str
 
     A path's top-level component is its first segment: the directory at the
     root that the path sits under, or the file itself when it sits at the root.
+    A path under a ``docs`` directory at the root counts toward no component,
+    because documentation describes a component and is not one. Without that,
+    a change that updates its own documentation would always span two.
     The check is coarse on purpose, because it knows no repository's layout.
     Two packages under one top-level directory count as one component, so a
     pass here does not prove the flag.
     """
-    components = sorted({path.split("/", 1)[0] for path in changed})
+    components = sorted({path.split("/", 1)[0] for path in changed if not path.startswith("docs/")})
     if not record["risk"]["reaches_outside_package"] and len(components) > 1:
         message = (
             "the flag says the change stays inside its package, and the pull request changes paths under "

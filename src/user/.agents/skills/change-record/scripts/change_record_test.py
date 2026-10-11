@@ -1254,7 +1254,7 @@ class TestCrL10GroupsByTypeAndReach:
         self, shim_dir: Path, tmp_path: Path
     ):
         log = tmp_path / "gh.log"
-        gh_listing(shim_dir, log, "src/panel/gate.py", "src/panel/gate_test.py", "docs/guides/panel.md")
+        gh_listing(shim_dir, log, "src/panel/gate.py", "packages/tool/cli.py", "docs/guides/panel.md")
         record = example()
         record["risk"]["reaches_outside_package"] = False
         code, result = lint(record, tmp_path, SCRIPT, "--pr", "843")
@@ -1262,8 +1262,31 @@ class TestCrL10GroupsByTypeAndReach:
         assert [(error["code"], error["path"]) for error in result["errors"]] == [
             ("reach", "/risk/reaches_outside_package")
         ]
-        assert "docs, src" in result["errors"][0]["message"]
+        assert "2 top-level components: packages, src" in result["errors"][0]["message"]
         assert log.read_text(encoding="utf-8").splitlines() == ["pr diff 843 --name-only"]
+
+    def test_cr_l10_lint_pr_passes_that_record_when_the_paths_are_one_component_and_docs(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", "docs/specs/ledger.md", "docs/guides/panel.md")
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert lint(record, tmp_path, SCRIPT, "--pr", "843") == (0, {"valid": True})
+
+    def test_cr_l10_lint_pr_passes_that_record_when_every_path_is_under_docs(self, shim_dir: Path, tmp_path: Path):
+        gh_listing(shim_dir, tmp_path / "gh.log", "docs/specs/ledger.md", "docs/guides/panel.md")
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert lint(record, tmp_path, SCRIPT, "--pr", "843") == (0, {"valid": True})
+
+    @pytest.mark.parametrize("other", ["docs", "docs-site/index.md", "src/docs/panel.md"])
+    def test_cr_l10_only_a_path_under_a_docs_directory_at_the_root_counts_toward_no_component(
+        self, other: str, shim_dir: Path, tmp_path: Path
+    ):
+        gh_listing(shim_dir, tmp_path / "gh.log", "packages/tool/cli.py", other)
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert findings_with(record, "reach", tmp_path, "--pr", "843") == ["/risk/reaches_outside_package"]
 
     def test_cr_l10_lint_pr_passes_that_record_when_the_paths_stay_in_one_component(
         self, shim_dir: Path, tmp_path: Path
@@ -1276,7 +1299,7 @@ class TestCrL10GroupsByTypeAndReach:
     def test_cr_l10_lint_pr_passes_a_record_that_reaches_outside_whatever_the_paths(
         self, shim_dir: Path, tmp_path: Path
     ):
-        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", "docs/guides/panel.md")
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", "packages/tool/cli.py")
         assert lint(example(), tmp_path, SCRIPT, "--pr", "843") == (0, {"valid": True})
 
     def test_cr_l10_a_file_at_the_root_is_a_component_of_its_own(self, shim_dir: Path, tmp_path: Path):
@@ -1286,7 +1309,7 @@ class TestCrL10GroupsByTypeAndReach:
         assert findings_with(record, "reach", tmp_path, "--pr", "843") == ["/risk/reaches_outside_package"]
 
     def test_lint_pr_reports_the_other_findings_beside_the_reach(self, shim_dir: Path, tmp_path: Path):
-        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", "docs/guides/panel.md")
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", "packages/tool/cli.py")
         record = example()
         record["risk"]["reaches_outside_package"] = False
         record["heads_up"] = []
