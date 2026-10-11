@@ -12,7 +12,7 @@
 | `commentary` | A phrase of commentary about the document, in any text the author wrote. |
 | `machine-content` | A `<details>` fold, an HTML comment or a fenced `json` block, in any field. |
 
-An entry is `None.` with or without space around it.
+In `heads_up` and `verification.not_run`, an entry is `None.` with or without space around it. `discovered.rows` takes the entry only as written, and the schema checks that.
 
 ## The text the author wrote
 

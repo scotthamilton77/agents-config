@@ -3,6 +3,7 @@
   "$id": "https://agents.local/schemas/change-record/1",
   "title": "Change record",
   "description": "Everything one pull request's description, commit message and review replies say, held once. A field marked x-rewritable holds wording an editor may change; every other field is a fact.",
+  "$comment": "Every pattern here closes with (?![\\s\\S]), which matches only where no character follows. A closing $ also matches before a final newline in some regex engines, so a value with a newline after it would pass there.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -45,7 +46,8 @@
         },
         "head_sha": {
           "type": "string",
-          "pattern": "^([0-9a-f]{40})?$",
+          "pattern": "^([0-9a-f]{40})?(?![\\s\\S])",
+          "examples": ["", "0123456789abcdef0123456789abcdef01234567"],
           "description": "The commit the verification gates ran at, as forty hex characters. Empty until known."
         }
       }
@@ -197,7 +199,8 @@
           "description": "One entry per piece of work. A pull request that found nothing holds the single entry \"None.\".",
           "items": {
             "type": ["object", "string"],
-            "pattern": "^None\\.$",
+            "pattern": "^None\\.(?![\\s\\S])",
+            "examples": ["None."],
             "additionalProperties": false,
             "required": ["status", "what", "reason"],
             "properties": {
@@ -266,7 +269,8 @@
         },
         "terminal_sha": {
           "type": "string",
-          "pattern": "^([0-9a-f]{40})?$",
+          "pattern": "^([0-9a-f]{40})?(?![\\s\\S])",
+          "examples": ["", "0123456789abcdef0123456789abcdef01234567"],
           "description": "The head of the latest complete round with no blocking finding. Empty when no round is."
         },
         "findings": {
@@ -365,7 +369,8 @@
         "comment_id": {"type": ["integer", "null"], "description": "The pull request comment holding this revision."},
         "head_sha": {
           "type": "string",
-          "pattern": "^([0-9a-f]{40})?$",
+          "pattern": "^([0-9a-f]{40})?(?![\\s\\S])",
+          "examples": ["", "0123456789abcdef0123456789abcdef01234567"],
           "description": "The pull request's head when the record was published."
         },
         "rewrites": {
@@ -403,7 +408,8 @@
   "$defs": {
     "digest": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "examples": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"]
     },
     "pull_request_reference": {
       "type": "object",

@@ -141,8 +141,8 @@ def _schema_faults(record: Any) -> set[tuple[str, str]]:
 def is_none(entry: Any) -> bool:
     """Say whether a list entry is the one that states its list is empty.
 
-    Space around the entry is ignored. A reader sees the same entry with or
-    without it, and the schema's pattern lets a trailing newline through.
+    Space around the entry is ignored, because a reader sees the same entry
+    with or without it.
     """
     return isinstance(entry, str) and entry.strip() == NONE
 

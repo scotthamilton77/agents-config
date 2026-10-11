@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
 
 import change_record
 
@@ -226,6 +227,27 @@ def object_schemas(node: Any, path: str = "") -> list[tuple[str, dict[str, Any]]
     return found
 
 
+# What every pattern in the schema ends with. It matches only where no character
+# follows. A closing `$` also matches before a final newline in the regex engine
+# the lint runs on, so a value with a newline after it would pass.
+END_OF_VALUE = r"(?![\s\S])"
+
+
+def patterned(node: Any, path: str = "") -> list[tuple[str, dict[str, Any]]]:
+    """Return every subschema that carries a pattern, with where it sits in the schema file."""
+    if isinstance(node, list):
+        children = enumerate(node)
+        found = []
+    elif isinstance(node, dict):
+        children = node.items()
+        found = [(path, node)] if isinstance(node.get("pattern"), str) else []
+    else:
+        return []
+    for key, child in children:
+        found += patterned(child, f"{path}/{key}")
+    return found
+
+
 def schema_at(slot: str) -> dict[str, Any] | None:
     """Return the subschema a template slot names, or None when the schema has no such field."""
     node = SCHEMA
@@ -257,11 +279,44 @@ class TestSchema:
         # A mark outside the record's own fields would be one the walk above cannot see.
         assert json.dumps(SCHEMA).count('"x-rewritable"') == len(REWRITABLE)
 
+    def test_every_pattern_admits_its_examples_and_no_value_longer_than_one(self):
+        found = patterned(SCHEMA)
+        assert len(found) >= 5
+        for where, node in found:
+            assert node.get("examples"), f"{where} gives no example of a value its pattern admits"
+            check = Draft202012Validator({"type": "string", "pattern": node["pattern"]})
+            for example in node["examples"]:
+                assert check.is_valid(example), (where, example)
+                for extra in ("\n", "\r", " ", "0", "\u2028"):
+                    assert not check.is_valid(example + extra), (where, example + extra)
+                    assert not check.is_valid(extra + example), (where, extra + example)
+
+    def test_every_pattern_is_anchored_in_a_form_every_regex_dialect_reads_alike(self):
+        for where, node in patterned(SCHEMA):
+            pattern = node["pattern"]
+            assert pattern.startswith("^"), where
+            assert pattern.endswith(END_OF_VALUE), where
+            # A `$`, an anchor only one dialect has, a named group and an inline flag each read differently somewhere.
+            assert not re.search(r"\$|\\[AZz]|\(\?P|\(\?[aiLmsux]", pattern), where
+
     def test_the_field_table_names_exactly_the_schema_groups(self):
         table = (REFERENCES / "fields.md").read_text(encoding="utf-8")
         first_cells = [line.split("|")[1] for line in table.splitlines() if line.startswith("| `")]
         named = {name for cell in first_cells for name in re.findall(r"`([a-z_]+)`", cell)}
         assert named == set(SCHEMA["properties"])
+
+
+# A value its pattern admits, with a newline after it, in each field the schema
+# holds to a pattern. The first entry is the newline alone, where the pattern
+# also admits the empty value.
+TRAILING_NEWLINE: dict[str, Callable[[dict[str, Any]], None]] = {
+    "/pr/head_sha": lambda record: record["pr"].update(head_sha="\n"),
+    "/campaign/terminal_sha": lambda record: record["campaign"].update(terminal_sha="a" * 40 + "\n"),
+    "/record/head_sha": lambda record: record["record"].update(head_sha="a" * 40 + "\n"),
+    "/record/digest": lambda record: record["record"].update(digest="c" * 64 + "\n"),
+    "/campaign/digest": lambda record: record["campaign"].update(digest="c" * 64 + "\n"),
+    "/discovered/rows/0": lambda record: record["discovered"].update(rows=["None.\n"]),
+}
 
 
 class TestLint:
@@ -315,6 +370,14 @@ class TestLint:
         assert lint(record, tmp_path) == (0, {"valid": True})
         record["criteria"] = [{"id": "A1"}]
         assert_fails_naming(record, "/criteria/0/promise", tmp_path)
+
+    @pytest.mark.parametrize("field", sorted(TRAILING_NEWLINE))
+    def test_a_value_with_a_newline_after_it_fails_naming_its_field(self, field: str, tmp_path: Path):
+        record = example()
+        TRAILING_NEWLINE[field](record)
+        code, result = lint(record, tmp_path)
+        assert code == 1
+        assert [(error["code"], error["path"]) for error in result["errors"]] == [("schema", field)]
 
     def test_each_fault_is_reported_once_and_in_path_order(self, tmp_path: Path):
         record = example()
@@ -468,16 +531,11 @@ UNSTATED: dict[str, Callable[[dict[str, Any]], None]] = {
     "/verification": lambda record: record["verification"].update(gates=[], not_run=[]),
 }
 
-# The entry that states an emptiness, as written and with a trailing newline.
-# The schema's pattern for a discovered row lets the newline through, so a
-# record holding it is one the rules must read without failing.
-NONE_ENTRIES = ["None.", "None.\n"]
-
 # The same fields with the emptiness stated, for the three lists that take the entry.
-STATED: dict[str, Callable[[dict[str, Any], str], None]] = {
-    "/heads_up": lambda record, entry: record.update(heads_up=[entry]),
-    "/discovered/rows": lambda record, entry: record["discovered"].update(rows=[entry]),
-    "/verification": lambda record, entry: record["verification"].update(gates=[], not_run=[entry]),
+STATED: dict[str, Callable[[dict[str, Any]], None]] = {
+    "/heads_up": lambda record: record.update(heads_up=["None."]),
+    "/discovered/rows": lambda record: record["discovered"].update(rows=["None."]),
+    "/verification": lambda record: record["verification"].update(gates=[], not_run=["None."]),
 }
 
 
@@ -488,11 +546,10 @@ class TestCrL4StatedEmptiness:
         UNSTATED[field](record)
         assert_breaks(record, "unstated-empty", field, tmp_path)
 
-    @pytest.mark.parametrize("entry", NONE_ENTRIES)
     @pytest.mark.parametrize("field", sorted(STATED))
-    def test_cr_l4_a_single_none_entry_passes(self, field: str, entry: str, tmp_path: Path):
+    def test_cr_l4_a_single_none_entry_passes(self, field: str, tmp_path: Path):
         record = example()
-        STATED[field](record, entry)
+        STATED[field](record)
         assert_passes(record, tmp_path)
 
     def test_cr_l4_a_risk_table_with_one_row_passes(self, tmp_path: Path):
@@ -764,11 +821,17 @@ NONE_BESIDE: dict[str, Callable[[dict[str, Any], str], None]] = {
 
 
 class TestCrL11NoneBesideAnEntry:
-    @pytest.mark.parametrize("entry", NONE_ENTRIES)
     @pytest.mark.parametrize("field", sorted(NONE_BESIDE))
-    def test_cr_l11_none_beside_another_entry_fails_naming_the_list(self, field: str, entry: str, tmp_path: Path):
+    def test_cr_l11_none_beside_another_entry_fails_naming_the_list(self, field: str, tmp_path: Path):
         record = example()
-        NONE_BESIDE[field](record, entry)
+        NONE_BESIDE[field](record, "None.")
+        assert_breaks(record, "none-beside-entry", field, tmp_path)
+
+    @pytest.mark.parametrize("field", ["/heads_up", "/verification/not_run"])
+    def test_cr_l11_none_with_space_around_it_is_still_the_none_entry(self, field: str, tmp_path: Path):
+        # The discovered list is left out: its schema takes the entry only as written.
+        record = example()
+        NONE_BESIDE[field](record, " None.\n")
         assert_breaks(record, "none-beside-entry", field, tmp_path)
 
 
