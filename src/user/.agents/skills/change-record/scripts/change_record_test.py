@@ -10,6 +10,12 @@ Run: uv run change_record_test.py
 
 from __future__ import annotations
 
+# The fence goes up when conftest is imported. This import comes first, so the
+# fence also holds while this file runs as a script, before pytest starts.
+import conftest  # noqa: F401
+
+# isort: split
+
 import copy
 import json
 import re
