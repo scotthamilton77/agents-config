@@ -68,6 +68,12 @@ def test_pnd_a13_a_map_seat_that_times_out_is_handed_up_and_the_page_says_so(
     assert lane(session.entries(), "map")[-1][0] == "replied"
     said = notices(session.entries())
     assert any("'fast' tier failed" in one and "timed out" in one for one in said), said
+    # The log holds the notice before the page's next poll has brought it in,
+    # so the notice itself is what is waited for.
+    page.wait_for_function(
+        "() => NOTES.some(n => n.text.indexOf('timed out') >= 0)",
+        timeout=BOARD_TIMEOUT,
+    )
     shown = notifications(page)
     assert "timed out" in shown, shown
     assert "handed up to the 'heavy' tier" in shown, shown
