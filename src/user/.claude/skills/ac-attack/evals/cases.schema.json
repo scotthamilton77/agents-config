@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agents.local/schemas/ac-attack-cases/1",
+  "title": "Criteria attack evaluation catalogue",
+  "description": "The manifest of the cases that evaluate the attack lenses. Each case is a defective document and its control, or a control alone, kept in a directory named by the case's ID beside this manifest, under a directory named cases. A case the evaluation contract's catalogue table lists must state that row's served parents, rule, lens and child exactly; a case the table does not list, such as one harvested from a real round, is held to every other check.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cases"],
+  "properties": {
+    "cases": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/case"}
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "pattern": "\\S"},
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "serves", "rule", "lens", "child", "site", "detection", "source_revision"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "description": "The case's ID, which also names its directory, so it is a bare name that cannot lead out of the cases directory."
+        },
+        "serves": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/text"},
+          "description": "What the case serves: each parent criterion ID the catalogue table's Serves cell names, and each what-if question it quotes, written without its quotation marks. The table's other prose in that cell describes the defect and is not stated here, so a row naming no criterion and quoting no question serves an empty list. A row covering a range of cases gives each case the parent IDs it names and one of its quoted questions, in order. The comparison ignores order."
+        },
+        "rule": {
+          "$ref": "#/$defs/text",
+          "description": "The rule ID of the acceptance-criteria standard the case's defect breaks, as the table writes it without backticks. The value none marks a control-only case, which plants no defect and so breaks no rule."
+        },
+        "lens": {
+          "$ref": "#/$defs/text",
+          "description": "The lens that owns the rule and attacks the case. For a pair case it must enforce the rule, as the lens's own front matter states. A control-only case states the table's value, full panel."
+        },
+        "child": {
+          "$ref": "#/$defs/text",
+          "description": "The evaluation contract's criterion that this case passing discharges, as the table's Child column states it. A row covering a range of cases gives each case one criterion of its range, in order."
+        },
+        "site": {
+          "oneOf": [{"$ref": "#/$defs/text"}, {"type": "null"}],
+          "description": "Where the defect sits: the ID of the criterion it is planted in, or none when the defect is an absence. A control-only case has no defect and states null."
+        },
+        "detection": {
+          "$ref": "#/$defs/text",
+          "description": "One sentence stating what an objection must say to detect the defect."
+        },
+        "source_revision": {
+          "oneOf": [{"$ref": "#/$defs/text"}, {"type": "null"}],
+          "description": "The revision a harvested document was taken from, or null for a document written for the catalogue."
+        }
+      }
+    }
+  }
+}

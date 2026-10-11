@@ -111,7 +111,8 @@ ENCLOSED_NEXT = frozenset(",]}")
 NEXT_NON_SPACE_RE = re.compile(r"\S")
 
 # The marker the reviewer prompt closes its fenced data with. A transport that replays the
-# prompt on stdout puts the prompt's own report schema in front of the reviewer's output, so
+# prompt in a capture (the Codex command-line tool does, in the transcript it writes to stderr)
+# puts the prompt's own report schema and the target in front of the reviewer's output, so
 # everything up to this marker is prompt rather than anything a lens wrote.
 PROMPT_END_MARKER = "<<<END UNTRUSTED CONTENT>>>"
 
@@ -134,11 +135,19 @@ CLEAN_VERDICT = "clean"
 # output is the model's final text on both transports and records no tool use at all, so
 # the transport's stderr is the only place that evidence exists.
 
-# The openrouter launcher's proxy prints one line per API turn. A nested run that calls no
-# tool forwards a single request and every tool call adds a turn, so anything above one
-# forward is a read.
-OPENROUTER_FORWARD_RE = re.compile(r"^.*decision=forward.*$", re.MULTILINE)
-OPENROUTER_FORWARDS_WITHOUT_TOOLS = 1
+# The openrouter launcher's proxy logs one ledger line per forwarded request and closes it
+# with how many tool results the request's latest user message carried, which is the
+# client's own count of the tool calls the model made on its previous turn. The client
+# makes requests of its own that call no tool, so the number of forwards shows nothing; a
+# forward line carrying no count was written by a launcher that records none and shows
+# nothing either. The model field sits between the line's head and its decision and is
+# whatever the client sent, so only the count that closes a ledger line is the proxy's: one
+# planted inside a model name, or inside an upstream error the proxy relays, is not.
+OPENROUTER_TOOL_RESULTS_RE = re.compile(
+    r"^\[proxy\] model-ledger \S+ \S+ model=.* decision=forward tool-results=(\d+)"
+    r"(?: user-instructed)?$",
+    re.MULTILINE,
+)
 
 # Codex is reached two ways and each records a tool call differently, so both count. The
 # plugin job runner prefixes every progress line with its own tag; the command-line tool
@@ -734,13 +743,13 @@ def parse_report(body: str) -> tuple[dict, str]:
     Tolerance stops at the end of this ladder on purpose — reconstructing a
     report from prose makes the harvester the reviewer, and nothing downstream
     can tell the difference. It stops short of the prompt as well: a transport
-    that replays the prompt on stdout offers the prompt's own report schema as
-    the earliest object in the body. Everything up to the line the prompt closes
-    with is therefore prompt, and the schema is refused at every rung.
+    that replays the prompt offers the prompt's own report schema as the
+    earliest object in the body, and the target under review sits inside that
+    prompt. Only what follows the prompt's last closing marker is the reviewer's,
+    the same boundary the read-evidence scan uses, and the schema is refused at
+    every rung.
     """
-    prompt_end = PROMPT_END_RE.search(body)
-    if prompt_end is not None:
-        body = body[prompt_end.end():]
+    body = after_prompt(body)
     document = _as_object(body)
     if document is not None and not _is_template(document):
         return document, "whole-body"
@@ -762,13 +771,16 @@ def parse_report(body: str) -> tuple[dict, str]:
     )
 
 
-def evidence_after_prompt(text: str) -> str:
-    """The part of a retained capture that the reviewer's own run wrote.
+def after_prompt(text: str) -> str:
+    """The part of a capture that the reviewer's own run wrote: what follows the prompt.
 
-    Both transports echo the prompt, and the target under review sits inside it, so a
-    target quoting these patterns would otherwise supply the very evidence it is quoted
-    in. Only what follows the prompt's last closing marker counts. A capture holding no
-    marker echoed no prompt and counts whole.
+    The Codex command-line tool replays the prompt in the transcript it writes to stderr,
+    and the target under review sits inside that prompt. A target holding a marker line
+    of its own would move a cut at the first marker to wherever the target chose, so the
+    cut is at the last marker-only line: everything the reviewer wrote comes after the
+    prompt. Both the report parser and the read-evidence scan cut here, so a capture is
+    divided the same way whichever stream it came from. A capture holding no marker
+    echoed no prompt and counts whole.
     """
     markers = list(PROMPT_END_RE.finditer(text))
     return text[markers[-1].end():] if markers else text
@@ -780,10 +792,9 @@ def reads_recorded(transport: str, text: str) -> int | None:
     A transport this gate cannot count is reported rather than judged: refusing every
     clean report on an unrecognized transport would end rounds the evidence never spoke to.
     """
-    body = evidence_after_prompt(text)
+    body = after_prompt(text)
     if transport == OPENROUTER_TRANSPORT:
-        forwards = len(OPENROUTER_FORWARD_RE.findall(body))
-        return max(forwards - OPENROUTER_FORWARDS_WITHOUT_TOOLS, 0)
+        return sum(int(count) for count in OPENROUTER_TOOL_RESULTS_RE.findall(body))
     if transport == CODEX_TRANSPORT:
         return sum(len(pattern.findall(body)) for pattern in CODEX_ACTIVITY_RES)
     return None
@@ -822,8 +833,9 @@ def check_read_evidence(claimed: dict, report: dict) -> None:
     if reads is None or reads > 0:
         return
     counted = (
-        f"more than the {OPENROUTER_FORWARDS_WITHOUT_TOOLS} forwarded request a run calling no "
-        "tool makes"
+        "a forwarded request carrying a tool result, which the launcher's proxy counts on each "
+        "forward line; a capture whose forward lines carry no count came from a launcher that "
+        "records none and is unread the same way"
         if transport == OPENROUTER_TRANSPORT
         else CODEX_SHAPES
     )
@@ -908,8 +920,9 @@ def ingest(args: argparse.Namespace) -> dict[str, Any]:
             "no-output",
             f"the claimed output path {output} holds nothing. Each attempt writes its own path, "
             "so nothing there means this attempt wrote nothing. Claim again with reason "
-            f"{DEAD_RUN!r} and the kill line as the evidence when your watchdog killed it for "
-            f"silence, and with reason {TRANSPORT_ERROR!r} and the route's error otherwise",
+            f"{DEAD_RUN!r} when your watchdog killed it for silence or the launcher's own skill "
+            "says the response ended inside the model's reasoning, with that signal as the "
+            f"evidence, and with reason {TRANSPORT_ERROR!r} and the route's error otherwise",
         )
     try:
         report, recovery = parse_report(body)
