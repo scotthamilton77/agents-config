@@ -174,8 +174,9 @@ dead run:
    for that model.
 2. The failover seat at its pin, when the table lists no effort below the one that died or the
    step down also died.
-3. A dead run on the failover seat ends the ladder: the lens is out of attempts and the round
-   halts.
+3. A dead run on the failover seat ends the ladder: the lens is out of attempts, and the round
+   halts when the last failure on every route the lens ran on was a dead route or a dead run,
+   which the gate's refusal says.
 
 Whatever the failure, the next claim declares its reason and the failure verbatim, the proxy
 line or the watchdog's kill line included:
@@ -270,7 +271,9 @@ that quotes these patterns cannot vouch for the reviewer that was sent to read i
 
 A clean report with nothing recorded is **unread** — its own refusal, and neither a transport
 failure nor an unparseable body. Re-dispatch the lens with reason `unusable-output`. A findings
-report is never refused this way: it names what it found, and what it found is the evidence.
+report is never refused this way: it names what it found, and what it found is the evidence. The
+assembler reads these outcomes: a lens whose every ingest the gate refused has no report, and a
+report file written beside a refused attempt does not cover it.
 
 Past the ladder the output is **unparseable**: the lens has no entry and the round is incomplete
 unless it is re-dispatched with reason `unusable-output`. Tolerance stops there on purpose.
@@ -282,8 +285,8 @@ downstream can tell the difference.
 Assembly is `assemble_verdict.py`, never hand-written JSON: it reads `round.json`, the gate's
 attempts ledger, one ingested report per staffed lens, and a routes file naming the vendor,
 transport, and model that actually produced each report, substitutions included. Coverage fails
-closed — a missing report, a report for an unstaffed lens, and output from a dispatch the gate
-never authorized all refuse rather than assemble.
+closed — a missing report, a report for an unstaffed lens, a lens whose every ingest the gate
+refused, and output from a dispatch the gate never authorized all refuse rather than assemble.
 
 It resolves the two judgment-shaped cases mechanically. A finding marked `mechanical` with no
 evidence is downgraded to `advisory` with `downgraded_from` set — never dropped, never left

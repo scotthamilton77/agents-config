@@ -2427,6 +2427,58 @@ class TestChangeFile:
             assert path.read_bytes() == expected, entry["lens"]
             assert str(path) in (out_dir / f"{entry['lens']}.md").read_text(encoding="utf-8")
 
+    @pytest.mark.parametrize("mode", ["round-one", "delta", "sweep"])
+    def test_every_prompt_lists_the_paths_its_scope_changed(self, repo, acs_file, tmp_path,
+                                                            capsys, mode):
+        """A reviewer holding only Read, Grep and Glob cannot turn two revisions into files
+        to open, and one that cannot find the target answers clean rather than say so. The
+        prompt therefore names every changed path over the lens's own scope."""
+        flat = class_round(tmp_path, repo, acs_file, "typed-code", mode)
+        code, result = run(flat, capsys)
+        assert code == 0, result
+        out_dir = out_dir_of(flat)
+        meta = meta_of(out_dir)
+        for entry in meta["lenses"]:
+            start = entry.get("delta_base_sha", meta["base_sha"])
+            expected = subprocess.run(
+                ["git", "-C", str(repo.root), "diff", "--name-only", "-z", start,
+                 meta["head_sha"]],
+                capture_output=True, check=True,
+            ).stdout.decode("utf-8").split("\0")[:-1]
+            assert expected, "the fixture must change a file for the listing to mean anything"
+            prompt = (out_dir / f"{entry['lens']}.md").read_text(encoding="utf-8")
+            section = prompt.split("## What to read\n", 1)[1].split("\n## ", 1)[0]
+            listed = [line[2:] for line in section.splitlines() if line.startswith("- ")]
+            assert listed == expected, entry["lens"]
+            assert "No file changed" not in section
+            assert f"Your scope starts at commit: {start}" in section, entry["lens"]
+
+    def test_a_changed_path_with_a_space_is_listed_whole(self, repo, acs_file, tmp_path,
+                                                         capsys):
+        """A reviewer opens the path as written; a path split on its space names two files
+        that do not exist, and git's own quoting of such a path is not the path either."""
+        (repo.root / "docs").mkdir()
+        (repo.root / "docs" / "my guide.md").write_text("# guide\n", encoding="utf-8")
+        (repo.root / "ünïcode.txt").write_text("u\n", encoding="utf-8")
+        repo.head = repo.commit("paths git would quote")
+        out_dir = tmp_path / "out"
+        code, result = run(argv(repo, acs_file, out_dir), capsys)
+        assert code == 0, result
+        prompt = (out_dir / f"{TYPED_CODE_LENSES[0]}.md").read_text(encoding="utf-8")
+        section = prompt.split("## What to read\n", 1)[1].split("\n## ", 1)[0]
+        listed = [line[2:] for line in section.splitlines() if line.startswith("- ")]
+        assert listed == ["a.txt", "docs/my guide.md", "ünïcode.txt"]
+
+    def test_a_scope_with_no_changed_file_says_so(self, repo, acs_file, tmp_path, capsys):
+        out_dir = tmp_path / "out"
+        code, result = run(argv(repo, acs_file, out_dir, **{"--head-sha": repo.base}), capsys)
+        assert code == 0, result
+        for lens in TYPED_CODE_LENSES:
+            prompt = (out_dir / f"{lens}.md").read_text(encoding="utf-8")
+            section = prompt.split("## What to read\n", 1)[1].split("\n## ", 1)[0]
+            assert "No file changed over your scope." in section
+            assert not [line for line in section.splitlines() if line.startswith("- ")]
+
     def test_a18_lenses_sharing_a_revision_pair_share_one_diff(self, repo, acs_file, tmp_path,
                                                                capsys, monkeypatch):
         real_run = emitter.subprocess.run
@@ -2440,7 +2492,9 @@ class TestChangeFile:
         monkeypatch.setattr(emitter.subprocess, "run", counting)
         code, result = run(argv(repo, acs_file, tmp_path / "out"), capsys)
         assert code == 0, result
-        assert len(diffs) == 1, diffs
+        # One revision pair costs one diff and one path listing, however many lenses share it.
+        assert len([cmd for cmd in diffs if "--name-only" not in cmd]) == 1, diffs
+        assert len([cmd for cmd in diffs if "--name-only" in cmd]) == 1, diffs
 
     def test_a18_two_identical_revisions_write_an_empty_named_file(self, repo, acs_file,
                                                                   tmp_path, capsys):

@@ -207,6 +207,11 @@ def check_coverage(staffed: list[str], reports: dict[str, str], routes: dict[str
 
 def read_claims(directory: Path) -> list[dict[str, Any]]:
     """The dispatches the gate authorized this round, oldest first."""
+    return [record for record in read_ledger(directory) if record.get("kind") == "claim"]
+
+
+def read_ledger(directory: Path) -> list[dict[str, Any]]:
+    """Every record the gate wrote this round, oldest first."""
     path = directory / LEDGER_NAME
     if not path.is_file():
         raise Refusal(
@@ -235,9 +240,33 @@ def read_claims(directory: Path) -> list[dict[str, Any]]:
                 "unreadable-ledger",
                 f"line {number} of the attempt ledger {path} is not a record object",
             )
-        if record.get("kind") == "claim":
-            records.append(record)
+        records.append(record)
     return records
+
+
+def check_ingested(staffed: list[str], records: list[dict[str, Any]]) -> None:
+    """A lens whose every ingest the gate refused has no report, however clean its output.
+
+    The gate writes one outcome per ingest: parsed, or a refusal such as unread, which
+    is a clean report from a reviewer that never opened the target. A report file beside
+    such an attempt is the refused output under another name, so a lens with outcomes and
+    no parsed one fails coverage the way a silent lens does.
+    """
+    for lens in staffed:
+        outcomes = [
+            record for record in records
+            if record.get("kind") == "outcome" and record.get("lens") == lens
+        ]
+        if outcomes and not any(record.get("outcome") == "parsed" for record in outcomes):
+            ended = ", ".join(
+                f"attempt {record.get('attempt')} {record.get('outcome')}" for record in outcomes
+            )
+            raise Refusal(
+                "incomplete-round",
+                f"staffed lens {lens!r} has no ingested report: {ended}. An attempt the gate "
+                "refused is not coverage of the lens, and a round missing a lens is not written "
+                "as a verdict",
+            )
 
 
 def check_authorized(staffed: list[str], routes: dict[str, dict], claims: list[dict]) -> None:
@@ -501,7 +530,9 @@ def assemble(args: argparse.Namespace) -> dict[str, Any]:
     reports = parse_pairs(args.report, "--report")
     routes = read_routes(args.routes)
     check_coverage(staffed, reports, routes)
-    check_authorized(staffed, routes, read_claims(directory))
+    records = read_ledger(directory)
+    check_authorized(staffed, routes, [r for r in records if r.get("kind") == "claim"])
+    check_ingested(staffed, records)
 
     findings, suppressions, lens_verdicts = collect(
         staffed, reports, settled_index(round_meta), round_meta.get("round")
