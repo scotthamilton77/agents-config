@@ -19,6 +19,9 @@
 | `reply` | A reply outside 40 to 90 words, with a Change line that is empty or longer than two sentences, a Deferred reply that does not name the inheriting item, a Rejected reply with no URL, or one with no host or no path, for the comment that asked for it, or a phrase of campaign status. |
 | `reply-count` | A finding the campaign marks fixed that has no reply, or more than one. |
 | `stale-stamp` | A generated part whose content its stamp does not cover, or that has no stamp. |
+| `commit-markup` | Under `render` only: a field of the commit message that holds a Markdown table, a `<details>` fold, a fenced block or an HTML comment. |
+| `decisions-block` | Under `render body` only: an existing body that holds one of the two markers around a decisions block, holds one of them twice, or holds them out of order. |
+| `reply-entry` | Under `render reply` only: no reply entry, or more than one, matches the finding the command names. |
 
 In `heads_up` and `verification.not_run`, an entry is `None.` with or without space around it. `discovered.rows` takes the entry only as written, and the schema checks that.
 

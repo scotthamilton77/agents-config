@@ -7,7 +7,7 @@ admission:
   remove_when: Twenty consecutive merged pull requests pass the record lint with the skill not loaded, or the owner's clarifying questions on pull request descriptions stop over that run.
 ---
 
-Every change is described in the pull request body, in the commit message, and in each reply to a review finding. A change record is one JSON document that holds everything those three artifacts say, with each fact in one field. Write the record first. Then write each artifact from it, in the shape of its template. The body and the commit message then cannot disagree on a fact. A reader finds the same thing in the same place on every pull request.
+Every change is described in the pull request body, in the commit message, and in each reply to a review finding. A change record is one JSON document that holds everything those three artifacts say, with each fact in one field. Write the record first. Then render each artifact from it, and never write one of the three by hand. The body and the commit message then cannot disagree on a fact. A reader finds the same thing in the same place on every pull request.
 
 ## The record
 
@@ -30,7 +30,17 @@ Stdout is JSON: `{"valid": true}`, or `{"valid": false, "errors": [{"code", "pat
 
 ## The three artifacts
 
-Each template is a file under `references/`. In a template, `${a.b}` stands for the record field at that path. A line whose slot passes through a list, written `[]`, appears once per entry.
+`render` fills a template file under `references/` from the record, so each template is the exact form of its artifact:
+
+```bash
+uv run scripts/change_record.py render body record.json --output body.md
+uv run scripts/change_record.py render commit record.json
+uv run scripts/change_record.py render reply record.json --finding <finding id>
+```
+
+`render` runs `lint` first. A record that fails gets the lint result on stderr, exit 1, and nothing written. The artifact goes to stdout, or to the file `--output` names. `render` never calls GitHub. When the pull request already has a body, save it to a file and pass `--existing-body`. Another tool may keep a decisions block in that body, and `render` carries the block over unchanged.
+
+In a template, `${a.b}` stands for the record field at that path. A line whose slot passes through a list, written `[]`, appears once per entry. The lines between `{{#a.b}}` and `{{/a.b}}` appear only when the record holds a value there. Text in parentheses around a slot is left out when the record has nothing for that slot.
 
 ### The pull request body: `references/pr-body.md`
 

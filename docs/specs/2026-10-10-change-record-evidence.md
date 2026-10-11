@@ -16,15 +16,15 @@
 - CR-L14 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL14OneReplyPerFixedFinding
 - CR-L15 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL15GeneratedStamps
 - CR-L16 | test: src/user/.agents/skills/change-record/scripts/conftest_test.py::TestCrL16Fence
-- CR-L17 | open
+- CR-L17 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrL17TemplatesDriveTheRender
 - CR-R1 | open
-- CR-R2 | open
-- CR-R3 | open
-- CR-R4 | open
-- CR-R5 | open
-- CR-R6 | open
-- CR-R7 | open
-- CR-R8 | open
+- CR-R2 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR2Decisions
+- CR-R3 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR3CommitMessage
+- CR-R4 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR4CommitMarkup
+- CR-R5 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR5Reply
+- CR-R6 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR6LintFirst
+- CR-R7 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR7Determinism
+- CR-R8 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR8Sentinels
 - CR-X1 | open
 - CR-X2 | open
 - CR-X3 | open

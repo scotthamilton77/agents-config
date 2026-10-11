@@ -1,0 +1,83 @@
+Outcome: Fixed.
+Change: A fourth claim for a run that died now meets the attempt-limit refusal, with halt guidance and a ledger entry. A claim outside the recovery sequence is refused only while attempts remain. (75bb090c)
+Verification: test_a17_a_dead_run_past_the_bound_is_out_of_attempts_not_off_ladder failed before the change and passes after. Restoring the old unconditional refusal makes only that test fail.
+
+Outcome: Superseded.
+Change: The restated design deletes the scope-keyed tier rule this finding challenged, and its tests with it. The tier rule on main stands unchanged. (4b799fc1)
+Verification: The three existing tier tests pass on the branch: the declared tier in the first round, the re-review tier later, and the declared tier when no re-review tier is set. No scope-keyed test remains.
+
+Outcome: Deferred.
+Change: Nothing changes in this pull request, because the verdict schema lives in another skill and is outside this change. The notes on agents-config-9k9.408 (this pull request's work item) carry the missing halt reason for a follow-on item.
+Verification: The finding is advisory and does not block. The schema is not edited, so it still reads transport-failure for a halt caused by runs that died.
+
+Outcome: Fixed.
+Change: The gate now gives halt guidance when the last failure on every route the reviewer ran on was a transport error or a run that died. The halt sentence in harvest.md states the same condition. (75bb090c)
+Verification: test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output failed before the change, with no halt key in the refusal, and passes after. Restoring the old check of every failure makes only that test fail.
+
+Outcome: Fixed.
+Change: test_a9_the_round_record_names_each_lens_pin now checks each reviewer entry's tier against the roster before it checks the pin. Only the test changed. (7774cae8)
+Verification: A mutant that dispatched every reviewer at its declared tier in a sweep had passed all 219 emitter tests. That mutant now fails this test for the prose, spec and typed-code sweeps, and the branch passes it.
+
+Outcome: Fixed.
+Change: All 27 scenario reads were run again on isolated readers that can reach only copies of the five named files. The scenario file now names that reader and says why an Agent-tool subagent does not qualify. (6643c534)
+Verification: An isolation trial showed that the isolated reader sees no instruction file, and that a reader with default settings sees the global ones. The isolated readers gave the keyed answer in 27 of 27 reads. No unit test exercises a doctrine evaluation.
+
+Outcome: Fixed.
+Change: change_diffs now computes the diff for each distinct start revision once, and reuses its bytes for every reviewer that shares the revision pair. (cdd53cc1)
+Verification: An instrumented run had counted five git diff calls for one typed-code emission. test_a18_lenses_sharing_a_revision_pair_share_one_diff failed before the change and passes after. The file-content, empty-change and unknown-revision tests still pass.
+
+Outcome: Fixed.
+Change: The transport-error example in harvest.md now claims the failover slot with `--effort low` in place of `--effort high`. (a55b0e4d)
+Verification: The failover slot in that example is the OpenRouter frontier slot for a whole-document read, and contracts.json pins it at low effort. test_a6_every_lens_pin_has_its_stated_effort holds that value. No test runs an example command, so the example was read against the pin.
+
+Outcome: Fixed.
+Change: harvest.md now says that only an `attempts-exhausted` refusal ends a reviewer's run. A claim refused as `off-ladder`, or for a missing or malformed flag, spends no attempt and can be corrected and claimed again. (a55b0e4d)
+Verification: The gate raises those refusals before it writes the ledger, so they spend no attempt. test_a_refused_claim_rewrites_nothing_and_grants_no_attempt holds that behaviour.
+
+Outcome: Fixed.
+Change: harvest.md now says that an attempt the watchdog killed for silence leaves no output and is a run that died. The gate's no-output message names `dead-run` for that case and `transport-error` otherwise. (837f8a4c)
+Verification: test_a_claimed_path_holding_no_file_is_a_transport_failure gained an assertion that the message names `dead-run`. The test failed before the change and passes after.
+
+Outcome: Fixed.
+Change: The comment on MAX_ATTEMPTS no longer argues for another model on the same vendor, and now says why each attempt declares its transport and its model. The same argument is gone from the docstring of check_route. (a55b0e4d)
+Verification: No test exercises a comment, so both texts were read against the doctrine. The only recovery they describe is the failover slot that the routing table fixes, which is what harvest.md requires.
+
+Outcome: Fixed.
+Change: The first line of the docstring of exhausted() now says halt guidance is given when the last failure on every route the reviewer ran on was a transport error or a run that died. (75bb090c)
+Verification: No test exercises a docstring, so it was read against the code it describes. It states the rule that test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output holds in dispatch_gate_test.py.
+
+Outcome: Fixed.
+Change: The gate now accepts a failover only onto the other provider of the Codex and OpenRouter pair, and a lower-effort retry only on the starting transport. A claim on any third transport is refused and spends no attempt. (56130d01)
+Verification: test_a17_a_transport_that_is_not_the_failover_seat_is_refused failed before the change, because the gate authorised the claim, and passes after. A mutant that drops the same-transport guard from the lower-effort branch also fails it.
+
+Outcome: Fixed.
+Change: test_a17_a_dead_run_after_the_failover_is_out_of_attempts now runs for both requested transports, the failover one and the starting one, with the failover on the second attempt and on the third. (56130d01)
+Verification: Against the reviewer's mutant, the two starting-transport cases failed and the other two passed. Against the unchanged gate all four cases pass.
+
+Outcome: Fixed.
+Change: The comment on ROUTE_FAILURES now says that a reviewer out of attempts halts the round when the last failure on every route it ran on is one of the listed failures. (e399db1d)
+Verification: No test exercises a comment, so it was read against exhausted(), which it now matches. test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output still holds the behaviour the comment describes.
+
+Outcome: Fixed.
+Change: harvest.md now says that an `attempts-exhausted` refusal is the one that carries halt guidance. The sentence on an `off-ladder` refusal is unchanged, so each case has one sentence and the two no longer overlap. (78c49400)
+Verification: The gate attaches halt guidance only to an `attempts-exhausted` refusal, and raises an `off-ladder` refusal without it. No test exercises prose, so the sentences were checked against that code.
+
+Outcome: Fixed.
+Change: harvest.md now says that a claimed path holding nothing is refused as `no-output`. It tells the reader to claim again as `dead-run` after a watchdog kill for silence, and as `transport-error` otherwise. (0fd61251)
+Verification: The new sentences restate the gate's own no-output message and agree with the section on runs that died. No test exercises prose. Another reviewer reported the same defect, and this one change answers both findings.
+
+Outcome: Fixed.
+Change: The sentence in harvest.md that classed every empty claimed path as a transport failure is replaced by the gate's own no-output guidance. That guidance is `dead-run` after a watchdog kill for silence, and `transport-error` otherwise. (0fd61251)
+Verification: No test exercises prose. Another reviewer reported the same defect, and one change answers both findings.
+
+Outcome: Fixed.
+Change: The scenario file now names its input files by skill and file name, in place of paths from the repository root. It names each scenario's round record as a file beside the scenario file. (5bc9e856)
+Verification: The finding was advisory, and it was fixed because the fix is cheap and right. The keyed answers did not change. No test exercises prose.
+
+Outcome: Fixed.
+Change: The introduction of harvest.md now says that each rule settles a case the invoker would otherwise improvise. The episode it used to narrate is gone. (e43ccecc)
+Verification: The reason for the rules stays in the same sentence: an improvised rule is one nobody can audit afterwards. No test exercises prose.
+
+Outcome: Fixed.
+Change: The section of harvest.md on symmetric transport now says that neither direction is the exceptional one, because either transport can be down while the other works. The outages it used to narrate are gone. (e43ccecc)
+Verification: The reason for symmetric failover stays, in one sentence. No test exercises prose.
