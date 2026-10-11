@@ -65,13 +65,15 @@ MID_SENTENCE = re.compile(r"\b(?:e\.g|i\.e)\.", re.IGNORECASE)
 CLOSING_ID = re.compile(r"\s*\[[^\]]*\]\s*$")
 
 # Constructs that belong in an artifact a machine reads, by the name a finding
-# gives them. The fence has a pattern of its own, read before the code spans
-# are taken out, because taking them out takes a fence out too.
+# gives them. A fenced block is read apart from these, a line at a time, before
+# the code spans are taken out, because taking them out takes a fence out too.
 MACHINE_CONTENT = {
     "a `<details>` fold": re.compile(r"<details[\s>]", re.IGNORECASE),
     "an HTML comment": re.compile(r"<!--"),
 }
-JSON_FENCE = re.compile(r"^ {0,3}(?:`{3,}|~{3,})[ \t]*json\b", re.IGNORECASE | re.MULTILINE)
+
+# A line that may open or close a fenced block: the run of fence characters, then the rest of the line.
+FENCE_LINE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 
 
 class RecordError(Exception):
@@ -136,6 +138,27 @@ def _schema_faults(record: Any) -> set[tuple[str, str]]:
     return faults
 
 
+def is_none(entry: Any) -> bool:
+    """Say whether a list entry is the one that states its list is empty.
+
+    Space around the entry is ignored. A reader sees the same entry with or
+    without it, and the schema's pattern lets a trailing newline through.
+    """
+    return isinstance(entry, str) and entry.strip() == NONE
+
+
+def _discovered_work(record: dict[str, Any]) -> Iterator[tuple[int, dict[str, Any]]]:
+    """Yield the index and the row of each piece of discovered work.
+
+    A row is an object, and the entry that states the list is empty is a
+    string. The schema promises nothing more about the string than its
+    pattern, so the two are told apart by type and never by the string's text.
+    """
+    for index, row in enumerate(record["discovered"]["rows"]):
+        if isinstance(row, dict):
+            yield index, row
+
+
 def outside_code(text: str) -> str:
     """Return ``text`` with each code span replaced by a placeholder.
 
@@ -144,6 +167,31 @@ def outside_code(text: str) -> str:
     counts as one, and it holds angle brackets, so it completes no phrase.
     """
     return CODE_SPAN.sub("<code>", text)
+
+
+def holds_json_fence(text: str) -> bool:
+    """Say whether ``text`` holds a fenced block whose language is JSON.
+
+    A fence opens on a line that starts with three or more backticks or
+    tildes. A line of backticks with another backtick after the run is a code
+    span that happens to start the line, so it opens nothing. A line inside an
+    open fence is that block's content, so a fence quoted inside another
+    block opens nothing either.
+    """
+    closer = ""
+    for line in text.splitlines():
+        match = FENCE_LINE.fullmatch(line)
+        if not match:
+            continue
+        run, rest = match.groups()
+        if closer:
+            if run[0] == closer[0] and len(run) >= len(closer) and not rest.strip():
+                closer = ""
+        elif run[0] == "~" or "`" not in rest:
+            if re.match(r"\s*json\b", rest, re.IGNORECASE):
+                return True
+            closer = run
+    return False
 
 
 def count_sentences(text: str) -> int:
@@ -169,23 +217,6 @@ def _strings(node: Any, path: str = "") -> Iterator[tuple[str, str]]:
     elif isinstance(node, list):
         for index, child in enumerate(node):
             yield from _strings(child, f"{path}/{index}")
-
-
-def _rewritable_text(schema: dict[str, Any], node: Any, path: str = "") -> Iterator[tuple[str, str]]:
-    """Yield the path and value of every string under ``node`` that the schema marks as wording.
-
-    The schema is the one list of the fields that hold wording, so a rule that
-    reads wording follows a mark added to the schema or taken from it.
-    """
-    if isinstance(node, str):
-        if schema.get("x-rewritable") is True:
-            yield path, node
-    elif isinstance(node, dict):
-        for name, child in node.items():
-            yield from _rewritable_text(schema.get("properties", {}).get(name, {}), child, f"{path}/{name}")
-    elif isinstance(node, list):
-        for index, child in enumerate(node):
-            yield from _rewritable_text(schema.get("items", {}), child, f"{path}/{index}")
 
 
 def _body_scope(record: dict[str, Any]) -> Iterator[tuple[str | None, str]]:
@@ -220,9 +251,7 @@ def _body_scope(record: dict[str, Any]) -> Iterator[tuple[str | None, str]]:
         yield f"/changes/{index}/text", change["text"]
     if "design_notes" in record:
         yield "/design_notes", record["design_notes"]
-    for index, row in enumerate(record["discovered"]["rows"]):
-        if row == NONE:
-            continue
+    for index, row in _discovered_work(record):
         yield None, row.get("item", "")
         if "pr" in row:
             yield None, f"#{row['pr']}"
@@ -271,6 +300,19 @@ def _gloss_scopes(record: dict[str, Any]) -> Iterator[Iterable[tuple[str | None,
             (f"/replies/{index}/change", reply["change"]),
             (f"/replies/{index}/verification", reply["verification"]),
         ]
+
+
+def _author_text(record: dict[str, Any]) -> Iterator[tuple[str, str]]:
+    """Yield the path and text of every text field the author wrote.
+
+    These are the fields the gloss scopes read, without the cells that only
+    introduce an id. Generated parts and the text of a filed row of discovered
+    work are left out there, so they are left out here.
+    """
+    for scope in _gloss_scopes(record):
+        for path, text in scope:
+            if path is not None:
+                yield path, text
 
 
 def _glossed(text: str, match: re.Match[str]) -> bool:
@@ -336,16 +378,14 @@ def _none_beside_entries(record: dict[str, Any]) -> Iterator[dict[str, str]]:
         "/verification/not_run": record["verification"]["not_run"],
     }
     for path, entries in lists.items():
-        if NONE in entries and len(entries) > 1:
+        if any(is_none(entry) for entry in entries) and len(entries) > 1:
             message = f'"{NONE}" says this list is empty, so no other entry sits beside it'
             yield _finding("none-beside-entry", path, message)
 
 
 def _discovered_rows(record: dict[str, Any]) -> Iterator[dict[str, str]]:
     """Report each row of discovered work that leaves out what its status calls for."""
-    for index, row in enumerate(record["discovered"]["rows"]):
-        if row == NONE:
-            continue
+    for index, row in _discovered_work(record):
         path = f"/discovered/rows/{index}"
         if row["status"] == "filed" and not row.get("item", "").strip():
             yield _finding("discovered-row", f"{path}/item", "a filed row names its tracker item")
@@ -363,24 +403,12 @@ def _summary_length(record: dict[str, Any]) -> Iterator[dict[str, str]]:
 
 
 def _commentary(record: dict[str, Any]) -> Iterator[dict[str, str]]:
-    """Report each listed phrase of commentary about the document, in wording the author wrote.
-
-    The reason on a filed row of discovered work is the tracker's wording, so
-    it is not read.
-    """
-    rows = record["discovered"]["rows"]
-    not_the_authors = {
-        f"/discovered/rows/{index}/reason"
-        for index, row in enumerate(rows)
-        if row != NONE and row["status"] == "filed"
-    }
+    """Report each listed phrase of commentary about the document, in any text the author wrote."""
     patterns = {
         phrase: re.compile(r"(?<!\w)" + r"\s+".join(map(re.escape, phrase.split())) + r"(?!\w)", re.IGNORECASE)
         for phrase in load_phrases()["document_commentary"]
     }
-    for path, text in _rewritable_text(load_schema(), record):
-        if path in not_the_authors:
-            continue
+    for path, text in _author_text(record):
         plain = outside_code(text)
         for phrase, pattern in patterns.items():
             if pattern.search(plain):
@@ -392,7 +420,7 @@ def _machine_content(record: dict[str, Any]) -> Iterator[dict[str, str]]:
     for path, text in _strings(record):
         plain = outside_code(text)
         found = [name for name, pattern in MACHINE_CONTENT.items() if pattern.search(plain)]
-        if JSON_FENCE.search(text):
+        if holds_json_fence(text):
             found.append("a fenced `json` block")
         for name in found:
             message = f"this field holds {name}, which belongs in an artifact a machine reads"

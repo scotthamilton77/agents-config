@@ -168,10 +168,14 @@ def example() -> dict[str, Any]:
     return copy.deepcopy(EXAMPLE)
 
 
+def slot_of(path: str) -> str:
+    """Return the template slot that names the field at ``path``."""
+    return re.sub(r"/\d+", "[]", path).lstrip("/").replace("/", ".")
+
+
 def read_order(scope: Any) -> list[str]:
     """Return the template slot of each field a gloss scope reads, in the order it first reads one."""
-    slots = [re.sub(r"/\d+", "[]", path).lstrip("/").replace("/", ".") for path, _ in scope if path]
-    return list(dict.fromkeys(slots))
+    return list(dict.fromkeys(slot_of(path) for path, _ in scope if path))
 
 
 def copied_skill(tmp_path: Path) -> Path:
@@ -464,11 +468,16 @@ UNSTATED: dict[str, Callable[[dict[str, Any]], None]] = {
     "/verification": lambda record: record["verification"].update(gates=[], not_run=[]),
 }
 
+# The entry that states an emptiness, as written and with a trailing newline.
+# The schema's pattern for a discovered row lets the newline through, so a
+# record holding it is one the rules must read without failing.
+NONE_ENTRIES = ["None.", "None.\n"]
+
 # The same fields with the emptiness stated, for the three lists that take the entry.
-STATED: dict[str, Callable[[dict[str, Any]], None]] = {
-    "/heads_up": lambda record: record.update(heads_up=["None."]),
-    "/discovered/rows": lambda record: record["discovered"].update(rows=["None."]),
-    "/verification": lambda record: record["verification"].update(gates=[], not_run=["None."]),
+STATED: dict[str, Callable[[dict[str, Any], str], None]] = {
+    "/heads_up": lambda record, entry: record.update(heads_up=[entry]),
+    "/discovered/rows": lambda record, entry: record["discovered"].update(rows=[entry]),
+    "/verification": lambda record, entry: record["verification"].update(gates=[], not_run=[entry]),
 }
 
 
@@ -479,10 +488,11 @@ class TestCrL4StatedEmptiness:
         UNSTATED[field](record)
         assert_breaks(record, "unstated-empty", field, tmp_path)
 
+    @pytest.mark.parametrize("entry", NONE_ENTRIES)
     @pytest.mark.parametrize("field", sorted(STATED))
-    def test_cr_l4_a_single_none_entry_passes(self, field: str, tmp_path: Path):
+    def test_cr_l4_a_single_none_entry_passes(self, field: str, entry: str, tmp_path: Path):
         record = example()
-        STATED[field](record)
+        STATED[field](record, entry)
         assert_passes(record, tmp_path)
 
     def test_cr_l4_a_risk_table_with_one_row_passes(self, tmp_path: Path):
@@ -554,7 +564,7 @@ class TestCrL6SummaryLength:
     def test_cr_l6_a_summary_outside_three_to_five_sentences_fails(self, count: int, tmp_path: Path):
         record = example()
         record["summary"] = " ".join(SENTENCES[:count])
-        assert_breaks(record, "summary-length", "/summary", tmp_path, str(count))
+        assert_breaks(record, "summary-length", "/summary", tmp_path, f"has {count} sentences")
 
     @pytest.mark.parametrize("count", [3, 5])
     def test_cr_l6_a_summary_of_three_to_five_sentences_passes(self, count: int, tmp_path: Path):
@@ -562,17 +572,37 @@ class TestCrL6SummaryLength:
         record["summary"] = " ".join(SENTENCES[:count])
         assert_passes(record, tmp_path)
 
-    def test_cr_l6_a_full_stop_that_ends_no_sentence_is_not_counted(self, tmp_path: Path):
+    def test_cr_l6_a_full_stop_inside_a_number_ends_no_sentence(self, tmp_path: Path):
         record = example()
-        record["summary"] = (
-            "The gate let a fourth claim through under version 3.4 of the doctrine. "
-            "It now refuses that claim, e.g. a retry on a third provider. "
-            "The refusal reads `halt. stop. no retry.` and is recorded. "
-            "The round then halts (as the doctrine says.) "
-            "One check stays open"
-        )
-        assert_passes(record, tmp_path)
+        record["summary"] = "The gate uses version 3.4. It now refuses retries."
+        assert_breaks(record, "summary-length", "/summary", tmp_path, "has 2 sentences")
 
+    @pytest.mark.parametrize(
+        ("text", "count"),
+        [
+            ("The gate uses version 3.4. It now refuses retries.", 2),
+            ("The file is harvest.md. It names contracts.json.", 2),
+            ("It refuses a retry, e.g. on a third provider. It halts, i.e. the round ends.", 2),
+            ("The refusal reads `halt. stop. no retry.` and is recorded.", 1),
+            ("The round halts (as the doctrine says.) Then it stops.", 2),
+            ("Does the round halt? It does! Then it stops...", 3),
+            ("One check stays open", 1),
+            ("", 0),
+        ],
+    )
+    def test_cr_l6_sentences_are_counted_exactly(self, text: str, count: int):
+        assert change_record.count_sentences(text) == count
+
+
+# One field of each kind that the author writes as text and no editor may
+# reword, with how a test fills it.
+NOT_REWRITABLE: dict[str, Callable[[dict[str, Any], str], None]] = {
+    "/work_item/slice": lambda record, text: record["work_item"].update(slice=text),
+    "/discovered/rows/0/what": lambda record, text: record["discovered"]["rows"][0].update(what=text),
+    "/verification/gates/0/location": lambda record, text: record["verification"]["gates"][0].update(location=text),
+    "/verification/not_run/0": lambda record, text: record["verification"].update(not_run=[text]),
+    "/criteria/0/evidence": lambda record, text: record["criteria"][0].update(evidence=text),
+}
 
 # One sample of each construct that belongs in a machine's artifact and never in
 # a field a person reads, by the words the lint names it with.
@@ -609,17 +639,40 @@ class TestCrL7CommentaryAndMachineContent:
         record["changes"][0]["text"] += " The footnote that named the old rule is gone."
         assert_passes(record, tmp_path)
 
-    def test_cr_l7_a_field_that_holds_no_wording_is_not_read_for_commentary(self, tmp_path: Path):
+    @pytest.mark.parametrize("field", sorted(NOT_REWRITABLE))
+    def test_cr_l7_a_listed_phrase_fails_in_a_text_field_no_editor_may_reword(self, field: str, tmp_path: Path):
+        assert slot_of(field) not in REWRITABLE
         record = example()
-        record["verification"]["not_run"] = ["The live-provider scenarios. Note that they spend review budget."]
-        assert_passes(record, tmp_path)
+        NOT_REWRITABLE[field](record, "Note that the live-provider gate was not run.")
+        assert_breaks(record, "commentary", field, tmp_path, "note that")
 
-    def test_cr_l7_a_filed_rows_reason_is_the_trackers_and_is_not_read_for_commentary(self, tmp_path: Path):
+    def test_cr_l7_a_listed_phrase_fails_in_the_commit_message_and_in_a_reply(self, tmp_path: Path):
+        record = example()
+        record["commit"]["why"] = swap(record["commit"]["why"], "Review cost", "Note that review cost")
+        reply = record["replies"][0]
+        reply["verification"] = swap(reply["verification"], "Restoring", "Note that restoring")
+        fields = [path for path, _ in findings(record, "commentary", tmp_path)]
+        assert fields == ["/commit/why", "/replies/0/verification"]
+
+    def test_cr_l7_a_filed_rows_text_is_the_trackers_and_is_not_read_for_commentary(self, tmp_path: Path):
         record = example()
         record["discovered"]["rows"].append({
             "status": "filed", "item": "agents-config-9k9.470",
-            "what": "The gate compares used effort with the pin.", "reason": "Note that it waits on the routing table.",
+            "what": "This section of the gate compares used effort with the pin.",
+            "reason": "Note that it waits on the routing table.",
         })
+        assert_passes(record, tmp_path)
+
+    def test_cr_l7_a_generated_part_is_not_read_for_commentary(self, tmp_path: Path):
+        record = example()
+        record["campaign"]["findings"][0]["claim"] += " Note that the grant writes a file."
+        record["where_this_fits"]["builds_on"][0]["gloss"] += ", see below"
+        assert_passes(record, tmp_path)
+
+    def test_cr_l7_a_command_and_a_diagram_source_are_quoted_and_not_read_for_commentary(self, tmp_path: Path):
+        record = example()
+        record["verification"]["gates"][0]["gate"] = "grep -c 'note that' harvest.md"
+        record["blast_radius"]["reach_graph"] += "\n  N[see below] --> P[review-panel skill]"
         assert_passes(record, tmp_path)
 
     def test_cr_l7_the_lint_reads_the_phrase_list_the_skill_ships(self, tmp_path: Path):
@@ -634,17 +687,6 @@ class TestCrL7CommentaryAndMachineContent:
         (found,) = findings(record, "commentary", tmp_path, skill / "scripts" / "change_record.py")
         assert found[0] == "/design_notes"
         assert "as you can see" in found[1]
-
-    def test_cr_l7_the_fields_that_hold_wording_come_from_the_schema(self, tmp_path: Path):
-        skill = copied_skill(tmp_path)
-        shipped = skill / "references" / "record.schema.json"
-        schema = json.loads(shipped.read_text(encoding="utf-8"))
-        del schema["properties"]["design_notes"]["x-rewritable"]
-        shipped.write_text(json.dumps(schema), encoding="utf-8")
-        record = example()
-        record["design_notes"] += " Note that the pins hold."
-        assert_breaks(record, "commentary", "/design_notes", tmp_path, "note that")
-        assert findings(record, "commentary", tmp_path, skill / "scripts" / "change_record.py") == []
 
     @pytest.mark.parametrize("construct", sorted(MACHINE_CONTENT))
     def test_cr_l7_machine_content_in_an_author_written_field_fails_naming_the_construct(
@@ -665,22 +707,68 @@ class TestCrL7CommentaryAndMachineContent:
         record["campaign"]["findings"][0]["claim"] += claim
         assert_passes(record, tmp_path)
 
+    @pytest.mark.parametrize(
+        "notes",
+        ["```json payload```", "The replies changed.\n```json payload``` opened each of them before."],
+    )
+    def test_cr_l7_a_code_span_that_opens_a_line_is_no_fenced_block(self, notes: str, tmp_path: Path):
+        record = example()
+        record["design_notes"] = notes
+        assert_passes(record, tmp_path)
+
+    @pytest.mark.parametrize("language", ["text", "jsonc", "json5"])
+    def test_cr_l7_a_fenced_block_in_another_language_passes(self, language: str, tmp_path: Path):
+        record = example()
+        record["design_notes"] = f'The gate printed this.\n\n```{language}\n{{"valid": true}}\n```'
+        assert_passes(record, tmp_path)
+
+    def test_cr_l7_a_run_of_backticks_inside_a_line_opens_no_fence(self, tmp_path: Path):
+        record = example()
+        record["design_notes"] = "Each reply opened with ```json and nothing on the line closed it."
+        assert_passes(record, tmp_path)
+
+    @pytest.mark.parametrize(
+        "quoted",
+        ['```json\n{"valid": true}\n```', '```\n```json\n{"valid": true}\n```'],
+    )
+    def test_cr_l7_a_json_fence_quoted_inside_another_fenced_block_passes(self, quoted: str, tmp_path: Path):
+        record = example()
+        record["design_notes"] = f"Each reply opened like this.\n\n````text\n{quoted}\n````"
+        assert_passes(record, tmp_path)
+
+    @pytest.mark.parametrize(
+        "fenced",
+        [
+            '```json\n{"valid": true}\n```',
+            '~~~json\n{"valid": true}\n~~~',
+            '  ```` JSON \n{"valid": true}\n````',
+            '```text\nexit 0\n```\n\n```json\n{"valid": true}\n```',
+        ],
+    )
+    def test_cr_l7_a_fenced_json_block_fails_however_its_fence_is_written(self, fenced: str, tmp_path: Path):
+        record = example()
+        record["design_notes"] = f"The reply held this.\n\n{fenced}\n\nIt holds prose now."
+        assert_breaks(record, "machine-content", "/design_notes", tmp_path, "`json`")
+
 
 # Each list that states its emptiness, holding the entry beside one real entry.
-NONE_BESIDE: dict[str, Callable[[dict[str, Any]], None]] = {
-    "/heads_up": lambda record: record.update(heads_up=["None.", record["heads_up"][0]]),
-    "/discovered/rows": lambda record: record["discovered"].update(rows=[record["discovered"]["rows"][0], "None."]),
-    "/verification/not_run": lambda record: record["verification"].update(
-        not_run=["None.", "The live-provider scenarios, because they spend review budget."]
+NONE_BESIDE: dict[str, Callable[[dict[str, Any], str], None]] = {
+    "/heads_up": lambda record, entry: record.update(heads_up=[entry, record["heads_up"][0]]),
+    "/discovered/rows": lambda record, entry: record["discovered"].update(
+        rows=[record["discovered"]["rows"][0], entry]
+    ),
+    "/verification/not_run": lambda record, entry: record["verification"].update(
+        not_run=[entry, "The live-provider scenarios, because they spend review budget."]
     ),
 }
 
 
 class TestCrL11NoneBesideAnEntry:
+    @pytest.mark.parametrize("entry", NONE_ENTRIES)
     @pytest.mark.parametrize("field", sorted(NONE_BESIDE))
-    def test_cr_l11_none_beside_another_entry_fails_naming_the_list(self, field: str, tmp_path: Path):
+    def test_cr_l11_none_beside_another_entry_fails_naming_the_list(self, field: str, entry: str, tmp_path: Path):
         record = example()
-        NONE_BESIDE[field](record)
+        NONE_BESIDE[field](record, entry)
         assert_breaks(record, "none-beside-entry", field, tmp_path)
 
 
