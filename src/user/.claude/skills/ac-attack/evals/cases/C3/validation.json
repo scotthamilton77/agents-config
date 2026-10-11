@@ -1,0 +1,25 @@
+{
+  "report": {
+    "lens": "set-consistency",
+    "objections": [],
+    "report": "empty"
+  },
+  "run": {
+    "transport": "openrouter",
+    "model": "moonshotai/kimi-k3",
+    "effort": "low",
+    "response_id": null,
+    "started": "2026-10-11T19:55:28Z"
+  },
+  "decision": {
+    "verdict": "accept",
+    "digests": {
+      "control.md": "ebed34dac5d01e38eef2624f0468ee340c288dcd26a787b5e6882d0599847f4c",
+      "defective.md": "cd5ab9c2a1a3182b2a243fa979d3ed31842388f4e46b156475dbf42c394c2d09"
+    }
+  },
+  "digests": {
+    "control.md": "ebed34dac5d01e38eef2624f0468ee340c288dcd26a787b5e6882d0599847f4c",
+    "defective.md": "cd5ab9c2a1a3182b2a243fa979d3ed31842388f4e46b156475dbf42c394c2d09"
+  }
+}

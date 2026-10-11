@@ -1,0 +1,49 @@
+{
+  "report": {
+    "lens": "what-if",
+    "objections": [
+      {
+        "ground": {
+          "reason": "AUD-A7 enumerates the malformed service answers that exit 3 (wrong status, non-list body, severity outside D1, advisory for an unpinned package, duplicate advisory, timeout), and D3 says each advisory names a pinned package, but neither D3 nor any criterion says anything about version: the service may name a package that is pinned while its advisory applies to a version other than the pinned one. The document neither covers that answer nor rules it out, and the outcome matters because the command's purpose is to block a pull request only on advisories that actually apply to the pinned versions.",
+          "rule": "what-if-questions"
+        },
+        "lens": "what-if",
+        "objection": "The criteria let through a command that treats an advisory for a different version of a pinned package as applying to the pin (failing a clean pull request, or printing a wrong `<package>@<version>` line), or that crashes on it, since no criterion states whether such an answer is valid data, a malformed answer under AUD-A7, or must be filtered out.",
+        "scenario": {
+          "given": "a `deps.lock` pinning `left-pad@1.0.0` and a stub answering one high advisory `ADV-17` that names `left-pad` at version `2.0.0`",
+          "when": "`deps audit` runs",
+          "expect": "a defined outcome the document never states: either the advisory is reported against the pin, or the answer is rejected with `advisory service unavailable` and exit 3, or the advisory is ignored as not applicable to the pinned version"
+        },
+        "target_ac": "none"
+      }
+    ],
+    "report": "objections"
+  },
+  "run": {
+    "transport": "openrouter",
+    "model": "moonshotai/kimi-k3",
+    "effort": "low",
+    "response_id": null,
+    "started": "2026-10-11T21:24:43Z"
+  },
+  "decision": {
+    "verdict": "accept",
+    "digests": {
+      "control.md": "a254757ef0cff0db1c1da7ea504c22eb48cd7140fb960ee8242b6e52b05865bd",
+      "defective.md": "fe7c12339c519d204c937ad85ee50fe4f088ed53063dae14b457088e91b933c8"
+    },
+    "rejected": [
+      {
+        "lens": "what-if",
+        "target_ac": "none",
+        "objection": "The criteria let through a command that treats an advisory for a different version of a pinned package as applying to the pin (failing a clean pull request, or printing a wrong `<package>@<version>` line), or that crashes on it, since no criterion states whether such an answer is valid data, a malformed answer under AUD-A7, or must be filtered out.",
+        "reason": "The document pins a package and its version together, as in a `deps.lock` pinning `left-pad@1.0.0`, so an advisory naming `left-pad` at 2.0.0 is an advisory for a package `deps.lock` does not pin; D3 excludes it from the advisory list, and AUD-A7 already states the outcome, exit 3 with `advisory service unavailable`."
+      }
+    ],
+    "ruling": "The owner rejected the recurring objection that the not-applicable answers to the twice and nothing-changed questions need a criterion for D4: D4 makes the command read-only with no state between runs, so those questions are answered by that reason, which the standard accepts; a cached-answer scenario invents state the decision rules out, and a re-run with a changed advisory is a run with something changed. Demanding a criterion for the inapplicable dimension is the finding the parent criterion says a correct review does not raise."
+  },
+  "digests": {
+    "control.md": "a254757ef0cff0db1c1da7ea504c22eb48cd7140fb960ee8242b6e52b05865bd",
+    "defective.md": "fe7c12339c519d204c937ad85ee50fe4f088ed53063dae14b457088e91b933c8"
+  }
+}

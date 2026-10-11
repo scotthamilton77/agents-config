@@ -1,0 +1,351 @@
+{
+  "cases": [
+    {
+      "id": "C1",
+      "serves": [
+        "ACQ-A1"
+      ],
+      "rule": "observable-obligation",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A25",
+      "site": "EXP-A4",
+      "detection": "The objection says EXP-A4 checks only that the status command's source holds a line format and that a named test exists, so it can pass while `export status` never shows the operator each parked batch with its parked time and last error.",
+      "source_revision": null
+    },
+    {
+      "id": "C2",
+      "serves": [
+        "ACQ-A2"
+      ],
+      "rule": "observable-obligation",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A26",
+      "site": "STM-A1",
+      "detection": "The objection says STM-A1 leaves the invoice's UTC offset unstated although under D1 that offset decides whether an invoice issued at 21:30 on 31 March belongs to March or April, so the criterion's expected April result holds for some offsets and not others.",
+      "source_revision": null
+    },
+    {
+      "id": "C3",
+      "serves": [
+        "ACQ-A3"
+      ],
+      "rule": "decision-closure",
+      "lens": "set-consistency",
+      "child": "ACE-A27",
+      "site": "INV-A2",
+      "detection": "The objection says that INV-A2's 'rounded to two decimal places' leaves the rounding mode undecided for an amount exactly halfway between two cents, so that such an amount (10.125 EUR, say) may show as 10.13 or as 10.12 and both readings pass INV-A2.",
+      "source_revision": null
+    },
+    {
+      "id": "C4",
+      "serves": [
+        "ACQ-A4"
+      ],
+      "rule": "one-obligation",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A28",
+      "site": "REG-A5",
+      "detection": "The objection says REG-A5 bundles the claim, publish and install obligations, each deliverable and acceptable on its own, into one criterion that has to be split.",
+      "source_revision": null
+    },
+    {
+      "id": "C5",
+      "serves": [
+        "ACQ-A5"
+      ],
+      "rule": "can-fail",
+      "lens": "obligation-reduction",
+      "child": "ACE-A29",
+      "site": "TAX-A1",
+      "detection": "The objection says that TAX-A1 takes its expected tax from `tax_for`, the function checkout itself calls, so a change that alters the tax checkout charges still passes and the preservation check cannot fail under a violating implementation.",
+      "source_revision": null
+    },
+    {
+      "id": "C6",
+      "serves": [
+        "ACQ-A6"
+      ],
+      "rule": "consistency",
+      "lens": "set-consistency",
+      "child": "ACE-A30",
+      "site": "ATT-A2",
+      "detection": "The objection says that ATT-A1 and ATT-A2 both apply to an API upload of a file of exactly 26,214,400 bytes, where ATT-A1 requires it accepted with 201 and ATT-A2 requires it refused with 413.",
+      "source_revision": null
+    },
+    {
+      "id": "C7",
+      "serves": [
+        "ACQ-A7"
+      ],
+      "rule": "coverage",
+      "lens": "obligation-reduction",
+      "child": "ACE-A31",
+      "site": "none",
+      "detection": "The objection says that no criterion covers restoring an archived page, the promised outcome that Restore makes the page not archived and counts as an edit, so that runs within 365 days of it leave the page not archived, with a scenario in which restore is broken and every criterion still passes.",
+      "source_revision": null
+    },
+    {
+      "id": "C8",
+      "serves": [
+        "ACQ-A8",
+        "What if something it relies on is missing?"
+      ],
+      "rule": "what-if-questions",
+      "lens": "what-if",
+      "child": "ACE-A32",
+      "site": "none",
+      "detection": "An objection detects this defect when it says that no criterion states what `deps audit` does when the advisory service it relies on is unreachable, errors, times out or answers with something that is not an advisory list, and that the command must then fail rather than pass, because it has not checked every pinned package.",
+      "source_revision": null
+    },
+    {
+      "id": "C9",
+      "serves": [
+        "ACQ-A9"
+      ],
+      "rule": "verification-contract",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A33",
+      "site": "RST-A5",
+      "detection": "The objection says RST-A5, the promise that a first-time on-call engineer restores the database within 30 minutes using only the runbook, has no verification contract at all: no measurement or check, pass/fail rule, acceptance authority or completion waiting on it.",
+      "source_revision": null
+    },
+    {
+      "id": "C10",
+      "serves": [
+        "ACQ-A10"
+      ],
+      "rule": "restraint",
+      "lens": "obligation-reduction",
+      "child": "ACE-A34",
+      "site": "PRM-A4",
+      "detection": "The objection says that PRM-A4 repeats the viewer-delete refusal PRM-A1 already checks and excludes no failure PRM-A1 does not already exclude, naming PRM-A1 as the existing coverage.",
+      "source_revision": null
+    },
+    {
+      "id": "C11",
+      "serves": [
+        "ACQ-A14"
+      ],
+      "rule": "verified-premise",
+      "lens": "set-consistency",
+      "child": "ACE-A35",
+      "site": "SYN-A1",
+      "detection": "The objection says that SYN-A1 takes the vendor's limit to be 100 requests per rolling 60-second window while the document's own evidence, the quoted vendor reference and the run log, puts it at 60, so a job passing SYN-A1 can still exceed the real limit.",
+      "source_revision": null
+    },
+    {
+      "id": "C12",
+      "serves": [
+        "ACQ-A15"
+      ],
+      "rule": "stochastic-and-window",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A36",
+      "site": "EXP-A10",
+      "detection": "The objection says EXP-A10's production observation fixes no window, nor the population, collection method or missing-data treatment, before collection starts, so neither what is counted nor when the criterion is complete is defined.",
+      "source_revision": null
+    },
+    {
+      "id": "C13",
+      "serves": [
+        "ACQ-A16"
+      ],
+      "rule": "one-obligation",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A37",
+      "site": "CHK-A1",
+      "detection": "The objection says no child owns verifying CHK-A1, the outcome spanning S1 to S3, and that closing the three slices closes the parent without evidence that CHK-A1 holds.",
+      "source_revision": null
+    },
+    {
+      "id": "C14",
+      "serves": [
+        "ACQ-A17"
+      ],
+      "rule": "pending-until-performed",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A38",
+      "site": "TOK-A5",
+      "detection": "The objection says TOK-A5, the commitment that the token store keeps no copy of a token's secret, rests only on the advisory static-analysis scan, whose open findings do not block merge, so no required acceptance check discharges it.",
+      "source_revision": null
+    },
+    {
+      "id": "C15",
+      "serves": [
+        "ACQ-A31"
+      ],
+      "rule": "verification-contract",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A45",
+      "site": "HDA-A2",
+      "detection": "The objection says HDA-A2 assigns to a human, the support lead, a property a mechanical check could establish, namely that each acknowledgement's body holds the ticket number and its priority's response time, which an automated test reading the sent email can assert.",
+      "source_revision": null
+    },
+    {
+      "id": "C16",
+      "serves": [
+        "ACQ-A18"
+      ],
+      "rule": "document-deliverable",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A39",
+      "site": "ORD-A1",
+      "detection": "The objection says ORD-A1 checks only that the research note exists and is linked, so nothing assesses whether the note answers the question with evidence-supported claims.",
+      "source_revision": null
+    },
+    {
+      "id": "C17",
+      "serves": [
+        "ACQ-A19"
+      ],
+      "rule": "has-basis",
+      "lens": "obligation-reduction",
+      "child": "ACE-A40",
+      "site": "WIK-A4",
+      "detection": "The objection says that WIK-A4 demands links to the most-viewed pages of the space on an archived page, a capability no part of the agreed purpose, decisions or preservation guarantee asks for, so adding it grows the scope without authorization.",
+      "source_revision": null
+    },
+    {
+      "id": "C18",
+      "serves": [
+        "What if it fails?"
+      ],
+      "rule": "what-if-questions",
+      "lens": "what-if",
+      "child": "ACE-A42",
+      "site": "none",
+      "detection": "An objection detects this defect when it says that no criterion states what `relnotes build` does when a run fails, such as an entry file that breaks the entry format or cannot be read or a `CHANGELOG.md` that cannot be read or written, and that a failed run must leave `CHANGELOG.md` unchanged and exit with a failing status.",
+      "source_revision": null
+    },
+    {
+      "id": "C19",
+      "serves": [
+        "What if the input is empty or at a limit?"
+      ],
+      "rule": "what-if-questions",
+      "lens": "what-if",
+      "child": "ACE-A57",
+      "site": "none",
+      "detection": "An objection detects this defect when it says that no criterion states what `deps audit` does when `deps.lock` pins no package at all, such as whether it sends a request, what it prints, and whether it passes or fails.",
+      "source_revision": null
+    },
+    {
+      "id": "C20",
+      "serves": [
+        "What if it runs twice, or at the same time?"
+      ],
+      "rule": "what-if-questions",
+      "lens": "what-if",
+      "child": "ACE-A58",
+      "site": "none",
+      "detection": "An objection detects this defect when it says that no criterion states what happens when two builds for the same date run at the same time, such as the scheduler's build and an operator's rebuild, including which build's report survives or whether one build is refused.",
+      "source_revision": null
+    },
+    {
+      "id": "C21",
+      "serves": [
+        "What if it runs again with nothing changed?"
+      ],
+      "rule": "what-if-questions",
+      "lens": "what-if",
+      "child": "ACE-A59",
+      "site": "none",
+      "detection": "An objection detects this defect when it says that no criterion states what `relnotes build` does when it runs again for a version whose section `CHANGELOG.md` already holds, and that a second run with nothing changed must not add a second section for that version.",
+      "source_revision": null
+    },
+    {
+      "id": "C22",
+      "serves": [],
+      "rule": "document-deliverable",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A60",
+      "site": "FLG-A1",
+      "detection": "The objection says FLG-A1 checks only that the decision record is merged, so nothing assesses whether the record makes a reasoned choice against the stated constraints K1 to K5.",
+      "source_revision": null
+    },
+    {
+      "id": "C23",
+      "serves": [],
+      "rule": "one-obligation",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A61",
+      "site": "PWR-A1",
+      "detection": "The objection says PWR-A1 is closed when its implementation slices S1 to S3 close, before S4's end-to-end test supplies the evidence that the reset outcome holds, so the parent can close while the end-to-end reset fails.",
+      "source_revision": null
+    },
+    {
+      "id": "C24",
+      "serves": [],
+      "rule": "restraint",
+      "lens": "obligation-reduction",
+      "child": "ACE-A62",
+      "site": "PWR-A6",
+      "detection": "The objection says that PWR-A6 prescribes how the token is stored, a `reset_tokens` table with an `expires_at` column, which no decision or constraint requires, so the criterion pins an implementation choice rather than excluding an in-scope failure.",
+      "source_revision": null
+    },
+    {
+      "id": "C25",
+      "serves": [],
+      "rule": "stochastic-and-window",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A63",
+      "site": "RTE-A1",
+      "detection": "The objection says RTE-A1's pass threshold is chosen after the evaluation runs' results are known instead of being fixed before evaluating, so the threshold can be set to whatever the runs achieved.",
+      "source_revision": null
+    },
+    {
+      "id": "C26",
+      "serves": [],
+      "rule": "sufficiency",
+      "lens": "obligation-reduction",
+      "child": "ACE-A64",
+      "site": "PRM-A1",
+      "detection": "The objection says that no criterion sends the commenter's actions, since PRM-A1 tests only the viewer and the owner, so an implementation that treats a commenter as a viewer passes every criterion while refusing the comment D1 allows a commenter.",
+      "source_revision": null
+    },
+    {
+      "id": "C27",
+      "serves": [],
+      "rule": "human-measurement",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A65",
+      "site": "TIL-A4",
+      "detection": "The objection says TIL-A4's human-performed measurement has no defined protocol, leaving the participants, starting conditions, permitted assistance, what counts as done, or a measurable pass rule undefined.",
+      "source_revision": null
+    },
+    {
+      "id": "C28",
+      "serves": [
+        "ACQ-A30"
+      ],
+      "rule": "human-judgment",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A44",
+      "site": "ACC-A6",
+      "detection": "The objection says ACC-A6 names the design lead as the human evaluator but states no assessment standard, so nothing defines what the design lead's approval is judged against.",
+      "source_revision": null
+    },
+    {
+      "id": "C29",
+      "serves": [],
+      "rule": "stochastic-and-window",
+      "lens": "behavioural-outcome",
+      "child": "ACE-A66",
+      "site": "IMG-A3",
+      "detection": "The objection says IMG-A3 lets the rate over an incomplete observation window, the days collected before the 14-day window ends, decide the criterion instead of leaving it pending.",
+      "source_revision": null
+    },
+    {
+      "id": "P1",
+      "serves": [
+        "ACQ-A21"
+      ],
+      "rule": "none",
+      "lens": "full panel",
+      "child": "ACE-A41",
+      "site": null,
+      "detection": "A panel objection fails this case when it demands acceptance criteria for the retention job the spec describes, such as its behaviour, its tests or the storage it frees, of a document whose deliverable is the spec itself.",
+      "source_revision": null
+    }
+  ]
+}

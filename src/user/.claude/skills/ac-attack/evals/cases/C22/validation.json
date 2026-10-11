@@ -1,0 +1,25 @@
+{
+  "report": {
+    "lens": "behavioural-outcome",
+    "objections": [],
+    "report": "empty"
+  },
+  "run": {
+    "transport": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "response_id": "01a12cac-d960-7892-8757-61d1f6e8d895",
+    "started": "2026-10-11T20:34:47Z"
+  },
+  "digests": {
+    "control.md": "8fa40640ec1514e701c2c34aa89873923b611cd3de5fc147876bd48cae95bbac",
+    "defective.md": "085153e1481e82f984361343316171b19240f4d8151354c12ec9cb455b847ff6"
+  },
+  "decision": {
+    "verdict": "accept",
+    "digests": {
+      "control.md": "8fa40640ec1514e701c2c34aa89873923b611cd3de5fc147876bd48cae95bbac",
+      "defective.md": "085153e1481e82f984361343316171b19240f4d8151354c12ec9cb455b847ff6"
+    }
+  }
+}
