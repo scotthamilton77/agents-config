@@ -12,8 +12,8 @@ this script states, and each case's directory `cases/<id>/` beside the manifest.
 table is read from the evaluation contract at every run, so the table has one copy to drift from.
 
 Prints a JSON result to stdout, `{"passed": bool, "errors": [...]}`, where each error carries a
-`code`, a `message`, and the `case` or the `rule` it names. Exit 0 passed, 1 refused, 2 unusable
-input. Read-only, and deterministic over one tree: the same inputs always print the same bytes.
+`code` and a `message`, and each refusal also the `case` or the `rule` it names. Exit 0 passed, 1
+refused, 2 unusable input. Read-only, and deterministic over one tree: the same inputs always print the same bytes.
 
 A pair case's directory holds `defective.md` and `control.md`, which differ in one contiguous run
 of lines. A control-only case, whose rule is `none`, holds `control.md` alone. Each case directory
@@ -176,17 +176,24 @@ def document_faults(case: dict[str, Any], case_dir: Path,
     """What is wrong with a well-formed case's documents and its validation record."""
     control_only = case["rule"] == CONTROL_ONLY
     names = (CONTROL,) if control_only else (DEFECTIVE, CONTROL)
-    held = {}
+    held: dict[str, bytes] = {}
+    present: set[str] = set()
+    faults: list[tuple[str, str]] = []
     for name in (DEFECTIVE, CONTROL):
-        # A document that cannot be read, absent or gone before the read, is one the case lacks.
+        # A document gone before the read is absent. One that is there but cannot be read is its
+        # own fault and still counts as held, so making it unreadable hides nothing.
         try:
             held[name] = (case_dir / name).read_bytes()
-        except OSError:
-            pass
-    faults = [("missing-document", f"holds no {name} in its directory")
-              for name in names if name not in held]
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            faults.append(("unreadable-document", f"holds a {name} that cannot be read "
+                           f"({exc.strerror or type(exc).__name__})"))
+        present.add(name)
+    faults += [("missing-document", f"holds no {name} in its directory")
+               for name in names if name not in present]
     if control_only:
-        if DEFECTIVE in held:
+        if DEFECTIVE in present:
             faults.append(("control-only-defective", f"is control-only and holds a {DEFECTIVE}"))
         if case["site"] is not None:
             faults.append(("control-only-site", f"is control-only and states the site "

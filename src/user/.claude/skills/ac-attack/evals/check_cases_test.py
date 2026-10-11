@@ -357,6 +357,26 @@ def test_ace_a13_a_document_gone_before_it_is_read_is_a_missing_document(
     assert refused(evals, capsys) == [("C4", "missing-document")]
 
 
+@pytest.mark.parametrize(("case_id", "document", "expected"), [
+    ("C4", "control.md", [("C4", "unreadable-document")]),
+    ("P1", "defective.md", [("P1", "control-only-defective"), ("P1", "unreadable-document")]),
+], ids=["pair-control", "control-only-defective"])
+def test_ace_a13_an_unreadable_document_is_refused(
+        evals, catalogue, capsys, monkeypatch, case_id, document, expected):
+    locked = evals / "cases" / case_id / document
+    if not locked.exists():
+        locked.write_text(DEFECTIVE, encoding="utf-8")
+    read_bytes = Path.read_bytes
+
+    def deny(path: Path) -> bytes:
+        if path == locked:
+            raise PermissionError(path)
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", deny)
+    assert sorted(refused(evals, capsys)) == expected
+
+
 def test_ace_a13_a_pair_case_with_identical_documents_is_refused(evals, catalogue, capsys):
     case_dir = evals / "cases" / "C5"
     (case_dir / "control.md").write_text(DEFECTIVE, encoding="utf-8")
@@ -371,6 +391,14 @@ def test_ace_a13_a_pair_case_differing_in_two_hunks_is_refused(evals, catalogue,
                                          encoding="utf-8")
     validate(case_dir)
     assert refused(evals, capsys) == [("C5", "more-than-one-hunk")]
+
+
+def test_ace_a13_a_correction_spanning_adjacent_lines_is_one_hunk(evals, catalogue, capsys):
+    case_dir = evals / "cases" / "C5"
+    (case_dir / "control.md").write_text(CONTROL.replace("- A3 Done.", "- A3 The export reports "
+                                                         "its count."), encoding="utf-8")
+    validate(case_dir)
+    assert run(evals, capsys) == (0, {"errors": [], "passed": True})
 
 
 @pytest.mark.parametrize(("document", "text"), [
@@ -434,12 +462,24 @@ def test_ace_a13_a_validation_record_lacking_a_part_is_refused(evals, catalogue,
     assert refused(evals, capsys) == [("C7", code)]
 
 
-def test_ace_a13_a_validation_record_missing_one_documents_digest_is_refused(
-        evals, catalogue, capsys):
+@pytest.mark.parametrize("report", [None, "", [], {}],
+                         ids=["null", "empty-string", "empty-list", "empty-object"])
+def test_ace_a13_a_validation_record_with_an_empty_report_is_refused(
+        evals, catalogue, capsys, report):
     path = evals / "cases" / "C7" / "validation.json"
     record = json.loads(path.read_text(encoding="utf-8"))
-    del record["digests"]["defective.md"]
-    del record["decision"]["digests"]["defective.md"]
+    record["report"] = report
+    path.write_text(json.dumps(record), encoding="utf-8")
+    assert refused(evals, capsys) == [("C7", "validation-lacks-report")]
+
+
+@pytest.mark.parametrize("document", ["defective.md", "control.md"])
+def test_ace_a13_a_validation_record_missing_one_documents_digest_is_refused(
+        evals, catalogue, capsys, document):
+    path = evals / "cases" / "C7" / "validation.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    del record["digests"][document]
+    del record["decision"]["digests"][document]
     path.write_text(json.dumps(record), encoding="utf-8")
     assert refused(evals, capsys) == [("C7", "validation-lacks-digests")]
 
