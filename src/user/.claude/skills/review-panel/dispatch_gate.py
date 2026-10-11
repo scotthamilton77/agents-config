@@ -110,18 +110,26 @@ LINE_OBJECT_RE = re.compile(r"^[ \t]*\{", re.MULTILINE)
 ENCLOSED_NEXT = frozenset(",]}")
 NEXT_NON_SPACE_RE = re.compile(r"\S")
 
-# The marker the reviewer prompt closes its fenced data with. A transport that replays the
+# The reviewer prompt closes its fenced data with a marker line. A transport that replays the
 # prompt in a capture (the Codex command-line tool does, in the transcript it writes to stderr)
 # puts the prompt's own report schema and the target in front of the reviewer's output, so
-# everything up to this marker is prompt rather than anything a lens wrote.
+# everything up to that line is prompt rather than anything a lens wrote. The emitter mints
+# the line per round from the reviewed head and records it in round.json under this key; the
+# target existed before its head's hash did, so it cannot hold the line, and the first line
+# holding only it is the prompt's own close. The static marker is the fallback for a round
+# record that carries none, and there the cut is at the last marker-only line, since a
+# target can write the static marker and the reviewer's output follows the whole prompt.
+ROUND_MARKER_KEY = "prompt_end_marker"
 PROMPT_END_MARKER = "<<<END UNTRUSTED CONTENT>>>"
 
-# The prompt emits that marker on a line of its own. A reviewer is free to quote the marker
-# in a finding, where it sits among the JSON around it on the same line, so only a line
-# holding nothing else is the prompt's own close.
-PROMPT_END_RE = re.compile(
-    rf"^[ \t]*{re.escape(PROMPT_END_MARKER)}[ \t]*\r?$", re.MULTILINE
-)
+
+def marker_line_re(marker: str) -> re.Pattern[str]:
+    """A line holding nothing but the marker: a marker quoted inside a finding shares its
+    line with the JSON around it, and is not a boundary."""
+    return re.compile(rf"^[ \t]*{re.escape(marker)}[ \t]*\r?$", re.MULTILINE)
+
+
+PROMPT_END_RE = marker_line_re(PROMPT_END_MARKER)
 
 # The report schema in the prompt spells out both alternatives in each field the reviewer
 # chooses a value for. A report carries one alternative, so an object still carrying the
@@ -729,7 +737,7 @@ def _first_object_from(body: str, offsets: list[int]) -> dict | None:
     return None
 
 
-def parse_report(body: str) -> tuple[dict, str]:
+def parse_report(body: str, marker: str | None = None) -> tuple[dict, str]:
     """The tolerance ladder, in order; the first step that yields an object wins.
 
     Models violate an exact-output contract in predictable, harmless ways: a
@@ -745,11 +753,11 @@ def parse_report(body: str) -> tuple[dict, str]:
     can tell the difference. It stops short of the prompt as well: a transport
     that replays the prompt offers the prompt's own report schema as the
     earliest object in the body, and the target under review sits inside that
-    prompt. Only what follows the prompt's last closing marker is the reviewer's,
-    the same boundary the read-evidence scan uses, and the schema is refused at
-    every rung.
+    prompt. Only what follows the prompt's closing marker is the reviewer's, the
+    same boundary the read-evidence scan uses, and the schema is refused at every
+    rung.
     """
-    body = after_prompt(body)
+    body = after_prompt(body, marker)
     document = _as_object(body)
     if document is not None and not _is_template(document):
         return document, "whole-body"
@@ -771,28 +779,46 @@ def parse_report(body: str) -> tuple[dict, str]:
     )
 
 
-def after_prompt(text: str) -> str:
+def after_prompt(text: str, marker: str | None = None) -> str:
     """The part of a capture that the reviewer's own run wrote: what follows the prompt.
 
     The Codex command-line tool replays the prompt in the transcript it writes to stderr,
-    and the target under review sits inside that prompt. A target holding a marker line
-    of its own would move a cut at the first marker to wherever the target chose, so the
-    cut is at the last marker-only line: everything the reviewer wrote comes after the
-    prompt. Both the report parser and the read-evidence scan cut here, so a capture is
-    divided the same way whichever stream it came from. A capture holding no marker
-    echoed no prompt and counts whole.
+    and the target under review sits inside that prompt. With the round's own marker the
+    cut is at the first line holding only it: the target cannot write that line, and a
+    reviewer quoting it after its report does not move the cut. Without one the cut is at
+    the last line holding only the static marker, because a target can write that marker
+    and everything the reviewer wrote comes after the prompt. Both the report parser and
+    the read-evidence scan cut here, so a capture is divided the same way whichever stream
+    it came from. A capture holding no marker echoed no prompt and counts whole.
     """
+    if marker:
+        first = marker_line_re(marker).search(text)
+        return text[first.end():] if first else text
     markers = list(PROMPT_END_RE.finditer(text))
     return text[markers[-1].end():] if markers else text
 
 
-def reads_recorded(transport: str, text: str) -> int | None:
+def round_marker(out_dir: str) -> str | None:
+    """The marker line this round's prompts close with, as round.json records it.
+
+    Read tolerantly: a round directory with no record, or a record from an emitter that
+    minted none, is an older round, not a refusal, and takes the static marker's rule.
+    """
+    try:
+        document = json.loads(round_meta_path(out_dir).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    marker = document.get(ROUND_MARKER_KEY) if isinstance(document, dict) else None
+    return marker if isinstance(marker, str) and marker.strip() else None
+
+
+def reads_recorded(transport: str, text: str, marker: str | None = None) -> int | None:
     """How many tool calls this transport's stderr records, or None when no rule covers it.
 
     A transport this gate cannot count is reported rather than judged: refusing every
     clean report on an unrecognized transport would end rounds the evidence never spoke to.
     """
-    body = after_prompt(text)
+    body = after_prompt(text, marker)
     if transport == OPENROUTER_TRANSPORT:
         return sum(int(count) for count in OPENROUTER_TOOL_RESULTS_RE.findall(body))
     if transport == CODEX_TRANSPORT:
@@ -800,7 +826,7 @@ def reads_recorded(transport: str, text: str) -> int | None:
     return None
 
 
-def check_read_evidence(claimed: dict, report: dict) -> None:
+def check_read_evidence(claimed: dict, report: dict, marker: str | None = None) -> None:
     """Refuse a clean report that nothing shows the reviewer read the target for.
 
     A findings report is never refused here: it names what it found, and what it found is
@@ -829,7 +855,7 @@ def check_read_evidence(claimed: dict, report: dict) -> None:
             "no-stderr-capture",
             f"cannot read the retained stderr {stderr} for the clean report from {lens}: {exc}",
         ) from exc
-    reads = reads_recorded(transport, text)
+    reads = reads_recorded(transport, text, marker)
     if reads is None or reads > 0:
         return
     counted = (
@@ -924,13 +950,14 @@ def ingest(args: argparse.Namespace) -> dict[str, Any]:
             "says the response ended inside the model's reasoning, with that signal as the "
             f"evidence, and with reason {TRANSPORT_ERROR!r} and the route's error otherwise",
         )
+    marker = round_marker(args.out_dir)
     try:
-        report, recovery = parse_report(body)
+        report, recovery = parse_report(body, marker)
     except Refusal:
         append_record(path, outcome_record(claimed, "unparseable", output))
         raise
     try:
-        check_read_evidence(claimed, report)
+        check_read_evidence(claimed, report, marker)
     except Refusal as exc:
         append_record(path, outcome_record(claimed, "unread", output, code=exc.code))
         raise

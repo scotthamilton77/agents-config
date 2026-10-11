@@ -250,15 +250,20 @@ returned, and the ledger records the trimmed version as the reviewer's.
 
 A transport may also replay the whole prompt ahead of the reviewer's output. The Codex
 command-line tool does, in the transcript it writes to stderr; its stdout carries the final message
-alone. The ladder reads only what follows the **last** line of the claimed output holding nothing but
-the prompt's closing untrusted-content marker, the same boundary the read-evidence check below
-applies to the retained stderr, and it never accepts
-the prompt's own report schema, so an echoed prompt yields the reviewer's report or nothing. The
-target under review sits inside the echoed prompt, so a target that plants a marker line and a
-report-shaped object of its own still sits before the boundary and cannot pose as the report. A
-finding may quote the marker inside its text, where it shares its line with the JSON around it; a
-marker alone on a line anywhere in the output moves the boundary, which is why the completion
-contract asks for one JSON object and nothing else.
+alone. The emitter closes each prompt's fenced data with a marker line it mints for the round from
+the reviewed head, the claim and the round number, and records that line in `round.json`. The
+ladder reads only what follows the **first** line of the claimed output holding nothing but that
+marker, the same boundary the read-evidence check below applies to the retained stderr, and it
+never accepts the prompt's own report schema, so an echoed prompt yields the reviewer's report or
+nothing. The target under review sits inside the echoed prompt, and it cannot hold the marker: a
+tree cannot contain the digest of its own commit. A target that plants the static marker line and a
+report-shaped object of its own therefore still sits before the boundary and cannot pose as the
+report, and a reviewer that quotes the target, or the marker itself, after its report moves nothing.
+A round record that carries no marker is an older emitter's, and there the gate falls back to the
+static marker and cuts at the **last** line holding only it, since a target can write that marker.
+The completion contract tells the reviewer never to reproduce the closing line alone or inside a
+fence; a finding that must cite it quotes it inside its own text, where it shares its line with the
+JSON around it.
 
 A **clean** report is checked against the attempt's retained stderr before it is accepted, because
 a reviewer that answers clean without opening the change costs the round a lens while looking like
@@ -270,7 +275,7 @@ carried none called no tool, however many requests the client around it made. A 
 forward lines carry no count came from a launcher that records none and is unread the same way.
 On `codex` both entry points count: the plugin job runner tags each tool line with `[codex] `, and
 the command-line tool opens each call with a bare `exec` line and reports the result beneath it.
-Only what follows the prompt's last closing marker counts, so a target that quotes these patterns
+Only what follows the prompt's closing marker counts, so a target that quotes these patterns
 cannot vouch for the reviewer that was sent to read it.
 
 A clean report with nothing recorded is **unread** — its own refusal, and neither a transport
