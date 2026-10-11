@@ -296,7 +296,8 @@ checker suites run under `make content-tests`.
   case whose validation record is unreadable, writes a key twice, lacks its
   report, the owner's decision or the digests, or whose decision is not an
   acceptance of the recorded documents. It names the case and the fault, and
-  an unreadable document by name.
+  an unreadable document by name. A manifest that writes a key twice is
+  unusable, and the check refuses the catalogue whole.
 - **ACE-A14** Given fixture reports and verdicts, the scorer counts a detection
   for an objection citing the case's rule at its site, and for one citing only
   the rule or only the site that the judge matches to the detection statement.
@@ -365,7 +366,8 @@ checker suites run under `make content-tests`.
   for no other, plans no third repeat of a run, and the scorer judges a
   retested side on all ten of its runs.
 - **ACE-A47** Given locks and a tree in which one case's document or one
-  lens's emitted prompt has changed, the scorer reports as void exactly the
+  lens's emitted prompt has changed, or in which ACE-D6's configuration of one
+  lens's model or effort has changed, the scorer reports as void exactly the
   locks whose fingerprint changed, naming each.
 - **ACE-A48** Given stored reports and a changed judge prompt, judge model or
   scorer, the scorer rescores them with no lens dispatch planned, and keeps a lock only
@@ -387,7 +389,8 @@ checker suites run under `make content-tests`.
   thresholds the attempt's plan fixed, and averages no rate across cases.
 - **ACE-A53** The scorer refuses an attempt whose usable reports do not match
   the planned runs of the attempt and its retest one to one, or in which a
-  report lacks a response ID or two share one, naming the run or the report.
+  report lacks a response ID, two share one, or one carries a response ID a
+  report in another committed attempt carries, naming the run or the report.
   A repeat's superseded reports match nothing.
 - **ACE-A54** The planner refuses a plan of more than 310 dispatches that names
   no owner approval, naming the count.
