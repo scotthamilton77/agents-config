@@ -242,9 +242,8 @@ It walks the tolerance ladder — the whole body as JSON, then a single fenced b
 found in the body with the surrounding text ignored — and prints the report it recovered. Output
 from a dispatch it never authorized is refused rather than read, so a dispatch that went around
 the gate shows up as a hole in the ledger instead of as a lens entry. A claimed path holding
-nothing is refused as `no-output`, because the attempt wrote nothing. Claim again with the reason
-the launcher's outcome maps to under "A dispatch that came back with no report", with the
-launcher's signal as the evidence.
+nothing is refused as `no-output`, because the attempt wrote nothing. What follows is the
+launcher's outcome, read under "A dispatch that came back with no report".
 
 Some transports wrap the reviewer's output in their own harness log lines — a banner before it, an
 exit line after it, and command echoes that may themselves contain braces. **Ingest the claimed
