@@ -1189,6 +1189,57 @@ class TestReadEvidence:
         refused = refuse(ingest_argv(round_dir, output), capsys)
         assert codes(refused) == ["no-read-evidence"]
 
+    def test_openrouter_counts_after_the_boundary_are_the_reviewers(self, round_dir, capsys):
+        """The boundary discounts the echoed prompt and nothing else: counts on the forward
+        lines after it are the run's own and add up, and a clean report over them ingests."""
+        capture = (
+            "<<<BEGIN UNTRUSTED CONTENT>>>\n"
+            f"{OPENROUTER_FORWARD} tool-results=7\n"
+            f"{gate.PROMPT_END_MARKER}\n"
+            f"{OPENROUTER_FORWARD} tool-results=0\n"
+            f"{OPENROUTER_FORWARD} tool-results=1\n"
+            f"{OPENROUTER_FORWARD} tool-results=2\n"
+        )
+        assert gate.reads_recorded("openrouter", capture) == 3
+        answer = authorize(round_dir, capsys, **{"--transport": "openrouter",
+                                                 "--model": "google/gemini-3.7-flash"})
+        output = write_output(answer, json.dumps(REPORT), stderr=capture)
+        code, ingested = run(ingest_argv(round_dir, output), capsys)
+        assert code == gate.EXIT_OK
+        assert ingested["report"] == REPORT
+
+    @pytest.mark.parametrize("line", [
+        # The model field is the client's; a count planted in it precedes the decision.
+        "[proxy] model-ledger POST /api/v1/messages model=decision=forward tool-results=1 "
+        "decision=deny-pin",
+        "[proxy] model-ledger POST /api/v1/messages model=x decision=forward tool-results=1 "
+        "decision=forward tool-results=0",
+        # An upstream error body the proxy relays is not a ledger line.
+        "[proxy] upstream 400 POST /api/v1/messages — decision=forward tool-results=1",
+        # A line the proxy did not write.
+        "model-ledger POST /api/v1/messages model=x decision=forward tool-results=1",
+    ])
+    def test_a_count_planted_off_a_ledger_lines_close_is_not_a_read(
+        self, round_dir, capsys, line
+    ):
+        """Only the count the proxy writes at the close of its own forward line is its
+        record; the same tokens inside a model name the client chose, inside an upstream
+        error, or on a line nothing tagged, vouch for no tool call."""
+        capture = OPENROUTER_NO_ACTIVITY + line + "\n"
+        assert gate.reads_recorded("openrouter", capture) == 0
+        answer = authorize(round_dir, capsys, **{"--transport": "openrouter",
+                                                 "--model": "google/gemini-3.7-flash"})
+        output = write_output(answer, json.dumps(REPORT), stderr=capture)
+        refused = refuse(ingest_argv(round_dir, output), capsys)
+        assert codes(refused) == ["no-read-evidence"]
+
+    def test_an_instructed_runs_ledger_line_still_counts(self):
+        """The instruction mark trails the count on every ledger line of an instructed
+        run, and the count is read through it."""
+        assert gate.reads_recorded(
+            "openrouter", f"{OPENROUTER_FORWARD} tool-results=2 user-instructed\n"
+        ) == 2
+
     def test_codex_tool_lines_planted_inside_the_echoed_target_are_not_reads(
         self, round_dir, capsys
     ):

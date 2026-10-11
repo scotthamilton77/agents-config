@@ -135,13 +135,18 @@ CLEAN_VERDICT = "clean"
 # output is the model's final text on both transports and records no tool use at all, so
 # the transport's stderr is the only place that evidence exists.
 
-# The openrouter launcher's proxy logs one line per forwarded request and writes on it how
-# many tool results the request carried, which is the client's own count of the tool calls
-# the model made on its previous turn. The client makes requests of its own that call no
-# tool, so the number of forwards shows nothing; a forward line carrying no count was
-# written by a launcher that records none and shows nothing either.
+# The openrouter launcher's proxy logs one ledger line per forwarded request and closes it
+# with how many tool results the request's latest user message carried, which is the
+# client's own count of the tool calls the model made on its previous turn. The client
+# makes requests of its own that call no tool, so the number of forwards shows nothing; a
+# forward line carrying no count was written by a launcher that records none and shows
+# nothing either. The model field sits between the line's head and its decision and is
+# whatever the client sent, so only the count that closes a ledger line is the proxy's: one
+# planted inside a model name, or inside an upstream error the proxy relays, is not.
 OPENROUTER_TOOL_RESULTS_RE = re.compile(
-    r"^.*decision=forward tool-results=(\d+).*$", re.MULTILINE
+    r"^\[proxy\] model-ledger \S+ \S+ model=.* decision=forward tool-results=(\d+)"
+    r"(?: user-instructed)?$",
+    re.MULTILINE,
 )
 
 # Codex is reached two ways and each records a tool call differently, so both count. The

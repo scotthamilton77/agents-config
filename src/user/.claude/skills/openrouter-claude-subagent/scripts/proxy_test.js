@@ -1329,12 +1329,20 @@ test("a forwarded completion's ledger line counts the tool results its latest us
       { role: "user", content: [toolResult("a"), { type: "text", text: "and then" }] },
     ] },
     { model: PINNED, messages: [{ role: "user", content: "a plain string" }] },
+    // Earlier turns' tool results are history, not this turn's calls.
+    { model: PINNED, messages: [
+      { role: "user", content: [{ type: "text", text: "read it" }] },
+      { role: "assistant", content: [{ type: "tool_use", id: "a", name: "Read", input: {} }] },
+      { role: "user", content: [toolResult("a")] },
+      { role: "assistant", content: [{ type: "text", text: "done" }] },
+      { role: "user", content: [{ type: "text", text: "now answer" }] },
+    ] },
   ];
   try {
     for (const body of bodies) await rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify(body)).response;
     assert.deepEqual(
       logs.filter((line) => line.startsWith("model-ledger")),
-      [0, 2, 1, 0].map((n) => `model-ledger POST /api/v1/messages model=${PINNED} decision=forward tool-results=${n}`),
+      [0, 2, 1, 0, 0].map((n) => `model-ledger POST /api/v1/messages model=${PINNED} decision=forward tool-results=${n}`),
     );
   } finally {
     await proxy.close();

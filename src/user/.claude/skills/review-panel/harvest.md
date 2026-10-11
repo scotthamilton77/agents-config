@@ -263,14 +263,15 @@ contract asks for one JSON object and nothing else.
 A **clean** report is checked against the attempt's retained stderr before it is accepted, because
 a reviewer that answers clean without opening the change costs the round a lens while looking like
 its best one. What counts as a read depends on the transport. On `openrouter` the launcher's proxy
-logs one line per forwarded request and writes on it how many tool results the request carried,
-which is the client's own count of the tool calls the model made on its previous turn; a run whose
-forwards carried none called no tool, however many requests the client around it made. A capture
-whose forward lines carry no count came from a launcher that records none and is unread the same
-way. On `codex` both entry points count: the plugin job runner tags each tool line with `[codex] `,
-and the command-line tool opens each call with a bare `exec` line and reports the result beneath
-it. Only what follows the prompt's last closing marker counts, so a target
-that quotes these patterns cannot vouch for the reviewer that was sent to read it.
+logs one line per forwarded request and closes it with how many tool results the request's latest
+user message carried, which is the client's own count of the tool calls the model made on its
+previous turn; earlier turns' results are history and are not counted again. A run whose forwards
+carried none called no tool, however many requests the client around it made. A capture whose
+forward lines carry no count came from a launcher that records none and is unread the same way.
+On `codex` both entry points count: the plugin job runner tags each tool line with `[codex] `, and
+the command-line tool opens each call with a bare `exec` line and reports the result beneath it.
+Only what follows the prompt's last closing marker counts, so a target that quotes these patterns
+cannot vouch for the reviewer that was sent to read it.
 
 A clean report with nothing recorded is **unread** — its own refusal, and neither a transport
 failure nor an unparseable body. Re-dispatch the lens with reason `unusable-output`. A findings
