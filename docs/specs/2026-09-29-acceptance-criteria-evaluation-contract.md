@@ -54,11 +54,12 @@ manifest `evals/cases.json` gives each case:
 - the source revision of any harvested document.
 
 The manifest holds one value per key; a key written twice makes it unusable.
-A criterion ID in ACE-D3's table takes the form the repository's spec lint
-defines: a prefix of upper-case letters and digits, a hyphen, the letter A
-and digits, with no word character and no hyphen directly before or after
-it, so that no ID is read out of a longer one. The case check holds its own
-copy of that form, since the lint is not importable from a skill script.
+A criterion ID in ACE-D3's table has the shape the repository's spec lint
+gives every criterion or decision ID, narrowed to criteria: a prefix of
+upper-case letters and digits, a hyphen, the letter A and digits, with no
+word character or hyphen directly before or after. Those are the lint's
+edges, not word boundaries. The case check holds its own copy of that form,
+since the lint is not importable from a skill script.
 
 The directory `evals/cases/<id>/` holds `defective.md` and `control.md`. The
 control is the defective document with its one defect corrected, and the two
