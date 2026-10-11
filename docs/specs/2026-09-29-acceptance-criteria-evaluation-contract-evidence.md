@@ -4,6 +4,8 @@
 - ACE-A11 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a11_an_empty_catalogue_is_refused_naming_every_rule
 - ACE-A12 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a12_a_catalogue_missing_a_listed_case_is_refused_naming_it
 - ACE-A12 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a12_a_case_differing_from_the_table_is_refused_naming_it
+- ACE-A12 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_a_parent_id_with_a_digit_in_its_prefix_is_read_from_the_table
+- ACE-A12 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_a_parent_id_a_hyphen_continues_is_not_read_from_the_table
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_case_missing_a_manifest_field_is_refused
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_pair_case_missing_a_document_is_refused
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_pair_case_with_identical_documents_is_refused
@@ -15,6 +17,10 @@
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_case_without_a_validation_record_is_refused
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_validation_record_lacking_a_part_is_refused
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_decision_not_accepting_the_recorded_documents_is_refused
+- ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_an_unreadable_document_is_refused
+- ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_validation_record_writing_its_decision_twice_is_refused
+- ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_validation_record_nested_past_the_decoder_limit_is_refused
+- ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_a_manifest_writing_one_key_twice_is_unusable
 - ACE-A14 | open
 - ACE-A15 | open
 - ACE-A16 | open
