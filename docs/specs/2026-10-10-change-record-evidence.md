@@ -2,19 +2,19 @@
 
 - CR-L1 | open
 - CR-L2 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL2Gloss
-- CR-L3 | open
+- CR-L3 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL3CommitSubject
 - CR-L4 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL4StatedEmptiness
 - CR-L5 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL5DiscoveredRows
 - CR-L6 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL6SummaryLength
 - CR-L7 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL7CommentaryAndMachineContent
-- CR-L8 | open
+- CR-L8 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL8Init
 - CR-L9 | open
-- CR-L10 | open
+- CR-L10 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL10GroupsByTypeAndReach
 - CR-L11 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL11NoneBesideAnEntry
-- CR-L12 | open
-- CR-L13 | open
-- CR-L14 | open
-- CR-L15 | open
+- CR-L12 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL12CommitBody
+- CR-L13 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL13Replies
+- CR-L14 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL14OneReplyPerFixedFinding
+- CR-L15 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL15GeneratedStamps
 - CR-L16 | test: src/user/.agents/skills/change-record/scripts/conftest_test.py::TestCrL16Fence
 - CR-L17 | open
 - CR-R1 | open
