@@ -257,7 +257,7 @@
             "properties": {
               "reviewer": {"type": "string", "minLength": 1},
               "rounds": {"type": "string", "description": "The rounds the reviewer ran, as a range."},
-              "findings": {"type": "integer", "minimum": 0, "description": "Distinct findings, not comments or commits."},
+              "findings": {"type": "integer", "minimum": 0, "description": "The number of distinct findings. Comments and commits are not counted."},
               "fixed": {"type": "integer", "minimum": 0},
               "rejected": {"type": "integer", "minimum": 0},
               "deferred": {"type": "integer", "minimum": 0}
