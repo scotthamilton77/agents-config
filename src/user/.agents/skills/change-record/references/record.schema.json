@@ -1,0 +1,418 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agents.local/schemas/change-record/1",
+  "title": "Change record",
+  "description": "Everything one pull request's description, commit message and review replies say, held once. A field marked x-rewritable holds wording an editor may change; every other field is a fact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "pr",
+    "work_item",
+    "summary",
+    "heads_up",
+    "risk",
+    "changes",
+    "discovered",
+    "verification",
+    "commit",
+    "record"
+  ],
+  "properties": {
+    "pr": {
+      "description": "The pull request itself.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "title", "type", "component", "head_sha"],
+      "properties": {
+        "number": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "The pull request number. Null until the pull request is open."
+        },
+        "title": {
+          "type": "string",
+          "x-rewritable": true,
+          "description": "The pull request title. Only its wording may be rewritten; its type, component and bracketed id are facts."
+        },
+        "type": {
+          "enum": ["build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "spec", "style", "test"],
+          "description": "The commit type. It decides which sections the pull request body carries."
+        },
+        "component": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The thing a reader would search for, such as a package or skill name. Never a tracker id."
+        },
+        "head_sha": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40})?$",
+          "description": "The commit the verification gates ran at, as forty hex characters. Empty until known."
+        }
+      }
+    },
+    "work_item": {
+      "description": "The tracker item this pull request delivers.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "gloss", "slice"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The tracker's full id for the item."
+        },
+        "gloss": {
+          "type": "string",
+          "x-rewritable": true,
+          "description": "What the item is for, as the words that follow its id in a sentence."
+        },
+        "slice": {
+          "type": "string",
+          "description": "Which part of its parent item this pull request is, in one line."
+        }
+      }
+    },
+    "summary": {
+      "type": "string",
+      "x-rewritable": true,
+      "description": "The opening of the pull request body: the problem, then what is true now, then what remains."
+    },
+    "heads_up": {
+      "type": "array",
+      "description": "Anything that should lower a reader's confidence, one sentence each. A list with nothing to say holds the single entry \"None.\". An entry that opens with a generator's name and a colon was written by that generator and is not rewritable.",
+      "items": {
+        "type": "string",
+        "x-rewritable": true
+      }
+    },
+    "where_this_fits": {
+      "description": "Where the work item sits in the tracker and among other pull requests. Generated from the tracker and from GitHub, never typed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ancestry", "builds_on", "concurrent", "scope"],
+      "properties": {
+        "ancestry": {
+          "type": "array",
+          "description": "The chain of parent items, outermost first, ending at the work item.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "title", "type"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "title": {"type": "string"},
+              "type": {"type": "string", "description": "The tracker's type for the item, such as milestone or epic."}
+            }
+          }
+        },
+        "builds_on": {
+          "type": "array",
+          "description": "Merged pull requests this one depends on.",
+          "items": {"$ref": "#/$defs/pull_request_reference"}
+        },
+        "concurrent": {
+          "type": "array",
+          "description": "Open pull requests that touch a path this one touches.",
+          "items": {"$ref": "#/$defs/pull_request_reference"}
+        },
+        "scope": {
+          "type": "array",
+          "description": "The parts of the parent item and the state of each.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["slice", "covers", "status"],
+            "properties": {
+              "slice": {"type": "string", "minLength": 1, "description": "The part's tracker id or label."},
+              "covers": {"type": "string", "description": "What the part covers."},
+              "status": {"enum": ["done", "this PR", "in flight", "open"]},
+              "pr": {"type": "integer", "minimum": 1, "description": "The open pull request delivering a part that is in flight."}
+            }
+          }
+        },
+        "digest": {"$ref": "#/$defs/digest", "description": "The generator's stamp over the rest of this group."}
+      }
+    },
+    "risk": {
+      "description": "What could go wrong, as a table.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reaches_outside_package", "rows"],
+      "properties": {
+        "reaches_outside_package": {
+          "type": "boolean",
+          "description": "True when the change affects anything outside its own package. A true value calls for both blast-radius diagrams."
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["failure", "exposed", "evidence", "recovery"],
+            "properties": {
+              "failure": {"type": "string", "x-rewritable": true, "description": "What could go wrong, as a user or agent would notice it."},
+              "exposed": {"type": "string", "x-rewritable": true, "description": "Who or what is exposed."},
+              "evidence": {"type": "string", "x-rewritable": true, "description": "How we know it did not happen: a named check and what it showed."},
+              "recovery": {"type": "string", "x-rewritable": true, "description": "What to do if it did."}
+            }
+          }
+        }
+      }
+    },
+    "blast_radius": {
+      "description": "Two Mermaid diagram sources, written without their fences.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reach_graph": {"type": "string", "description": "A graph from the changed component outward, each edge labelled by its kind of impact."},
+        "task_flow": {"type": "string", "description": "The affected task flow with the changed steps marked."}
+      }
+    },
+    "changes": {
+      "type": "array",
+      "description": "What is different now, one entry per topic.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["topic", "text"],
+        "properties": {
+          "topic": {"type": "string", "x-rewritable": true, "description": "A short label, written without its closing full stop."},
+          "text": {"type": "string", "x-rewritable": true}
+        }
+      }
+    },
+    "design_notes": {
+      "type": "string",
+      "x-rewritable": true,
+      "description": "Why this approach, and each rejected alternative with what breaks under it."
+    },
+    "discovered": {
+      "description": "Work found along the way and not done here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rows"],
+      "properties": {
+        "rows": {
+          "type": "array",
+          "description": "One entry per piece of work. A pull request that found nothing holds the single entry \"None.\".",
+          "items": {
+            "type": ["object", "string"],
+            "pattern": "^None\\.$",
+            "additionalProperties": false,
+            "required": ["status", "what", "reason"],
+            "properties": {
+              "status": {"enum": ["filed", "not filed", "in flight"]},
+              "item": {"type": "string", "description": "The tracker id of a filed row."},
+              "pr": {"type": "integer", "minimum": 1, "description": "The pull request an in-flight row belongs to."},
+              "what": {"type": "string", "description": "What the work is. On an in-flight row, what this pull request told the other one."},
+              "reason": {
+                "type": "string",
+                "x-rewritable": true,
+                "description": "Why it is not in this pull request. On a filed row the reason is the tracker's and is not rewritable."
+              }
+            }
+          }
+        },
+        "filed_digest": {"$ref": "#/$defs/digest", "description": "The generator's stamp over the filed rows, which are generated from the tracker and never typed."}
+      }
+    },
+    "verification": {
+      "description": "The gates that ran and what did not.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gates", "not_run"],
+      "properties": {
+        "gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gate", "exit_status", "location"],
+            "properties": {
+              "gate": {"type": "string", "description": "The command, as run."},
+              "exit_status": {"type": "integer"},
+              "location": {"type": "string", "description": "Where it ran from."}
+            }
+          }
+        },
+        "not_run": {
+          "type": "array",
+          "description": "Each check that was not run, and why. A list with nothing to say holds the single entry \"None.\".",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "campaign": {
+      "description": "Every review round on the pull request. Generated from the posted review verdicts, never typed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewers", "terminal_sha", "findings"],
+      "properties": {
+        "reviewers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reviewer", "rounds", "findings", "fixed", "rejected", "deferred"],
+            "properties": {
+              "reviewer": {"type": "string", "minLength": 1},
+              "rounds": {"type": "string", "description": "The rounds the reviewer ran, as a range."},
+              "findings": {"type": "integer", "minimum": 0, "description": "The number of distinct findings. Comments and commits are not counted."},
+              "fixed": {"type": "integer", "minimum": 0},
+              "rejected": {"type": "integer", "minimum": 0},
+              "deferred": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "terminal_sha": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40})?$",
+          "description": "The head of the latest complete round with no blocking finding. Empty when no round is."
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["round", "id", "claim"],
+            "properties": {
+              "claim_id": {"type": "string", "description": "The completion claim the finding's round judged."},
+              "artifact_class": {"type": "string", "description": "The kind of artifact the finding's round reviewed."},
+              "round": {"type": "integer", "minimum": 1, "description": "The round the finding first appeared in."},
+              "id": {"type": "string", "minLength": 1},
+              "claim": {"type": "string", "description": "What the finding says."},
+              "disposition": {"enum": ["fixed", "rebutted", "advisory-deferred", "transferred"], "description": "The latest disposition. Absent while the finding has none."},
+              "reason": {"type": "string", "description": "The evidence given with that disposition."},
+              "work_item": {"type": "string", "description": "The tracker item a deferred or transferred finding went to."},
+              "commit": {"type": "string", "description": "The commit the author's reply names. Empty when the reply names none."}
+            }
+          }
+        },
+        "digest": {"$ref": "#/$defs/digest", "description": "The generator's stamp over the rest of this group."}
+      }
+    },
+    "criteria": {
+      "type": ["array", "string"],
+      "description": "The acceptance criteria as a table. A spec pull request holds one line instead, saying whether its criteria were attacked and where the attack record is.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "promise", "evidence"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "promise": {"type": "string", "x-rewritable": true, "description": "What the criterion promises, in plain words."},
+          "evidence": {"type": "string", "description": "A test, a measurement or a review id."}
+        }
+      }
+    },
+    "commit": {
+      "description": "The commit message the merge uses.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "attribution"],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "x-rewritable": true,
+          "description": "The whole first line. Only its wording may be rewritten; its type, component and bracketed id are facts."
+        },
+        "why": {"type": "string", "x-rewritable": true, "description": "The problem and who it affected."},
+        "change": {"type": "string", "x-rewritable": true, "description": "What is different now."},
+        "verification": {"type": "string", "x-rewritable": true, "description": "The decisive check and its observed result, and what was not run."},
+        "trivial": {"type": "string", "description": "The reason the message has no body. Present only in place of why, change and verification."},
+        "attribution": {
+          "description": "Who wrote the change with the author.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tool", "co_author", "session_key", "session_url"],
+          "properties": {
+            "tool": {"type": "string", "description": "The authoring tool's name."},
+            "co_author": {"type": "string", "description": "The model and its vendor's no-reply address, as the co-author trailer's value."},
+            "session_key": {"type": "string", "description": "The session trailer's key, which the authoring tool defines."},
+            "session_url": {"type": "string"}
+          }
+        }
+      }
+    },
+    "replies": {
+      "type": "array",
+      "description": "One reply per review finding the author answers on the pull request.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "outcome", "change", "verification"],
+        "properties": {
+          "finding_id": {"type": "string", "minLength": 1},
+          "claim_id": {"type": "string", "description": "The completion claim the finding belongs to. Needed when two claims share a finding id."},
+          "artifact_class": {"type": "string", "description": "The kind of artifact the finding's round reviewed."},
+          "outcome": {"enum": ["Fixed", "Superseded", "Rejected", "Deferred"]},
+          "change": {"type": "string", "x-rewritable": true, "description": "What is different now, in one or two sentences."},
+          "verification": {"type": "string", "x-rewritable": true, "description": "The check and what it showed."},
+          "commit": {"type": "string", "description": "The commit that made the change."},
+          "request_url": {"type": "string", "description": "The reviewer comment that asked for a reply to a rejection."}
+        }
+      }
+    },
+    "record": {
+      "description": "The record's own bookkeeping. Written when the record is published or its wording is rewritten, never by the author.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "revision"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "revision": {"type": "integer", "minimum": 0, "description": "Zero until the record is first published."},
+        "digest": {"$ref": "#/$defs/digest", "description": "The digest of the record with this group removed."},
+        "comment_id": {"type": ["integer", "null"], "description": "The pull request comment holding this revision."},
+        "head_sha": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40})?$",
+          "description": "The pull request's head when the record was published."
+        },
+        "rewrites": {
+          "type": "array",
+          "description": "One entry per rewrite pass applied.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["revision", "sections", "proposed", "pruned", "corrected", "applied"],
+            "properties": {
+              "revision": {"type": "integer", "minimum": 1, "description": "The revision the pass produced."},
+              "sections": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["field", "old_digest", "new_digest"],
+                  "properties": {
+                    "field": {"type": "string", "minLength": 1},
+                    "old_digest": {"$ref": "#/$defs/digest"},
+                    "new_digest": {"$ref": "#/$defs/digest"}
+                  }
+                }
+              },
+              "proposed": {"type": "integer", "minimum": 0},
+              "pruned": {"type": "integer", "minimum": 0},
+              "corrected": {"type": "integer", "minimum": 0},
+              "applied": {"type": "integer", "minimum": 0}
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pull_request_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pr", "gloss"],
+      "properties": {
+        "pr": {"type": "integer", "minimum": 1},
+        "gloss": {"type": "string", "description": "The pull request's title."}
+      }
+    }
+  }
+}

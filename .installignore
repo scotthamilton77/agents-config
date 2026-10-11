@@ -88,6 +88,9 @@ test_*.py
 *_test.js
 *_test.sh
 test_*.sh
+# pytest's per-directory support file, on the same rule as the suites above: it
+# exists only for the suites beside it, and those never ship.
+conftest.py
 # A skill's trigger-eval corpus, at ANY depth, on the same rule as the suites
 # above: a file the repo gate consumes as verification is never a file the
 # installer ships. Keyed on the directory rather than the filename because the

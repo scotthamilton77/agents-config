@@ -15,7 +15,7 @@
 - CR-L13 | open
 - CR-L14 | open
 - CR-L15 | open
-- CR-L16 | open
+- CR-L16 | test: src/user/.agents/skills/change-record/scripts/conftest_test.py::TestCrL16Fence
 - CR-L17 | open
 - CR-R1 | open
 - CR-R2 | open
