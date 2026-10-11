@@ -41,8 +41,9 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 # The registry and standard readers live in the record check one directory up. Importing it rather
-# than copying its functions keeps one reading of the lens front matter. Bytecode is not written,
-# since this check is a read and must leave the tree as it found it.
+# than copying its functions keeps one reading of the lens front matter, and one refusal of a JSON
+# object that writes a key twice, which a last-wins read would decide on a value no reader sees.
+# Bytecode is not written, since this check is a read and must leave the tree as it found it.
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE.parent))
 import check_record  # noqa: E402
@@ -117,7 +118,8 @@ def read_manifest(evals: Path) -> list[Any]:
     """The manifest's cases, refused as unusable when it is missing or is not a catalogue at all."""
     path = evals / "cases.json"
     try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
+        manifest = json.loads(path.read_text(encoding="utf-8"),
+                              object_pairs_hook=check_record.one_value_per_key)
     except FileNotFoundError as exc:
         raise RecordError("no-manifest", f"no manifest at {path}; a catalogue with no manifest "
                           "holds no case the check could pass") from exc
@@ -224,7 +226,8 @@ def validation_faults(case_dir: Path, names: tuple[str, ...],
                       held: dict[str, bytes]) -> list[tuple[str, str]]:
     """What is wrong with a case's validation record against the documents it holds."""
     try:
-        record = json.loads((case_dir / VALIDATION).read_text(encoding="utf-8"))
+        record = json.loads((case_dir / VALIDATION).read_text(encoding="utf-8"),
+                            object_pairs_hook=check_record.one_value_per_key)
     # The decoder raises RecursionError, not ValueError, on nesting deeper than it can follow.
     except (OSError, ValueError, RecursionError):
         record = None

@@ -192,6 +192,15 @@ def test_a_contract_without_the_catalogue_table_is_unusable(evals, catalogue, tm
     assert faults(result) == [(None, "bad-contract")]
 
 
+def test_a_manifest_writing_one_key_twice_is_unusable(evals, catalogue, capsys):
+    # Read last-wins, the second list would be checked while the first is what a reader sees.
+    entries = json.dumps(catalogue)
+    (evals / "cases.json").write_text(f'{{"cases": [], "cases": {entries}}}', encoding="utf-8")
+    code, result = run(evals, capsys)
+    assert code == 2
+    assert faults(result) == [(None, "bad-manifest")]
+
+
 def test_a_missing_manifest_is_unusable(evals, capsys):
     evals.mkdir()
     code, result = run(evals, capsys)
@@ -506,6 +515,18 @@ def test_ace_a13_a_validation_record_nested_past_the_decoder_limit_is_refused(
         return loads(text, *args, **kwargs)
 
     monkeypatch.setattr(json, "loads", too_deep)
+    assert refused(evals, capsys) == [("C7", "no-validation")]
+
+
+def test_ace_a13_a_validation_record_writing_its_decision_twice_is_refused(evals, catalogue, capsys):
+    # Read last-wins, the acceptance would decide the case while the rejection is what a reader sees.
+    path = evals / "cases" / "C7" / "validation.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    reject = json.dumps({"verdict": "reject", "digests": record["digests"]})
+    accept = json.dumps(record["decision"])
+    path.write_text(f'{{"report": {json.dumps(record["report"])}, "decision": {reject}, '
+                    f'"decision": {accept}, "digests": {json.dumps(record["digests"])}}}',
+                    encoding="utf-8")
     assert refused(evals, capsys) == [("C7", "no-validation")]
 
 
