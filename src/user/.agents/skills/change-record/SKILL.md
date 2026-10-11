@@ -13,17 +13,20 @@ Every change is described in the pull request body, in the commit message, and i
 
 `references/record.schema.json` defines every field. `references/fields.md` says what each group holds, who writes it, and which fields hold wording an editor may change. `examples/pr-843.json` is a worked record for a feature pull request that went through eight review rounds.
 
-The author writes most of the record. Three parts hold facts that are copied and never composed. `where_this_fits` comes from the tracker and from GitHub. `campaign` comes from the posted review verdicts. The filed rows of `discovered` come from the tracker. Nothing in this skill fills those parts, so take their facts from the tracker's and GitHub's own output. The `record` group is bookkeeping the author leaves alone.
+The author writes most of the record. Three parts hold facts that are copied and never composed. `where_this_fits` comes from the tracker and from GitHub. `campaign` comes from the posted review verdicts. The filed rows of `discovered` come from the tracker. Nothing in this skill fills those parts, so take their facts from the tracker's and GitHub's own output. Each part carries a stamp over its content, and `references/lint-rules.md` shows how to set it. The `record` group is bookkeeping the author leaves alone.
 
-Check a record before writing from it. From this skill's directory:
+Start a record with `init`, and check it with `lint` before writing from it. From this skill's directory:
 
 ```bash
-uv run scripts/change_record.py lint path/to/record.json
+uv run scripts/change_record.py init --type feat --component NAME --work-item ID path/to/record.json
+uv run scripts/change_record.py lint [--pr NUMBER] path/to/record.json
 ```
+
+`init` leaves the author's fields empty and never replaces a file. `lint` then names each empty field.
 
 Stdout is JSON: `{"valid": true}`, or `{"valid": false, "errors": [{"code", "path", "message"}, …]}`. `path` names the field at fault and `code` names the rule it broke. Exit 0 valid, 1 invalid, 2 unreadable or unparseable.
 
-`lint` checks structure against the schema first, under the code `schema`. It reports a missing required field, a field the schema does not define, and a value of the wrong type. Once the structure is valid, it checks the rules a program can decide. They cover a gloss on each id's first use, emptiness stated with `None.`, the rows of discovered work, the summary's length, the phrases of commentary about the document that `references/lint-phrases.json` lists, and machine content, which is a `<details>` fold, an HTML comment or a fenced `json` block. `references/lint-rules.md` lists each rule under its code and says how `lint` reads an id, a gloss and a sentence.
+`lint` checks structure against the schema first, under the code `schema`. Once the structure is valid, it checks the rules a program can decide. They cover the glosses, stated emptiness, the lengths the templates below give, the groups each commit type carries, one reply for each fixed finding, the stamps, and the phrases that `references/lint-phrases.json` lists. `references/lint-rules.md` lists each rule under its code and says how `lint` counts and matches. With `--pr`, `lint` also checks the record's reach flag against the pull request's changed paths, which it reads through `gh`.
 
 ## The three artifacts
 
@@ -57,7 +60,7 @@ What each commit type carries:
 
 ### The review reply: `references/review-reply.txt`
 
-- One reply goes on each finding that changed code or prose. It is 40 to 90 words, and its Change line is one or two sentences ending with the commit when there is one.
+- One reply goes on each finding that changed code or prose. It is 40 to 90 words, and its Change line is one or two sentences ending with the commit when there is one. Its entry names the finding by `claim_id`, `artifact_class` and `finding_id` together.
 - The outcome is Fixed, Superseded, Rejected or Deferred. Superseded means the finding's target no longer exists because the design was restated, and the reply shows it is gone. A deferral names the item that inherits the finding.
 - A rejection gets a reply only when a reviewer asks on the thread. That reply gives the evidence against the finding.
 - Campaign status is stated once, in the body's Verification section, and never in a reply.

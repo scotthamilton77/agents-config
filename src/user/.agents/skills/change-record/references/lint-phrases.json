@@ -10,5 +10,11 @@
     "see above",
     "see below",
     "this description"
+  ],
+  "campaign_status": [
+    "terminal-clean",
+    "terminal clean",
+    "round <number>",
+    "clean sweep"
   ]
 }
