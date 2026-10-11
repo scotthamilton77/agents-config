@@ -135,11 +135,19 @@ CLEAN_VERDICT = "clean"
 # output is the model's final text on both transports and records no tool use at all, so
 # the transport's stderr is the only place that evidence exists.
 
-# The openrouter launcher's proxy prints one line per API turn. A nested run that calls no
-# tool forwards a single request and every tool call adds a turn, so anything above one
-# forward is a read.
-OPENROUTER_FORWARD_RE = re.compile(r"^.*decision=forward.*$", re.MULTILINE)
-OPENROUTER_FORWARDS_WITHOUT_TOOLS = 1
+# The openrouter launcher's proxy logs one ledger line per forwarded request and closes it
+# with how many tool results the request's latest user message carried, which is the
+# client's own count of the tool calls the model made on its previous turn. The client
+# makes requests of its own that call no tool, so the number of forwards shows nothing; a
+# forward line carrying no count was written by a launcher that records none and shows
+# nothing either. The model field sits between the line's head and its decision and is
+# whatever the client sent, so only the count that closes a ledger line is the proxy's: one
+# planted inside a model name, or inside an upstream error the proxy relays, is not.
+OPENROUTER_TOOL_RESULTS_RE = re.compile(
+    r"^\[proxy\] model-ledger \S+ \S+ model=.* decision=forward tool-results=(\d+)"
+    r"(?: user-instructed)?$",
+    re.MULTILINE,
+)
 
 # Codex is reached two ways and each records a tool call differently, so both count. The
 # plugin job runner prefixes every progress line with its own tag; the command-line tool
@@ -786,8 +794,7 @@ def reads_recorded(transport: str, text: str) -> int | None:
     """
     body = after_prompt(text)
     if transport == OPENROUTER_TRANSPORT:
-        forwards = len(OPENROUTER_FORWARD_RE.findall(body))
-        return max(forwards - OPENROUTER_FORWARDS_WITHOUT_TOOLS, 0)
+        return sum(int(count) for count in OPENROUTER_TOOL_RESULTS_RE.findall(body))
     if transport == CODEX_TRANSPORT:
         return sum(len(pattern.findall(body)) for pattern in CODEX_ACTIVITY_RES)
     return None
@@ -826,8 +833,9 @@ def check_read_evidence(claimed: dict, report: dict) -> None:
     if reads is None or reads > 0:
         return
     counted = (
-        f"more than the {OPENROUTER_FORWARDS_WITHOUT_TOOLS} forwarded request a run calling no "
-        "tool makes"
+        "a forwarded request carrying a tool result, which the launcher's proxy counts on each "
+        "forward line; a capture whose forward lines carry no count came from a launcher that "
+        "records none and is unread the same way"
         if transport == OPENROUTER_TRANSPORT
         else CODEX_SHAPES
     )

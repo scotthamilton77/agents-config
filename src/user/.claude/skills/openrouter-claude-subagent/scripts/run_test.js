@@ -1152,7 +1152,9 @@ for (const model of ["openai/gpt-5.6-mini", "google/gemini-3.8-flash"]) {
     assert.equal(seen.forwarded, 2);
     assert.equal(seen.ledger.length, 3);
     for (const line of seen.ledger) assert.ok(line.split(" ").includes("user-instructed"), line);
-    for (const line of seen.ledger.slice(0, 2)) assert.ok(line.split(" ").includes("decision=forward"), line);
+    for (const line of seen.ledger.slice(0, 2)) {
+      assert.ok(line.endsWith(" decision=forward tool-results=0 user-instructed"), line);
+    }
   });
 }
 

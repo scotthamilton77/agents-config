@@ -1298,13 +1298,63 @@ test("with another upstream origin, a completion reaches it and leaves the same 
     const ledgerOf = (logs) => logs.filter((line) => line.startsWith("model-ledger"));
     assert.equal(ledgerOf(overridden).length, 1);
     assert.deepEqual(ledgerOf(overridden), ledgerOf(plain));
-    assert.equal(ledgerOf(overridden)[0], `model-ledger POST /api/v1/messages model=${PINNED} decision=forward`);
+    assert.equal(ledgerOf(overridden)[0], `model-ledger POST /api/v1/messages model=${PINNED} decision=forward tool-results=0`);
   } finally {
     await viaStandIn.close();
     await viaOpenRouter.close();
     await standIn.close();
   }
 });
+
+// ─── Tool results on the ledger line ───────────────────────────────
+
+const toolResult = (id) => ({ type: "tool_result", tool_use_id: id, content: "ok" });
+const text = (t) => ({ type: "text", text: t });
+const user = (...content) => ({ role: "user", content });
+const assistant = (...content) => ({ role: "assistant", content });
+
+// The count is the latest user message's tool results, whatever follows or precedes
+// it: a client makes requests of its own that call no tool, so the number of
+// forwards says nothing, and earlier turns' results are history already counted.
+// A message mixing a result with text is counted before the split that moves the
+// text into a message of its own.
+test("toolResultsCarried counts the latest user message's tool results across the message shapes", () => {
+  const { toolResultsCarried } = require("./proxy.js");
+  const shapes = [
+    [[], 0],
+    [undefined, 0],
+    [[assistant(text("no user turn"))], 0],
+    [[user("a plain string")], 0],
+    [[user(text("read it")), assistant({ type: "tool_use", id: "a", name: "Read", input: {} }), user(toolResult("a"), toolResult("b"))], 2],
+    [[user(toolResult("a"), toolResult("b")), assistant(text("prefilled"))], 2],
+    [[user(toolResult("a")), assistant(text("done")), user(text("now answer"))], 0],
+    [[user(toolResult("a"), text("and then"))], 1],
+  ];
+  for (const [messages, expected] of shapes) {
+    assert.equal(toolResultsCarried(messages), expected, JSON.stringify(messages));
+  }
+});
+
+for (const userInstructed of [false, true]) {
+  test(`a forwarded completion's ledger line carries the count${userInstructed ? " ahead of the instruction mark" : ""}`, async () => {
+    const standIn = await startStandIn(answerAtOnce);
+    const logs = [];
+    const proxy = await start({ port: 0, pinnedModel: PINNED, userInstructed, log: (m) => logs.push(m), upstream: standIn.url });
+    // The latest user message mixes its results with text, so a count taken after
+    // the mixed-message split would find a text-only user message and read 0.
+    const body = { model: PINNED, messages: [user(toolResult("a"), toolResult("b"), text("and then")), assistant(text("prefilled"))] };
+    try {
+      await rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify(body)).response;
+      assert.deepEqual(
+        logs.filter((line) => line.startsWith("model-ledger")),
+        [`model-ledger POST /api/v1/messages model=${PINNED} decision=forward tool-results=2${userInstructed ? " user-instructed" : ""}`],
+      );
+    } finally {
+      await proxy.close();
+      await standIn.close();
+    }
+  });
+}
 
 // ─── The user's instruction ────────────────────────────────────────
 

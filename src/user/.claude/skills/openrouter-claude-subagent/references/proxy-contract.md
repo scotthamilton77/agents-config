@@ -66,11 +66,14 @@ those off with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`. Note the semantics:
 switch, not a boolean, so there is no way to spell "off" except by unsetting it.
 
 Every completion request leaves one line on stderr naming the method, path,
-model, and decision (`forward`, `deny-pin`, or `deny-denylist`). When
-`--user-instructed` admitted the run, each line ends with one more token,
-`user-instructed`, so an audit can tell which runs the user sent here. On a
-model the launcher does not refuse, the flag leaves no mark. When a bill looks
-wrong later, that ledger is the record to read.
+model, and decision (`forward`, `deny-pin`, or `deny-denylist`). A forwarded
+line then carries `tool-results=N`: how many tool results the request's latest
+user message brought, which is the client's own count of the tool calls the
+model made on its previous turn, and the record a reader asking whether the run
+used its tools reads. When `--user-instructed` admitted the run, each line ends
+with one more token, `user-instructed`, so an audit can tell which runs the user
+sent here. On a model the launcher does not refuse, the flag leaves no mark.
+When a bill looks wrong later, that ledger is the record to read.
 
 The gate applies to requests that generate a reply. A request that only
 measures a payload — counting its tokens — is forwarded without being checked
