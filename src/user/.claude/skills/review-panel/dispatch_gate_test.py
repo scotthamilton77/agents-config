@@ -861,6 +861,16 @@ class TestIngest:
         assert ingested["report"] == nested
         assert ingested["recovery"] == "first-object"
 
+    def test_a_whole_object_a_harness_logs_alone_is_not_told_from_the_report(self):
+        """The last rung's one distinction is the token that follows an object: a nested
+        object is enclosed, a whole one is not. A whole object a harness logged on its own
+        line ahead of the report is therefore taken as the report. No dispatched transport
+        writes one; this pins the limitation the rung documents, so the docstring and the
+        code cannot drift apart again."""
+        body = f'[harness] {{"event": "started"}}\n{json.dumps(REPORT)}\n'
+        assert gate.parse_report(body) == ({"event": "started"}, "first-object")
+        assert "harness" in inspect.getsource(gate._first_object_from)
+
     def test_a_parsed_report_records_its_outcome_on_the_claimed_attempt(self, round_dir, capsys):
         answer = authorize(round_dir, capsys)
         output = write_output(answer, json.dumps(REPORT))
