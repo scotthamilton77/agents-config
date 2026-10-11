@@ -1340,7 +1340,9 @@ for (const userInstructed of [false, true]) {
     const standIn = await startStandIn(answerAtOnce);
     const logs = [];
     const proxy = await start({ port: 0, pinnedModel: PINNED, userInstructed, log: (m) => logs.push(m), upstream: standIn.url });
-    const body = { model: PINNED, messages: [user(toolResult("a"), toolResult("b")), assistant(text("prefilled"))] };
+    // The latest user message mixes its results with text, so a count taken after
+    // the mixed-message split would find a text-only user message and read 0.
+    const body = { model: PINNED, messages: [user(toolResult("a"), toolResult("b"), text("and then")), assistant(text("prefilled"))] };
     try {
       await rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify(body)).response;
       assert.deepEqual(
