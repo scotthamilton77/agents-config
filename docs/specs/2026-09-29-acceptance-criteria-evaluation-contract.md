@@ -53,6 +53,13 @@ manifest `evals/cases.json` gives each case:
 - a one-sentence detection statement;
 - the source revision of any harvested document.
 
+The manifest holds one value per key; a key written twice makes it unusable.
+A criterion ID in ACE-D3's table takes the form the repository's spec lint
+defines: a prefix of upper-case letters and digits, a hyphen, the letter A
+and digits, bounded by the lint's ID edges rather than word boundaries. The
+case check holds its own copy of that form, since the lint is not importable
+from a skill script.
+
 The directory `evals/cases/<id>/` holds `defective.md` and `control.md`. The
 control is the defective document with its one defect corrected, and the two
 differ in one contiguous hunk. A control-only case has no defective document
@@ -283,10 +290,13 @@ checker suites run under `make content-tests`.
 - **ACE-A13** The case check refuses a case missing a manifest field; a pair
   case whose documents are missing, identical, differ in more than one
   contiguous hunk, or differ from the digests its validation recorded, or
-  whose rule its lens does not enforce; a control-only case holding a
-  defective document or a site; and a case whose validation record lacks its
+  whose rule its lens does not enforce; a case holding a document that is
+  present but unreadable, which counts as present for the control-only
+  check; a control-only case holding a defective document or a site; and a
+  case whose validation record is unreadable, writes a key twice, lacks its
   report, the owner's decision or the digests, or whose decision is not an
-  acceptance of the recorded documents. It names the case and the fault.
+  acceptance of the recorded documents. It names the case and the fault, and
+  an unreadable document by name.
 - **ACE-A14** Given fixture reports and verdicts, the scorer counts a detection
   for an objection citing the case's rule at its site, and for one citing only
   the rule or only the site that the judge matches to the detection statement.

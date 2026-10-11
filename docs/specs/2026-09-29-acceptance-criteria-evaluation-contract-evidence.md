@@ -15,6 +15,8 @@
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_case_without_a_validation_record_is_refused
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_validation_record_lacking_a_part_is_refused
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_decision_not_accepting_the_recorded_documents_is_refused
+- ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_an_unreadable_document_is_refused
+- ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_validation_record_writing_its_decision_twice_is_refused
 - ACE-A14 | open
 - ACE-A15 | open
 - ACE-A16 | open
