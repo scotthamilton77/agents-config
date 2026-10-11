@@ -1398,8 +1398,13 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
     thread's material has always crossed inside the board bytes; what it lacked
     was any sentence saying so, which left a turn asked about the tool
     describing a screen it has never been shown.
+
+    A pre-ruling is read the map's conversation rather than its own channel's.
+    Its channel carries only earlier pre-rulings, each about an answer nobody
+    gave, and a turn reading those would take one hypothesis for the board's
+    history.
     """
-    channel = context.channel
+    channel = MAP_CHANNEL if context.option is not None else context.channel
     conversation = "\n".join(f"{turn.who}: {turn.text}" for turn in turns_of(entries, channel))
     concluded = context.conclusion
     conflict = context.conflict
@@ -1465,7 +1470,11 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
                 if context.scope
                 else []
             ),
-            *_mootness_section(context.mootness),
+            *(
+                _pre_ruling_section(context.mootness, context.option)
+                if context.option is not None
+                else _mootness_section(context.mootness)
+            ),
             *([context.backpressure] if context.backpressure else []),
             "## Your turn",
             MAP_CLOSING if context.agent == GRILL_MASTER else THREAD_CLOSING,
@@ -1514,6 +1523,26 @@ def _answer_section(context: DispatchContext, entries: Sequence[LogEntry]) -> li
         f"Their note: {note}" if isinstance(note, str) and note else "Their note: none",
     ]
     return ["## The human's latest answer", "\n".join(said)]
+
+
+def _pre_ruling_section(obligation: MootnessObligation | None, option: str) -> list[str]:
+    """The answer a pre-ruling weighs, said as one the human has not given.
+
+    The obligation names the decision and the option's text the way an answer's
+    does, and the rule for ruling is the same. What differs is the tense: the
+    board in this dispatch is the board before the answer, and a turn told the
+    human already answered would look for that answer on it and not find it.
+    """
+    if obligation is None:
+        return []
+    named = ", ".join(obligation.ids)
+    return [
+        "## A pre-ruling: the obligation of an answer not yet given",
+        f"The human has not taken option {option} of {obligation.target} yet: "
+        f"{obligation.answer!r}. That option names {named}. Rule as if they take it, over the "
+        f"board as it stands. Nothing you send lands unless they do.",
+        MOOTNESS_OBLIGATION_RULE,
+    ]
 
 
 def _mootness_section(obligation: MootnessObligation | None) -> list[str]:

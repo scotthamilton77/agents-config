@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING
 from grillui.escalation import mootness_obligation
 from grillui.projector import catch_up, conclusion_of, project_thread, replay, whole_board
 from grillui.schemas import (
+    GRILL_MASTER_CHANNELS,
     HELP_THREAD_KIND,
     MAP_CHANNEL,
     SESSION_START_KIND,
@@ -79,9 +80,11 @@ def agent_for(channel: str) -> str:
     """Whose context a channel's turns belong to.
 
     The map is the grill-master's and every thread is its own agent's, which is
-    the whole of the rule: a channel is a context, and the two never merge.
+    the whole of the rule: a channel is a context, and the two never merge. The
+    background channel pre-rulings run on is the grill-master's too, because a
+    pre-ruling is the map turn an answer would owe, weighed before it is given.
     """
-    return GRILL_MASTER if channel == MAP_CHANNEL else THREAD_AGENT
+    return GRILL_MASTER if channel in GRILL_MASTER_CHANNELS else THREAD_AGENT
 
 
 class DispatchIncompleteError(RuntimeError):
@@ -109,6 +112,7 @@ def assemble(
     tasks: Sequence[str] = (),
     scope: Sequence[str] = (),
     custom_text: bool = False,
+    option: str | None = None,
 ) -> str:
     """One dispatch context, serialised, carrying the whole of what it owes.
 
@@ -143,12 +147,14 @@ def assemble(
     `tasks` is the impact tasks the turn carries, and `custom_text` says the
     turn answers the human's own words. Each of those turns weighs the board
     against a settlement, and so does the doctor, so all three are handed the
-    backpressure paragraph. `scope` is what a retry may change.
+    backpressure paragraph. `scope` is what a retry may change, and `option`
+    the option a pre-ruling weighs before the human has taken it.
 
     The pending queue rides inside the image either way, which is what makes
     every one of these dispatches carry the queue as of the moment it was replayed.
     """
-    board = whole_board(image) if channel == MAP_CHANNEL else project_thread(image, channel)
+    whole = channel in GRILL_MASTER_CHANNELS
+    board = whole_board(image) if whole else project_thread(image, channel)
     context = DispatchContext(
         agent=agent_for(channel),
         channel=channel,
@@ -165,13 +171,14 @@ def assemble(
         custom_text=custom_text,
         backpressure=BACKPRESSURE if tasks or custom_text or reassess else None,
         scope=list(scope),
+        option=option,
     )
     recorded = context.model_dump_json()
     # The map dispatch is checked against the source image, not the projection
     # it was assembled through: a projection that dropped a field on the way in
     # would vouch for its own output. A thread dispatch reduces by design, so
     # its own projection is the only whole it owes.
-    verify_complete(recorded, image if channel == MAP_CHANNEL else board)
+    verify_complete(recorded, image if whole else board)
     return recorded
 
 
@@ -207,6 +214,7 @@ def record_dispatch(
     tasks: Sequence[str] = (),
     scope: Sequence[str] = (),
     custom_text: bool = False,
+    option: str | None = None,
 ) -> Path:
     """Replay at dispatch time, assemble, and record what the agent was given.
 
@@ -234,6 +242,7 @@ def record_dispatch(
         tasks=tasks,
         scope=scope,
         custom_text=custom_text,
+        option=option,
     )
     directory = log.directory / DISPATCH_DIR
     directory.mkdir(parents=True, exist_ok=True)
