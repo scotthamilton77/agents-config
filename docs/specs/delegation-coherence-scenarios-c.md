@@ -538,22 +538,66 @@ KeyError: 'response'
 
 Key: `ANSWER: REFUSED`.
 
+### The reader holding only `choosing-a-delegate`
+
+Prompt D, scenario D1. `<SKILL_DIR>` is the absolute path of
+`src/user/.claude/skills/choosing-a-delegate`.
+
+```text
+You are a coding agent working in a user's session. The only skill you hold is
+`choosing-a-delegate`, and its files are under <SKILL_DIR>. Read
+<SKILL_DIR>/SKILL.md, and any other file under <SKILL_DIR> it points you to.
+Read nothing outside <SKILL_DIR>. Run no command of any kind.
+
+You delegated a run to another provider. This is what you observe now:
+
+<INPUT>
+
+Question: which one of these does what you observe mean?
+- USABLE: the run produced usable output
+- REFUSED: the launcher refused the invocation
+- NOT-SERVED: the provider did not serve the run
+- UNUSABLE: the run produced unusable output
+
+Reply with exactly one line: `ANSWER: ` followed by one of the four words.
+```
+
+#### D1
+
+```text
+The run worked for 14 minutes. It read the repository and edited three files
+in the checkout, and the provider answered every request it sent. Then the
+launcher stopped the run and reported that your command named the report
+file inside a directory that does not exist, so the report could not be
+written. The fix is to correct that path in your command and launch again.
+```
+
+Key: `ANSWER: REFUSED`.
+
 ### Caller scenarios
 
 Prompt K. `<FILE>` is the harvest file for H1 to H5 and the `ac-attack`
-skill file for K1 to K5. Each caller skill has five scenarios. Harvest's H3
-has two captured inputs, H3a and H3b, each run three times. The `<INPUT>` names the lens: `correctness` for
-harvest, `what-if` for `ac-attack`.
+skill file for K1 to K5. Each caller skill has five scenarios, one per
+response the criterion names. H3 and K3 each have two captured inputs: `a` is
+a provider that did not serve the run, and `b` is the launcher's own clock
+expiring. Each input runs three times. The `<INPUT>` names the lens:
+`correctness` for harvest, `what-if` for `ac-attack`.
+
+H1 and K1 key `INGEST`. Ingest is where the caller's own gate on an unread or
+unusable report runs, so that gate still applies after ingest. No caller
+scenario's input is a response that ended inside the model's reasoning or a
+run the caller's own watchdog killed for silence. For either of those two
+inputs, `dead-run` is on key alongside the caller's unusable-output answer.
 
 | Scenario | Captured input | Key |
 | --- | --- | --- |
 | H1, K1 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: usable output. | `INGEST` |
 | H2, K2 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the launcher refused the invocation. | `FIX-INVOCATION` |
-| H3a, K3 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the provider did not serve the run. | `transport-error` |
+| H3a, K3a | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the provider did not serve the run. | `transport-error` |
 | H4 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the run produced unusable output. The reply was prose in place of the report the prompt asked for, and the response did not end inside the model's reasoning. | `unusable-output` |
 | K4 | You dispatched the `<lens>` lens. Its launcher's own skill says what its ending means: the run produced unusable output. | `unusable-output` |
 | H5, K5 | You dispatched the `<lens>` lens. The user then told you to abandon this dispatch, so you sent the run a signal to end it. Its launcher's own skill says what its ending means: the provider did not serve the run. | `STOP` |
-| H3b | You dispatched the `<lens>` lens through a launcher with an idle limit. The run forwarded nothing for that long, so the launcher ended it. Its launcher's own skill says what its ending means: the provider did not serve the run. | `transport-error` |
+| H3b, K3b | You dispatched the `<lens>` lens through a launcher with an idle limit. The run forwarded nothing for that long, so the launcher ended it. Its launcher's own skill says what its ending means: the provider did not serve the run. | `transport-error` |
 
 ## DEL-C6: the read-only run command against a stub
 
@@ -783,10 +827,10 @@ answer was given after that.
 | K2 | 1 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
 | K2 | 2 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
 | K2 | 3 | after | `ANSWER: FIX-INVOCATION` | FIX-INVOCATION | pass |
-| K3 | baseline | before | `ANSWER: transport-error` | transport-error | pass |
-| K3 | 1 | after | `ANSWER: transport-error` | transport-error | pass |
-| K3 | 2 | after | `ANSWER: transport-error` | transport-error | pass |
-| K3 | 3 | after | `ANSWER: transport-error` | transport-error | pass |
+| K3a | baseline | before | `ANSWER: transport-error` | transport-error | pass |
+| K3a | 1 | after | `ANSWER: transport-error` | transport-error | pass |
+| K3a | 2 | after | `ANSWER: transport-error` | transport-error | pass |
+| K3a | 3 | after | `ANSWER: transport-error` | transport-error | pass |
 | K4 | baseline | before | `ANSWER: INGEST` | unusable-output | fail |
 | K4 | 1 | after | `ANSWER: unusable-output` | unusable-output | pass |
 | K4 | 2 | after | `ANSWER: unusable-output` | unusable-output | pass |
@@ -912,3 +956,20 @@ H3b, so they did not rerun.
 | C8 | 1 | `REPORT` holds c8-e71d23a9df13abb8; `PROCESS: exited`; answered 1791663592 | run token, exited, after the exit | pass |
 | C8 | 2 | `REPORT` holds c8-fb55fa505ba7fddf; `PROCESS: exited`; answered 1791663588 | run token, exited, after the exit | pass |
 | C8 | 3 | `REPORT` holds c8-654622c86dd03ba0; `PROCESS: exited`; answered 1791663587 | run token, exited, after the exit | pass |
+
+### Runs after the amended refusal definition
+
+On 2026-10-11 two scenarios ran three times each, each a fresh native subagent
+pinned to `sonnet`:
+- D1, the new scenario for the reader holding only `choosing-a-delegate`,
+  after that skill's refusal definition came to rest on where the fix lies.
+- K3b, the new `ac-attack` input for the launcher's own clock expiring.
+
+| Scenario | Run | Answer | Key | Result |
+| --- | --- | --- | --- | --- |
+| D1 | 1 | `ANSWER: REFUSED` | REFUSED | pass |
+| D1 | 2 | `ANSWER: REFUSED` | REFUSED | pass |
+| D1 | 3 | `ANSWER: REFUSED` | REFUSED | pass |
+| K3b | 1 | `ANSWER: transport-error` | transport-error | pass |
+| K3b | 2 | `ANSWER: transport-error` | transport-error | pass |
+| K3b | 3 | `ANSWER: transport-error` | transport-error | pass |

@@ -66,8 +66,8 @@ Every launcher reports one of four outcomes, and each launcher's own skill says
 which of its signals means which:
 
 - **Usable output.** The run returned what it was asked for.
-- **The launcher refused the invocation.** The run did no work. The fix is in the
-  command or its setup, and another provider would refuse it too.
+- **The launcher refused the invocation.** The fix lies in your invocation: the
+  command, its setup or the brief. Another provider would refuse it too.
 - **The provider did not serve the run.** The provider failed, or a clock or a
   signal ended the run first. Another provider can serve it.
 - **The run produced unusable output.** The provider served the run, but what
