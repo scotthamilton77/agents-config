@@ -29,7 +29,7 @@ The `bare-id` and `commentary` rules read the text the author wrote. That is eve
 - a generated part and the text of a filed discovered row, which hold the tracker's wording or GitHub's
 - a gate's command and a diagram's source, which are quoted and cannot be reworded
 
-Both rules read a field whole. The `bare-id` rule alone passes over the id that stands by itself in the brackets closing the title or the commit subject. An id among other words in those brackets is read.
+Both rules read a field whole. The `bare-id` rule alone passes over the work item's short id where it stands by itself in the brackets closing the title or the commit subject. Any other id in those brackets is read, and so is an id among other words there.
 
 The `machine-content` rule reads every field, generated parts included.
 

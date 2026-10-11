@@ -524,6 +524,35 @@ class TestCrL2Gloss:
         record[group][name] = "feat(review-panel): use the retry bound [after D16 lands]"
         assert_breaks(record, "bare-id", field, tmp_path, "D16")
 
+    @pytest.mark.parametrize("field", ["/pr/title", "/commit/subject"])
+    @pytest.mark.parametrize("other", ["D16", "#843", "9k9.409", "agents-config-9k9.408"])
+    def test_cr_l2_an_id_alone_in_the_closing_brackets_is_passed_over_only_when_it_is_the_work_items_short_id(
+        self, field: str, other: str, tmp_path: Path
+    ):
+        record = example()
+        group, name = field.strip("/").split("/")
+        record[group][name] = swap(PLAIN_SUBJECT, "[9k9.408]", f"[{other}]")
+        assert_breaks(record, "bare-id", field, tmp_path, other)
+        record[group][name] = PLAIN_SUBJECT
+        assert findings(record, "bare-id", tmp_path) == []
+
+    @pytest.mark.parametrize("field", ["/pr/title", "/commit/subject"])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "feat(review-panel): finish what 9k9.408 began [9k9.408]",
+            "feat(review-panel): use the retry bound [see 9k9.408]",
+            "feat(review-panel): use the retry bound [9k9.408 and no other]",
+        ],
+    )
+    def test_cr_l2_the_work_items_short_id_needs_its_gloss_wherever_it_does_not_stand_alone_in_the_closing_brackets(
+        self, field: str, text: str, tmp_path: Path
+    ):
+        record = example()
+        group, name = field.strip("/").split("/")
+        record[group][name] = text
+        assert_breaks(record, "bare-id", field, tmp_path, "9k9.408")
+
     def test_cr_l2_an_id_alone_in_closing_brackets_is_passed_over_only_in_a_title_or_subject(self, tmp_path: Path):
         record = example()
         record["heads_up"].append("The gate still refuses a fourth claim [D16]")
@@ -1000,10 +1029,18 @@ class TestCrL3CommitSubject:
             with_subject(subject), "commit-subject", "/commit/subject", tmp_path, "does not end", "`[9k9.408]`"
         )
 
-    @pytest.mark.parametrize("found", ["agents-config-9k9.408", "config-9k9.408", "9k9.409", "9k9"])
+    @pytest.mark.parametrize("found", ["agents-config-9k9.408", "config-9k9.408", "9k9.409", "9k9", "D16", "#843"])
     def test_cr_l3_a_bracketed_id_that_is_not_the_short_id_fails_naming_both(self, found: str, tmp_path: Path):
         record = with_subject(swap(PLAIN_SUBJECT, "[9k9.408]", f"[{found}]"))
         assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, f"`[{found}]`", "`9k9.408`")
+
+    @pytest.mark.parametrize("closing", ["[ 9k9.408 ]", "[9k9.408]  ", "[\t9k9.408]"])
+    def test_cr_l3_space_inside_the_closing_brackets_or_after_them_is_no_part_of_the_id(
+        self, closing: str, tmp_path: Path
+    ):
+        record = with_subject(swap(PLAIN_SUBJECT, "[9k9.408]", closing))
+        assert findings(record, "commit-subject", tmp_path) == []
+        assert findings(record, "bare-id", tmp_path) == []
 
     @pytest.mark.parametrize(
         ("full", "short"),

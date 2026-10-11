@@ -404,15 +404,18 @@ def _closes_the_text(text: str, match: re.Match[str]) -> bool:
 def _bare_ids(record: dict[str, Any]) -> Iterator[dict[str, str]]:
     """Report each id whose first use, in a stretch of text read on its own, has no gloss.
 
-    A title and a commit subject close with the work item's id in brackets.
-    That id is part of the form and takes no gloss, so it is passed over when
-    it stands alone there. An id among other words in those brackets is read.
+    A title and a commit subject close with the work item's short id in
+    brackets. That id is part of the form and takes no gloss, so it is passed
+    over when it stands alone there. The form puts no other id in that place,
+    so any other id in those brackets is read, and so is an id among other
+    words there.
     """
+    own = short_id(record["work_item"]["id"])
     for scope in _gloss_scopes(record):
         seen: set[str] = set()
         for path, text in scope:
             for match in ID.finditer(text):
-                if path in CLOSED_BY_AN_ID and _closes_the_text(text, match):
+                if path in CLOSED_BY_AN_ID and match.group() == own and _closes_the_text(text, match):
                     continue
                 name = " ".join(match.group().split())
                 key = f"section {match['section']}" if match["section"] else name
