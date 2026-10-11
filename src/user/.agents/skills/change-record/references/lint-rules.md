@@ -99,7 +99,7 @@ A Deferred reply names the item that inherits the finding. When the campaign fin
 
 A Rejected reply gives, in `request_url`, the URL of the reviewer's comment that asked for it.
 
-The phrases of campaign status are in `lint-phrases.json`, under `campaign_status`. In a phrase, `<number>` stands for any number. `lint` matches each phrase whole, in any letter case, in `change` and in `verification`.
+The phrases of campaign status are in `lint-phrases.json`, under `campaign_status`. `lint` matches each phrase whole, in any letter case, in `change` and in `verification`.
 
 ## Stamps
 
@@ -119,7 +119,7 @@ Stamp a part only after copying it from its source. A stamp says the content is 
 
 ## Commentary and machine content
 
-The phrases of commentary are in `lint-phrases.json` beside this file, under `document_commentary`. `lint` matches each phrase whole, in any letter case.
+The phrases of commentary are in `lint-phrases.json` beside this file, under `document_commentary`. `lint` matches each phrase whole, in any letter case. In a phrase of either list in that file, `<number>` stands for any number.
 
 A phrase or a construct inside a code span passes, whatever else the span holds. To write about one, quote it in backticks on one line. A code span opens and closes on the same line. A span that wraps across a line end is not read as a span, because a fold or a fence that starts a line inside it is a real one. A backtick after a backslash opens no span. A phrase of campaign status inside a code span in a reply passes in the same way.
 

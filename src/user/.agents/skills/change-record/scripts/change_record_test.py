@@ -766,7 +766,7 @@ class TestCrL7CommentaryAndMachineContent:
         record = example()
         record["campaign"]["findings"][0]["claim"] += " Note that the grant writes a file."
         record["where_this_fits"]["builds_on"][0]["gloss"] += ", see below"
-        assert_passes(record, tmp_path)
+        assert_passes(change_record.stamp_generated(record), tmp_path)
 
     def test_cr_l7_a_command_and_a_diagram_source_are_quoted_and_not_read_for_commentary(self, tmp_path: Path):
         record = example()
@@ -786,6 +786,19 @@ class TestCrL7CommentaryAndMachineContent:
         (found,) = findings(record, "commentary", tmp_path, skill / "scripts" / "change_record.py")
         assert found[0] == "/design_notes"
         assert "as you can see" in found[1]
+
+    def test_cr_l7_a_listed_phrase_may_stand_a_number_in_as_the_status_phrases_do(self, tmp_path: Path):
+        skill = copied_skill(tmp_path)
+        shipped = skill / "references" / "lint-phrases.json"
+        lists = json.loads(shipped.read_text(encoding="utf-8"))
+        lists["document_commentary"].append("see point <number>")
+        shipped.write_text(json.dumps(lists), encoding="utf-8")
+        record = example()
+        record["design_notes"] += " See point 12 for the reason."
+        assert_passes(record, tmp_path)
+        (found,) = findings(record, "commentary", tmp_path, skill / "scripts" / "change_record.py")
+        assert found[0] == "/design_notes"
+        assert "see point <number>" in found[1]
 
     @pytest.mark.parametrize("construct", sorted(MACHINE_CONTENT))
     def test_cr_l7_machine_content_in_an_author_written_field_fails_naming_the_construct(
@@ -1740,6 +1753,14 @@ class TestCrL15GeneratedStamps:
         assert_passes(record, tmp_path)
         del record["discovered"]["rows"][-1]
         assert_breaks(record, "stale-stamp", "/discovered/filed_digest", tmp_path, "no longer matches")
+
+    def test_cr_l15_a_filed_row_is_told_from_the_none_entry_by_type_as_every_rule_tells_it(self):
+        # The schema admits the entry only as written. A caller may hold a record
+        # the schema has not read yet, and no text of the entry may be taken for a row.
+        record = example()
+        record["discovered"]["rows"] = [" None.\n", dict(FILED_ROW), "None."]
+        parts = {group: content for group, _, content in change_record.generated_parts(record)}
+        assert parts["discovered"] == [FILED_ROW]
 
     def test_cr_l15_a_filed_stamp_over_no_filed_row_is_the_stamp_of_an_empty_list(self, tmp_path: Path):
         record = example()

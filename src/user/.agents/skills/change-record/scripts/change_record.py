@@ -649,7 +649,7 @@ def generated_parts(record: dict[str, Any]) -> Iterator[tuple[str, str, Any]]:
         if group in record:
             yield group, "digest", {name: value for name, value in record[group].items() if name != "digest"}
     discovered = record["discovered"]
-    filed = [row for row in discovered["rows"] if row != NONE and row["status"] == "filed"]
+    filed = [row for _, row in _discovered_work(record) if row["status"] == "filed"]
     if filed or "filed_digest" in discovered:
         yield "discovered", "filed_digest", filed
 
@@ -810,10 +810,7 @@ def _summary_length(record: dict[str, Any]) -> Iterator[dict[str, str]]:
 
 def _commentary(record: dict[str, Any]) -> Iterator[dict[str, str]]:
     """Report each listed phrase of commentary about the document, in any text the author wrote."""
-    patterns = {
-        phrase: re.compile(r"(?<!\w)" + r"\s+".join(map(re.escape, phrase.split())) + r"(?!\w)", re.IGNORECASE)
-        for phrase in load_phrases()["document_commentary"]
-    }
+    patterns = {phrase: _phrase_pattern(phrase) for phrase in load_phrases()["document_commentary"]}
     for path, text in _author_text(record):
         plain = outside_code(text)
         for phrase, pattern in patterns.items():
