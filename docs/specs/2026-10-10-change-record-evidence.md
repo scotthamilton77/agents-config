@@ -1,16 +1,16 @@
 # Evidence
 
 - CR-L1 | open
-- CR-L2 | open
+- CR-L2 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL2Gloss
 - CR-L3 | open
-- CR-L4 | open
-- CR-L5 | open
-- CR-L6 | open
-- CR-L7 | open
+- CR-L4 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL4StatedEmptiness
+- CR-L5 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL5DiscoveredRows
+- CR-L6 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL6SummaryLength
+- CR-L7 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL7CommentaryAndMachineContent
 - CR-L8 | open
 - CR-L9 | open
 - CR-L10 | open
-- CR-L11 | open
+- CR-L11 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL11NoneBesideAnEntry
 - CR-L12 | open
 - CR-L13 | open
 - CR-L14 | open
