@@ -21,7 +21,9 @@ Check a record before writing from it. From this skill's directory:
 uv run scripts/change_record.py lint path/to/record.json
 ```
 
-`lint` checks structure against the schema. It reports a missing required field, a field the schema does not define, and a value of the wrong type. Stdout is JSON: `{"valid": true}`, or `{"valid": false, "errors": [{"code", "path", "message"}, …]}` with `path` naming the field at fault. Exit 0 valid, 1 invalid, 2 unreadable or unparseable. `lint` does not read the prose, so the rules below are the author's to hold.
+Stdout is JSON: `{"valid": true}`, or `{"valid": false, "errors": [{"code", "path", "message"}, …]}`. `path` names the field at fault and `code` names the rule it broke. Exit 0 valid, 1 invalid, 2 unreadable or unparseable.
+
+`lint` checks structure against the schema first, under the code `schema`. It reports a missing required field, a field the schema does not define, and a value of the wrong type. Once the structure is valid, it checks the rules a program can decide. They cover a gloss on each id's first use, emptiness stated with `None.`, the rows of discovered work, the summary's length, the phrases of commentary about the document that `references/lint-phrases.json` lists, and machine content, which is a `<details>` fold, an HTML comment or a fenced `json` block. `references/lint-rules.md` lists each rule under its code and says how `lint` reads an id, a gloss and a sentence.
 
 ## The three artifacts
 
@@ -62,7 +64,7 @@ What each commit type carries:
 
 ## Writing checks
 
-All seven apply to the summary, Heads-up, Risk and Changes. The first four also apply below the horizontal rule. The commit message is read alone in the log and each reply is read alone on its thread, so gloss an id again on its first use in each.
+All seven apply to the summary, Heads-up, Risk and Changes. The first four also apply below the horizontal rule. The commit message is read alone in the log and each reply is read alone on its thread, so gloss an id again on its first use in each. `lint` decides part of the first check and part of the sixth. Everything else here is the author's to hold. For `lint`, a gloss is a parenthetical that follows the id, as in `X7 (the retry bound)`, or holds it, as in `the retry is bounded (X7)`.
 
 1. A stranger can read it. Every work item, criterion, decision, section and pull request number carries a gloss on first use. Every house term is defined where it first appears or replaced with a common word.
 2. Problem, then change, then what remains. No history of how the text got here.

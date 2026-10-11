@@ -13,12 +13,16 @@ from __future__ import annotations
 import copy
 import json
 import re
+import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+import change_record
 
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
@@ -26,6 +30,7 @@ SCRIPT = HERE / "change_record.py"
 REFERENCES = SKILL / "references"
 SCHEMA = json.loads((REFERENCES / "record.schema.json").read_text(encoding="utf-8"))
 EXAMPLE = json.loads((SKILL / "examples" / "pr-843.json").read_text(encoding="utf-8"))
+COMMENTARY = json.loads((REFERENCES / "lint-phrases.json").read_text(encoding="utf-8"))["document_commentary"]
 
 # The groups a record of any commit type carries. The others depend on the type
 # or are filled by a generator, so their absence is not a structural fault.
@@ -116,12 +121,12 @@ TEMPLATE_MARKERS = {
 }
 
 
-def lint(record: Any, tmp_path: Path) -> tuple[int, dict[str, Any]]:
+def lint(record: Any, tmp_path: Path, script: Path = SCRIPT) -> tuple[int, dict[str, Any]]:
     """Run the lint subcommand over ``record`` in a child process and parse what it printed."""
     path = tmp_path / "record.json"
     path.write_text(json.dumps(record), encoding="utf-8")
     proc = subprocess.run(
-        [sys.executable, str(SCRIPT), "lint", str(path)],
+        [sys.executable, str(script), "lint", str(path)],
         capture_output=True, text=True, check=False,
     )
     return proc.returncode, json.loads(proc.stdout)
@@ -134,8 +139,60 @@ def assert_fails_naming(record: Any, field: str, tmp_path: Path) -> None:
     assert field in [error["path"] for error in result["errors"]], result["errors"]
 
 
+def assert_passes(record: Any, tmp_path: Path) -> None:
+    assert lint(record, tmp_path) == (0, {"valid": True})
+
+
+def findings(record: Any, rule: str, tmp_path: Path, script: Path = SCRIPT) -> list[tuple[str, str]]:
+    """Return the path and message of each finding the lint reports under the code ``rule``."""
+    _, result = lint(record, tmp_path, script)
+    return [(error["path"], error["message"]) for error in result.get("errors", []) if error["code"] == rule]
+
+
+def assert_breaks(record: Any, rule: str, field: str, tmp_path: Path, *named: str) -> None:
+    """Assert the lint refuses ``record`` with one finding of ``rule`` at ``field``, and no other of that rule.
+
+    Each of ``named`` must appear in the finding's message, which is how a
+    finding names the id, the phrase or the construct at fault.
+    """
+    code, result = lint(record, tmp_path)
+    assert code == 1
+    assert result["valid"] is False
+    found = [(error["path"], error["message"]) for error in result["errors"] if error["code"] == rule]
+    assert [path for path, _ in found] == [field], result["errors"]
+    for name in named:
+        assert name in found[0][1], found[0][1]
+
+
 def example() -> dict[str, Any]:
     return copy.deepcopy(EXAMPLE)
+
+
+def read_order(scope: Any) -> list[str]:
+    """Return the template slot of each field a gloss scope reads, in the order it first reads one."""
+    slots = [re.sub(r"/\d+", "[]", path).lstrip("/").replace("/", ".") for path, _ in scope if path]
+    return list(dict.fromkeys(slots))
+
+
+def copied_skill(tmp_path: Path) -> Path:
+    """Copy the skill to a directory a test may edit, and return the copy."""
+    return shutil.copytree(SKILL, tmp_path / "skill", ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
+
+
+# The last sentence of the example's summary, which a test swaps for one that names an id.
+OPEN_POINT = "The panel does not yet check that a run actually used its pinned effort."
+
+
+def swap(text: str, old: str, new: str) -> str:
+    """Replace ``old`` with ``new`` in ``text``, and fail when ``old`` is not there to replace."""
+    assert old in text
+    return text.replace(old, new)
+
+
+def naming_in_summary(record: dict[str, Any], sentence: str) -> dict[str, Any]:
+    """Swap the summary's last sentence for ``sentence``, which keeps the summary at five sentences."""
+    record["summary"] = swap(record["summary"], OPEN_POINT, sentence)
+    return record
 
 
 def marked_paths(node: dict[str, Any], path: str = "") -> set[str]:
@@ -265,6 +322,392 @@ class TestLint:
         paths = [error["path"] for error in result["errors"]]
         assert paths == ["/alpha", "/changes", "/summary", "/zebra"]
         assert {error["code"] for error in result["errors"]} == {"schema"}
+
+
+# One id of each shape the gloss rule reads: a tracker id, a criterion id, a
+# decision id, a pull request number and a spec section.
+ID_SHAPES = ["agents-config-9k9.484", "CR-L2", "D16", "#843", "section 3.4"]
+
+GLOSSED_IN_SUMMARY = "Checking the effort a run used waits for #901 (the pin-verification gate)."
+BARE_IN_SUMMARY = "Checking the effort a run used waits for #901."
+
+
+class TestCrL2Gloss:
+    @pytest.mark.parametrize("bare", ID_SHAPES)
+    def test_cr_l2_a_bare_first_use_fails_naming_the_field_and_the_id(self, bare: str, tmp_path: Path):
+        record = example()
+        record["heads_up"].append(f"The gate still refuses what {bare} asks for.")
+        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, bare)
+
+    @pytest.mark.parametrize("glossed", ID_SHAPES)
+    def test_cr_l2_a_glossed_first_use_passes(self, glossed: str, tmp_path: Path):
+        record = example()
+        record["heads_up"].append(f"The gate still refuses what {glossed} (the three-attempt bound) asks for.")
+        assert_passes(record, tmp_path)
+
+    def test_cr_l2_an_id_glossed_in_the_summary_and_bare_in_the_changes_passes(self, tmp_path: Path):
+        record = naming_in_summary(example(), GLOSSED_IN_SUMMARY)
+        record["changes"][0]["text"] += " Reading the pins back is left to #901."
+        assert_passes(record, tmp_path)
+
+    def test_cr_l2_an_id_bare_in_the_summary_fails_though_the_changes_gloss_it(self, tmp_path: Path):
+        record = naming_in_summary(example(), BARE_IN_SUMMARY)
+        record["changes"][0]["text"] += " Reading the pins back is left to #901 (the pin-verification gate)."
+        assert_breaks(record, "bare-id", "/summary", tmp_path, "#901")
+
+    def test_cr_l2_a_bare_first_use_in_a_not_run_entry_fails(self, tmp_path: Path):
+        record = example()
+        record["verification"]["not_run"] = ["The A17 scenarios on live providers, because they spend review budget."]
+        assert_breaks(record, "bare-id", "/verification/not_run/0", tmp_path, "A17")
+
+    def test_cr_l2_an_id_glossed_in_the_summary_is_bare_in_a_reply_and_fails(self, tmp_path: Path):
+        record = naming_in_summary(example(), GLOSSED_IN_SUMMARY)
+        reply = record["replies"][0]
+        reply["change"] = swap(reply["change"], "while attempts remain.", "while attempts remain, as #901 asks.")
+        assert_breaks(record, "bare-id", "/replies/0/change", tmp_path, "#901")
+
+    def test_cr_l2_an_id_glossed_in_the_summary_is_bare_in_the_commit_why_and_fails(self, tmp_path: Path):
+        record = naming_in_summary(example(), GLOSSED_IN_SUMMARY)
+        commit = record["commit"]
+        commit["why"] = swap(commit["why"], "were unpredictable.", "were unpredictable, as #901 showed.")
+        assert_breaks(record, "bare-id", "/commit/why", tmp_path, "#901")
+
+    @pytest.mark.parametrize(
+        ("template", "scope"),
+        [("pr-body.md", change_record._body_scope), ("commit-message.txt", change_record._commit_scope)],
+    )
+    def test_cr_l2_a_text_is_read_in_the_order_its_template_shows_it(self, template: str, scope: Any):
+        shown = list(dict.fromkeys(SLOT.findall((REFERENCES / template).read_text(encoding="utf-8"))))
+        read = [slot for slot in read_order(scope(example())) if slot in shown]
+        assert len(read) >= 5
+        assert read == [slot for slot in shown if slot in read]
+
+    def test_cr_l2_each_reply_is_read_alone(self, tmp_path: Path):
+        record = example()
+        first, second = record["replies"][0], record["replies"][1]
+        first["change"] = swap(
+            first["change"], "while attempts remain.", "while attempts remain, as #901 (the effort gate) asks."
+        )
+        second["change"] = swap(second["change"], "stands unchanged.", "stands unchanged, as #901 asks.")
+        assert_breaks(record, "bare-id", "/replies/1/change", tmp_path, "#901")
+
+    def test_cr_l2_a_later_bare_use_is_not_reported_again(self, tmp_path: Path):
+        record = example()
+        record["heads_up"].append("The gate still refuses what D16 asks for, and nothing else meets D16.")
+        record["changes"][0]["text"] += " D16 stays open."
+        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "D16")
+
+    def test_cr_l2_an_id_inside_a_parenthetical_is_glossed_by_the_words_around_it(self, tmp_path: Path):
+        record = example()
+        record["heads_up"].append("The gate still refuses a fourth claim (D16).")
+        assert_passes(record, tmp_path)
+
+    def test_cr_l2_a_parenthetical_holding_only_another_id_is_no_gloss(self, tmp_path: Path):
+        record = example()
+        record["heads_up"].append("The gate still refuses what #843 (#844) asks for.")
+        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "#843")
+
+    def test_cr_l2_backticks_do_not_stand_in_for_a_gloss(self, tmp_path: Path):
+        record = example()
+        record["heads_up"].append("The gate still refuses what `CR-L2` asks for.")
+        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "CR-L2")
+        record["heads_up"][5] = "The gate still refuses what `CR-L2` (the three-attempt bound) asks for."
+        assert_passes(record, tmp_path)
+
+    def test_cr_l2_the_tracker_tree_introduces_the_work_item_for_the_text_below_it(self, tmp_path: Path):
+        record = example()
+        record["risk"]["rows"][0]["recovery"] += " Reopen agents-config-9k9.408."
+        assert_passes(record, tmp_path)
+        above = naming_in_summary(example(), "Checking the effort a run used stays open on agents-config-9k9.408.")
+        assert_breaks(above, "bare-id", "/summary", tmp_path, "agents-config-9k9.408")
+
+    def test_cr_l2_the_work_item_line_introduces_the_work_item_for_the_commit_message(self, tmp_path: Path):
+        record = example()
+        record["commit"]["why"] = swap(
+            record["commit"]["why"], "were unpredictable.", "were unpredictable before agents-config-9k9.408."
+        )
+        assert_passes(record, tmp_path)
+
+    def test_cr_l2_a_subject_may_name_only_its_own_item_bare_and_only_in_its_closing_brackets(self, tmp_path: Path):
+        record = example()
+        record["commit"]["subject"] = swap(record["commit"]["subject"], "as data", "as data after #803")
+        assert_breaks(record, "bare-id", "/commit/subject", tmp_path, "#803")
+
+    def test_cr_l2_a_filed_row_is_the_trackers_text_and_introduces_its_item(self, tmp_path: Path):
+        record = example()
+        record["discovered"]["rows"].append({
+            "status": "filed",
+            "item": "agents-config-9k9.470",
+            "what": "The gate compares the effort a run used with its pin, as A19 asks.",
+            "reason": "A19 was written after this pull request opened.",
+        })
+        record["verification"]["not_run"] = ["The check filed as agents-config-9k9.470, because nothing runs it yet."]
+        assert_passes(record, tmp_path)
+
+    def test_cr_l2_a_gate_command_is_quoted_as_run_and_is_not_read(self, tmp_path: Path):
+        record = example()
+        record["verification"]["gates"][0]["gate"] = "work show agents-config-9k9.470"
+        assert_passes(record, tmp_path)
+
+    def test_cr_l2_a_diagram_source_is_not_read(self, tmp_path: Path):
+        record = example()
+        record["blast_radius"]["reach_graph"] += "\n  A1[emitter] --> B2[gate]"
+        assert_passes(record, tmp_path)
+
+
+# Each way a record can leave an emptiness unstated, by the field the lint names.
+UNSTATED: dict[str, Callable[[dict[str, Any]], None]] = {
+    "/heads_up": lambda record: record.update(heads_up=[]),
+    "/discovered/rows": lambda record: record["discovered"].update(rows=[]),
+    "/risk/rows": lambda record: record["risk"].update(rows=[]),
+    "/criteria": lambda record: record.update(criteria=[]),
+    "/verification": lambda record: record["verification"].update(gates=[], not_run=[]),
+}
+
+# The same fields with the emptiness stated, for the three lists that take the entry.
+STATED: dict[str, Callable[[dict[str, Any]], None]] = {
+    "/heads_up": lambda record: record.update(heads_up=["None."]),
+    "/discovered/rows": lambda record: record["discovered"].update(rows=["None."]),
+    "/verification": lambda record: record["verification"].update(gates=[], not_run=["None."]),
+}
+
+
+class TestCrL4StatedEmptiness:
+    @pytest.mark.parametrize("field", sorted(UNSTATED))
+    def test_cr_l4_an_emptiness_left_unstated_fails_naming_the_field(self, field: str, tmp_path: Path):
+        record = example()
+        UNSTATED[field](record)
+        assert_breaks(record, "unstated-empty", field, tmp_path)
+
+    @pytest.mark.parametrize("field", sorted(STATED))
+    def test_cr_l4_a_single_none_entry_passes(self, field: str, tmp_path: Path):
+        record = example()
+        STATED[field](record)
+        assert_passes(record, tmp_path)
+
+    def test_cr_l4_a_risk_table_with_one_row_passes(self, tmp_path: Path):
+        record = example()
+        del record["risk"]["rows"][1:]
+        assert_passes(record, tmp_path)
+
+    def test_cr_l4_a_criteria_table_with_no_row_passes_on_a_type_that_needs_none(self, tmp_path: Path):
+        record = example()
+        record["pr"]["type"] = "docs"
+        record["criteria"] = []
+        assert findings(record, "unstated-empty", tmp_path) == []
+
+    def test_cr_l4_a_gate_alone_or_a_not_run_entry_alone_is_a_verification(self, tmp_path: Path):
+        gate_alone = example()
+        gate_alone["verification"]["not_run"] = []
+        assert_passes(gate_alone, tmp_path)
+        entry_alone = example()
+        entry_alone["verification"].update(gates=[], not_run=["The whole gate, because the runner was down."])
+        assert_passes(entry_alone, tmp_path)
+
+
+class TestCrL5DiscoveredRows:
+    def test_cr_l5_a_filed_row_that_names_no_item_fails(self, tmp_path: Path):
+        record = example()
+        record["discovered"]["rows"].append({
+            "status": "filed", "what": "The gate compares used effort with the pin.", "reason": "It needs tests.",
+        })
+        assert_breaks(record, "discovered-row", "/discovered/rows/6/item", tmp_path)
+
+    def test_cr_l5_a_filed_row_that_names_its_item_passes(self, tmp_path: Path):
+        record = example()
+        record["discovered"]["rows"].append({
+            "status": "filed", "item": "agents-config-9k9.470",
+            "what": "The gate compares used effort with the pin.", "reason": "It needs its own tests.",
+        })
+        assert_passes(record, tmp_path)
+
+    def test_cr_l5_an_in_flight_row_that_names_no_pull_request_fails(self, tmp_path: Path):
+        record = example()
+        assert record["discovered"]["rows"][1]["status"] == "in flight"
+        del record["discovered"]["rows"][1]["pr"]
+        assert_breaks(record, "discovered-row", "/discovered/rows/1/pr", tmp_path)
+
+    @pytest.mark.parametrize("reason", ["", "  "])
+    def test_cr_l5_a_row_with_an_empty_reason_fails(self, reason: str, tmp_path: Path):
+        record = example()
+        record["discovered"]["rows"][0]["reason"] = reason
+        assert_breaks(record, "discovered-row", "/discovered/rows/0/reason", tmp_path)
+
+    def test_cr_l5_the_single_none_entry_passes(self, tmp_path: Path):
+        record = example()
+        record["discovered"]["rows"] = ["None."]
+        assert_passes(record, tmp_path)
+
+
+SENTENCES = [
+    "The gate let a fourth claim through.",
+    "It now refuses that claim.",
+    "Each refusal is recorded!",
+    "Does the round halt?",
+    "It does, and it says why.",
+    "One check stays open.",
+]
+
+
+class TestCrL6SummaryLength:
+    @pytest.mark.parametrize("count", [2, 6])
+    def test_cr_l6_a_summary_outside_three_to_five_sentences_fails(self, count: int, tmp_path: Path):
+        record = example()
+        record["summary"] = " ".join(SENTENCES[:count])
+        assert_breaks(record, "summary-length", "/summary", tmp_path, str(count))
+
+    @pytest.mark.parametrize("count", [3, 5])
+    def test_cr_l6_a_summary_of_three_to_five_sentences_passes(self, count: int, tmp_path: Path):
+        record = example()
+        record["summary"] = " ".join(SENTENCES[:count])
+        assert_passes(record, tmp_path)
+
+    def test_cr_l6_a_full_stop_that_ends_no_sentence_is_not_counted(self, tmp_path: Path):
+        record = example()
+        record["summary"] = (
+            "The gate let a fourth claim through under version 3.4 of the doctrine. "
+            "It now refuses that claim, e.g. a retry on a third provider. "
+            "The refusal reads `halt. stop. no retry.` and is recorded. "
+            "The round then halts (as the doctrine says.) "
+            "One check stays open"
+        )
+        assert_passes(record, tmp_path)
+
+
+# One sample of each construct that belongs in a machine's artifact and never in
+# a field a person reads, by the words the lint names it with.
+MACHINE_CONTENT = {
+    "<details>": "<details><summary>Raw output</summary>exit 0</details>",
+    "HTML comment": "<!-- change-record v1 -->",
+    "`json`": '```json\n{"valid": true}\n```',
+}
+
+
+class TestCrL7CommentaryAndMachineContent:
+    def test_cr_l7_the_list_holds_the_phrases_the_writing_checks_name(self):
+        assert {"this section", "note that"} <= set(COMMENTARY)
+        assert len(set(COMMENTARY)) == len(COMMENTARY)
+
+    @pytest.mark.parametrize("phrase", COMMENTARY)
+    def test_cr_l7_a_listed_phrase_of_commentary_fails_naming_it(self, phrase: str, tmp_path: Path):
+        record = example()
+        record["changes"][0]["text"] += f" The reader may {phrase} with care."
+        assert_breaks(record, "commentary", "/changes/0/text", tmp_path, phrase)
+
+    def test_cr_l7_a_listed_phrase_fails_whatever_its_case(self, tmp_path: Path):
+        record = example()
+        record["changes"][0]["text"] += " Note that the pins hold."
+        assert_breaks(record, "commentary", "/changes/0/text", tmp_path, "note that")
+
+    def test_cr_l7_a_listed_phrase_inside_a_code_span_passes(self, tmp_path: Path):
+        record = example()
+        record["changes"][0]["text"] += " The doctrine file no longer opens with `note that`."
+        assert_passes(record, tmp_path)
+
+    def test_cr_l7_a_longer_word_that_holds_a_listed_phrase_passes(self, tmp_path: Path):
+        record = example()
+        record["changes"][0]["text"] += " The footnote that named the old rule is gone."
+        assert_passes(record, tmp_path)
+
+    def test_cr_l7_a_field_that_holds_no_wording_is_not_read_for_commentary(self, tmp_path: Path):
+        record = example()
+        record["verification"]["not_run"] = ["The live-provider scenarios. Note that they spend review budget."]
+        assert_passes(record, tmp_path)
+
+    def test_cr_l7_a_filed_rows_reason_is_the_trackers_and_is_not_read_for_commentary(self, tmp_path: Path):
+        record = example()
+        record["discovered"]["rows"].append({
+            "status": "filed", "item": "agents-config-9k9.470",
+            "what": "The gate compares used effort with the pin.", "reason": "Note that it waits on the routing table.",
+        })
+        assert_passes(record, tmp_path)
+
+    def test_cr_l7_the_lint_reads_the_phrase_list_the_skill_ships(self, tmp_path: Path):
+        skill = copied_skill(tmp_path)
+        shipped = skill / "references" / "lint-phrases.json"
+        lists = json.loads(shipped.read_text(encoding="utf-8"))
+        lists["document_commentary"].append("as you can see")
+        shipped.write_text(json.dumps(lists), encoding="utf-8")
+        record = example()
+        record["design_notes"] += " As you can see, the pins hold."
+        assert_passes(record, tmp_path)
+        (found,) = findings(record, "commentary", tmp_path, skill / "scripts" / "change_record.py")
+        assert found[0] == "/design_notes"
+        assert "as you can see" in found[1]
+
+    def test_cr_l7_the_fields_that_hold_wording_come_from_the_schema(self, tmp_path: Path):
+        skill = copied_skill(tmp_path)
+        shipped = skill / "references" / "record.schema.json"
+        schema = json.loads(shipped.read_text(encoding="utf-8"))
+        del schema["properties"]["design_notes"]["x-rewritable"]
+        shipped.write_text(json.dumps(schema), encoding="utf-8")
+        record = example()
+        record["design_notes"] += " Note that the pins hold."
+        assert_breaks(record, "commentary", "/design_notes", tmp_path, "note that")
+        assert findings(record, "commentary", tmp_path, skill / "scripts" / "change_record.py") == []
+
+    @pytest.mark.parametrize("construct", sorted(MACHINE_CONTENT))
+    def test_cr_l7_machine_content_in_an_author_written_field_fails_naming_the_construct(
+        self, construct: str, tmp_path: Path
+    ):
+        record = example()
+        record["design_notes"] += "\n\n" + MACHINE_CONTENT[construct]
+        assert_breaks(record, "machine-content", "/design_notes", tmp_path, construct)
+
+    def test_cr_l7_machine_content_in_a_generated_campaign_claim_fails_naming_the_construct(self, tmp_path: Path):
+        record = example()
+        record["campaign"]["findings"][0]["claim"] += " <!-- quoted from the review -->"
+        assert_breaks(record, "machine-content", "/campaign/findings/0/claim", tmp_path, "HTML comment")
+
+    def test_cr_l7_machine_content_inside_a_code_span_passes(self, tmp_path: Path):
+        record = example()
+        claim = " The reply held `<details>`, `<!-- a marker -->` and `` ```json ``."
+        record["campaign"]["findings"][0]["claim"] += claim
+        assert_passes(record, tmp_path)
+
+
+# Each list that states its emptiness, holding the entry beside one real entry.
+NONE_BESIDE: dict[str, Callable[[dict[str, Any]], None]] = {
+    "/heads_up": lambda record: record.update(heads_up=["None.", record["heads_up"][0]]),
+    "/discovered/rows": lambda record: record["discovered"].update(rows=[record["discovered"]["rows"][0], "None."]),
+    "/verification/not_run": lambda record: record["verification"].update(
+        not_run=["None.", "The live-provider scenarios, because they spend review budget."]
+    ),
+}
+
+
+class TestCrL11NoneBesideAnEntry:
+    @pytest.mark.parametrize("field", sorted(NONE_BESIDE))
+    def test_cr_l11_none_beside_another_entry_fails_naming_the_list(self, field: str, tmp_path: Path):
+        record = example()
+        NONE_BESIDE[field](record)
+        assert_breaks(record, "none-beside-entry", field, tmp_path)
+
+
+class TestLintRules:
+    def test_the_rule_table_names_exactly_the_codes_the_lint_reports(self):
+        table = (REFERENCES / "lint-rules.md").read_text(encoding="utf-8")
+        listed = {line.split("|")[1].strip(" `") for line in table.splitlines() if line.startswith("| `")}
+        reported = set(re.findall(r'_finding\(\s*"([a-z-]+)"', SCRIPT.read_text(encoding="utf-8")))
+        assert len(listed) >= 7
+        assert listed == reported - {"schema"}
+
+    def test_the_other_rules_wait_for_a_record_whose_structure_is_valid(self, tmp_path: Path):
+        record = example()
+        record["heads_up"] = []
+        record["zebra"] = 1
+        _, result = lint(record, tmp_path)
+        assert [(error["code"], error["path"]) for error in result["errors"]] == [("schema", "/zebra")]
+
+    def test_findings_of_every_rule_come_in_path_order(self, tmp_path: Path):
+        record = example()
+        record["summary"] = SENTENCES[0]
+        record["heads_up"].append("The gate still refuses what D16 asks for.")
+        record["discovered"]["rows"] = []
+        _, result = lint(record, tmp_path)
+        assert [(error["code"], error["path"]) for error in result["errors"]] == [
+            ("unstated-empty", "/discovered/rows"), ("bare-id", "/heads_up/5"), ("summary-length", "/summary"),
+        ]
 
 
 class TestCommandLine:
