@@ -223,7 +223,8 @@ def validation_faults(case_dir: Path, names: tuple[str, ...],
     """What is wrong with a case's validation record against the documents it holds."""
     try:
         record = json.loads((case_dir / VALIDATION).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    # The decoder raises RecursionError, not ValueError, on nesting deeper than it can follow.
+    except (OSError, ValueError, RecursionError):
         record = None
     if not isinstance(record, dict):
         return [("no-validation", f"holds no readable {VALIDATION}; its runs count only once the "

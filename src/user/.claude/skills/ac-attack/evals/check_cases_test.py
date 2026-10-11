@@ -321,6 +321,17 @@ def test_ace_a13_a_case_whose_field_is_not_a_string_is_refused_naming_it(
     assert sorted(refused(evals, capsys)) == expected
 
 
+@pytest.mark.parametrize(("field", "value"), [
+    ("serves", "ACQ-A2"), ("serves", [7]), ("lens", 7), ("child", 7), ("site", 7),
+    ("detection", []), ("source_revision", 7),
+], ids=["serves-string", "serves-number-item", "lens", "child", "site", "detection", "source_revision"])
+def test_ace_a13_a_case_whose_field_has_the_wrong_shape_is_refused(
+        evals, catalogue, capsys, field, value):
+    entry_of(catalogue, "C2")[field] = value
+    write_manifest(evals, catalogue)
+    assert refused(evals, capsys) == [("C2", "malformed-field")]
+
+
 def test_ace_a13_a_case_missing_its_id_is_refused_naming_its_position(evals, catalogue, capsys):
     del catalogue[0]["id"]
     write_manifest(evals, catalogue)
@@ -374,7 +385,11 @@ def test_ace_a13_an_unreadable_document_is_refused(
         return read_bytes(path)
 
     monkeypatch.setattr(Path, "read_bytes", deny)
-    assert sorted(refused(evals, capsys)) == expected
+    code, result = run(evals, capsys)
+    assert code == 1
+    assert sorted(faults(result)) == expected
+    assert [document in error["message"] for error in result["errors"]
+            if error["code"] == "unreadable-document"] == [True]
 
 
 def test_ace_a13_a_pair_case_with_identical_documents_is_refused(evals, catalogue, capsys):
@@ -447,6 +462,37 @@ def test_ace_a13_a_control_only_case_holding_a_site_is_refused(evals, catalogue,
 def test_ace_a13_a_case_without_a_validation_record_is_refused(evals, catalogue, capsys):
     (evals / "cases" / "C7" / "validation.json").unlink()
     assert refused(evals, capsys) == [("C7", "no-validation")]
+
+
+def test_ace_a13_a_validation_record_that_is_not_an_object_is_refused(evals, catalogue, capsys):
+    (evals / "cases" / "C7" / "validation.json").write_text(
+        json.dumps(["report", "decision", "digests"]), encoding="utf-8")
+    assert refused(evals, capsys) == [("C7", "no-validation")]
+
+
+def test_ace_a13_a_validation_record_nested_past_the_decoder_limit_is_refused(
+        evals, catalogue, capsys, monkeypatch):
+    # How deep the decoder can nest depends on the interpreter and its stack, so the decoder is
+    # made to raise what it raises past that depth rather than the test hunting for the depth.
+    (evals / "cases" / "C7" / "validation.json").write_text("[[[]]]", encoding="utf-8")
+    loads = json.loads
+
+    def too_deep(text, *args, **kwargs):
+        if text == "[[[]]]":
+            raise RecursionError("maximum recursion depth exceeded while decoding a JSON array")
+        return loads(text, *args, **kwargs)
+
+    monkeypatch.setattr(json, "loads", too_deep)
+    assert refused(evals, capsys) == [("C7", "no-validation")]
+
+
+def test_ace_a13_a_validation_record_whose_digests_are_not_an_object_is_refused(
+        evals, catalogue, capsys):
+    path = evals / "cases" / "C7" / "validation.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["digests"] = record["decision"]["digests"] = ["defective.md", "control.md"]
+    path.write_text(json.dumps(record), encoding="utf-8")
+    assert refused(evals, capsys) == [("C7", "validation-lacks-digests")]
 
 
 @pytest.mark.parametrize(("key", "code"), [
