@@ -169,6 +169,14 @@ def test_the_contract_table_reads_as_thirty_cases_with_ranges_expanded():
                            "lens": "full panel", "child": "ACE-A41"}
 
 
+def test_a_parent_id_with_a_digit_in_its_prefix_is_read_from_the_table(tmp_path):
+    contract = tmp_path / "contract.md"
+    contract.write_text(CONTRACT.read_text(encoding="utf-8").replace("| C1 | ACQ-A1 |",
+                                                                     "| C1 | ACQ2-A1 |"),
+                        encoding="utf-8")
+    assert check.read_table(contract)[0]["serves"] == ["ACQ2-A1"]
+
+
 def test_a_contract_without_the_catalogue_table_is_unusable(evals, catalogue, tmp_path, capsys):
     contract = tmp_path / "contract.md"
     contract.write_text("# A contract\n\nNo table here.\n", encoding="utf-8")
@@ -295,6 +303,14 @@ def test_ace_a12_a_case_differing_from_the_table_is_refused_naming_it(
     assert code == 1
     assert faults(result) == [(case_id, "table-mismatch")]
     assert column in result["errors"][0]["message"]
+
+
+def test_ace_a12_a_row_is_compared_as_the_contract_states_it_at_run_time(
+        evals, catalogue, tmp_path, capsys):
+    contract = tmp_path / "contract.md"
+    contract.write_text(CONTRACT.read_text(encoding="utf-8").replace("| ACE-A25 |", "| ACE-A999 |"),
+                        encoding="utf-8")
+    assert refused(evals, capsys, "--contract", str(contract)) == [("C1", "table-mismatch")]
 
 
 # ACE-A13: each case is well formed, and validated over the documents it holds.

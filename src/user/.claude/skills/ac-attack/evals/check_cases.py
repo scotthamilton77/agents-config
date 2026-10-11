@@ -54,7 +54,9 @@ DEFAULT_CONTRACT = (HERE.parents[5] / "docs" / "specs"
                     / "2026-09-29-acceptance-criteria-evaluation-contract.md")
 TABLE_HEADER = "| Case | Serves | Rule | Lens | Child |"
 COMPARED = ("serves", "rule", "lens", "child")
-CRITERION = re.compile(r"\b[A-Z]{2,}-A\d+\b")
+# A criterion ID as the repository's spec lint reads one: a prefix of capitals and digits, then -A
+# and a number, bounded so that neither a word character nor a hyphen continues it.
+CRITERION = re.compile(r"(?<![\w-])[A-Z0-9]+-A\d+(?![\w-])")
 QUESTION = re.compile(r'"([^"]+)"')
 RANGE = re.compile(r"(\S*?)(\d+) to \1(\d+)")
 CONTROL_ONLY = "none"
