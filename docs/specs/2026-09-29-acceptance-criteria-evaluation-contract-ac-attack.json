@@ -29,7 +29,7 @@
       "covering_ac": "ACE-A13",
       "disposition": "accepted",
       "id": "obligation-reduction-3",
-      "revision": "sha256:a68deb74c83aa2506c2424e11a9b833b76df182f404fd3e616b84b44c20b8547"
+      "revision": "sha256:16220f40078d7d30a692b2abfce018fa58b1878ef5b5c71d591a49774707e874"
     },
     {
       "disposition": "rejected",
@@ -70,7 +70,7 @@
       "covering_ac": "ACE-A47",
       "disposition": "accepted",
       "id": "obligation-reduction-11",
-      "revision": "sha256:a68deb74c83aa2506c2424e11a9b833b76df182f404fd3e616b84b44c20b8547"
+      "revision": "sha256:16220f40078d7d30a692b2abfce018fa58b1878ef5b5c71d591a49774707e874"
     },
     {
       "disposition": "rejected",
@@ -126,7 +126,7 @@
       "covering_ac": "ACE-A53",
       "disposition": "accepted",
       "id": "what-if-2",
-      "revision": "sha256:a68deb74c83aa2506c2424e11a9b833b76df182f404fd3e616b84b44c20b8547"
+      "revision": "sha256:16220f40078d7d30a692b2abfce018fa58b1878ef5b5c71d591a49774707e874"
     }
   ],
   "lenses": [

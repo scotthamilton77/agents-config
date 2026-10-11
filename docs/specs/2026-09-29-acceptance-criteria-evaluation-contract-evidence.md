@@ -19,6 +19,7 @@
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_decision_not_accepting_the_recorded_documents_is_refused
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_an_unreadable_document_is_refused
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_validation_record_writing_its_decision_twice_is_refused
+- ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_ace_a13_a_validation_record_nested_past_the_decoder_limit_is_refused
 - ACE-A13 | test: src/user/.claude/skills/ac-attack/evals/check_cases_test.py::test_a_manifest_writing_one_key_twice_is_unusable
 - ACE-A14 | open
 - ACE-A15 | open
