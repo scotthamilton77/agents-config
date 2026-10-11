@@ -1,0 +1,995 @@
+{
+ "about": "Output of read-only work and gh calls, recorded from the agents-config repository on 2026-10-11. Each answer is keyed by the arguments of its call and holds the exit status, stdout and stderr. Stdout that parsed as JSON is held as JSON. Four texts no generator reads are cut and marked: the milestone's own notes and description, each pull request's body, and each file's patch. The milestone's list of child ids is cut to its first three.",
+ "work": {
+  "--format json show agents-config-9k9.484.2.3": {
+   "exit": 0,
+   "stdout": {
+    "protocol": "2.22",
+    "ok": true,
+    "data": {
+     "items": [
+      {
+       "id": "agents-config-9k9.484.2.3",
+       "title": "The context and discovered generators fill the record from the tracker and from GitHub",
+       "type": "feature",
+       "status": "in_progress",
+       "priority": "P2",
+       "labels": [
+        "shape-feat"
+       ],
+       "parent": "agents-config-9k9.484.2",
+       "deps": [],
+       "children": [],
+       "description": "",
+       "notes": "Claimed 2026-10-11 for the change-record grind; branch feat/9k9.484.2.3-change-record-context, stacked on slice L's unmerged lint PRs. One PR. Orchestrator ruling carried in the brief and recorded as erratum 5 on agents-config-9k9.484.3: a work item whose parent is the root of its tree is its own owning item, as CR-X7 already says of a parentless item, so a direct child of the milestone does not list every milestone child in its scope table.",
+       "created": "2026-10-11T17:58:28Z",
+       "updated": "2026-10-11T22:27:53Z",
+       "closed": null,
+       "acceptance": "CR-X1, CR-X2, CR-X3, CR-X4, CR-X5, CR-X6, CR-X7, CR-X8",
+       "unknown_relations": [],
+       "unknown_scalars": [],
+       "track": null
+      }
+     ]
+    },
+    "error": null
+   },
+   "stderr": ""
+  },
+  "--format json show agents-config-9k9.484.2": {
+   "exit": 0,
+   "stdout": {
+    "protocol": "2.22",
+    "ok": true,
+    "data": {
+     "items": [
+      {
+       "id": "agents-config-9k9.484.2",
+       "title": "[Impl] Change records: PR descriptions, commit messages and review replies rendered from a linted machine-readable record (scope: per spec)",
+       "type": "task",
+       "status": "open",
+       "priority": "P2",
+       "labels": [
+        "shape-impl-container",
+        "track:review-and-merge"
+       ],
+       "parent": "agents-config-9k9.484",
+       "deps": [
+        {
+         "id": "agents-config-9k9.484.1",
+         "type": "blocks",
+         "status": "closed"
+        }
+       ],
+       "children": [
+        "agents-config-9k9.484.2.8",
+        "agents-config-9k9.484.2.5",
+        "agents-config-9k9.484.2.1",
+        "agents-config-9k9.484.2.4",
+        "agents-config-9k9.484.2.3",
+        "agents-config-9k9.484.2.7",
+        "agents-config-9k9.484.2.6",
+        "agents-config-9k9.484.2.2"
+       ],
+       "description": "",
+       "notes": "[work] spec: docs/specs/2026-10-10-change-record.md\n[work] manifest: {\"items\":[{\"noun\":\"feat\",\"title\":\"The change-record skill, its schema, the record lint and the init stub\",\"acceptance\":\"CR-L1, CR-L2, CR-L3, CR-L4, CR-L5, CR-L6, CR-L7, CR-L8, CR-L9, CR-L10, CR-L11, CR-L12, CR-L13, CR-L14, CR-L15, CR-L16, CR-L17\"},{\"noun\":\"feat\",\"title\":\"The renderer produces the PR body, the commit message and the replies from a change record\",\"acceptance\":\"CR-R1, CR-R2, CR-R3, CR-R4, CR-R5, CR-R6, CR-R7, CR-R8\"},{\"noun\":\"feat\",\"title\":\"The context and discovered generators fill the record from the tracker and from GitHub\",\"acceptance\":\"CR-X1, CR-X2, CR-X3, CR-X4, CR-X5, CR-X6, CR-X7, CR-X8\"},{\"noun\":\"feat\",\"title\":\"The campaign generator fills the review campaign from the verdict envelopes\",\"acceptance\":\"CR-C1, CR-C2, CR-C3, CR-C4, CR-C5, CR-C6, CR-C7, CR-C8\"},{\"noun\":\"feat\",\"title\":\"Publish posts the record as a marked append-only comment, renders the body from it, and merge supplies the commit message\",\"acceptance\":\"CR-P1, CR-P2, CR-P3, CR-P4, CR-P5, CR-P6, CR-P7, CR-P8, CR-P9, CR-P10, CR-P11, CR-P12, CR-P13, CR-P14\"},{\"noun\":\"feat\",\"title\":\"The rewrite pass proposes per-section prose replacements that the author accepts or prunes\",\"acceptance\":\"CR-W1, CR-W2, CR-W3, CR-W4, CR-W5, CR-W6, CR-W7, CR-W8, CR-W9, CR-W10, CR-W11\"},{\"noun\":\"chore\",\"title\":\"The review-panel skill, the root AGENTS.md and the squash settings point at the change record\",\"acceptance\":\"CR-G1, CR-G2, CR-G3\"},{\"noun\":\"feat\",\"title\":\"A commit or PR hook enforces the record lint, deferred on minting\",\"acceptance\":\"Deferred with `work defer` as soon as it is minted. Opened only when, among the first ten PRs merged after the wiring slice lands, a merged PR's body fails `lint --pr`, read from those PRs' record comments. Criteria are written and attacked then, before any work starts.\"}],\"none_reason\":null}",
+       "created": "2026-10-10T16:59:05Z",
+       "updated": "2026-10-11T17:58:25Z",
+       "closed": null,
+       "acceptance": null,
+       "unknown_relations": [],
+       "unknown_scalars": [],
+       "track": "review-and-merge"
+      }
+     ]
+    },
+    "error": null
+   },
+   "stderr": ""
+  },
+  "--format json show agents-config-9k9.484": {
+   "exit": 0,
+   "stdout": {
+    "protocol": "2.22",
+    "ok": true,
+    "data": {
+     "items": [
+      {
+       "id": "agents-config-9k9.484",
+       "title": "Change records: PR descriptions, commit messages and review replies rendered from a linted machine-readable record",
+       "type": "feature",
+       "status": "open",
+       "priority": "P2",
+       "labels": [
+        "planned",
+        "shape-spec",
+        "track:review-and-merge"
+       ],
+       "parent": "agents-config-9k9",
+       "deps": [],
+       "children": [
+        "agents-config-9k9.484.3",
+        "agents-config-9k9.484.2",
+        "agents-config-9k9.484.1"
+       ],
+       "description": "Agents write PR descriptions, commit messages and review replies with no template. On the twelve most recent merged PRs every description carried a first-use tracker or criterion id with no gloss, none stated where the change sits in the milestone's tree, none had a risk or blast-radius section, and none listed discovered work; across them there were 46 distinct level-two headings. Commit subjects ran to a median of 91 characters and the repository's squash setting (COMMIT_MESSAGES) concatenates every branch commit's trailers into the merge commit. The owner has to re-read or ask before approving.\n\nThis spec decides the three artifact templates (PR body, commit message, review reply), the pipeline that produces them from a JSON change record validated by a schema and linted before anything reaches GitHub, the record's home as an append-only marked PR comment, and a bounded Codex rewrite pass over the record's prose fields. The design inputs are .claude-scratch/git-doc-templates-proposal-v2.md and its mock, and the GPT rewriter brief at docs/reference/2026-10-10-gpt-prose-rewriter-implementation-brief.md.\n\nADMISSION. Prevents: a PR description the owner cannot read standalone (bare ids, no placement in the milestone tree, no risk or blast radius, discovered work unlisted), a merge commit carrying repeated trailers from the squash setting, and review replies that restate campaign status instead of what changed. All three are observed on PRs 838 to 846. Costs: one shared skill loaded when a PR, commit or reply is written; one PEP 723 script and its suite under content-tests; one PR comment per description revision; one Codex dispatch per rewrite pass; a change to the repository's squash settings. Removed by: twenty consecutive merged PRs pass the record lint with the skill not loaded, or the owner's clarifying questions on PR descriptions stop over that run.",
+       "notes": "Spec drafted on branch spec/9k9.484-change-record and opened as PR 851. One criteria attack ran 2026-10-10: 62 objections, 50 accepted, 12 rejected; 64 criteria after amendment; record at docs/specs/2026-10-10-change-record-ac-attack.json. Seven slices plus one deferred hook item in the Continuations manifest. Review round not yet run.\nPR 851 round 3 (head e1620f2f) withdrew slice Q (prgroom poller and reply changes) after the architecture seat read charter D13: prgroom's poll and reply verbs have no caller and are deleted, so the slice hardened retired code. CR-D10 now records that prgroom is left alone. Seven slices, 69 criteria at 49149572; fourth criteria attack in progress.",
+       "created": "2026-10-10T16:59:01Z",
+       "updated": "2026-10-11T10:22:09Z",
+       "closed": null,
+       "acceptance": null,
+       "unknown_relations": [],
+       "unknown_scalars": [],
+       "track": "review-and-merge"
+      }
+     ]
+    },
+    "error": null
+   },
+   "stderr": ""
+  },
+  "--format json show agents-config-9k9": {
+   "exit": 0,
+   "stdout": {
+    "protocol": "2.22",
+    "ok": true,
+    "data": {
+     "items": [
+      {
+       "id": "agents-config-9k9",
+       "title": "Harness rework",
+       "type": "milestone",
+       "status": "open",
+       "priority": "P1",
+       "labels": [],
+       "parent": null,
+       "deps": [],
+       "children": [
+        "agents-config-9k9.12",
+        "agents-config-9k9.160",
+        "agents-config-9k9.68"
+       ],
+       "description": "Charter: docs/specs/2026-07-21-harness-rework-way-forward.md (D1–D20). Rebuild the harness: spec contract with ACs as the review-termination condition; scaffold-as-plan; self-managed class-specific re [cut from the recording]",
+       "notes": "S1 facade gaps found while minting (input to V2/S2 audit): (1) 'work create --raw' is transport-only and rejects --acceptance, and the noun set (spike|chore|decision|feat|bugfix|spec|epic) has no mile [cut from the recording]",
+       "created": "2026-07-22T10:04:03Z",
+       "updated": "2026-09-27T12:28:45Z",
+       "closed": null,
+       "acceptance": "AC1 always-on surface ≤10k tokens, installer-enforced. AC2 zero conflicting deployed artifacts. AC3 100% admission records on deployed rules/skills/commands. AC4 spec lint rejects specs lacking AC section + per-slice ACs. AC5 wait-for-pr-comments, reply-and-resolve-pr-threads, monitor-pr, writing-plans, and deleted prgroom modules absent from src/ and all deploy targets. AC6 config-prose PRs: median bot-review rounds ≤1 and median fix-commits-after-first-review ≤1. AC7 interventions-per-PR reported under bot identity for every PR in window. AC8 pre-PR cycle time (claim→PR-open) reported per work item. AC9 termination: AC1–AC5 hold + 10 consecutive PRs meeting AC6–AC8 → milestone closes, harness work loses standing track.",
+       "unknown_relations": [],
+       "unknown_scalars": [],
+       "track": null
+      }
+     ]
+    },
+    "error": null
+   },
+   "stderr": ""
+  },
+  "--format json list --parent agents-config-9k9.484.2": {
+   "exit": 0,
+   "stdout": {
+    "protocol": "2.22",
+    "ok": true,
+    "data": {
+     "items": [
+      {
+       "id": "agents-config-9k9.484.2.8",
+       "title": "A commit or PR hook enforces the record lint, deferred on minting",
+       "type": "feature",
+       "status": "deferred",
+       "priority": "P2",
+       "labels": [
+        "shape-feat"
+       ],
+       "parent": "agents-config-9k9.484.2",
+       "description": "",
+       "notes": "[work] deferred 2026-10-11T17:59:22.044184+00:00: Minted deferred by design (spec CR-D9). Opened only when, among the first ten PRs merged after the wiring slice (agents-config-9k9.484.2.7) lands, a merged PR's body fails lint --pr read from its record comment; its criteria are written then.",
+       "created": "2026-10-11T17:58:34Z",
+       "updated": "2026-10-11T17:59:22Z",
+       "closed": null,
+       "acceptance": "Deferred with `work defer` as soon as it is minted. Opened only when, among the first ten PRs merged after the wiring slice lands, a merged PR's body fails `lint --pr`, read from those PRs' record comments. Criteria are written and attacked then, before any work starts.",
+       "unknown_relations": [
+        "children",
+        "deps"
+       ],
+       "unknown_scalars": [],
+       "track": null
+      },
+      {
+       "id": "agents-config-9k9.484.2.7",
+       "title": "The review-panel skill, the root AGENTS.md and the squash settings point at the change record",
+       "type": "chore",
+       "status": "open",
+       "priority": "P2",
+       "labels": [
+        "shape-chore"
+       ],
+       "parent": "agents-config-9k9.484.2",
+       "description": "",
+       "notes": "Owner instruction, 2026-10-11: this slice also amends charter D5 in docs/specs/2026-07-21-harness-rework-way-forward.md with one sentence naming the bounded exception the owner ruled on agents-config-9k9.486: the change-record rewrite pass seats a foreign model to propose prose replacements that the Anthropic author accepts, prunes or corrects, and the author's review is the control. Until that sentence lands, D5 contradicts CR-D6 of the change-record spec and the root AGENTS.md says the charter wins, so slice W's review round would re-raise the conflict (it did on PR 851 as architectural-fit.r1.f5). Vet: the one-sentence diff; doc-lint exit 0.",
+       "created": "2026-10-11T17:58:33Z",
+       "updated": "2026-10-11T18:12:04Z",
+       "closed": null,
+       "acceptance": "CR-G1, CR-G2, CR-G3",
+       "unknown_relations": [
+        "children",
+        "deps"
+       ],
+       "unknown_scalars": [],
+       "track": null
+      },
+      {
+       "id": "agents-config-9k9.484.2.6",
+       "title": "The rewrite pass proposes per-section prose replacements that the author accepts or prunes",
+       "type": "feature",
+       "status": "open",
+       "priority": "P2",
+       "labels": [
+        "shape-feat"
+       ],
+       "parent": "agents-config-9k9.484.2",
+       "description": "",
+       "notes": "Owner ruling in session, 2026-10-11: the owner's per-section verdicts on the four applied rewrite diffs (CR-W8) do not hold the slice's code. The slice's PRs merge on CR-W1 to W7 and W9 to W11; the CR-W8 evidence row stays open and this item stays open on that one criterion until the owner records the verdicts. The grind leaves the four applied diffs and a blank per-section judgment file ready for that reading.",
+       "created": "2026-10-11T17:58:32Z",
+       "updated": "2026-10-11T19:13:51Z",
+       "closed": null,
+       "acceptance": "CR-W1, CR-W2, CR-W3, CR-W4, CR-W5, CR-W6, CR-W7, CR-W8, CR-W9, CR-W10, CR-W11",
+       "unknown_relations": [
+        "children",
+        "deps"
+       ],
+       "unknown_scalars": [],
+       "track": null
+      },
+      {
+       "id": "agents-config-9k9.484.2.5",
+       "title": "Publish posts the record as a marked append-only comment, renders the body from it, and merge supplies the commit message",
+       "type": "feature",
+       "status": "open",
+       "priority": "P2",
+       "labels": [
+        "shape-feat"
+       ],
+       "parent": "agents-config-9k9.484.2",
+       "description": "",
+       "notes": "",
+       "created": "2026-10-11T17:58:31Z",
+       "updated": "2026-10-11T17:58:31Z",
+       "closed": null,
+       "acceptance": "CR-P1, CR-P2, CR-P3, CR-P4, CR-P5, CR-P6, CR-P7, CR-P8, CR-P9, CR-P10, CR-P11, CR-P12, CR-P13, CR-P14",
+       "unknown_relations": [
+        "children",
+        "deps"
+       ],
+       "unknown_scalars": [],
+       "track": null
+      },
+      {
+       "id": "agents-config-9k9.484.2.4",
+       "title": "The campaign generator fills the review campaign from the verdict envelopes",
+       "type": "feature",
+       "status": "in_progress",
+       "priority": "P2",
+       "labels": [
+        "shape-feat"
+       ],
+       "parent": "agents-config-9k9.484.2",
+       "description": "",
+       "notes": "Claimed 2026-10-11 for the change-record grind; branch feat/9k9.484.2.4-change-record-campaign, stacked on slice L's unmerged lint PRs. One PR. Rulings carried in the brief: rounds render as the lowest to highest round a reviewer ran across claims; the generator always writes claim id and class on a finding; a fix commit comes only from a thread reply.\n2026-10-11: split into two PRs. PR a ships CR-C1 to C4, C6, C8, the campaign case of CR-X4 and the two CR-C7 cases that do not involve the terminal sha. PR b ships CR-C5 and CR-C7's terminal-clean case, and is blocked: the review-verdict skill has no callable completeness rule (erratum 28 on agents-config-9k9.484.3). Owner asked in session which checks a new function should mechanise.",
+       "created": "2026-10-11T17:58:30Z",
+       "updated": "2026-10-11T22:34:34Z",
+       "closed": null,
+       "acceptance": "CR-C1, CR-C2, CR-C3, CR-C4, CR-C5, CR-C6, CR-C7, CR-C8",
+       "unknown_relations": [
+        "children",
+        "deps"
+       ],
+       "unknown_scalars": [],
+       "track": null
+      },
+      {
+       "id": "agents-config-9k9.484.2.3",
+       "title": "The context and discovered generators fill the record from the tracker and from GitHub",
+       "type": "feature",
+       "status": "in_progress",
+       "priority": "P2",
+       "labels": [
+        "shape-feat"
+       ],
+       "parent": "agents-config-9k9.484.2",
+       "description": "",
+       "notes": "Claimed 2026-10-11 for the change-record grind; branch feat/9k9.484.2.3-change-record-context, stacked on slice L's unmerged lint PRs. One PR. Orchestrator ruling carried in the brief and recorded as erratum 5 on agents-config-9k9.484.3: a work item whose parent is the root of its tree is its own owning item, as CR-X7 already says of a parentless item, so a direct child of the milestone does not list every milestone child in its scope table.",
+       "created": "2026-10-11T17:58:28Z",
+       "updated": "2026-10-11T22:27:53Z",
+       "closed": null,
+       "acceptance": "CR-X1, CR-X2, CR-X3, CR-X4, CR-X5, CR-X6, CR-X7, CR-X8",
+       "unknown_relations": [
+        "children",
+        "deps"
+       ],
+       "unknown_scalars": [],
+       "track": null
+      },
+      {
+       "id": "agents-config-9k9.484.2.2",
+       "title": "The renderer produces the PR body, the commit message and the replies from a change record",
+       "type": "feature",
+       "status": "in_progress",
+       "priority": "P2",
+       "labels": [
+        "shape-feat"
+       ],
+       "parent": "agents-config-9k9.484.2",
+       "description": "",
+       "notes": "Claimed 2026-10-11 for the change-record grind. Delivery plan: two PRs. PR a (branch feat/9k9.484.2.2a-change-record-render): the render subcommand driven by the three template files, CR-L17, CR-R2 to CR-R8, and the feat rendering of the one example record against a golden file. PR b, after slice L's third PR lands the other three example records: CR-R1 in full (four feat goldens, minimal fixtures per commit type, the docs/chore and spec variants). Review per owner authorization: one foreign-model pass per PR (Codex, or Gemini on Codex's usage limit).",
+       "created": "2026-10-11T17:58:27Z",
+       "updated": "2026-10-11T20:00:04Z",
+       "closed": null,
+       "acceptance": "CR-R1, CR-R2, CR-R3, CR-R4, CR-R5, CR-R6, CR-R7, CR-R8",
+       "unknown_relations": [
+        "children",
+        "deps"
+       ],
+       "unknown_scalars": [],
+       "track": null
+      },
+      {
+       "id": "agents-config-9k9.484.2.1",
+       "title": "The change-record skill, its schema, the record lint and the init stub",
+       "type": "feature",
+       "status": "in_progress",
+       "priority": "P2",
+       "labels": [
+        "shape-feat"
+       ],
+       "parent": "agents-config-9k9.484.2",
+       "description": "",
+       "notes": "admit-request gate, run 2026-10-11 on the change-record skill proposed by docs/specs/2026-10-10-change-record.md (CR-D4), before this slice opens. Verdict: ADMIT. Check 1, live counterpart: readable-prose governs sentences and the spec defers to it rather than restating it; where-does-this-fit explains an item's placement to a user on request, while the record's context generator renders placement into a PR body from the same tracker reads, a different consumer and output, so neither overlaps as a competing answer, and where-does-this-fit's own remove_when (a facade verb rendering the same layers) is not met by it; review-panel's dispositions text and the root AGENTS.md reply sentence are consolidated onto the skill by slice G, not duplicated; prgroom's reply writer has no caller and charter D13 deletes it. No claims: conflicts. Check 2, the record on agents-config-9k9.484: prevents names three failures observed on PRs 838 to 846; cost names a PR comment per revision, a Codex dispatch per rewrite pass, a suite under content-tests and a squash-setting change, none measured by a gate; remove_when (twenty merged PRs passing the lint with the skill unloaded, or the owner's clarifying questions stopping) is observable. Check 3 does not apply to a skill. Check 4: the body is priced at the model-invoked 2k-token cap; the templates, the schema and the field table belong under references/, and the description is routing text only. Check 5: shared tree, since gh and work are portable; deployed prose cites no tracker id, charter decision or spec section. Check 6: house-authored, no provenance header. Conditions on this slice, all enforced by the installer's gates: body within cap after the references/ split, complete admission block copied from 9k9.484 into SKILL.md front matter, name equal to the folder name.\nClaimed 2026-10-11 for the change-record grind. Delivery plan: three small PRs in sequence, by owner instruction to keep reviews small. PR a (branch feat/9k9.484.2.1a-change-record-skeleton): skill text, schema, templates, field table, schema-level lint, one example record (PR 843), hermetic suite runner (CR-L16, structural part of CR-L1). PR b: prose lint rules CR-L2, L4, L5, L6, L7, L11. PR c: CR-L3, L10, L12, L13, L14, L15, init (CR-L8), the other three example records, CR-L1 and CR-L9 evidence. CR-L17 needs a renderer to check and lands with the first PR of slice R (agents-config-9k9.484.2.2); this item closes after that. Review per owner authorization in session: one Codex pass per PR against the slice criteria, up to three, in place of the review panel.\nPR a merged 2026-10-11: #859, squash commit 63a1c0d1. Review: Codex refused on its usage limit, so the one pass ran on Gemini (gemini-3.1-pro, high) and returned clean. CR-L16 discharged; CR-L1 and CR-L9 stay open until PR c.",
+       "created": "2026-10-11T17:58:26Z",
+       "updated": "2026-10-11T19:58:44Z",
+       "closed": null,
+       "acceptance": "CR-L1, CR-L2, CR-L3, CR-L4, CR-L5, CR-L6, CR-L7, CR-L8, CR-L9, CR-L10, CR-L11, CR-L12, CR-L13, CR-L14, CR-L15, CR-L16, CR-L17",
+       "unknown_relations": [
+        "children",
+        "deps"
+       ],
+       "unknown_scalars": [],
+       "track": null
+      }
+     ]
+    },
+    "error": null
+   },
+   "stderr": ""
+  },
+  "--format json dep list agents-config-9k9.484.2.3": {
+   "exit": 0,
+   "stdout": {
+    "protocol": "2.22",
+    "ok": true,
+    "data": {
+     "depends_on": [
+      {
+       "id": "agents-config-9k9.484.2",
+       "type": "parent-child",
+       "status": "open"
+      }
+     ],
+     "dependents": []
+    },
+    "error": null
+   },
+   "stderr": ""
+  },
+  "--format json dep list agents-config-9k9.484.2.1": {
+   "exit": 0,
+   "stdout": {
+    "protocol": "2.22",
+    "ok": true,
+    "data": {
+     "depends_on": [
+      {
+       "id": "agents-config-9k9.484.2",
+       "type": "parent-child",
+       "status": "open"
+      }
+     ],
+     "dependents": [
+      {
+       "id": "agents-config-9k9.484.3",
+       "type": "discovered-from",
+       "status": "deferred"
+      },
+      {
+       "id": "agents-config-9k9.484.2.6",
+       "type": "blocks",
+       "status": "open"
+      },
+      {
+       "id": "agents-config-9k9.484.2.5",
+       "type": "blocks",
+       "status": "open"
+      }
+     ]
+    },
+    "error": null
+   },
+   "stderr": ""
+  },
+  "--format json show agents-config-9k9.484.3": {
+   "exit": 0,
+   "stdout": {
+    "protocol": "2.22",
+    "ok": true,
+    "data": {
+     "items": [
+      {
+       "id": "agents-config-9k9.484.3",
+       "title": "The change-record spec's errata are amended in one pass and re-attacked once",
+       "type": "chore",
+       "status": "deferred",
+       "priority": "P3",
+       "labels": [
+        "shape-chore",
+        "track:review-and-merge"
+       ],
+       "parent": "agents-config-9k9.484",
+       "deps": [
+        {
+         "id": "agents-config-9k9.484.2.1",
+         "type": "discovered-from",
+         "status": "in_progress"
+        }
+       ],
+       "children": [],
+       "description": "Errata found while implementing the change-record spec (docs/specs/2026-10-10-change-record.md), each implemented to the reading given and awaiting one amendment with one re-attack. (1) Section 2.1 defines the short id as the full id with the prefix removed up to and including the first hyphen, which turns agents-config-9k9.484 into config-9k9.484 against its own example 9k9.484; implemented as the example. (2) CR-L8 and CR-L15 conflict for an init stub, which holds no stamped generated group; implemented as: an absent generated group passes lint, a present one must carry a matching stamp. (3) Section 5's table has no attribution field and no field for a spec PR's blast radius; the schema added commit.attribution. (4) The section 3.1 template says ancestry lines carry a role, CR-X1 says type. (5) Section 2.1's owning item for a direct child of the milestone would be the milestone, and the design mock treats the work item as its own owning item. (6) CR-C1 asks for rounds as a range, but rounds restart per claim and class. (7) CR-L13 has a Deferred reply name the work item the campaign's disposition carries, and real advisory-deferred dispositions carry none. (8) Section 3.4 applies the no-commentary check to four sections, CR-L7 to every author-written prose field; implemented as CR-L7. (9) CR-L7's code-span clause names only the phrase, while CR-C2 relies on a construct in a code span passing; both implemented. (10) CR-L4 as worded passes a verification group with gates and an empty not-run list, though the template always shows a not-run line. (11) CR-L11 names two lists and the None. convention covers three. (12) pr.title and commit.trivial appear in no template, so they have no gloss scope. (13) CR-R1 bounds the text above the horizontal rule at 400 words, and the PR 843 example and the design mock both hold about 1,268 (about 991 outside folds); the check clause never names the count. Vet: the amended spec, a fresh criteria attack record against it, spec-lint exit 0.\n\n## Triage\n- Scope: out-of-scope — Each erratum is implemented to the spec's evident intent in the slice that reads it; amending the text invalidates the attack record, so it is one batched amendment, not seven.\n- Priority: P3 — No slice is blocked: each implementation follows the spec's own example or criterion and records its reading in a PR body.\n- Anchor: agents-config-9k9.484 — The errata are in the spec this container owns, and an amendment needs that spec's criteria re-attacked.",
+       "notes": "[work] deferred 2026-10-11T20:49:01.540160+00:00: Deferred by the grind's discovered-work policy (P3 and below are filed and deferred). Open it after the change-record slices merge, so one amendment and one re-attack cover every erratum the implementation turns up; later slices append theirs as notes here.\nErrata added by the renderer slice, 2026-10-11. (14) Section 3.1's illustration puts the terminal-clean sentence directly under the reviewer table, which GitHub parses as a table row; the template carries a blank line there. (15) Section 3.1 gives an in-flight discovered row no place for its pull request, though CR-L5 requires one; rendered as 'in flight (#n)'. (16) CR-D7 says the author chooses Superseded in the record and does not say how the findings table learns it; read from the matching reply. (17) CR-R4 says 'commit prose fields' without listing them; implemented over every field the commit template names. (18) CR-R6 says 'with the lint output' and names no stream; implemented as stderr. (19) CR-L17 says 'heading' for all three templates, and the commit and reply templates hold labels, not headings.\nErratum added by slice L part c, 2026-10-11. (20) Section 3.3 puts one reply on each finding that changed code or prose, but a finding the reviewing App posts only inside the verdict envelope, with no inline comment, has no thread to reply on. PR 843 has five such fixed findings; the author's account of each fix exists only as the next envelope's prior-disposition evidence. The spec should say where such a reply goes, or that the record entry alone satisfies CR-L14.\nErrata added by slice L part c, 2026-10-11. (21) CR-C2 writes a finding's claim and class only when the PR carries more than one, while CR-D7's identity and CR-L14's matching need both always; the schema now requires both on every campaign finding. (22) CR-D7 takes a finding's fix commit from the author's thread reply, so a fixed finding with no thread keeps an empty campaign commit while the record's reply entry holds it. (23) CR-L10 fails a record whose reach flag is true without both diagrams, but a docs or chore body has no blast-radius fold to render them in. (24) CR-L10's 'top-level component' is undefined; implemented as the first path segment, a root file as its own component, and paths under a top-level docs directory counting toward none. (25) CR-L13 does not say which words of a reply count; implemented as the change and verification text, not the labels, outcome or commit. (26) CR-L8's 'exactly the fields the author must fill' cannot hold for the reach flag, which has no unfilled state; the stub sets it false. (27) CR-L3 lists no rule for a subject with no colon or no wording, so such a subject passes.\nErrata added by slice C, 2026-10-11. (28) CR-C5, CR-D7 and section 2.1 have the script call the review-verdict skill's completeness rule, but that rule exists only as prose: five checks 'a person checks by hand'. validate_verdict.py holds a validator and no completeness function. Slice C ships without the terminal sha until the owner rules on the function's shape. (29) CR-C5's 'latest envelope' is unsafe on a mixed target: on PR 843 the latest envelope is the prose class's round at the final head, while the code class's last clean round judged an earlier head. (30) A superseded claim's findings never receive a disposition, so a reviewer row's counts do not sum; the spec does not say how a row shows them. (31) CR-C3 does not say which reviews count as envelopes the tool could not read; implemented as App reviews whose envelope block fails to parse or validate. (32) CR-C1's rounds 'as a range' can imply a round a reviewer skipped; the design mock lists rounds one by one.",
+       "created": "2026-10-11T20:48:51Z",
+       "updated": "2026-10-11T22:34:33Z",
+       "closed": null,
+       "acceptance": null,
+       "unknown_relations": [],
+       "unknown_scalars": [],
+       "track": "review-and-merge"
+      }
+     ]
+    },
+    "error": null
+   },
+   "stderr": ""
+  },
+  "--format json show agents-config-zzz.999": {
+   "exit": 1,
+   "stdout": {
+    "protocol": "2.22",
+    "ok": false,
+    "data": null,
+    "error": {
+     "code": "E_NOT_FOUND",
+     "message": "no such item(s): agents-config-zzz.999 — find the right id with `work list` or `work search QUERY`",
+     "detail": {
+      "missing": [
+       "agents-config-zzz.999"
+      ]
+     }
+    }
+   },
+   "stderr": ""
+  },
+  "--format json dep list agents-config-zzz.999": {
+   "exit": 1,
+   "stdout": {
+    "protocol": "2.22",
+    "ok": false,
+    "data": null,
+    "error": {
+     "code": "E_NOT_FOUND",
+     "message": "no item matches the requested id — find the right id with `work list` or `work search QUERY`",
+     "detail": {}
+    }
+   },
+   "stderr": ""
+  }
+ },
+ "gh": {
+  "api repos/{owner}/{repo}/pulls?state=open&per_page=100&page=1": {
+   "exit": 0,
+   "stdout": [
+    {
+     "url": "https://api.github.com/repos/scotthamilton77/agents-config/pulls/860",
+     "id": 4822231484,
+     "node_id": "PR_kwDORA3vz88AAAABH21pvA",
+     "html_url": "https://github.com/scotthamilton77/agents-config/pull/860",
+     "diff_url": "https://github.com/scotthamilton77/agents-config/pull/860.diff",
+     "patch_url": "https://github.com/scotthamilton77/agents-config/pull/860.patch",
+     "issue_url": "https://api.github.com/repos/scotthamilton77/agents-config/issues/860",
+     "number": 860,
+     "state": "open",
+     "locked": false,
+     "title": "feat(change-record): lint checks glosses, stated emptiness and the record's prose [9k9.484.2.1]",
+     "user": {
+      "login": "scotthamilton77",
+      "id": 10354605,
+      "node_id": "MDQ6VXNlcjEwMzU0NjA1",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10354605?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/scotthamilton77",
+      "html_url": "https://github.com/scotthamilton77",
+      "followers_url": "https://api.github.com/users/scotthamilton77/followers",
+      "following_url": "https://api.github.com/users/scotthamilton77/following{/other_user}",
+      "gists_url": "https://api.github.com/users/scotthamilton77/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/scotthamilton77/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/scotthamilton77/subscriptions",
+      "organizations_url": "https://api.github.com/users/scotthamilton77/orgs",
+      "repos_url": "https://api.github.com/users/scotthamilton77/repos",
+      "events_url": "https://api.github.com/users/scotthamilton77/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/scotthamilton77/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+     },
+     "body": "The change-record skill's `lint` checked only a record's structure, so a record with bare ids, silent omissions or commentary about itself passed. `lint` now enforces six rules a program can decide: a [cut from the recording]",
+     "created_at": "2026-10-11T20:47:36Z",
+     "updated_at": "2026-10-11T21:58:36Z",
+     "closed_at": null,
+     "merged_at": null,
+     "merge_commit_sha": "052f9340de8331d7ad0362934be5d2c57085f091",
+     "assignees": [],
+     "requested_reviewers": [],
+     "requested_teams": [],
+     "labels": [],
+     "milestone": null,
+     "draft": false,
+     "commits_url": "https://api.github.com/repos/scotthamilton77/agents-config/pulls/860/commits",
+     "review_comments_url": "https://api.github.com/repos/scotthamilton77/agents-config/pulls/860/comments",
+     "review_comment_url": "https://api.github.com/repos/scotthamilton77/agents-config/pulls/comments{/number}",
+     "comments_url": "https://api.github.com/repos/scotthamilton77/agents-config/issues/860/comments",
+     "statuses_url": "https://api.github.com/repos/scotthamilton77/agents-config/statuses/5024ec1841e6527f0ec7901f7887b007aa2f5e23",
+     "head": {
+      "label": "scotthamilton77:feat/9k9.484.2.1b-change-record-prose-lint",
+      "ref": "feat/9k9.484.2.1b-change-record-prose-lint",
+      "sha": "5024ec1841e6527f0ec7901f7887b007aa2f5e23",
+      "user": {
+       "login": "scotthamilton77",
+       "id": 10354605,
+       "node_id": "MDQ6VXNlcjEwMzU0NjA1",
+       "avatar_url": "https://avatars.githubusercontent.com/u/10354605?v=4",
+       "gravatar_id": "",
+       "url": "https://api.github.com/users/scotthamilton77",
+       "html_url": "https://github.com/scotthamilton77",
+       "followers_url": "https://api.github.com/users/scotthamilton77/followers",
+       "following_url": "https://api.github.com/users/scotthamilton77/following{/other_user}",
+       "gists_url": "https://api.github.com/users/scotthamilton77/gists{/gist_id}",
+       "starred_url": "https://api.github.com/users/scotthamilton77/starred{/owner}{/repo}",
+       "subscriptions_url": "https://api.github.com/users/scotthamilton77/subscriptions",
+       "organizations_url": "https://api.github.com/users/scotthamilton77/orgs",
+       "repos_url": "https://api.github.com/users/scotthamilton77/repos",
+       "events_url": "https://api.github.com/users/scotthamilton77/events{/privacy}",
+       "received_events_url": "https://api.github.com/users/scotthamilton77/received_events",
+       "type": "User",
+       "user_view_type": "public",
+       "site_admin": false
+      },
+      "repo": {
+       "id": 1141764047,
+       "node_id": "R_kgDORA3vzw",
+       "name": "agents-config",
+       "full_name": "scotthamilton77/agents-config",
+       "private": false,
+       "owner": {
+        "login": "scotthamilton77",
+        "id": 10354605,
+        "node_id": "MDQ6VXNlcjEwMzU0NjA1",
+        "avatar_url": "https://avatars.githubusercontent.com/u/10354605?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/scotthamilton77",
+        "html_url": "https://github.com/scotthamilton77",
+        "followers_url": "https://api.github.com/users/scotthamilton77/followers",
+        "following_url": "https://api.github.com/users/scotthamilton77/following{/other_user}",
+        "gists_url": "https://api.github.com/users/scotthamilton77/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/scotthamilton77/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/scotthamilton77/subscriptions",
+        "organizations_url": "https://api.github.com/users/scotthamilton77/orgs",
+        "repos_url": "https://api.github.com/users/scotthamilton77/repos",
+        "events_url": "https://api.github.com/users/scotthamilton77/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/scotthamilton77/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+       },
+       "html_url": "https://github.com/scotthamilton77/agents-config",
+       "description": "Versioned coding agent configuration files (claude, codex, gemini).",
+       "fork": false,
+       "url": "https://api.github.com/repos/scotthamilton77/agents-config",
+       "forks_url": "https://api.github.com/repos/scotthamilton77/agents-config/forks",
+       "keys_url": "https://api.github.com/repos/scotthamilton77/agents-config/keys{/key_id}",
+       "collaborators_url": "https://api.github.com/repos/scotthamilton77/agents-config/collaborators{/collaborator}",
+       "teams_url": "https://api.github.com/repos/scotthamilton77/agents-config/teams",
+       "hooks_url": "https://api.github.com/repos/scotthamilton77/agents-config/hooks",
+       "issue_events_url": "https://api.github.com/repos/scotthamilton77/agents-config/issues/events{/number}",
+       "events_url": "https://api.github.com/repos/scotthamilton77/agents-config/events",
+       "assignees_url": "https://api.github.com/repos/scotthamilton77/agents-config/assignees{/user}",
+       "branches_url": "https://api.github.com/repos/scotthamilton77/agents-config/branches{/branch}",
+       "tags_url": "https://api.github.com/repos/scotthamilton77/agents-config/tags",
+       "blobs_url": "https://api.github.com/repos/scotthamilton77/agents-config/git/blobs{/sha}",
+       "git_tags_url": "https://api.github.com/repos/scotthamilton77/agents-config/git/tags{/sha}",
+       "git_refs_url": "https://api.github.com/repos/scotthamilton77/agents-config/git/refs{/sha}",
+       "trees_url": "https://api.github.com/repos/scotthamilton77/agents-config/git/trees{/sha}",
+       "statuses_url": "https://api.github.com/repos/scotthamilton77/agents-config/statuses/{sha}",
+       "languages_url": "https://api.github.com/repos/scotthamilton77/agents-config/languages",
+       "stargazers_url": "https://api.github.com/repos/scotthamilton77/agents-config/stargazers",
+       "contributors_url": "https://api.github.com/repos/scotthamilton77/agents-config/contributors",
+       "subscribers_url": "https://api.github.com/repos/scotthamilton77/agents-config/subscribers",
+       "subscription_url": "https://api.github.com/repos/scotthamilton77/agents-config/subscription",
+       "commits_url": "https://api.github.com/repos/scotthamilton77/agents-config/commits{/sha}",
+       "git_commits_url": "https://api.github.com/repos/scotthamilton77/agents-config/git/commits{/sha}",
+       "comments_url": "https://api.github.com/repos/scotthamilton77/agents-config/comments{/number}",
+       "issue_comment_url": "https://api.github.com/repos/scotthamilton77/agents-config/issues/comments{/number}",
+       "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/{+path}",
+       "compare_url": "https://api.github.com/repos/scotthamilton77/agents-config/compare/{base}...{head}",
+       "merges_url": "https://api.github.com/repos/scotthamilton77/agents-config/merges",
+       "archive_url": "https://api.github.com/repos/scotthamilton77/agents-config/{archive_format}{/ref}",
+       "downloads_url": "https://api.github.com/repos/scotthamilton77/agents-config/downloads",
+       "issues_url": "https://api.github.com/repos/scotthamilton77/agents-config/issues{/number}",
+       "pulls_url": "https://api.github.com/repos/scotthamilton77/agents-config/pulls{/number}",
+       "milestones_url": "https://api.github.com/repos/scotthamilton77/agents-config/milestones{/number}",
+       "notifications_url": "https://api.github.com/repos/scotthamilton77/agents-config/notifications{?since,all,participating}",
+       "labels_url": "https://api.github.com/repos/scotthamilton77/agents-config/labels{/name}",
+       "releases_url": "https://api.github.com/repos/scotthamilton77/agents-config/releases{/id}",
+       "deployments_url": "https://api.github.com/repos/scotthamilton77/agents-config/deployments",
+       "created_at": "2026-01-25T11:47:11Z",
+       "updated_at": "2026-10-11T21:15:41Z",
+       "pushed_at": "2026-10-11T21:58:35Z",
+       "git_url": "git://github.com/scotthamilton77/agents-config.git",
+       "ssh_url": "git@github.com:scotthamilton77/agents-config.git",
+       "clone_url": "https://github.com/scotthamilton77/agents-config.git",
+       "svn_url": "https://github.com/scotthamilton77/agents-config",
+       "homepage": null,
+       "size": 86953,
+       "stargazers_count": 0,
+       "watchers_count": 0,
+       "language": "Python",
+       "has_issues": true,
+       "has_projects": true,
+       "has_downloads": false,
+       "has_wiki": true,
+       "has_pages": false,
+       "has_discussions": false,
+       "forks_count": 0,
+       "mirror_url": null,
+       "archived": false,
+       "disabled": false,
+       "open_issues_count": 2,
+       "license": {
+        "key": "mit",
+        "name": "MIT License",
+        "spdx_id": "MIT",
+        "url": "https://api.github.com/licenses/mit",
+        "node_id": "MDc6TGljZW5zZTEz"
+       },
+       "allow_forking": true,
+       "is_template": false,
+       "web_commit_signoff_required": false,
+       "has_pull_requests": true,
+       "pull_request_creation_policy": "all",
+       "topics": [],
+       "visibility": "public",
+       "forks": 0,
+       "open_issues": 2,
+       "watchers": 0,
+       "default_branch": "main"
+      }
+     },
+     "base": {
+      "label": "scotthamilton77:main",
+      "ref": "main",
+      "sha": "63a1c0d1bc196077fc5734c3cd60a01c6136c888",
+      "user": {
+       "login": "scotthamilton77",
+       "id": 10354605,
+       "node_id": "MDQ6VXNlcjEwMzU0NjA1",
+       "avatar_url": "https://avatars.githubusercontent.com/u/10354605?v=4",
+       "gravatar_id": "",
+       "url": "https://api.github.com/users/scotthamilton77",
+       "html_url": "https://github.com/scotthamilton77",
+       "followers_url": "https://api.github.com/users/scotthamilton77/followers",
+       "following_url": "https://api.github.com/users/scotthamilton77/following{/other_user}",
+       "gists_url": "https://api.github.com/users/scotthamilton77/gists{/gist_id}",
+       "starred_url": "https://api.github.com/users/scotthamilton77/starred{/owner}{/repo}",
+       "subscriptions_url": "https://api.github.com/users/scotthamilton77/subscriptions",
+       "organizations_url": "https://api.github.com/users/scotthamilton77/orgs",
+       "repos_url": "https://api.github.com/users/scotthamilton77/repos",
+       "events_url": "https://api.github.com/users/scotthamilton77/events{/privacy}",
+       "received_events_url": "https://api.github.com/users/scotthamilton77/received_events",
+       "type": "User",
+       "user_view_type": "public",
+       "site_admin": false
+      },
+      "repo": {
+       "id": 1141764047,
+       "node_id": "R_kgDORA3vzw",
+       "name": "agents-config",
+       "full_name": "scotthamilton77/agents-config",
+       "private": false,
+       "owner": {
+        "login": "scotthamilton77",
+        "id": 10354605,
+        "node_id": "MDQ6VXNlcjEwMzU0NjA1",
+        "avatar_url": "https://avatars.githubusercontent.com/u/10354605?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/scotthamilton77",
+        "html_url": "https://github.com/scotthamilton77",
+        "followers_url": "https://api.github.com/users/scotthamilton77/followers",
+        "following_url": "https://api.github.com/users/scotthamilton77/following{/other_user}",
+        "gists_url": "https://api.github.com/users/scotthamilton77/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/scotthamilton77/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/scotthamilton77/subscriptions",
+        "organizations_url": "https://api.github.com/users/scotthamilton77/orgs",
+        "repos_url": "https://api.github.com/users/scotthamilton77/repos",
+        "events_url": "https://api.github.com/users/scotthamilton77/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/scotthamilton77/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+       },
+       "html_url": "https://github.com/scotthamilton77/agents-config",
+       "description": "Versioned coding agent configuration files (claude, codex, gemini).",
+       "fork": false,
+       "url": "https://api.github.com/repos/scotthamilton77/agents-config",
+       "forks_url": "https://api.github.com/repos/scotthamilton77/agents-config/forks",
+       "keys_url": "https://api.github.com/repos/scotthamilton77/agents-config/keys{/key_id}",
+       "collaborators_url": "https://api.github.com/repos/scotthamilton77/agents-config/collaborators{/collaborator}",
+       "teams_url": "https://api.github.com/repos/scotthamilton77/agents-config/teams",
+       "hooks_url": "https://api.github.com/repos/scotthamilton77/agents-config/hooks",
+       "issue_events_url": "https://api.github.com/repos/scotthamilton77/agents-config/issues/events{/number}",
+       "events_url": "https://api.github.com/repos/scotthamilton77/agents-config/events",
+       "assignees_url": "https://api.github.com/repos/scotthamilton77/agents-config/assignees{/user}",
+       "branches_url": "https://api.github.com/repos/scotthamilton77/agents-config/branches{/branch}",
+       "tags_url": "https://api.github.com/repos/scotthamilton77/agents-config/tags",
+       "blobs_url": "https://api.github.com/repos/scotthamilton77/agents-config/git/blobs{/sha}",
+       "git_tags_url": "https://api.github.com/repos/scotthamilton77/agents-config/git/tags{/sha}",
+       "git_refs_url": "https://api.github.com/repos/scotthamilton77/agents-config/git/refs{/sha}",
+       "trees_url": "https://api.github.com/repos/scotthamilton77/agents-config/git/trees{/sha}",
+       "statuses_url": "https://api.github.com/repos/scotthamilton77/agents-config/statuses/{sha}",
+       "languages_url": "https://api.github.com/repos/scotthamilton77/agents-config/languages",
+       "stargazers_url": "https://api.github.com/repos/scotthamilton77/agents-config/stargazers",
+       "contributors_url": "https://api.github.com/repos/scotthamilton77/agents-config/contributors",
+       "subscribers_url": "https://api.github.com/repos/scotthamilton77/agents-config/subscribers",
+       "subscription_url": "https://api.github.com/repos/scotthamilton77/agents-config/subscription",
+       "commits_url": "https://api.github.com/repos/scotthamilton77/agents-config/commits{/sha}",
+       "git_commits_url": "https://api.github.com/repos/scotthamilton77/agents-config/git/commits{/sha}",
+       "comments_url": "https://api.github.com/repos/scotthamilton77/agents-config/comments{/number}",
+       "issue_comment_url": "https://api.github.com/repos/scotthamilton77/agents-config/issues/comments{/number}",
+       "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/{+path}",
+       "compare_url": "https://api.github.com/repos/scotthamilton77/agents-config/compare/{base}...{head}",
+       "merges_url": "https://api.github.com/repos/scotthamilton77/agents-config/merges",
+       "archive_url": "https://api.github.com/repos/scotthamilton77/agents-config/{archive_format}{/ref}",
+       "downloads_url": "https://api.github.com/repos/scotthamilton77/agents-config/downloads",
+       "issues_url": "https://api.github.com/repos/scotthamilton77/agents-config/issues{/number}",
+       "pulls_url": "https://api.github.com/repos/scotthamilton77/agents-config/pulls{/number}",
+       "milestones_url": "https://api.github.com/repos/scotthamilton77/agents-config/milestones{/number}",
+       "notifications_url": "https://api.github.com/repos/scotthamilton77/agents-config/notifications{?since,all,participating}",
+       "labels_url": "https://api.github.com/repos/scotthamilton77/agents-config/labels{/name}",
+       "releases_url": "https://api.github.com/repos/scotthamilton77/agents-config/releases{/id}",
+       "deployments_url": "https://api.github.com/repos/scotthamilton77/agents-config/deployments",
+       "created_at": "2026-01-25T11:47:11Z",
+       "updated_at": "2026-10-11T21:15:41Z",
+       "pushed_at": "2026-10-11T21:58:35Z",
+       "git_url": "git://github.com/scotthamilton77/agents-config.git",
+       "ssh_url": "git@github.com:scotthamilton77/agents-config.git",
+       "clone_url": "https://github.com/scotthamilton77/agents-config.git",
+       "svn_url": "https://github.com/scotthamilton77/agents-config",
+       "homepage": null,
+       "size": 86953,
+       "stargazers_count": 0,
+       "watchers_count": 0,
+       "language": "Python",
+       "has_issues": true,
+       "has_projects": true,
+       "has_downloads": false,
+       "has_wiki": true,
+       "has_pages": false,
+       "has_discussions": false,
+       "forks_count": 0,
+       "mirror_url": null,
+       "archived": false,
+       "disabled": false,
+       "open_issues_count": 2,
+       "license": {
+        "key": "mit",
+        "name": "MIT License",
+        "spdx_id": "MIT",
+        "url": "https://api.github.com/licenses/mit",
+        "node_id": "MDc6TGljZW5zZTEz"
+       },
+       "allow_forking": true,
+       "is_template": false,
+       "web_commit_signoff_required": false,
+       "has_pull_requests": true,
+       "pull_request_creation_policy": "all",
+       "topics": [],
+       "visibility": "public",
+       "forks": 0,
+       "open_issues": 2,
+       "watchers": 0,
+       "default_branch": "main"
+      }
+     },
+     "_links": {
+      "self": {
+       "href": "https://api.github.com/repos/scotthamilton77/agents-config/pulls/860"
+      },
+      "html": {
+       "href": "https://github.com/scotthamilton77/agents-config/pull/860"
+      },
+      "issue": {
+       "href": "https://api.github.com/repos/scotthamilton77/agents-config/issues/860"
+      },
+      "comments": {
+       "href": "https://api.github.com/repos/scotthamilton77/agents-config/issues/860/comments"
+      },
+      "review_comments": {
+       "href": "https://api.github.com/repos/scotthamilton77/agents-config/pulls/860/comments"
+      },
+      "review_comment": {
+       "href": "https://api.github.com/repos/scotthamilton77/agents-config/pulls/comments{/number}"
+      },
+      "commits": {
+       "href": "https://api.github.com/repos/scotthamilton77/agents-config/pulls/860/commits"
+      },
+      "statuses": {
+       "href": "https://api.github.com/repos/scotthamilton77/agents-config/statuses/5024ec1841e6527f0ec7901f7887b007aa2f5e23"
+      }
+     },
+     "author_association": "OWNER",
+     "auto_merge": null,
+     "assignee": null,
+     "active_lock_reason": null
+    }
+   ],
+   "stderr": ""
+  },
+  "api repos/{owner}/{repo}/pulls?state=open&per_page=100&page=2": {
+   "exit": 0,
+   "stdout": [],
+   "stderr": ""
+  },
+  "pr view 859 --json number,state,title": {
+   "exit": 0,
+   "stdout": {
+    "number": 859,
+    "state": "MERGED",
+    "title": "feat(change-record): the skill ships its record schema, templates and structural lint [9k9.484.2.1]"
+   },
+   "stderr": ""
+  },
+  "pr view 773 --json number,state,title": {
+   "exit": 0,
+   "stdout": {
+    "number": 773,
+    "state": "CLOSED",
+    "title": "feat(9k9.408): every lens class keeps one OpenRouter seat and routes the rest through Codex"
+   },
+   "stderr": ""
+  },
+  "api repos/{owner}/{repo}/pulls/860/files?per_page=100&page=1": {
+   "exit": 0,
+   "stdout": [
+    {
+     "sha": "c32d803ce89144f1f8a07c145e7b81b5b026f20e",
+     "filename": "docs/specs/2026-10-10-change-record-evidence.md",
+     "status": "modified",
+     "additions": 6,
+     "deletions": 6,
+     "changes": 12,
+     "blob_url": "https://github.com/scotthamilton77/agents-config/blob/436ed507d00773d4d44003e9be9618bd9b3d0ff2/docs%2Fspecs%2F2026-10-10-change-record-evidence.md",
+     "raw_url": "https://github.com/scotthamilton77/agents-config/raw/436ed507d00773d4d44003e9be9618bd9b3d0ff2/docs%2Fspecs%2F2026-10-10-change-record-evidence.md",
+     "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/docs%2Fspecs%2F2026-10-10-change-record-evidence.md?ref=436ed507d00773d4d44003e9be9618bd9b3d0ff2",
+     "patch": "@@ -1,16 +1,16 @@\n # Evidence\n \n - CR-L1 | open\n-- CR-L2 | open\n+- CR-L2 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL2Gloss\n - CR-L3 | open\n-- CR-L4 | open\n-- C [cut from the recording]"
+    },
+    {
+     "sha": "af5c93ae49ac4a0ae20033bed3a374410d8e676c",
+     "filename": "src/user/.agents/skills/change-record/SKILL.md",
+     "status": "modified",
+     "additions": 4,
+     "deletions": 2,
+     "changes": 6,
+     "blob_url": "https://github.com/scotthamilton77/agents-config/blob/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2FSKILL.md",
+     "raw_url": "https://github.com/scotthamilton77/agents-config/raw/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2FSKILL.md",
+     "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2FSKILL.md?ref=436ed507d00773d4d44003e9be9618bd9b3d0ff2",
+     "patch": "@@ -21,7 +21,9 @@ Check a record before writing from it. From this skill's directory:\n uv run scripts/change_record.py lint path/to/record.json\n ```\n \n-`lint` checks structure against the schema. It r [cut from the recording]"
+    },
+    {
+     "sha": "f688dc22aa6227dd66affcd29ea03caf561c1576",
+     "filename": "src/user/.agents/skills/change-record/references/lint-phrases.json",
+     "status": "added",
+     "additions": 14,
+     "deletions": 0,
+     "changes": 14,
+     "blob_url": "https://github.com/scotthamilton77/agents-config/blob/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Freferences%2Flint-phrases.json",
+     "raw_url": "https://github.com/scotthamilton77/agents-config/raw/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Freferences%2Flint-phrases.json",
+     "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Freferences%2Flint-phrases.json?ref=436ed507d00773d4d44003e9be9618bd9b3d0ff2",
+     "patch": "@@ -0,0 +1,14 @@\n+{\n+  \"document_commentary\": [\n+    \"this section\",\n+    \"note that\",\n+    \"please note\",\n+    \"worth noting\",\n+    \"it should be noted\",\n+    \"as noted\",\n+    \"as mentioned\",\n+    \"s [cut from the recording]"
+    },
+    {
+     "sha": "4ead1a3d7ed5d822cc8ad2251c3a42a5280cbc13",
+     "filename": "src/user/.agents/skills/change-record/references/lint-rules.md",
+     "status": "added",
+     "additions": 58,
+     "deletions": 0,
+     "changes": 58,
+     "blob_url": "https://github.com/scotthamilton77/agents-config/blob/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Freferences%2Flint-rules.md",
+     "raw_url": "https://github.com/scotthamilton77/agents-config/raw/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Freferences%2Flint-rules.md",
+     "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Freferences%2Flint-rules.md?ref=436ed507d00773d4d44003e9be9618bd9b3d0ff2",
+     "patch": "@@ -0,0 +1,58 @@\n+# What `lint` checks\n+\n+`lint` checks a record's structure against the schema first. It reports each fault under the code `schema`. The rules below run once the structure is valid. E [cut from the recording]"
+    },
+    {
+     "sha": "7a502759a7104d59c99565418563425c12be07ec",
+     "filename": "src/user/.agents/skills/change-record/references/record.schema.json",
+     "status": "modified",
+     "additions": 11,
+     "deletions": 5,
+     "changes": 16,
+     "blob_url": "https://github.com/scotthamilton77/agents-config/blob/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Freferences%2Frecord.schema.json",
+     "raw_url": "https://github.com/scotthamilton77/agents-config/raw/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Freferences%2Frecord.schema.json",
+     "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Freferences%2Frecord.schema.json?ref=436ed507d00773d4d44003e9be9618bd9b3d0ff2",
+     "patch": "@@ -3,6 +3,7 @@\n   \"$id\": \"https://agents.local/schemas/change-record/1\",\n   \"title\": \"Change record\",\n   \"description\": \"Everything one pull request's description, commit message and review replies s [cut from the recording]"
+    },
+    {
+     "sha": "61379195ff94b8e761e4c200f8f34d95c4868216",
+     "filename": "src/user/.agents/skills/change-record/scripts/change_record.py",
+     "status": "modified",
+     "additions": 382,
+     "deletions": 8,
+     "changes": 390,
+     "blob_url": "https://github.com/scotthamilton77/agents-config/blob/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fchange_record.py",
+     "raw_url": "https://github.com/scotthamilton77/agents-config/raw/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fchange_record.py",
+     "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fchange_record.py?ref=436ed507d00773d4d44003e9be9618bd9b3d0ff2",
+     "patch": "@@ -7,24 +7,87 @@\n \n Usage: uv run change_record.py lint <record.json>\n \n-``lint`` checks a record against the record schema and prints a JSON result to\n-stdout. Exit 0 valid, 1 invalid, 2 unreadable, [cut from the recording]"
+    },
+    {
+     "sha": "5bc7463a90bd37ecb96623f7bb0e85c00010e383",
+     "filename": "src/user/.agents/skills/change-record/scripts/change_record_test.py",
+     "status": "modified",
+     "additions": 658,
+     "deletions": 2,
+     "changes": 660,
+     "blob_url": "https://github.com/scotthamilton77/agents-config/blob/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fchange_record_test.py",
+     "raw_url": "https://github.com/scotthamilton77/agents-config/raw/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fchange_record_test.py",
+     "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fchange_record_test.py?ref=436ed507d00773d4d44003e9be9618bd9b3d0ff2",
+     "patch": "@@ -10,22 +10,34 @@\n \n from __future__ import annotations\n \n+# The fence goes up when conftest is imported. This import comes first, so the\n+# fence also holds while this file runs as a script, before [cut from the recording]"
+    },
+    {
+     "sha": "0306fc1b4fce9011d978a2a8b6e0e06958ca3bd3",
+     "filename": "src/user/.agents/skills/change-record/scripts/conftest.py",
+     "status": "modified",
+     "additions": 45,
+     "deletions": 28,
+     "changes": 73,
+     "blob_url": "https://github.com/scotthamilton77/agents-config/blob/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fconftest.py",
+     "raw_url": "https://github.com/scotthamilton77/agents-config/raw/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fconftest.py",
+     "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fconftest.py?ref=436ed507d00773d4d44003e9be9618bd9b3d0ff2",
+     "patch": "@@ -1,18 +1,25 @@\n \"\"\"Fence every suite in this directory off from the network, GitHub and the tracker.\n \n-pytest loads this file for each suite beside it, so a new suite is fenced\n-without asking for [cut from the recording]"
+    },
+    {
+     "sha": "9b688325ae44fba0bb608b69506ca1a11e532cdf",
+     "filename": "src/user/.agents/skills/change-record/scripts/conftest_test.py",
+     "status": "modified",
+     "additions": 90,
+     "deletions": 0,
+     "changes": 90,
+     "blob_url": "https://github.com/scotthamilton77/agents-config/blob/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fconftest_test.py",
+     "raw_url": "https://github.com/scotthamilton77/agents-config/raw/436ed507d00773d4d44003e9be9618bd9b3d0ff2/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fconftest_test.py",
+     "contents_url": "https://api.github.com/repos/scotthamilton77/agents-config/contents/src%2Fuser%2F.agents%2Fskills%2Fchange-record%2Fscripts%2Fconftest_test.py?ref=436ed507d00773d4d44003e9be9618bd9b3d0ff2",
+     "patch": "@@ -10,10 +10,17 @@\n \n from __future__ import annotations\n \n+# The fence goes up when conftest is imported. This import comes first, so the\n+# fence also holds while this file runs as a script, before [cut from the recording]"
+    }
+   ],
+   "stderr": ""
+  },
+  "api repos/{owner}/{repo}/pulls/860/files?per_page=100&page=2": {
+   "exit": 0,
+   "stdout": [],
+   "stderr": ""
+  }
+ }
+}

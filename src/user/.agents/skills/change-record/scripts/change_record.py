@@ -3,13 +3,15 @@
 # requires-python = ">=3.11"
 # dependencies = ["jsonschema>=4"]
 # ///
-"""Start and check a change record, and render a pull request's three artifacts from it.
+"""Start, fill and check a change record, and render a pull request's three artifacts from it.
 
 A change record is the JSON document a pull request's description, commit
 message and review replies are written from.
 
 Usage: uv run change_record.py init --type TYPE --component NAME --work-item ID <record.json>
        uv run change_record.py lint [--pr NUMBER] <record.json>
+       uv run change_record.py context <record.json>
+       uv run change_record.py discovered <record.json>
        uv run change_record.py render body <record.json> [--existing-body FILE] [--comment-url URL]
        uv run change_record.py render commit <record.json>
        uv run change_record.py render reply <record.json> --finding ID
@@ -24,6 +26,12 @@ it also reads that pull request's changed paths through ``gh`` and checks the
 record against them. Exit 0 valid, 1 invalid, 2 unreadable, unparseable,
 called wrongly, or ``gh`` failed.
 
+``context`` and ``discovered`` fill the parts of a record that are copied
+from the tracker and from GitHub, which they read through ``work`` and ``gh``
+in the working directory's repository. Each takes the work item and the pull
+request from the record, and writes the file once, after every call has
+succeeded. Exit 0 the record holds the part, 2 anything failed.
+
 ``render`` fills one of the three template files from a record and writes the
 result to stdout, or to the file ``--output`` names. It lints first. A record
 it refuses gets the JSON result on stderr and nothing written. Exit 0
@@ -33,13 +41,14 @@ rendered, 1 refused, 2 unreadable, unparseable or called wrongly.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import re
 import string
 import subprocess
 import sys
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -684,16 +693,8 @@ def pr_changed_paths(number: int) -> list[str]:
     A ``gh`` that cannot be run, or that fails, raises a ``RecordError``,
     because a check that could not read the paths has decided nothing.
     """
-    command = ["gh", "pr", "diff", str(number), "--name-only"]
-    try:
-        # A path is bytes to git, and one that is no UTF-8 must not stop the read.
-        proc = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace", check=False)
-    except OSError as exc:
-        raise RecordError("gh-failed", f"cannot run `{' '.join(command)}`: {exc}") from exc
-    if proc.returncode != 0:
-        reason = proc.stderr.strip() or "it printed no reason"
-        raise RecordError("gh-failed", f"`{' '.join(command)}` exited {proc.returncode}: {reason}")
-    return [line for line in proc.stdout.splitlines() if line.strip()]
+    printed = run_tool(["gh", "pr", "diff", str(number), "--name-only"])
+    return [line for line in printed.splitlines() if line.strip()]
 
 
 def _reach(record: dict[str, Any], changed: list[str]) -> Iterator[dict[str, str]]:
@@ -1067,6 +1068,330 @@ def _init(args: argparse.Namespace) -> int:
     return EXIT_VALID
 
 
+# What every generator shares: running an executable, writing the record once,
+# and keeping its own heads-up rows.
+
+
+def run_tool(command: list[str]) -> str:
+    """Run ``command``, a call to the ``gh`` or the ``work`` executable, and return what it printed.
+
+    A command that cannot be run, or that exits with an error, raises a
+    ``RecordError`` whose message quotes the whole command, so the message
+    names the call and every id the call was given. The error's code is the
+    executable's name followed by ``-failed``. The reason is the message of
+    the error the tracker printed, or else what the command wrote to stderr.
+    """
+    quoted = f"`{' '.join(command)}`"
+    try:
+        # What an executable prints is bytes, and bytes that are no UTF-8 must not stop the read.
+        proc = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace", check=False)
+    except OSError as exc:
+        raise RecordError(f"{command[0]}-failed", f"cannot run {quoted}: {exc}") from exc
+    if proc.returncode != 0:
+        try:
+            reason = json.loads(proc.stdout)["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            reason = proc.stderr.strip() or proc.stdout.strip() or "it printed no reason"
+        raise RecordError(f"{command[0]}-failed", f"{quoted} exited {proc.returncode}: {reason}")
+    return proc.stdout
+
+
+def tool_json(command: list[str]) -> Any:
+    """Run ``command`` as ``run_tool`` does, and return what it printed, parsed as JSON."""
+    printed = run_tool(command)
+    try:
+        return json.loads(printed)
+    except json.JSONDecodeError as exc:
+        raise RecordError(f"{command[0]}-failed", f"`{' '.join(command)}` did not print JSON: {exc}") from exc
+
+
+def gh_pages(endpoint: str) -> list[Any]:
+    """Return every entry of a list the GitHub API serves in pages, read through ``gh api``.
+
+    The pages are asked for one at a time, and the reading stops at the first
+    page that comes back empty. ``endpoint`` is the path of the list, with or
+    without a query of its own.
+    """
+    entries: list[Any] = []
+    page = 1
+    while True:
+        command = ["gh", "api", f"{endpoint}{'&' if '?' in endpoint else '?'}page={page}"]
+        batch = tool_json(command)
+        if not isinstance(batch, list):
+            raise RecordError("gh-failed", f"`{' '.join(command)}` did not print a list")
+        if not batch:
+            return entries
+        entries += batch
+        page += 1
+
+
+def write_record(path: Path, record: dict[str, Any]) -> None:
+    """Replace the record file at ``path`` with ``record``, in one step.
+
+    The text is written beside the file and then moved over it, so a reader
+    never finds half a record. The groups are written in the order the schema
+    lists them, so the file reads the same whichever generator ran first.
+    """
+    ordered = {name: record[name] for name in load_schema()["properties"] if name in record}
+    beside = path.with_name(path.name + ".tmp")
+    try:
+        beside.write_text(json.dumps(ordered, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        beside.replace(path)
+    except OSError as exc:
+        raise RecordError("unwritable", f"cannot write {path}: {exc}") from exc
+
+
+def set_generator_rows(record: dict[str, Any], generator: str, rows: list[str]) -> None:
+    """Make ``rows`` the heads-up rows that ``generator`` holds in ``record``.
+
+    A generator's row opens with its name and a colon, which is how the next
+    run finds the rows to replace. A row takes the place of a ``None.`` entry.
+    When the generator's last row goes and no other entry is left, the
+    ``None.`` entry comes back. A list the author has not filled yet stays
+    empty, because only the author can say that there is nothing to report.
+    """
+    opening = f"{generator}: "
+    entries = record["heads_up"]
+    others = [entry for entry in entries if not entry.startswith(opening) and not (rows and is_none(entry))]
+    took_one_out = len(others) < len(entries)
+    record["heads_up"] = others + [opening + row for row in rows] or ([NONE] if took_one_out else [])
+
+
+def run_generator(args: argparse.Namespace, fill: Callable[[dict[str, Any]], None]) -> int:
+    """Run one generator over the record file ``args.record`` names, and return the exit status.
+
+    ``fill`` computes every part its generator owns and sets them in the
+    record it is given. The file is written once, after ``fill`` returns, and
+    only when the record changed. A failure of any kind therefore leaves the
+    file as it was, and a second run over unchanged sources writes nothing.
+    """
+    try:
+        record = read_record(args.record)
+        faults = sorted(_schema_faults(record))
+        if faults:
+            where, fault = faults[0]
+            message = f"{args.record} does not fit the record schema at {where or 'its root'}: {fault}"
+            raise RecordError("schema", message)
+        filled = copy.deepcopy(record)
+        try:
+            fill(filled)
+        except (KeyError, IndexError, TypeError) as exc:
+            # A field the tracker cannot answer is absent from its output, and a
+            # part built without it would state a guess as a fact.
+            message = f"an answer from the tracker or from GitHub lacks what the generator reads: {exc!r}"
+            raise RecordError("answer-shape", message) from exc
+        if filled != record:
+            write_record(args.record, filled)
+    except RecordError as exc:
+        print(exc.message, file=sys.stderr)
+        return EXIT_UNUSABLE
+    print(f"wrote {args.record}" if filled != record else f"{args.record} is already current")
+    return EXIT_VALID
+
+
+def add_generator(commands: Any, name: str, fill: Callable[[dict[str, Any]], None], does: str) -> None:
+    """Add the subcommand ``name`` to ``commands``: a generator that takes a record file and runs ``fill``.
+
+    ``does`` says what the generator does, as the words that follow "to" in a sentence.
+    """
+    generator = commands.add_parser(
+        name,
+        help=does,
+        description=f"Read a record to {does}. The record names the work item and the pull request to read about. "
+        "The file is written once, after every call has succeeded, so a failure leaves it as it was. "
+        "Exit 0 the record holds the part, 2 anything failed.",
+    )
+    generator.add_argument("record", type=Path, help="path to the record's JSON file")
+    generator.set_defaults(run=lambda args: run_generator(args, fill))
+
+
+# The two generators that read the tracker: `context` and `discovered`.
+
+# The list of a repository's open pull requests. The `gh` executable fills in
+# the owner and the name of the repository the working directory belongs to.
+OPEN_PULLS = "repos/{owner}/{repo}/pulls?state=open&per_page=100"
+
+# What `context` says in the heads-up list when it could not compare paths with the other open pull requests.
+NO_NUMBER = "The record names no pull request yet, so the other open pull requests were not checked for shared paths."
+
+# The line the tracker adds to an item's notes when the item is delivered, and
+# the pull request its evidence names. The evidence is written as the caller
+# gave it: a number, a number after a `#`, or a pull request's URL. Evidence
+# of any other kind names no pull request.
+DELIVERED = re.compile(r"^[ \t]*\[work\] delivered:[ \t]*(?:.*?(?:/pull/|#))?(\d+)[ \t]*$", re.MULTILINE)
+
+# The scope line of the triage record the tracker writes at the end of a
+# discovered item's description, and the reason the line gives. The tracker
+# writes a dash between the scope call and its reason. A call that defers work
+# names the route it took before that dash, so the reason is what follows it.
+TRIAGE_SCOPE = re.compile(
+    r"^## Triage[ \t]*\n- Scope: (?:out-of-scope|in-scope — deferred: .+?) — (.+?)[ \t]*$", re.MULTILINE
+)
+
+
+def tracker(*arguments: str) -> Any:
+    """Return the data of the tracker's answer to a read, made through the ``work`` executable."""
+    return tool_json(["work", "--format", "json", *arguments])["data"]
+
+
+def _ancestors(item_id: str) -> list[dict[str, Any]]:
+    """Return the tracker item ``item_id`` and every item above it, outermost first.
+
+    Each step reads the parent field of the item below. An id that looks like
+    a path says nothing about where its item sits now, so no step reads one.
+    """
+    chain: list[dict[str, Any]] = []
+    following: str | None = item_id
+    while following is not None:
+        if any(item["id"] == following for item in chain):
+            raise RecordError("work-failed", f"the tracker's parent fields lead from {following} back to itself")
+        chain.insert(0, tracker("show", following)["items"][0])
+        following = chain[0]["parent"]
+    return chain
+
+
+def _in_id_order(item: dict[str, Any]) -> list[Any]:
+    """Return a sort key that puts tracker items in the order a reader counts their ids, so .10 follows .9."""
+    return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", item["id"])]
+
+
+def _scope(
+    work_item: dict[str, Any], children: list[dict[str, Any]], pulls: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Return the scope table: one row per child of the owning item, with its title and its status.
+
+    The record's own work item is this pull request, whatever else is true of
+    it. A closed child is done. A child is in flight when an open pull request
+    names it, which a title does by closing with the child's id in brackets,
+    short or full. The lowest-numbered such pull request is the one shown.
+    Every other child is open. An owning item with no child has one part, which
+    is this pull request.
+    """
+    naming: dict[str, int] = {}
+    for pull in pulls:
+        naming.setdefault(closing_id(pull["title"]), pull["number"])
+    rows: list[dict[str, Any]] = []
+    for child in children:
+        row = {"slice": child["id"], "covers": child["title"]}
+        carrier = naming.get(child["id"]) or naming.get(short_id(child["id"]))
+        if child["id"] == work_item["id"]:
+            row["status"] = "this PR"
+        elif child["status"] == "closed":
+            row["status"] = "done"
+        elif carrier:
+            row.update(status="in flight", pr=carrier)
+        else:
+            row["status"] = "open"
+        rows.append(row)
+    return rows or [{"slice": work_item["id"], "covers": work_item["title"], "status": "this PR"}]
+
+
+def _builds_on(children: list[dict[str, Any]], apart_from: int | None) -> list[dict[str, Any]]:
+    """Return the merged pull requests that delivered ``children``, lowest number first, each with its title.
+
+    The number comes from the delivery the tracker recorded on a closed child.
+    The tracker records it as the caller gave it and checks nothing, so GitHub
+    is asked whether each one merged, and one that closed without merging is
+    left out. A number is read as a pull request of the working directory's
+    repository, so a delivery that names another repository is looked up in
+    the wrong place. ``apart_from`` is the record's own pull request, which
+    is never something it builds on.
+    """
+    numbers = {
+        int(number)
+        for child in children
+        if child["status"] == "closed"
+        for number in DELIVERED.findall(child["notes"] or "")
+    }
+    merged = []
+    for number in sorted(numbers - {apart_from}):
+        pull = tool_json(["gh", "pr", "view", str(number), "--json", "number,state,title"])
+        if pull["state"] == "MERGED":
+            merged.append({"pr": number, "gloss": pull["title"]})
+    return merged
+
+
+def _touched_paths(number: int) -> set[str]:
+    """Return every path pull request ``number`` touches, read from GitHub's list of its files.
+
+    A renamed file counts under its old path and its new one, because a
+    change to either meets the rename. The list is read in pages, since
+    GitHub refuses to give the whole diff of a large pull request in one
+    answer.
+    """
+    files = gh_pages(f"repos/{{owner}}/{{repo}}/pulls/{number}/files?per_page=100")
+    return {file[name] for file in files for name in ("filename", "previous_filename") if file.get(name)}
+
+
+def _concurrent(number: int, others: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return each of the open pull requests ``others`` that touches a path pull request ``number`` touches.
+
+    Each entry carries the pull request's title. The paths of ``number`` are
+    read only when there is another open pull request to compare them with.
+    Every open pull request costs two calls or more, so a repository with
+    hundreds open makes this slow.
+    """
+    own = _touched_paths(number) if others else set()
+    return [{"pr": pull["number"], "gloss": pull["title"]} for pull in others if own & _touched_paths(pull["number"])]
+
+
+def fill_context(record: dict[str, Any]) -> None:
+    """Set ``where_this_fits`` in ``record`` from the tracker and from GitHub, with its stamp.
+
+    The owning item is the work item's parent. A work item at the root of its
+    tree, or directly under the root, is its own owning item, because the
+    children of a root are every piece of work in the project.
+    """
+    number = record["pr"]["number"]
+    chain = _ancestors(record["work_item"]["id"])
+    owner = chain[-1] if len(chain) <= 2 else chain[-2]
+    children = sorted(tracker("list", "--parent", owner["id"])["items"], key=_in_id_order)
+    others = [pull for pull in gh_pages(OPEN_PULLS) if pull["number"] != number]
+    others.sort(key=lambda pull: pull["number"])
+    fits = {
+        "ancestry": [{name: item[name] for name in ("id", "title", "type")} for item in chain],
+        "builds_on": _builds_on([child for child in children if child["id"] != chain[-1]["id"]], number),
+        "concurrent": [] if number is None else _concurrent(number, others),
+        "scope": _scope(chain[-1], children, others),
+    }
+    record["where_this_fits"] = {**fits, "digest": stamp(fits)}
+    # A pull request's paths are GitHub's to give, so a record with no number
+    # cannot be compared with the other open ones. The list then says so, and
+    # it says nothing when no other pull request is open.
+    set_generator_rows(record, "context", [NO_NUMBER] if number is None and others else [])
+
+
+def fill_discovered(record: dict[str, Any]) -> None:
+    """Set the filed rows of ``discovered`` in ``record`` from the tracker, with their stamp.
+
+    An item gets a row when its discovered-from edge points at the record's
+    work item. The row holds the item's id, its title, and the reason its
+    triage record gives for the scope call. The filed rows come first, in id
+    order, and every other row stays where the author put it. The ``None.``
+    entry goes when a filed row arrives. It never comes from here, because
+    only the author can say that the pull request found nothing.
+    """
+    work_item_id = record["work_item"]["id"]
+    edges = tracker("dep", "list", work_item_id)["dependents"]
+    found = sorted((edge for edge in edges if edge["type"] == "discovered-from"), key=_in_id_order)
+    items = tracker("show", *(edge["id"] for edge in found))["items"] if found else []
+    filed = []
+    for item in sorted(items, key=_in_id_order):
+        reasons = TRIAGE_SCOPE.findall(item["description"] or "")
+        if not reasons:
+            message = (
+                f"{item['id']} was discovered from {work_item_id}, and its description holds no triage record "
+                "to take the reason from"
+            )
+            raise RecordError("no-triage", message)
+        filed.append({"status": "filed", "item": item["id"], "what": item["title"], "reason": reasons[-1]})
+    rest = [row for row in record["discovered"]["rows"] if not (isinstance(row, dict) and row["status"] == "filed")]
+    if filed:
+        rest = [row for row in rest if isinstance(row, dict)]
+    record["discovered"]["rows"] = filed + rest
+    record["discovered"]["filed_digest"] = stamp(filed)
+
+
 def _filled(text: str) -> str:
     """Return ``text`` as a command-line argument's value, and refuse it when it is blank or is no text.
 
@@ -1423,7 +1748,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the command line. Each subcommand names the function that runs it as ``run``."""
     parser = argparse.ArgumentParser(
         prog="change_record.py",
-        description="Start or check a change record, the JSON document a pull request's description, "
+        description="Start, fill or check a change record, the JSON document a pull request's description, "
         "commit message and review replies are written from, and render the three from it.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
@@ -1464,6 +1789,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="also check the record against this pull request's changed paths, which are read through gh",
     )
     lint.set_defaults(run=_lint)
+    add_generator(commands, "context", fill_context, "fill where_this_fits from the tracker and from GitHub")
+    add_generator(commands, "discovered", fill_discovered, "fill the filed rows of discovered from the tracker")
     render = commands.add_parser(
         "render",
         help="render the pull request body, the commit message or a review reply from a record",

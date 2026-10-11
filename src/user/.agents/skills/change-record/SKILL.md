@@ -13,7 +13,7 @@ Every change is described in the pull request body, in the commit message, and i
 
 `references/record.schema.json` defines every field. `references/fields.md` says what each group holds, who writes it, and which fields hold wording an editor may change. `examples/pr-843.json` is a worked record for a feature pull request that went through eight review rounds.
 
-The author writes most of the record. Three parts hold facts that are copied and never composed. `where_this_fits` comes from the tracker and from GitHub. `campaign` comes from the posted review verdicts. The filed rows of `discovered` come from the tracker. Nothing in this skill fills those parts, so take their facts from the tracker's and GitHub's own output. Each part carries a stamp over its content, and `references/lint-rules.md` shows how to set it. The `record` group is bookkeeping the author leaves alone.
+The author writes most of the record. Three parts hold facts that are copied and never composed. `context` fills `where_this_fits` from the tracker and from GitHub. `discovered` fills the filed rows of `discovered` from the tracker. `references/generators.md` describes both. Nothing fills `campaign` yet, so copy it from the posted review verdicts. Each part carries a stamp over its content, and `references/lint-rules.md` shows how to set one by hand. The `record` group is bookkeeping the author leaves alone.
 
 ## The script
 
