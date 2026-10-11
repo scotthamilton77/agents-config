@@ -22,13 +22,13 @@
 - a pull request number, such as `#12`
 - a numbered section, such as `section 4.2`
 
-A gloss is a parenthetical, in one of two places. It can follow the id, as in `X7 (the retry bound)`, and then it holds at least one word that is not itself an id. It can hold the id, as in `the retry is bounded (X7)`, and then the words around the id say what it is. Backticks around an id do not excuse it.
+A gloss is a parenthetical, in one of two places. It can follow the id, as in `X7 (the retry bound)`, and then it holds at least one word that is not itself an id. It can hold the id, as in `the retry is bounded (X7)`, and then the words around the id say what it is. Backticks around an id do not excuse it. A parenthetical after a list of ids glosses only the last of them.
 
 Only the first use of an id needs its gloss. `lint` finds the first use in each of three texts, because each is read alone: the title with the body, the commit message, and each reply. It reads the fields of a text in the order the text's template shows them.
 
 Some cells set an id beside its own gloss. `lint` takes such an id as introduced for the text below the cell. These cells are a line of the tracker tree, a pull request the body builds on or runs beside, a row of the scope table, the item or pull request of a discovered row, the id column of the criteria table, and the work-item line of the commit message.
 
-`lint` reads no id in a generated part, in the text of a filed discovered row, in a gate's command or in a diagram's source. It also skips the bracketed id that closes the title and the commit subject.
+`lint` asks for no gloss in a generated part, in the text of a filed discovered row, in a gate's command or in a diagram's source. It also passes over the bracketed id that closes the title and the commit subject.
 
 `lint` cannot tell whether a gloss explains its id. That judgement stays with the author.
 
