@@ -40,12 +40,11 @@ needs, and two lenses may share ground when one asks about a criterion and the o
 | `set-consistency` | The set against itself | Criteria that cannot hold together, and wording that admits different outcomes. |
 | `what-if` | One criterion, asked what it leaves untested | The standard's what-if questions, naming cases no criterion tests. |
 
-A lens's `tier` names the model capability it needs and `transport` the route its prompt goes
-out on: an `openrouter` lens through the
-`openrouter-claude-subagent` skill, a `codex` lens through the codex command-line tool. When one
-transport is down, run its lenses over the other — the panel has then lost its vendor diversity,
-and blind spots correlate within a vendor. No field records the substitution, so say so in your
-report or it is lost. One attacker runs per lens,
+A lens's `tier` is the capability it needs, `transport` its route: an `openrouter` lens through
+the `openrouter-claude-subagent` skill, a `codex` lens as the Codex delegation skill's read-only
+run. Ingest usable output, fix a refusal, rerun unusable output as `unusable-output`, and stop a
+run you signalled. A run its provider did not serve is `transport-error`: move its lenses to
+the other transport, losing vendor diversity, and say so in your report. One attacker runs per lens,
 alone: asked for everything, one attacker satisfices, returning two holes where a panel returns
 seven.
 
