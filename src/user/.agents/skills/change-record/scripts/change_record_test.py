@@ -506,6 +506,18 @@ class TestCrL2Gloss:
         record["commit"]["subject"] = swap(record["commit"]["subject"], "as data", "as data after #803")
         assert_breaks(record, "bare-id", "/commit/subject", tmp_path, "#803")
 
+    @pytest.mark.parametrize("field", ["/pr/title", "/commit/subject"])
+    def test_cr_l2_an_id_among_other_words_in_the_closing_brackets_needs_its_gloss(self, field: str, tmp_path: Path):
+        record = example()
+        group, name = field.strip("/").split("/")
+        record[group][name] = "feat(review-panel): use the retry bound [after D16 lands]"
+        assert_breaks(record, "bare-id", field, tmp_path, "D16")
+
+    def test_cr_l2_an_id_alone_in_closing_brackets_is_passed_over_only_in_a_title_or_subject(self, tmp_path: Path):
+        record = example()
+        record["heads_up"].append("The gate still refuses a fourth claim [D16]")
+        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "D16")
+
     def test_cr_l2_a_filed_row_is_the_trackers_text_and_introduces_its_item(self, tmp_path: Path):
         record = example()
         record["discovered"]["rows"].append({
@@ -667,6 +679,10 @@ NOT_REWRITABLE: dict[str, Callable[[dict[str, Any], str], None]] = {
     "/criteria/0/evidence": lambda record, text: record["criteria"][0].update(evidence=text),
 }
 
+# Characters that end a line for Python's own line splitting and that Markdown
+# reads as characters within a line.
+NOT_LINE_ENDS = ["\u2028", "\u2029", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85"]
+
 # One sample of each construct that belongs in a machine's artifact and never in
 # a field a person reads, by the words the lint names it with.
 MACHINE_CONTENT = {
@@ -707,6 +723,15 @@ class TestCrL7CommentaryAndMachineContent:
         assert slot_of(field) not in REWRITABLE
         record = example()
         NOT_REWRITABLE[field](record, "Note that the live-provider gate was not run.")
+        assert_breaks(record, "commentary", field, tmp_path, "note that")
+
+    @pytest.mark.parametrize("field", ["/pr/title", "/commit/subject"])
+    def test_cr_l7_a_listed_phrase_in_the_brackets_that_close_a_title_or_subject_fails(
+        self, field: str, tmp_path: Path
+    ):
+        record = example()
+        group, name = field.strip("/").split("/")
+        record[group][name] = "feat(review-panel): use the retry bound [note that it applies]"
         assert_breaks(record, "commentary", field, tmp_path, "note that")
 
     def test_cr_l7_a_listed_phrase_fails_in_the_commit_message_and_in_a_reply(self, tmp_path: Path):
@@ -790,14 +815,40 @@ class TestCrL7CommentaryAndMachineContent:
         record["design_notes"] = "Each reply opened with ```json and nothing on the line closed it."
         assert_passes(record, tmp_path)
 
-    @pytest.mark.parametrize(
-        "quoted",
-        ['```json\n{"valid": true}\n```', '```\n```json\n{"valid": true}\n```'],
-    )
-    def test_cr_l7_a_json_fence_quoted_inside_another_fenced_block_passes(self, quoted: str, tmp_path: Path):
+    @pytest.mark.parametrize("separator", NOT_LINE_ENDS)
+    def test_cr_l7_a_fence_inside_a_code_span_passes_whatever_separator_the_span_holds(
+        self, separator: str, tmp_path: Path
+    ):
         record = example()
-        record["design_notes"] = f"Each reply opened like this.\n\n````text\n{quoted}\n````"
+        record["design_notes"] = f"`prefix{separator}~~~json{separator}{{}}{separator}~~~{separator}suffix`"
         assert_passes(record, tmp_path)
+
+    def test_cr_l7_an_escaped_backtick_opens_no_code_span(self, tmp_path: Path):
+        record = example()
+        record["design_notes"] = "It keeps one \\` here, <details>exit 0</details>, and one \\` there."
+        assert_breaks(record, "machine-content", "/design_notes", tmp_path, "<details>")
+        record["design_notes"] = "It keeps one \\` here, then `<details>` in a span, and one more ` there."
+        assert_passes(record, tmp_path)
+
+    def test_cr_l7_a_real_json_block_after_a_span_that_quotes_a_fence_still_fails(self, tmp_path: Path):
+        record = example()
+        record["design_notes"] = "The literal is `prefix\u2028~~~text\u2028suffix`.\n\n```json\n{}\n```"
+        assert_breaks(record, "machine-content", "/design_notes", tmp_path, "`json`")
+
+    @pytest.mark.parametrize(
+        "notes",
+        [
+            "`a\n<details>\nb`",
+            "It keeps a ` tick.\n\n<details>exit 0</details>\n\nIt keeps a second ` tick.",
+            "It printed `<details>\nand more` once.",
+        ],
+    )
+    def test_cr_l7_a_span_that_wraps_across_a_line_end_hides_nothing(self, notes: str, tmp_path: Path):
+        # A fold that starts a line is a real fold whatever backticks surround it,
+        # so a span is read only where it opens and closes on one line.
+        record = example()
+        record["design_notes"] = notes
+        assert_breaks(record, "machine-content", "/design_notes", tmp_path, "<details>")
 
     @pytest.mark.parametrize(
         "fenced",
@@ -806,6 +857,11 @@ class TestCrL7CommentaryAndMachineContent:
             '~~~json\n{"valid": true}\n~~~',
             '  ```` JSON \n{"valid": true}\n````',
             '```text\nexit 0\n```\n\n```json\n{"valid": true}\n```',
+            '````text\n```json\n{"valid": true}\n```\n````',
+            '> ```json\n> {"valid": true}\n> ```',
+            '- The reply:\n\n    ```json\n    {"valid": true}\n    ```',
+            '1. ```json\n   {"valid": true}\n   ```',
+            'The reply:\r```json\r{"valid": true}\r```',
         ],
     )
     def test_cr_l7_a_fenced_json_block_fails_however_its_fence_is_written(self, fenced: str, tmp_path: Path):

@@ -16,11 +16,12 @@ In `heads_up` and `verification.not_run`, an entry is `None.` with or without sp
 
 ## The text the author wrote
 
-The `bare-id` and `commentary` rules read the text the author wrote. That is every text field of the record apart from three kinds:
+The `bare-id` and `commentary` rules read the text the author wrote. That is every text field of the record apart from two kinds:
 
 - a generated part and the text of a filed discovered row, which hold the tracker's wording or GitHub's
 - a gate's command and a diagram's source, which are quoted and cannot be reworded
-- the bracketed id that closes the title and the commit subject
+
+Both rules read a field whole. The `bare-id` rule alone passes over the id that stands by itself in the brackets closing the title or the commit subject. An id among other words in those brackets is read.
 
 The `machine-content` rule reads every field, generated parts included.
 
@@ -50,6 +51,8 @@ A sentence ends at a full stop, a question mark or an exclamation mark that is f
 
 The phrases of commentary are in `lint-phrases.json` beside this file, under `document_commentary`. `lint` matches each phrase whole, in any letter case.
 
-A fenced `json` block is a fence that opens on a line of its own and names `json` as its language. A code span that starts a line opens no fence. A fence quoted inside another fenced block is that block's content.
+A phrase or a construct inside a code span passes, whatever else the span holds. To write about one, quote it in backticks on one line. A code span opens and closes on the same line. A span that wraps across a line end is not read as a span, because a fold or a fence that starts a line inside it is a real one. A backtick after a backslash opens no span.
 
-A phrase or a construct inside a code span passes. To write about one, quote it in backticks.
+A fenced `json` block is a line that opens a fence and names `json` as its language. The line may sit inside a quote or a list item. A line ends at a line feed or a carriage return, and at no other character. A code span that starts a line opens no fence.
+
+`lint` judges each line alone. A `json` fence therefore fails even where another fenced block quotes it, and a fold or an HTML comment inside a fenced block fails as it would outside one. To show a fence, quote its opening inline.

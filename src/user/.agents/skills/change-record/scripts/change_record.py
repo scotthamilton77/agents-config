@@ -53,27 +53,40 @@ ID = re.compile(
     re.VERBOSE,
 )
 
-# A code span opens with a run of backticks and closes with a run of the same length.
-CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).+?(?<!`)\1(?!`)", re.DOTALL)
+# A line end as Markdown reads one. Any other separator, such as U+2028, is a
+# character within a line.
+LINE_END = re.compile(r"\r\n|\r|\n")
+
+# A code span opens with a run of backticks and closes with a run of the same
+# length on the same line. A span that wraps across a line end is not read as
+# one. A fold or a fence that starts a line inside such a span is a real one,
+# because Markdown reads the start of a line before it reads the span. A
+# backtick after a backslash is an escaped character and opens nothing.
+CODE_SPAN = re.compile(r"(?<![`\\])(`+)(?!`)[^\r\n]+?(?<!`)\1(?!`)")
 
 SENTENCE_END = re.compile(r"""[.!?]+["')\]]*(?:\s+|$)""")
 
 # Neither of these ends a sentence, and their full stops would otherwise be read as ends.
 MID_SENTENCE = re.compile(r"\b(?:e\.g|i\.e)\.", re.IGNORECASE)
 
-# The bracketed id that closes a title or a commit subject.
-CLOSING_ID = re.compile(r"\s*\[[^\]]*\]\s*$")
+# The two fields that close with the work item's id in brackets.
+CLOSED_BY_AN_ID = frozenset({"/pr/title", "/commit/subject"})
 
 # Constructs that belong in an artifact a machine reads, by the name a finding
-# gives them. A fenced block is read apart from these, a line at a time, before
-# the code spans are taken out, because taking them out takes a fence out too.
+# gives them. A fenced block is read apart from these, a line at a time.
 MACHINE_CONTENT = {
     "a `<details>` fold": re.compile(r"<details[\s>]", re.IGNORECASE),
     "an HTML comment": re.compile(r"<!--"),
 }
 
-# A line that may open or close a fenced block: the run of fence characters, then the rest of the line.
-FENCE_LINE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
+# A whole line that opens a fenced block whose language is JSON. The fence may
+# sit at any depth of a quote or a list. A run of backticks with another
+# backtick later on the line is a code span that starts the line, so it opens
+# nothing.
+JSON_FENCE = re.compile(
+    r"(?:[ \t]*(?:>|[-*+][ \t]|\d{1,9}[.)][ \t]))*[ \t]*(?:`{3,}[ \t]*json\b[^`]*|~{3,}[ \t]*json\b.*)",
+    re.IGNORECASE,
+)
 
 
 class RecordError(Exception):
@@ -170,28 +183,12 @@ def outside_code(text: str) -> str:
 
 
 def holds_json_fence(text: str) -> bool:
-    """Say whether ``text`` holds a fenced block whose language is JSON.
+    """Say whether any line of ``text`` opens a fenced block whose language is JSON.
 
-    A fence opens on a line that starts with three or more backticks or
-    tildes. A line of backticks with another backtick after the run is a code
-    span that happens to start the line, so it opens nothing. A line inside an
-    open fence is that block's content, so a fence quoted inside another
-    block opens nothing either.
+    Each line is judged alone. Keeping track of which block is open would let
+    a line that only looks like a fence hide a real block below it.
     """
-    closer = ""
-    for line in text.splitlines():
-        match = FENCE_LINE.fullmatch(line)
-        if not match:
-            continue
-        run, rest = match.groups()
-        if closer:
-            if run[0] == closer[0] and len(run) >= len(closer) and not rest.strip():
-                closer = ""
-        elif run[0] == "~" or "`" not in rest:
-            if re.match(r"\s*json\b", rest, re.IGNORECASE):
-                return True
-            closer = run
-    return False
+    return any(JSON_FENCE.fullmatch(line) for line in LINE_END.split(text))
 
 
 def count_sentences(text: str) -> int:
@@ -230,7 +227,7 @@ def _body_scope(record: dict[str, Any]) -> Iterator[tuple[str | None, str]]:
     gloss and stay what it is.
     """
     fits = record.get("where_this_fits", {})
-    yield "/pr/title", CLOSING_ID.sub("", record["pr"]["title"])
+    yield "/pr/title", record["pr"]["title"]
     yield "/summary", record["summary"]
     for index, entry in enumerate(record["heads_up"]):
         yield f"/heads_up/{index}", entry
@@ -279,7 +276,7 @@ def _commit_scope(record: dict[str, Any]) -> Iterator[tuple[str | None, str]]:
     that id is introduced for the sections below the line.
     """
     commit = record["commit"]
-    yield "/commit/subject", CLOSING_ID.sub("", commit["subject"])
+    yield "/commit/subject", commit["subject"]
     yield None, record["work_item"]["id"]
     yield "/work_item/gloss", record["work_item"]["gloss"]
     for name in ("why", "change", "verification", "trivial"):
@@ -333,12 +330,24 @@ def _glossed(text: str, match: re.Match[str]) -> bool:
     return depth > 0 or bool(following and re.search(r"[^\W\d_]", ID.sub("", following.group(1))))
 
 
+def _closes_the_text(text: str, match: re.Match[str]) -> bool:
+    """Say whether the id at ``match`` stands alone in the brackets that close ``text``."""
+    return text[: match.start()].rstrip().endswith("[") and text[match.end():].strip() == "]"
+
+
 def _bare_ids(record: dict[str, Any]) -> Iterator[dict[str, str]]:
-    """Report each id whose first use, in a stretch of text read on its own, has no gloss."""
+    """Report each id whose first use, in a stretch of text read on its own, has no gloss.
+
+    A title and a commit subject close with the work item's id in brackets.
+    That id is part of the form and takes no gloss, so it is passed over when
+    it stands alone there. An id among other words in those brackets is read.
+    """
     for scope in _gloss_scopes(record):
         seen: set[str] = set()
         for path, text in scope:
             for match in ID.finditer(text):
+                if path in CLOSED_BY_AN_ID and _closes_the_text(text, match):
+                    continue
                 name = " ".join(match.group().split())
                 key = f"section {match['section']}" if match["section"] else name
                 if key in seen:
