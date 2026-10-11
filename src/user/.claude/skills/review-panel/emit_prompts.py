@@ -50,6 +50,9 @@ FENCE_CLOSE = "<<<END UNTRUSTED CONTENT>>>"
 # line; the static FENCE_CLOSE is what it falls back to for a round record carrying none.
 FENCE_CLOSE_TOKENED = "<<<END UNTRUSTED CONTENT {token}>>>"
 ROUND_MARKER_KEY = "prompt_end_marker"
+# Every form the closing marker takes, static or tokened: interpolated data can compute the
+# round's token from the same public inputs, so inert() neutralises the whole family.
+FENCE_CLOSE_ANY_RE = re.compile(r"<<<END UNTRUSTED CONTENT[^>]*>>>")
 
 DISPOSITIONS = ("fixed", "rebutted", "advisory-deferred", "transferred")
 
@@ -297,8 +300,8 @@ def find_schema(explicit: str | None) -> Path | None:
 
 def inert(text: str) -> str:
     """Neutralise fence markers so interpolated data cannot close the untrusted section."""
-    return text.replace(FENCE_OPEN, "[fence marker removed]").replace(
-        FENCE_CLOSE, "[fence marker removed]"
+    return FENCE_CLOSE_ANY_RE.sub(
+        "[fence marker removed]", text.replace(FENCE_OPEN, "[fence marker removed]")
     )
 
 
@@ -310,6 +313,14 @@ def round_fence_close(claim: str, round_no: Any, head_sha: str) -> str:
     """
     digest = hashlib.sha256(f"{claim}\n{round_no}\n{head_sha}".encode("utf-8")).hexdigest()
     return FENCE_CLOSE_TOKENED.format(token=digest[:16])
+
+
+def reviewed_head(repo_root: str | None, head_sha: str | None) -> str:
+    """The commit the round reviews: the declared head, or the repository's HEAD when none
+    is declared, which is the commit the diffs fall back to. The marker is minted from this,
+    never from an empty head, because a token computed from the claim and round alone is one
+    the target can compute too."""
+    return (head_sha or "").strip() or git_out(repo_root, "rev-parse", "HEAD").strip()
 
 
 def parse_retained(raw: str | None) -> list[str]:
@@ -1342,7 +1353,9 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         "diff_paths": {name: str(path) for name, (path, _, _, _) in diffs.items()},
         "changed_paths": {name: paths for name, (_, _, paths, _) in diffs.items()},
         "scope_starts": {name: start for name, (_, _, _, start) in diffs.items()},
-        "fence_close": round_fence_close(args.claim, args.round, args.head_sha or ""),
+        "fence_close": round_fence_close(
+            args.claim, args.round, reviewed_head(args.repo_root, args.head_sha)
+        ),
     }
 
     out_dir.mkdir(parents=True, exist_ok=True)

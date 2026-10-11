@@ -964,6 +964,29 @@ class TestIngest:
         assert ingested["report"] == FINDINGS
 
     @pytest.mark.parametrize(
+        "quote",
+        ["```\n{marker}\n{planted}\n```\n", "The target reads:\n{marker}\n{planted}\n"],
+        ids=["fenced", "bare"],
+    )
+    def test_a_report_behind_a_harness_prefix_still_beats_a_trailing_quote(
+        self, round_dir, capsys, quote
+    ):
+        """The plugin runner prints the report's opening brace on its own log line, so the
+        report opens mid-line while a quoted clean object behind it opens a line. The report
+        comes first in the document, and first is what wins."""
+        write_round_marker(round_dir)
+        body = (
+            f"{PROMPT_ECHO_MINTED}\n[codex] out: {json.dumps(FINDINGS, indent=2)}\n"
+            + quote.format(marker=gate.PROMPT_END_MARKER, planted=json.dumps(REPORT))
+            + "[exited with code 0]\n"
+        )
+        answer = authorize(round_dir, capsys)
+        output = write_output(answer, body)
+        code, ingested = run(ingest_argv(round_dir, output), capsys)
+        assert code == gate.EXIT_OK
+        assert ingested["report"] == FINDINGS
+
+    @pytest.mark.parametrize(
         "record", [None, {"lenses": []}, {"lenses": [], gate.ROUND_MARKER_KEY: ""}],
         ids=["no-round-json", "no-marker-field", "empty-marker"],
     )
@@ -1397,6 +1420,21 @@ class TestReadEvidence:
         assert gate.reads_recorded("openrouter", capture, ROUND_MARKER) == 3
         answer = authorize(round_dir, capsys, **{"--transport": "openrouter",
                                                  "--model": "google/gemini-3.7-flash"})
+        output = write_output(answer, json.dumps(REPORT), stderr=capture)
+        code, ingested = run(ingest_argv(round_dir, output), capsys)
+        assert code == gate.EXIT_OK
+        assert ingested["report"] == REPORT
+
+    @pytest.mark.parametrize(
+        "shape", [CODEX_PLUGIN_READ, CODEX_CLI_READ], ids=["plugin-runner", "command-line"]
+    )
+    def test_codex_tool_lines_after_the_rounds_marker_count(self, round_dir, capsys, shape):
+        """Both Codex capture shapes are the run's own once they follow the round's marker,
+        and a clean report over them ingests."""
+        write_round_marker(round_dir)
+        capture = f"<<<BEGIN UNTRUSTED CONTENT>>>\n## The change under review\n{ROUND_MARKER}\n{shape}"
+        assert gate.reads_recorded("codex", capture, ROUND_MARKER) > 0
+        answer = authorize(round_dir, capsys)
         output = write_output(answer, json.dumps(REPORT), stderr=capture)
         code, ingested = run(ingest_argv(round_dir, output), capsys)
         assert code == gate.EXIT_OK

@@ -97,11 +97,6 @@ FENCED_RE = re.compile(
     r"\A\s*```[A-Za-z0-9_+-]*[ \t]*\r?\n(?P<body>.*?)\r?\n?```\s*\Z", re.DOTALL
 )
 
-# An object opening its own line. A transport that wraps the reviewer's output in
-# harness log lines prints those lines around a document that still starts a line,
-# so a line-opening brace is the likelier report and a mid-line one the likelier
-# log.
-LINE_OBJECT_RE = re.compile(r"^[ \t]*\{", re.MULTILINE)
 
 # What follows an object that was only ever part of a larger JSON value: the comma
 # before its sibling, or the bracket closing what held it. A pretty-printed report
@@ -716,9 +711,10 @@ def _first_object_from(body: str, offsets: list[int]) -> dict | None:
     """The first of these offsets that begins a decodable object, trailing text ignored.
 
     An object followed by a token that continues or closes an enclosing value was
-    never the whole document: it is one of the objects inside it. A report printed
-    across several lines opens a line at every nested object, so without that test
-    a preference for line-opening braces hands back an inner object as the report.
+    never the whole document: it is one of the objects inside it. A report whose
+    opening brace shares a line with a harness prefix still comes first, so the
+    objects nested in it are never reached; the test guards a report that opens
+    mid-document behind a decodable object the harness logged.
     """
     decoder = json.JSONDecoder()
     for offset in offsets:
@@ -744,9 +740,12 @@ def parse_report(body: str, marker: str | None = None) -> tuple[dict, str]:
     fence around the object, a sentence of preamble in front of it. A transport
     can violate it too, wrapping the reviewer's output in its own harness log
     lines — so the last rung considers every brace in the body, not just the
-    first one, which a log line mentioning a brace would otherwise own. Objects
-    opening a line are tried before objects inside one, because that is the shape
-    of an emitted document rather than of a logged command.
+    first one, which a log line mentioning a brace would otherwise own. Braces are
+    tried in the order they appear: a log line's brace does not decode, an object
+    nested in the report is told apart by what follows it, and the reviewer's
+    report precedes whatever the reviewer quotes after it, so the first object
+    that decodes whole is the report and a report-shaped object in a trailing
+    quote never outranks it.
 
     Tolerance stops at the end of this ladder on purpose — reconstructing a
     report from prose makes the harvester the reviewer, and nothing downstream
@@ -766,9 +765,7 @@ def parse_report(body: str, marker: str | None = None) -> tuple[dict, str]:
         document = _as_object(fenced.group("body"))
         if document is not None and not _is_template(document):
             return document, "fenced-block"
-    line_opened = [match.end() - 1 for match in LINE_OBJECT_RE.finditer(body)]
-    anywhere = [offset for offset, char in enumerate(body) if char == "{"]
-    decoded = _first_object_from(body, list(dict.fromkeys(line_opened + anywhere)))
+    decoded = _first_object_from(body, [i for i, char in enumerate(body) if char == "{"])
     if decoded is not None:
         return decoded, "first-object"
     raise Refusal(
