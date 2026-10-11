@@ -1308,47 +1308,51 @@ test("with another upstream origin, a completion reaches it and leaves the same 
 
 // ─── Tool results on the ledger line ───────────────────────────────
 
-test("a forwarded completion's ledger line counts the tool results its latest user message carries", async () => {
-  // A client makes requests of its own that call no tool, so the number of
-  // forwards says nothing about tool use; the tool results the latest user
-  // message carries are the client's own record of the calls the model made on
-  // its previous turn. A message mixing a tool result with text is counted
-  // before the split that moves the text into a message of its own.
-  const standIn = await startStandIn(answerAtOnce);
-  const logs = [];
-  const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m), upstream: standIn.url });
-  const toolResult = (id) => ({ type: "tool_result", tool_use_id: id, content: "ok" });
-  const bodies = [
-    { model: PINNED, messages: [] },
-    { model: PINNED, messages: [
-      { role: "user", content: [{ type: "text", text: "read it" }] },
-      { role: "assistant", content: [{ type: "tool_use", id: "a", name: "Read", input: {} }, { type: "tool_use", id: "b", name: "Grep", input: {} }] },
-      { role: "user", content: [toolResult("a"), toolResult("b")] },
-    ] },
-    { model: PINNED, messages: [
-      { role: "user", content: [toolResult("a"), { type: "text", text: "and then" }] },
-    ] },
-    { model: PINNED, messages: [{ role: "user", content: "a plain string" }] },
-    // Earlier turns' tool results are history, not this turn's calls.
-    { model: PINNED, messages: [
-      { role: "user", content: [{ type: "text", text: "read it" }] },
-      { role: "assistant", content: [{ type: "tool_use", id: "a", name: "Read", input: {} }] },
-      { role: "user", content: [toolResult("a")] },
-      { role: "assistant", content: [{ type: "text", text: "done" }] },
-      { role: "user", content: [{ type: "text", text: "now answer" }] },
-    ] },
+const toolResult = (id) => ({ type: "tool_result", tool_use_id: id, content: "ok" });
+const text = (t) => ({ type: "text", text: t });
+const user = (...content) => ({ role: "user", content });
+const assistant = (...content) => ({ role: "assistant", content });
+
+// The count is the latest user message's tool results, whatever follows or precedes
+// it: a client makes requests of its own that call no tool, so the number of
+// forwards says nothing, and earlier turns' results are history already counted.
+// A message mixing a result with text is counted before the split that moves the
+// text into a message of its own.
+test("toolResultsCarried counts the latest user message's tool results across the message shapes", () => {
+  const { toolResultsCarried } = require("./proxy.js");
+  const shapes = [
+    [[], 0],
+    [undefined, 0],
+    [[assistant(text("no user turn"))], 0],
+    [[user("a plain string")], 0],
+    [[user(text("read it")), assistant({ type: "tool_use", id: "a", name: "Read", input: {} }), user(toolResult("a"), toolResult("b"))], 2],
+    [[user(toolResult("a"), toolResult("b")), assistant(text("prefilled"))], 2],
+    [[user(toolResult("a")), assistant(text("done")), user(text("now answer"))], 0],
+    [[user(toolResult("a"), text("and then"))], 1],
   ];
-  try {
-    for (const body of bodies) await rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify(body)).response;
-    assert.deepEqual(
-      logs.filter((line) => line.startsWith("model-ledger")),
-      [0, 2, 1, 0, 0].map((n) => `model-ledger POST /api/v1/messages model=${PINNED} decision=forward tool-results=${n}`),
-    );
-  } finally {
-    await proxy.close();
-    await standIn.close();
+  for (const [messages, expected] of shapes) {
+    assert.equal(toolResultsCarried(messages), expected, JSON.stringify(messages));
   }
 });
+
+for (const userInstructed of [false, true]) {
+  test(`a forwarded completion's ledger line carries the count${userInstructed ? " ahead of the instruction mark" : ""}`, async () => {
+    const standIn = await startStandIn(answerAtOnce);
+    const logs = [];
+    const proxy = await start({ port: 0, pinnedModel: PINNED, userInstructed, log: (m) => logs.push(m), upstream: standIn.url });
+    const body = { model: PINNED, messages: [user(toolResult("a"), toolResult("b")), assistant(text("prefilled"))] };
+    try {
+      await rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify(body)).response;
+      assert.deepEqual(
+        logs.filter((line) => line.startsWith("model-ledger")),
+        [`model-ledger POST /api/v1/messages model=${PINNED} decision=forward tool-results=2${userInstructed ? " user-instructed" : ""}`],
+      );
+    } finally {
+      await proxy.close();
+      await standIn.close();
+    }
+  });
+}
 
 // ─── The user's instruction ────────────────────────────────────────
 

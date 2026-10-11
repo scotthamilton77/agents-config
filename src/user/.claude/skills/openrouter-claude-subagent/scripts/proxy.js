@@ -835,6 +835,7 @@ module.exports = {
   describeModel,
   createSSEFixer,
   splitMixedMessages,
+  toolResultsCarried,
   stripDeferredTools,
   isAnthropicModel,
   parseSSEBlock,

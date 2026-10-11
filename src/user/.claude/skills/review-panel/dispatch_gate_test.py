@@ -1090,19 +1090,24 @@ class TestReadEvidence:
         assert "records none" in refused["errors"][0]["message"]
         assert kinds(round_dir, "outcome")[0]["outcome"] == "unread"
 
+    @pytest.mark.parametrize("capture", [
+        OPENROUTER_ONE_READ,
+        # An uncounted forward beside a counted one contributes nothing and discounts nothing.
+        OPENROUTER_UNCOUNTED + f"{OPENROUTER_FORWARD} tool-results=1\n",
+    ])
     def test_a_clean_openrouter_report_with_one_recorded_read_ingests(
-        self, round_dir, capsys
+        self, round_dir, capsys, capture
     ):
         """The tool-result count on a forward line is the launcher's own record of a tool
         call, and the counts add: the gate reads how many calls the run made, not how
         many requests."""
-        assert gate.reads_recorded("openrouter", OPENROUTER_ONE_READ) == 1
+        assert gate.reads_recorded("openrouter", capture) == 1
         assert gate.reads_recorded(
-            "openrouter", OPENROUTER_ONE_READ + f"{OPENROUTER_FORWARD} tool-results=3\n"
+            "openrouter", capture + f"{OPENROUTER_FORWARD} tool-results=3\n"
         ) == 4
         answer = authorize(round_dir, capsys, **{"--transport": "openrouter",
                                                  "--model": "google/gemini-3.7-flash"})
-        output = write_output(answer, json.dumps(REPORT), stderr=OPENROUTER_ONE_READ)
+        output = write_output(answer, json.dumps(REPORT), stderr=capture)
         code, ingested = run(ingest_argv(round_dir, output), capsys)
         assert code == gate.EXIT_OK
         assert ingested["report"] == REPORT
