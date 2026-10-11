@@ -90,6 +90,21 @@ function parseSSEBlock(block) {
 
 // ─── Request-body repair ───────────────────────────────────────────
 
+/** How many tool results the request's latest user message carries: the
+ *  client's own record that the model called that many tools on its previous
+ *  turn. Counted before the mixed-message split below moves them into a
+ *  message of their own. */
+function toolResultsCarried(messages) {
+  if (!Array.isArray(messages)) return 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg?.role !== "user") continue;
+    if (!Array.isArray(msg.content)) return 0;
+    return msg.content.filter((b) => b?.type === "tool_result").length;
+  }
+  return 0;
+}
+
 /** Split user messages that mix tool_result blocks with text blocks.
  *  When OpenRouter translates these to OpenAI format for providers like
  *  DeepSeek, the tool response must land before the next user message or the
@@ -689,9 +704,11 @@ function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, 
     // `undefined` here means the body named no model at all, which is not a
     // model switch — a non-JSON body leaves it that way too.
     let model;
+    let toolResults = 0;
     try {
       const obj = JSON.parse(raw);
       model = obj.model;
+      toolResults = toolResultsCarried(obj.messages);
       if (obj.messages || obj.tools) {
         if (obj.messages) splitMixedMessages(obj.messages);
         if (!isAnthropicModel(obj.model)) stripDeferredTools(obj);
@@ -703,12 +720,16 @@ function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, 
       const verdict = screenModel(model, pinnedModel, userInstructed);
       // One line, one write: this ledger is the record a later billing
       // question gets read against, and an interleaved half-line is no record.
-      // The instruction mark is a separate trailing token, so that an audit
-      // can see which runs the user sent here and a reader matching the whole
-      // token `decision=forward` still matches.
+      // A forwarded line also carries how many tool results the request
+      // brought, which is what a reader counting the run's tool calls reads;
+      // the request count alone cannot, because the client makes requests of
+      // its own that call no tool. The instruction mark is a separate trailing
+      // token, so that an audit can see which runs the user sent here and a
+      // reader matching the whole token `decision=forward` still matches.
       log(
         `model-ledger ${clientReq.method} ${targetUrl.pathname} ` +
         `model=${describeModel(model)} decision=${verdict.decision}` +
+        (verdict.decision === "forward" ? ` tool-results=${toolResults}` : "") +
         (userInstructed ? " user-instructed" : "")
       );
       if (verdict.decision !== "forward") {

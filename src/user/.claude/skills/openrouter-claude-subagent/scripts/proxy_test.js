@@ -1298,10 +1298,46 @@ test("with another upstream origin, a completion reaches it and leaves the same 
     const ledgerOf = (logs) => logs.filter((line) => line.startsWith("model-ledger"));
     assert.equal(ledgerOf(overridden).length, 1);
     assert.deepEqual(ledgerOf(overridden), ledgerOf(plain));
-    assert.equal(ledgerOf(overridden)[0], `model-ledger POST /api/v1/messages model=${PINNED} decision=forward`);
+    assert.equal(ledgerOf(overridden)[0], `model-ledger POST /api/v1/messages model=${PINNED} decision=forward tool-results=0`);
   } finally {
     await viaStandIn.close();
     await viaOpenRouter.close();
+    await standIn.close();
+  }
+});
+
+// ─── Tool results on the ledger line ───────────────────────────────
+
+test("a forwarded completion's ledger line counts the tool results its latest user message carries", async () => {
+  // A client makes requests of its own that call no tool, so the number of
+  // forwards says nothing about tool use; the tool results the latest user
+  // message carries are the client's own record of the calls the model made on
+  // its previous turn. A message mixing a tool result with text is counted
+  // before the split that moves the text into a message of its own.
+  const standIn = await startStandIn(answerAtOnce);
+  const logs = [];
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m), upstream: standIn.url });
+  const toolResult = (id) => ({ type: "tool_result", tool_use_id: id, content: "ok" });
+  const bodies = [
+    { model: PINNED, messages: [] },
+    { model: PINNED, messages: [
+      { role: "user", content: [{ type: "text", text: "read it" }] },
+      { role: "assistant", content: [{ type: "tool_use", id: "a", name: "Read", input: {} }, { type: "tool_use", id: "b", name: "Grep", input: {} }] },
+      { role: "user", content: [toolResult("a"), toolResult("b")] },
+    ] },
+    { model: PINNED, messages: [
+      { role: "user", content: [toolResult("a"), { type: "text", text: "and then" }] },
+    ] },
+    { model: PINNED, messages: [{ role: "user", content: "a plain string" }] },
+  ];
+  try {
+    for (const body of bodies) await rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify(body)).response;
+    assert.deepEqual(
+      logs.filter((line) => line.startsWith("model-ledger")),
+      [0, 2, 1, 0].map((n) => `model-ledger POST /api/v1/messages model=${PINNED} decision=forward tool-results=${n}`),
+    );
+  } finally {
+    await proxy.close();
     await standIn.close();
   }
 });
