@@ -866,7 +866,7 @@ class TestIngest:
         object is enclosed, a whole one is not. A whole object a harness logged on its own
         line ahead of the report is therefore taken as the report. No dispatched transport
         writes one; this pins the limitation the rung documents, so the docstring and the
-        code cannot drift apart again."""
+        code state the same case."""
         body = f'[harness] {{"event": "started"}}\n{json.dumps(REPORT)}\n'
         assert gate.parse_report(body) == ({"event": "started"}, "first-object")
         assert "harness" in inspect.getsource(gate._first_object_from)
