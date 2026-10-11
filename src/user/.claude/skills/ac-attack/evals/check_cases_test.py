@@ -177,6 +177,13 @@ def test_a_parent_id_with_a_digit_in_its_prefix_is_read_from_the_table(tmp_path)
     assert check.read_table(contract)[0]["serves"] == ["ACQ2-A1"]
 
 
+def test_a_parent_id_a_hyphen_continues_is_not_read_from_the_table(tmp_path):
+    contract = tmp_path / "contract.md"
+    contract.write_text(CONTRACT.read_text(encoding="utf-8").replace(
+        "| C1 | ACQ-A1 |", "| C1 | x-ACQ-A1, ACQ-A1-tail, ACQ-A2 |"), encoding="utf-8")
+    assert check.read_table(contract)[0]["serves"] == ["ACQ-A2"]
+
+
 def test_a_contract_without_the_catalogue_table_is_unusable(evals, catalogue, tmp_path, capsys):
     contract = tmp_path / "contract.md"
     contract.write_text("# A contract\n\nNo table here.\n", encoding="utf-8")
