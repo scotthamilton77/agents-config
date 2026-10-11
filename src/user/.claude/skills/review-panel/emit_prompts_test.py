@@ -528,14 +528,22 @@ class TestPromptBoundary:
         assert minted["round-2"] == emitter.round_fence_close("claim-7", "2", head2)
         assert len(set(minted.values())) == 3
 
-    def test_an_undeclared_head_resolves_to_the_repositorys_head(self, repo, tmp_path):
-        """An emission with no --head-sha reviews HEAD, so HEAD is what its marker is minted
-        from; a token minted from an empty head is one the target can compute."""
-        assert emitter.reviewed_head(str(repo.root), None) == repo.head
-        assert emitter.reviewed_head(str(repo.root), "  ") == repo.head
-        assert emitter.reviewed_head(str(repo.root), "abc123") == "abc123"
+    def test_the_declared_head_is_resolved_to_a_commit_hash(self, repo, tmp_path):
+        """The marker is minted from the hash of the commit reviewed, never from the text
+        declared: no head resolves to HEAD, a symbolic name resolves to the commit it names
+        today, a hash resolves to itself, and a name the repository cannot resolve, or no
+        repository, refuses rather than mints."""
+        resolve = emitter.reviewed_head
+        assert resolve(str(repo.root), None) == repo.head
+        assert resolve(str(repo.root), "  ") == repo.head
+        assert resolve(str(repo.root), "HEAD") == repo.head
+        assert resolve(str(repo.root), "HEAD~1") == repo.base
+        assert resolve(str(repo.root), repo.head) == repo.head
+        assert resolve(str(repo.root), repo.base[:10]) == repo.base
         with pytest.raises(emitter.Refusal):
-            emitter.reviewed_head(str(tmp_path / "not-a-repo"), None)
+            resolve(str(repo.root), "no-such-ref")
+        with pytest.raises(emitter.Refusal):
+            resolve(str(tmp_path / "not-a-repo"), None)
         assert "reviewed_head(" in inspect.getsource(emitter.emit)
 
     def test_the_contract_forbids_reproducing_the_closing_line(self, repo, acs_file, tmp_path,

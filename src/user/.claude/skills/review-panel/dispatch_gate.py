@@ -711,10 +711,12 @@ def _first_object_from(body: str, offsets: list[int]) -> dict | None:
     """The first of these offsets that begins a decodable object, trailing text ignored.
 
     An object followed by a token that continues or closes an enclosing value was
-    never the whole document: it is one of the objects inside it. A report whose
-    opening brace shares a line with a harness prefix still comes first, so the
-    objects nested in it are never reached; the test guards a report that opens
-    mid-document behind a decodable object the harness logged.
+    never the whole document: it is one of the objects inside it. That is the only
+    shape this rung tells apart: a whole object a harness logs on its own ahead of
+    the report decodes, is enclosed by nothing, and is returned as the report. No
+    transport the panel dispatches on logs one, and the ladder does not guess at
+    report shape, since a reviewer's malformed report is refused rather than
+    reconstructed.
     """
     decoder = json.JSONDecoder()
     for offset in offsets:
@@ -741,11 +743,13 @@ def parse_report(body: str, marker: str | None = None) -> tuple[dict, str]:
     can violate it too, wrapping the reviewer's output in its own harness log
     lines — so the last rung considers every brace in the body, not just the
     first one, which a log line mentioning a brace would otherwise own. Braces are
-    tried in the order they appear: a log line's brace does not decode, an object
-    nested in the report is told apart by what follows it, and the reviewer's
-    report precedes whatever the reviewer quotes after it, so the first object
-    that decodes whole is the report and a report-shaped object in a trailing
-    quote never outranks it.
+    tried in the order they appear: a brace inside a shell command does not decode
+    as an object, an object nested in the report is told apart by what follows it,
+    and the reviewer's report precedes whatever the reviewer quotes after it, so
+    the first object that decodes whole is taken as the report and a report-shaped
+    object in a trailing quote never outranks it. A whole object a harness logged
+    on its own line ahead of the report would be taken the same way; no dispatched
+    transport writes one.
 
     Tolerance stops at the end of this ladder on purpose — reconstructing a
     report from prose makes the harvester the reviewer, and nothing downstream

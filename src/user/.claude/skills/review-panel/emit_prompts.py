@@ -316,11 +316,13 @@ def round_fence_close(claim: str, round_no: Any, head_sha: str) -> str:
 
 
 def reviewed_head(repo_root: str | None, head_sha: str | None) -> str:
-    """The commit the round reviews: the declared head, or the repository's HEAD when none
-    is declared, which is the commit the diffs fall back to. The marker is minted from this,
-    never from an empty head, because a token computed from the claim and round alone is one
-    the target can compute too."""
-    return (head_sha or "").strip() or git_out(repo_root, "rev-parse", "HEAD").strip()
+    """The full hash of the commit the round reviews: the declared head resolved through the
+    repository, or its HEAD when none is declared, which is what the diffs fall back to. The
+    marker is minted from this hash and never from the declared text, because a symbolic
+    name such as HEAD or a branch names different commits on different days, and an empty
+    head would leave a token the target can compute from the claim and round alone."""
+    declared = (head_sha or "").strip() or "HEAD"
+    return git_out(repo_root, "rev-parse", "--verify", f"{declared}^{{commit}}").strip()
 
 
 def parse_retained(raw: str | None) -> list[str]:
