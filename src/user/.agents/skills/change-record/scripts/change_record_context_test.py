@@ -1403,16 +1403,36 @@ HOUSE_MARKS = re.compile(r"agents-config|9k9|\bCR-[A-Z]+\d|[Ss]ection \d|docs/sp
 
 
 class TestDeployedText:
-    @pytest.mark.parametrize("name", ["SKILL.md", "references/generators.md", "scripts/change_record.py"])
+    @pytest.mark.parametrize(
+        "name", ["SKILL.md", "references/commands.md", "references/generators.md", "scripts/change_record.py"]
+    )
     def test_the_shipped_text_names_both_generators_and_carries_no_mark_of_this_repository(self, name: str):
         text = (SKILL / name).read_text(encoding="utf-8")
         assert "context" in text and "discovered" in text
         assert HOUSE_MARKS.findall(text) == []
 
-    def test_the_reference_gives_the_two_command_lines_the_script_takes(self):
-        text = (SKILL / "references" / "generators.md").read_text(encoding="utf-8")
+    def test_the_skill_body_has_an_entry_for_each_generator_and_points_at_both_references(self):
+        body = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        entries = [line for line in body.splitlines() if line.startswith("- `")]
         for generator in ("context", "discovered"):
-            assert f"uv run path/to/scripts/change_record.py {generator} path/to/record.json" in text
+            assert f"uv run scripts/change_record.py {generator} record.json" in body
+            assert len([entry for entry in entries if entry.startswith(f"- `{generator}` ")]) == 1
+        assert "references/commands.md" in body and "references/generators.md" in body
+        assert "Nothing in this skill fills" not in body
+
+    def test_the_commands_reference_gives_both_command_lines_where_to_run_them_and_the_exit_statuses(self):
+        text = (SKILL / "references" / "commands.md").read_text(encoding="utf-8")
+        section = text[text.index("## `context` and `discovered`"):].split("\n## ")[0]
+        for generator in ("context", "discovered"):
+            assert f"scripts/change_record.py {generator} record.json" in section
+        assert "working directory" in section
+        assert "Exit 0 the record holds the part, 2 anything failed." in section
+        assert "generators.md" in section
+
+    def test_the_generators_reference_leaves_the_command_lines_to_the_commands_reference(self):
+        text = (SKILL / "references" / "generators.md").read_text(encoding="utf-8")
+        assert "commands.md" in text
+        assert "uv run" not in text
 
 
 if __name__ == "__main__":

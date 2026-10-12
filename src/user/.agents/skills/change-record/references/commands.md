@@ -1,6 +1,6 @@
 # The script's subcommands
 
-Run each from the skill's directory, as `uv run scripts/change_record.py` followed by the subcommand.
+Run each from the skill's directory, as `uv run scripts/change_record.py` followed by the subcommand. `context`, `discovered` and `lint --pr` read the repository of the working directory. Run those three from inside that repository, and give the script by its path.
 
 ## The result a fault is reported in
 
@@ -17,6 +17,21 @@ uv run scripts/change_record.py init --type TYPE --component NAME --work-item ID
 `init` writes a new record that the schema accepts, with every field the author fills left empty. `lint` then names each of those fields. `init` never replaces a file.
 
 Exit 0 written, 1 a file is already there, 2 the file cannot be written or the call is wrong.
+
+## `context` and `discovered`
+
+```bash
+uv run path/to/scripts/change_record.py context record.json
+uv run path/to/scripts/change_record.py discovered record.json
+```
+
+`context` fills `where_this_fits`, and `discovered` fills the filed rows of `discovered`. Each writes its part with the stamp `lint` checks. `generators.md` beside this file says how each part is derived and which calls each subcommand makes.
+
+Neither takes an id on the command line. Both read the work item from the record's `work_item.id`, and `context` reads the pull request from `pr.number`. Both read the tracker through `work`, and `context` reads GitHub through `gh`. Every call is a read. Run both from inside the pull request's repository, because `work` and `gh` read the repository of the working directory.
+
+Each computes everything first and writes the record file once. The file stays exactly as it was when the record cannot be read or does not fit the schema, when the tracker does not know the work item, and when a `work` or `gh` call fails or cannot be run. The message on stderr quotes the call that failed. A second run over unchanged sources writes nothing and says so.
+
+Exit 0 the record holds the part, 2 anything failed.
 
 ## `lint`
 

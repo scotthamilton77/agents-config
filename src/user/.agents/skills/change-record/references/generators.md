@@ -7,14 +7,7 @@ Two subcommands fill the parts of a record that hold facts from the tracker and 
 | `context` | `where_this_fits`, with its stamp | the tracker through `work`, and GitHub through `gh` |
 | `discovered` | the filed rows of `discovered`, with their stamp | the tracker through `work` |
 
-Run each from inside the repository the pull request belongs to. `work` and `gh` both read the repository of the working directory. Give the script by its path in this skill's directory:
-
-```bash
-uv run path/to/scripts/change_record.py context path/to/record.json
-uv run path/to/scripts/change_record.py discovered path/to/record.json
-```
-
-Neither takes an id on the command line. Both read the work item from `work_item.id`, and `context` reads the pull request from `pr.number`. A generated part therefore always describes the record's own work item.
+`commands.md` beside this file gives the two command lines, where to run them and their exit statuses. This file says how each part is derived.
 
 Every call either one makes is a read. Neither writes to the tracker or to GitHub.
 
@@ -63,20 +56,9 @@ An item with a discovered-from edge and no triage record in its description make
 
 `discovered` writes the stamp on every run, over an empty list when no item was found.
 
-## When a call fails
-
-Each generator computes everything first and writes the record file once. It exits 2 and leaves the file exactly as it was when any of these happens:
-
-- the tracker does not know the work item
-- a `work` or `gh` call exits with an error, or cannot be run
-- an answer lacks a field the generator reads
-- the record cannot be read, or does not fit the schema
-
-The message on stderr quotes the call that failed, so it names the id the call was given. Exit 0 means the record holds the part.
-
 ## Running again
 
-A second run over unchanged sources leaves the file byte for byte as it was, and says so. Run a generator again when its sources change: when the pull request opens, when a sibling item closes or a sibling pull request merges, and when new work is filed.
+A second run over unchanged sources leaves the file byte for byte as it was. Run a generator again when its sources change. That is when the pull request opens, when a sibling item closes or a sibling pull request merges, and when new work is filed.
 
 A hand edit of a generated part fails `lint` under `stale-stamp`. Running the part's generator again replaces the edit and clears the finding.
 
