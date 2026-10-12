@@ -1264,9 +1264,7 @@ def of_type(kind: str) -> dict[str, Any]:
 FILES_PAGE = "api repos/{owner}/{repo}/pulls/843/files?per_page=100&page="
 
 
-def gh_listing(
-    shim_dir: Path, log: Path, *paths: str, status: int = 0, later: tuple[dict[str, str], ...] = ()
-) -> None:
+def gh_listing(shim_dir: Path, log: Path, *paths: str, status: int = 0, later: tuple[Any, ...] = ()) -> None:
     """Put a ``gh`` on the search path that answers as GitHub lists a pull request's files, and exits ``status``.
 
     The shim records its arguments in ``log``. Its first page holds a file for
@@ -1504,6 +1502,21 @@ class TestCrL10GroupsByTypeAndReach:
         code, result = lint(example(), tmp_path, SCRIPT, "--pr", "843")
         assert code == 2
         assert [error["code"] for error in result["errors"]] == ["gh-failed"]
+
+    @pytest.mark.parametrize(
+        "entry",
+        [{}, None, "src/panel/gate.py", {"filename": ""}, {"filename": 5}, {"filename": "a.py", "previous_filename": 5}],
+        ids=["empty", "null", "text", "an empty name", "a name that is no text", "an old name that is no text"],
+    )
+    def test_lint_pr_exits_2_when_a_page_holds_an_entry_that_is_no_file(self, entry: Any, shim_dir: Path, tmp_path: Path):
+        # Such a page read as a pull request with no changed path would pass a record it had not checked.
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", later=(entry,))
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        code, result = lint(record, tmp_path, SCRIPT, "--pr", "843")
+        assert code == 2
+        assert [error["code"] for error in result["errors"]] == ["gh-failed"]
+        assert f"`gh {FILES_PAGE}2`" in result["errors"][0]["message"]
 
     @pytest.mark.parametrize("status", [None, 1])
     def test_lint_pr_exits_2_when_gh_is_missing_or_fails(self, status: int | None, shim_dir: Path, tmp_path: Path):

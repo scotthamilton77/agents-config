@@ -990,6 +990,14 @@
    "exit": 0,
    "stdout": [],
    "stderr": ""
+  },
+  "repo view --json nameWithOwner,url": {
+   "exit": 0,
+   "stdout": {
+    "nameWithOwner": "scotthamilton77/agents-config",
+    "url": "https://github.com/scotthamilton77/agents-config"
+   },
+   "stderr": ""
   }
  }
 }

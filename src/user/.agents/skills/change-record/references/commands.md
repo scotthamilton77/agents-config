@@ -29,7 +29,7 @@ uv run path/to/scripts/change_record.py discovered record.json
 
 Neither takes an id on the command line. Both read the work item from the record's `work_item.id`, and `context` reads the pull request from `pr.number`. Both read the tracker through `work`, and `context` reads GitHub through `gh`. Every call is a read. Run both from inside the pull request's repository, because `work` and `gh` read the repository of the working directory.
 
-Each computes everything first and writes the record file once. The file stays exactly as it was when the record cannot be read or does not fit the schema, when the tracker does not know the work item, and when a `work` or `gh` call fails or cannot be run. The message on stderr quotes the call that failed. A second run over unchanged sources writes nothing and says so.
+Each computes everything first and writes the record file once. The file stays exactly as it was when the record cannot be read or does not fit the schema, when the tracker does not know the work item, when a `work` or `gh` call fails or cannot be run, and when a call's answer does not have the shape that call's answer has. The message on stderr quotes the call at fault. A second run over unchanged sources writes nothing and says so.
 
 Exit 0 the record holds the part, 2 anything failed.
 

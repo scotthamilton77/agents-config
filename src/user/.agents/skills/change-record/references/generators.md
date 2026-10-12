@@ -11,7 +11,9 @@ Two subcommands fill the parts of a record that hold facts from the tracker and 
 
 Every call either one makes is a read. Neither writes to the tracker or to GitHub.
 
-Both copy titles and reasons that other people wrote. A title that holds a `<details>` fold, an HTML comment or a line that opens a `json` fence is written with that construct quoted as a code span. The reader then sees the same characters, and a generated part never fails `lint` under `machine-content`. When a span cannot quote the construct where it stands, the whole line is quoted.
+Both copy titles and reasons that other people wrote. A title that holds a `<details>` fold, an HTML comment or a line that opens a `json` fence is written with that construct quoted as a code span. The reader then sees the same characters, and a generated part never fails `lint` under `machine-content`. When a span cannot quote the construct where it stands, the whole line is quoted. A fold whose tag breaks onto a second line has its first line quoted.
+
+Both check every answer before they read it. An answer must have the shape its call's answer has: a list where a list belongs, each entry with the fields the generator reads, and each field of its own type. An answer about several items must hold each item asked for once, and no other. An answer that fails the check stops the run. It is never read as an empty result.
 
 ## `context`
 
@@ -30,9 +32,11 @@ Both copy titles and reasons that other people wrote. A title that holds a `<det
 | `in flight` | An open pull request names the child. The row carries that pull request's number. |
 | `open` | Anything else. |
 
-The statuses are tried in that order, so a closed child is `done` even when an open pull request names it. A pull request names an item when its title closes with the item's id in brackets, short or full, as in `fix(gate): a pin survives a retry [a1b.3]`. When two open pull requests name one child, the row carries the lower number. An owning item with no child gets a single row, which is the work item as `this PR`.
+The statuses are tried in that order, so a closed child is `done` even when an open pull request names it. A pull request names an item when its title closes with the item's id in brackets, short or full, as in `fix(gate): a pin survives a retry [a1b.3]`. When two open pull requests name one child, the row carries the lower number, whichever form of the id each uses. An owning item with no child gets a single row, which is the work item as `this PR`.
 
-**Builds on.** These are the merged pull requests that delivered the owning item's closed children. The number comes from the delivery the tracker recorded in the child's notes, written as a number, as a number after `#`, or as a pull request's URL. `context` asks GitHub about each one. A merged pull request is listed with its title, and one that closed without merging is left out. A child that is still open adds nothing, even when one of its pull requests has merged. A number is looked up in the working directory's repository.
+**Builds on.** These are the merged pull requests that delivered the owning item's closed children. The number comes from the delivery the tracker recorded in the child's notes, written as a number, as a number after `#`, or as a pull request's URL. `context` asks GitHub about each one. A merged pull request is listed with its title, and one that closed without merging is left out. A child that is still open adds nothing, even when one of its pull requests has merged.
+
+A delivery can name a repository, as `owner/name#12` does and as a URL does. Such a delivery counts only when the repository is the working directory's own, which `context` asks GitHub for. The same number in another repository is another pull request. It is left out and is never looked up here. A delivery that names no repository is a pull request of this one.
 
 **Concurrent.** These are the open pull requests, other than the record's own, that touch a path the record's pull request touches. Each is listed with its title. A renamed file counts under its old path and its new one. `context` reads the list of open pull requests a page at a time until a page comes back empty, and reads each pull request's files the same way.
 
@@ -48,11 +52,13 @@ A generator's `heads_up` row takes the place of a `None.` entry. When the row go
 
 `discovered` writes one filed row for each tracker item whose discovered-from edge points at the record's work item. The row holds the item's id in `item`, its title in `what`, and in `reason` the reason its triage record gives for the scope call.
 
+The triage record is the `## Triage` heading in the item's description with the scope line straight under it. The last one in the description counts. One quoted inside a fenced block is an example and does not count.
+
 The filed rows come first, in id order. Every not-filed and in-flight row stays as the author wrote it, in the order the author wrote it. Each run replaces the filed rows, so a row whose item is no longer discovered from the work item goes.
 
 A `None.` entry goes when a filed row arrives. `discovered` never writes `None.`, because only the author can say that the pull request found nothing.
 
-An item with a discovered-from edge and no triage record in its description makes `discovered` fail, naming the item. File discovered work with `work discover`, which writes the triage record.
+An item with a discovered-from edge and no triage record in its description makes `discovered` fail, naming the item. So does an item whose only triage record is a quoted example. File discovered work with `work discover`, which writes the triage record.
 
 `discovered` writes the stamp on every run, over an empty list when no item was found.
 
@@ -69,10 +75,11 @@ A hand edit of a generated part fails `lint` under `stale-stamp`. Running the pa
 1. `work --format json show ID`, once for the work item and once for each item above it
 2. `work --format json list --parent ID`, for the owning item
 3. `gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100&page=N"`, from page 1 until a page is empty
-4. `gh pr view NUMBER --json number,state,title`, once for each pull request a closed child was delivered by
-5. `gh api "repos/{owner}/{repo}/pulls/NUMBER/files?per_page=100&page=N"`, from page 1 until a page is empty, for the record's pull request and then for each other open one
+4. `gh repo view --json nameWithOwner,url`, once, when a closed child's delivery names a repository
+5. `gh pr view NUMBER --json number,state,title`, once for each pull request of this repository that a closed child was delivered by
+6. `gh api "repos/{owner}/{repo}/pulls/NUMBER/files?per_page=100&page=N"`, from page 1 until a page is empty, for the record's pull request and then for each other open one
 
-`context` skips step 5 when the record has no number or no other pull request is open.
+`context` skips step 6 when the record has no number or no other pull request is open.
 
 `discovered` makes these, in order:
 

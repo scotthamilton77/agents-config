@@ -20,6 +20,7 @@ import conftest  # noqa: F401
 
 # isort: split
 
+import ast
 import copy
 import json
 import random
@@ -27,7 +28,7 @@ import re
 import shlex
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,10 @@ PULL = RECORDED["gh"][OPEN_PULLS + "1"]["stdout"][0]
 FILE = RECORDED["gh"]["api repos/{owner}/{repo}/pulls/860/files?per_page=100&page=1"]["stdout"][0]
 assert "previous_filename" not in FILE
 VIEWED = RECORDED["gh"]["pr view 859 --json number,state,title"]["stdout"]
+
+# The call that asks which repository the working directory belongs to, and the recorded answer's fields.
+WHICH_REPOSITORY = "repo view --json nameWithOwner,url"
+assert set(RECORDED["gh"][WHICH_REPOSITORY]["stdout"]) == {"nameWithOwner", "url"}
 
 # The program behind each shim. It writes the call down, then gives the answer
 # its table holds for the call's arguments. A call the table does not answer
@@ -105,12 +110,13 @@ def calls(tmp_path: Path, name: str) -> list[str]:
 def is_read(call: str) -> bool:
     """Say whether a call to ``gh`` only reads.
 
-    Viewing a pull request reads. So does an API call that names no method
-    and sends no field, because ``gh api`` then makes a GET request.
+    Viewing a pull request or the repository reads. So does an API call that
+    names no method and sends no field, because ``gh api`` then makes a GET
+    request.
     """
     words = call.split()
     writing = ("-X", "--method", "-f", "-F", "--field", "--raw-field", "--input")
-    if words[:2] == ["pr", "view"]:
+    if words[:2] in (["pr", "view"], ["repo", "view"]):
         return True
     return words[:1] == ["api"] and not any(word.startswith(writing) for word in words[1:])
 
@@ -186,9 +192,10 @@ def github(
     ``pages`` are the pages of open pull requests, and an empty page follows
     the last of them. ``views`` are pull requests looked up by number.
     ``files`` maps a pull request to the paths it touches, which come as one
-    page of files with an empty page after it.
+    page of files with an empty page after it. The working directory's
+    repository is ``example/repo`` on ``github.com``.
     """
-    answers = {}
+    answers = {WHICH_REPOSITORY: {"stdout": {"nameWithOwner": "example/repo", "url": "https://github.com/example/repo"}}}
     for number, page in enumerate([*(pages or []), []], start=1):
         answers[f"{OPEN_PULLS}{number}"] = {"stdout": page}
     for viewed in views or []:
@@ -281,7 +288,7 @@ class TestCrX1Ancestry:
 # The first is closed, and its delivery names the pull request that carried it.
 DONE = item(
     "agents-config-9k9.401", "One routing table names the model behind each tier", EPIC["id"], status="closed",
-    notes="Claimed for the routing work.\n[work] delivered: 803",
+    notes="Claimed for the routing work.\n[work] delivered: example/repo#803",
 )
 IN_FLIGHT = item(
     "agents-config-9k9.409", "A clean report shows its reviewer opened the change", EPIC["id"], status="in_progress"
@@ -384,6 +391,22 @@ class TestCrX2Scope:
         record = filled("context", written(tmp_path, example()))
         assert scope_of(record)[2]["pr"] == 850
 
+    @pytest.mark.parametrize(
+        ("by_full_id", "by_short_id", "shown"), [(853, 850, 850), (850, 853, 850), (849, 850, 849)]
+    )
+    def test_cr_x2_the_lowest_number_is_shown_whichever_form_of_the_id_each_pull_request_names_the_item_by(
+        self, by_full_id: int, by_short_id: int, shown: int, shim_dir: Path, tmp_path: Path
+    ):
+        full = pull(by_full_id, "test(review-panel): the gate has a negative control [agents-config-9k9.409]")
+        short = pull(by_short_id, "feat(review-panel): a clean report shows its reviewer opened the change [9k9.409]")
+        files = {NUMBER: OWN_PATHS, by_full_id: APART, by_short_id: APART}
+        shim(shim_dir, tmp_path, "work", tracker(*FAMILY))
+        shim(shim_dir, tmp_path, "gh", github([[full, short]], [ROUTING], files))
+        record = filled("context", written(tmp_path, example()))
+        assert scope_of(record)[2] == {
+            "slice": IN_FLIGHT["id"], "covers": IN_FLIGHT["title"], "status": "in flight", "pr": shown
+        }
+
 
 def delivered(suffix: str, evidence: str, status: str = "closed") -> dict[str, Any]:
     """Return a child of the epic whose notes record its delivery with ``evidence``."""
@@ -414,7 +437,7 @@ class TestCrX3BuildsOn:
 
     @pytest.mark.parametrize(
         "evidence",
-        ["803", "#803", "PR #803", "https://github.com/example/repo/pull/803", "example/repo#803"],
+        ["803", "#803", "PR #803", "PR#803", "https://github.com/example/repo/pull/803", "example/repo#803"],
     )
     def test_cr_x3_a_delivery_names_its_pull_request_by_number_or_by_url(
         self, evidence: str, shim_dir: Path, tmp_path: Path
@@ -438,7 +461,7 @@ class TestCrX3BuildsOn:
         ongoing = delivered("404", "830", status="in_progress")
         mentioned = item(
             "agents-config-9k9.405", "The pins are documented", EPIC["id"], status="closed",
-            notes="Superseded by PR #831, see https://github.com/example/repo/pull/832.",
+            notes="Superseded by PR #831\nSee https://github.com/example/repo/pull/832\n[work] deferred: 833",
         )
         shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, ongoing, mentioned, THIS))
         shim(shim_dir, tmp_path, "gh", github())
@@ -453,6 +476,88 @@ class TestCrX3BuildsOn:
         record = filled("context", written(tmp_path, example()))
         assert record["where_this_fits"]["builds_on"] == [{"pr": 803, "gloss": ROUTING["title"]}]
 
+
+    def test_cr_x3_a_delivery_that_names_no_repository_is_looked_up_without_asking_which_one_this_is(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, delivered("401", "PR #803"), THIS))
+        shim(shim_dir, tmp_path, "gh", github([], [ROUTING]))
+        filled("context", written(tmp_path, example()))
+        assert calls(tmp_path, "gh") == [OPEN_PULLS + "1", VIEW_ROUTING]
+
+    @pytest.mark.parametrize(
+        "evidence",
+        [
+            "example/repo#803",
+            "Example/Repo#803",
+            "https://github.com/example/repo/pull/803",
+            "merged as HTTPS://GitHub.com/Example/repo/pull/803",
+        ],
+    )
+    def test_cr_x3_a_delivery_that_names_this_repository_is_looked_up_in_it(
+        self, evidence: str, shim_dir: Path, tmp_path: Path
+    ):
+        twice = (delivered("401", evidence), delivered("402", evidence))
+        shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, *twice, THIS))
+        shim(shim_dir, tmp_path, "gh", github([], [ROUTING]))
+        record = filled("context", written(tmp_path, example()))
+        assert record["where_this_fits"]["builds_on"] == [{"pr": 803, "gloss": ROUTING["title"]}]
+        # The repository is asked for once, however many deliveries name one.
+        assert calls(tmp_path, "gh") == [OPEN_PULLS + "1", WHICH_REPOSITORY, VIEW_ROUTING]
+
+    @pytest.mark.parametrize(
+        "evidence",
+        [
+            "other/repo#803",
+            "example/repo-two#803",
+            "example/repo/issues#803",
+            "https://github.com/other/repo/pull/803",
+            "https://github.com/example/repository/pull/803",
+            "https://git.example.com/example/repo/pull/803",
+            "see https://github.com/example/repo/tree/main and https://github.com/other/repo/pull/803",
+        ],
+    )
+    def test_cr_x3_a_delivery_that_names_another_repository_adds_nothing_and_is_never_looked_up_in_this_one(
+        self, evidence: str, shim_dir: Path, tmp_path: Path
+    ):
+        # Pull request 803 of this repository exists and merged. It is not the one the delivery names.
+        shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, delivered("401", evidence), THIS))
+        shim(shim_dir, tmp_path, "gh", github([], [ROUTING]))
+        record = filled("context", written(tmp_path, example()))
+        assert record["where_this_fits"]["builds_on"] == []
+        assert calls(tmp_path, "gh") == [OPEN_PULLS + "1", WHICH_REPOSITORY]
+
+    def test_cr_x3_deliveries_in_this_repository_and_in_another_are_told_apart_in_one_run(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        children = (delivered("401", "803"), delivered("402", "other/repo#812"), delivered("403", "example/repo#820"))
+        views = [
+            ROUTING, viewed(812, "feat(other): twelve"), viewed(820, "feat(review-panel): a seat reads its pin [9k9.403]")
+        ]
+        shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, *children, THIS))
+        shim(shim_dir, tmp_path, "gh", github([], views))
+        record = filled("context", written(tmp_path, example()))
+        assert [entry["pr"] for entry in record["where_this_fits"]["builds_on"]] == [803, 820]
+
+    @pytest.mark.parametrize("answer", [{}, {"nameWithOwner": "example/repo"}, {"nameWithOwner": "", "url": ""}, []])
+    def test_cr_x3_an_answer_that_does_not_say_which_repository_this_is_fails_the_run(
+        self, answer: Any, shim_dir: Path, tmp_path: Path
+    ):
+        shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, delivered("401", "example/repo#803"), THIS))
+        shim(shim_dir, tmp_path, "gh", github([], [ROUTING]) | {WHICH_REPOSITORY: {"stdout": answer}})
+        proc = unchanged_by("context", written(tmp_path, copy.deepcopy(EXAMPLE)))
+        assert proc.returncode == 2 and f"`gh {WHICH_REPOSITORY}`" in proc.stderr
+
+    @pytest.mark.parametrize("ending", ["\r\n", "\r", "\n"], ids=["CRLF", "CR", "LF"])
+    def test_cr_x3_a_delivery_is_found_whatever_ends_the_lines_of_the_notes(
+        self, ending: str, shim_dir: Path, tmp_path: Path
+    ):
+        notes = ending.join(["Claimed for the routing work.", "[work] delivered: 803", "Reviewed in one round.", ""])
+        done = DONE | {"notes": notes}
+        shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, done, THIS))
+        shim(shim_dir, tmp_path, "gh", github([], [ROUTING]))
+        record = filled("context", written(tmp_path, example()))
+        assert record["where_this_fits"]["builds_on"] == [{"pr": 803, "gloss": ROUTING["title"]}]
 
     def test_cr_x3_a_sibling_that_this_same_pull_request_delivered_is_not_something_it_builds_on(
         self, shim_dir: Path, tmp_path: Path
@@ -538,6 +643,17 @@ class TestCrX8Concurrent:
         record = filled("context", written(tmp_path, example()))
         assert [entry["pr"] for entry in concurrent_of(record)] == [850]
 
+    def test_cr_x8_an_open_pull_request_that_comes_back_on_two_pages_is_listed_once(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        # A pull request that opens while the pages are read pushes the last entry of one page onto the next.
+        shim(shim_dir, tmp_path, "work", tracker(*FAMILY))
+        files = {NUMBER: OWN_PATHS, 850: SHARED, 851: APART}
+        shim(shim_dir, tmp_path, "gh", github([[ELSEWHERE, OTHER], [OTHER]], [ROUTING], files))
+        record = filled("context", written(tmp_path, example()))
+        assert concurrent_of(record) == [{"pr": 850, "gloss": OTHER["title"]}]
+        assert calls(tmp_path, "gh").count(files_of(850, 1)) == 1
+
     def test_cr_x8_concurrent_pull_requests_come_lowest_number_first(self, shim_dir: Path, tmp_path: Path):
         later = pull(855, "refactor(review-panel): the gate reads one file [9k9.431]")
         shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, THIS))
@@ -600,6 +716,16 @@ class TestCrX8Concurrent:
         twice = filled("context", tmp_path / "record.json")["heads_up"]
         assert once == twice == [*EXAMPLE["heads_up"], NOT_CHECKED]
 
+    def test_an_unfilled_list_that_took_the_row_holds_none_once_the_row_goes(self, shim_dir: Path, tmp_path: Path):
+        shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, THIS))
+        shim(shim_dir, tmp_path, "gh", github([[SHARING]], [], {NUMBER: OWN_PATHS, 850: APART}))
+        unfilled = example(number=None)
+        unfilled["heads_up"] = []
+        first = filled("context", written(tmp_path, unfilled))
+        assert first["heads_up"] == [NOT_CHECKED]
+        first["pr"]["number"] = NUMBER
+        assert filled("context", written(tmp_path, first))["heads_up"] == ["None."]
+
     @pytest.mark.parametrize("heads_up", [[], ["None."], ["The gate ran on one machine."]])
     def test_a_record_with_no_number_gets_no_row_when_no_other_pull_request_is_open(
         self, heads_up: list[str], shim_dir: Path, tmp_path: Path
@@ -635,6 +761,12 @@ class TestGeneratorRows:
 
     def test_none_comes_back_when_a_generators_last_row_goes_and_nothing_else_is_left(self):
         assert self.rows(["context: An old row."], []) == ["None."]
+
+    def test_none_comes_back_though_the_list_was_empty_before_the_generator_wrote_into_it(self):
+        # The record keeps no trace of what the list held before the row, so the row's going always leaves None.
+        written_into = self.rows([], ["Nothing was read."])
+        assert written_into == ["context: Nothing was read."]
+        assert self.rows(written_into, []) == ["None."]
 
     def test_a_list_the_generator_never_wrote_in_is_left_as_it_is(self):
         assert self.rows([], []) == []
@@ -845,7 +977,85 @@ class TestCrX5Discovered:
     def test_cr_x5_the_reason_is_the_one_the_recorded_triage_record_gives(self):
         shown = RECORDED["work"]["--format json show agents-config-9k9.484.3"]["stdout"]["data"]["items"][0]
         assert "\n\n## Triage\n- Scope: out-of-scope — " in shown["description"]
-        assert change_record.TRIAGE_SCOPE.findall(shown["description"]) == [RECORDED_REASON]
+        assert change_record.triage_reason(shown["description"]) == RECORDED_REASON
+
+    @pytest.mark.parametrize("ending", ["\r\n", "\r", "\n"], ids=["CRLF", "CR", "LF"])
+    def test_cr_x5_the_triage_record_is_read_whatever_ends_its_lines(self, ending: str):
+        record = ending.join(["## Triage", "- Scope: out-of-scope — Current reason.", "- Priority: P3 — Later.", ""])
+        assert change_record.triage_reason(f"Found while pinning.{ending}{ending}{record}") == "Current reason."
+        deferred = record.replace("out-of-scope", "in-scope — deferred: next-slice")
+        assert change_record.triage_reason(deferred) == "Current reason."
+
+    @pytest.mark.parametrize("ending", ["\r\n", "\r"], ids=["CRLF", "CR"])
+    def test_cr_x5_the_last_record_gives_the_reason_though_an_older_draft_ends_its_lines_another_way(
+        self, ending: str, shim_dir: Path, tmp_path: Path
+    ):
+        draft = "A first draft read:\n\n## Triage\n- Scope: out-of-scope — Old reason.\n- Priority: P4 — Never.\n\n"
+        final = ending.join(["## Triage", "- Scope: out-of-scope — Current reason.", "- Priority: P3 — Later.", ""])
+        found = FOUND[0] | {"description": draft + final}
+        shim(shim_dir, tmp_path, "work", found_from(found))
+        record = filled("discovered", written(tmp_path, discovering(["None."])))
+        assert record["discovered"]["rows"][0]["reason"] == "Current reason."
+
+    @pytest.mark.parametrize(
+        "quoted",
+        [
+            "```markdown\n## Triage\n- Scope: out-of-scope — Example only.\n```",
+            "```\n## Triage\n- Scope: in-scope — deferred: next-slice — Example only.\n```",
+            "~~~\n## Triage\n- Scope: out-of-scope — Example only.\n~~~",
+            "````text\n```\n## Triage\n- Scope: out-of-scope — Example only.\n```\n````",
+            "```\n## Triage\n- Scope: out-of-scope — Example only.\n~~~\nA fence of another kind closes nothing.",
+            "```\r\n## Triage\r\n- Scope: out-of-scope — Example only.\r\n```",
+            "- The form is:\n  ```\n## Triage\n- Scope: out-of-scope — Example only.\n  ```",
+            "An example with no end:\n```\n## Triage\n- Scope: out-of-scope — Example only.",
+        ],
+    )
+    def test_cr_x5_a_triage_block_quoted_inside_a_fenced_block_is_no_triage_record(self, quoted: str):
+        only_quoted = f"The record takes this form:\n\n{quoted}\n\nNo triage has been recorded."
+        assert change_record.triage_reason(only_quoted) is None
+        real = "## Triage\n- Scope: out-of-scope — The real reason.\n- Priority: P3 — Later."
+        assert change_record.triage_reason(f"{real}\n\nFor the form, see:\n\n{quoted}\n") == "The real reason."
+        # A block that nothing closes runs to the end of the text, so a record after it is inside it.
+        runs_on = "no end" in quoted or "closes nothing" in quoted
+        after = change_record.triage_reason(f"For the form, see:\n\n{quoted}\n\n{real}")
+        assert after == (None if runs_on else "The real reason.")
+
+    @pytest.mark.parametrize(
+        "description",
+        [
+            "",
+            "## Triage",
+            "## Triage\n\n- Scope: out-of-scope — A blank line parts the heading from the scope.",
+            "### Triage\n- Scope: out-of-scope — The heading is at another level.",
+            "    ## Triage\n    - Scope: out-of-scope — The block is indented as code.",
+            "## Triage\n- Scope: undecided — The scope call is none the tracker writes.",
+            "## Triage notes\n- Scope: out-of-scope — The heading says more.",
+        ],
+    )
+    def test_cr_x5_text_that_only_resembles_a_triage_record_gives_no_reason(self, description: str):
+        assert change_record.triage_reason(description) is None
+
+    def test_cr_x5_an_item_whose_only_triage_block_is_a_quoted_example_fails_as_one_with_none_does(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        example_only = (
+            "The record takes this form:\n\n```markdown\n## Triage\n- Scope: out-of-scope — Example only.\n```\n\n"
+            "No triage has been recorded."
+        )
+        shim(shim_dir, tmp_path, "work", found_from(FOUND[0] | {"description": example_only}))
+        proc = unchanged_by("discovered", written(tmp_path, discovering([NOT_FILED])))
+        assert FOUND[0]["id"] in proc.stderr and "triage" in proc.stderr
+
+    def test_cr_x5_a_real_record_gives_the_reason_though_a_quoted_example_follows_it(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        description = (
+            triaged("out-of-scope", "The real reason.")
+            + "\n\nThe form, for reference:\n\n```\n## Triage\n- Scope: out-of-scope — Example only.\n```\n"
+        )
+        shim(shim_dir, tmp_path, "work", found_from(FOUND[0] | {"description": description}))
+        record = filled("discovered", written(tmp_path, discovering(["None."])))
+        assert record["discovered"]["rows"][0]["reason"] == "The real reason."
 
 
 def unchanged_by(generator: str, path: Path) -> subprocess.CompletedProcess[str]:
@@ -871,6 +1081,7 @@ CONTEXT_CALLS = {
     "gh": [
         OPEN_PULLS + "1",
         OPEN_PULLS + "2",
+        WHICH_REPOSITORY,
         "pr view 803 --json number,state,title",
         *(files_of(number, page) for number in (NUMBER, 850) for page in (1, 2)),
     ],
@@ -1127,6 +1338,14 @@ QUOTED = {
     "A fold <details `with` a span in its tag>": "A fold `<details ``with` a span in its tag>",
     "A fold beside a span, <details>`here`": "A fold beside a span, `<details>``here`",
     "Two lines.\r\n<details>\nA third.": "Two lines.\r\n`<details>`\nA third.",
+    "<details\nopen>Title</details>": "`<details`\nopen>Title</details>",
+    "<details\r\nopen>Title</details>": "`<details`\r\nopen>Title</details>",
+    "<details\ropen>Title</details>": "`<details`\ropen>Title</details>",
+    "A tag that breaks after its name, <DETAILS\n class=x>": "A tag that breaks after its name, `<DETAILS`\n class=x>",
+    "<details\n<details\n>": "`<details`\n`<details`\n>",
+    "A comment that breaks, <!-- first\nsecond -->": "A comment that breaks, `<!--` first\nsecond -->",
+    # The backtick that follows the name is enough here, because a tag's name ends at a space or at its close.
+    "An escaped fold that breaks, \\<details\nopen>": "An escaped fold that breaks, \\`<details`\nopen>",
 }
 
 # Text whose construct a code span cannot quote where it stands, and the same text with its line quoted whole.
@@ -1148,13 +1367,15 @@ ALREADY_INERT = [
     "A fence in another language is no construct:\n```python\nprint()\n```",
     "The word details and a lone < or -- are plain text",
     "A tag that only starts like a fold, <details-like> or <details/>, is no construct",
+    "A fold's name at the very end of the text opens nothing: <details",
+    "Its closing tag is no construct either: </details>\n</details\n>",
     "A span that starts a line is no fence: ```json```",
 ]
 
 # Pieces a hostile title could be made of. Random runs of them stand in for every text a tracker could hold.
 PIECES = [
-    "<details>", "<details open>", "<DETAILS ", "<details-", "<details/>", "<!--", "-->",
-    "`", "``", "```", "```json", "~~~json", "json",
+    "<details>", "<details open>", "<DETAILS ", "<details-", "<details/>", "<details", "<DETAILS", "open>",
+    "</details>", "<!--", "-->", "`", "``", "```", "```json", "~~~json", "json", "\r", "\t", "\f",
     "\\", " ", "x", "\n", "\r\n", "> ", "- ", "1. ", "|", "\u2028",
 ]
 
@@ -1181,9 +1402,12 @@ class TestInertText:
     def test_whatever_the_text_the_result_holds_no_construct_and_a_second_pass_changes_nothing(self):
         # The same seed gives the same texts on every run, so a failure can be run again.
         chooser = random.Random(843)
-        texts = ["".join(chooser.choices(PIECES, k=chooser.randint(1, 9))) for _ in range(4000)]
+        texts = ["".join(chooser.choices(PIECES, k=chooser.randint(1, 9))) for _ in range(8000)]
         held = [text for text in texts if change_record.machine_constructs(text)]
-        assert len(held) > 1000
+        assert len(held) > 2000
+        # A fold whose tag breaks after its name, at a line end of each of the three kinds, is among them.
+        for ending in ("\n", "\r\n", "\r"):
+            assert [text for text in held if f"<details{ending}" in text.lower()]
         for text in texts:
             once = change_record.inert(text)
             assert change_record.machine_constructs(once) == [], repr(text)
@@ -1221,6 +1445,26 @@ class TestGeneratedTextIsInert:
         filled("context", path)
         filled("discovered", path)
         return path
+
+    @pytest.mark.parametrize("ending", ["\n", "\r\n", "\r"], ids=["LF", "CRLF", "CR"])
+    def test_a_title_whose_fold_breaks_across_lines_still_leaves_a_record_that_passes_lint(
+        self, ending: str, shim_dir: Path, tmp_path: Path
+    ):
+        broken = f"<details{ending}open>Title</details>"
+        assert change_record.machine_constructs(broken)
+        found = FOUND[0] | {"title": broken, "description": triaged("out-of-scope", broken.replace(ending, " "))}
+        answers = tracker(
+            MILESTONE, EPIC | {"title": broken}, THIS | {"title": broken}, found, discovered={WORK_ITEM: [found["id"]]}
+        )
+        shim(shim_dir, tmp_path, "work", answers)
+        sharing = pull(850, f"{broken} [9k9.418]")
+        shim(shim_dir, tmp_path, "gh", github([[sharing]], [], {NUMBER: OWN_PATHS, 850: SHARED}))
+        path = written(tmp_path, example())
+        filled("context", path)
+        filled("discovered", path)
+        assert_passes_lint(path)
+        record = json.loads(path.read_text(encoding="utf-8"))
+        assert record["where_this_fits"]["ancestry"][1]["title"] == f"`<details`{ending}open>Title</details>"
 
     def test_a_record_filled_from_titles_that_hold_constructs_passes_lint(self, shim_dir: Path, tmp_path: Path):
         path = self.fill_from_hostile_sources(shim_dir, tmp_path)
@@ -1386,6 +1630,180 @@ class TestCrC8ReadsOnly:
         shim(shim_dir, tmp_path, "gh", {})
         filled("discovered", written(tmp_path, discovering(["None."])))
         assert calls(tmp_path, "gh") == []
+
+
+# The calls whose answers the cases below spoil, one of each kind a generator makes.
+SHOW_THIS = f"--format json show {WORK_ITEM}"
+LIST_EPIC = f"--format json list --parent {EPIC['id']}"
+EDGES_OF_THIS = f"--format json dep list {WORK_ITEM}"
+SHOW_FOUND = "--format json show agents-config-9k9.470 agents-config-9k9.471"
+VIEW_ROUTING = "pr view 803 --json number,state,title"
+STRANGER = "agents-config-9k9.999"
+
+
+def items_of(answer: dict[str, Any]) -> list[dict[str, Any]]:
+    return answer["data"]["items"]
+
+
+def stranger_like(answer: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of the answer's first item under the id of an item nobody asked for."""
+    return items_of(answer)[0] | {"id": STRANGER}
+
+
+def changed(change: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    """Return a function that applies ``change`` to an answer in place and returns the answer."""
+    def apply(answer: Any) -> Any:
+        change(answer)
+        return answer
+    return apply
+
+
+# Answers that do not have the shape their call's answer has, by generator,
+# executable and call. Each entry takes a copy of the well-formed answer and
+# returns the answer to give in its place.
+MISSHAPEN: dict[tuple[str, str, str], dict[str, Any]] = {
+    ("context", "work", SHOW_THIS): {
+        "no data": changed(lambda answer: answer.update(data=None)),
+        "an object where the list of items belongs": changed(lambda answer: answer["data"].update(items={})),
+        "an empty list of items": changed(lambda answer: answer["data"].update(items=[])),
+        "an item that is null": changed(lambda answer: answer["data"].update(items=[None])),
+        "an item that was not asked for": changed(lambda answer: items_of(answer)[0].update(id=STRANGER)),
+        "an item beside the one asked for": changed(lambda answer: items_of(answer).append(stranger_like(answer))),
+        "a title that is no text": changed(lambda answer: items_of(answer)[0].update(title=None)),
+        "a type that is no text": changed(lambda answer: items_of(answer)[0].update(type=7)),
+        "a parent that is no id": changed(lambda answer: items_of(answer)[0].update(parent=[EPIC["id"]])),
+        "no parent field": changed(lambda answer: items_of(answer)[0].pop("parent")),
+    },
+    ("context", "work", LIST_EPIC): {
+        "an object where the list of children belongs": changed(lambda answer: answer["data"].update(items={})),
+        "a child that is null": changed(lambda answer: answer["data"].update(items=[None])),
+        "a child with no id": changed(lambda answer: items_of(answer)[0].pop("id")),
+        "a child with no status": changed(lambda answer: items_of(answer)[0].pop("status")),
+        "a child whose title is no text": changed(lambda answer: items_of(answer)[0].update(title=5)),
+        "a child whose notes are no text": changed(lambda answer: items_of(answer)[0].update(notes=5)),
+        "a child of another item": changed(lambda answer: items_of(answer)[0].update(parent=MILESTONE["id"])),
+        "one child twice": changed(lambda answer: items_of(answer).append(items_of(answer)[0])),
+    },
+    ("context", "gh", OPEN_PULLS + "1"): {
+        "an entry that is empty": lambda answer: [{}],
+        "an entry that is null": lambda answer: [None],
+        "an entry with no title": lambda answer: [{"number": 850}],
+        "a number that is text": lambda answer: [answer[0] | {"number": "850"}],
+        "a title that is no text": lambda answer: [answer[0] | {"title": None}],
+    },
+    ("context", "gh", WHICH_REPOSITORY): {
+        "an empty object": lambda answer: {},
+        "a list": lambda answer: [answer],
+        "no url": lambda answer: {"nameWithOwner": answer["nameWithOwner"]},
+        "an owner and name that is no text": lambda answer: answer | {"nameWithOwner": None},
+        "an empty url": lambda answer: answer | {"url": ""},
+    },
+    ("context", "gh", VIEW_ROUTING): {
+        "an empty object": lambda answer: {},
+        "a list": lambda answer: [answer],
+        "another pull request than the one asked for": lambda answer: answer | {"number": 804},
+        "a state that is no text": lambda answer: answer | {"state": None},
+        "no title": lambda answer: {"number": 803, "state": "MERGED"},
+    },
+    ("context", "gh", files_of(NUMBER, 1)): {
+        "an entry that is empty": lambda answer: [{}],
+        "an entry that is null": lambda answer: [None],
+        "a file with an empty name": lambda answer: [answer[0] | {"filename": ""}],
+        "a file whose name is no text": lambda answer: [answer[0] | {"filename": 5}],
+        "a file whose old name is no text": lambda answer: [answer[0] | {"previous_filename": 5}],
+    },
+    ("discovered", "work", EDGES_OF_THIS): {
+        "no data": changed(lambda answer: answer.update(data=None)),
+        "an object where the list of edges belongs": changed(lambda answer: answer["data"].update(dependents={})),
+        "no list of edges": changed(lambda answer: answer["data"].pop("dependents")),
+        "an edge that is null": changed(lambda answer: answer["data"].update(dependents=[None])),
+        "an edge with no type": changed(lambda answer: answer["data"].update(dependents=[{"id": FOUND[0]["id"]}])),
+        "an edge whose id is no text": changed(lambda answer: answer["data"]["dependents"][0].update(id=470)),
+    },
+    ("discovered", "work", SHOW_FOUND): {
+        "an object where the list of items belongs": changed(lambda answer: answer["data"].update(items={})),
+        "one of the two items asked for": changed(lambda answer: items_of(answer).pop()),
+        "an item that was not asked for": changed(lambda answer: items_of(answer)[1].update(id=STRANGER)),
+        "an item beside the two asked for": changed(lambda answer: items_of(answer).append(stranger_like(answer))),
+        "one item twice": changed(lambda answer: items_of(answer).__setitem__(1, items_of(answer)[0])),
+        "a title that is null": changed(lambda answer: items_of(answer)[0].update(title=None)),
+        "a description that is no text": changed(lambda answer: items_of(answer)[0].update(description=5)),
+        "no description field": changed(lambda answer: items_of(answer)[0].pop("description")),
+    },
+}
+MISSHAPEN_CASES = [(*site, fault) for site, faults in MISSHAPEN.items() for fault in faults]
+
+
+class TestAnswerShape:
+    """An answer that lacks the shape its call's answer has fails the run, names the call and writes nothing."""
+
+    def spoiled(self, name: str, call: str, fault: str) -> dict[str, dict[str, Any]]:
+        """Return both executables' answers over the family, with the answer to ``call`` spoiled by ``fault``."""
+        answers = {
+            "work": copy.deepcopy(FAMILY_WITH_FOUND),
+            "gh": copy.deepcopy(github([[OTHER]], [ROUTING], {NUMBER: OWN_PATHS, 850: OWN_PATHS})),
+        }
+        generator = next(site[0] for site in MISSHAPEN if site[1:] == (name, call))
+        answers[name][call] = {"stdout": MISSHAPEN[generator, name, call][fault](answers[name][call]["stdout"])}
+        return answers
+
+    @pytest.mark.parametrize(("generator", "name", "call", "fault"), MISSHAPEN_CASES)
+    def test_an_answer_of_the_wrong_shape_fails_the_run_naming_its_call_and_leaves_the_record(
+        self, generator: str, name: str, call: str, fault: str, shim_dir: Path, tmp_path: Path
+    ):
+        answers = self.spoiled(name, call, fault)
+        shim(shim_dir, tmp_path, "work", answers["work"])
+        shim(shim_dir, tmp_path, "gh", answers["gh"])
+        # The record already holds both generated parts, so an answer read as empty would take rows away.
+        record = copy.deepcopy(EXAMPLE)
+        record["discovered"] = {"rows": [*FILED, NOT_FILED], "filed_digest": change_record.stamp(FILED)}
+        proc = unchanged_by(generator, written(tmp_path, record))
+        assert proc.returncode == 2
+        assert f"`{name} {call}`" in proc.stderr
+        assert "Traceback" not in proc.stderr
+
+    @pytest.mark.parametrize(("generator", "name", "call"), sorted(MISSHAPEN))
+    def test_cr_x4_a_call_that_exits_with_an_error_fails_the_run_though_it_printed_a_usable_answer(
+        self, generator: str, name: str, call: str, shim_dir: Path, tmp_path: Path
+    ):
+        # The exit status is the call's own word on whether it worked, whatever it printed.
+        answers = {"work": FAMILY_WITH_FOUND, "gh": github([[OTHER]], [ROUTING], {NUMBER: OWN_PATHS, 850: OWN_PATHS})}
+        answers[name] = answers[name] | {call: answers[name][call] | {"exit": 3}}
+        shim(shim_dir, tmp_path, "work", answers["work"])
+        shim(shim_dir, tmp_path, "gh", answers["gh"])
+        proc = unchanged_by(generator, written(tmp_path, copy.deepcopy(EXAMPLE)))
+        assert proc.returncode == 2
+        assert f"`{name} {call}` exited 3" in proc.stderr
+
+    def test_every_kind_of_call_a_generator_makes_has_a_spoiled_answer_among_the_cases(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        shim(shim_dir, tmp_path, "work", FAMILY_WITH_FOUND)
+        shim(shim_dir, tmp_path, "gh", github([[OTHER]], [ROUTING], {NUMBER: OWN_PATHS, 850: OWN_PATHS}))
+        path = written(tmp_path, copy.deepcopy(EXAMPLE))
+        filled("context", path)
+        filled("discovered", path)
+        def kind(call: str) -> str:
+            return re.sub(r"\d+", "N", re.sub(r"agents-config-[\w.]+", "ID", call))
+
+        made = {(name, kind(call)) for name in ("work", "gh") for call in calls(tmp_path, name)}
+        assert made == {(name, kind(call)) for _, name, call in MISSHAPEN}
+
+    def test_every_read_in_the_script_states_the_shape_of_its_answer(self):
+        # A read that states no shape would take whatever came back. The readers
+        # take the shape as their second argument or by keyword.
+        tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+        readers = {"tool_json": 2, "gh_pages": 2, "tracker": None}
+        reads = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in readers
+        ]
+        assert len(reads) >= 6
+        for read in reads:
+            positional = readers[read.func.id]
+            shaped = any(keyword.arg in ("shape", "entry") for keyword in read.keywords)
+            shaped = shaped or (positional is not None and len(read.args) >= positional)
+            assert shaped, f"line {read.lineno}: {read.func.id} is called with no shape for its answer"
 
 
 class TestGeneratorCommandLine:

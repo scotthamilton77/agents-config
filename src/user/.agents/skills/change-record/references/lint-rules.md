@@ -101,7 +101,7 @@ A message has all three body sections or none of them. In a body, `why` is two o
 
 `lint --pr NUMBER` checks the flag against the pull request itself. It reads the pull request's list of files from GitHub through `gh api`, a page at a time, in the working directory's repository. A renamed file counts under its old path and its new one. A path's top-level component is its first segment. That is the directory at the root that holds the path, or the file itself when it sits at the root. A path under a `docs` directory at the root counts toward no component, because documentation describes a component and is not one. A record whose flag is false fails, under `reach`, when the paths span more than one component. A pull request that changes one component and its documentation therefore passes, and so does one that changes documentation alone.
 
-This check is coarse. Two packages under one top-level directory count as one component, so a pass does not prove the flag. When `gh` cannot be run or exits with an error, `lint` reports the code `gh-failed` and exits 2, because it has decided nothing.
+This check is coarse. Two packages under one top-level directory count as one component, so a pass does not prove the flag. When `gh` cannot be run, exits with an error, or gives a page that is no list of files, `lint` reports the code `gh-failed` and exits 2, because it has decided nothing.
 
 ## Replies
 
