@@ -85,6 +85,17 @@ FEAT_HEADINGS = [
     "## Criteria",
 ]
 
+# The commit types by the body each takes. A spec takes every section too, in a form of its own.
+EVERY_SECTION_TYPES = ["feat", "fix", "perf", "refactor", "test"]
+SHORT_BODY_TYPES = ["build", "chore", "ci", "docs", "revert", "style"]
+SHORT_HEADINGS = ["## Heads-up", "## Risk", "## Changes", "## Discovered work", "## Verification"]
+HEADINGS = {
+    **dict.fromkeys([*EVERY_SECTION_TYPES, "spec"], FEAT_HEADINGS),
+    **dict.fromkeys(SHORT_BODY_TYPES, SHORT_HEADINGS),
+}
+
+ATTACK_LINE = "The criteria were attacked twice, and the attack record sits beside the spec."
+
 # What a commit message must never hold, as a pattern over the rendered text.
 COMMIT_MARKUP = {
     "table": re.compile(r"^(?=.*\|)(?=.*-)[ \t|:-]+$", re.MULTILINE),
@@ -232,16 +243,26 @@ def at(record: dict[str, Any], path: str) -> Any:
     return node
 
 
-def retyped(record: dict[str, Any], kind: str) -> dict[str, Any]:
-    """Give the example record another commit type.
+def of_type(kind: str) -> dict[str, Any]:
+    """Return the example as a pull request of type ``kind``, in the form lint takes for that type.
 
-    The type must be as long as the example's own, so the subject stays within its limit.
+    The record keeps every group the example holds, so a type whose body
+    leaves a section out still holds what that section would show.
     """
-    assert len(kind) == len(record["pr"]["type"])
-    record["pr"]["type"] = kind
-    record["pr"]["title"] = record["pr"]["title"].replace("feat(", f"{kind}(", 1)
-    record["commit"]["subject"] = record["commit"]["subject"].replace("feat(", f"{kind}(", 1)
+    record = example()
+    subject = f"{kind}(review-panel): pin reviewer effort and tools as data [9k9.408]"
+    record["pr"].update(type=kind, title=subject)
+    record["commit"]["subject"] = subject
+    if kind in SHORT_BODY_TYPES:
+        del record["risk"]["rows"][1:]
+    if kind == "spec":
+        record["criteria"] = ATTACK_LINE
     return record
+
+
+def headings(body: str) -> list[str]:
+    """Return the level-two headings of a body, in order."""
+    return [line for line in body.splitlines() if line.startswith("## ")]
 
 
 def reply_flags(entry: dict[str, Any]) -> list[str]:
@@ -371,15 +392,17 @@ class TestCrL17TemplatesDriveTheRender:
             text = re.sub(rf"(?m)^{re.escape(old)}", new, text)
         return text
 
-    @pytest.mark.parametrize(("name", "artifact"), [
-        ("pr-body.md", "body"),
-        ("commit-message.txt", "commit"),
-        ("review-reply.txt", "reply"),
+    @pytest.mark.parametrize(("name", "artifact", "kind"), [
+        ("pr-body.md", "body", "feat"),
+        ("pr-body.md", "body", "docs"),
+        ("pr-body.md", "body", "spec"),
+        ("commit-message.txt", "commit", "feat"),
+        ("review-reply.txt", "reply", "feat"),
     ])
     def test_cr_l17_an_edited_template_changes_its_artifact_the_same_way(
-        self, name: str, artifact: str, tmp_path: Path
+        self, name: str, artifact: str, kind: str, tmp_path: Path
     ):
-        record = example()
+        record = valid(of_type(kind))
         flags: list[Any] = []
         if artifact == "body":
             # This block holds no line a template also holds, so the edit below leaves it alone.
@@ -399,6 +422,10 @@ class TestCrL17TemplatesDriveTheRender:
         followed = render(record, tmp_path, artifact, *flags, script=skill / "scripts" / "change_record.py")
         assert followed != shipped
         assert followed == self.edit(shipped, name)
+        if artifact == "body":
+            # Every heading the type's body carries is the template's own line, so each one moved.
+            assert headings(shipped.split(OPENING)[0]) == HEADINGS[kind]
+            assert headings(followed.split(OPENING)[0]) == [f"{heading} (edited)" for heading in HEADINGS[kind]]
 
     def test_cr_l17_the_edit_reaches_every_heading_and_label_of_each_template(self):
         # The case above proves the render follows whatever the edit changes, so
@@ -438,7 +465,7 @@ class TestCrR1Body:
         if record["pr"]["type"] != "feat":
             pytest.skip("the heading set of another commit type is not this case's")
         body = golden_path(record_path, "pr-body").read_text(encoding="utf-8")
-        assert [line for line in body.splitlines() if line.startswith("## ")] == FEAT_HEADINGS
+        assert headings(body) == FEAT_HEADINGS
 
     @pytest.mark.parametrize("record_path", EXAMPLES, ids=lambda path: path.stem)
     def test_cr_r1_a_feat_body_shows_at_most_400_words_above_its_rule(self, record_path: Path):
@@ -449,6 +476,51 @@ class TestCrR1Body:
         assert "\n---\n" in body, "the body has no horizontal rule to end its one-pager"
         shown = len(visible_words(body))
         assert shown <= ONE_PAGER_WORDS, f"{record_path.stem} shows {shown} words above its rule"
+
+    @pytest.mark.parametrize("kind", sorted(HEADINGS))
+    def test_cr_r1_a_body_carries_the_headings_of_its_commit_type_in_order(self, kind: str):
+        assert sorted(HEADINGS) == sorted(change_record.load_schema()["properties"]["pr"]["properties"]["type"]["enum"])
+        assert headings(change_record.render_body(valid(of_type(kind)))) == HEADINGS[kind]
+
+    @pytest.mark.parametrize("kind", SHORT_BODY_TYPES)
+    def test_cr_r1_a_short_body_leaves_out_criteria_blast_radius_and_placement_whatever_the_record_holds(
+        self, kind: str
+    ):
+        # The body follows the record's type. This record holds a criteria table,
+        # both diagrams and its place in the tracker, and its type shows none of them.
+        record = valid(of_type(kind))
+        assert record["criteria"] and record["where_this_fits"]["ancestry"]
+        assert record["blast_radius"]["reach_graph"] and record["blast_radius"]["task_flow"]
+        body = change_record.render_body(record)
+        shown_anyway = (
+            "## Criteria", "| Criterion |", record["criteria"][0]["promise"],
+            "Blast radius", "```mermaid",
+            "## Where this fits", "this PR:", "Builds on:", "Scope of the owning item",
+            record["where_this_fits"]["ancestry"][0]["title"],
+        )
+        for gone in shown_anyway:
+            assert gone not in body, gone
+        # What sits under a heading the type keeps is still there.
+        for kept in ("<details><summary>Design notes</summary>", "### Review campaign", "Findings by round"):
+            assert kept in body, kept
+        assert f"- {record['heads_up'][-1]}\n\n## Risk\n" in body
+        assert "\n\n\n" not in body
+
+    def test_cr_r1_a_spec_body_gives_its_criteria_as_one_line_under_the_heading_with_no_table(self):
+        record = valid(of_type("spec"))
+        body = change_record.render_body(record)
+        assert f"\n\n## Criteria\n{ATTACK_LINE}\n\n<details><summary>Proposed commit message</summary>\n" in body
+        assert "| Criterion |" not in body
+
+    @pytest.mark.parametrize("kind", EVERY_SECTION_TYPES)
+    def test_cr_r1_a_body_of_a_type_that_carries_criteria_gives_them_as_a_table(self, kind: str):
+        record = valid(of_type(kind))
+        row = record["criteria"][0]
+        table = (
+            "## Criteria\n| Criterion | What it promises | Evidence |\n| --- | --- | --- |\n"
+            f"| {row['id']} | {row['promise']} | {row['evidence']} |\n"
+        )
+        assert table in change_record.render_body(record)
 
     def test_the_word_count_is_of_what_a_reader_sees_without_opening_a_fold(self):
         body = (
@@ -553,15 +625,15 @@ class TestBodyDetails:
         rows = [line[2:-2].split(" | ") for line in fold.splitlines() if line.startswith("| ")]
         return rows[2:]
 
-    def test_a_missing_optional_group_takes_its_heading_and_fold_with_it(self):
-        # A docs record carries no criteria and one risk row, so lint accepts it without them.
-        record = retyped(example(), "docs")
-        for group in ("where_this_fits", "blast_radius", "design_notes", "campaign", "criteria"):
+    def test_a_missing_optional_group_takes_its_fold_and_its_lines_with_it(self):
+        record = example()
+        for group in ("where_this_fits", "blast_radius", "design_notes", "campaign"):
             del record[group]
-        del record["risk"]["rows"][1:]
         record["risk"]["reaches_outside_package"] = False
+        record["replies"] = []
         body = change_record.render_body(valid(record))
-        assert [line for line in body.splitlines() if line.startswith("#")] == FEAT_HEADINGS[:-1]
+        assert headings(body) == FEAT_HEADINGS
+        assert "### Review campaign" not in body
         for gone in ("Scope of the owning item", "Blast radius", "Design notes", "Builds on", "mermaid"):
             assert gone not in body
         assert f"## Where this fits\n    this PR: {record['work_item']['slice']}\n\n## Risk\n" in body
@@ -640,13 +712,6 @@ class TestBodyDetails:
         assert "## Heads-up\n- None.\n\n" in body
         assert "| --- | --- | --- | --- |\n| None. |  |  |  |\n\n---\n" in body
         assert "- Not run: None.\n" in body
-
-    def test_a_one_line_criteria_fills_the_first_cell_of_one_row(self):
-        # A spec record holds its criteria as one line of text, where the template has a table row.
-        record = retyped(example(), "spec")
-        record["criteria"] = "Attacked twice, and the attack record sits beside the spec."
-        body = change_record.render_body(valid(record))
-        assert f"| --- | --- | --- |\n| {record['criteria']} |  |  |\n\n<details>" in body
 
     def test_a_row_in_flight_names_its_pull_request_beside_the_status(self):
         record = example()

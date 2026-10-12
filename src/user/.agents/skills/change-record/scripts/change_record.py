@@ -2025,7 +2025,9 @@ ONE_PAGER_WORDS = 400
 FOLD = re.compile(r"<details[\s>].*?</details>", re.DOTALL)
 ONE_PAGER_END = re.compile(r"^---$", re.MULTILINE)
 
-_SECTION = re.compile(r"\{\{([#/])([a-z_.]+)\}\}")
+# A line that opens or closes a block of a template. An opening line may name
+# the values its path takes, after an equals sign and with commas between them.
+_SECTION = re.compile(r"\{\{([#/])([a-z_.]+)(?:=([a-z,]+))?\}\}")
 _PARENTHESIS = re.compile(r" \((?:[^()$]*\$\{[^}]+\})+[^()$]*\)")
 
 
@@ -2120,9 +2122,13 @@ def _fill(template: str, record: dict[str, Any], bound: dict[str, Any] | None = 
 
     A line whose slot passes through a list appears once per entry, unless the
     caller bound that list to one entry. The lines between ``{{#a.b}}`` and
-    ``{{/a.b}}`` appear only when the record holds a value at that path. A
-    blank line of the template is left out where the line before it is blank,
-    so the lines that vanish between two blank lines leave one behind.
+    ``{{/a.b}}`` appear only when the record holds a value at that path. The
+    lines between ``{{#a.b=x,y}}`` and ``{{/a.b}}`` appear only when the value
+    at that path is one of those named, which is how a template says which
+    commit types carry a block. A record that holds a group its type does not
+    carry therefore renders without it. A blank line of the template is left
+    out where the line before it is blank, so the lines that vanish between
+    two blank lines leave one behind.
     """
     bound = bound or {}
     lines: list[str] = []
@@ -2130,7 +2136,8 @@ def _fill(template: str, record: dict[str, Any], bound: dict[str, Any] | None = 
     for line in template.splitlines():
         section = _SECTION.fullmatch(line)
         if section and section[1] == "#":
-            open_sections.append(_holds_something(_look(record, section[2], bound)))
+            held = _look(record, section[2], bound)
+            open_sections.append(held in section[3].split(",") if section[3] else _holds_something(held))
         elif section:
             open_sections.pop()
         elif not line and lines and not lines[-1]:
@@ -2145,11 +2152,7 @@ def _fill(template: str, record: dict[str, Any], bound: dict[str, Any] | None = 
                 continue
             head, _, field = repeated[0].partition("[]")
             first = field.lstrip(".")
-            entries = _look(record, head, bound)
-            if isinstance(entries, str):
-                # A field holding one line where a table is usual renders as one row.
-                entries = [{first: entries}]
-            for entry in entries or []:
+            for entry in _look(record, head, bound) or []:
                 # The entry that states its list is empty stands in the line's first place.
                 if is_none(entry) and first:
                     entry = {first: NONE}

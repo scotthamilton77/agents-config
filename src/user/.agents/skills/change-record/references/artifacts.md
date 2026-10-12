@@ -7,6 +7,7 @@
 - `${a.b}` stands for the record field at that path.
 - A line whose slot passes through a list, written `[]`, appears once per entry of that list.
 - The lines between `{{#a.b}}` and `{{/a.b}}` appear only when the record holds a value at that path. A group the record does not hold therefore takes its heading or its fold with it. So does a group whose every value is empty, such as a blast radius with two empty diagrams.
+- The lines between `{{#a.b=x,y}}` and `{{/a.b}}` appear only when the record's value at that path is one of those named. The body's template does this with `pr.type`, so each such block names the commit types whose body carries it.
 - A slot that stands alone on its line is a block, and its value keeps its own lines. Any other slot is set on the template's line.
 - A blank line of a template is left out where the line before it is blank. Lines that vanish between two blank lines therefore leave one blank line behind.
 - Text in parentheses around one slot or more is left out, parentheses included, when the record has nothing for any slot inside them.
@@ -27,11 +28,22 @@ A line ends at a line feed or a carriage return, alone or as a pair. What an art
 
 ## The pull request body: `pr-body.md`
 
+The sections a body carries follow the record's `pr.type`.
+
+| Type | The body carries |
+| --- | --- |
+| `feat`, `fix`, `refactor`, `perf`, `test` | Every section, with Criteria as a table. |
+| `spec` | Every section, with Criteria as one line. |
+| `docs`, `chore`, `build`, `ci`, `style`, `revert` | Heads-up, Risk, Changes, Discovered work and Verification. |
+
+The type decides, and what the record holds does not. A `docs` record that holds `criteria`, `blast_radius` or `where_this_fits` renders with no Criteria section, no blast-radius fold and no Where this fits section. Its work item is still named in the commit message, which every body carries in a fold. `lint` accepts such a record, so look at the type before filling those groups.
+
 - **Summary.** It has no heading. It gives the problem, then what is true now, then what remains, in three to five sentences.
 - **Heads-up.** Anything that should lower a reader's confidence, one sentence each. Write `None.` when there is nothing.
 - **Where this fits.** The author writes one line, saying which slice of its parent item this pull request is. The rest comes from the tracker and from GitHub.
 - **Discovered work.** A row is filed and names its tracker item, or is not filed, or is in flight and names the other pull request. An in-flight row says what this pull request told the other one. Write a single `None.` row when nothing was found.
 - **Verification.** Each gate with its exit status and where it ran, then what was not run and why.
+- **Criteria.** A table with one row for each criterion. On a `spec` it is the one line the record holds, set under the heading with no table.
 
 `render` writes some values in a form of its own:
 
