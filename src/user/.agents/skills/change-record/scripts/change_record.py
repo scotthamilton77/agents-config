@@ -687,14 +687,18 @@ def _groups_by_type(record: dict[str, Any]) -> Iterator[dict[str, str]]:
 
 
 def pr_changed_paths(number: int) -> list[str]:
-    """Return the paths pull request ``number`` changes, read through the ``gh`` executable.
+    """Return every path pull request ``number`` changes, read from GitHub's list of its files through ``gh``.
 
     The pull request is looked up in the repository of the working directory.
-    A ``gh`` that cannot be run, or that fails, raises a ``RecordError``,
-    because a check that could not read the paths has decided nothing.
+    A renamed file counts under its old path and its new one, because a
+    change to either meets the rename. The list is read in pages, since
+    GitHub refuses to give the whole diff of a large pull request in one
+    answer. A ``gh`` that cannot be run, or that fails, raises a
+    ``RecordError``, because a check that could not read the paths has
+    decided nothing.
     """
-    printed = run_tool(["gh", "pr", "diff", str(number), "--name-only"])
-    return [line for line in printed.splitlines() if line.strip()]
+    files = gh_pages(f"repos/{{owner}}/{{repo}}/pulls/{number}/files?per_page=100")
+    return sorted({file[name] for file in files for name in ("filename", "previous_filename") if file.get(name)})
 
 
 def _reach(record: dict[str, Any], changed: list[str]) -> Iterator[dict[str, str]]:
@@ -1311,28 +1315,20 @@ def _builds_on(children: list[dict[str, Any]], apart_from: int | None) -> list[d
     return merged
 
 
-def _touched_paths(number: int) -> set[str]:
-    """Return every path pull request ``number`` touches, read from GitHub's list of its files.
-
-    A renamed file counts under its old path and its new one, because a
-    change to either meets the rename. The list is read in pages, since
-    GitHub refuses to give the whole diff of a large pull request in one
-    answer.
-    """
-    files = gh_pages(f"repos/{{owner}}/{{repo}}/pulls/{number}/files?per_page=100")
-    return {file[name] for file in files for name in ("filename", "previous_filename") if file.get(name)}
-
-
 def _concurrent(number: int, others: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return each of the open pull requests ``others`` that touches a path pull request ``number`` touches.
+    """Return each of the open pull requests ``others`` that changes a path pull request ``number`` changes.
 
     Each entry carries the pull request's title. The paths of ``number`` are
     read only when there is another open pull request to compare them with.
     Every open pull request costs two calls or more, so a repository with
     hundreds open makes this slow.
     """
-    own = _touched_paths(number) if others else set()
-    return [{"pr": pull["number"], "gloss": pull["title"]} for pull in others if own & _touched_paths(pull["number"])]
+    own = set(pr_changed_paths(number)) if others else set()
+    return [
+        {"pr": pull["number"], "gloss": pull["title"]}
+        for pull in others
+        if own.intersection(pr_changed_paths(pull["number"]))
+    ]
 
 
 def fill_context(record: dict[str, Any]) -> None:
