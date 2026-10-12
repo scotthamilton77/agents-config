@@ -11,7 +11,7 @@
     "gloss": "a lint that keeps the routing table the only model inventory",
     "slice": "slice A of the delegation-coherence spec"
   },
-  "summary": "The routing table in the delegation skill is meant to be the only place a model id lives. Nothing enforced that. A new test suite now reads every Markdown file under `src/` and fails `make ci` on a model id the table does not list. Anthropic aliases such as `sonnet` are not caught.",
+  "summary": "The routing table in the delegation skill is meant to be the only inventory of model ids. Nothing enforced that. A new test suite now reads the Markdown files under `src/`, except those under an `evals` or `node_modules` directory, and fails `make ci` on a model id the table does not list. Anthropic aliases such as `sonnet` are not caught.",
   "heads_up": [
     "campaign: No review round has run on this pull request."
   ],
@@ -138,7 +138,7 @@
       {
         "gate": "make ci",
         "exit_status": 0,
-        "location": "the worktree root"
+        "location": "a directory the pull request does not name"
       }
     ],
     "not_run": [
@@ -154,7 +154,7 @@
   "criteria": [
     {
       "id": "DEL-A1",
-      "promise": "An unlisted model id anywhere under `src/` fails, naming the file and the id.",
+      "promise": "An unlisted model id in any Markdown file the lint reads under `src/` fails, naming the file and the id.",
       "evidence": "12 cases with an invented id and a version-bumped id per vendor scheme, a depth case and a listed-id control"
     },
     {
@@ -190,8 +190,8 @@
   ],
   "commit": {
     "subject": "feat(choosing-a-delegate): the content gate fails a model id the routing table omits [9k9.458.3]",
-    "why": "The routing table is meant to be the only place a model id lives, so that a model change is one edit. Nothing enforced that.",
-    "change": "A pytest suite beside the delegation skill reads every Markdown file under src/ outside evals/. It fails on a model id the routing table does not list, and on a table row elsewhere that names one. It also fails on a routing table that has changed shape. The Providers table in the routing file becomes a list, because the lint allows two tables there.",
+    "why": "The routing table is meant to be the only inventory of model ids. Nothing enforced that.",
+    "change": "A pytest suite beside the delegation skill reads every Markdown file under src/, except those under an evals or node_modules directory. It fails on a model id the routing table does not list, and on a table row elsewhere that names one. It also fails on a routing table that has changed shape. The Providers table in the routing file becomes a list, because the lint allows two tables there.",
     "verification": "make ci exits 0 at the head, with 20 content suites passing. All 34 cases fail against a stub lint and pass at the head. One unlisted id appended to a skill made the gate exit 2 and name the line. Anthropic aliases are not caught, and no review round ran.",
     "attribution": {
       "tool": "Claude Code",

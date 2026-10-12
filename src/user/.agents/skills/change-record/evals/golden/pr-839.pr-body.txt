@@ -1,4 +1,4 @@
-The routing table in the delegation skill is meant to be the only place a model id lives. Nothing enforced that. A new test suite now reads every Markdown file under `src/` and fails `make ci` on a model id the table does not list. Anthropic aliases such as `sonnet` are not caught.
+The routing table in the delegation skill is meant to be the only inventory of model ids. Nothing enforced that. A new test suite now reads the Markdown files under `src/`, except those under an `evals` or `node_modules` directory, and fails `make ci` on a model id the table does not list. Anthropic aliases such as `sonnet` are not caught.
 
 ## Heads-up
 - campaign: No review round has run on this pull request.
@@ -53,13 +53,13 @@ All 34 cases failed against a stub lint that returned no files and no violations
 ---
 
 ## Verification
-- make ci: exit 0, run standalone from the worktree root at da6819097499a42da97a6b9f735491a6ff531edc.
+- make ci: exit 0, run standalone from a directory the pull request does not name at da6819097499a42da97a6b9f735491a6ff531edc.
 - Not run: A review round. The pull request does not say why.
 
 ## Criteria
 | Criterion | What it promises | Evidence |
 | --- | --- | --- |
-| DEL-A1 | An unlisted model id anywhere under `src/` fails, naming the file and the id. | 12 cases with an invented id and a version-bumped id per vendor scheme, a depth case and a listed-id control |
+| DEL-A1 | An unlisted model id in any Markdown file the lint reads under `src/` fails, naming the file and the id. | 12 cases with an invented id and a version-bumped id per vendor scheme, a depth case and a listed-id control |
 | DEL-A2 | The landed tree passes. | test_del_a2_landed_tree_passes, which read 94 files |
 | DEL-A3 | A fenced example with a listed id fails once its row is removed. | one fixture case |
 | DEL-A4 | An `evals` directory is not read. | two cases at different depths |
@@ -75,15 +75,16 @@ feat(choosing-a-delegate): the content gate fails a model id the routing table o
 Work item agents-config-9k9.458.3, a lint that keeps the routing table the only model inventory.
 
 Why
-The routing table is meant to be the only place a model id lives, so
-that a model change is one edit. Nothing enforced that.
+The routing table is meant to be the only inventory of model ids.
+Nothing enforced that.
 
 Change
 A pytest suite beside the delegation skill reads every Markdown file
-under src/ outside evals/. It fails on a model id the routing table does
-not list, and on a table row elsewhere that names one. It also fails on
-a routing table that has changed shape. The Providers table in the
-routing file becomes a list, because the lint allows two tables there.
+under src/, except those under an evals or node_modules directory. It
+fails on a model id the routing table does not list, and on a table row
+elsewhere that names one. It also fails on a routing table that has
+changed shape. The Providers table in the routing file becomes a list,
+because the lint allows two tables there.
 
 Verification
 make ci exits 0 at the head, with 20 content suites passing. All 34
