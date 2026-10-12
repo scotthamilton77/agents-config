@@ -707,7 +707,6 @@ class TestCrR3CommitMessage:
         )
 
     @pytest.mark.parametrize("path", [
-        "/commit/subject",
         "/pr/title",
         "/work_item/id",
         "/work_item/gloss",
@@ -725,6 +724,21 @@ class TestCrR3CommitMessage:
         put(record, path, at(record, path) + tail)
         found = [(error["code"], error["path"]) for error in refusal(record, tmp_path, "commit")]
         assert ("line-break", path) in found, found
+
+    @pytest.mark.parametrize("ending", ["\n", "\r", "\r\n"], ids=["LF", "CR", "CRLF"])
+    def test_cr_r3_a_line_break_in_the_subject_is_reported_once_by_the_rule_on_its_form(
+        self, ending: str, tmp_path: Path
+    ):
+        # The subject has a rule of its own for its whole one-line form, so the
+        # rule on one-line fields leaves the subject to it and one fault draws one finding.
+        record = example()
+        record["commit"]["subject"] = record["commit"]["subject"].replace(" and ", f"{ending}and ", 1)
+        assert ending in record["commit"]["subject"]
+        errors = refusal(record, tmp_path, "commit")
+        about_the_break = [error for error in errors if "line break" in error["message"]]
+        assert [(error["code"], error["path"]) for error in about_the_break] == [("commit-subject", "/commit/subject")]
+        # The carriage return and line feed together make the subject one character too long as well.
+        assert {error["code"] for error in errors} == {"commit-subject"}
 
     @pytest.mark.parametrize("key", ["Claude Session", "Claude_Session", "Claude.Session", " Claude-Session", "Claude-Session ", "Sesión", "a:b"])
     def test_cr_r3_lint_refuses_a_session_key_git_would_not_read_as_a_trailer_key(self, key: str, tmp_path: Path):

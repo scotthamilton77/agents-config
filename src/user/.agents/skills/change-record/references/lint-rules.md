@@ -19,7 +19,7 @@
 | `reply` | A reply outside 40 to 90 words, with a Change line that is empty or longer than two sentences, a Deferred reply that does not name the inheriting item, a Rejected reply with no URL, or one with no host or no path, for the comment that asked for it, or a phrase of campaign status. |
 | `reply-count` | A finding the campaign marks fixed that has no reply, or more than one. |
 | `stale-stamp` | A generated part whose content its stamp does not cover, or that has no stamp. |
-| `line-break` | A line break in a field an artifact sets on one line: the title, the commit subject, the work item's id, gloss or slice, or a field of the attribution. |
+| `line-break` | A line break in a field an artifact sets on one line: the title, the work item's id, gloss or slice, or a field of the attribution. A line break in the commit subject is reported under `commit-subject`. |
 | `session-key` | A session trailer key that holds anything but letters, digits and hyphens. |
 | `commit-markup` | Under `render` only: a field of the commit message that holds a Markdown table, a `<details>` fold, a fenced block or an HTML comment, or prose whose wrapped form opens a line with `---`. |
 | `decisions-block` | Under `render body` only: an existing body that holds one of the two markers around a decisions block, holds one of them twice, or holds them out of order. |
@@ -73,6 +73,8 @@ A new record holds no generated part and no reply. Its reach flag, `risk.reaches
 ## Line breaks
 
 A line ends at a line feed or a carriage return. Nine fields are set on one line and never hold one: `pr.title`, `commit.subject`, `work_item.id`, `work_item.gloss`, `work_item.slice`, and the four fields of `commit.attribution`. Each is a fact or is one line by form, so no artifact can set a break in it and stay what it is. A break in the subject, the id, the gloss or an attribution value would also move the lines git reads the commit message's trailers from.
+
+`lint` reports a break in the commit subject under `commit-subject`, with the rest of the subject's form, and a break in any of the other eight under `line-break`. One fault draws one finding.
 
 Every other text field may hold a line break. `artifacts.md` beside this file says how `render` sets one.
 

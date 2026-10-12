@@ -18,7 +18,7 @@ A line ends at a line feed or a carriage return, alone or as a pair. What an art
 
 | Field | A line break in it |
 | --- | --- |
-| `pr.title`, `commit.subject`, `work_item.id`, `work_item.gloss`, `work_item.slice`, and the four fields of `commit.attribution` | `lint` refuses it. Each is a fact or is one line by form. A break there would change the fact, or would move the lines git reads the trailers from. |
+| `pr.title`, `commit.subject`, `work_item.id`, `work_item.gloss`, `work_item.slice`, and the four fields of `commit.attribution` | `lint` refuses it, under `commit-subject` for the subject and `line-break` for the rest. Each is a fact or is one line by form. A break there would change the fact, or would move the lines git reads the trailers from. |
 | Any value set in a table cell | It becomes `<br>`, so the value stays in its row. |
 | `design_notes` and the two diagram sources | It stays. Each is a block and keeps its own lines. |
 | `commit.why`, `commit.change` and `commit.verification` | It reads as a space. Each is one paragraph, which `render` wraps at 72 columns. |

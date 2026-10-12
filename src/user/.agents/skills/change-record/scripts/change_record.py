@@ -91,14 +91,15 @@ AUTHOR_FILLS = (
 )
 
 # The fields an artifact sets on one line, where a line break would change what
-# the artifact is. A break in the subject, in the work item's id or gloss, or in
-# an attribution value moves the lines git reads the commit message's trailers from.
+# the artifact is. A break in the work item's id or gloss, or in an attribution
+# value, moves the lines git reads the commit message's trailers from. The
+# commit subject is one line too, and the rule on its form says so, which is
+# why it is left out here and one fault draws one finding.
 ONE_LINE_FIELDS = (
     "/pr/title",
     "/work_item/id",
     "/work_item/gloss",
     "/work_item/slice",
-    "/commit/subject",
     "/commit/attribution/tool",
     "/commit/attribution/co_author",
     "/commit/attribution/session_key",
