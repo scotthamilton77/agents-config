@@ -2,8 +2,8 @@ The agent running a review round used to choose each reviewer's effort and tools
 
 ## Heads-up
 - The gates ran with the system bash first on PATH, because the Homebrew bash hangs one hook test.
-- The code reviewers last judged commit e399db1d, and five prose-only commits followed it.
-- The 27 raw answers that test the written dispatch rules are outside the repository.
+- The code reviewers last judged commit e399db1d, and four prose-only commits followed it.
+- The 27 raw answers that test the written dispatch rules are on the author's machine, outside the repository.
 
 ## Where this fits
 agents-config-9k9  Harness rework (milestone)
@@ -46,12 +46,12 @@ flowchart LR
 ## Changes
 - **Pins.** contracts.json pins effort and tools for every reviewer slot, and no reviewer gets a shell.
 - **The change as a file.** The emitter writes one diff file beside each prompt.
-- **Recovery sequence.** A run that died is retried one effort step lower, then on the other provider. The round halts after three attempts.
+- **Recovery sequence.** A run that died is retried one effort step lower, then on the other provider. The round halts when that attempt dies too.
 <details><summary>Design notes</summary>
 
 The earlier design routed the OpenRouter mid-tier model away from whole-document reads. That constraint had no run record behind it, and the only recorded reads of that shape on that model had finished. A constraint stated without its variables cannot be scoped or falsified, so the design no longer encodes it. A slot that names a model runs that model. The recovery sequence answers for a death when one happens, and records every attempt. During this pull request's own review that model finished 20 whole-document reads in 20.
 
-Rejected: letting the dispatcher pick a fallback model freely. That hides the cost decision in a prompt and leaves no record. Rejected: a shell grant restricted by a command prefix. Both `git diff` and `git log` accept `--output`, so a prefix pattern is not read-only.
+Letting the dispatcher pick a fallback model freely was rejected, because vendors reprice and retire models under a remembered pick, and nobody can audit an improvised rule afterwards. A shell grant restricted by a command prefix was rejected, because both `git diff` and `git log` accept `--output`, so a prefix pattern is not read-only.
 
 contracts.json holds eight slots by provider, tier and read scope, plus the staffing recommender and the trend checkpoint. OpenRouter reads a whole document at low effort and a diff at high. Codex frontier slots run at high and mid slots at medium. No pin names a model, because the routing table does that. Every tool grant is the Codex read-only sandbox, or a list drawn from Read, Grep and Glob. No reviewer gets a shell pattern, because `git diff --output=<path>` writes a file.
 
@@ -59,7 +59,7 @@ The emitter writes each diff file over that reviewer's scope for the round, so a
 
 Each artifact class keeps exactly one OpenRouter reviewer. Four reviewers move to Codex. Declared tiers do not change.
 
-The gate's claim command takes `--effort` and records it. A run that died may be claimed again only as the same model one effort step lower, or as the other provider at the same tier and scope. Anything else is refused and costs no attempt. After three attempts the round halts with guidance. A revert restarts a round in flight, because its attempts ledger gained a field.
+The gate's claim command takes `--effort` and records it. A run that died may be claimed again only as the same model one effort step lower, or as the other provider at the same tier and scope. Anything else is refused and costs no attempt. A reviewer gets three attempts. Once it is out of attempts, the round halts only when the last failure on every route it ran on was a run that died or a transport error. A reviewer that runs out of attempts any other way is left without a report, and the round is incomplete. A revert restarts a round in flight, because its attempts ledger gained a field.
 
 harvest.md states the sequence, the failover slot, the diff file and the claim form. Nine scenarios with expected answers check that a reader holding only those files reaches the right dispatch.
 
@@ -154,10 +154,10 @@ unpredictable.
 
 Change
 The panel's configuration holds effort and tools for every reviewer
-slot, and each round records what it used. Every reviewer receives the
-change as a diff file. A run that dies mid-reasoning retries one effort
-step lower, then on the other provider, then halts the round. Models
-still come from the shared routing table.
+slot, and each round's record copies them from that slot's pin. Every
+reviewer receives the change as a diff file. A run that dies
+mid-reasoning retries one effort step lower, then on the other provider,
+then halts the round. Models still come from the shared routing table.
 
 Verification
 make ci, doc-lint and content-lint exit 0 at 5bc9e856. 27 of 27 isolated
