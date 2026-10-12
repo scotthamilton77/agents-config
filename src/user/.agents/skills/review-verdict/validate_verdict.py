@@ -11,6 +11,9 @@ Given a staffing record, also checks the verdict against it: the digest the verd
 names must be that file's, and the lenses it reports must be exactly the staffed set.
 
 Prints a JSON result to stdout. Exit 0 valid, 1 invalid, 2 unreadable or unparseable.
+
+``round_status`` is for a caller that imports this file. It decides whether a round is
+complete and terminal-clean from facts that caller supplies, and it has no command-line form.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -174,6 +178,104 @@ def validate_document(document: Any, staffing: Staffing | None = None) -> dict[s
         return {"valid": True}
     errors.sort(key=lambda err: (err["path"], err["code"], err["message"]))
     return {"valid": False, "errors": errors}
+
+
+def _unaccounted(envelope: dict[str, Any], other_envelopes: Iterable[Any]) -> list[dict[str, Any]]:
+    """List the earlier mechanical findings that no prior disposition names.
+
+    An earlier round is an envelope for the same claim and artifact class with a lower
+    round number. An entry names a finding by its round and its id together, because a
+    bare id can repeat from one round to the next.
+
+    The other envelopes are read only as far as their shape allows. An earlier round
+    posted under an older version of this contract fails the schema now, and it still
+    raised the findings it lists, so schema validity is not asked of them.
+    """
+    settled = {(entry["round"], entry["id"]) for entry in envelope["prior_dispositions"]}
+    claim = (envelope["artifact_class"], envelope["claim_id"])
+    gaps: set[tuple[int, str]] = set()
+    for other in other_envelopes:
+        if not isinstance(other, dict):
+            continue
+        if (other.get("artifact_class"), other.get("claim_id")) != claim:
+            continue
+        number, findings = other.get("round"), other.get("findings")
+        if not isinstance(number, int) or number >= envelope["round"]:
+            continue
+        for finding in findings if isinstance(findings, list) else []:
+            if not isinstance(finding, dict) or finding.get("type") != "mechanical":
+                continue
+            finding_id = finding.get("id")
+            # A disposition can name only a string id, so no entry could answer any other kind.
+            if isinstance(finding_id, str) and (number, finding_id) not in settled:
+                gaps.add((number, finding_id))
+    return [{"round": number, "id": finding_id} for number, finding_id in sorted(gaps)]
+
+
+def round_status(
+    envelope: Any,
+    *,
+    head_sha: str,
+    merge_base: str,
+    other_envelopes: Iterable[Any] = (),
+    staffing: Staffing | None = None,
+) -> dict[str, Any]:
+    """Decide whether one review round is complete and whether it is terminal-clean.
+
+    The caller supplies every fact about the world, and this function looks none up.
+    ``head_sha`` is the pull request's current head. ``merge_base`` is the merge base of
+    the branch and its target. Both are full lowercase 40-hex object ids.
+    ``other_envelopes`` holds the other envelopes posted on the same pull request, and
+    the earlier rounds of this claim are picked out of them. ``staffing`` is the staffing
+    record as ``read_staffing`` returns it, for a caller that has the file.
+
+    Two things stay with the caller. It supplies only envelopes the reviewing App posted,
+    which nothing here can check. It also chooses which round to judge, because this
+    function judges the one round it is handed.
+
+    The result is plain JSON data with six keys, and it is the same for the same arguments.
+    ``complete`` and ``terminal_clean`` are the two decisions. ``failed`` names what makes
+    the round incomplete: ``halted``, or any of ``base-sync``, ``live-and-authentic``,
+    ``lens-coverage`` and ``ledger-coverage``. An envelope the schema refuses fails
+    ``live-and-authentic``, and a missing ``retained_categories`` is one such refusal, so
+    retention needs no check of its own. ``not_compared`` holds ``lens-coverage`` when no
+    staffing record was supplied, which alone never makes a round incomplete. ``errors``
+    holds the validator's errors, in the validator's shape. ``unaccounted`` lists each
+    earlier mechanical finding without a prior disposition, as its ``round`` and ``id``.
+    """
+    status: dict[str, Any] = {
+        "complete": False,
+        "terminal_clean": False,
+        "failed": [],
+        "not_compared": ["lens-coverage"] if staffing is None else [],
+        "errors": validate_document(envelope).get("errors", []),
+        "unaccounted": [],
+    }
+    if status["errors"]:
+        status["failed"] = ["live-and-authentic"]
+        return status
+    if envelope["verdict"] == "halted":
+        status["failed"] = ["halted"]
+        return status
+
+    failed: list[str] = []
+    if envelope["base_sha"] != merge_base:
+        failed.append("base-sync")
+    if envelope["head_sha"] != head_sha:
+        failed.append("live-and-authentic")
+    if staffing is not None:
+        status["errors"] = _staffing_errors(envelope, staffing)
+        if status["errors"]:
+            failed.append("lens-coverage")
+    status["unaccounted"] = _unaccounted(envelope, other_envelopes)
+    if status["unaccounted"]:
+        failed.append("ledger-coverage")
+
+    blocking = any(finding["type"] == "mechanical" for finding in envelope["findings"])
+    status["failed"] = failed
+    status["complete"] = not failed
+    status["terminal_clean"] = not failed and not blocking
+    return status
 
 
 def read_document(path: Path) -> Any:

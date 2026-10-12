@@ -37,6 +37,7 @@ validator = _load_validator()
 
 SHA_A = "a" * 40
 SHA_B = "b" * 40
+SHA_C = "c" * 40
 DIGEST_A = "sha256:" + "a" * 64
 DIGEST_B = "sha256:" + "b" * 64
 
@@ -1072,6 +1073,264 @@ class TestStaffingArgumentSpellings:
         )
         assert proc.returncode == 2
         assert json.loads(proc.stdout)["errors"][0]["code"] == "unreadable"
+
+
+SOUND = {
+    "complete": True, "terminal_clean": True, "failed": [], "not_compared": [],
+    "errors": [], "unaccounted": [],
+}
+
+
+class TestRoundStatus:
+    """A round's completeness and its terminal-clean state are decided from supplied facts.
+
+    No case here touches the network, GitHub or git: every fact is a literal.
+    """
+
+    def status(self, doc: Any, **facts: Any) -> dict[str, Any]:
+        """Judge a document against the head and merge base ``valid_verdict`` declares."""
+        facts.setdefault("head_sha", SHA_B)
+        facts.setdefault("merge_base", SHA_A)
+        return validator.round_status(doc, **facts)
+
+    def staffing(self, *lenses: str, digest: str = DIGEST_A):
+        return validator.Staffing(digest=digest, lenses=frozenset(lenses))
+
+    def round_of(self, number: int, findings: list[dict[str, Any]] | None = None,
+                 dispositions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        doc = valid_verdict()
+        doc["round"] = number
+        doc["findings"] = findings or []
+        doc["verdict"] = "findings" if findings else "clean"
+        doc["prior_dispositions"] = dispositions or []
+        return doc
+
+    def advisory_finding(self, **overrides: Any) -> dict[str, Any]:
+        return {**mechanical_finding(), "type": "advisory", **overrides}
+
+    @pytest.mark.parametrize("findings", [[], [mechanical_finding()],
+                                          [{**mechanical_finding(), "type": "advisory"}]])
+    def test_halted_round_is_neither_complete_nor_terminal_clean(self, findings):
+        """A halt is incomplete by construction, whatever findings it holds."""
+        doc = halted_verdict()
+        doc["findings"] = findings
+        assert is_valid(doc)
+        result = self.status(doc)
+        assert result["complete"] is False
+        assert result["terminal_clean"] is False
+        assert result["failed"] == ["halted"]
+
+    def test_schema_invalid_envelope_is_incomplete_and_carries_the_validator_errors(self):
+        """Every compared field is sound here, so only the schema can refuse this round."""
+        doc = valid_verdict()
+        doc["notes"] = "extra"
+        result = self.status(doc)
+        assert result["complete"] is False
+        assert result["terminal_clean"] is False
+        assert result["failed"] == ["live-and-authentic"]
+        assert result["errors"] == validator.validate_document(doc)["errors"]
+        assert result["errors"]
+
+    def test_envelope_without_retained_categories_is_incomplete(self):
+        """Retention is declared by the schema's required field, so its absence is a schema error."""
+        doc = valid_verdict()
+        del doc["retained_categories"]
+        result = self.status(doc)
+        assert result["complete"] is False
+        assert any("retained_categories" in err["message"] for err in result["errors"])
+
+    @pytest.mark.parametrize("document", [None, [], "verdict", 3, {}, {"verdict": "halted"}])
+    def test_malformed_envelope_is_incomplete_not_a_crash(self, document):
+        result = self.status(document)
+        assert result["complete"] is False
+        assert result["terminal_clean"] is False
+        assert result["errors"]
+
+    def test_base_differing_from_the_merge_base_fails_base_sync(self):
+        result = self.status(valid_verdict(), merge_base=SHA_C)
+        assert result["complete"] is False
+        assert result["terminal_clean"] is False
+        assert result["failed"] == ["base-sync"]
+
+    def test_head_differing_from_the_current_head_fails_liveness(self):
+        result = self.status(valid_verdict(), head_sha=SHA_C)
+        assert result["complete"] is False
+        assert result["terminal_clean"] is False
+        assert result["failed"] == ["live-and-authentic"]
+
+    @pytest.mark.parametrize(("staffed", "reported"), [
+        (["correctness", "security"], ["correctness"]),
+        (["correctness"], ["correctness", "security"]),
+        (["correctness", "security"], ["correctness", "test-adequacy"]),
+    ])
+    def test_lenses_other_than_the_staffed_set_fail_lens_coverage(self, staffed, reported):
+        doc = valid_verdict()
+        doc["lenses"] = [lens_entry(name) for name in reported]
+        result = self.status(doc, staffing=self.staffing(*staffed))
+        assert result["complete"] is False
+        assert result["terminal_clean"] is False
+        assert result["failed"] == ["lens-coverage"]
+        assert result["not_compared"] == []
+        assert {err["code"] for err in result["errors"]} <= {
+            "lens-not-staffed", "staffing-coverage-gap"
+        }
+        assert result["errors"]
+
+    def test_staffing_digest_mismatch_fails_lens_coverage(self):
+        result = self.status(valid_verdict(), staffing=self.staffing("correctness", digest=DIGEST_B))
+        assert result["complete"] is False
+        assert result["failed"] == ["lens-coverage"]
+        assert [err["code"] for err in result["errors"]] == ["staffing-digest-mismatch"]
+
+    def test_without_a_staffing_record_lens_coverage_is_reported_as_not_compared(self):
+        """An absent staffing record is stated in the result and does not make a round incomplete."""
+        result = self.status(valid_verdict())
+        assert result["not_compared"] == ["lens-coverage"]
+        assert result["complete"] is True
+        assert result["failed"] == []
+
+    def test_undispositioned_prior_mechanical_finding_fails_ledger_coverage(self):
+        prior = self.round_of(1, [mechanical_finding()])
+        result = self.status(self.round_of(2), other_envelopes=[prior])
+        assert result["complete"] is False
+        assert result["terminal_clean"] is False
+        assert result["failed"] == ["ledger-coverage"]
+        assert result["unaccounted"] == [{"round": 1, "id": "f1"}]
+
+    def test_dispositioned_prior_mechanical_finding_passes_ledger_coverage(self):
+        prior = self.round_of(1, [mechanical_finding()])
+        doc = self.round_of(2, dispositions=[{"round": 1, "id": "f1", "disposition": "fixed"}])
+        result = self.status(doc, other_envelopes=[prior])
+        assert result["complete"] is True
+        assert result["unaccounted"] == []
+
+    @pytest.mark.parametrize("entry", [
+        {"round": 1, "id": "f2", "disposition": "fixed"},
+        {"round": 2, "id": "f1", "disposition": "fixed"},
+    ])
+    def test_disposition_naming_another_round_or_id_accounts_for_nothing(self, entry):
+        """An entry accounts for a finding only by naming both its round and its id."""
+        prior = self.round_of(1, [mechanical_finding()])
+        result = self.status(self.round_of(3, dispositions=[entry]), other_envelopes=[prior])
+        assert result["failed"] == ["ledger-coverage"]
+        assert result["unaccounted"] == [{"round": 1, "id": "f1"}]
+
+    def test_prior_advisory_finding_needs_no_disposition(self):
+        prior = self.round_of(1, [self.advisory_finding()])
+        result = self.status(self.round_of(2), other_envelopes=[prior])
+        assert result["complete"] is True
+        assert result["unaccounted"] == []
+
+    def test_round_one_with_no_prior_rounds_passes_ledger_coverage(self):
+        result = self.status(self.round_of(1), other_envelopes=[])
+        assert result["complete"] is True
+        assert result["unaccounted"] == []
+
+    def test_every_gap_in_every_prior_round_is_named_once_in_order(self):
+        first = self.round_of(1, [mechanical_finding(), {**mechanical_finding(), "id": "f2"}])
+        second = self.round_of(2, [{**mechanical_finding(), "id": "f1"}],
+                               [{"round": 1, "id": "f1", "disposition": "fixed"}])
+        doc = self.round_of(3, dispositions=[{"round": 1, "id": "f1", "disposition": "fixed"}])
+        result = self.status(doc, other_envelopes=[second, first, second])
+        assert result["unaccounted"] == [{"round": 1, "id": "f2"}, {"round": 2, "id": "f1"}]
+
+    @pytest.mark.parametrize("override", [
+        {"claim_id": "claim-2"},
+        {"artifact_class": "typed-code"},
+        {"round": 2},
+        {"round": 3},
+    ])
+    def test_only_earlier_rounds_of_the_same_claim_and_class_are_prior_rounds(self, override):
+        """Another claim's or class's findings, and this or a later round's, are not this ledger's."""
+        other = {**self.round_of(1, [mechanical_finding()]), **override}
+        result = self.status(self.round_of(2), other_envelopes=[other])
+        assert result["complete"] is True
+        assert result["unaccounted"] == []
+
+    def test_malformed_other_envelopes_are_ordinary_input(self):
+        """Nothing here names a finding of an earlier round of this claim, so nothing is owed."""
+        prior = self.round_of(1, [mechanical_finding()])
+        others = [
+            None, "verdict", 7, [], {},
+            {**prior, "round": "1"},
+            {**prior, "round": None},
+            {**prior, "findings": "f1"},
+            {**prior, "findings": [None, "f1", {"type": "mechanical"},
+                                   {"type": "mechanical", "id": ["f1"]}]},
+            {**prior, "claim_id": ["claim-1"]},
+        ]
+        result = self.status(self.round_of(2), other_envelopes=others)
+        assert result["complete"] is True
+        assert result["unaccounted"] == []
+
+    def test_prior_round_under_an_older_contract_still_owes_its_findings(self):
+        """An earlier round that no longer validates still raised the findings it lists."""
+        prior = {**self.round_of(1, [mechanical_finding()]), "schema_version": "2"}
+        del prior["staffing_record"]
+        assert not is_valid(prior)
+        result = self.status(self.round_of(2), other_envelopes=[prior])
+        assert result["failed"] == ["ledger-coverage"]
+        assert result["unaccounted"] == [{"round": 1, "id": "f1"}]
+
+    def test_complete_clean_round_is_terminal_clean(self):
+        doc = valid_verdict()
+        assert doc["verdict"] == "clean"
+        result = self.status(doc)
+        assert (result["complete"], result["terminal_clean"]) == (True, True)
+
+    def test_complete_advisory_only_round_is_terminal_clean(self):
+        doc = self.round_of(1, [self.advisory_finding(), self.advisory_finding(id="f2")])
+        assert doc["verdict"] == "findings"
+        result = self.status(doc)
+        assert (result["complete"], result["terminal_clean"]) == (True, True)
+
+    def test_complete_round_with_a_mechanical_finding_is_not_terminal_clean(self):
+        doc = self.round_of(1, [self.advisory_finding(id="f0"), mechanical_finding()])
+        result = self.status(doc)
+        assert (result["complete"], result["terminal_clean"]) == (True, False)
+
+    def test_round_passing_all_five_checks_with_staffing_leaves_nothing_uncompared(self):
+        prior = self.round_of(1, [mechanical_finding(), self.advisory_finding(id="f2")])
+        doc = self.round_of(2, dispositions=[{"round": 1, "id": "f1", "disposition": "fixed"}])
+        doc["lenses"] = [lens_entry("correctness"), lens_entry("security")]
+        result = self.status(
+            doc, other_envelopes=[prior], staffing=self.staffing("correctness", "security")
+        )
+        assert result == SOUND
+
+    def test_every_failing_check_is_named_together_in_a_fixed_order(self):
+        prior = self.round_of(1, [mechanical_finding()])
+        result = self.status(
+            self.round_of(2), head_sha=SHA_C, merge_base=SHA_C, other_envelopes=[prior],
+            staffing=self.staffing("security"),
+        )
+        assert result["failed"] == [
+            "base-sync", "live-and-authentic", "lens-coverage", "ledger-coverage"
+        ]
+
+    def test_result_is_plain_json_and_the_same_on_every_call(self):
+        """The result survives a JSON round trip unchanged, and the arguments are left as given."""
+        prior = self.round_of(1, [mechanical_finding()])
+        doc = self.round_of(2)
+        facts = {"head_sha": SHA_C, "merge_base": SHA_C, "other_envelopes": [prior],
+                 "staffing": self.staffing("security", "test-adequacy")}
+        before = json.dumps([doc, prior], sort_keys=True)
+        first = self.status(doc, **facts)
+        second = self.status(doc, **facts)
+        assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
+        assert json.loads(json.dumps(first)) == first
+        assert set(first) == set(SOUND)
+        assert json.dumps([doc, prior], sort_keys=True) == before
+
+    def test_foreign_script_loads_the_validator_by_path_and_calls_the_function(self):
+        """A caller outside this skill has only the file path, and that is enough."""
+        spec = importlib.util.spec_from_file_location("verdict_validator_for_a_caller", VALIDATOR_PATH)
+        assert spec and spec.loader
+        foreign = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(foreign)
+        assert foreign is not validator
+        result = foreign.round_status(valid_verdict(), head_sha=SHA_B, merge_base=SHA_A)
+        assert result == {**SOUND, "not_compared": ["lens-coverage"]}
 
 
 if __name__ == "__main__":
