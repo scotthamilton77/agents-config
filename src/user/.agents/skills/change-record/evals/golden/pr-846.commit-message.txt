@@ -3,9 +3,10 @@ feat(acceptance-criteria): the attack panel files coverage gaps under one rule o
 Work item agents-config-9k9.405.14, two overlapping rules of the criteria standard ask different questions.
 
 Why
-Two rules in the acceptance-criteria standard asked the same question,
-so the attack panel reported a missing check under two names. On a clean
-control document only 2 of 10 runs came back empty.
+One rule in the acceptance-criteria standard opened with a sentence that
+held the coverage rule's question, so the reviewer that owns that rule
+filed coverage gaps under it. On the corrected control document only 2
+of 10 runs came back empty.
 
 Change
 The verification-contract rule now opens by judging the check each

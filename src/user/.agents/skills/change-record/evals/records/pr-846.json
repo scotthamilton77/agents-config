@@ -11,7 +11,7 @@
     "gloss": "two overlapping rules of the criteria standard ask different questions",
     "slice": "the fix for two overlapping rules of the standard"
   },
-  "summary": "The standard for acceptance criteria had two rules that asked the same question, so the panel that attacks a criteria set reported one gap under two names. One rule now asks only about the check a criterion names. The other rule keeps the question of whether a commitment has a criterion at all. On a test document with no defect, 9 of 10 panel runs now return an empty report, up from 2 of 10. All 10 runs on the defective copy still catch the planted defect.",
+  "summary": "The acceptance-criteria standard has a coverage rule, which asks whether a commitment has a criterion at all. Another rule opened with a sentence that held the same question, so the reviewer that owns that rule filed coverage gaps under it. That rule now asks only about the check a criterion names. On the corrected control document, 9 of 10 panel runs now return an empty report, up from 2 of 10. All 10 runs on the defective document still object to the planted criterion.",
   "heads_up": [
     "The run records behind the numbers are in an untracked scratch directory on the author's machine.",
     "Every existing attack record's fingerprint changes, because the rule text is part of each emitted prompt."
@@ -130,7 +130,7 @@
         "recovery": "Revert."
       },
       {
-        "failure": "The gain on the clean control is noise.",
+        "failure": "The gain on the control document is noise.",
         "exposed": "The owner, who would believe the panel is quieter than it is.",
         "evidence": "Ten runs per document used the same model and effort. The one control objection left cites a flaw the document has in both versions.",
         "recovery": "Run the pilot again."
@@ -151,7 +151,7 @@
       "text": "The attack skill's table gains a column naming what each reviewer reads, which decides who owns a rule."
     }
   ],
-  "design_notes": "The `verification-contract` rule opened by saying that every material commitment has a feasible check. That sentence holds the coverage rule's question, so the reviewer that owns `verification-contract` filed coverage gaps under it. On the pilot's second case, 18 of 20 runs raised such objections under the rule as it was.\n\nEach reviewer in the attack panel is defined by the unit it reads. One reads a single criterion on its own shape. One reads the set against the document's promises. One reads the set against itself. One asks a single criterion what it leaves untested. That unit decides which reviewer owns a rule. Two reviewers may share ground when one asks about a criterion and the other about the set.\n\nThe measurement used the pilot's second case, which is a realistic document of eight criteria with one planted defect, and a corrected control. Ten fresh runs per document read prompts emitted from each version of the standard. Runs objecting to the planted criterion under the planted rule stayed at 10 of 10. Defective runs with objections elsewhere fell from 10 of 10 to 1 of 10. Control runs returning an empty report rose from 2 of 10 to 9 of 10. The one control objection left cites a contradiction the test document carries in both versions.\n\nNo reviewer prompt changed. No existing attack record is reopened, because the record check binds to the document's revision and never to the rule text. Other sentences in the attack skill were shortened to keep its body under the size cap.",
+  "design_notes": "The `verification-contract` rule opened by saying that every material commitment has a feasible check. That sentence holds the coverage rule's question, so the reviewer that owns `verification-contract` filed coverage gaps under it. On the pilot's second case, 18 of 20 runs raised such objections under the rule as it was.\n\nEach reviewer in the attack panel is defined by the unit it reads. One reads a single criterion on its own shape. One reads the set against the document's promises. One reads the set against itself. One asks a single criterion what it leaves untested. That unit decides which reviewer owns a rule. Two reviewers may share ground when one asks about a criterion and the other about the set.\n\nThe measurement used the pilot's second case, which is a realistic document of eight criteria with one planted defect, and a corrected control. Ten fresh runs per document read prompts emitted from each version of the standard. 10 of 10 defective runs objected to the planted criterion under the planted rule, before the change and after it. 1 of 10 defective runs objected elsewhere, down from 10 of 10. 9 of 10 control runs returned an empty report, up from 2 of 10. The one control objection left cites a contradiction the test document carries in both versions.\n\nNo reviewer prompt changed. No existing attack record is reopened, because the record check binds to the document's revision and never to the rule text. Other sentences in the attack skill were shortened to keep its body under the size cap.",
   "discovered": {
     "rows": [
       "None."
@@ -225,7 +225,7 @@
   ],
   "commit": {
     "subject": "feat(acceptance-criteria): the attack panel files coverage gaps under one rule only [9k9.405.14]",
-    "why": "Two rules in the acceptance-criteria standard asked the same question, so the attack panel reported a missing check under two names. On a clean control document only 2 of 10 runs came back empty.",
+    "why": "One rule in the acceptance-criteria standard opened with a sentence that held the coverage rule's question, so the reviewer that owns that rule filed coverage gaps under it. On the corrected control document only 2 of 10 runs came back empty.",
     "change": "The verification-contract rule now opens by judging the check each criterion names. Whether a commitment has a criterion at all stays with the coverage rule. The attack skill's table of reviewers names what each one reads, which is what decides who owns a rule.",
     "verification": "make ci exits 0. On the pilot's second case, ten runs per document gave an empty control report in 9 of 10 runs. The planted defect was detected in 10 of 10. One prose review round came back clean.",
     "attribution": {

@@ -1,4 +1,4 @@
-The standard for acceptance criteria had two rules that asked the same question, so the panel that attacks a criteria set reported one gap under two names. One rule now asks only about the check a criterion names. The other rule keeps the question of whether a commitment has a criterion at all. On a test document with no defect, 9 of 10 panel runs now return an empty report, up from 2 of 10. All 10 runs on the defective copy still catch the planted defect.
+The acceptance-criteria standard has a coverage rule, which asks whether a commitment has a criterion at all. Another rule opened with a sentence that held the same question, so the reviewer that owns that rule filed coverage gaps under it. That rule now asks only about the check a criterion names. On the corrected control document, 9 of 10 panel runs now return an empty report, up from 2 of 10. All 10 runs on the defective document still object to the planted criterion.
 
 ## Heads-up
 - The run records behind the numbers are in an untracked scratch directory on the author's machine.
@@ -35,7 +35,7 @@ Builds on: #785 (feat(9k9.397): one acceptance-criteria standard, and the criter
 | What could go wrong | Who or what is exposed | How we know it did not | What to do if it did |
 | --- | --- | --- | --- |
 | The panel stops catching a defect it caught before. | Every spec attacked with the deployed standard, in every project. | All 10 runs on the defective document still objected to the planted criterion under the planted rule. | Revert. |
-| The gain on the clean control is noise. | The owner, who would believe the panel is quieter than it is. | Ten runs per document used the same model and effort. The one control objection left cites a flaw the document has in both versions. | Run the pilot again. |
+| The gain on the control document is noise. | The owner, who would believe the panel is quieter than it is. | Ten runs per document used the same model and effort. The one control objection left cites a flaw the document has in both versions. | Run the pilot again. |
 <details><summary>Blast radius</summary>
 
 ```mermaid
@@ -63,7 +63,7 @@ The `verification-contract` rule opened by saying that every material commitment
 
 Each reviewer in the attack panel is defined by the unit it reads. One reads a single criterion on its own shape. One reads the set against the document's promises. One reads the set against itself. One asks a single criterion what it leaves untested. That unit decides which reviewer owns a rule. Two reviewers may share ground when one asks about a criterion and the other about the set.
 
-The measurement used the pilot's second case, which is a realistic document of eight criteria with one planted defect, and a corrected control. Ten fresh runs per document read prompts emitted from each version of the standard. Runs objecting to the planted criterion under the planted rule stayed at 10 of 10. Defective runs with objections elsewhere fell from 10 of 10 to 1 of 10. Control runs returning an empty report rose from 2 of 10 to 9 of 10. The one control objection left cites a contradiction the test document carries in both versions.
+The measurement used the pilot's second case, which is a realistic document of eight criteria with one planted defect, and a corrected control. Ten fresh runs per document read prompts emitted from each version of the standard. 10 of 10 defective runs objected to the planted criterion under the planted rule, before the change and after it. 1 of 10 defective runs objected elsewhere, down from 10 of 10. 9 of 10 control runs returned an empty report, up from 2 of 10. The one control objection left cites a contradiction the test document carries in both versions.
 
 No reviewer prompt changed. No existing attack record is reopened, because the record check binds to the document's revision and never to the rule text. Other sentences in the attack skill were shortened to keep its body under the size cap.
 </details>
@@ -102,9 +102,10 @@ feat(acceptance-criteria): the attack panel files coverage gaps under one rule o
 Work item agents-config-9k9.405.14, two overlapping rules of the criteria standard ask different questions.
 
 Why
-Two rules in the acceptance-criteria standard asked the same question,
-so the attack panel reported a missing check under two names. On a clean
-control document only 2 of 10 runs came back empty.
+One rule in the acceptance-criteria standard opened with a sentence that
+held the coverage rule's question, so the reviewer that owns that rule
+filed coverage gaps under it. On the corrected control document only 2
+of 10 runs came back empty.
 
 Change
 The verification-contract rule now opens by judging the check each
