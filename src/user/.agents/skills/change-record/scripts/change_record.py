@@ -1700,8 +1700,13 @@ def or_none(shape: dict[str, Any]) -> dict[str, Any]:
 
 # The shape of each answer `campaign` reads from GitHub, which holds what
 # `campaign` reads from that answer and nothing else: the pull request, an
-# entry of its reviews, and an entry of its review comments.
-PULL = holding({"user": or_none(holding({"login": NAME}))})
+# entry of its reviews, an entry of its review comments, and the comparison of
+# its base branch with its head.
+PULL = holding({
+    "user": or_none(holding({"login": NAME})),
+    "head": holding({"sha": NAME}),
+    "base": holding({"ref": NAME}),
+})
 REVIEW = holding({
     "id": COUNT,
     "body": TEXT_OR_NONE,
@@ -1712,25 +1717,46 @@ REVIEW_COMMENT = holding(
     {"id": COUNT, "pull_request_review_id": or_none(COUNT), "body": TEXT, "user": or_none(holding({"login": NAME}))},
     {"in_reply_to_id": or_none(COUNT)},
 )
+COMPARISON = holding({"merge_base_commit": holding({"sha": NAME})})
+
+# The heads-up row for a campaign whose latest round did not end it clean.
+NOT_TERMINAL_CLEAN = "The latest review round is not terminal-clean, so no commit is recorded as cleared by review."
 
 
-def load_verdict_validator() -> Callable[[Any], dict[str, Any]]:
-    """Return the validator that the ``review-verdict`` skill ships, loaded from the skill directory beside this one.
+def _verdict_skill(name: str) -> Callable[..., dict[str, Any]]:
+    """Return the function ``name`` of the ``review-verdict`` skill, loaded from the skill directory beside this one.
 
-    The validator takes a parsed verdict and returns ``{"valid": True}``, or
-    ``{"valid": False, "errors": [...]}`` with a message in each error. It is
-    that skill's own function. This script holds no copy of the verdict's
-    rules, so the two cannot come to disagree.
+    It is that skill's own function. This script holds no copy of the
+    verdict's rules, so the two cannot come to disagree.
     """
     path = VERDICT_SKILL / "validate_verdict.py"
     try:
         spec = importlib.util.spec_from_file_location("validate_verdict", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        return module.validate_document
+        return getattr(module, name)
     except (OSError, ImportError, SyntaxError, AttributeError) as exc:
-        message = f"the `review-verdict` skill's validator checks each verdict, and {path} cannot be loaded: {exc}"
+        message = f"`campaign` reads verdicts with the `review-verdict` skill's `{name}`, and {path} does not give it: {exc}"
         raise RecordError("no-verdict-skill", message) from exc
+
+
+def load_verdict_validator() -> Callable[[Any], dict[str, Any]]:
+    """Return the validator that the ``review-verdict`` skill ships.
+
+    The validator takes a parsed verdict and returns ``{"valid": True}``, or
+    ``{"valid": False, "errors": [...]}`` with a message in each error.
+    """
+    return _verdict_skill("validate_document")
+
+
+def load_round_status() -> Callable[..., dict[str, Any]]:
+    """Return the rule that the ``review-verdict`` skill ships for whether a review round is terminal-clean.
+
+    The rule takes one verdict, with the pull request's current head, its
+    merge base and its other verdicts as keyword arguments. It returns a
+    result whose ``terminal_clean`` is the decision.
+    """
+    return _verdict_skill("round_status")
 
 
 def fenced_json(body: str) -> str | None:
@@ -1902,22 +1928,41 @@ def _empty_campaign_rows(counted: int, unreadable: int) -> list[str]:
     return [f"{unreadable} {carried} that could not be read, so no review round is counted."]
 
 
-def _terminal_sha(verdicts: list[dict[str, Any]]) -> str:
-    """Return the head commit at which the campaign in ``verdicts`` ended clean, which is always an empty string.
+def _terminal_sha(verdicts: list[dict[str, Any]], pull: dict[str, Any], judge: Callable[..., dict[str, Any]]) -> str:
+    """Return the head commit of the latest round in ``verdicts`` when it is terminal-clean, and an empty string otherwise.
 
-    A campaign ends clean at the head of a round that is complete and holds no
-    blocking finding. Whether a round is complete is for the skill that
-    defines a review verdict to decide, and that skill ships no function that
-    decides it. This script does not decide it in that skill's place, so it
-    names no commit for any campaign.
+    ``verdicts`` is in the order the reviews were posted, so the latest round
+    is the last of them. An earlier round never names the commit. ``judge`` is
+    the ``review-verdict`` skill's rule for a round, and it alone decides.
+    This script hands it the facts it asks for and repeats none of its checks.
+
+    The facts are the head commit that ``pull`` gives, the merge base of that
+    head and the base branch, and every other verdict. GitHub's comparison of
+    the two gives the merge base. The base branch is compared by its name,
+    because the commit GitHub gives for a pull request's base can be behind
+    that branch. No staffing record is handed over, so the rule does not
+    compare the reviewers that ran with the ones that were staffed. A
+    campaign with no verdict has no round to judge, and nothing is compared
+    for it.
     """
-    return ""
+    if not verdicts:
+        return ""
+    *others, latest = verdicts
+    head = pull["head"]["sha"]
+    comparison = ["gh", "api", f"repos/{{owner}}/{{repo}}/compare/{pull['base']['ref']}...{head}"]
+    merge_base = tool_json(comparison, COMPARISON)["merge_base_commit"]["sha"]
+    status = judge(latest, head_sha=head, merge_base=merge_base, other_envelopes=others)
+    return latest["head_sha"] if status["terminal_clean"] else ""
 
 
-def campaign_part(verdicts: list[dict[str, Any]], commits: dict[tuple[str, str, str], str]) -> dict[str, Any]:
+def campaign_part(
+    verdicts: list[dict[str, Any]], commits: dict[tuple[str, str, str], str], terminal_sha: str = ""
+) -> dict[str, Any]:
     """Return the campaign part of a record, built from review verdicts in the order they were posted.
 
     ``commits`` gives the commit the author's reply names, by the finding.
+    ``terminal_sha`` is the commit the campaign ended clean at, or an empty
+    string when it has not ended clean.
 
     A finding is named by its verdict's claim id and artifact class together
     with its own id, because finding ids start again with each claim and each
@@ -1975,7 +2020,7 @@ def campaign_part(verdicts: list[dict[str, Any]], commits: dict[tuple[str, str, 
             if "work_item" in settled[key]:
                 entry["work_item"] = settled[key]["work_item"]
         entry["commit"] = commits.get(key, "")
-    part = {"reviewers": reviewers, "terminal_sha": _terminal_sha(verdicts), "findings": list(findings.values())}
+    part = {"reviewers": reviewers, "terminal_sha": terminal_sha, "findings": list(findings.values())}
     return {**part, "digest": stamp(part)}
 
 
@@ -1983,11 +2028,14 @@ def fill_campaign(record: dict[str, Any], pr: int | None = None, app: str | None
     """Set ``campaign`` in ``record`` from the review verdicts posted on its pull request, with its stamp.
 
     The pull request is ``pr``, or else the one the record names, and a
-    ``pr`` that is not the record's own is refused. The validator is loaded
-    before the first call, so a missing skill costs no call. The pull request
-    is read for its author, whose replies name the commits. A campaign that
+    ``pr`` that is not the record's own is refused. The validator and the
+    rule for a round are loaded before the first call, so a missing skill
+    costs no call. The pull request is read for its author, whose replies
+    name the commits, and for its head and its base branch. A campaign that
     comes out empty gets a heads-up row that says why, and that row goes when
-    a later run counts a verdict.
+    a later run counts a verdict. A campaign whose latest round is not
+    terminal-clean gets a row that says so, and that row goes when a later
+    run names the terminal commit.
     """
     held = record["pr"]["number"]
     number = held if pr is None else pr
@@ -1996,15 +2044,20 @@ def fill_campaign(record: dict[str, Any], pr: int | None = None, app: str | None
     if held not in (None, number):
         message = f"the record is for pull request {held}, and --pr names pull request {number}"
         raise RecordError("other-pull-request", message)
-    validate = load_verdict_validator()
+    validate, judge = load_verdict_validator(), load_round_status()
     pull = f"repos/{{owner}}/{{repo}}/pulls/{number}"
-    author = (tool_json(["gh", "api", pull], PULL)["user"] or {}).get("login")
+    answer = tool_json(["gh", "api", pull], PULL)
+    author = (answer["user"] or {}).get("login")
     reviews = gh_pages(f"{pull}/reviews?per_page=100", REVIEW)
     comments = gh_pages(f"{pull}/comments?per_page=100", REVIEW_COMMENT)
     posted, unreadable = _posted_verdicts(reviews, app, validate)
     verdicts = [verdict for _, verdict in posted]
-    record["campaign"] = campaign_part(verdicts, _reply_commits(comments, author, posted))
-    set_generator_rows(record, "campaign", _empty_campaign_rows(len(verdicts), unreadable))
+    terminal = _terminal_sha(verdicts, answer, judge)
+    record["campaign"] = campaign_part(verdicts, _reply_commits(comments, author, posted), terminal)
+    rows = _empty_campaign_rows(len(verdicts), unreadable)
+    if verdicts and not terminal:
+        rows.append(NOT_TERMINAL_CLEAN)
+    set_generator_rows(record, "campaign", rows)
 
 
 def _filled(text: str) -> str:

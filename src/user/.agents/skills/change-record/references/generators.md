@@ -79,7 +79,9 @@ An item with a discovered-from edge and no triage record in its description make
 
 **The commit.** A finding's `commit` comes from the pull request author's reply on the finding's own thread, which the reviewing App opens with an inline comment. `campaign` reads the commit from one of two places in that reply. The first is in parentheses at the end of the reply's `Change:` line. The second, for a reply with no such line, is straight after the word "commit". When the author replies more than once, the latest reply that names a commit decides. The `commit` is empty for a finding with no thread and for a reply that names no commit in either place. It is empty for every finding when the pull request author's account is gone, because no reply is then the author's. `campaign` copies no commit from the record's `replies`, and it changes no entry there, so an outcome the author chose stays.
 
-**The terminal commit.** `campaign` leaves `terminal_sha` empty. Whether a round was complete is a rule the `review-verdict` skill states, and that skill ships no function that decides it.
+**The terminal commit.** `terminal_sha` is the head commit of the latest round when that round is terminal-clean. It is empty otherwise. The latest round is the last counted review in the order GitHub lists them, which is the order they were submitted. An earlier round never names the commit, whatever it found.
+
+A round is terminal-clean when it is complete and holds no blocking finding. The `review-verdict` skill defines both, and its `round_status` decides. `campaign` calls that function and repeats none of its checks. It hands the function the pull request's current head, the merge base of that head and the base branch, and every other counted verdict. The function reads the current head, so a clean round on a commit the pull request has since left names no terminal commit. `campaign` hands over no staffing record, so the function does not compare the reviewers that ran with the ones that were staffed.
 
 ### An empty campaign
 
@@ -90,9 +92,15 @@ An item with a discovered-from edge and no triage record in its description make
 
 The row behaves as the row `context` writes does. It takes the place of a `None.` entry, and the next run that counts a verdict takes it out. When it goes and no other entry is left, `None.` comes back.
 
+### A campaign that has not ended clean
+
+`campaign` adds one row to `heads_up` when it counts a verdict and the latest round is not terminal-clean. The row reads `campaign: The latest review round is not terminal-clean, so no commit is recorded as cleared by review.`
+
+The row behaves as the rows above do. The next run that finds the latest round terminal-clean takes it out and sets `terminal_sha`.
+
 ## Running again
 
-A second run over unchanged sources leaves the file byte for byte as it was. Run a generator again when its sources change. That is when the pull request opens, when a sibling item closes or a sibling pull request merges, when new work is filed, and when a review round is posted or answered.
+A second run over unchanged sources leaves the file byte for byte as it was. Run a generator again when its sources change. That is when the pull request opens, when a sibling item closes or a sibling pull request merges, when new work is filed, and when a review round is posted or answered. Run `campaign` again when the pull request's head or its base branch moves, because either can end a terminal-clean state.
 
 A hand edit of a generated part fails `lint` under `stale-stamp`. Running the part's generator again replaces the edit and clears the finding.
 
@@ -118,8 +126,9 @@ A hand edit of a generated part fails `lint` under `stale-stamp`. Running the pa
 
 `campaign` makes these, in order:
 
-1. `gh api "repos/{owner}/{repo}/pulls/NUMBER"`, for the pull request's author
+1. `gh api "repos/{owner}/{repo}/pulls/NUMBER"`, for the pull request's author, its head commit and its base branch
 2. `gh api "repos/{owner}/{repo}/pulls/NUMBER/reviews?per_page=100&page=N"`, from page 1 until a page is empty
 3. `gh api "repos/{owner}/{repo}/pulls/NUMBER/comments?per_page=100&page=N"`, the same way, for the author's replies
+4. `gh api "repos/{owner}/{repo}/compare/BASE...HEAD"`, once, for the merge base of the base branch `BASE` and the head commit `HEAD`
 
-`campaign` reads no issue comment.
+`campaign` skips step 4 when it counts no verdict. It reads no issue comment.
