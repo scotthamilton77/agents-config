@@ -8,7 +8,7 @@
 - CR-L6 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL6SummaryLength
 - CR-L7 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL7CommentaryAndMachineContent
 - CR-L8 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL8Init
-- CR-L9 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL9WhatShips
+- CR-L9 | observed: #874 2026-10-12 scotthamilton77
 - CR-L10 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL10GroupsByTypeAndReach
 - CR-L11 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL11NoneBesideAnEntry
 - CR-L12 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL12CommitBody
@@ -66,6 +66,6 @@
 - CR-W9 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW9OnePassPerRevision
 - CR-W10 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW10Counts
 - CR-W11 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW11Dispatch
-- CR-G1 | open
-- CR-G2 | open
+- CR-G1 | observed: #874 2026-10-12 scotthamilton77
+- CR-G2 | test: packages/installer/tests/unit/test_delivery_contract.py::test_cr_g2_the_delivery_contract_states_each_change_record_sentence
 - CR-G3 | open
