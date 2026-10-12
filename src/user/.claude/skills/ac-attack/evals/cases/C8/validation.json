@@ -4,17 +4,17 @@
     "objections": [
       {
         "ground": {
-          "reason": "AUD-A7 enumerates the malformed service answers that exit 3 (wrong status, non-list body, severity outside D1, advisory for an unpinned package, duplicate advisory, timeout), and D3 says each advisory names a pinned package, but neither D3 nor any criterion says anything about version: the service may name a package that is pinned while its advisory applies to a version other than the pinned one. The document neither covers that answer nor rules it out, and the outcome matters because the command's purpose is to block a pull request only on advisories that actually apply to the pinned versions.",
-          "rule": "what-if-questions"
+          "reason": "The missing-dependency question asks what happens when a dependency errors. AUD-A7 fixes stdout, stderr and the exit status for a failing service, but unlike AUD-A4 it asserts nothing about the requests the stub received. D3 says the command sends its packages in one request, yet no criterion pins that on the failure path, so an implementation that retries a refused connection or a timed-out request satisfies every criterion while sending the service two or more requests per run.",
+          "rule": "What if something it relies on is missing?"
         },
         "lens": "what-if",
-        "objection": "The criteria let through a command that treats an advisory for a different version of a pinned package as applying to the pin (failing a clean pull request, or printing a wrong `<package>@<version>` line), or that crashes on it, since no criterion states whether such an answer is valid data, a malformed answer under AUD-A7, or must be filtered out.",
+        "objection": "The criteria let through an implementation that retries the advisory service on failure. A retrying command still prints nothing to stdout, writes `advisory service unavailable` to stderr and exits 3, so AUD-A7 passes, but CI latency and load on the advisory service multiply, and D3's single-request contract is unenforced exactly where it is most likely to be broken.",
         "scenario": {
-          "given": "a `deps.lock` pinning `left-pad@1.0.0` and a stub answering one high advisory `ADV-17` that names `left-pad` at version `2.0.0`",
+          "given": "a `deps.lock` pinning three packages and a stub that refuses the first connection attempt (or lets the first request run past 30 seconds) and would answer a second one",
           "when": "`deps audit` runs",
-          "expect": "a defined outcome the document never states: either the advisory is reported against the pin, or the answer is rejected with `advisory service unavailable` and exit 3, or the advisory is ignored as not applicable to the pinned version"
+          "expect": "the stub receives exactly one request before the command prints `advisory service unavailable` and exits 3 \u2014 an outcome the document implies through D3's one-request contract, which no criterion checks on the failure path"
         },
-        "target_ac": "none"
+        "target_ac": "AUD-A7"
       }
     ],
     "report": "objections"
@@ -23,8 +23,12 @@
     "transport": "openrouter",
     "model": "moonshotai/kimi-k3",
     "effort": "low",
-    "response_id": null,
-    "started": "2026-10-11T21:24:43Z"
+    "response_id": "50d6d15e-0800-43ce-86f1-27adefb21875",
+    "started": "2026-10-12T02:29:46Z",
+    "isolation": {
+      "tools_declared": "",
+      "tool_use_events": 0
+    }
   },
   "decision": {
     "verdict": "accept",
@@ -35,9 +39,9 @@
     "rejected": [
       {
         "lens": "what-if",
-        "target_ac": "none",
-        "objection": "The criteria let through a command that treats an advisory for a different version of a pinned package as applying to the pin (failing a clean pull request, or printing a wrong `<package>@<version>` line), or that crashes on it, since no criterion states whether such an answer is valid data, a malformed answer under AUD-A7, or must be filtered out.",
-        "reason": "The document pins a package and its version together, as in a `deps.lock` pinning `left-pad@1.0.0`, so an advisory naming `left-pad` at 2.0.0 is an advisory for a package `deps.lock` does not pin; D3 excludes it from the advisory list, and AUD-A7 already states the outcome, exit 3 with `advisory service unavailable`."
+        "target_ac": "AUD-A7",
+        "objection": "The criteria let through an implementation that retries the advisory service on failure.",
+        "reason": "AUD-A4 runs the case of three pinned packages and a stub that answers, and its stated outcome is that the stub receives one request; a stub that refuses or times out the first request is that one-request case under another stub input, a variant of AUD-A4's case."
       }
     ],
     "ruling": "The owner rejected the recurring objection that the not-applicable answers to the twice and nothing-changed questions need a criterion for D4: D4 makes the command read-only with no state between runs, so those questions are answered by that reason, which the standard accepts; a cached-answer scenario invents state the decision rules out, and a re-run with a changed advisory is a run with something changed. Demanding a criterion for the inapplicable dimension is the finding the parent criterion says a correct review does not raise."

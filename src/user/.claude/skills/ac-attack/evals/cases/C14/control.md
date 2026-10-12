@@ -15,7 +15,7 @@ The reporting API accepts one shared key per customer. The key never expires and
 - **D1 Scope.** A token carries a list of report types. A request for a report type outside that list gets 403 with the body `{"error":"out_of_scope"}`.
 - **D2 Expiry.** A token's lifetime is 1 to 365 whole days, and it expires at its creation time plus that lifetime. A request with an expired token gets 401 with the body `{"error":"token_expired"}`.
 - **D3 Revocation.** Once a token is revoked in the console, a request with it gets 401 with the body `{"error":"token_revoked"}`.
-- **D4 Secrecy.** The service stores only a salted hash of a token's secret. Neither its storage nor its logs hold the secret as plain text or in any encoding the service uses: base64, hex or URL encoding.
+- **D4 Secrecy.** The service stores only a hash of a token's secret. Neither its storage nor its logs hold the secret as plain text or in any encoding the service uses: base64, hex or URL encoding.
 
 ## Acceptance criteria
 

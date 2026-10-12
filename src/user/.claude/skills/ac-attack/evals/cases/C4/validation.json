@@ -8,18 +8,24 @@
     "transport": "codex",
     "model": "gpt-6.1-sol",
     "effort": "high",
-    "response_id": "01a12ce2-c493-7bc3-8b7b-c907696ce58f",
-    "started": "2026-10-11T21:33:40Z"
-  },
-  "digests": {
-    "control.md": "3233fa0478003b3fb9cea4bfcbe18400b6eb2fc6dbf50bad76fb99cf7dc983e2",
-    "defective.md": "0f4690c3b6d2a0ae930f4dee0d466374fae41da301d03d283de279f4ddcdcd89"
+    "response_id": "01a12df4-663a-7752-a183-c1588ab7602a",
+    "started": "2026-10-12T02:32:34Z",
+    "isolation": {
+      "cwd": "/private/tmp/codex-cwd-iso.YpiiRV",
+      "agents_md": {},
+      "agents_md_injections": 0
+    }
   },
   "decision": {
     "verdict": "accept",
     "digests": {
       "control.md": "3233fa0478003b3fb9cea4bfcbe18400b6eb2fc6dbf50bad76fb99cf7dc983e2",
       "defective.md": "0f4690c3b6d2a0ae930f4dee0d466374fae41da301d03d283de279f4ddcdcd89"
-    }
+    },
+    "rejected": []
+  },
+  "digests": {
+    "control.md": "3233fa0478003b3fb9cea4bfcbe18400b6eb2fc6dbf50bad76fb99cf7dc983e2",
+    "defective.md": "0f4690c3b6d2a0ae930f4dee0d466374fae41da301d03d283de279f4ddcdcd89"
   }
 }

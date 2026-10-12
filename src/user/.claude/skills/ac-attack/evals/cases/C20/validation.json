@@ -1,25 +1,52 @@
 {
   "report": {
     "lens": "what-if",
-    "objections": [],
-    "report": "empty"
+    "objections": [
+      {
+        "ground": {
+          "reason": "The failure question is answered for the recovery build's own behaviour but not for the debris the killed build leaves behind. D2's atomic replace implies a working file written into reports/ before the rename, and SLS-A3 kills a build after rows were written but before the replace. SLS-A3 then asserts only that the recovery build adds 'no other new file' \u2014 new relative to the recovery build's start \u2014 so an orphaned partial working file left by the killed build passes every criterion. The document's purpose is that finance never finds a partial report in reports/, and neither D2 nor any criterion states where the working file lives or that it is removed.",
+          "rule": "what-if-questions"
+        },
+        "lens": "what-if",
+        "objection": "The criteria let a build interrupted between writing rows and the atomic replace leave its partial working file in reports/ forever, contradicting the purpose that finance never finds a partial report there, with no test ever asserting its absence.",
+        "scenario": {
+          "given": "a build for 2026-10-01 killed via the pause hook after writing rows to its working file but before the atomic replace, leaving that partial file in reports/",
+          "when": "the recovery build for 2026-10-01 runs and exits 0",
+          "expect": "reports/ holds only sales-2026-10-01.csv, with the killed build's partial working file removed or never having been in reports/ \u2014 which no criterion checks"
+        },
+        "target_ac": "SLS-A3"
+      }
+    ],
+    "report": "objections"
   },
   "run": {
     "transport": "openrouter",
     "model": "moonshotai/kimi-k3",
     "effort": "low",
-    "response_id": null,
-    "started": "2026-10-11T21:19:19Z"
-  },
-  "digests": {
-    "control.md": "4b31e831767a27ee442c96d71a2a48342227ec1c80918f68a8f2c42ff4612adb",
-    "defective.md": "9ca0f36dfa528d8ed7646259b4ee18f37da54f5a415b565331d80dc8200d0e0e"
+    "response_id": "8efeabd6-d4d9-4754-8f37-09b9d5cb7714",
+    "started": "2026-10-12T02:30:58Z",
+    "isolation": {
+      "tools_declared": "",
+      "tool_use_events": 0
+    }
   },
   "decision": {
     "verdict": "accept",
     "digests": {
       "control.md": "4b31e831767a27ee442c96d71a2a48342227ec1c80918f68a8f2c42ff4612adb",
       "defective.md": "9ca0f36dfa528d8ed7646259b4ee18f37da54f5a415b565331d80dc8200d0e0e"
-    }
+    },
+    "rejected": [
+      {
+        "lens": "what-if",
+        "target_ac": "SLS-A3",
+        "objection": "The criteria let a build interrupted between writing rows and the atomic replace leave its partial working file in reports/ forever, contradicting the purpose that finance never finds a partial report there, with no test ever asserting its absence.",
+        "reason": "The What-if answers already cover this case: under \"What if it fails?\", SLS-A3 runs a build killed after the last row but before the report was replaced, followed by a new build, with the stated outcome that `reports/` holds no other new file; the objection's scenario is that answered case, disputed in only part of its wording."
+      }
+    ]
+  },
+  "digests": {
+    "control.md": "4b31e831767a27ee442c96d71a2a48342227ec1c80918f68a8f2c42ff4612adb",
+    "defective.md": "9ca0f36dfa528d8ed7646259b4ee18f37da54f5a415b565331d80dc8200d0e0e"
   }
 }

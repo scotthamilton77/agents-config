@@ -6,7 +6,7 @@ A customer who opens a ticket by email hears nothing until an agent picks the ti
 
 ## What changes
 
-- The help desk replies to every ticket opened by email within one minute, with an acknowledgement.
+- The help desk replies within one minute, with an acknowledgement, to every ticket opened by email except those D4 exempts.
 - The acknowledgement carries the ticket number and the response time the ticket's priority promises.
 - A customer's reply to the acknowledgement joins the same ticket and opens no new one.
 
@@ -22,7 +22,7 @@ A customer who opens a ticket by email hears nothing until an agent picks the ti
 
 Each criterion names its check. An automated check is a test in the help desk's integration suite, which runs the mail pipeline against a mail sink that captures every outbound email. It passes when the test passes in CI on the pull request's head. A human check is recorded as a comment on the pull request naming the evaluator, the verdict, each checklist item that failed and the commit judged. The pull request does not merge until every criterion passes.
 
-- **HDA-A1** Given a ticket opened by email from a customer address, when the pipeline processes it, the mail sink holds exactly one email to that address within 60 seconds, with the subject D2 gives. Checked by an automated test.
+- **HDA-A1** Given a ticket opened by an email from a customer address that carries no `Auto-Submitted` header, when the pipeline processes it, the mail sink holds exactly one email to that address within 60 seconds, with the subject D2 gives. Checked by an automated test.
 - **HDA-A2** Given one ticket of each priority opened by email, when the pipeline processes them, the body of each ticket's acknowledgement in the mail sink holds that ticket's number and the response time D1 gives for its priority. Checked by an automated test.
 - **HDA-A3** Given an open ticket, when the customer replies to its acknowledgement, the ticket gains one customer comment holding the reply's text and the help desk holds no new ticket. Checked by an automated test.
 - **HDA-A4** Given an inbound email carrying `Auto-Submitted: auto-replied`, when the pipeline processes it, the mail sink holds no email to its sender. Checked by an automated test.

@@ -1,146 +1,295 @@
 {
   "report": {
     "lens": "obligation-reduction",
-    "objections": [],
-    "report": "empty",
+    "objections": [
+      {
+        "ground": {
+          "reason": "D1 promises role-based decisions for the four actions. PRM-A1 checks the twelve named-role pairings only in its seeded project and request history; decisions in other project states remain unchecked.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "The criteria allow authorization to depend on project contents outside the checked setup.",
+        "obligation": "O1.2",
+        "scenario": {
+          "expect": "PRM-A1, PRM-A2 and PRM-A3 pass, but the viewer's delete succeeds and removes this project.",
+          "given": "An implementation follows D1 in the criteria's setup but permits viewers to delete projects containing three comments.",
+          "when": "A viewer sends delete to an existing project containing three comments."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "D1 promises that 'An allowed read returns the project.' PRM-A1 checks the complete read result only for the seeded project; the other criteria check equality before and after a refused request rather than correctness for other project contents.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "Allowed reads can return incorrect project contents outside the checked seed.",
+        "obligation": "O2.2",
+        "scenario": {
+          "expect": "PRM-A1, PRM-A2 and PRM-A3 pass, but the owner receives a body different from the project's stored body.",
+          "given": "An implementation returns the seeded project correctly but substitutes an incorrect body when a project contains three comments.",
+          "when": "An owner reads an existing project containing three comments."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "D1 promises that 'an allowed comment adds the comment to it.' PRM-A1 checks that effect only when commenting on the freshly seeded project.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "An allowed comment can be accepted without being added in other project states.",
+        "obligation": "O3.2",
+        "scenario": {
+          "expect": "PRM-A1, PRM-A2 and PRM-A3 pass, but the request returns 2xx and the new comment is absent.",
+          "given": "An implementation adds comments correctly to the seeded project but silently drops new comments on projects already containing three comments.",
+          "when": "A commenter submits a valid comment to an existing project containing three comments."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "D1 promises that 'an allowed edit replaces its body with the one sent.' PRM-A1 checks replacement only in its freshly seeded edit scenarios.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "An allowed edit can leave the previous body in place outside the checked scenarios.",
+        "obligation": "O4.2",
+        "scenario": {
+          "expect": "PRM-A1, PRM-A2 and PRM-A3 pass, but the edit returns 2xx and the project retains its old body.",
+          "given": "An implementation replaces the body correctly in the seeded project but ignores edits to projects containing three comments.",
+          "when": "An owner submits a valid replacement body to an existing project containing three comments."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "D1 promises that 'an allowed delete removes it.' PRM-A1 observes only that every caller's next read returns 404; those responses do not establish removal beyond those reads.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "A delete can produce the checked 404 responses while leaving the project available afterwards.",
+        "obligation": "O5.2",
+        "scenario": {
+          "expect": "PRM-A1, PRM-A2 and PRM-A3 pass, including every caller's next read returning 404, but the owner's subsequent read returns the retained project.",
+          "given": "An implementation retains a deleted project and returns 404 once to each caller after deletion, then resumes normal access.",
+          "when": "An owner deletes the seeded project, every caller performs its next read, and the owner reads again."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "D2 promises that 'A refused action returns HTTP 403 with the body {\"error\": \"forbidden\"}.' PRM-A1 checks that response only for the five refused pairings in its seeded setup.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "Refused named-role requests can return a different response outside the checked setup.",
+        "obligation": "O6.2",
+        "scenario": {
+          "expect": "PRM-A1, PRM-A2 and PRM-A3 pass, but the refused edit returns HTTP 403 with {\"error\": \"denied\"}.",
+          "given": "An implementation returns the specified refusal response for the seeded project but a different error body for projects containing three comments.",
+          "when": "A viewer sends edit to an existing project containing three comments."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "The change promises that 'A refused action leaves the project as it was'; D2 and D3 also promise unchanged project state. PRM-A2 and PRM-A3 check preservation only in their seeded scenarios.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "A refused request can alter the project outside the checked preservation scenarios.",
+        "obligation": "O7.3",
+        "scenario": {
+          "expect": "PRM-A1, PRM-A2 and PRM-A3 pass, but the request returns the specified 403 response and a subsequent owner read shows a changed title.",
+          "given": "An implementation preserves the seeded project on refusal but changes the title of projects containing three comments when rejecting an edit.",
+          "when": "A viewer sends edit to an existing project containing three comments."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "D3 promises the nonexistent-project response for each action by a caller with no role, including its header comparison. PRM-A3 checks this only for the seeded project after the caller reads Q.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "A caller with no role can receive a distinguishable response in other project states or request histories.",
+        "obligation": "O8.2",
+        "scenario": {
+          "expect": "PRM-A1, PRM-A2 and PRM-A3 pass, but this read returns HTTP 200 with project contents while the corresponding nonexistent-project read returns HTTP 404.",
+          "given": "An implementation supplies the required matching responses in PRM-A3's setup but exposes projects containing three comments to callers with no role.",
+          "when": "A caller with no role reads an existing project containing three comments."
+        },
+        "target_ac": "none"
+      }
+    ],
+    "report": "objections",
     "workings": {
       "obligations": [
         {
           "id": "O1",
           "kind": "result",
-          "statement": "Allow actions according to the caller's role on the requested project.",
-          "source": "\u201cThe project API decides each of its four actions by the caller's role on the project\u201d; D1: \u201cA viewer may read. A commenter may read and comment. An owner may do all four.\u201d",
+          "statement": "Decide the four actions using the caller's role on the requested project: viewers may read, commenters may read and comment, owners may perform all four, and the other named-role pairings are refused.",
+          "source": "What changes: 'The project API decides each of its four actions by the caller's role on the project, as the matrix in D1 gives.' D1: 'A viewer may read. A commenter may read and comment. An owner may do all four. Every other pairing of role and action is refused.'",
           "parts": [
             {
               "id": "O1.1",
-              "statement": "Allow a viewer to read the requested project.",
+              "statement": "The twelve viewer, commenter and owner pairings produce the D1 allow/refuse outcomes on freshly seeded P with PRM-A1's caller setup and preceding reads of Q.",
               "discharged_by": [
                 "PRM-A1"
               ]
             },
             {
               "id": "O1.2",
-              "statement": "Allow a commenter to read and comment on the requested project.",
-              "discharged_by": [
-                "PRM-A1"
-              ]
-            },
-            {
-              "id": "O1.3",
-              "statement": "Allow an owner to read, comment, edit and delete the requested project.",
-              "discharged_by": [
-                "PRM-A1"
-              ]
+              "statement": "The same named-role matrix holds in other in-scope project states and request histories.",
+              "discharged_by": []
             }
           ]
         },
         {
           "id": "O2",
-          "kind": "failure",
-          "statement": "Refuse the five disallowed pairings of the named roles and actions with the specified response.",
-          "source": "D1: \u201cEvery other pairing of role and action is refused.\u201d D2: \u201cA refused action returns HTTP 403 with the body `{\"error\": \"forbidden\"}`.\u201d",
+          "kind": "result",
+          "statement": "An allowed read returns the project.",
+          "source": "D1: 'An allowed read returns the project'.",
           "parts": [
             {
               "id": "O2.1",
-              "statement": "A viewer's comment, edit and delete requests return HTTP 403 with the specified forbidden body.",
+              "statement": "Allowed reads in PRM-A1 return P's seeded title, body, comments and revision list.",
               "discharged_by": [
                 "PRM-A1"
               ]
             },
             {
               "id": "O2.2",
-              "statement": "A commenter's edit and delete requests return HTTP 403 with the specified forbidden body.",
-              "discharged_by": [
-                "PRM-A1"
-              ]
+              "statement": "Allowed reads return the project's actual contents in other in-scope project states and request histories.",
+              "discharged_by": []
             }
           ]
         },
         {
           "id": "O3",
           "kind": "result",
-          "statement": "Each allowed action produces its specified effect.",
-          "source": "D1: \u201cAn allowed read returns the project, an allowed comment adds the comment to it, an allowed edit replaces its body with the one sent, and an allowed delete removes it.\u201d",
+          "statement": "An allowed comment adds the submitted comment to the project.",
+          "source": "D1: 'an allowed comment adds the comment to it'.",
           "parts": [
             {
               "id": "O3.1",
-              "statement": "An allowed read returns the project's title, body, comments and revision list.",
+              "statement": "The allowed comment requests checked by PRM-A1 add their comments after P's two seeded comments, which remain.",
               "discharged_by": [
                 "PRM-A1"
               ]
             },
             {
               "id": "O3.2",
-              "statement": "An allowed comment adds the submitted comment while retaining existing comments.",
-              "discharged_by": [
-                "PRM-A1"
-              ]
-            },
-            {
-              "id": "O3.3",
-              "statement": "An allowed edit replaces the project's body with the submitted body.",
-              "discharged_by": [
-                "PRM-A1"
-              ]
-            },
-            {
-              "id": "O3.4",
-              "statement": "An allowed delete removes the project.",
-              "discharged_by": [
-                "PRM-A1"
-              ]
+              "statement": "Other in-scope allowed comment requests add their submitted comments to the project.",
+              "discharged_by": []
             }
           ]
         },
         {
           "id": "O4",
-          "kind": "guarantee",
-          "statement": "A refused action preserves the project as observed through an owner's read.",
-          "source": "\u201cA refused action leaves the project as it was.\u201d D2: \u201cthe project, as an owner reads it afterwards, is unchanged.\u201d",
+          "kind": "result",
+          "statement": "An allowed edit replaces the project's body with the submitted body.",
+          "source": "D1: 'an allowed edit replaces its body with the one sent'.",
           "parts": [
             {
               "id": "O4.1",
-              "statement": "Each of the five refused role-action pairings leaves the owner's read of the project's title, body, comments and revision list byte-identical.",
+              "statement": "The allowed edit checked by PRM-A1 replaces freshly seeded P's body with the body sent in that test.",
               "discharged_by": [
-                "PRM-A2"
+                "PRM-A1"
               ]
+            },
+            {
+              "id": "O4.2",
+              "statement": "Other in-scope allowed edits replace the project's body with the submitted body.",
+              "discharged_by": []
             }
           ]
         },
         {
           "id": "O5",
-          "kind": "failure",
-          "statement": "For every action, a caller with no role on the requested project receives the same response as for a nonexistent project, subject only to the specified header exceptions.",
-          "source": "D3: \u201cA caller with no role on the project gets, for each of the four actions, the same response a request for a project that does not exist gets, apart from the values of the `Date` and `X-Request-Id` headers, which have the same format as for a project that does not exist.\u201d",
+          "kind": "result",
+          "statement": "An allowed delete removes the project.",
+          "source": "D1: 'an allowed delete removes it'.",
           "parts": [
             {
               "id": "O5.1",
-              "statement": "For read, comment, edit and delete, the status, body and headers other than Date and X-Request-Id match the corresponding nonexistent-project response.",
+              "statement": "After the allowed delete checked by PRM-A1, every seeded caller's next read of P returns 404.",
               "discharged_by": [
-                "PRM-A3"
+                "PRM-A1"
               ]
             },
             {
               "id": "O5.2",
-              "statement": "For all four actions, Date and X-Request-Id have the same formats as in the corresponding nonexistent-project response.",
-              "discharged_by": [
-                "PRM-A3"
-              ]
+              "statement": "Deletion removes the project beyond those immediate read responses, including subsequent access through the four actions, and also removes projects in other in-scope states.",
+              "discharged_by": []
             }
           ]
         },
         {
           "id": "O6",
-          "kind": "guarantee",
-          "statement": "Requests from a caller with no role on the project preserve the project.",
-          "source": "D3: \u201cThe project is unchanged.\u201d",
+          "kind": "failure",
+          "statement": "Each refused viewer or commenter pairing returns HTTP 403 with the body {\"error\": \"forbidden\"}.",
+          "source": "D1 identifies the refused named-role pairings. D2: 'A refused action returns HTTP 403 with the body {\"error\": \"forbidden\"}'. D3 separately specifies the response for callers with no role.",
           "parts": [
             {
               "id": "O6.1",
-              "statement": "Each of the four actions attempted without a project role leaves the owner's read of the project byte-identical.",
+              "statement": "The five refused pairings checked by PRM-A1 return the specified status and body in that test's setup.",
+              "discharged_by": [
+                "PRM-A1"
+              ]
+            },
+            {
+              "id": "O6.2",
+              "statement": "The five refused named-role pairings return the specified status and body in other in-scope project states and request histories.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O7",
+          "kind": "guarantee",
+          "statement": "Refused actions, including actions requested by callers with no role, leave the project unchanged as observed by an owner read.",
+          "source": "What changes: 'A refused action leaves the project as it was.' D2: 'the project, as an owner reads it afterwards, is unchanged.' D3: 'The project is unchanged.'",
+          "parts": [
+            {
+              "id": "O7.1",
+              "statement": "For PRM-A2's five refused pairings on freshly seeded P, the owner's before and after reads of the title, body, comments and revision list are byte-identical.",
+              "discharged_by": [
+                "PRM-A2"
+              ]
+            },
+            {
+              "id": "O7.2",
+              "statement": "For PRM-A3's four no-role requests on freshly seeded P after reading Q, the owner's before and after reads of the title, body, comments and revision list are byte-identical.",
               "discharged_by": [
                 "PRM-A3"
               ]
+            },
+            {
+              "id": "O7.3",
+              "statement": "Refused and no-role requests preserve the project in other in-scope project states and request histories.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O8",
+          "kind": "failure",
+          "statement": "For each of the four actions, a caller with no role receives the same response as for a nonexistent project, except that Date and X-Request-Id values may differ while retaining the same formats.",
+          "source": "D3: 'A caller with no role on the project gets, for each of the four actions, the same response a request for a project that does not exist gets, apart from the values of the Date and X-Request-Id headers, which have the same format as for a project that does not exist.'",
+          "parts": [
+            {
+              "id": "O8.1",
+              "statement": "PRM-A3's four no-role requests on freshly seeded P after reading Q match the corresponding nonexistent-project status, body and other headers, with matching Date and X-Request-Id formats.",
+              "discharged_by": [
+                "PRM-A3"
+              ]
+            },
+            {
+              "id": "O8.2",
+              "statement": "The same response equivalence holds for no-role requests in other in-scope project states and request histories.",
+              "discharged_by": []
             }
           ]
         }
@@ -156,15 +305,70 @@
     "transport": "codex",
     "model": "gpt-6.1-sol",
     "effort": "high",
-    "response_id": "01a12dc1-9204-7b32-b773-121bf2530153",
-    "started": "2026-10-12T01:37:02Z"
+    "response_id": "01a12df5-adc1-77b1-b94c-038a19c4b354",
+    "started": "2026-10-12T02:33:57Z",
+    "isolation": {
+      "cwd": "/private/tmp/codex-cwd-iso.fQ4qiP",
+      "agents_md": {},
+      "agents_md_injections": 0
+    }
   },
   "decision": {
     "verdict": "accept",
     "digests": {
       "control.md": "099f7684c904f56c7f5b12fd91f34a88fa7ea103dacd64b9979e2e6e4858ebe3",
       "defective.md": "28983834a141a31e829db3c27335f2e084d222ee9856a3b7d6fb5bfdde74eaa7"
-    }
+    },
+    "rejected": [
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "The criteria allow authorization to depend on project contents outside the checked setup.",
+        "reason": "PRM-A1 sends each caller's four actions to a freshly seeded P holding a title, a body, two comments and a revision list, each caller reading Q first. The objection's scenario is a variant of that case, another input: a project holding three comments, whose specified outcome under D1 and D2 is the same, the viewer's delete refused. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "Allowed reads can return incorrect project contents outside the checked seed.",
+        "reason": "PRM-A1 sends each caller's four actions to a freshly seeded P holding a title, a body, two comments and a revision list, each caller reading Q first. The objection's scenario is a variant of that case, another input: a project holding three comments, whose specified outcome under D1 is the same, an allowed read returning the project. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "An allowed comment can be accepted without being added in other project states.",
+        "reason": "PRM-A1 sends each caller's four actions to a freshly seeded P holding a title, a body, two comments and a revision list, each caller reading Q first. The objection's scenario is a variant of that case, another input: a project holding three comments, whose specified outcome under D1 is the same, an allowed comment added. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "An allowed edit can leave the previous body in place outside the checked scenarios.",
+        "reason": "PRM-A1 sends each caller's four actions to a freshly seeded P holding a title, a body, two comments and a revision list, each caller reading Q first. The objection's scenario is a variant of that case, another input: a project holding three comments, whose specified outcome under D1 is the same, an allowed edit replacing the body. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "A delete can produce the checked 404 responses while leaving the project available afterwards.",
+        "reason": "PRM-A1 sends each caller's four actions to a freshly seeded P holding a title, a body, two comments and a revision list, each caller reading Q first. The objection's scenario is a variant of that case, a further repetition: reads after the first read that follows a delete, whose specified outcome under D1 is the same, the project removed. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "Refused named-role requests can return a different response outside the checked setup.",
+        "reason": "PRM-A1 sends each caller's four actions to a freshly seeded P holding a title, a body, two comments and a revision list, each caller reading Q first. The objection's scenario is a variant of that case, another input: a project holding three comments, whose specified outcome under D2 is the same, HTTP 403 with the forbidden body. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "A refused request can alter the project outside the checked preservation scenarios.",
+        "reason": "PRM-A2 sends each of the five refused pairings to a freshly seeded P holding two comments, without a prior read of Q. The objection's scenario is a variant of that case, another input: a project holding three comments, whose specified outcome under D2 is the same, the project unchanged. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "A caller with no role can receive a distinguishable response in other project states or request histories.",
+        "reason": "PRM-A3 sends the no-role caller's four actions to a freshly seeded P holding two comments, the caller reading Q first. The objection's scenario is a variant of that case, another input: a project holding three comments, whose specified outcome under D3 is the same, the response a missing project gets. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      }
+    ]
   },
   "digests": {
     "control.md": "099f7684c904f56c7f5b12fd91f34a88fa7ea103dacd64b9979e2e6e4858ebe3",

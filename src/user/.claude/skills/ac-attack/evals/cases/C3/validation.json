@@ -8,8 +8,12 @@
     "transport": "openrouter",
     "model": "moonshotai/kimi-k3",
     "effort": "low",
-    "response_id": null,
-    "started": "2026-10-11T19:55:28Z"
+    "response_id": "36315c82-7d35-4b75-93bd-d9d57e5a1ee7",
+    "started": "2026-10-12T02:29:48Z",
+    "isolation": {
+      "tools_declared": "",
+      "tool_use_events": 0
+    }
   },
   "decision": {
     "verdict": "accept",

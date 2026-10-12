@@ -4,30 +4,30 @@
     "objections": [
       {
         "ground": {
-          "reason": "TAX-A2 observes checkout with a substituted function. It does not establish that checkout obtains its tax from the maintained implementation during ordinary execution.",
+          "reason": "No criterion checks checkout's tax against the maintained tax_for implementation. TAX-A1 checks captured values; TAX-A2 checks a substituted implementation.",
           "rule": "sufficiency"
         },
         "lens": "obligation-reduction",
-        "objection": "All criteria can pass while ordinary checkout execution continues to obtain tax from its local implementation.",
+        "objection": "Checkout can pass every criterion while failing D3: \u201cFor every order in the reference corpus, the tax checkout returns is exactly the value tax_for returns for that order.\u201d",
         "obligation": "O3.1",
         "scenario": {
-          "expect": "Every criterion passes, but ordinary checkout still obtains tax from its local implementation.",
-          "given": "Checkout uses its local implementation when the maintained tax_for is installed, but forwards the injected function's result when a replacement is supplied. Its local implementation preserves the captured totals and refusals.",
-          "when": "The three criterion tests run on the pull request's head."
+          "expect": "Every criterion passes, but checkout returns the captured tax for the differing order instead of the maintained library's tax.",
+          "given": "The maintained tax_for returns a different tax from the captured value for one corpus order. Checkout forwards values when the seeded stub is installed, otherwise returns captured taxes and totals, and preserves all required refusals.",
+          "when": "All three criterion checks run, followed by replaying the differing order with the maintained library installed."
         },
         "target_ac": "none"
       },
       {
         "ground": {
-          "reason": "The inventory promises tax obtained from the maintained shared implementation. TAX-A2 checks propagation of substituted values, which does not completely discharge any part of that promise.",
-          "rule": "restraint"
+          "reason": "The check establishes agreement with seeded stub outputs. No obligation outside the acceptance criteria commits checkout to those substituted outputs, and this check does not discharge the commitment concerning the maintained implementation.",
+          "rule": "has-basis"
         },
         "lens": "obligation-reduction",
-        "objection": "TAX-A2 checks replacement-function behavior without a corresponding obligation for that execution context.",
+        "objection": "TAX-A2 discharges no inventoried part. The author must reconcile its test-double requirement with the document's obligations.",
         "scenario": {
-          "given": "The document commits to preserved totals, preserved refusals, and use of the maintained shared tax implementation.",
-          "when": "TAX-A2 replaces that implementation and checks propagation of seeded stub values.",
-          "expect": "The check produces a result about substitution behavior, while no stated obligation depends on that behavior itself."
+          "expect": "The check reports whether checkout matches the stub's recorded values, although no document obligation depends on agreement with those particular substituted values.",
+          "given": "Checkout is built with tax_for replaced by the seeded random stub specified in TAX-A2.",
+          "when": "TAX-A2 replays the corpus and compares response taxes with the stub's recorded outputs."
         },
         "target_ac": "TAX-A2"
       }
@@ -38,7 +38,7 @@
         {
           "id": "O1",
           "kind": "guarantee",
-          "statement": "Checkout preserves the captured tax and total, to the cent, for every reference-corpus request.",
+          "statement": "Preserve the captured pre-change tax and total, to the cent, for every reference-corpus order.",
           "source": "D1: \u201cFor each order in the reference corpus, checkout returns the same tax and total, to the cent, as the pre-change service returned for it.\u201d",
           "parts": [
             {
@@ -53,12 +53,12 @@
         {
           "id": "O2",
           "kind": "failure",
-          "statement": "Every reference-corpus request with any unsupported two-letter shipping-region code is refused with HTTP 422 and unknown_tax_region.",
+          "statement": "Refuse every reference-corpus request whose shipping region is replaced by an unsupported two-letter code, with HTTP 422 and unknown_tax_region.",
           "source": "D2: \u201cEach reference-corpus request, with its shipping region replaced by a two-letter code that the tax tables do not hold, is still refused with HTTP 422 and the error code unknown_tax_region.\u201d",
           "parts": [
             {
               "id": "O2.1",
-              "statement": "Every corpus request combined with every unsupported two-letter region code receives HTTP 422 and unknown_tax_region.",
+              "statement": "Every corpus request with every unsupported two-letter shipping-region code receives HTTP 422 and unknown_tax_region.",
               "discharged_by": [
                 "TAX-A3"
               ]
@@ -68,12 +68,12 @@
         {
           "id": "O3",
           "kind": "result",
-          "statement": "For every reference-corpus order, checkout obtains its returned tax from the maintained shared tax_for implementation and returns exactly its value.",
+          "statement": "Take checkout's tax for every reference-corpus order from the maintained shared-library tax_for, returning exactly its value.",
           "source": "What changes: \u201cCheckout takes the tax for every reference-corpus order from tax_for in the shared pricing library, as D3 states.\u201d D3: \u201cFor every order in the reference corpus, the tax checkout returns is exactly the value tax_for returns for that order.\u201d",
           "parts": [
             {
               "id": "O3.1",
-              "statement": "With the maintained shared implementation installed, checkout obtains each corpus order's returned tax from tax_for and returns exactly its value.",
+              "statement": "With the maintained shared library installed, every reference-corpus order receives its tax from tax_for and checkout returns exactly that value.",
               "discharged_by": []
             }
           ]
@@ -90,8 +90,13 @@
     "transport": "codex",
     "model": "gpt-6.1-sol",
     "effort": "high",
-    "response_id": "01a12d0c-1b7b-7e82-bf2f-166fcede985b",
-    "started": "2026-10-11T22:18:50Z"
+    "response_id": "01a12df1-264a-7432-8fb8-fc8ee7b66173",
+    "started": "2026-10-12T02:29:01Z",
+    "isolation": {
+      "cwd": "/private/tmp/codex-cwd-iso.IOp8w3",
+      "agents_md": {},
+      "agents_md_injections": 0
+    }
   },
   "decision": {
     "verdict": "accept",
@@ -103,14 +108,14 @@
       {
         "lens": "obligation-reduction",
         "target_ac": "none",
-        "objection": "All criteria can pass while ordinary checkout execution continues to obtain tax from its local implementation.",
-        "reason": "In ordinary execution the scenario's checkout returns exactly the tax and totals D1 and D3 require; its outcome differs only when it detects the test's substitution of tax_for, which is an implementation keyed to the test rather than a case of the document's scope, and so a demand for exhaustive testing the standard does not make."
+        "objection": "Checkout can pass every criterion while failing D3: \u201cFor every order in the reference corpus, the tax checkout returns is exactly the value tax_for returns for that order.\u201d.",
+        "reason": "TAX-A2 runs D3's equality over the reference corpus with tax_for replaced by a seeded random stub. The objection's scenario is a variant of that case, another input: the maintained tax_for in place of the stub, whose specified outcome under D3 is the same, checkout's tax equal to the value tax_for returns. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "TAX-A2",
-        "objection": "TAX-A2 checks replacement-function behavior without a corresponding obligation for that execution context.",
-        "reason": "TAX-A2 discharges D3: an implementation whose tax does not come from tax_for, such as one keeping its own copy, reports its own tax instead of the stub's recorded values and fails TAX-A2, so D3 depends on its result."
+        "objection": "TAX-A2 discharges no inventoried part.",
+        "reason": "TAX-A2 runs checkout over the reference corpus with tax_for replaced by a seeded random stub, which is the case in which D3's stated outcome, checkout's tax equal to the value tax_for returns, is checked. The objection names no decision outcome left unchecked; it reads that run as serving no obligation while D3 states the one it serves, and is rejected."
       }
     ]
   },

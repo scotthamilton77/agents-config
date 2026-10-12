@@ -6,7 +6,7 @@ The nightly export job sends each batch of invoices to the ledger service. Today
 
 ## What changes
 
-- The job retries a failed batch up to three times. Then it parks the batch and carries on with the next one.
+- The job sends a failing batch at most three times in all. Then it parks the batch and carries on with the next one.
 - An operator who runs `export status` sees every parked batch, with the time it was parked and the error that parked it.
 - The reconciler is a separate service owned by the ledger team. It reads each parked batch's record from `parked/<batch-id>.json`. That file is the interface between the two systems, and decision D3 fixes its format.
 - The ledger team measures the ledger service as failing about one send in ten during normal service. At that rate, three attempts should leave at most one batch in a hundred parked.
@@ -18,7 +18,7 @@ The nightly export job sends each batch of invoices to the ledger service. Today
 - **D2 Parking.** A parked batch does not stop the batches after it. The job exits 0 when every batch was delivered and 3 when at least one was parked.
 - **D3 Record format.** A parked batch's record is one JSON object with exactly four fields: `batch_id` (string), `parked_at` (UTC, ISO 8601, to the second), `attempts` (integer) and `last_error` (string). The reconciler rejects a record with any other field.
 - **D4 Status.** `export status` prints one line for each parked batch: its id, its parked time and its last error. With nothing parked it prints `no parked batches`. It exits 0 in both cases.
-- **D5 Release.** `export release <batch-id>` deletes the batch's record and queues the batch for the next run. Naming a batch that is not parked is an error.
+- **D5 Release.** `export release <batch-id>` queues the batch for the next run, which sends it again and, once it is delivered, removes its record. Naming a batch that is not parked is an error.
 - **D6 Reliability target.** During normal service at least 99 batches in 100 reach the ledger without being parked. A night on which the ledger team's status page records an outage is not normal service.
 
 ## Acceptance criteria

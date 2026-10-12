@@ -1,25 +1,54 @@
 {
   "report": {
     "lens": "behavioural-outcome",
-    "objections": [],
-    "report": "empty"
+    "objections": [
+      {
+        "ground": {
+          "reason": "D6 promises that during normal service 'at least 99 batches in 100 reach the ledger without being parked.' EXP-A10 checks only 'batches the job's run logs record as sent.' That denominator excludes batches the job fails to send, so the check cannot distinguish the promised delivery rate from a lower rate caused by skipped batches.",
+          "rule": "verification-contract"
+        },
+        "lens": "behavioural-outcome",
+        "objection": "EXP-A10 permits acceptance when the logged sends meet the delivery threshold but the full population of batches does not.",
+        "obligation": "D6's requirement that at least 99 batches in 100 reach the ledger without being parked during normal service.",
+        "scenario": {
+          "expect": "EXP-A10 passes with 100% of logged sent batches delivered, while only 90% of the batches reach the ledger.",
+          "given": "A released job silently skips 10 of every 100 input batches each night. It sends and delivers the other 90, and its complete run logs record those 90 as sent and delivered. All 30 nights have no recorded outage.",
+          "when": "The operations lead evaluates EXP-A10 over the completed 30-night window using the copied run logs."
+        },
+        "target_ac": "EXP-A10"
+      }
+    ],
+    "report": "objections"
   },
   "run": {
     "transport": "codex",
     "model": "gpt-6.1-sol",
     "effort": "high",
-    "response_id": "01a12cf0-ad25-70c2-88a5-4179a5645de9",
-    "started": "2026-10-11T21:48:52Z"
-  },
-  "digests": {
-    "control.md": "20878ba1bbcf30c8f5c060d8fc48a2532adfe87ae4c9125c161b23f295f5a147",
-    "defective.md": "699d4f63f2e55132b45f1b29ce4b04685078de3b742670b04a67512c8d249b06"
+    "response_id": "01a12df3-18ca-7920-874d-7460252d8b21",
+    "started": "2026-10-12T02:31:08Z",
+    "isolation": {
+      "cwd": "/private/tmp/codex-cwd-iso.1LGUHN",
+      "agents_md": {},
+      "agents_md_injections": 0
+    }
   },
   "decision": {
     "verdict": "accept",
     "digests": {
-      "control.md": "20878ba1bbcf30c8f5c060d8fc48a2532adfe87ae4c9125c161b23f295f5a147",
-      "defective.md": "699d4f63f2e55132b45f1b29ce4b04685078de3b742670b04a67512c8d249b06"
-    }
+      "control.md": "758137424e6d0dd2aaf0ddcb6b64f8ebf05a0f9f5ff3e67e37cb98b3e207488b",
+      "defective.md": "770cf080da4d980e8b91d13feb55cd1c07467f84c9109830629700be22b51c99"
+    },
+    "rejected": [
+      {
+        "lens": "behavioural-outcome",
+        "target_ac": "EXP-A10",
+        "objection": "EXP-A10 permits acceptance when the logged sends meet the delivery threshold but the full population of batches does not.",
+        "reason": "EXP-A10 runs the 30-night production window over every batch the job's run logs record as sent, and requires at least 99% of those to be delivered without being parked. A job that skips batches without sending them changes only which batches are members of that population, so the scenario is a population-member variant of that case, which the uphold rule rejects."
+      }
+    ]
+  },
+  "digests": {
+    "control.md": "758137424e6d0dd2aaf0ddcb6b64f8ebf05a0f9f5ff3e67e37cb98b3e207488b",
+    "defective.md": "770cf080da4d980e8b91d13feb55cd1c07467f84c9109830629700be22b51c99"
   }
 }

@@ -8,8 +8,13 @@
     "transport": "codex",
     "model": "gpt-6.1-sol",
     "effort": "high",
-    "response_id": "01a12cad-163d-7370-96ea-5890a2b9d674",
-    "started": "2026-10-11T20:35:02Z"
+    "response_id": "01a12df1-8913-7403-a823-b409d4b5b722",
+    "started": "2026-10-12T02:29:26Z",
+    "isolation": {
+      "cwd": "/private/tmp/codex-cwd-iso.dS7kaX",
+      "agents_md": {},
+      "agents_md_injections": 0
+    }
   },
   "digests": {
     "control.md": "1f2de22052d2d3798f80b93b3a9fa12b5122dfe886283769b759890eed6f3ccd",
@@ -20,6 +25,7 @@
     "digests": {
       "control.md": "1f2de22052d2d3798f80b93b3a9fa12b5122dfe886283769b759890eed6f3ccd",
       "defective.md": "2c9e0a0404c35a616e2c5088c297e10b33f8e61c90d3926cc10afabe0e1e2b9d"
-    }
+    },
+    "rejected": []
   }
 }

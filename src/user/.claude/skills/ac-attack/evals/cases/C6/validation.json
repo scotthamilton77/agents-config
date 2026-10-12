@@ -1,22 +1,69 @@
 {
   "report": {
     "lens": "set-consistency",
-    "objections": [],
-    "report": "empty"
+    "objections": [
+      {
+        "ground": {
+          "reason": "ATT-A3 presumes the upload has a 'during' phase in which the volume can be listed before the response, but nothing in the document decides whether the service may refuse an over-limit upload as soon as it reads the Content-Length header. Early refusal satisfies D2 and D3 yet leaves no in-flight window to observe, so the same test passes under one conforming implementation and is unexercisable (or fails) under another.",
+          "rule": "decision-closure"
+        },
+        "lens": "set-consistency",
+        "objection": "The set admits two materially different designs \u2014 refuse-on-header and consume-then-refuse \u2014 while ATT-A3's pass condition only exists under the second, so the criteria do not decide whether early refusal is acceptable.",
+        "scenario": {
+          "expect": "The suite verdict diverges on implementation strategy alone: the consume-then-refuse service passes ATT-A3, the refuse-on-header service offers no 'during the upload' moment to list, so ATT-A3 cannot be exercised as written.",
+          "given": "A fresh service instance and a 100 MiB upload request whose Content-Length header declares 104,857,600 bytes",
+          "when": "the service refuses the request immediately upon reading the header, before any body bytes arrive"
+        },
+        "target_ac": "ATT-A3"
+      },
+      {
+        "ground": {
+          "reason": "The criteria never state whether the 26,214,400-byte limit is judged on the declared size (Content-Length) or the bytes actually received. When those two disagree, ATT-A1 and ATT-A2 cover the same request under different readings and demand opposite outcomes (201 stored vs 413 refused).",
+          "rule": "decision-closure"
+        },
+        "lens": "set-consistency",
+        "objection": "A request whose declared size and received body size straddle the limit is accepted under one reading of the boundary and refused under the other, and the set does not say which measurement the limit applies to.",
+        "scenario": {
+          "expect": "Reading the limit as declared size yields 201 and the file stored per ATT-A1; reading it as received bytes yields 413 with the D2 body and an unchanged attachment list per ATT-A2 \u2014 divergent outcomes for the identical request.",
+          "given": "A ticket and an upload request with Content-Length 26,214,400 whose body actually carries 26,214,401 bytes",
+          "when": "the request is uploaded to the ticket through the API"
+        },
+        "target_ac": "ATT-A1"
+      }
+    ],
+    "report": "objections"
   },
   "run": {
     "transport": "openrouter",
     "model": "moonshotai/kimi-k3",
     "effort": "low",
-    "response_id": null,
-    "started": "2026-10-11T19:55:42Z"
+    "response_id": "aa9a5c6a-e238-43a9-a16c-6c2e90403159",
+    "started": "2026-10-12T02:29:48Z",
+    "isolation": {
+      "tools_declared": "",
+      "tool_use_events": 0
+    }
   },
   "decision": {
     "verdict": "accept",
     "digests": {
       "control.md": "66791a77016dd8207a6ebd49c977550f22bec62bddc8bd8c2e63dbb08e9e01fb",
       "defective.md": "36a52d9d1d93cab93099aa6215059720fb5c7fd70bb62971cd5e40069663698f"
-    }
+    },
+    "rejected": [
+      {
+        "lens": "set-consistency",
+        "target_ac": "ATT-A3",
+        "objection": "The set admits two materially different designs \u2014 refuse-on-header and consume-then-refuse \u2014 while ATT-A3's pass condition only exists under the second, so the criteria do not decide whether early refusal is acceptable.",
+        "reason": "ATT-A3 runs the case of a 100 MiB upload to a ticket through the API, with the attachment volume listed during the upload and after the response. The objection's scenario is the same over-limit upload refused as soon as the service reads its declared size, before any body bytes arrive: a variant of that case in the point within the request at which the refusal comes."
+      },
+      {
+        "lens": "set-consistency",
+        "target_ac": "ATT-A1",
+        "objection": "A request whose declared size and received body size straddle the limit is accepted under one reading of the boundary and refused under the other, and the set does not say which measurement the limit applies to.",
+        "reason": "ATT-A1 and ATT-A2 run the cases of API uploads of exactly 26,214,400 bytes, and of 26,214,401 bytes and of 100 MiB. The objection's scenario is an upload whose declared size and body size disagree on either side of the limit: a variant input to the same limit those cases run at and past."
+      }
+    ]
   },
   "digests": {
     "control.md": "66791a77016dd8207a6ebd49c977550f22bec62bddc8bd8c2e63dbb08e9e01fb",
