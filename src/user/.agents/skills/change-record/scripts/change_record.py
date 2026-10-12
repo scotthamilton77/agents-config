@@ -16,6 +16,7 @@ Usage: uv run change_record.py init --type TYPE --component NAME --work-item ID 
        uv run change_record.py render body <record.json> [--existing-body FILE] [--comment-url URL]
        uv run change_record.py render commit <record.json>
        uv run change_record.py render reply <record.json> --finding ID
+       uv run change_record.py publish [--dry-run] <record.json>
 
 ``init`` writes a new record with every field the author fills left empty.
 It never replaces a file. Exit 0 written, 1 a file is already there, 2 the
@@ -44,6 +45,13 @@ it refuses gets the JSON result on stderr and nothing written. ``render body``
 warns on stderr when the body shows more words above its horizontal rule than
 a one-pager takes, and writes the body all the same. Exit 0 rendered, 1
 refused, 2 unreadable, unparseable or called wrongly.
+
+``publish`` posts a record on its pull request, which it reads and writes
+through ``gh``. It lints first. It then posts the record as a new comment and
+sets the pull request body to the render that points at that comment. It never
+edits a comment. With ``--dry-run`` it prints the comment and the body to
+stdout and writes nothing. A record it refuses gets the JSON result on stderr.
+Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.
 """
 
 from __future__ import annotations
@@ -1110,7 +1118,7 @@ def _init(args: argparse.Namespace) -> int:
 # and keeping its own heads-up rows.
 
 
-def run_tool(command: list[str]) -> str:
+def run_tool(command: list[str], sent: str | None = None) -> str:
     """Run ``command``, a call to the ``gh`` or the ``work`` executable, and return what it printed.
 
     A command that cannot be run, or that exits with an error, raises a
@@ -1118,11 +1126,12 @@ def run_tool(command: list[str]) -> str:
     names the call and every id the call was given. The error's code is the
     executable's name followed by ``-failed``. The reason is the message of
     the error the tracker printed, or else what the command wrote to stderr.
+    ``sent`` is text the command reads from its standard input.
     """
     quoted = f"`{' '.join(command)}`"
     try:
         # What an executable prints is bytes, and bytes that are no UTF-8 must not stop the read.
-        proc = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace", check=False)
+        proc = subprocess.run(command, input=sent, capture_output=True, encoding="utf-8", errors="replace", check=False)
     except OSError as exc:
         raise RecordError(f"{command[0]}-failed", f"cannot run {quoted}: {exc}") from exc
     if proc.returncode != 0:
@@ -1164,7 +1173,7 @@ def unusable(command: list[str], why: str) -> RecordError:
     return RecordError(f"{command[0]}-failed", f"`{' '.join(command)}` gave an answer that cannot be used: {why}")
 
 
-def tool_json(command: list[str], shape: dict[str, Any] | None = None) -> Any:
+def tool_json(command: list[str], shape: dict[str, Any] | None = None, sent: str | None = None) -> Any:
     """Run ``command`` as ``run_tool`` does, and return what it printed, parsed as JSON.
 
     ``shape`` is the shape the answer must have. An answer that does not fit
@@ -1172,7 +1181,7 @@ def tool_json(command: list[str], shape: dict[str, Any] | None = None) -> Any:
     answer departs from the shape, so no caller goes on with it. A call that
     gives no shape takes whatever JSON came back.
     """
-    printed = run_tool(command)
+    printed = run_tool(command, sent)
     try:
         answer = json.loads(printed)
     except ValueError as exc:
@@ -1308,6 +1317,23 @@ def inert(text: str) -> str:
     return "".join(_inert_line(line, ending) + ending for line, ending in zip(lines[::2], lines[1::2]))
 
 
+def regenerated(record: dict[str, Any], fill: Callable[..., None], **options: Any) -> dict[str, Any]:
+    """Return a copy of ``record`` in which ``fill`` has set afresh every part its generator owns.
+
+    ``record`` itself is left as it was, so the two can be compared.
+    """
+    filled = copy.deepcopy(record)
+    try:
+        fill(filled, **options)
+    except (KeyError, IndexError, TypeError) as exc:
+        # Each read states the shape of its answer, and a wrong shape fails
+        # there, naming the call. This catches a read whose stated shape
+        # asks for less than the generator goes on to use.
+        message = f"an answer from the tracker or from GitHub lacks what the generator reads: {exc!r}"
+        raise RecordError("answer-shape", message) from exc
+    return filled
+
+
 def run_generator(args: argparse.Namespace, fill: Callable[..., None]) -> int:
     """Run one generator over the record file ``args.record`` names, and return the exit status.
 
@@ -1326,15 +1352,7 @@ def run_generator(args: argparse.Namespace, fill: Callable[..., None]) -> int:
             where, fault = faults[0]
             message = f"{args.record} does not fit the record schema at {where or 'its root'}: {fault}"
             raise RecordError("schema", message)
-        filled = copy.deepcopy(record)
-        try:
-            fill(filled, **options)
-        except (KeyError, IndexError, TypeError) as exc:
-            # Each read states the shape of its answer, and a wrong shape fails
-            # there, naming the call. This catches a read whose stated shape
-            # asks for less than the generator goes on to use.
-            message = f"an answer from the tracker or from GitHub lacks what the generator reads: {exc!r}"
-            raise RecordError("answer-shape", message) from exc
+        filled = regenerated(record, fill, **options)
         if filled != record:
             write_record(args.record, filled)
     except RecordError as exc:
@@ -2385,6 +2403,196 @@ def _render(args: argparse.Namespace) -> int:
     return EXIT_VALID
 
 
+# Publication. A record is posted on its pull request as a comment of its own,
+# and the pull request body is set to the render of that record. A later
+# revision is a new comment, so the comments keep every revision and the body
+# shows the newest one.
+
+# The most characters GitHub takes in a pull request body, and in a comment.
+GITHUB_LIMIT = 65536
+
+# The first line of a record comment, which is what tells one from every other
+# comment on a pull request.
+MARKER = re.compile(r"<!-- change-record v\d+ pr=(?P<pr>\d+) rev=(?P<revision>\d+) sha256=(?P<digest>[0-9a-f]{64}) -->")
+
+# GitHub gives a comment its URL when it creates the comment. That URL is the
+# pull request's own, then this fragment with the comment's id where the zeros
+# are. The body points at the comment, so until the comment exists the zeros
+# stand for its id, and the body can be measured and shown with them. An id is
+# ten digits long today. Once ids take eleven, a body within a character of the
+# limit passes the measure here and GitHub refuses it. That run fails as any
+# refused call does, after its comment is posted.
+NEW_COMMENT = "#issuecomment-" + "0" * 10
+
+# The shapes of the two answers `publish` reads from GitHub, which are the pull
+# request and a comment on it. A commit is forty hex characters, as the record
+# holds one.
+COMMIT = {"type": "string", "pattern": r"^[0-9a-f]{40}(?![\s\S])"}
+PULL_TO_PUBLISH = holding({"body": TEXT_OR_NONE, "html_url": NAME, "head": holding({"sha": COMMIT})})
+COMMENT = holding({"id": COUNT, "body": TEXT, "html_url": NAME})
+
+# The subcommand that fills each generated part and the function it runs, by the part's group.
+GENERATORS = {
+    "where_this_fits": ("context", fill_context),
+    "discovered": ("discovered", fill_discovered),
+    "campaign": ("campaign", fill_campaign),
+}
+
+
+def record_digest(record: dict[str, Any]) -> str:
+    """Return the digest of ``record``'s content, as sixty-four hex characters.
+
+    The digest is the stamp over the record without its ``record`` group, so
+    it is a SHA-256 digest of JSON with sorted keys, as ``stamp`` writes it.
+    The ``record`` group says where and when the record was published. Leaving
+    it out means that publishing a record does not change its digest.
+    """
+    return stamp({name: group for name, group in record.items() if name != "record"})
+
+
+def record_comment(record: dict[str, Any]) -> str:
+    """Return the comment that holds ``record``, whose ``record`` group gives the revision and the digest.
+
+    The first line is the marker. It names the schema version, the pull
+    request, the revision and the digest, so a reader finds the comment and
+    knows what it holds without opening it. The record follows in a fold, as
+    JSON on one line with sorted keys. The JSON is written tight because a
+    comment has a size limit and a generated part cannot be cut to fit. Its
+    one line opens with a brace, so no line of it closes the fence around it.
+    """
+    held = record["record"]
+    marker = (
+        f"<!-- change-record v{held['schema_version']} pr={record['pr']['number']} "
+        f"rev={held['revision']} sha256={held['digest']} -->"
+    )
+    written = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    summary = f"<details><summary>Change record, revision {held['revision']}</summary>"
+    return f"{marker}\n{summary}\n\n```json\n{written}\n```\n\n</details>\n"
+
+
+def newest_record_comment(comments: list[dict[str, Any]], number: int) -> dict[str, Any] | None:
+    """Return the newest record comment of pull request ``number`` among ``comments``, or None when there is none.
+
+    A record comment is one whose first line is a marker that names this pull
+    request. A comment that quotes a marker further down is not one. The
+    newest has the highest revision, read as a number, so 10 follows 9. Where
+    two carry one revision, the newest is the one with the higher id, which
+    GitHub created later. The order GitHub lists the comments in decides
+    nothing. The comment comes back with the ``revision`` and the ``digest``
+    its marker gives.
+    """
+    found = []
+    for comment in comments:
+        marker = MARKER.fullmatch(LINE_END.split(comment["body"], maxsplit=1)[0])
+        if marker and int(marker["pr"]) == number:
+            found.append({**comment, "revision": int(marker["revision"]), "digest": marker["digest"]})
+    return max(found, key=lambda comment: (comment["revision"], comment["id"]), default=None)
+
+
+def publish(record: dict[str, Any], path: Path, dry_run: bool) -> str:
+    """Post ``record`` on its pull request, write what was posted into the file at ``path``, and say what was done.
+
+    Every reason to refuse is checked before anything is written. The comment
+    is then created, the body is set, and the file is written, in that order.
+    A run that stops between two of those is finished by the next run, which
+    finds the comment by its digest and writes only what is still missing.
+    ``dry_run`` prints the comment and the body and writes nothing.
+    """
+    number = record["pr"]["number"]
+    if number is None:
+        message = "the record names no pull request; set `pr.number` to the number of the open pull request"
+        raise RecordError("no-pull-request", message)
+    pull_path = f"repos/{{owner}}/{{repo}}/pulls/{number}"
+    comments_path = f"repos/{{owner}}/{{repo}}/issues/{number}/comments"
+    pull = tool_json(["gh", "api", pull_path], PULL_TO_PUBLISH)
+    newest = newest_record_comment(gh_pages(f"{comments_path}?per_page=100", COMMENT), number)
+    if newest is None:
+        # A stamp shows only that a generated part was not edited after it was
+        # stamped, and a stamp can be set by hand. Before the first comment is
+        # posted, each generator therefore runs over a copy of the record, and
+        # the record must already be what the generator writes.
+        stale = [
+            _finding(
+                "stale-part", f"/{group}",
+                f"`{name}` would now write {GENERATED_PARTS[group]} differently, so the record is out of date "
+                f"or was edited by hand; run `{name}` again",
+            )
+            for group, (name, fill) in GENERATORS.items()
+            if regenerated(record, fill) != record
+        ]
+        if stale:
+            raise Refusal(stale)
+    digest = record_digest(record)
+    posted = newest is not None and newest["digest"] == digest
+    revision = 1 if newest is None else newest["revision"] + (0 if posted else 1)
+    # A comment cannot name its own id, so the record is posted without one.
+    kept = {name: value for name, value in record["record"].items() if name != "comment_id"}
+    posting = {**record, "record": {**kept, "revision": revision, "digest": digest, "head_sha": pull["head"]["sha"]}}
+    comment = newest["body"] if posted else record_comment(posting)
+    existing = pull["body"] or ""
+    body = render_body(posting, existing, newest["html_url"] if posted else pull["html_url"] + NEW_COMMENT)
+    too_long = [
+        _finding("too-long", "", f"{name} is {len(text)} characters long, and GitHub takes at most {GITHUB_LIMIT}")
+        for name, text in (("the record comment", comment), ("the pull request body", body))
+        if len(text) > GITHUB_LIMIT
+    ]
+    if too_long:
+        raise Refusal(too_long)
+    what = "({}, {})".format(
+        "comment already posted" if posted else "new comment",
+        "new body" if body != existing else "body already current",
+    )
+    if dry_run:
+        sys.stdout.buffer.write((comment + body).encode("utf-8"))
+        return f"dry run of revision {revision} {what}"
+    if not posted:
+        newest = tool_json(["gh", "api", comments_path, "--method", "POST", "-F", "body=@-"], COMMENT, comment)
+        body = render_body(posting, existing, newest["html_url"])
+    if body != existing:
+        run_tool(["gh", "api", pull_path, "--method", "PATCH", "-F", "body=@-"], body)
+    filed = {**posting, "record": {**posting["record"], "comment_id": newest["id"]}}
+    if filed != record:
+        write_record(path, filed)
+    return f"published revision {revision} at {newest['html_url']} {what}"
+
+
+def _publish(args: argparse.Namespace) -> int:
+    """Run ``publish``: post the record and set the body, or report on stderr why nothing was written."""
+    try:
+        record = read_record(args.record)
+        findings = lint_record(record)
+        if findings:
+            raise Refusal(findings)
+        said = publish(record, args.record, args.dry_run)
+    except RecordError as exc:
+        unreadable = [_finding(exc.code, "", exc.message)]
+        print(json.dumps({"valid": False, "errors": unreadable}, sort_keys=True), file=sys.stderr)
+        return EXIT_UNUSABLE
+    except Refusal as refusal:
+        print(json.dumps({"valid": False, "errors": refusal.findings}, sort_keys=True), file=sys.stderr)
+        return EXIT_INVALID
+    # A dry run keeps stdout for the comment and the body alone.
+    print(said, file=sys.stderr if args.dry_run else sys.stdout)
+    return EXIT_VALID
+
+
+def add_publish(commands: Any) -> None:
+    """Add the ``publish`` subcommand to ``commands``."""
+    parser = commands.add_parser(
+        "publish",
+        help="post a record on its pull request and set the pull request body from it",
+        description="Post a record on its pull request as a new comment, and set the pull request body to the "
+        "render that points at that comment. The record is linted first, and every reason to refuse is checked "
+        "before anything is written. A record that is refused gets the JSON result on stderr. "
+        "Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.",
+    )
+    parser.add_argument("record", type=Path, help="path to the record's JSON file")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print the comment and the body to stdout, and write nothing"
+    )
+    parser.set_defaults(run=_publish)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command line. Each subcommand names the function that runs it as ``run``."""
     parser = argparse.ArgumentParser(
@@ -2473,6 +2681,7 @@ def build_parser() -> argparse.ArgumentParser:
     reply.add_argument("--finding", required=True, help="the finding's id, as the reply entry holds it")
     reply.add_argument("--claim", help="the entry's claim id, when two entries share a finding id")
     reply.add_argument("--artifact-class", help="the entry's artifact class, when the claim id is shared too")
+    add_publish(commands)
     return parser
 
 
