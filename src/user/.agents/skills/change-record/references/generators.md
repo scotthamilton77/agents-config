@@ -13,6 +13,8 @@ Every call either one makes is a read. Neither writes to the tracker or to GitHu
 
 Both copy titles and reasons that other people wrote. A title that holds a `<details>` fold, an HTML comment or a line that opens a `json` fence is written with that construct quoted as a code span. The reader then sees the same characters, and a generated part never fails `lint` under `machine-content`. When a span cannot quote the construct where it stands, the whole line is quoted. A fold whose tag breaks onto a second line has its first line quoted.
 
+A title is copied with any line break it holds. The pull request body shows such a break as a space where the title stands on a line, and as `<br>` in a table cell, so every line and every row stays whole. A byte in an answer that is not UTF-8 is replaced with the mark for an unreadable character. A title that holds half of a surrogate pair cannot be written at all, so the run fails and names the field.
+
 Both check every answer before they read it. An answer must have the shape its call's answer has: a list where a list belongs, each entry with the fields the generator reads, and each field of its own type. An answer about several items must hold each item asked for once, and no other. An answer that fails the check stops the run. It is never read as an empty result.
 
 ## `context`

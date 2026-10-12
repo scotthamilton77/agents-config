@@ -37,6 +37,9 @@ import pytest
 import change_record
 
 HERE = Path(__file__).resolve().parent
+
+# A line end of any of the three kinds.
+LINE_ENDS = re.compile(r"\r\n|\r|\n")
 SKILL = HERE.parent
 SCRIPT = HERE / "change_record.py"
 EXAMPLE = json.loads((SKILL / "examples" / "pr-843.json").read_text(encoding="utf-8"))
@@ -63,7 +66,8 @@ assert set(RECORDED["gh"][WHICH_REPOSITORY]["stdout"]) == {"nameWithOwner", "url
 
 # The program behind each shim. It writes the call down, then gives the answer
 # its table holds for the call's arguments. A call the table does not answer
-# fails, and so does the call whose number the table says to fail.
+# fails, and so does the call whose number the table says to fail. An answer
+# may give its output as bytes in hex, for output that is no text.
 REPLAY = """\
 import json
 import sys
@@ -83,6 +87,8 @@ if answer is None:
     sys.exit(f"{name}: the shim holds no answer for `{call}`")
 out = answer.get("stdout", "")
 sys.stdout.write(out if isinstance(out, str) else json.dumps(out))
+sys.stdout.flush()
+sys.stdout.buffer.write(bytes.fromhex(answer.get("bytes", "")))
 sys.stderr.write(answer.get("stderr", ""))
 sys.exit(answer.get("exit", 0))
 """
@@ -1512,7 +1518,163 @@ class TestGeneratedTextIsInert:
         )
         assert proc.returncode == 0, proc.stderr
         assert "agents-config-9k9.77  Fold the scope table in `<details>` on a long item (epic)" in proc.stdout
-        assert "| agents-config-9k9.470 | filed | ```` ```json ```` | Carry the `<!-- prgroom -->` block over |" in proc.stdout
+        filed = "| agents-config-9k9.470 | filed | ```` ```json ```` | Carry the `<!-- prgroom -->` block over |"
+        assert filed in proc.stdout
+
+
+def rendered(path: Path) -> str:
+    """Render the pull request body from the record at ``path`` and return it."""
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "render", "body", str(path)], capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout
+
+
+class TestLineBreaksInCopiedText:
+    """A title that holds a line break is copied as it is, and the body keeps each line and each row whole."""
+
+    def fill_from_broken_titles(self, ending: str, shim_dir: Path, tmp_path: Path) -> Path:
+        """Run both generators over titles that each hold the line end ``ending``."""
+        def broken(title: str) -> str:
+            first, _, rest = title.partition(" ")
+            return f"{first}{ending}{rest}"
+
+        family = [entry | {"title": broken(entry["title"])} for entry in (EPIC, DONE, THIS, IN_FLIGHT, WAITING)]
+        found = FOUND[0] | {"title": broken(FOUND[0]["title"])}
+        answers = tracker(MILESTONE, *family, found, discovered={WORK_ITEM: [found["id"]]})
+        routing = ROUTING | {"title": broken(ROUTING["title"])}
+        other = pull(850, broken(OTHER["title"]))
+        shim(shim_dir, tmp_path, "work", answers)
+        shim(shim_dir, tmp_path, "gh", github([[other]], [routing], {NUMBER: OWN_PATHS, 850: SHARED}))
+        path = written(tmp_path, example())
+        filled("context", path)
+        filled("discovered", path)
+        return path
+
+    @pytest.mark.parametrize("ending", ["\n", "\r\n", "\r"], ids=["LF", "CRLF", "CR"])
+    def test_a_record_filled_from_titles_that_hold_a_line_break_passes_lint_and_keeps_each_break(
+        self, ending: str, shim_dir: Path, tmp_path: Path
+    ):
+        path = self.fill_from_broken_titles(ending, shim_dir, tmp_path)
+        assert_passes_lint(path)
+        record = json.loads(path.read_text(encoding="utf-8"))
+        fits = record["where_this_fits"]
+        copied = [
+            fits["ancestry"][1]["title"], fits["ancestry"][2]["title"], fits["builds_on"][0]["gloss"],
+            fits["concurrent"][0]["gloss"], record["discovered"]["rows"][0]["what"],
+            *(row["covers"] for row in fits["scope"]),
+        ]
+        assert len(copied) == 10
+        assert all(text.count(ending) == 1 and len(LINE_ENDS.findall(text)) == 1 for text in copied)
+        # The pull request still names its item, though its title breaks before the closing id's line.
+        assert fits["scope"][2] == {
+            "slice": IN_FLIGHT["id"], "covers": f"A{ending}{IN_FLIGHT['title'][2:]}", "status": "in flight", "pr": 850
+        }
+
+    @pytest.mark.parametrize("ending", ["\n", "\r\n", "\r"], ids=["LF", "CRLF", "CR"])
+    def test_the_body_keeps_each_line_and_each_row_whole_when_a_title_holds_a_line_break(
+        self, ending: str, shim_dir: Path, tmp_path: Path
+    ):
+        body = rendered(self.fill_from_broken_titles(ending, shim_dir, tmp_path))
+        fits = body[body.index("## Where this fits"):body.index("## Risk")].splitlines()
+        # On a line of its own a break reads as a space, and in a table cell it reads as a break tag.
+        assert fits[1:6] == [
+            "agents-config-9k9  Harness rework (milestone)",
+            "agents-config-9k9.77  Every review seat is pinned as data (epic)",
+            "agents-config-9k9.408  Pin effort and tools per reviewer slot (feature)",
+            f"    this PR: {EXAMPLE['work_item']['slice']}",
+            f"Builds on: #803 ({ROUTING['title']}). Concurrent: #850 ({OTHER['title']}).",
+        ]
+        rows = [line for line in fits if line.startswith("| agents-config-")]
+        assert rows == [
+            f"| agents-config-9k9.401 | One<br>{DONE['title'][4:]} | done |",
+            f"| agents-config-9k9.408 | Pin<br>{THIS['title'][4:]} | this PR |",
+            f"| agents-config-9k9.409 | A<br>{IN_FLIGHT['title'][2:]} | in flight (#850) |",
+            f"| agents-config-9k9.410 | The<br>{WAITING['title'][4:]} | open |",
+            f"| agents-config-9k9.470 | The<br>{FOUND[0]['title'][4:]} | open |",
+        ]
+        found = body[body.index("## Discovered work"):body.index("\n---\n")].splitlines()
+        assert found[3] == f"| agents-config-9k9.470 | filed | The<br>{FOUND[0]['title'][4:]} | {FILED[0]['reason']} |"
+        assert not [line for line in body.splitlines() if "\r" in line]
+
+
+# A title as JSON may escape it, holding half of a surrogate pair, which is text UTF-8 cannot hold.
+HALF_A_PAIR = "A title that ends in half a pair \ud83d"
+
+
+class TestTextThatIsNotUtf8:
+    def test_a_title_that_utf8_cannot_hold_fails_the_run_naming_the_field_and_writes_nothing(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC | {"title": HALF_A_PAIR}, THIS))
+        shim(shim_dir, tmp_path, "gh", github())
+        proc = unchanged_by("context", written(tmp_path, copy.deepcopy(EXAMPLE)))
+        assert proc.returncode == 2
+        assert "/where_this_fits/ancestry/1/title" in proc.stderr and "UTF-8" in proc.stderr
+        assert "Traceback" not in proc.stderr
+
+    def test_a_filed_title_that_utf8_cannot_hold_fails_the_run_and_writes_nothing(self, shim_dir: Path, tmp_path: Path):
+        shim(shim_dir, tmp_path, "work", found_from(FOUND[0] | {"title": HALF_A_PAIR}))
+        proc = unchanged_by("discovered", written(tmp_path, discovering([NOT_FILED])))
+        assert proc.returncode == 2
+        assert "/discovered/rows/0/what" in proc.stderr and "Traceback" not in proc.stderr
+
+    def test_a_title_printed_with_a_byte_that_is_not_utf8_is_copied_with_the_byte_marked(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        # The tracker prints the epic with a byte that is no text in its title, where a JSON escape could stand.
+        answers = tracker(MILESTONE, EPIC, THIS)
+        printed = json.dumps(answers[f"--format json show {EPIC['id']}"]["stdout"]).encode("utf-8")
+        assert printed.count(b"Every review seat") == 1
+        answers[f"--format json show {EPIC['id']}"] = {"bytes": printed.replace(b"Every review", b"Every \xff review").hex()}
+        shim(shim_dir, tmp_path, "work", answers)
+        shim(shim_dir, tmp_path, "gh", github())
+        path = written(tmp_path, example())
+        record = filled("context", path)
+        assert record["where_this_fits"]["ancestry"][1]["title"] == "Every � review seat is pinned as data"
+        assert_passes_lint(path)
+
+    def test_a_changed_path_that_utf8_cannot_hold_does_not_stop_the_read(self, shim_dir: Path, tmp_path: Path):
+        # A path is compared and never written, so one that is no text is as good a path as any.
+        odd = "src/panel/\ud83d.py"
+        shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, THIS))
+        shim(shim_dir, tmp_path, "gh", github([[SHARING]], [], {NUMBER: [odd, *OWN_PATHS], 850: [odd]}))
+        record = filled("context", written(tmp_path, example()))
+        assert concurrent_of(record) == [{"pr": 850, "gloss": SHARING["title"]}]
+
+    @pytest.mark.parametrize(
+        ("change", "said"),
+        [
+            ("record.update(summary='changed')", "wrote record\\udcff.json\n"),
+            ("None", "record\\udcff.json is already current\n"),
+        ],
+        ids=["written", "already current"],
+    )
+    def test_a_run_over_a_record_path_that_is_not_utf8_says_what_it_did_without_failing(self, change: str, said: str):
+        # Some file systems refuse such a name, so the read and the write are stood in for.
+        program = (
+            "import argparse, pathlib, sys\n"
+            "import change_record as c\n"
+            "c.read_record = lambda path: c.new_record('feat', 'panel', 'x-1')\n"
+            "c.write_record = lambda path, record: None\n"
+            "args = argparse.Namespace(record=pathlib.Path('record\\udcff.json'))\n"
+            f"sys.exit(c.run_generator(args, lambda record: {change}))\n"
+        )
+        proc = subprocess.run([sys.executable, "-c", program], cwd=HERE, capture_output=True, check=False)
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.decode("utf-8") == said
+
+    def test_a_record_that_utf8_cannot_hold_is_never_written(self, tmp_path: Path):
+        path = written(tmp_path, example())
+        before = path.read_bytes()
+        record = example()
+        record["summary"] = HALF_A_PAIR
+        with pytest.raises(change_record.RecordError) as refused:
+            change_record.write_record(path, record)
+        assert (refused.value.code, "/summary" in refused.value.message) == ("not-utf-8", True)
+        assert path.read_bytes() == before
+        assert sorted(tmp_path.glob("record.json*")) == [path]
 
 
 # The record's work item in the recorded answers, and the item whose work turned another up.

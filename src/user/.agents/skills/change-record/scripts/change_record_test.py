@@ -1492,6 +1492,17 @@ class TestCrL10GroupsByTypeAndReach:
         _, result = lint(record, tmp_path, SCRIPT, "--pr", "843")
         assert "2 top-level components: packages, src" in result["errors"][0]["message"]
 
+    def test_lint_pr_reads_a_path_that_holds_half_a_surrogate_pair_without_failing(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        # JSON can escape half of a pair in a file's name. The path is compared and reported, and never written.
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", later=({"filename": "packages/\ud83d.py"},))
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        code, result = lint(record, tmp_path, SCRIPT, "--pr", "843")
+        assert code == 1
+        assert [error["code"] for error in result["errors"]] == ["reach"]
+
     @pytest.mark.parametrize("printed", ["no json at all", '{"message": "Not Found"}'])
     def test_lint_pr_exits_2_when_gh_prints_something_that_is_no_page_of_files(
         self, printed: str, shim_dir: Path, tmp_path: Path

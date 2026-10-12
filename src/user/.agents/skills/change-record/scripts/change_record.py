@@ -1190,8 +1190,14 @@ def write_record(path: Path, record: dict[str, Any]) -> None:
 
     The text is written beside the file and then moved over it, so a reader
     never finds half a record. The groups are written in the order the schema
-    lists them, so the file reads the same whichever generator ran first.
+    lists them, so the file reads the same whichever generator ran first. A
+    record that holds text UTF-8 cannot hold is refused before anything is
+    written, because no file can take it and no later read would accept it.
     """
+    where = next(_not_utf8(record), None)
+    if where is not None:
+        message = f"cannot write {path}: the record would hold text that UTF-8 cannot hold, at {where or 'its root'}"
+        raise RecordError("not-utf-8", message)
     ordered = {name: record[name] for name in load_schema()["properties"] if name in record}
     beside = path.with_name(path.name + ".tmp")
     try:
@@ -1296,7 +1302,9 @@ def run_generator(args: argparse.Namespace, fill: Callable[[dict[str, Any]], Non
     except RecordError as exc:
         print(exc.message, file=sys.stderr)
         return EXIT_UNUSABLE
-    print(f"wrote {args.record}" if filled != record else f"{args.record} is already current")
+    said = f"wrote {args.record}" if filled != record else f"{args.record} is already current"
+    # A path may hold bytes that are no text, which standard output refuses as they are.
+    print(said.encode("utf-8", "backslashreplace").decode("utf-8"))
     return EXIT_VALID
 
 
