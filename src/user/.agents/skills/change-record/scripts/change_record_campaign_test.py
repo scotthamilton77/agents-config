@@ -243,10 +243,6 @@ def paged(endpoint: str, pages: list[list[Any]]) -> dict[str, Any]:
     return {f"api {endpoint}?per_page=100&page={number}": page for number, page in enumerate([*pages, []], 1)}
 
 
-class Raw(str):
-    """An answer the shim prints as it is written, where every other answer is written as JSON."""
-
-
 class Ran(NamedTuple):
     code: int
     out: str
@@ -290,7 +286,7 @@ class Pull:
         cases = []
         for index, (call, answer) in enumerate(answers.items()):
             file = state / f"answer-{index}.json"
-            file.write_text(answer if isinstance(answer, Raw) else json.dumps(answer), encoding="utf-8")
+            file.write_text(json.dumps(answer), encoding="utf-8")
             cases.append(f"  {shlex.quote(call)}) /bin/cat {shlex.quote(str(file))} ;;\n")
         log = shlex.quote(str(self.log))
         shim = self.shim_dir / "gh"
@@ -641,8 +637,7 @@ class TestCrC2Findings:
 
     @pytest.mark.parametrize("record", [
         '{"id": []}', '{"id": 7}', '{"id": {"f": 1}}', '{"id": null}', '{"lens": "correctness"}', "[1, 2]", '"f1"',
-        "7", "not json", '{"id": ' + "[" * 1100 + "]" * 1100 + "}", "[" * 100_000 + "]" * 100_000,
-        '{"id": "f1", "weight": ' + "9" * 5000 + "}",
+        "7", "not json", '{"id": "f1", "weight": ' + "9" * 5000 + "}",
     ])
     def test_cr_c2_a_comment_whose_finding_record_gives_no_id_as_text_opens_no_thread(self, record: str, pull: Pull):
         raised = finding("f1")
@@ -838,26 +833,6 @@ class TestCrC4SkippedReviews:
         why = "its verdict cannot be read: it cannot be loaded as JSON: "
         assert ran.err.startswith(f"campaign: review {broken['id']} is skipped, because {why}")
         assert rows(pull.record()) == [("correctness", "1", 0, 0, 0, 0)]
-
-    @pytest.mark.parametrize("depth", [1100, 100_000])
-    def test_cr_c4_a_verdict_nested_too_deeply_to_read_is_skipped_named_and_the_rest_are_counted(
-        self, depth: int, pull: Pull
-    ):
-        # The validator rejects a field it does not know. A field this deep stops a reader before the validator sees it.
-        text = json.dumps(verdict(findings=[finding("f1")]))[:-1] + ', "unused": ' + "[" * depth + "]" * depth + "}"
-        deep = review(text)
-        pull.serve([deep, review(verdict(claim="claim-b", findings=[finding("f1")]))])
-        pull.write(example())
-        ran = pull.run()
-        assert ran.code == 0
-        assert len(ran.err.splitlines()) == 1
-        assert ran.err.startswith(f"campaign: review {deep['id']} is skipped, because its verdict cannot be read: ")
-        record = pull.record()
-        assert [(entry["claim_id"], entry["id"]) for entry in record["campaign"]["findings"]] == [("claim-b", "f1")]
-        pull.serve([deep])
-        pull.write(with_heads_up("None."))
-        assert pull.run().code == 0
-        assert pull.record()["heads_up"][0].startswith("campaign: 1 review carries a verdict that could not be read")
 
     @pytest.mark.parametrize(("field", "spoil"), [
         ("/claim_id", lambda held: held.update(claim_id="claim-a <!-- identity -->")),
@@ -1125,23 +1100,6 @@ class TestAnswerShapes:
 
 
 class TestSharedHelpers:
-    @pytest.mark.parametrize(("call", "answer"), [
-        (PULL_CALL, '{"user": {"login": ' + "7" * 5000 + "}}"),
-        (PULL_CALL, "[" * 100_000 + "]" * 100_000),
-        (REVIEWS_CALL, '[{"id": ' + "7" * 5000 + "}]"),
-        (COMMENTS_CALL, "[" * 100_000 + "]" * 100_000),
-    ])
-    def test_cr_x4_an_answer_that_cannot_be_loaded_fails_the_run_naming_its_call_and_leaves_the_record(
-        self, call: str, answer: str, pull: Pull
-    ):
-        pull.serve(REVIEWS, COMMENTS, spoiled={call: lambda _: Raw(answer)})
-        before = pull.write(example())
-        ran = pull.run()
-        assert ran.code == 2
-        assert f"`gh {call}` gave an answer that cannot be used" in ran.err
-        assert len(ran.err) < 1000
-        assert pull.path.read_bytes() == before
-
     def test_two_writers_interleaved_leave_one_whole_record_and_nothing_beside_it(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):

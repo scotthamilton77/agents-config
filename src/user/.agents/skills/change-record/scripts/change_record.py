@@ -1156,9 +1156,8 @@ def tool_json(command: list[str], shape: dict[str, Any] | None = None) -> Any:
     printed = run_tool(command)
     try:
         answer = json.loads(printed)
-    except (ValueError, RecursionError) as exc:
-        # Text that is no JSON fails to load, and so does JSON that holds a
-        # number thousands of digits long or is nested thousands deep.
+    except ValueError as exc:
+        # Text that is no JSON fails to load, and so does JSON that holds a number thousands of digits long.
         raise unusable(command, f"it cannot be loaded as JSON: {exc}") from exc
     if shape is not None:
         from jsonschema import Draft202012Validator
@@ -1738,7 +1737,7 @@ def _thread_finding(body: str) -> str | None:
     """
     try:
         finding_id = json.loads(fenced_json(body) or "")["id"]
-    except (ValueError, KeyError, TypeError, RecursionError):
+    except (ValueError, KeyError, TypeError):
         return None
     return finding_id if isinstance(finding_id, str) else None
 
@@ -1797,23 +1796,19 @@ def _read_verdict(text: str, validate: Callable[[Any], dict[str, Any]]) -> dict[
     """Return the verdict that ``text`` holds, or raise a ``ValueError`` that says why it cannot be read.
 
     Four kinds of verdict are refused here, where the review that carries
-    one can be named. One cannot be loaded as JSON. One is nested too deeply
-    for a reader to walk, which a loader, this function and the validator
-    each find in their own way. One escapes half of a surrogate pair, which
-    is text no record can take. One holds, in an identifier the record takes
-    as it is written, a construct the lint refuses in every field.
+    one can be named. One cannot be loaded as JSON. One escapes half of a
+    surrogate pair, which is text no record can take. One the validator
+    rejects. One holds, in an identifier the record takes as it is written,
+    a construct the lint refuses in every field.
     """
     try:
-        try:
-            verdict = json.loads(text)
-        except ValueError as exc:
-            raise ValueError(f"it cannot be loaded as JSON: {exc}") from exc
-        where = next(_not_utf8(verdict), None)
-        if where is not None:
-            raise ValueError(f"it holds text that UTF-8 cannot hold, at {where or 'its root'}")
-        result = validate(verdict)
-    except RecursionError as exc:
-        raise ValueError("it is nested too deeply to read") from exc
+        verdict = json.loads(text)
+    except ValueError as exc:
+        raise ValueError(f"it cannot be loaded as JSON: {exc}") from exc
+    where = next(_not_utf8(verdict), None)
+    if where is not None:
+        raise ValueError(f"it holds text that UTF-8 cannot hold, at {where or 'its root'}")
+    result = validate(verdict)
     if not result["valid"]:
         faults = "; ".join(str(error.get("message")) for error in result.get("errors", []))
         raise ValueError(f"the verdict validator rejects it: {faults}")
