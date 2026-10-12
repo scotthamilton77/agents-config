@@ -19,6 +19,11 @@
 | `reply` | A reply outside 40 to 90 words, with a Change line that is empty or longer than two sentences, a Deferred reply that does not name the inheriting item, a Rejected reply with no URL, or one with no host or no path, for the comment that asked for it, or a phrase of campaign status. |
 | `reply-count` | A finding the campaign marks fixed that has no reply, or more than one. |
 | `stale-stamp` | A generated part whose content its stamp does not cover, or that has no stamp. |
+| `line-break` | A line break in a field an artifact sets on one line: the title, the work item's id, gloss or slice, or a field of the attribution. A line break in the commit subject is reported under `commit-subject`. |
+| `session-key` | A session trailer key that holds anything but letters, digits and hyphens. |
+| `commit-markup` | Under `render` only: a field of the commit message that holds a Markdown table, a `<details>` fold, a fenced block or an HTML comment, or prose whose wrapped form opens a line with `---`. |
+| `decisions-block` | Under `render body` only: an existing body that holds one of the two markers around a decisions block, holds one of them twice, or holds them out of order. |
+| `reply-entry` | Under `render reply` only: no reply entry, or more than one, matches the finding the command names. |
 
 In `heads_up` and `verification.not_run`, an entry is `None.` with or without space around it. `discovered.rows` takes the entry only as written, and the schema checks that.
 
@@ -64,6 +69,16 @@ A word is a run of characters with no space in it. A number, a file name and a h
 `init` writes a record that the schema accepts, with every field the author fills left empty. `lint` then names each of those fields, and nothing else. A list that takes `None.` is reported under `unstated-empty`. An empty summary is reported under `summary-length`, an empty subject under `commit-subject`, and a missing commit body under `commit-body`. Every other empty field is reported under `unfilled`.
 
 A new record holds no generated part and no reply. Its reach flag, `risk.reaches_outside_package`, starts false, because a flag has no empty value. Set it when the change reaches outside its package.
+
+## Line breaks
+
+A line ends at a line feed or a carriage return. Nine fields are set on one line and never hold one: `pr.title`, `commit.subject`, `work_item.id`, `work_item.gloss`, `work_item.slice`, and the four fields of `commit.attribution`. Each is a fact or is one line by form, so no artifact can set a break in it and stay what it is. A break in the subject, the id, the gloss or an attribution value would also move the lines git reads the commit message's trailers from.
+
+`lint` reports a break in the commit subject under `commit-subject`, with the rest of the subject's form, and a break in any of the other eight under `line-break`. One fault draws one finding.
+
+Every other text field may hold a line break. `artifacts.md` beside this file says how `render` sets one.
+
+The session trailer's key, `commit.attribution.session_key`, holds letters, digits and hyphens alone. Git reads a trailer's key from those characters. A last paragraph with one line git cannot read as a trailer loses all three trailers.
 
 ## The commit message
 

@@ -3,10 +3,16 @@
 # requires-python = ">=3.11"
 # dependencies = ["jsonschema>=4"]
 # ///
-"""Start and check a change record, the JSON document a pull request's description is written from.
+"""Start and check a change record, and render a pull request's three artifacts from it.
+
+A change record is the JSON document a pull request's description, commit
+message and review replies are written from.
 
 Usage: uv run change_record.py init --type TYPE --component NAME --work-item ID <record.json>
        uv run change_record.py lint [--pr NUMBER] <record.json>
+       uv run change_record.py render body <record.json> [--existing-body FILE] [--comment-url URL]
+       uv run change_record.py render commit <record.json>
+       uv run change_record.py render reply <record.json> --finding ID
 
 ``init`` writes a new record with every field the author fills left empty.
 It never replaces a file. Exit 0 written, 1 a file is already there, 2 the
@@ -17,6 +23,11 @@ rules a program can decide, and prints a JSON result to stdout. With ``--pr``
 it also reads that pull request's changed paths through ``gh`` and checks the
 record against them. Exit 0 valid, 1 invalid, 2 unreadable, unparseable,
 called wrongly, or ``gh`` failed.
+
+``render`` fills one of the three template files from a record and writes the
+result to stdout, or to the file ``--output`` names. It lints first. A record
+it refuses gets the JSON result on stderr and nothing written. Exit 0
+rendered, 1 refused, 2 unreadable, unparseable or called wrongly.
 """
 
 from __future__ import annotations
@@ -25,6 +36,7 @@ import argparse
 import hashlib
 import json
 import re
+import string
 import subprocess
 import sys
 from collections.abc import Iterable, Iterator
@@ -78,6 +90,26 @@ AUTHOR_FILLS = (
     "/commit/attribution/session_url",
 )
 
+# The fields an artifact sets on one line, where a line break would change what
+# the artifact is. A break in the work item's id or gloss, or in an attribution
+# value, moves the lines git reads the commit message's trailers from. The
+# commit subject is one line too, and the rule on its form says so, which is
+# why it is left out here and one fault draws one finding.
+ONE_LINE_FIELDS = (
+    "/pr/title",
+    "/work_item/id",
+    "/work_item/gloss",
+    "/work_item/slice",
+    "/commit/attribution/tool",
+    "/commit/attribution/co_author",
+    "/commit/attribution/session_key",
+    "/commit/attribution/session_url",
+)
+
+# The characters git reads a trailer's key from. A last paragraph with a line
+# git cannot read as a trailer loses every trailer it holds.
+TRAILER_KEY = re.compile(r"[A-Za-z0-9-]+")
+
 # The form of a link to a comment: a host, then a path that names something on
 # it. A query or a fragment may follow. No host is named here, because a
 # comment lives wherever the repository is hosted.
@@ -126,14 +158,16 @@ MACHINE_CONTENT = {
     "an HTML comment": re.compile(r"<!--"),
 }
 
-# A whole line that opens a fenced block whose language is JSON. The fence may
-# sit at any depth of a quote or a list. A run of backticks with another
-# backtick later on the line is a code span that starts the line, so it opens
-# nothing.
-JSON_FENCE = re.compile(
-    r"(?:[ \t]*(?:>|[-*+][ \t]|\d{1,9}[.)][ \t]))*[ \t]*(?:`{3,}[ \t]*json\b[^`]*|~{3,}[ \t]*json\b.*)",
-    re.IGNORECASE,
+# A whole line that opens a fenced block, and what the line says after the
+# fence, which starts with the block's language. The fence may sit at any depth
+# of a quote or a list. A run of backticks with another backtick later on the
+# line is a code span that starts the line, so it opens nothing.
+FENCE = re.compile(
+    r"(?:[ \t]*(?:>|[-*+][ \t]|\d{1,9}[.)][ \t]))*[ \t]*(?:`{3,}(?=[^`]*\Z)|~{3,})(?P<after>.*)"
 )
+
+# What follows the fence on a line that opens a block whose language is JSON.
+JSON_LANGUAGE = re.compile(r"[ \t]*json\b", re.IGNORECASE)
 
 
 class RecordError(Exception):
@@ -252,13 +286,21 @@ def outside_code(text: str) -> str:
     return CODE_SPAN.sub("<code>", text)
 
 
-def holds_json_fence(text: str) -> bool:
-    """Say whether any line of ``text`` opens a fenced block whose language is JSON.
+def fence_openings(text: str) -> Iterator[str]:
+    """Yield, for each line of ``text`` that opens a fenced block, what the line says after the fence.
 
     Each line is judged alone. Keeping track of which block is open would let
     a line that only looks like a fence hide a real block below it.
     """
-    return any(JSON_FENCE.fullmatch(line) for line in LINE_END.split(text))
+    for line in LINE_END.split(text):
+        match = FENCE.fullmatch(line)
+        if match:
+            yield match["after"]
+
+
+def holds_json_fence(text: str) -> bool:
+    """Say whether any line of ``text`` opens a fenced block whose language is JSON."""
+    return any(JSON_LANGUAGE.match(after) for after in fence_openings(text))
 
 
 def count_sentences(text: str) -> int:
@@ -728,6 +770,32 @@ def stamp_generated(record: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
+def _line_breaks(record: dict[str, Any]) -> Iterator[dict[str, str]]:
+    """Report each field an artifact sets on one line that holds a line break.
+
+    These fields are facts, or are one line by their form, so no artifact can
+    set a break in one and stay what it is. Prose that an artifact sets on one
+    line may hold a break, and ``render`` reads it as a space.
+    """
+    for path in ONE_LINE_FIELDS:
+        value: Any = record
+        for name in path.split("/")[1:]:
+            value = value[name]
+        if LINE_END.search(value):
+            yield _finding("line-break", path, "this field is set on one line, and it holds a line break")
+
+
+def _session_key(record: dict[str, Any]) -> Iterator[dict[str, str]]:
+    """Report a session trailer key that git would not read as a trailer's key.
+
+    An empty key is left to the rule on unfilled fields.
+    """
+    key = record["commit"]["attribution"]["session_key"]
+    if key.strip() and not TRAILER_KEY.fullmatch(key):
+        message = "git reads a trailer's key from letters, digits and hyphens alone, and this key holds something else"
+        yield _finding("session-key", "/commit/attribution/session_key", message)
+
+
 def _unfilled(record: dict[str, Any]) -> Iterator[dict[str, str]]:
     """Report each field the author fills that is still empty.
 
@@ -911,6 +979,8 @@ RULES = (
     _replies,
     _reply_counts,
     _unfilled,
+    _line_breaks,
+    _session_key,
 )
 
 
@@ -1010,12 +1080,351 @@ def _filled(text: str) -> str:
     return text
 
 
+# Rendering. Each artifact is one template file, read when the artifact is
+# rendered, so every heading, label and column title a reader sees comes from
+# that file and none from this script.
+
+# Another tool keeps a decisions block in the pull request body, between these
+# two markers. A render carries the block over and never writes one.
+DECISIONS_OPENING = "<!-- prgroom:decisions:start -->"
+DECISIONS_CLOSING = "<!-- prgroom:decisions:end -->"
+
+# A review round records a disposition in its own vocabulary. A reader sees
+# the word here in its place.
+OUTCOME_OF = {
+    "fixed": "Fixed",
+    "rebutted": "Rejected",
+    "advisory-deferred": "Deferred",
+    "transferred": "Deferred",
+}
+
+# A whole line that is the row under a table's header, which is what makes the
+# lines around it a table.
+TABLE_RULE = re.compile(r"(?=.*\|)(?=.*-)[ \t|:-]+")
+
+# A whole line that git reads as the end of a commit message. The trailers
+# below such a line are no longer read.
+DIVIDER = re.compile(r"---(?:\s.*)?")
+
+# A word of prose for the wrap: a run with no space in it, with any code span
+# it touches taken whole, spaces and all.
+WORD = re.compile(r"(?:" + CODE_SPAN.pattern + r"|\S)+")
+
+# The most columns a line of commit prose takes, which is the width a log is read at.
+WRAP_COLUMN = 72
+
+_SECTION = re.compile(r"\{\{([#/])([a-z_.]+)\}\}")
+_PARENTHESIS = re.compile(r" \([^()$]*\$\{([^}]+)\}[^()$]*\)")
+
+
+class Refusal(Exception):
+    """A render that must not be written; carries the findings that say why."""
+
+    def __init__(self, findings: list[dict[str, str]]) -> None:
+        super().__init__(findings)
+        self.findings = findings
+
+
+class _Slots(string.Template):
+    """Template text whose ``${a.b}`` slots name record fields by their path."""
+
+    braceidpattern = r"[a-z_.\[\]]+"
+
+
+def _look(record: dict[str, Any], path: str, bound: dict[str, Any]) -> Any:
+    """Return what the record holds at a slot's path, or None when it holds nothing there.
+
+    A path through ``[]`` is read from the one list entry bound for the line
+    being filled. Every other path is read from the record's root.
+    """
+    head, each, rest = path.partition("[]")
+    node = bound.get(head) if each else record
+    for name in filter(None, (rest if each else head).split(".")):
+        node = node.get(name) if isinstance(node, dict) else None
+    return node
+
+
+def _holds_something(value: Any) -> bool:
+    """Say whether a value has anything in it for a reader.
+
+    Text that is only space, a list of nothing and a group whose every value
+    is empty all render as a group the record does not hold.
+    """
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, dict):
+        return any(map(_holds_something, value.values()))
+    if isinstance(value, list):
+        return any(map(_holds_something, value))
+    return value is not None
+
+
+def _one_line(text: str) -> str:
+    """Return prose as one line, in which each line break and the space around it read as one space."""
+    if not LINE_END.search(text):
+        return text
+    return " ".join(filter(None, (part.strip() for part in LINE_END.split(text))))
+
+
+def _shown(value: Any) -> str:
+    """Return a field's value as a reader sees it.
+
+    A list reaches here only from a slot that names it whole, which the
+    templates do for references to other pull requests.
+    """
+    if isinstance(value, list):
+        return ", ".join(f"#{ref['pr']} ({ref['gloss']})" for ref in value) or "none"
+    return "" if value is None else str(value)
+
+
+def _fill_line(line: str, record: dict[str, Any], bound: dict[str, Any]) -> str:
+    """Fill one template line.
+
+    A slot that stands alone on its line is a block, and its value keeps its
+    own lines. Any other slot is set on the template's line. A table row keeps
+    a line break as ``<br>`` and escapes a pipe, so the value stays in its
+    cell. Elsewhere a line break reads as a space. Text in parentheses around
+    a slot goes, parentheses and all, when the record has nothing there.
+    """
+    in_table = line.startswith("|")
+    is_block = bool(_Slots.pattern.fullmatch(line))
+
+    def shown(path: str) -> str:
+        text = _shown(_look(record, path, bound))
+        if in_table:
+            return LINE_END.sub("<br>", text.replace("|", "\\|"))
+        return text if is_block else _one_line(text)
+
+    line = _PARENTHESIS.sub(lambda found: found[0] if shown(found[1]) else "", line)
+    return _Slots(line).substitute({path: shown(path) for path in _Slots(line).get_identifiers()})
+
+
+def _fill(template: str, record: dict[str, Any], bound: dict[str, Any] | None = None) -> str:
+    """Fill a template from a record and return the artifact.
+
+    A line whose slot passes through a list appears once per entry, unless the
+    caller bound that list to one entry. The lines between ``{{#a.b}}`` and
+    ``{{/a.b}}`` appear only when the record holds a value at that path. A
+    blank line of the template is left out where the line before it is blank,
+    so the lines that vanish between two blank lines leave one behind.
+    """
+    bound = bound or {}
+    lines: list[str] = []
+    open_sections: list[bool] = []
+    for line in template.splitlines():
+        section = _SECTION.fullmatch(line)
+        if section and section[1] == "#":
+            open_sections.append(_holds_something(_look(record, section[2], bound)))
+        elif section:
+            open_sections.pop()
+        elif not line and lines and not lines[-1]:
+            continue
+        elif all(open_sections):
+            repeated = [
+                path for path in _Slots(line).get_identifiers()
+                if "[]" in path and path.partition("[]")[0] not in bound
+            ]
+            if not repeated:
+                lines.append(_fill_line(line, record, bound))
+                continue
+            head, _, field = repeated[0].partition("[]")
+            first = field.lstrip(".")
+            entries = _look(record, head, bound)
+            if isinstance(entries, str):
+                # A field holding one line where a table is usual renders as one row.
+                entries = [{first: entries}]
+            for entry in entries or []:
+                # The entry that states its list is empty stands in the line's first place.
+                if is_none(entry) and first:
+                    entry = {first: NONE}
+                lines.append(_fill_line(line, record, {**bound, head: entry}))
+    return "\n".join(lines) + "\n"
+
+
+def _template(name: str) -> str:
+    return (REFERENCES / name).read_text(encoding="utf-8")
+
+
+def _wrapped(text: str) -> str:
+    """Set prose as one paragraph, in lines of at most ``WRAP_COLUMN`` columns.
+
+    A line break in the text reads as a space. A code span is never split,
+    because a construct it quotes would stop being a literal at the start of
+    a line. A word or a span longer than a line takes a line of its own.
+    """
+    lines: list[str] = []
+    for found in WORD.finditer(_one_line(text)):
+        word = found.group()
+        if lines and len(lines[-1]) + 1 + len(word) <= WRAP_COLUMN:
+            lines[-1] += f" {word}"
+        else:
+            lines.append(word)
+    return "\n".join(lines)
+
+
+def commit_markup(written: str, laid_out: str) -> Iterator[str]:
+    """Name each construct in one field of a commit message that the message cannot hold.
+
+    A commit message is read as plain text in a log, where a table, a fold, a
+    fenced block and an HTML comment do not render. ``written`` is the field as
+    the record holds it, and ``laid_out`` is the same text as the message shows
+    it. The message is what a reader gets, so every construct is read from
+    ``laid_out``, with the readers ``lint`` uses. A table and a fenced block
+    are made of whole lines, which the wrap takes apart, so those two are read
+    from ``written`` as well.
+    """
+    plain = outside_code(laid_out)
+    yield from (name for name, pattern in MACHINE_CONTENT.items() if pattern.search(plain))
+    shown = LINE_END.split(laid_out)
+    if any(TABLE_RULE.fullmatch(line) for line in [*LINE_END.split(written), *shown]):
+        yield "a Markdown table"
+    if any(True for text in (written, laid_out) for _ in fence_openings(text)):
+        yield "a fenced block"
+    if any(DIVIDER.fullmatch(line) for line in shown):
+        yield "a line that opens with `---`, which git reads as the end of the message"
+
+
+def render_commit_message(record: dict[str, Any]) -> str:
+    """Return the commit message for a record, or raise ``Refusal`` when a field carries markup."""
+    commit = dict(record["commit"])
+    for section in BODY_SECTIONS:
+        if section in commit:
+            commit[section] = _wrapped(commit[section])
+    view = {**record, "commit": commit}
+    template = _template("commit-message.txt")
+    faults = [
+        _finding("commit-markup", "/" + path.replace(".", "/"), f"a commit message cannot hold {kind}")
+        for path in _Slots(template).get_identifiers()
+        for kind in commit_markup(_shown(_look(record, path, {})), _shown(_look(view, path, {})))
+    ]
+    if faults:
+        raise Refusal(faults)
+    return _fill(template, view)
+
+
+def render_reply(record: dict[str, Any], entry: dict[str, Any]) -> str:
+    """Return the reply to one review finding, given that finding's entry in the record's replies."""
+    return _fill(_template("review-reply.txt"), record, {"replies": entry})
+
+
+def _decisions_block(body: str) -> str:
+    """Return the decisions block an existing body holds, markers included, or "" when it holds none.
+
+    A body with one marker, a repeated marker or the two out of order has no
+    block that can be told apart from the text around it. Rendering such a body
+    as if it had none would drop what the other tool wrote, so it is refused.
+    """
+    counts = {marker: body.count(marker) for marker in (DECISIONS_OPENING, DECISIONS_CLOSING)}
+    if not any(counts.values()):
+        return ""
+    for marker, count in counts.items():
+        if count != 1:
+            message = f"the existing body holds {marker} {count} times, and a decisions block has it once"
+            raise Refusal([_finding("decisions-block", "", message)])
+    start, end = body.index(DECISIONS_OPENING), body.index(DECISIONS_CLOSING)
+    if end < start:
+        message = f"the existing body holds {DECISIONS_CLOSING} before {DECISIONS_OPENING}"
+        raise Refusal([_finding("decisions-block", "", message)])
+    return body[start : end + len(DECISIONS_CLOSING)]
+
+
+def _outcome(finding: dict[str, Any], replies: list[dict[str, Any]]) -> str:
+    """Return the outcome word for a finding in the campaign table.
+
+    A review round never records a finding as superseded. Only the author's
+    reply to that finding does, so such a reply decides the word.
+    """
+    for reply in replies:
+        if _identity(reply, "finding_id") == _identity(finding, "id") and reply["outcome"] == "Superseded":
+            return reply["outcome"]
+    return OUTCOME_OF.get(finding.get("disposition", ""), "")
+
+
+def render_body(record: dict[str, Any], existing_body: str = "", comment_url: str = "") -> str:
+    """Return the pull request body for a record.
+
+    ``existing_body`` is the body the pull request has now, whose decisions
+    block is carried over byte for byte. ``comment_url`` is the comment the
+    record is posted in, and the line pointing at it appears only when given.
+    """
+    view = {
+        **record,
+        # The summary stands alone on its template line and is one paragraph.
+        "summary": _one_line(record["summary"]),
+        "commit_message": render_commit_message(record).rstrip("\n"),
+        "decisions": _decisions_block(existing_body),
+        "record_comment_url": comment_url,
+    }
+    if "campaign" in record:
+        replies = record.get("replies", [])
+        findings = [
+            {**finding, "disposition": _outcome(finding, replies)}
+            for finding in record["campaign"]["findings"]
+        ]
+        view["campaign"] = {**record["campaign"], "findings": findings}
+    return _fill(_template("pr-body.md"), view)
+
+
+def _reply_entry(record: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    """Return the one reply entry the arguments name, or raise ``Refusal`` when they name none or several."""
+    wanted = {"finding_id": args.finding, "claim_id": args.claim, "artifact_class": args.artifact_class}
+    matches = [
+        entry for entry in record.get("replies", [])
+        if all(value is None or entry.get(key) == value for key, value in wanted.items())
+    ]
+    if len(matches) != 1:
+        message = (
+            f"{len(matches)} reply entries match finding {args.finding}; "
+            "name exactly one with --finding, --claim and --artifact-class"
+        )
+        raise Refusal([_finding("reply-entry", "/replies", message)])
+    return matches[0]
+
+
+def _read_body(path: Path | None) -> str:
+    """Read an existing body without changing a byte of it, line endings included."""
+    if path is None:
+        return ""
+    try:
+        return path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RecordError("unreadable", f"cannot read {path}: {exc}") from exc
+
+
+def _render(args: argparse.Namespace) -> int:
+    """Run ``render``: write one artifact, or report on stderr why none was written."""
+    try:
+        record = read_record(args.record)
+        findings = lint_record(record)
+        if findings:
+            raise Refusal(findings)
+        if args.artifact == "commit":
+            text = render_commit_message(record)
+        elif args.artifact == "reply":
+            text = render_reply(record, _reply_entry(record, args))
+        else:
+            text = render_body(record, _read_body(args.existing_body), args.comment_url)
+    except RecordError as exc:
+        unreadable = [_finding(exc.code, "", exc.message)]
+        print(json.dumps({"valid": False, "errors": unreadable}, sort_keys=True), file=sys.stderr)
+        return EXIT_UNUSABLE
+    except Refusal as refusal:
+        print(json.dumps({"valid": False, "errors": refusal.findings}, sort_keys=True), file=sys.stderr)
+        return EXIT_INVALID
+    # The artifact is written as bytes, so it is the same under every locale and on every platform.
+    if args.output:
+        args.output.write_bytes(text.encode("utf-8"))
+    else:
+        sys.stdout.buffer.write(text.encode("utf-8"))
+    return EXIT_VALID
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command line. Each subcommand names the function that runs it as ``run``."""
     parser = argparse.ArgumentParser(
         prog="change_record.py",
         description="Start or check a change record, the JSON document a pull request's description, "
-        "commit message and review replies are written from.",
+        "commit message and review replies are written from, and render the three from it.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
     init = commands.add_parser(
@@ -1055,6 +1464,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="also check the record against this pull request's changed paths, which are read through gh",
     )
     lint.set_defaults(run=_lint)
+    render = commands.add_parser(
+        "render",
+        help="render the pull request body, the commit message or a review reply from a record",
+        description="Fill one template file from a record. The record is linted first. A record "
+        "that is refused gets the JSON result on stderr and nothing written. "
+        "Exit 0 rendered, 1 refused, 2 unreadable or unparseable.",
+    )
+    artifacts = render.add_subparsers(dest="artifact", required=True)
+    for name, what in (
+        ("body", "the pull request body"),
+        ("commit", "the commit message"),
+        ("reply", "the reply to one review finding"),
+    ):
+        artifact = artifacts.add_parser(name, help=f"render {what}", description=f"Render {what}.")
+        artifact.add_argument("record", type=Path, help="path to the record's JSON file")
+        artifact.add_argument("--output", type=Path, help="write the artifact to this file in place of stdout")
+        artifact.set_defaults(run=_render)
+    body = artifacts.choices["body"]
+    body.add_argument(
+        "--existing-body", type=Path,
+        help="a file holding the pull request's current body, whose decisions block is carried over",
+    )
+    body.add_argument(
+        "--comment-url", default="",
+        help="the comment the record is posted in; adds the line that points at it",
+    )
+    reply = artifacts.choices["reply"]
+    reply.add_argument("--finding", required=True, help="the finding's id, as the reply entry holds it")
+    reply.add_argument("--claim", help="the entry's claim id, when two entries share a finding id")
+    reply.add_argument("--artifact-class", help="the entry's artifact class, when the claim id is shared too")
     return parser
 
 
