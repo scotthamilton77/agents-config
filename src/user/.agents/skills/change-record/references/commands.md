@@ -1,12 +1,14 @@
 # The script's subcommands
 
-Run each from the skill's directory, as `uv run scripts/change_record.py` followed by the subcommand. `context`, `discovered`, `campaign` and `lint --pr` read the repository of the working directory. Run those four from inside that repository, and give the script by its path.
+Run each from the skill's directory, as `uv run scripts/change_record.py` followed by the subcommand. `context`, `discovered`, `campaign`, `lint --pr` and `publish` read the repository of the working directory. Run those five from inside that repository, and give the script by its path.
 
 ## The result a fault is reported in
 
 `lint` prints one JSON result to stdout. It is `{"valid": true}`, or `{"valid": false, "errors": [{"code", "path", "message"}, …]}`. `path` names the field at fault, `code` names the rule it broke, and `message` says what to change. `lint-rules.md` beside this file lists every code.
 
 `render` prints the same result on stderr when it refuses a record. Its stdout holds the artifact and nothing else.
+
+`publish` prints the same result on stderr when it refuses a record, and when a call fails.
 
 ## `init`
 
@@ -91,3 +93,71 @@ A field of the commit message that holds a Markdown table, a `<details>` fold, a
 ### `render reply`
 
 `--finding ID` names the reply entry by its finding id. When two entries share a finding id, add `--claim` and, if the claim is shared too, `--artifact-class`. A command that matches no entry, or more than one, is refused under the code `reply-entry`.
+
+## `publish`
+
+```bash
+uv run path/to/scripts/change_record.py publish [--dry-run] record.json
+```
+
+`publish` posts the record on its pull request and sets the pull request body from it. The pull request is the one `pr.number` names, in the repository of the working directory. A record whose `pr.number` is not set has no pull request to post on, so the run stops with exit 2.
+
+`publish` checks every reason to refuse before it writes anything. It works in this order:
+
+1. It runs `lint`. A record that fails gets the lint result, and no call is made.
+2. It reads the pull request and every comment on it, and finds the newest record comment.
+3. On a pull request with no record comment, it runs `context`, `discovered` and `campaign` over a copy of the record. The record must already be what each of them writes. A part that differs is refused under the code `stale-part`, and the finding names the part and the generator to run again. A stamp set by hand therefore does not pass.
+4. It refuses a record comment or a body longer than 65,536 characters, which is the most GitHub takes. The code is `too-long`, and the finding gives the length. A decisions block carried over from the current body counts toward the body's length.
+5. It creates the record comment, then sets the body, then writes the record file.
+
+The body is the record as `render body` renders it, with the current body's decisions block carried over and with the line that points at the record comment. A body or a commit message that `render` refuses is refused here under the same code.
+
+In the record file, the `record` group gains the comment's id as `comment_id`, the revision, the digest, and the pull request's head commit as `head_sha`. `pr.head_sha` is the commit the gates ran at, and `publish` leaves it alone.
+
+`publish` never edits or deletes a comment. Its only writes to GitHub are one new comment and one edit of the body.
+
+`publish` runs `campaign` as it runs with no `--app`. A record whose campaign was filled with `--app`, on a pull request where another bot account also posted a verdict, is refused at the third step.
+
+### Publishing again
+
+When the record's digest equals the newest record comment's, `publish` posts no comment. It sets the body only when the body differs from the render that points at that comment. It writes the record file only when the file's `record` group does not name that comment yet. A run that stopped after the comment and before the body is therefore finished by running `publish` again.
+
+When the digest differs, `publish` posts a new comment at the next revision and sets the body to point at it. The third step is skipped, because the pull request has a record comment.
+
+### `--dry-run`
+
+With `--dry-run`, `publish` makes every read and every check, then prints the record comment and the body to stdout, the comment first. It writes nothing to GitHub and leaves the record file as it was. One line on stderr gives the revision and says whether the comment and the body are new.
+
+When the comment is already posted, the output is that comment as GitHub holds it, then the body with that comment's URL. When a run would post a new comment, the comment has no URL yet. The line that points at it then shows the pull request's URL followed by `#issuecomment-0000000000`, where a real run puts the new comment's id. The body's length is measured with those ten zeros, because a comment's id is ten digits long today.
+
+### The record comment
+
+A record comment's first line is the marker:
+
+`<!-- change-record v1 pr=NUMBER rev=REVISION sha256=DIGEST -->`
+
+The marker names the schema version, the pull request, the revision and the record's digest. The record follows in a `<details>` fold, as one line of JSON with sorted keys in a fenced `json` block. In the comment, the record's `record` group carries the revision, the digest and the head commit. It carries no `comment_id`, because a comment cannot name its own id.
+
+The digest is the SHA-256 digest of the record without its `record` group. That content is written as a stamp's content is, which `lint-rules.md` beside this file describes. Reordering keys changes nothing in the digest, and neither does publishing, which changes only the `record` group. Any other change gives another digest.
+
+The newest record comment is found by its marker and never by its place among the comments. `publish` reads every page of the pull request's comments, until a page comes back empty. A comment counts when its first line is the marker alone and the marker names this pull request. A marker quoted further down a comment does not count. The newest is the comment with the highest revision, compared as a number, so revision 10 follows revision 9. When two comments carry one revision, the one with the higher id is the newest.
+
+The body points at the comment it was rendered from, in this line:
+
+`Rendered from change record URL, revision REVISION.`
+
+### The calls `publish` makes
+
+`publish` makes these, in order:
+
+1. `gh api "repos/{owner}/{repo}/pulls/NUMBER"`, for the current body, the head commit and the pull request's URL
+2. `gh api "repos/{owner}/{repo}/issues/NUMBER/comments?per_page=100&page=N"`, from page 1 until a page is empty
+3. every call `context`, `discovered` and `campaign` make, which `generators.md` beside this file lists, ending with `gh api "repos/{owner}/{repo}/compare/BASE...HEAD"` when `campaign` counts a verdict
+4. `gh api "repos/{owner}/{repo}/issues/NUMBER/comments" --method POST -F body=@-`, with the comment on standard input
+5. `gh api "repos/{owner}/{repo}/pulls/NUMBER" --method PATCH -F body=@-`, with the body on standard input
+
+The first three are reads. `publish` skips step 3 when the pull request has a record comment, step 4 when the newest record comment holds the record's digest, and step 5 when the body is already the render.
+
+A call that fails or cannot be run stops the run, and so does an answer that does not have the shape that call's answer has. The message quotes the call. Nothing is written to GitHub after it, and the record file stays as it was.
+
+Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.

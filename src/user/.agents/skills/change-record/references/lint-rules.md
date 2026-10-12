@@ -21,9 +21,11 @@
 | `stale-stamp` | A generated part whose content its stamp does not cover, or that has no stamp. |
 | `line-break` | A line break in a field an artifact sets on one line: the title, the work item's id, gloss or slice, or a field of the attribution. A line break in the commit subject is reported under `commit-subject`. |
 | `session-key` | A session trailer key that holds anything but letters, digits and hyphens. |
-| `commit-markup` | Under `render` only: a field of the commit message that holds a Markdown table, a `<details>` fold, a fenced block or an HTML comment, or prose whose wrapped form opens a line with `---`. |
-| `decisions-block` | Under `render body` only: an existing body that holds one of the two markers around a decisions block, holds one of them twice, or holds them out of order. |
+| `commit-markup` | Under `render` and `publish` only: a field of the commit message that holds a Markdown table, a `<details>` fold, a fenced block or an HTML comment, or prose whose wrapped form opens a line with `---`. |
+| `decisions-block` | Under `render body` and `publish` only: an existing body that holds one of the two markers around a decisions block, holds one of them twice, or holds them out of order. |
 | `reply-entry` | Under `render reply` only: no reply entry, or more than one, matches the finding the command names. |
+| `stale-part` | Under `publish` only: a generated part that its generator would now write differently, on a pull request with no record comment yet. |
+| `too-long` | Under `publish` only: a record comment or a pull request body longer than 65,536 characters. |
 
 In `heads_up` and `verification.not_run`, an entry is `None.` with or without space around it. `discovered.rows` takes the entry only as written, and the schema checks that.
 

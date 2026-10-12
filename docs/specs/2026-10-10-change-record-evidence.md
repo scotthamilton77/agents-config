@@ -41,18 +41,18 @@
 - CR-C6 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC6RerunAndReplies
 - CR-C7 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC7StaleRows
 - CR-C8 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC8ReadsOnly
-- CR-P1 | open
-- CR-P2 | open
-- CR-P3 | open
+- CR-P1 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP1FirstPublish
+- CR-P2 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP2NextRevision
+- CR-P3 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP3Rerun
 - CR-P4 | open
-- CR-P5 | open
-- CR-P6 | open
-- CR-P7 | open
+- CR-P5 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP5Newest
+- CR-P6 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP6Size
+- CR-P7 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP7OnlyTwoWrites
 - CR-P8 | open
 - CR-P9 | open
 - CR-P10 | open
-- CR-P11 | open
-- CR-P12 | open
+- CR-P11 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP11Digest
+- CR-P12 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP12DryRun
 - CR-P13 | open
 - CR-P14 | open
 - CR-W1 | open
