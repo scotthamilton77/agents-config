@@ -1204,6 +1204,8 @@ def write_record(path: Path, record: dict[str, Any]) -> None:
         beside.write_text(json.dumps(ordered, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         beside.replace(path)
     except OSError as exc:
+        # A failed run leaves nothing behind, and that includes the text written beside the record.
+        beside.unlink(missing_ok=True)
         raise RecordError("unwritable", f"cannot write {path}: {exc}") from exc
 
 
@@ -1341,7 +1343,7 @@ DELIVERED = re.compile(r"\[work\] delivered:[ \t]*(?P<evidence>.*)")
 # Evidence that names a pull request: a number alone, a number after a `#`, or
 # a pull request's URL. The URL names a repository, and so does a `#` with an
 # owner and a name before it. Evidence of any other kind names no pull request.
-PULL_EVIDENCE = re.compile(r"(?:(?:.*[ \t])?(?:(?P<url>\S+)/pull/|(?P<before>[^\s#]*)#))?(?P<number>\d+)")
+PULL_EVIDENCE = re.compile(r"(?:(?:.*[ \t])?(?:(?P<url>\S+)/pull/|(?P<before>[^\s#]*)#))?(?P<number>\d+)(?:[/#?]\S*)?")
 
 # The heading of the triage record the tracker writes at the end of a
 # discovered item's description, and the scope line under it with the reason

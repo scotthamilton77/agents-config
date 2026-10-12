@@ -443,7 +443,17 @@ class TestCrX3BuildsOn:
 
     @pytest.mark.parametrize(
         "evidence",
-        ["803", "#803", "PR #803", "PR#803", "https://github.com/example/repo/pull/803", "example/repo#803"],
+        [
+            "803",
+            "#803",
+            "PR #803",
+            "PR#803",
+            "https://github.com/example/repo/pull/803",
+            "https://github.com/example/repo/pull/803/",
+            "https://github.com/example/repo/pull/803/files",
+            "https://github.com/example/repo/pull/803#issuecomment-1",
+            "example/repo#803",
+        ],
     )
     def test_cr_x3_a_delivery_names_its_pull_request_by_number_or_by_url(
         self, evidence: str, shim_dir: Path, tmp_path: Path
@@ -1675,6 +1685,15 @@ class TestTextThatIsNotUtf8:
         assert (refused.value.code, "/summary" in refused.value.message) == ("not-utf-8", True)
         assert path.read_bytes() == before
         assert sorted(tmp_path.glob("record.json*")) == [path]
+
+    def test_a_write_that_cannot_replace_the_record_leaves_nothing_beside_it(self, tmp_path: Path):
+        # A directory where the record should be takes the text beside it and then refuses the move.
+        path = tmp_path / "record.json"
+        path.mkdir()
+        with pytest.raises(change_record.RecordError) as refused:
+            change_record.write_record(path, example())
+        assert refused.value.code == "unwritable"
+        assert sorted(tmp_path.iterdir()) == [path]
 
 
 # The record's work item in the recorded answers, and the item whose work turned another up.
