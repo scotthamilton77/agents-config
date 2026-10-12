@@ -437,7 +437,12 @@ class TestCrL17TemplatesDriveTheRender:
         assert edited != template.read_text(encoding="utf-8")
         template.write_text(edited, encoding="utf-8")
 
-        followed = render(record, tmp_path, artifact, *flags, script=skill / "scripts" / "change_record.py")
+        # The edit puts a word after each heading, so an edited body may run past
+        # the one-pager's bound and draw the warning. Nothing else may be on stderr.
+        proc = run("render", artifact, write(record, tmp_path), *flags, script=skill / "scripts" / "change_record.py")
+        assert proc.returncode == 0, proc.stderr.decode("utf-8")
+        assert proc.stderr == b"" or (proc.stderr.startswith(b"warning: ") and proc.stderr.count(b"\n") == 1)
+        followed = proc.stdout.decode("utf-8")
         assert followed != shipped
         assert followed == self.edit(shipped, name)
         if artifact == "body":
