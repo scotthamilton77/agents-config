@@ -816,7 +816,7 @@ class TestCrL7CommentaryAndMachineContent:
     def test_cr_l7_a_generated_part_is_not_read_for_commentary(self, tmp_path: Path):
         record = example()
         record["campaign"]["findings"][0]["claim"] += " Note that the grant writes a file."
-        record["where_this_fits"]["builds_on"][0]["gloss"] += ", see below"
+        record["where_this_fits"]["scope"][0]["covers"] += ", see below"
         assert_passes(change_record.stamp_generated(record), tmp_path)
 
     def test_cr_l7_a_command_and_a_diagram_source_are_quoted_and_not_read_for_commentary(self, tmp_path: Path):

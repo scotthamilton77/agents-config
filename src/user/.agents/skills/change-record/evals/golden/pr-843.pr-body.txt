@@ -7,16 +7,14 @@ The agent running a review round used to choose each reviewer's effort and tools
 
 ## Where this fits
 agents-config-9k9  Harness rework (milestone)
-agents-config-9k9.408  review-panel routing: pin model, effort and tools per reviewer slot, as an interim cost control (feature)
-    this PR: slice A of three
-Builds on: #803 (feat(9k9.457): one multi-provider model routing table replaces the per-skill model tables). Concurrent: #777 (fix(9k9.418): a typed-code round's fixed finding that the lens located in a Markdown file names that file, not a test), #774 (feat(9k9.408): a clean lens report needs evidence its reviewer opened the target).
+agents-config-9k9.408  review-panel routing: pin model, effort and tool grant per transport-and-tier slot, the recommender and the checkpoint, as an interim cost control (chore)
+    this PR: slice A of three in the item's acceptance text
+Builds on: none. Concurrent: none.
 <details><summary>Scope of the owning item</summary>
 
 | Slice | What it covers | Status |
 | --- | --- | --- |
-| A | effort and tool pins per reviewer slot, the diff file and the recovery sequence for a run that dies | this PR |
-| B | the same pins for the criteria attack panel | open |
-| C | a clean report is refused unless the reviewer's activity log shows it opened the change | in flight (#774) |
+| agents-config-9k9.408 | review-panel routing: pin model, effort and tool grant per transport-and-tier slot, the recommender and the checkpoint, as an interim cost control | this PR |
 </details>
 
 ## Risk
@@ -65,7 +63,7 @@ The gate's claim command takes `--effort` and records it. A run that died may be
 
 harvest.md states the sequence, the failover slot, the diff file and the claim form. Nine scenarios with expected answers check that a reader holding only those files reaches the right dispatch.
 
-The criteria attack panel needs the same pins, as slice B of this work item, and it is a different skill with its own configuration file. This pull request reshaped the claim record that #774 (the read-evidence gate) adds two fields to. That pull request's gate checks that a reviewer read what it was handed, and this one only hands it over.
+The criteria attack panel needs the same pins, as slice B of this work item, and it is a different skill with its own configuration file.
 
 The round record copies each pin, and tests check that too. This pull request's own first round ran every reviewer at its pin, on two vendors, with no substitution. Both recovery failures were real bugs found in review, reproduced, and fixed with a failing-then-passing test each. A stuck round also costs coverage, because it can look finished with one reviewer never having read the change.
 
@@ -76,6 +74,7 @@ The written doctrine could send whoever runs a round by hand down the wrong path
 | Item | Status | What it is | Why not in this PR |
 | --- | --- | --- | --- |
 |  | not filed | The gate does not compare the effort a run used against its pin. | No consumer asks for it yet. |
+|  | in flight (#774) | This pull request reshaped the claim record that the read-evidence gate adds two fields to. | That gate checks that a reviewer read what it was handed. |
 |  | in flight (#777) | The skill file's sentence naming the diff file waits for that pull request. | The file is at its size cap. |
 |  | not filed | Two advisory review findings wait on the work item's notes. | Each needs a change outside this skill. |
 

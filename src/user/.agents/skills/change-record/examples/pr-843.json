@@ -9,7 +9,7 @@
   "work_item": {
     "id": "agents-config-9k9.408",
     "gloss": "predictable reviewer settings, as an interim cost control",
-    "slice": "slice A of three"
+    "slice": "slice A of three in the item's acceptance text"
   },
   "summary": "The agent running a review round used to choose each reviewer's effort and tools itself. The panel's configuration file now holds both for every reviewer slot. Every reviewer receives the change as a diff file. A run that dies follows a fixed recovery sequence. The panel does not yet check that a run actually used its pinned effort.",
   "heads_up": [
@@ -26,45 +26,20 @@
       },
       {
         "id": "agents-config-9k9.408",
-        "title": "review-panel routing: pin model, effort and tools per reviewer slot, as an interim cost control",
-        "type": "feature"
+        "title": "review-panel routing: pin model, effort and tool grant per transport-and-tier slot, the recommender and the checkpoint, as an interim cost control",
+        "type": "chore"
       }
     ],
-    "builds_on": [
-      {
-        "pr": 803,
-        "gloss": "feat(9k9.457): one multi-provider model routing table replaces the per-skill model tables"
-      }
-    ],
-    "concurrent": [
-      {
-        "pr": 777,
-        "gloss": "fix(9k9.418): a typed-code round's fixed finding that the lens located in a Markdown file names that file, not a test"
-      },
-      {
-        "pr": 774,
-        "gloss": "feat(9k9.408): a clean lens report needs evidence its reviewer opened the target"
-      }
-    ],
+    "builds_on": [],
+    "concurrent": [],
     "scope": [
       {
-        "slice": "A",
-        "covers": "effort and tool pins per reviewer slot, the diff file and the recovery sequence for a run that dies",
+        "slice": "agents-config-9k9.408",
+        "covers": "review-panel routing: pin model, effort and tool grant per transport-and-tier slot, the recommender and the checkpoint, as an interim cost control",
         "status": "this PR"
-      },
-      {
-        "slice": "B",
-        "covers": "the same pins for the criteria attack panel",
-        "status": "open"
-      },
-      {
-        "slice": "C",
-        "covers": "a clean report is refused unless the reviewer's activity log shows it opened the change",
-        "status": "in flight",
-        "pr": 774
       }
     ],
-    "digest": "a638b0b41410a4f9746423b0dae1bf30788ef2e02851c2c4022f4ad37f7b0f7f"
+    "digest": "8fd741a71c0f65f57882bdd3e2960441c10062c941a000802ae4286d85ccb852"
   },
   "risk": {
     "reaches_outside_package": true,
@@ -101,13 +76,19 @@
       "text": "A run that died is retried one effort step lower, then on the other provider. The round halts after three attempts."
     }
   ],
-  "design_notes": "The earlier design routed the OpenRouter mid-tier model away from whole-document reads. That constraint had no run record behind it, and the only recorded reads of that shape on that model had finished. A constraint stated without its variables cannot be scoped or falsified, so the design no longer encodes it. A slot that names a model runs that model. The recovery sequence answers for a death when one happens, and records every attempt. During this pull request's own review that model finished 20 whole-document reads in 20.\n\nRejected: letting the dispatcher pick a fallback model freely. That hides the cost decision in a prompt and leaves no record. Rejected: a shell grant restricted by a command prefix. Both `git diff` and `git log` accept `--output`, so a prefix pattern is not read-only.\n\ncontracts.json holds eight slots by provider, tier and read scope, plus the staffing recommender and the trend checkpoint. OpenRouter reads a whole document at low effort and a diff at high. Codex frontier slots run at high and mid slots at medium. No pin names a model, because the routing table does that. Every tool grant is the Codex read-only sandbox, or a list drawn from Read, Grep and Glob. No reviewer gets a shell pattern, because `git diff --output=<path>` writes a file.\n\nThe emitter writes each diff file over that reviewer's scope for the round, so a reviewer with no shell can still read the change. Reviewers sharing a revision pair share one computed diff. Each reviewer entry in the round record gains effort and tools copied from its pin. A slot with no pin refuses the round and writes nothing.\n\nEach artifact class keeps exactly one OpenRouter reviewer. Four reviewers move to Codex. Declared tiers do not change.\n\nThe gate's claim command takes `--effort` and records it. A run that died may be claimed again only as the same model one effort step lower, or as the other provider at the same tier and scope. Anything else is refused and costs no attempt. After three attempts the round halts with guidance. A revert restarts a round in flight, because its attempts ledger gained a field.\n\nharvest.md states the sequence, the failover slot, the diff file and the claim form. Nine scenarios with expected answers check that a reader holding only those files reaches the right dispatch.\n\nThe criteria attack panel needs the same pins, as slice B of this work item, and it is a different skill with its own configuration file. This pull request reshaped the claim record that #774 (the read-evidence gate) adds two fields to. That pull request's gate checks that a reviewer read what it was handed, and this one only hands it over.\n\nThe round record copies each pin, and tests check that too. This pull request's own first round ran every reviewer at its pin, on two vendors, with no substitution. Both recovery failures were real bugs found in review, reproduced, and fixed with a failing-then-passing test each. A stuck round also costs coverage, because it can look finished with one reviewer never having read the change.\n\nThe written doctrine could send whoever runs a round by hand down the wrong path. Nine written situations were answered by a model given only the doctrine files, and all 27 answers, three runs each, matched the expected dispatch. A reviewer without a shell could miss the change if its diff file were missing or covered the wrong scope. Tests cover the diff file's content, an empty change and an unknown revision, and a diff git cannot compute refuses the round before anything is dispatched.",
+  "design_notes": "The earlier design routed the OpenRouter mid-tier model away from whole-document reads. That constraint had no run record behind it, and the only recorded reads of that shape on that model had finished. A constraint stated without its variables cannot be scoped or falsified, so the design no longer encodes it. A slot that names a model runs that model. The recovery sequence answers for a death when one happens, and records every attempt. During this pull request's own review that model finished 20 whole-document reads in 20.\n\nRejected: letting the dispatcher pick a fallback model freely. That hides the cost decision in a prompt and leaves no record. Rejected: a shell grant restricted by a command prefix. Both `git diff` and `git log` accept `--output`, so a prefix pattern is not read-only.\n\ncontracts.json holds eight slots by provider, tier and read scope, plus the staffing recommender and the trend checkpoint. OpenRouter reads a whole document at low effort and a diff at high. Codex frontier slots run at high and mid slots at medium. No pin names a model, because the routing table does that. Every tool grant is the Codex read-only sandbox, or a list drawn from Read, Grep and Glob. No reviewer gets a shell pattern, because `git diff --output=<path>` writes a file.\n\nThe emitter writes each diff file over that reviewer's scope for the round, so a reviewer with no shell can still read the change. Reviewers sharing a revision pair share one computed diff. Each reviewer entry in the round record gains effort and tools copied from its pin. A slot with no pin refuses the round and writes nothing.\n\nEach artifact class keeps exactly one OpenRouter reviewer. Four reviewers move to Codex. Declared tiers do not change.\n\nThe gate's claim command takes `--effort` and records it. A run that died may be claimed again only as the same model one effort step lower, or as the other provider at the same tier and scope. Anything else is refused and costs no attempt. After three attempts the round halts with guidance. A revert restarts a round in flight, because its attempts ledger gained a field.\n\nharvest.md states the sequence, the failover slot, the diff file and the claim form. Nine scenarios with expected answers check that a reader holding only those files reaches the right dispatch.\n\nThe criteria attack panel needs the same pins, as slice B of this work item, and it is a different skill with its own configuration file.\n\nThe round record copies each pin, and tests check that too. This pull request's own first round ran every reviewer at its pin, on two vendors, with no substitution. Both recovery failures were real bugs found in review, reproduced, and fixed with a failing-then-passing test each. A stuck round also costs coverage, because it can look finished with one reviewer never having read the change.\n\nThe written doctrine could send whoever runs a round by hand down the wrong path. Nine written situations were answered by a model given only the doctrine files, and all 27 answers, three runs each, matched the expected dispatch. A reviewer without a shell could miss the change if its diff file were missing or covered the wrong scope. Tests cover the diff file's content, an empty change and an unknown revision, and a diff git cannot compute refuses the round before anything is dispatched.",
   "discovered": {
     "rows": [
       {
         "status": "not filed",
         "what": "The gate does not compare the effort a run used against its pin.",
         "reason": "No consumer asks for it yet."
+      },
+      {
+        "status": "in flight",
+        "pr": 774,
+        "what": "This pull request reshaped the claim record that the read-evidence gate adds two fields to.",
+        "reason": "That gate checks that a reviewer read what it was handed."
       },
       {
         "status": "in flight",
