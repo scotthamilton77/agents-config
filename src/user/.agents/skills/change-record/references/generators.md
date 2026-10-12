@@ -18,6 +18,8 @@ Neither takes an id on the command line. Both read the work item from `work_item
 
 Every call either one makes is a read. Neither writes to the tracker or to GitHub.
 
+Both copy titles and reasons that other people wrote. A title that holds a `<details>` fold, an HTML comment or a line that opens a `json` fence is written with that construct quoted as a code span. The reader then sees the same characters, and a generated part never fails `lint` under `machine-content`. When a span cannot quote the construct where it stands, the whole line is quoted.
+
 ## `context`
 
 `context` computes four things and writes them together.

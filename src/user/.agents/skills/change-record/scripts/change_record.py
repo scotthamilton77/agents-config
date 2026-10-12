@@ -956,14 +956,19 @@ def _commentary(record: dict[str, Any]) -> Iterator[dict[str, str]]:
                 yield _finding("commentary", path, f'"{phrase}" talks about the document; say the thing itself')
 
 
+def machine_constructs(text: str) -> list[str]:
+    """Name each construct in ``text`` that belongs in an artifact a machine reads."""
+    plain = outside_code(text)
+    found = [name for name, pattern in MACHINE_CONTENT.items() if pattern.search(plain)]
+    if holds_json_fence(text):
+        found.append("a fenced `json` block")
+    return found
+
+
 def _machine_content(record: dict[str, Any]) -> Iterator[dict[str, str]]:
     """Report each construct, anywhere in the record, that belongs in an artifact a machine reads."""
     for path, text in _strings(record):
-        plain = outside_code(text)
-        found = [name for name, pattern in MACHINE_CONTENT.items() if pattern.search(plain)]
-        if holds_json_fence(text):
-            found.append("a fenced `json` block")
-        for name in found:
+        for name in machine_constructs(text):
             message = f"this field holds {name}, which belongs in an artifact a machine reads"
             yield _finding("machine-content", path, message)
 
@@ -1161,6 +1166,49 @@ def set_generator_rows(record: dict[str, Any], generator: str, rows: list[str]) 
     record["heads_up"] = others + [opening + row for row in rows] or ([NONE] if took_one_out else [])
 
 
+# What ``inert`` quotes where it finds one outside a code span: the opening of
+# a fold with the rest of its tag, or the opening of an HTML comment with the
+# rest of the comment, as far as either runs before a backtick or the line's end.
+QUOTABLE = re.compile(r"<details\b[^>`\r\n]*>?|<!--(?:[^`\r\n]*?-->)?", re.IGNORECASE)
+
+
+def _inert_line(line: str) -> str:
+    """Return one line of text with every construct a machine reads quoted as a code span."""
+    if not machine_constructs(line):
+        return line
+    parts, at = [], 0
+    for span in [*CODE_SPAN.finditer(line), None]:
+        between = line[at : span.start() if span else len(line)]
+        parts.append(QUOTABLE.sub(lambda found: f"`{found[0]}`", between))
+        if span:
+            parts.append(span[0])
+            at = span.end()
+    quoted = "".join(parts)
+    if not machine_constructs(quoted):
+        return quoted
+    # A span cannot quote the construct where it stands. That is so for a line
+    # that opens a fence, and for a construct beside a backtick or a backslash.
+    # A span around the whole line, longer than any run of backticks in it,
+    # always can.
+    longest = max((len(run) for run in re.findall("`+", line)), default=0)
+    fence = "`" * (longest + 1)
+    return f"{fence} {line} {fence}"
+
+
+def inert(text: str) -> str:
+    """Return ``text`` with every construct a machine reads quoted as a code span, so that it stays a literal.
+
+    A generator copies titles and reasons that other people wrote. A fold, an
+    HTML comment or a line that opens a ``json`` fence would act as markup in
+    the pull request body, and the lint refuses each of them in any field. A
+    code span shows the same characters and does nothing. Text that holds no
+    such construct comes back as it was, so quoting twice changes nothing.
+    Each line is read alone, as the lint reads it.
+    """
+    pieces = re.split(f"({LINE_END.pattern})", text)
+    return "".join(piece if index % 2 else _inert_line(piece) for index, piece in enumerate(pieces))
+
+
 def run_generator(args: argparse.Namespace, fill: Callable[[dict[str, Any]], None]) -> int:
     """Run one generator over the record file ``args.record`` names, and return the exit status.
 
@@ -1276,7 +1324,7 @@ def _scope(
         naming.setdefault(closing_id(pull["title"]), pull["number"])
     rows: list[dict[str, Any]] = []
     for child in children:
-        row = {"slice": child["id"], "covers": child["title"]}
+        row = {"slice": child["id"], "covers": inert(child["title"])}
         carrier = naming.get(child["id"]) or naming.get(short_id(child["id"]))
         if child["id"] == work_item["id"]:
             row["status"] = "this PR"
@@ -1287,7 +1335,7 @@ def _scope(
         else:
             row["status"] = "open"
         rows.append(row)
-    return rows or [{"slice": work_item["id"], "covers": work_item["title"], "status": "this PR"}]
+    return rows or [{"slice": work_item["id"], "covers": inert(work_item["title"]), "status": "this PR"}]
 
 
 def _builds_on(children: list[dict[str, Any]], apart_from: int | None) -> list[dict[str, Any]]:
@@ -1311,7 +1359,7 @@ def _builds_on(children: list[dict[str, Any]], apart_from: int | None) -> list[d
     for number in sorted(numbers - {apart_from}):
         pull = tool_json(["gh", "pr", "view", str(number), "--json", "number,state,title"])
         if pull["state"] == "MERGED":
-            merged.append({"pr": number, "gloss": pull["title"]})
+            merged.append({"pr": number, "gloss": inert(pull["title"])})
     return merged
 
 
@@ -1325,7 +1373,7 @@ def _concurrent(number: int, others: list[dict[str, Any]]) -> list[dict[str, Any
     """
     own = set(pr_changed_paths(number)) if others else set()
     return [
-        {"pr": pull["number"], "gloss": pull["title"]}
+        {"pr": pull["number"], "gloss": inert(pull["title"])}
         for pull in others
         if own.intersection(pr_changed_paths(pull["number"]))
     ]
@@ -1345,7 +1393,7 @@ def fill_context(record: dict[str, Any]) -> None:
     others = [pull for pull in gh_pages(OPEN_PULLS) if pull["number"] != number]
     others.sort(key=lambda pull: pull["number"])
     fits = {
-        "ancestry": [{name: item[name] for name in ("id", "title", "type")} for item in chain],
+        "ancestry": [{"id": item["id"], "title": inert(item["title"]), "type": inert(item["type"])} for item in chain],
         "builds_on": _builds_on([child for child in children if child["id"] != chain[-1]["id"]], number),
         "concurrent": [] if number is None else _concurrent(number, others),
         "scope": _scope(chain[-1], children, others),
@@ -1380,7 +1428,8 @@ def fill_discovered(record: dict[str, Any]) -> None:
                 "to take the reason from"
             )
             raise RecordError("no-triage", message)
-        filed.append({"status": "filed", "item": item["id"], "what": item["title"], "reason": reasons[-1]})
+        row = {"status": "filed", "item": item["id"], "what": inert(item["title"]), "reason": inert(reasons[-1])}
+        filed.append(row)
     rest = [row for row in record["discovered"]["rows"] if not (isinstance(row, dict) and row["status"] == "filed")]
     if filed:
         rest = [row for row in rest if isinstance(row, dict)]

@@ -22,6 +22,7 @@ import conftest  # noqa: F401
 
 import copy
 import json
+import random
 import re
 import shlex
 import subprocess
@@ -1072,6 +1073,160 @@ class TestFilledRecord:
         filled(generator, path)
         assert path.read_bytes() == generated
         assert_passes_lint(path)
+
+
+# Text with a construct that belongs in an artifact a machine reads, and the same text with the construct quoted.
+QUOTED = {
+    "Drop the <details> fold from the body": "Drop the `<details>` fold from the body",
+    "Keep the <details open> fold": "Keep the `<details open>` fold",
+    "<DETAILS>": "`<DETAILS>`",
+    "Strip the <!-- marker --> from the body": "Strip the `<!-- marker -->` from the body",
+    "An opening <!-- with nothing to close it": "An opening `<!--` with nothing to close it",
+    "A <details> fold and a <!-- note --> together": "A `<details>` fold and a `<!-- note -->` together",
+    "One quoted `<details>` and one bare <details>": "One quoted `<details>` and one bare `<details>`",
+    "A fold <details `with` a span in its tag>": "A fold `<details ``with` a span in its tag>",
+    "A fold beside a span, <details>`here`": "A fold beside a span, `<details>``here`",
+    "Two lines.\r\n<details>\nA third.": "Two lines.\r\n`<details>`\nA third.",
+}
+
+# Text whose construct a code span cannot quote where it stands, and the same text with its line quoted whole.
+QUOTED_WHOLE = {
+    "```json": "```` ```json ````",
+    "~~~json": "` ~~~json `",
+    "> ```JSON": "```` > ```JSON ````",
+    "- ~~~~ json": "` - ~~~~ json `",
+    "An escaped \\<details> fold": "` An escaped \\<details> fold `",
+    "An open `span and a <details> fold": "`` An open `span and a <details> fold ``",
+    "Kept.\n```json\nKept.": "Kept.\n```` ```json ````\nKept.",
+}
+
+# Text that holds nothing a machine reads, or holds it only inside a code span.
+ALREADY_INERT = [
+    "",
+    "Pin effort and tools per reviewer slot",
+    "Quote `<details>` and `<!-- a comment -->` in backticks",
+    "A fence in another language is no construct:\n```python\nprint()\n```",
+    "The word details and a lone < or -- are plain text",
+    "A span that starts a line is no fence: ```json```",
+]
+
+# Pieces a hostile title could be made of. Random runs of them stand in for every text a tracker could hold.
+PIECES = [
+    "<details>", "<details open>", "<DETAILS ", "<!--", "-->", "`", "``", "```", "```json", "~~~json", "json",
+    "\\", " ", "x", "\n", "\r\n", "> ", "- ", "1. ", "|", "\u2028",
+]
+
+
+class TestInertText:
+    @pytest.mark.parametrize("text", sorted(QUOTED))
+    def test_a_fold_or_a_comment_outside_a_code_span_is_quoted_as_one(self, text: str):
+        assert change_record.inert(text) == QUOTED[text]
+
+    @pytest.mark.parametrize("text", sorted(QUOTED_WHOLE))
+    def test_a_line_whose_construct_no_span_can_quote_in_place_is_quoted_whole(self, text: str):
+        assert change_record.inert(text) == QUOTED_WHOLE[text]
+
+    @pytest.mark.parametrize("text", ALREADY_INERT)
+    def test_text_that_holds_no_construct_comes_back_as_it_was(self, text: str):
+        assert change_record.machine_constructs(text) == []
+        assert change_record.inert(text) == text
+
+    @pytest.mark.parametrize("text", sorted({**QUOTED, **QUOTED_WHOLE}))
+    def test_the_quoted_text_holds_no_construct_and_the_text_it_came_from_did(self, text: str):
+        assert change_record.machine_constructs(text)
+        assert change_record.machine_constructs(change_record.inert(text)) == []
+
+    def test_whatever_the_text_the_result_holds_no_construct_and_a_second_pass_changes_nothing(self):
+        # The same seed gives the same texts on every run, so a failure can be run again.
+        chooser = random.Random(843)
+        texts = ["".join(chooser.choices(PIECES, k=chooser.randint(1, 9))) for _ in range(4000)]
+        held = [text for text in texts if change_record.machine_constructs(text)]
+        assert len(held) > 1000
+        for text in texts:
+            once = change_record.inert(text)
+            assert change_record.machine_constructs(once) == [], repr(text)
+            assert change_record.inert(once) == once, repr(text)
+            if text not in held:
+                assert once == text, repr(text)
+
+    def test_the_lint_reports_through_the_same_reading_the_quoting_checks_itself_with(self, tmp_path: Path):
+        record = copy.deepcopy(EXAMPLE)
+        record["design_notes"] = "A fold:\n<details>\nand a fence:\n```json\n{}\n```"
+        named = change_record.machine_constructs(record["design_notes"])
+        assert named == ["a `<details>` fold", "a fenced `json` block"]
+        found = [error for error in lint(written(tmp_path, record))["errors"] if error["code"] == "machine-content"]
+        assert [error["message"].split(" holds ")[1].split(", which")[0] for error in found] == named
+
+
+# Titles and a reason as a tracker and GitHub could hold them, each with a construct a machine reads.
+FOLDED = "Fold the scope table in <details> on a long item"
+NOTED = "Carry the <!-- prgroom --> block over"
+FENCED = "```json"
+
+
+class TestGeneratedTextIsInert:
+    def fill_from_hostile_sources(self, shim_dir: Path, tmp_path: Path) -> Path:
+        """Run both generators over a tracker and a GitHub whose every title holds a construct."""
+        epic = EPIC | {"title": FOLDED}
+        done = DONE | {"title": NOTED}
+        found = FOUND[0] | {"title": FENCED, "description": triaged("out-of-scope", NOTED)}
+        answers = tracker(MILESTONE, epic, done, THIS | {"title": FOLDED}, found, discovered={WORK_ITEM: [found["id"]]})
+        routing = viewed(803, NOTED)
+        sharing = pull(850, f"{FOLDED} [9k9.418]")
+        shim(shim_dir, tmp_path, "work", answers)
+        shim(shim_dir, tmp_path, "gh", github([[sharing]], [routing], {NUMBER: OWN_PATHS, 850: SHARED}))
+        path = written(tmp_path, example())
+        filled("context", path)
+        filled("discovered", path)
+        return path
+
+    def test_a_record_filled_from_titles_that_hold_constructs_passes_lint(self, shim_dir: Path, tmp_path: Path):
+        path = self.fill_from_hostile_sources(shim_dir, tmp_path)
+        assert_passes_lint(path)
+        for _, text in change_record._strings(json.loads(path.read_text(encoding="utf-8"))):
+            assert change_record.machine_constructs(text) == []
+
+    def test_each_title_and_reason_is_written_with_its_construct_quoted(self, shim_dir: Path, tmp_path: Path):
+        record = json.loads(self.fill_from_hostile_sources(shim_dir, tmp_path).read_text(encoding="utf-8"))
+        folded, noted = change_record.inert(FOLDED), change_record.inert(NOTED)
+        assert (folded, noted) == (
+            "Fold the scope table in `<details>` on a long item", "Carry the `<!-- prgroom -->` block over"
+        )
+        fits = record["where_this_fits"]
+        assert [entry["title"] for entry in fits["ancestry"]] == ["Harness rework", folded, folded]
+        assert [row["covers"] for row in fits["scope"]] == [noted, folded, "```` ```json ````"]
+        assert fits["builds_on"] == [{"pr": 803, "gloss": noted}]
+        assert fits["concurrent"] == [{"pr": 850, "gloss": f"{folded} [9k9.418]"}]
+        assert record["discovered"]["rows"][0] == {
+            "status": "filed", "item": FOUND[0]["id"], "what": "```` ```json ````", "reason": noted,
+        }
+
+    def test_an_open_pull_request_still_names_its_item_when_its_title_holds_a_construct(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        naming = pull(850, f"{FOLDED} [9k9.409]")
+        shim(shim_dir, tmp_path, "work", tracker(*FAMILY))
+        shim(shim_dir, tmp_path, "gh", github([[naming]], [ROUTING], {NUMBER: OWN_PATHS, 850: APART}))
+        record = filled("context", written(tmp_path, example()))
+        assert scope_of(record)[2] == {
+            "slice": IN_FLIGHT["id"], "covers": IN_FLIGHT["title"], "status": "in flight", "pr": 850
+        }
+
+    def test_a_second_run_over_the_same_titles_leaves_the_record_byte_identical(self, shim_dir: Path, tmp_path: Path):
+        path = self.fill_from_hostile_sources(shim_dir, tmp_path)
+        before = path.read_bytes()
+        filled("context", path)
+        filled("discovered", path)
+        assert path.read_bytes() == before
+
+    def test_the_record_renders_with_each_quoted_title_in_its_place(self, shim_dir: Path, tmp_path: Path):
+        path = self.fill_from_hostile_sources(shim_dir, tmp_path)
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "render", "body", str(path)], capture_output=True, text=True, check=False
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "agents-config-9k9.77  Fold the scope table in `<details>` on a long item (epic)" in proc.stdout
+        assert "| agents-config-9k9.470 | filed | ```` ```json ```` | Carry the `<!-- prgroom -->` block over |" in proc.stdout
 
 
 # The record's work item in the recorded answers, and the item whose work turned another up.
