@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from collections.abc import Iterable
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -180,7 +180,7 @@ def validate_document(document: Any, staffing: Staffing | None = None) -> dict[s
     return {"valid": False, "errors": errors}
 
 
-def _unaccounted(envelope: dict[str, Any], other_envelopes: Iterable[Any]) -> list[dict[str, Any]]:
+def _unaccounted(envelope: dict[str, Any], other_envelopes: Sequence[Any]) -> list[dict[str, Any]]:
     """List the earlier mechanical findings that no prior disposition names.
 
     An earlier round is an envelope for the same claim and artifact class with a lower
@@ -217,7 +217,7 @@ def round_status(
     *,
     head_sha: str,
     merge_base: str,
-    other_envelopes: Iterable[Any] = (),
+    other_envelopes: Sequence[Any] = (),
     staffing: Staffing | None = None,
 ) -> dict[str, Any]:
     """Decide whether one review round is complete and whether it is terminal-clean.
@@ -242,6 +242,9 @@ def round_status(
     staffing record was supplied, which alone never makes a round incomplete. ``errors``
     holds the validator's errors, in the validator's shape. ``unaccounted`` lists each
     earlier mechanical finding without a prior disposition, as its ``round`` and ``id``.
+
+    An envelope the schema refuses, and a halted one, are judged no further. ``failed``
+    then holds that one reason, and ``unaccounted`` is empty whatever the ledger owes.
     """
     status: dict[str, Any] = {
         "complete": False,

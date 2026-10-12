@@ -1316,13 +1316,13 @@ class TestRoundStatus:
         doc = self.round_of(2)
         facts = {"head_sha": SHA_C, "merge_base": SHA_C, "other_envelopes": [prior],
                  "staffing": self.staffing("security", "test-adequacy")}
-        before = json.dumps([doc, prior], sort_keys=True)
+        before = json.dumps([doc, facts["other_envelopes"]], sort_keys=True)
         first = self.status(doc, **facts)
         second = self.status(doc, **facts)
         assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
         assert json.loads(json.dumps(first)) == first
         assert set(first) == set(SOUND)
-        assert json.dumps([doc, prior], sort_keys=True) == before
+        assert json.dumps([doc, facts["other_envelopes"]], sort_keys=True) == before
 
     def test_foreign_script_loads_the_validator_by_path_and_calls_the_function(self):
         """A caller outside this skill has only the file path, and that is enough."""
