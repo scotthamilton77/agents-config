@@ -1044,11 +1044,51 @@ class TestFilledRecord:
     def fill_both(self, shim_dir: Path, tmp_path: Path) -> Path:
         """Run both generators over the example record, and return the record file."""
         shim(shim_dir, tmp_path, "work", FAMILY_WITH_FOUND)
-        shim(shim_dir, tmp_path, "gh", github([[OTHER, SHARING]], [ROUTING], {NUMBER: OWN_PATHS, 850: SHARED}))
+        shim(shim_dir, tmp_path, "gh", github([[OTHER]], [ROUTING], {NUMBER: OWN_PATHS, 850: SHARED}))
         path = written(tmp_path, example())
         filled("context", path)
         filled("discovered", path)
         return path
+
+    def test_a_record_that_both_generators_filled_renders_each_generated_field_where_the_template_puts_it(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        path = self.fill_both(shim_dir, tmp_path)
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "render", "body", str(path)], capture_output=True, text=True, check=False
+        )
+        assert proc.returncode == 0, proc.stderr
+        fits = proc.stdout[proc.stdout.index("## Where this fits"):proc.stdout.index("## Risk")]
+        assert fits.splitlines()[1:6] == [
+            "agents-config-9k9  Harness rework (milestone)",
+            "agents-config-9k9.77  Every review seat is pinned as data (epic)",
+            "agents-config-9k9.408  Pin effort and tools per reviewer slot (feature)",
+            f"    this PR: {EXAMPLE['work_item']['slice']}",
+            f"Builds on: #803 ({ROUTING['title']}). Concurrent: #850 ({OTHER['title']}).",
+        ]
+        rows = [line for line in fits.splitlines() if line.startswith("| agents-config-")]
+        assert rows[:4] == [
+            f"| agents-config-9k9.401 | {DONE['title']} | done |",
+            f"| agents-config-9k9.408 | {THIS['title']} | this PR |",
+            f"| agents-config-9k9.409 | {IN_FLIGHT['title']} | in flight (#850) |",
+            f"| agents-config-9k9.410 | {WAITING['title']} | open |",
+        ]
+        found = proc.stdout[proc.stdout.index("## Discovered work"):proc.stdout.index("\n---\n")]
+        assert found.splitlines()[3:5] == [
+            f"| {row['item']} | filed | {row['what']} | {row['reason']} |" for row in FILED
+        ]
+
+    def test_a_record_with_nothing_around_it_renders_none_twice(self, shim_dir: Path, tmp_path: Path):
+        shim(shim_dir, tmp_path, "work", tracker(MILESTONE, EPIC, THIS))
+        shim(shim_dir, tmp_path, "gh", github())
+        path = written(tmp_path, example())
+        filled("context", path)
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "render", "body", str(path)], capture_output=True, text=True, check=False
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "Builds on: none. Concurrent: none.\n" in proc.stdout
+        assert f"| {WORK_ITEM} | {THIS['title']} | this PR |\n" in proc.stdout
 
     def test_a_record_that_both_generators_filled_passes_lint_with_its_stamps(self, shim_dir: Path, tmp_path: Path):
         path = self.fill_both(shim_dir, tmp_path)
@@ -1107,12 +1147,14 @@ ALREADY_INERT = [
     "Quote `<details>` and `<!-- a comment -->` in backticks",
     "A fence in another language is no construct:\n```python\nprint()\n```",
     "The word details and a lone < or -- are plain text",
+    "A tag that only starts like a fold, <details-like> or <details/>, is no construct",
     "A span that starts a line is no fence: ```json```",
 ]
 
 # Pieces a hostile title could be made of. Random runs of them stand in for every text a tracker could hold.
 PIECES = [
-    "<details>", "<details open>", "<DETAILS ", "<!--", "-->", "`", "``", "```", "```json", "~~~json", "json",
+    "<details>", "<details open>", "<DETAILS ", "<details-", "<details/>", "<!--", "-->",
+    "`", "``", "```", "```json", "~~~json", "json",
     "\\", " ", "x", "\n", "\r\n", "> ", "- ", "1. ", "|", "\u2028",
 ]
 
