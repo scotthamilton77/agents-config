@@ -55,16 +55,16 @@
 - CR-P12 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP12DryRun
 - CR-P13 | open
 - CR-P14 | open
-- CR-W1 | open
-- CR-W2 | open
-- CR-W3 | open
-- CR-W4 | open
-- CR-W5 | open
-- CR-W6 | open
+- CR-W1 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW1ExtractProse
+- CR-W2 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW2StaleAndMalformedResponses
+- CR-W3 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW3OnlyRewritableFields
+- CR-W4 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW4ProtectedValues
+- CR-W5 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW5AppliedSections
+- CR-W6 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW6SecondRun
 - CR-W7 | open
 - CR-W8 | open
-- CR-W9 | open
-- CR-W10 | open
+- CR-W9 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW9OnePassPerRevision
+- CR-W10 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW10Counts
 - CR-W11 | open
 - CR-G1 | open
 - CR-G2 | open

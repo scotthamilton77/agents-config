@@ -10,6 +10,8 @@ Run each from the skill's directory, as `uv run scripts/change_record.py` follow
 
 `publish` prints the same result on stderr when it refuses a record, and when a call fails.
 
+`extract-prose` and `apply-prose` print the same result on stderr when they refuse a record or a response.
+
 ## `init`
 
 ```bash
@@ -161,3 +163,16 @@ The first three are reads. `publish` skips step 3 when the pull request has a re
 A call that fails or cannot be run stops the run, and so does an answer that does not have the shape that call's answer has. The message quotes the call. Nothing is written to GitHub after it, and the record file stays as it was.
 
 Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.
+
+## `extract-prose` and `apply-prose`
+
+```bash
+uv run scripts/change_record.py extract-prose record.json [--output FILE]
+uv run scripts/change_record.py apply-prose record.json response.json
+```
+
+The two are the rewrite pass over the record's wording. `extract-prose` writes a request that lists each field an editor may reword, with its text and the digest of that text. `apply-prose` applies the replacements of a response to the record. It checks the whole response first, and one refused replacement leaves the record file as it was. Both only read and write files.
+
+`rewriting.md` beside this file gives the request, the response, every refusal, the values a replacement must keep, and the rule of one pass for each revision.
+
+`extract-prose` exits 0 written, 1 the record does not fit the schema, 2 unreadable, unparseable or unwritable. `apply-prose` exits 0 applied or nothing to apply, 1 refused, 2 unreadable or unparseable.
