@@ -8,6 +8,7 @@
 - A line whose slot passes through a list, written `[]`, appears once per entry of that list.
 - The lines between `{{#a.b}}` and `{{/a.b}}` appear only when the record holds a value at that path. A group the record does not hold therefore takes its heading or its fold with it. So does a group whose every value is empty, such as a blast radius with two empty diagrams.
 - A slot that stands alone on its line is a block, and its value keeps its own lines. Any other slot is set on the template's line.
+- A blank line of a template is left out where the line before it is blank. Lines that vanish between two blank lines therefore leave one blank line behind.
 - Text in parentheses around a slot is left out, parentheses included, when the record has nothing for that slot.
 
 Three slots name no record field. `${commit_message}` is the rendered commit message. `${decisions}` is the decisions block carried over from the pull request's existing body. `${record_comment_url}` is the comment the record is posted in.

@@ -64,8 +64,8 @@ ${design_notes}
 | Reviewer | Rounds | Findings | Fixed | Rejected | Deferred |
 | --- | --- | --- | --- | --- | --- |
 | ${campaign.reviewers[].reviewer} | ${campaign.reviewers[].rounds} | ${campaign.reviewers[].findings} | ${campaign.reviewers[].fixed} | ${campaign.reviewers[].rejected} | ${campaign.reviewers[].deferred} |
-{{#campaign.terminal_sha}}
 
+{{#campaign.terminal_sha}}
 Terminal-clean at ${campaign.terminal_sha}. Approval is a machine attestation of that head.
 {{/campaign.terminal_sha}}
 {{#campaign.findings}}

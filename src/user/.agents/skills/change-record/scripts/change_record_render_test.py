@@ -468,6 +468,23 @@ class TestBodyDetails:
         assert fold not in body
         assert "<details>\n\n</details>" not in body.replace("<summary></summary>", "")
 
+    @pytest.mark.parametrize(("clean", "findings"), [(True, True), (False, True), (True, False), (False, False)])
+    def test_a_blank_line_follows_the_reviewer_table_whatever_comes_after_it(self, clean: bool, findings: bool):
+        record = example()
+        if not clean:
+            record["campaign"]["terminal_sha"] = ""
+        if not findings:
+            record["campaign"]["findings"] = []
+        body = change_record.render_body(valid(record))
+        last = record["campaign"]["reviewers"][-1]
+        after = body.split(f"| {last['reviewer']} | {last['rounds']} |", 1)[1].split("\n", 1)[1]
+        sentence = f"Terminal-clean at {record['campaign']['terminal_sha']}. Approval is a machine attestation of that head.\n"
+        fold = "<details><summary>Findings by round</summary>\n"
+        expected = "\n" + (sentence if clean else "") + (fold if findings else "\n## Criteria\n" if clean else "## Criteria\n")
+        # One blank line parts the table from what follows, and no second one follows it.
+        assert after.startswith(expected), after[:160]
+        assert "\n\n\n" not in body
+
     def test_a_campaign_with_no_clean_round_and_no_finding_renders_its_table_alone(self):
         record = example()
         record["campaign"]["terminal_sha"] = ""

@@ -1204,7 +1204,9 @@ def _fill(template: str, record: dict[str, Any], bound: dict[str, Any] | None = 
 
     A line whose slot passes through a list appears once per entry, unless the
     caller bound that list to one entry. The lines between ``{{#a.b}}`` and
-    ``{{/a.b}}`` appear only when the record holds a value at that path.
+    ``{{/a.b}}`` appear only when the record holds a value at that path. A
+    blank line of the template is left out where the line before it is blank,
+    so the lines that vanish between two blank lines leave one behind.
     """
     bound = bound or {}
     lines: list[str] = []
@@ -1215,6 +1217,8 @@ def _fill(template: str, record: dict[str, Any], bound: dict[str, Any] | None = 
             open_sections.append(_holds_something(_look(record, section[2], bound)))
         elif section:
             open_sections.pop()
+        elif not line and lines and not lines[-1]:
+            continue
         elif all(open_sections):
             repeated = [
                 path for path in _Slots(line).get_identifiers()
