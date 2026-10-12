@@ -1,16 +1,14 @@
-The agent running a review round used to choose each reviewer's effort level and tool access itself, and avoided one model for whole-document reads on a belief no run record supported. The panel's configuration file now holds effort and tools for every reviewer slot, and each round records what it used. Every reviewer receives the change as a diff file, so a reviewer with no shell can still read it. A run that dies mid-reasoning follows a fixed recovery sequence: retry one effort step lower, then on the other provider, then stop the round. The panel does not yet check that a run actually used its pinned effort.
+The agent running a review round used to choose each reviewer's effort and tools itself. The panel's configuration file now holds both for every reviewer slot. Every reviewer receives the change as a diff file. A run that dies follows a fixed recovery sequence. The panel does not yet check that a run actually used its pinned effort.
 
 ## Heads-up
-- The gates ran with the system bash first on PATH, because the Homebrew bash on the author's machine hangs one hook test that the system bash passes.
-- The code reviewers' clean sweep judged commit e399db1d, and five prose-only commits followed it before the prose reviewers' sweep judged the final head.
-- The raw outputs of the 27 doctrine-reading scenarios are in a local corpus outside the repository.
-- The approving review is a bot attestation of the head commit, and no human reviewed this pull request before merge.
-- The gate records a run's pinned effort but does not verify the run used it.
+- The gates ran with the system bash first on PATH, because the Homebrew bash hangs one hook test.
+- The code reviewers last judged commit e399db1d, and five prose-only commits followed it.
+- The 27 raw answers that test the written dispatch rules are outside the repository.
 
 ## Where this fits
 agents-config-9k9  Harness rework (milestone)
 agents-config-9k9.408  review-panel routing: pin model, effort and tools per reviewer slot, as an interim cost control (feature)
-    this PR: slice A of three, under the item's 2026-10-07 restatement
+    this PR: slice A of three
 Builds on: #803 (feat(9k9.457): one multi-provider model routing table replaces the per-skill model tables). Concurrent: #777 (fix(9k9.418): a typed-code round's fixed finding that the lens located in a Markdown file names that file, not a test), #774 (feat(9k9.408): a clean lens report needs evidence its reviewer opened the target).
 <details><summary>Scope of the owning item</summary>
 
@@ -24,10 +22,8 @@ Builds on: #803 (feat(9k9.457): one multi-provider model routing table replaces 
 ## Risk
 | What could go wrong | Who or what is exposed | How we know it did not | What to do if it did |
 | --- | --- | --- | --- |
-| A reviewer is dispatched at an effort or with tools it cannot work with. | Every review round in every project with the deployed skill. | Tests check that every slot has a pin and that the round record copies it. This pull request's own first round ran every reviewer at its pin, on two vendors, with no substitution. | Edit the pin in contracts.json. Posted rounds stand. |
-| A run that dies is retried outside the sequence, or a fourth attempt is allowed and the round never stops. | Review spend, and a round that looks finished with one reviewer never having read the change. | Gate tests cover each step. Both failures were real bugs found in review, reproduced, and fixed with a failing-then-passing test each. | Revert. A round in flight restarts, because its attempts ledger gained a field. |
-| The written doctrine sends whoever runs a round by hand down the wrong path. | Any agent or human dispatching a round from the doctrine file. | Nine written situations were answered by a model given only the doctrine files. All 27 answers, three runs each, matched the expected dispatch. | Edit harvest.md. No code changes. |
-| A reviewer without a shell cannot see the change, because its diff file is missing or covers the wrong scope. | The OpenRouter reviewers, one per artifact class. | Tests cover the diff file's content, an empty change and an unknown revision. A diff git cannot compute refuses the round before anything is dispatched. | Revert. |
+| A reviewer runs at an effort or with tools it cannot work with. | Every review round that uses the deployed skill. | Tests check that every slot has a pin. | Edit the pin in contracts.json. |
+| A run that dies is retried outside the sequence, or the round never stops. | Review spend. | Gate tests cover each step. | Revert. |
 <details><summary>Blast radius</summary>
 
 ```mermaid
@@ -50,29 +46,38 @@ flowchart LR
 </details>
 
 ## Changes
-- **Pins.** contracts.json gains one pin per reviewer slot: eight slots by provider, tier and read scope, plus the staffing recommender and the trend checkpoint. OpenRouter reads a whole document at low effort and a diff at high. Codex frontier slots run at high and mid slots at medium. No pin names a model, because the routing table does that.
-- **Tool grants.** Every grant is the Codex read-only sandbox, or a list drawn from Read, Grep and Glob. No reviewer gets a shell pattern, because `git diff --output=<path>` writes a file.
-- **The change as a file.** The emitter writes one diff file beside each prompt, over that reviewer's scope for the round. Reviewers sharing a revision pair share one computed diff.
-- **Round record.** Each reviewer entry gains effort and tools copied from its pin. A slot with no pin refuses the round and writes nothing.
-- **Rosters.** Each artifact class keeps exactly one OpenRouter reviewer. Four reviewers move to Codex. Declared tiers do not change.
-- **Recovery sequence, in the gate.** The gate's claim command takes `--effort` and records it. A run that died may be claimed again only as the same model one effort step lower, or as the other provider at the same tier and scope. Anything else is refused and costs no attempt. After three attempts the round halts with guidance.
-- **Doctrine.** harvest.md states the sequence, the failover slot, the diff file and the claim form. Nine scenarios with expected answers check that a reader holding only those files reaches the right dispatch.
+- **Pins.** contracts.json pins effort and tools for every reviewer slot, and no reviewer gets a shell.
+- **The change as a file.** The emitter writes one diff file beside each prompt.
+- **Recovery sequence.** A run that died is retried one effort step lower, then on the other provider. The round halts after three attempts.
 <details><summary>Design notes</summary>
 
 The earlier design routed the OpenRouter mid-tier model away from whole-document reads. That constraint had no run record behind it, and the only recorded reads of that shape on that model had finished. A constraint stated without its variables cannot be scoped or falsified, so the design no longer encodes it. A slot that names a model runs that model. The recovery sequence answers for a death when one happens, and records every attempt. During this pull request's own review that model finished 20 whole-document reads in 20.
 
 Rejected: letting the dispatcher pick a fallback model freely. That hides the cost decision in a prompt and leaves no record. Rejected: a shell grant restricted by a command prefix. Both `git diff` and `git log` accept `--output`, so a prefix pattern is not read-only.
+
+contracts.json holds eight slots by provider, tier and read scope, plus the staffing recommender and the trend checkpoint. OpenRouter reads a whole document at low effort and a diff at high. Codex frontier slots run at high and mid slots at medium. No pin names a model, because the routing table does that. Every tool grant is the Codex read-only sandbox, or a list drawn from Read, Grep and Glob. No reviewer gets a shell pattern, because `git diff --output=<path>` writes a file.
+
+The emitter writes each diff file over that reviewer's scope for the round, so a reviewer with no shell can still read the change. Reviewers sharing a revision pair share one computed diff. Each reviewer entry in the round record gains effort and tools copied from its pin. A slot with no pin refuses the round and writes nothing.
+
+Each artifact class keeps exactly one OpenRouter reviewer. Four reviewers move to Codex. Declared tiers do not change.
+
+The gate's claim command takes `--effort` and records it. A run that died may be claimed again only as the same model one effort step lower, or as the other provider at the same tier and scope. Anything else is refused and costs no attempt. After three attempts the round halts with guidance. A revert restarts a round in flight, because its attempts ledger gained a field.
+
+harvest.md states the sequence, the failover slot, the diff file and the claim form. Nine scenarios with expected answers check that a reader holding only those files reaches the right dispatch.
+
+The criteria attack panel needs the same pins, as slice B of this work item, and it is a different skill with its own configuration file. This pull request reshaped the claim record that #774 (the read-evidence gate) adds two fields to. That pull request's gate checks that a reviewer read what it was handed, and this one only hands it over.
+
+The round record copies each pin, and tests check that too. This pull request's own first round ran every reviewer at its pin, on two vendors, with no substitution. Both recovery failures were real bugs found in review, reproduced, and fixed with a failing-then-passing test each. A stuck round also costs coverage, because it can look finished with one reviewer never having read the change.
+
+The written doctrine could send whoever runs a round by hand down the wrong path. Nine written situations were answered by a model given only the doctrine files, and all 27 answers, three runs each, matched the expected dispatch. A reviewer without a shell could miss the change if its diff file were missing or covered the wrong scope. Tests cover the diff file's content, an empty change and an unknown revision, and a diff git cannot compute refuses the round before anything is dispatched.
 </details>
 
 ## Discovered work
 | Item | Status | What it is | Why not in this PR |
 | --- | --- | --- | --- |
-|  | not filed | The criteria attack panel needs the same pins, as slice B of this work item. | It is a different skill with its own configuration file. |
-|  | in flight (#774) | This pull request reshaped the claim record that the read-evidence gate adds two fields to. | That gate checks a reviewer read what it was handed, and this pull request only hands it over. |
-|  | in flight (#777) | The panel's skill file is at its size cap, so the one sentence naming the diff file waits for that pull request. | Two pull requests editing one capped file would fight over the cap. |
-|  | not filed | The gate does not compare the effort a run used against its pin. | No consumer asks for it yet, and the pin is in the round record for a later gate to read. |
-|  | not filed | The acceptance text says a fresh native subagent reads the scenarios, and the committed reader protocol is a headless isolated process. | It is a wording defect in the criteria, recorded on the work item's notes for the next restatement. |
-|  | not filed | The verdict schema has no halt reason for a round stopped by runs that died. | It is a schema change in a shared skill with its own tests, recorded on the work item's notes. |
+|  | not filed | The gate does not compare the effort a run used against its pin. | No consumer asks for it yet. |
+|  | in flight (#777) | The skill file's sentence naming the diff file waits for that pull request. | The file is at its size cap. |
+|  | not filed | Two advisory review findings wait on the work item's notes. | Each needs a change outside this skill. |
 
 ---
 

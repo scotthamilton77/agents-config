@@ -185,6 +185,12 @@ def example() -> dict[str, Any]:
     return copy.deepcopy(EXAMPLE)
 
 
+# The path of an entry a test appends to the example's heads-up list, and of a
+# row it appends to the example's discovered work.
+APPENDED_HEADS_UP = f"/heads_up/{len(EXAMPLE['heads_up'])}"
+APPENDED_DISCOVERED = f"/discovered/rows/{len(EXAMPLE['discovered']['rows'])}"
+
+
 def slot_of(path: str) -> str:
     """Return the template slot that names the field at ``path``."""
     return re.sub(r"/\d+", "[]", path).lstrip("/").replace("/", ".")
@@ -421,7 +427,7 @@ class TestCrL2Gloss:
     def test_cr_l2_a_bare_first_use_fails_naming_the_field_and_the_id(self, bare: str, tmp_path: Path):
         record = example()
         record["heads_up"].append(f"The gate still refuses what {bare} asks for.")
-        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, bare)
+        assert_breaks(record, "bare-id", APPENDED_HEADS_UP, tmp_path, bare)
 
     @pytest.mark.parametrize("glossed", ID_SHAPES)
     def test_cr_l2_a_glossed_first_use_passes(self, glossed: str, tmp_path: Path):
@@ -479,7 +485,7 @@ class TestCrL2Gloss:
         record = example()
         record["heads_up"].append("The gate still refuses what D16 asks for, and nothing else meets D16.")
         record["changes"][0]["text"] += " D16 stays open."
-        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "D16")
+        assert_breaks(record, "bare-id", APPENDED_HEADS_UP, tmp_path, "D16")
 
     def test_cr_l2_an_id_inside_a_parenthetical_is_glossed_by_the_words_around_it(self, tmp_path: Path):
         record = example()
@@ -489,13 +495,13 @@ class TestCrL2Gloss:
     def test_cr_l2_a_parenthetical_holding_only_another_id_is_no_gloss(self, tmp_path: Path):
         record = example()
         record["heads_up"].append("The gate still refuses what #843 (#844) asks for.")
-        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "#843")
+        assert_breaks(record, "bare-id", APPENDED_HEADS_UP, tmp_path, "#843")
 
     def test_cr_l2_backticks_do_not_stand_in_for_a_gloss(self, tmp_path: Path):
         record = example()
         record["heads_up"].append("The gate still refuses what `CR-L2` asks for.")
-        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "CR-L2")
-        record["heads_up"][5] = "The gate still refuses what `CR-L2` (the three-attempt bound) asks for."
+        assert_breaks(record, "bare-id", APPENDED_HEADS_UP, tmp_path, "CR-L2")
+        record["heads_up"][-1] = "The gate still refuses what `CR-L2` (the three-attempt bound) asks for."
         assert_passes(record, tmp_path)
 
     def test_cr_l2_the_tracker_tree_introduces_the_work_item_for_the_text_below_it(self, tmp_path: Path):
@@ -556,7 +562,7 @@ class TestCrL2Gloss:
     def test_cr_l2_an_id_alone_in_closing_brackets_is_passed_over_only_in_a_title_or_subject(self, tmp_path: Path):
         record = example()
         record["heads_up"].append("The gate still refuses a fourth claim [D16]")
-        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "D16")
+        assert_breaks(record, "bare-id", APPENDED_HEADS_UP, tmp_path, "D16")
 
     def test_cr_l2_a_filed_row_is_the_trackers_text_and_introduces_its_item(self, tmp_path: Path):
         record = example()
@@ -636,7 +642,7 @@ class TestCrL5DiscoveredRows:
         record["discovered"]["rows"].append({
             "status": "filed", "what": "The gate compares used effort with the pin.", "reason": "It needs tests.",
         })
-        assert_breaks(record, "discovered-row", "/discovered/rows/6/item", tmp_path)
+        assert_breaks(record, "discovered-row", f"{APPENDED_DISCOVERED}/item", tmp_path)
 
     def test_cr_l5_a_filed_row_that_names_its_item_passes(self, tmp_path: Path):
         record = example()
@@ -2066,7 +2072,7 @@ class TestLintRules:
         record["discovered"]["rows"] = []
         _, result = lint(record, tmp_path)
         assert [(error["code"], error["path"]) for error in result["errors"]] == [
-            ("unstated-empty", "/discovered/rows"), ("bare-id", "/heads_up/5"), ("summary-length", "/summary"),
+            ("unstated-empty", "/discovered/rows"), ("bare-id", APPENDED_HEADS_UP), ("summary-length", "/summary"),
         ]
 
 
