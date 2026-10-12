@@ -44,17 +44,17 @@
 - CR-P1 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP1FirstPublish
 - CR-P2 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP2NextRevision
 - CR-P3 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP3Rerun
-- CR-P4 | open
+- CR-P4 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP4BodyChecks
 - CR-P5 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP5Newest
 - CR-P6 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP6Size
 - CR-P7 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP7OnlyTwoWrites
-- CR-P8 | open
-- CR-P9 | open
-- CR-P10 | open
+- CR-P8 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP8Merge
+- CR-P9 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP9HeadAndCampaign
+- CR-P10 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP10Race
 - CR-P11 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP11Digest
 - CR-P12 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP12DryRun
 - CR-P13 | open
-- CR-P14 | open
+- CR-P14 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP14Create
 - CR-W1 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW1ExtractProse
 - CR-W2 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW2StaleAndMalformedResponses
 - CR-W3 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW3OnlyRewritableFields

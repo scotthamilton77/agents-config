@@ -1305,6 +1305,16 @@ def of_type(kind: str) -> dict[str, Any]:
 # The call that asks GitHub for one page of pull request 843's files, without the page's number.
 FILES_PAGE = "api repos/{owner}/{repo}/pulls/843/files?per_page=100&page="
 
+# The two reads `lint --pr` makes after the files, and how a shim answers them: with a pull request that has
+# no body, and with no comment. A pull request with no record comment has no body for `lint` to check.
+PULL_READ = "api repos/{owner}/{repo}/pulls/843"
+COMMENTS_PAGE = "api repos/{owner}/{repo}/issues/843/comments?per_page=100&page=1"
+NO_BODY = {"body": None, "html_url": "https://github.com/example/repo/pull/843", "head": {"sha": "0" * 40}}
+UNPUBLISHED = (
+    "  *issues/843/comments*) printf '[]\\n' ;;\n"
+    f"  *pulls/843) printf '%s\\n' {shlex.quote(json.dumps(NO_BODY))} ;;\n"
+)
+
 
 def gh_listing(shim_dir: Path, log: Path, *paths: str, status: int = 0, later: tuple[Any, ...] = ()) -> None:
     """Put a ``gh`` on the search path that answers as GitHub lists a pull request's files, and exits ``status``.
@@ -1321,7 +1331,7 @@ def gh_listing(shim_dir: Path, log: Path, *paths: str, status: int = 0, later: t
     shim = shim_dir / "gh"
     shim.write_text(
         f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {shlex.quote(str(log))}\n"
-        f"case \"$*\" in\n{answers}  *) printf '[]\\n' ;;\nesac\nexit {status}\n",
+        f"case \"$*\" in\n{UNPUBLISHED}{answers}  *) printf '[]\\n' ;;\nesac\nexit {status}\n",
         encoding="utf-8",
     )
     shim.chmod(0o755)
@@ -1497,7 +1507,8 @@ class TestCrL10GroupsByTypeAndReach:
             ("reach", "/risk/reaches_outside_package")
         ]
         assert "2 top-level components: packages, src" in result["errors"][0]["message"]
-        assert log.read_text(encoding="utf-8").splitlines() == [FILES_PAGE + "1", FILES_PAGE + "2"]
+        made = [FILES_PAGE + "1", FILES_PAGE + "2", PULL_READ, COMMENTS_PAGE]
+        assert log.read_text(encoding="utf-8").splitlines() == made
 
     def test_cr_l10_lint_pr_passes_that_record_when_the_paths_are_one_component_and_docs(
         self, shim_dir: Path, tmp_path: Path
@@ -1554,7 +1565,7 @@ class TestCrL10GroupsByTypeAndReach:
         # The second file's name holds a byte that is no UTF-8, as git may hand one over.
         shim = shim_dir / "gh"
         shim.write_bytes(
-            b"#!/bin/sh\ncase \"$*\" in\n"
+            b"#!/bin/sh\ncase \"$*\" in\n" + UNPUBLISHED.encode("utf-8") +
             b"  *page=1) printf '[{\"filename\": \"src/gate.py\"}, {\"filename\": \"\\377dir/tool.py\"}]\\n' ;;\n"
             b"  *) printf '[]\\n' ;;\nesac\n"
         )
@@ -1572,7 +1583,8 @@ class TestCrL10GroupsByTypeAndReach:
         record = example()
         record["risk"]["reaches_outside_package"] = False
         assert findings_with(record, "reach", tmp_path, "--pr", "843") == ["/risk/reaches_outside_package"]
-        assert log.read_text(encoding="utf-8").splitlines() == [FILES_PAGE + str(page) for page in (1, 2, 3)]
+        files = [FILES_PAGE + str(page) for page in (1, 2, 3)]
+        assert log.read_text(encoding="utf-8").splitlines() == [*files, PULL_READ, COMMENTS_PAGE]
 
     def test_cr_l10_lint_pr_counts_a_renamed_file_under_its_old_path_and_its_new_one(
         self, shim_dir: Path, tmp_path: Path

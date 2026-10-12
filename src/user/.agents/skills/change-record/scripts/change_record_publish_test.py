@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["jsonschema>=4", "pytest>=8"]
 # ///
-"""Tests for the subcommand that posts a change record on its pull request and sets the body from it.
+"""Tests for the subcommands that post a change record on its pull request, check the body against it, and merge.
 
 Run: uv run change_record_publish_test.py
 """
@@ -69,11 +69,28 @@ REVIEW_COMMENTS = f"gh api {PULL_PATH}/comments?per_page=100&page=1"
 # The comparison of the base branch with the head, which `campaign` reads once it counts a verdict.
 COMPARE = f"gh api repos/{{owner}}/{{repo}}/compare/{BASE}...{HEAD}"
 
-# The last verdict recorded for the example's pull request, which is a clean
-# round with no finding, and the merge base recorded with it.
+# The eight verdicts recorded for the example's pull request, the merge base
+# recorded with them, and the head their last round cleared. The last verdict
+# is a clean round with no finding.
 RECORDED = SKILL / "evals" / "pr-843"
-VERDICT_REVIEW = json.loads((RECORDED / "reviews.json").read_text(encoding="utf-8"))[7]
+VERDICTS = json.loads((RECORDED / "reviews.json").read_text(encoding="utf-8"))[:8]
+VERDICT_REVIEW = VERDICTS[-1]
 MERGE_BASE = json.loads((RECORDED / "compare.json").read_text(encoding="utf-8"))["merge_base_commit"]["sha"]
+CLEARED = EXAMPLE["pr"]["head_sha"]
+
+# The reads of the pull request's changed paths, which `lint --pr` and `merge` make.
+FILES = f"gh api {PULL_PATH}/files?per_page=100&page="
+
+# What `publish --create` asks git and GitHub before it opens a pull request, and the call that opens one.
+BRANCH = "git branch --show-current"
+OPEN_FOR_BRANCH = "gh pr list --head a-branch --state open --json number"
+OPEN = f"gh pr create --head a-branch --title {EXAMPLE['pr']['title']} --body-file -"
+
+# The one write `merge` makes, on a pull request whose head is the commit review cleared.
+MERGE = (
+    f"gh pr merge {NUMBER} --squash --match-head-commit {CLEARED} "
+    f"--subject {EXAMPLE['commit']['subject']} --body-file -"
+)
 
 # The two markers another tool puts around the region of a body that it owns.
 OPENING = "<!-- prgroom:decisions:start -->"
@@ -89,11 +106,12 @@ DECISIONS = (
     f"{CLOSING}"
 )
 
-# The program behind both shims. It writes the call down, with whatever the
+# The program behind every shim. It writes the call down, with whatever the
 # call was sent on its standard input, then prints the answer its table holds
 # for the call. A call the table does not answer fails, and so does the call
 # whose number the table says to fail. An answer that carries a body comes back
-# with the body that was sent, as GitHub's does.
+# with the body that was sent, as GitHub's does. An answer under ``raw`` is
+# printed as it is, for a call that prints no JSON.
 REPLAY = """\
 import json
 import sys
@@ -102,7 +120,7 @@ table_path, log_path, name, *arguments = sys.argv[1:]
 with open(table_path, encoding="utf-8") as handle:
     table = json.load(handle)
 call = " ".join([name, *arguments])
-sent = sys.stdin.buffer.read().decode("utf-8") if "body=@-" in arguments else None
+sent = sys.stdin.buffer.read().decode("utf-8") if {"body=@-", "--body-file"} & set(arguments) else None
 with open(log_path, "a+", encoding="utf-8") as log:
     log.seek(0)
     earlier = sum(1 for _ in log)
@@ -114,17 +132,17 @@ if call not in table["answers"]:
 answer = table["answers"][call]
 if sent is not None and isinstance(answer, dict) and "body" in answer:
     answer["body"] = sent
-sys.stdout.write(json.dumps(answer))
+sys.stdout.write(answer["raw"] if isinstance(answer, dict) and "raw" in answer else json.dumps(answer))
 """
 
 
 def put_shims(shims: Path, state: Path, answers: dict[str, Any], fail_on: int | None = None) -> Path:
-    """Put a ``gh`` and a ``work`` on the search path that replay ``answers``, and return the log they share."""
+    """Put a ``gh``, a ``work`` and a ``git`` on the search path that replay ``answers``, and return the log they share."""
     state.mkdir()
     (state / "replay.py").write_text(REPLAY, encoding="utf-8")
     (state / "answers.json").write_text(json.dumps({"answers": answers, "fail_on": fail_on}), encoding="utf-8")
     log = state / "calls.log"
-    for name in ("gh", "work"):
+    for name in ("gh", "work", "git"):
         words = [str(state / "replay.py"), str(state / "answers.json"), str(log), name]
         shim = shims / name
         shim.write_text(f'#!/bin/sh\nexec python3 {" ".join(map(shlex.quote, words))} "$@"\n', encoding="utf-8")
@@ -141,12 +159,15 @@ def is_read(call: str) -> bool:
     """Say whether a call only reads.
 
     A ``gh api`` call reads when it names no method and sends no field,
-    because it then makes a GET request. A ``work`` call reads when it shows
-    or lists.
+    because it then makes a GET request. So does the listing of a branch's
+    pull requests. A ``work`` call reads when it shows or lists, and the one
+    ``git`` call that reads is the one that names the current branch.
     """
     tool, *words = call.split()
     if tool == "work":
         return words[:2] == ["--format", "json"] and (words[2] in ("show", "list") or words[2:4] == ["dep", "list"])
+    if call in (BRANCH, OPEN_FOR_BRANCH):
+        return True
     writing = ("-X", "--method", "-f", "-F", "--field", "--raw-field", "--input")
     return words[:1] == ["api"] and not any(word.startswith(writing) for word in words[1:])
 
@@ -156,8 +177,10 @@ def writes(calls: list[dict[str, Any]]) -> list[str]:
     return [entry["call"] for entry in calls if not is_read(entry["call"])]
 
 
-# Every sequence of writes one run of `publish` may make: none, either of the two alone, or the comment then the body.
-ALLOWED_WRITES = ([], [CREATE], [EDIT], [CREATE, EDIT])
+# Every sequence of writes one run of `publish` may make: none, either of the two alone, or the comment then the
+# body. Under `--create` one pull request may be opened first. `merge` makes one write, and `lint` makes none.
+ALLOWED_WRITES = ([], [CREATE], [EDIT], [CREATE, EDIT], [OPEN], [OPEN, CREATE], [OPEN, CREATE, EDIT])
+MERGE_WRITES = ([], [MERGE])
 
 
 def comment(comment_id: int, body: str) -> dict[str, Any]:
@@ -181,9 +204,11 @@ def marker(revision: int, digest: str, number: int = NUMBER) -> str:
     return f"<!-- change-record v1 pr={number} rev={revision} sha256={digest} -->"
 
 
-def record_comment(comment_id: int, revision: int, digest: str, number: int = NUMBER) -> dict[str, Any]:
-    """Return a record comment an earlier run left, with a fold this suite never opens."""
-    fold = f"<details><summary>Change record, revision {revision}</summary>\n\n```json\n{{}}\n```\n\n</details>\n"
+def record_comment(
+    comment_id: int, revision: int, digest: str, number: int = NUMBER, held: str = "{}"
+) -> dict[str, Any]:
+    """Return a record comment an earlier run left, whose fold holds the text ``held``."""
+    fold = f"<details><summary>Change record, revision {revision}</summary>\n\n```json\n{held}\n```\n\n</details>\n"
     return comment(comment_id, f"{marker(revision, digest, number)}\n{fold}")
 
 
@@ -203,16 +228,17 @@ def held_in(text: str) -> dict[str, Any]:
 
 
 def answers_for(
-    body: str | None = "", pages: list[list[dict[str, Any]]] | None = None, head: str = HEAD
+    body: str | None = "", pages: list[list[dict[str, Any]]] | None = None, head: str = HEAD,
+    reviews: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Return what the tracker and GitHub answer about the example's work item and its pull request.
+    """Return what git, the tracker and GitHub answer about the example's work item and its pull request.
 
     The work item has no parent and no child, nothing was discovered from it,
-    its pull request is the only open one, and no review round has run.
-    ``pages`` are the pages of the pull request's comments, and an empty page
-    follows the last of them. The second page of reviews and the comparison
-    with the base branch are answered too. Nothing asks for either until a
-    case puts a review on the first page.
+    and its pull request is the only open one. ``reviews`` are the reviews
+    posted on it, and no round has run when none is given. ``pages`` are the
+    pages of the pull request's comments, and an empty page follows the last
+    of them. The pull request changes one file. The working directory is on a
+    branch with no open pull request, and opening one gives this one.
     """
     pull = {
         "number": NUMBER, "html_url": PULL_URL, "body": body, "head": {"sha": head}, "base": {"ref": BASE},
@@ -231,10 +257,16 @@ def answers_for(
         EDGES: {"data": {"depends_on": [], "dependents": []}},
         OPEN_PULLS + "1": [{"number": NUMBER, "title": EXAMPLE["pr"]["title"]}],
         OPEN_PULLS + "2": [],
-        REVIEWS: [],
+        REVIEWS: reviews or [],
         REVIEWS.replace("&page=1", "&page=2"): [],
         REVIEW_COMMENTS: [],
         f"gh api repos/{{owner}}/{{repo}}/compare/{BASE}...{head}": {"merge_base_commit": {"sha": MERGE_BASE}},
+        FILES + "1": [{"filename": "src/panel/gate.py"}],
+        FILES + "2": [],
+        BRANCH: {"raw": "a-branch\n"},
+        OPEN_FOR_BRANCH: [],
+        OPEN: {"raw": f"{PULL_URL}\n"},
+        MERGE: {"raw": ""},
     }
     for number, page in enumerate([*(pages or []), []], start=1):
         answers[f"gh api {COMMENTS_PATH}?per_page=100&page={number}"] = page
@@ -254,24 +286,36 @@ class Prepared(NamedTuple):
     reads: list[str]
 
 
-@pytest.fixture(scope="module")
-def prepared(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Prepared]:
-    """Return the example record as the three generators leave it over the shims' answers, and the reads they made.
+def generated(root: Path, answers: dict[str, Any]) -> Prepared:
+    """Return the example record as the three generators leave it over ``answers``, and the reads they made.
 
     The generators themselves write the parts, so the record is current by
     their own account whatever they come to write.
     """
-    root = tmp_path_factory.mktemp("prepared")
     path = root / "record.json"
     path.write_text(json.dumps(EXAMPLE), encoding="utf-8")
-    log = put_shims(conftest.SHIMS, root / "state", answers_for())
+    log = put_shims(conftest.SHIMS, root / "state", answers)
     for generator in ("context", "discovered", "campaign"):
         assert change_record.main([generator, str(path)]) == 0
     for shim in conftest.SHIMS.iterdir():
         shim.unlink()
     record = json.loads(path.read_text(encoding="utf-8"))
     assert lint_clean(record)
-    yield Prepared(record, [entry["call"] for entry in logged(log)])
+    return Prepared(record, [entry["call"] for entry in logged(log)])
+
+
+@pytest.fixture(scope="module")
+def prepared(tmp_path_factory: pytest.TempPathFactory) -> Prepared:
+    """Return the record of a pull request that no review round has run on."""
+    return generated(tmp_path_factory.mktemp("prepared"), answers_for())
+
+
+@pytest.fixture(scope="module")
+def cleared(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    """Return the record of a pull request whose last review round cleared its head."""
+    record = generated(tmp_path_factory.mktemp("cleared"), answers_for(head=CLEARED, reviews=VERDICTS)).record
+    assert record["campaign"]["terminal_sha"] == CLEARED
+    return record
 
 
 @pytest.fixture
@@ -317,13 +361,15 @@ class Hub:
     def serve(
         self, body: str | None = "", pages: list[list[dict[str, Any]]] | None = None, *, head: str = HEAD,
         fail_on: int | None = None, spoiled: dict[str, Callable[[Any], Any]] | None = None,
+        reviews: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Serve the pull request with this body, these pages of comments and this head, on a log of its own.
+        """Serve the pull request with this body, these pages of comments, this head and these reviews.
 
-        The shims exit 1 on call number ``fail_on``. ``spoiled`` names a call
-        and gives what changes that call's answer.
+        Each serving has a log of its own. The shims exit 1 on call number
+        ``fail_on``. ``spoiled`` names a call and gives what changes that
+        call's answer.
         """
-        answers = answers_for(body, pages, head)
+        answers = answers_for(body, pages, head, reviews)
         for call, change in (spoiled or {}).items():
             answers[call] = change(answers[call])
         self.served += 1
@@ -337,18 +383,30 @@ class Hub:
     def record(self) -> dict[str, Any]:
         return json.loads(self.path.read_text(encoding="utf-8"))
 
-    def run(self, *argv: str) -> Ran:
-        """Run ``publish`` over the record, and check the writes the shims logged for this run.
+    def call(self, *argv: str, allowed: tuple[list[str], ...] = ([],)) -> Ran:
+        """Run the script with ``argv``, and check the writes the shims logged for this run against ``allowed``.
 
-        Every case runs the command through here, so no case passes with a
-        write in its log other than one comment created and one body set.
+        Every case runs its command through here, so no case passes with a
+        write in its log that its command may not make.
         """
         before = len(logged(self.log))
-        code = change_record.main(["publish", *argv, str(self.path)])
+        code = change_record.main(list(argv))
         out, err = self.capsys.readouterr()
         ran = Ran(code, out, err, logged(self.log)[before:])
-        assert ran.writes in ALLOWED_WRITES, ran.writes
+        assert ran.writes in allowed, ran.writes
         return ran
+
+    def run(self, *argv: str) -> Ran:
+        """Run ``publish`` over the record, which may create one comment and set one body, after opening one pull request."""
+        return self.call("publish", *argv, str(self.path), allowed=ALLOWED_WRITES)
+
+    def lint(self) -> Ran:
+        """Run ``lint --pr`` over the record, which may write nothing."""
+        return self.call("lint", "--pr", str(NUMBER), str(self.path))
+
+    def merge(self) -> Ran:
+        """Run ``merge`` on the pull request, which may make the one merge call."""
+        return self.call("merge", str(NUMBER), allowed=MERGE_WRITES)
 
     def child(self, *argv: str) -> subprocess.CompletedProcess[bytes]:
         """Run ``publish`` over the record in a child process, and return what it wrote, as bytes."""
@@ -376,11 +434,11 @@ def hub(shim_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> H
 
 @pytest.fixture(autouse=True)
 def cr_p7_every_write_of_the_case_is_the_comment_or_the_body(tmp_path: Path) -> Iterator[None]:
-    """Check, as each case ends, that every write in every log is one comment created or one body set."""
+    """Check, as each case ends, that every write in every log is one the three subcommands may make."""
     yield
     for log in sorted(tmp_path.glob("served-*/calls.log")):
         for entry in logged(log):
-            assert is_read(entry["call"]) or entry["call"] in (CREATE, EDIT), entry["call"]
+            assert is_read(entry["call"]) or entry["call"] in (CREATE, EDIT, OPEN, MERGE), entry["call"]
             assert (entry["sent"] is None) == is_read(entry["call"])
 
 
@@ -392,6 +450,13 @@ def posting(record: dict[str, Any], revision: int, head: str = HEAD) -> dict[str
 
 def new_url(comment_id: int = NEW_ID) -> str:
     return f"{PULL_URL}#issuecomment-{comment_id}"
+
+
+def left(record: dict[str, Any], revision: int = 1, head: str = HEAD, comment_id: int = NEW_ID) -> dict[str, Any]:
+    """Return what GitHub holds once ``record`` is published at ``revision``: its comment and the body that points at it."""
+    posted = posting(record, revision, head)
+    held = comment(comment_id, change_record.record_comment(posted))
+    return {"body": change_record.render_body(posted, "", held["html_url"]), "pages": [[held]]}
 
 
 class TestCrP11Digest:
@@ -505,14 +570,6 @@ class TestCrP1FirstPublish:
         # The record is one line of JSON, so a reader that takes the last fenced `json` block gets all of it.
         assert json.loads(change_record.fenced_json(posted)) == posting(current, 1)
         assert digest_of(held_in(posted)) == re.search(r"sha256=([0-9a-f]{64})", form["marker"])[1]
-
-    def test_publish_writes_the_live_head_into_the_record_and_leaves_the_gates_commit_alone(
-        self, hub: Hub, current: dict[str, Any]
-    ):
-        ran = hub.published(current)
-        assert hub.record()["record"]["head_sha"] == HEAD
-        assert held_in(ran.sent(CREATE))["record"]["head_sha"] == HEAD
-        assert hub.record()["pr"]["head_sha"] == EXAMPLE["pr"]["head_sha"] != HEAD
 
     def test_the_body_carries_the_decisions_block_of_the_body_it_replaces_byte_for_byte(
         self, hub: Hub, current: dict[str, Any]
@@ -690,19 +747,6 @@ class TestCrP5Newest:
             f"gh api {COMMENTS_PATH}?per_page=100&page={number}" for number in (1, 2, 3, 4)
         ]
         assert hub.record()["record"]["comment_id"] == 6000000009
-
-    @pytest.mark.parametrize("listed_first", [True, False], ids=["higher-id-first", "higher-id-last"])
-    def test_cr_p10_of_two_record_comments_at_one_revision_the_higher_id_is_the_newest(
-        self, listed_first: bool, hub: Hub, current: dict[str, Any]
-    ):
-        winner = record_comment(6000000008, 2, digest_of(current))
-        both = [winner, record_comment(6000000005, 2, "a" * 64)]
-        hub.serve("", [both if listed_first else both[::-1]])
-        hub.write(current)
-        ran = hub.run()
-        assert (ran.code, ran.writes) == (0, [EDIT]), ran.err
-        assert hub.record()["record"]["comment_id"] == 6000000008
-        assert f"Rendered from change record {winner['html_url']}, revision 2." in ran.sent(EDIT)
 
     def test_a_marker_that_names_another_pull_request_is_no_record_comment_of_this_one(
         self, hub: Hub, current: dict[str, Any]
@@ -1063,6 +1107,316 @@ class TestFailedCalls:
         assert ran.writes == [] and hub.path.read_bytes() == before
 
 
+def canonical(record: dict[str, Any]) -> str:
+    """Return ``record`` as the one line of JSON a record comment holds."""
+    return json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def with_fold(record: dict[str, Any], held: str) -> dict[str, Any]:
+    """Return GitHub as ``left`` gives it, with ``held`` in the fold of the record comment in place of the record."""
+    posted = posting(record, 1)
+    newest = record_comment(NEW_ID, 1, posted["record"]["digest"], held=held)
+    return {"body": change_record.render_body(posted, "", newest["html_url"]), "pages": [[newest]]}
+
+
+def behind(record: dict[str, Any]) -> dict[str, Any]:
+    """Return GitHub with revisions 1 and 2 of ``record`` posted, and the body still the render of revision 1."""
+    first, second = left(record, 1, comment_id=6000000001), left(record, 2, comment_id=6000000002)
+    return {"body": first["body"], "pages": [[*first["pages"][0], *second["pages"][0]]]}
+
+
+# Each way a body or the newest record comment can be wrong: what GitHub then holds for a record, the code
+# `lint --pr` reports, and a word of the reason it gives.
+WRONG: dict[str, tuple[Callable[[dict[str, Any]], dict[str, Any]], str, str]] = {
+    "lower-revision": (behind, "stale-pointer", "revision 1"),
+    "hand-edited": (lambda record: {**left(record), "body": left(record)["body"] + "\nA line added by hand.\n"},
+                    "stale-body", "not the render"),
+    "fold-not-json": (lambda record: with_fold(record, "{not json"), "record-comment", "JSON"),
+    "fold-off-schema": (lambda record: with_fold(record, canonical({**posting(record, 1), "summary": 7})),
+                        "record-comment", "schema at /summary"),
+    "fold-off-digest": (lambda record: with_fold(record, canonical({**posting(record, 1), "summary": "Other words."})),
+                        "record-comment", "digest"),
+}
+
+
+class TestCrP4BodyChecks:
+    def test_cr_p4_lint_passes_a_body_that_is_the_render_of_the_newest_record_comment(
+        self, hub: Hub, current: dict[str, Any]
+    ):
+        hub.serve(**left(current))
+        hub.write(current)
+        ran = hub.lint()
+        assert (ran.code, json.loads(ran.out)) == (0, {"valid": True})
+        assert [entry["call"] for entry in ran.calls] == [FILES + "1", FILES + "2", READ_PULL, COMMENTS_1, COMMENTS_2]
+
+    @pytest.mark.parametrize("wrong", sorted(WRONG))
+    def test_cr_p4_lint_fails_naming_what_is_wrong_with_the_body_or_the_newest_record_comment(
+        self, wrong: str, hub: Hub, current: dict[str, Any]
+    ):
+        state, code, reason = WRONG[wrong]
+        hub.serve(**state(current))
+        hub.write(current)
+        ran = hub.lint()
+        (error,) = json.loads(ran.out)["errors"]
+        assert ran.code == 1 and error["code"] == code and reason in error["message"], error
+
+    def test_lint_has_nothing_to_compare_on_a_pull_request_with_no_record_comment(
+        self, hub: Hub, current: dict[str, Any]
+    ):
+        hub.serve("A body someone wrote.")
+        hub.write(current)
+        assert hub.lint().code == 0
+
+    def test_each_read_of_lint_that_fails_exits_2_naming_the_call(self, hub: Hub, current: dict[str, Any]):
+        for number, call in enumerate([FILES + "1", FILES + "2", READ_PULL, COMMENTS_1, COMMENTS_2], start=1):
+            hub.serve(**left(current), fail_on=number)
+            hub.write(current)
+            ran = hub.lint()
+            (error,) = json.loads(ran.out)["errors"]
+            assert ran.code == 2 and error["code"] == "gh-failed" and f"`{call}` exited 1" in error["message"]
+
+
+class TestCrP10Race:
+    @pytest.mark.parametrize("listed_first", [True, False], ids=["higher-id-first", "higher-id-last"])
+    def test_cr_p10_of_two_record_comments_at_one_revision_the_higher_id_is_the_newest(
+        self, listed_first: bool, hub: Hub, current: dict[str, Any]
+    ):
+        winner = record_comment(6000000008, 2, digest_of(current))
+        both = [winner, record_comment(6000000005, 2, "a" * 64)]
+        hub.serve("", [both if listed_first else both[::-1]])
+        hub.write(current)
+        ran = hub.run()
+        assert (ran.code, ran.writes) == (0, [EDIT]), ran.err
+        assert hub.record()["record"]["comment_id"] == 6000000008
+        assert f"Rendered from change record {winner['html_url']}, revision 2." in ran.sent(EDIT)
+
+    @pytest.mark.parametrize("names_the_newest", [True, False], ids=["the-newest", "the-other"])
+    def test_cr_p10_of_two_comments_at_one_revision_lint_takes_only_a_body_that_points_at_the_higher_id(
+        self, names_the_newest: bool, hub: Hub, current: dict[str, Any]
+    ):
+        newest = left(current, 2, comment_id=6000000008)["pages"][0][0]
+        other = record_comment(6000000005, 2, "a" * 64)
+        named = newest if names_the_newest else other
+        hub.serve(change_record.render_body(posting(current, 2), "", named["html_url"]), [[newest, other]])
+        hub.write(current)
+        ran = hub.lint()
+        assert ran.code == (0 if names_the_newest else 1)
+        if not names_the_newest:
+            (error,) = json.loads(ran.out)["errors"]
+            assert error["code"] == "stale-pointer"
+            assert other["html_url"] in error["message"] and newest["html_url"] in error["message"]
+
+
+def reviewed(record: dict[str, Any], **changed: Any) -> dict[str, Any]:
+    """Return GitHub with ``record`` published at the head review cleared, and the eight recorded verdicts posted."""
+    return {**left(record, head=CLEARED), "head": CLEARED, "reviews": VERDICTS, **changed}
+
+
+def halted(record: dict[str, Any]) -> dict[str, Any]:
+    """Return ``record`` as `campaign` leaves it when the latest round did not end the campaign clean."""
+    record = copy.deepcopy(record)
+    record["campaign"]["terminal_sha"] = ""
+    return change_record.stamp_generated(record)
+
+
+def blocking(review: dict[str, Any]) -> dict[str, Any]:
+    """Return ``review`` posted again as the next round, at the same head, with a finding that blocks."""
+    before, text, after = re.fullmatch(r"(.*\n`{3,}json\n)(.*)(\n`{3,}\n.*)", review["body"], re.DOTALL).groups()
+    envelope = json.loads(text)
+    lens = envelope["lenses"][0]["lens"]
+    envelope["round"] += 1
+    envelope["lenses"][0]["verdict"] = envelope["verdict"] = "findings"
+    envelope["findings"] = [{
+        "id": f"{lens}.r{envelope['round']}.f1", "lens": lens, "type": "mechanical",
+        "ac": "the two tables agree", "claim": "The two tables disagree on one pin.",
+        "evidence": "The gate reads one value and the reference gives another.",
+    }]
+    return {**review, "id": review["id"] + 1, "body": before + json.dumps(envelope, indent=2) + after}
+
+
+def two_components(cleared: dict[str, Any]) -> dict[str, Any]:
+    """Return GitHub with a record that says the change stays in its package, on a pull request that changes two."""
+    record = {**cleared, "risk": {**cleared["risk"], "reaches_outside_package": False}}
+    widened = {FILES + "1": lambda page: [*page, {"filename": "packages/tool/cli.py"}]}
+    return reviewed(record, spoiled=widened)
+
+
+# Each reason `merge` refuses for, by the code it reports: what GitHub then holds, given the record review
+# cleared and the record no round ran on, and whether `merge` got as far as reading the changed paths.
+State = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+REFUSED: dict[str, tuple[State, bool]] = {
+    "no-record-comment": (lambda cleared, current: {"body": "A body someone wrote.", "head": CLEARED}, False),
+    "summary-length": (lambda cleared, current: reviewed({**cleared, "summary": "One sentence is too few."}), False),
+    "stale-body": (lambda cleared, current: reviewed(cleared, body="A body someone wrote."), False),
+    "reach": (lambda cleared, current: two_components(cleared), True),
+    "empty-campaign": (lambda cleared, current: left(current), False),
+    "not-terminal-clean": (lambda cleared, current: reviewed(halted(cleared)), False),
+    # The head moved on after the record was published.
+    "head-moved": (lambda cleared, current: reviewed(cleared, head=HEAD), False),
+    # The record was published again at the new head, and its campaign still names the head review cleared.
+    "head-not-cleared": (lambda cleared, current: {**left(cleared), "reviews": VERDICTS}, False),
+    # A round with a blocking finding was posted after the record, at the same head.
+    "stale-campaign": (lambda cleared, current: reviewed(cleared, reviews=[*VERDICTS, blocking(VERDICTS[-1])]), True),
+}
+
+
+# The reasons that are a missing record comment or a failure of what `lint --pr` checks.
+LINT_OR_NO_COMMENT = ["no-record-comment", "summary-length", "stale-body", "reach"]
+
+
+def assert_refused(hub: Hub, reason: str, cleared: dict[str, Any], current: dict[str, Any]) -> None:
+    """Serve what ``reason`` names, run ``merge``, and check that it refuses for that reason alone and merges nothing."""
+    state, reads_the_paths = REFUSED[reason]
+    hub.serve(**state(cleared, current))
+    ran = hub.merge()
+    assert ran.code == 1 and [error["code"] for error in ran.errors] == [reason], ran.err
+    assert ran.writes == [] and ran.out == ""
+    assert any(entry["call"].startswith(FILES) for entry in ran.calls) == reads_the_paths
+
+
+class TestCrP8Merge:
+    def test_cr_p8_merge_squashes_that_head_with_the_message_the_newest_record_comment_renders(
+        self, hub: Hub, cleared: dict[str, Any]
+    ):
+        # No record file is written, so the message can only come from the comment.
+        hub.serve(**reviewed(cleared))
+        ran = hub.merge()
+        assert ran.code == 0, ran.err
+        calls = [entry["call"] for entry in ran.calls]
+        assert calls[-1] == MERGE and all(map(is_read, calls[:-1]))
+        message = change_record.render_commit_message(posting(cleared, 1, CLEARED))
+        assert f"{EXAMPLE['commit']['subject']}\n\n{ran.sent(MERGE)}" == message
+        assert ran.out == f"merged pull request {NUMBER} at {CLEARED}\n"
+
+    @pytest.mark.parametrize("reason", LINT_OR_NO_COMMENT)
+    def test_cr_p8_merge_refuses_before_the_merge_call_naming_the_reason(
+        self, reason: str, hub: Hub, cleared: dict[str, Any], current: dict[str, Any]
+    ):
+        assert_refused(hub, reason, cleared, current)
+
+    def test_each_call_of_a_merge_that_fails_stops_it_naming_the_call(self, hub: Hub, cleared: dict[str, Any]):
+        hub.serve(**reviewed(cleared))
+        calls = [entry["call"] for entry in hub.merge().calls]
+        for number, call in enumerate(calls, start=1):
+            hub.serve(**reviewed(cleared), fail_on=number)
+            ran = hub.merge()
+            assert ran.code == 2 and f"`{call}` exited 1" in ran.errors[0]["message"], call
+            assert ran.writes == ([MERGE] if call == MERGE else [])
+
+
+class TestCrP9HeadAndCampaign:
+    def test_cr_p9_publish_writes_the_live_head_into_the_record_and_leaves_the_gates_commit_alone(
+        self, hub: Hub, current: dict[str, Any]
+    ):
+        ran = hub.published(current)
+        assert hub.record()["record"]["head_sha"] == HEAD
+        assert held_in(ran.sent(CREATE))["record"]["head_sha"] == HEAD
+        assert hub.record()["pr"]["head_sha"] == EXAMPLE["pr"]["head_sha"] != HEAD
+
+    @pytest.mark.parametrize("reason", sorted(set(REFUSED) - set(LINT_OR_NO_COMMENT)))
+    def test_cr_p9_merge_refuses_before_the_merge_call_naming_the_reason(
+        self, reason: str, hub: Hub, cleared: dict[str, Any], current: dict[str, Any]
+    ):
+        assert_refused(hub, reason, cleared, current)
+
+
+@pytest.fixture
+def unopened() -> dict[str, Any]:
+    """Return the example record as an author leaves one before its pull request exists: no number, no generated part."""
+    record = copy.deepcopy({name: group for name, group in EXAMPLE.items() if name not in ("where_this_fits", "campaign")})
+    record["pr"]["number"] = None
+    assert lint_clean(record)
+    return record
+
+
+def published(current: dict[str, Any]) -> dict[str, Any]:
+    """Return the record file a first publish of ``current`` leaves."""
+    return {**current, "record": {**posting(current, 1)["record"], "comment_id": NEW_ID}}
+
+
+class TestCrP14Create:
+    def test_cr_p14_create_opens_the_pull_request_then_fills_and_publishes_the_record(
+        self, hub: Hub, unopened: dict[str, Any], current: dict[str, Any], prepared: Prepared
+    ):
+        hub.serve()
+        hub.write(unopened)
+        ran = hub.run("--create")
+        assert ran.code == 0, ran.err
+        opening = [BRANCH, OPEN_FOR_BRANCH, OPEN]
+        assert [entry["call"] for entry in ran.calls] == [*opening, READ_PULL, COMMENTS_1, *prepared.reads, CREATE, EDIT]
+        # The call that opens it names the record's title. Its body is the render, which points at no comment yet.
+        assert ran.sent(OPEN) == change_record.render_body(unopened)
+        assert "Rendered from change record" not in ran.sent(OPEN)
+        # The record now names the pull request and holds what the three generators write for it.
+        assert held_in(ran.sent(CREATE)) == posting(current, 1)
+        assert ran.sent(EDIT) == change_record.render_body(posting(current, 1), "", new_url())
+        assert hub.record() == published(current)
+
+    def test_cr_p14_create_adopts_the_open_pull_request_of_the_branch_and_opens_no_second(
+        self, hub: Hub, unopened: dict[str, Any], current: dict[str, Any]
+    ):
+        hub.serve(spoiled={OPEN_FOR_BRANCH: lambda found: [{"number": NUMBER}]})
+        hub.write(unopened)
+        ran = hub.run("--create")
+        assert (ran.code, ran.writes) == (0, [CREATE, EDIT]), ran.err
+        assert hub.record() == published(current)
+
+    @pytest.mark.parametrize(
+        ("stops_at", "still_to_write"),
+        [pytest.param(SHOW, [CREATE, EDIT], id="a-generator-read"), pytest.param(EDIT, [EDIT], id="the-body-edit")],
+    )
+    def test_cr_p14_a_create_that_stopped_after_opening_is_finished_by_a_rerun_that_opens_nothing(
+        self, stops_at: str, still_to_write: list[str], hub: Hub, unopened: dict[str, Any], current: dict[str, Any],
+        prepared: Prepared,
+    ):
+        order = [BRANCH, OPEN_FOR_BRANCH, OPEN, READ_PULL, COMMENTS_1, *prepared.reads, CREATE, EDIT]
+        hub.serve(fail_on=order.index(stops_at) + 1)
+        hub.write(unopened)
+        stopped = hub.run("--create")
+        assert stopped.code == 2 and f"`{stops_at}` exited 1" in stopped.errors[0]["message"]
+        # GitHub holds the comment when the run got that far, and the file names the pull request either way.
+        hub.serve("", [[comment(NEW_ID, stopped.sent(CREATE))]] if stops_at == EDIT else None)
+        ran = hub.run("--create")
+        assert (ran.code, ran.writes) == (0, still_to_write), ran.err
+        assert not [entry["call"] for entry in ran.calls if entry["call"].startswith(("git ", "gh pr "))]
+        assert hub.record() == published(current)
+
+    def test_cr_p14_a_record_too_long_to_post_opens_no_pull_request(self, hub: Hub, unopened: dict[str, Any]):
+        unopened["design_notes"] += " " + "word " * 14000
+        hub.serve()
+        before = hub.write(unopened)
+        ran = hub.run("--create")
+        assert ran.code == 1 and [error["code"] for error in ran.errors] == ["too-long", "too-long"]
+        assert [entry["call"] for entry in ran.calls] == [BRANCH, OPEN_FOR_BRANCH] and hub.path.read_bytes() == before
+
+    def test_each_call_that_fails_before_the_pull_request_exists_stops_the_run(self, hub: Hub, unopened: dict[str, Any]):
+        for number, call in enumerate([BRANCH, OPEN_FOR_BRANCH, OPEN], start=1):
+            hub.serve(fail_on=number)
+            before = hub.write(unopened)
+            ran = hub.run("--create")
+            assert ran.code == 2 and f"`{call}` exited 1" in ran.errors[0]["message"]
+            assert ran.calls[-1]["call"] == call and hub.path.read_bytes() == before
+
+    @pytest.mark.parametrize(
+        ("call", "answer", "code"),
+        [
+            pytest.param(BRANCH, {"raw": "\n"}, "no-branch", id="no-branch"),
+            pytest.param(OPEN_FOR_BRANCH, {"message": "Not Found"}, "gh-failed", id="list-an-object"),
+            pytest.param(OPEN_FOR_BRANCH, [{"title": "A pull request"}], "gh-failed", id="list-no-number"),
+            pytest.param(OPEN, {"raw": "Creating a pull request\n"}, "gh-failed", id="create-no-url"),
+        ],
+    )
+    def test_an_answer_create_cannot_use_stops_the_run_at_that_call(
+        self, call: str, answer: Any, code: str, hub: Hub, unopened: dict[str, Any]
+    ):
+        hub.serve(spoiled={call: lambda _: answer})
+        before = hub.write(unopened)
+        ran = hub.run("--create")
+        assert ran.code == 2 and [error["code"] for error in ran.errors] == [code]
+        assert code == "no-branch" or f"`{call}`" in ran.errors[0]["message"]
+        assert ran.calls[-1]["call"] == call and hub.path.read_bytes() == before
+
+
 class TestCommandLine:
     def test_the_help_names_the_dry_run_and_the_exit_statuses(self, capsys: pytest.CaptureFixture[str]):
         with pytest.raises(SystemExit) as stopped:
@@ -1072,7 +1426,9 @@ class TestCommandLine:
         assert "--dry-run" in said and "write nothing" in said
         assert "Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed." in said
 
-    @pytest.mark.parametrize("argv", [("publish",), ("publish", "--create", "record.json"), ("merge", "843")])
+    @pytest.mark.parametrize(
+        "argv", [("publish",), ("publish", "--create", "--dry-run", "record.json"), ("merge",), ("merge", "a-branch")]
+    )
     def test_a_call_the_parser_cannot_read_exits_2(self, argv: tuple[str, ...], capsys: pytest.CaptureFixture[str]):
         with pytest.raises(SystemExit) as stopped:
             change_record.main(list(argv))
@@ -1080,16 +1436,12 @@ class TestCommandLine:
         assert stopped.value.code == 2
 
     def test_the_usage_at_the_top_of_the_script_gives_the_command_line(self):
-        assert "uv run change_record.py publish [--dry-run] <record.json>" in change_record.__doc__
+        assert "uv run change_record.py publish [--dry-run | --create] <record.json>" in change_record.__doc__
+        assert "uv run change_record.py merge NUMBER" in change_record.__doc__
 
 
 # Marks of the repository this skill was written in, which text shipped to other projects cannot carry.
 HOUSE_MARKS = re.compile(r"agents-config|9k9|\bCR-[A-Z]+\d|[Ss]ection \d|docs/specs")
-
-# What only a later change adds: a subcommand that merges, a flag that opens a pull request,
-# and a check of the body and the record comment under `lint --pr`.
-NOT_YET = re.compile(r"`merge`|change_record\.py merge|--create|gh pr merge|gh pr create")
-
 
 def shipped_text() -> dict[str, str]:
     """Return every text the skill ships that an agent reads, by its path under the skill."""
@@ -1102,14 +1454,17 @@ class TestPublishInTheSkillText:
         text = (REFERENCES / "commands.md").read_text(encoding="utf-8")
         return text[text.index("## `publish`") :].split("\n## ")[0]
 
-    def test_the_skill_body_has_one_entry_for_publish_and_its_command_line(self):
+    def test_the_skill_body_has_one_entry_each_for_publish_and_merge_and_says_how_a_pull_request_is_opened(self):
         body = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-        assert "change_record.py publish [--dry-run] record.json" in body
-        assert len([line for line in body.splitlines() if line.startswith("- `publish` ")]) == 1
+        assert "change_record.py publish [--dry-run | --create] record.json" in body
+        assert "change_record.py merge NUMBER" in body
+        for name in ("publish", "merge"):
+            assert len([line for line in body.splitlines() if line.startswith(f"- `{name}` ")]) == 1
+        assert "Open a pull request with `publish --create`" in body
 
     def test_the_commands_reference_describes_publish_its_dry_run_and_its_exit_statuses(self):
         section = self.section()
-        assert "scripts/change_record.py publish [--dry-run] record.json" in section
+        assert "scripts/change_record.py publish [--dry-run | --create] record.json" in section
         said = ("`--dry-run`", "working directory", "`stale-part`", "`too-long`", "65,536", "`pr.number`")
         assert [words for words in said if words not in section] == []
         assert "Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed." in section
@@ -1138,27 +1493,56 @@ class TestPublishInTheSkillText:
             written = re.sub(r"(repos/\S+)", r'"\1"', call).replace(str(NUMBER), "NUMBER").replace("&page=1", "&page=N")
             assert written.replace(f"{BASE}...{HEAD}", "BASE...HEAD") in calls, written
 
-    def test_the_lint_reference_lists_the_two_codes_publish_refuses_under(self):
+    def test_the_lint_reference_lists_the_codes_publish_and_the_body_checks_refuse_under(self):
         table = (REFERENCES / "lint-rules.md").read_text(encoding="utf-8")
         assert "| `stale-part` | Under `publish` only: " in table
         assert "| `too-long` | Under `publish` only: " in table
-
-    def test_no_shipped_text_describes_what_a_later_change_adds(self):
-        for name, text in shipped_text().items():
-            assert NOT_YET.findall(text) == [], name
+        for code in sorted({code for _, code, _ in WRONG.values()}):
+            assert f"| `{code}` | Under `--pr` and `merge` only: " in table
 
     def test_the_text_about_publish_carries_no_mark_of_this_repository(self):
         for name in ("SKILL.md", "references/commands.md", "scripts/change_record.py"):
             text = shipped_text()[name]
             assert "publish" in text and HOUSE_MARKS.findall(text) == [], name
         rows = (REFERENCES / "lint-rules.md").read_text(encoding="utf-8").splitlines()
-        added = [row for row in rows if row.startswith(("| `stale-part` ", "| `too-long` "))]
-        assert len(added) == 2 and HOUSE_MARKS.findall("\n".join(added)) == []
+        ours = ("| `stale-part` ", "| `too-long` ", "| `stale-pointer` ", "| `record-comment` ", "| `stale-body` ")
+        added = [row for row in rows if row.startswith(ours)]
+        assert len(added) == len(ours) and HOUSE_MARKS.findall("\n".join(added)) == []
 
-    def test_lint_is_not_said_to_check_the_body_or_the_record_comment(self):
+    def test_the_commands_reference_says_what_lint_checks_under_pr_and_lists_its_calls_in_order(self):
         text = (REFERENCES / "commands.md").read_text(encoding="utf-8")
         lint = text[text.index("## `lint`") :].split("\n## ")[0]
-        assert "record comment" not in lint and "pointer" not in lint and "the body" not in lint
+        for code in sorted({code for _, code, _ in WRONG.values()}):
+            assert f"- `{code}`: " in lint
+        places = [lint.index(call) for call in ("pulls/NUMBER/files?", 'pulls/NUMBER"`', "issues/NUMBER/comments?")]
+        assert places == sorted(places) and "no record comment passes" in lint
+
+    def test_the_commands_reference_describes_create_and_lists_its_calls_in_order(self):
+        section = self.section()
+        create = section[section.index("### `--create`") :].split("\n### ")[0]
+        for words in ("This is the way a pull request is opened.", "opens no second", "runs the three generators into"):
+            assert words in create, words
+        calls = ["`git branch --show-current`", "`gh pr list --head BRANCH --state open --json number`",
+                 "`gh pr create --head BRANCH --title TITLE --body-file -`"]
+        places = [section.index(call) for call in calls]
+        assert places == sorted(places)
+        assert BRANCH in calls[0] and OPEN_FOR_BRANCH.replace("a-branch", "BRANCH") in calls[1]
+        assert OPEN.replace("a-branch", "BRANCH").replace(EXAMPLE["pr"]["title"], "TITLE") in calls[2]
+
+    def test_the_commands_reference_describes_merge_its_refusals_and_its_calls_in_order(self):
+        text = (REFERENCES / "commands.md").read_text(encoding="utf-8")
+        section = text[text.index("## `merge`") :].split("\n## ")[0]
+        assert "scripts/change_record.py merge NUMBER" in section
+        # A fault in the record itself comes under whatever code `lint` gives it, and the section says so.
+        assert [code for code in REFUSED if f"`{code}`" not in section] == ["summary-length"]
+        assert "or any code of `lint`" in section
+        written = "`gh pr merge NUMBER --squash --match-head-commit HEAD --subject SUBJECT --body-file -`"
+        said = MERGE.replace(str(NUMBER), "NUMBER").replace(CLEARED, "HEAD").replace(EXAMPLE["commit"]["subject"], "SUBJECT")
+        assert said in written
+        calls = ('pulls/NUMBER"`', "issues/NUMBER/comments?", "pulls/NUMBER/files?", "every call `campaign` makes", written)
+        places = [section.index(call) for call in calls]
+        assert places == sorted(places)
+        assert "Exit 0 merged, 1 refused, 2 a call failed." in section
 
 
 if __name__ == "__main__":

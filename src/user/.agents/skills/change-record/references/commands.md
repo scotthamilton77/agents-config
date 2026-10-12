@@ -1,6 +1,6 @@
 # The script's subcommands
 
-Run each from the skill's directory, as `uv run scripts/change_record.py` followed by the subcommand. `context`, `discovered`, `campaign`, `lint --pr` and `publish` read the repository of the working directory. Run those five from inside that repository, and give the script by its path.
+Run each from the skill's directory, as `uv run scripts/change_record.py` followed by the subcommand. `context`, `discovered`, `campaign`, `lint --pr`, `publish` and `merge` read the repository of the working directory. Run those six from inside that repository, and give the script by its path.
 
 ## The result a fault is reported in
 
@@ -8,7 +8,7 @@ Run each from the skill's directory, as `uv run scripts/change_record.py` follow
 
 `render` prints the same result on stderr when it refuses a record. Its stdout holds the artifact and nothing else.
 
-`publish` prints the same result on stderr when it refuses a record, and when a call fails.
+`publish` and `merge` print the same result on stderr when they refuse, and when a call fails.
 
 `extract-prose` and `apply-prose` print the same result on stderr when they refuse a record or a response. `dispatch-prose` prints it there when a file it reads is missing.
 
@@ -64,6 +64,18 @@ uv run scripts/change_record.py lint [--pr NUMBER] record.json
 
 With `--pr`, `lint` also checks the record's reach flag against the pull request's changed paths, which it reads through `gh`.
 
+With `--pr`, `lint` then checks the pull request's body against the newest record comment, which `publish` posts. This check compares what GitHub holds and does not read the record file. A pull request with no record comment passes it, because there is nothing to compare. Otherwise one of three findings can follow:
+
+- `stale-pointer`: the body points at an older record comment. A publish that lost a race reads this way too. Two comments then carry one revision, and the body names the one with the lower id.
+- `record-comment`: the record in the newest comment's fold does not read as JSON, does not fit the schema, or does not hash to the digest in the comment's marker.
+- `stale-body`: the body is not the render of that record with the body's own decisions block. A body edited by hand reads this way.
+
+Under `--pr`, `lint` makes these calls, in order, and every one is a read:
+
+1. `gh api "repos/{owner}/{repo}/pulls/NUMBER/files?per_page=100&page=N"`, from page 1 until a page is empty
+2. `gh api "repos/{owner}/{repo}/pulls/NUMBER"`, for the body
+3. `gh api "repos/{owner}/{repo}/issues/NUMBER/comments?per_page=100&page=N"`, from page 1 until a page is empty
+
 Exit 0 valid, 1 invalid, 2 unreadable or unparseable, or `gh` failed under `--pr`.
 
 ## `render`
@@ -99,10 +111,10 @@ A field of the commit message that holds a Markdown table, a `<details>` fold, a
 ## `publish`
 
 ```bash
-uv run path/to/scripts/change_record.py publish [--dry-run] record.json
+uv run path/to/scripts/change_record.py publish [--dry-run | --create] record.json
 ```
 
-`publish` posts the record on its pull request and sets the pull request body from it. The pull request is the one `pr.number` names, in the repository of the working directory. A record whose `pr.number` is not set has no pull request to post on, so the run stops with exit 2.
+`publish` posts the record on its pull request and sets the pull request body from it. The pull request is the one `pr.number` names, in the repository of the working directory. A record whose `pr.number` is not set has no pull request to post on, so the run stops with exit 2 unless `--create` is given.
 
 `publish` checks every reason to refuse before it writes anything. It works in this order:
 
@@ -132,6 +144,16 @@ With `--dry-run`, `publish` makes every read and every check, then prints the re
 
 When the comment is already posted, the output is that comment as GitHub holds it, then the body with that comment's URL. When a run would post a new comment, the comment has no URL yet. The line that points at it then shows the pull request's URL followed by `#issuecomment-0000000000`, where a real run puts the new comment's id. The body's length is measured with those ten zeros, because a comment's id is ten digits long today.
 
+### `--create`
+
+With `--create`, `publish` opens the pull request when the record's `pr.number` is not set. This is the way a pull request is opened. It reads the current branch from git. When a pull request is already open for that branch, it takes that one and opens no second. Otherwise it runs `gh pr create` with the record's title, and with the render that has no pointing line as the body.
+
+No generated part can be current before the pull request exists, because `campaign` reads the pull request and `context` reads its paths. A first publish under `--create` therefore runs the three generators into the record, in place of the check in the third step. The record file is written as soon as the number is known, and again once the parts are filled.
+
+A run that stops after the pull request is open is finished by running `publish --create` again. That run takes the number from the file, or finds the open pull request by its branch, and goes on from there. A record that already names its pull request is published there, and nothing is opened.
+
+A record whose comment or body is already over the limit opens no pull request. The body with its pointing line is measured once the pull request exists. `--create` and `--dry-run` do not go together.
+
 ### The record comment
 
 A record comment's first line is the marker:
@@ -160,9 +182,52 @@ The body points at the comment it was rendered from, in this line:
 
 The first three are reads. `publish` skips step 3 when the pull request has a record comment, step 4 when the newest record comment holds the record's digest, and step 5 when the body is already the render.
 
+Under `--create`, on a record with no `pr.number`, these come before the five, in order:
+
+1. `git branch --show-current`
+2. `gh pr list --head BRANCH --state open --json number`
+3. `gh pr create --head BRANCH --title TITLE --body-file -`, with the body on standard input, when no pull request is open for the branch
+
 A call that fails or cannot be run stops the run, and so does an answer that does not have the shape that call's answer has. The message quotes the call. Nothing is written to GitHub after it, and the record file stays as it was.
 
 Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.
+
+## `merge`
+
+```bash
+uv run path/to/scripts/change_record.py merge NUMBER
+```
+
+`merge` squash-merges pull request `NUMBER` with the commit message that its newest record comment renders. It takes no record file, because the record on the pull request is the one that was reviewed. The merge commit's subject is the rendered subject, and its body is the rest of the rendered message, whatever the pull request's title is.
+
+`merge` decides nothing about whether a merge is allowed. It approves nothing, and it uses no administrator rights. A merge that GitHub refuses fails as any call does.
+
+`merge` checks every reason to refuse before it asks for the merge. The checks that need no further read come first, and the first one that applies is the one reported.
+
+| Code | `merge` refuses when |
+| --- | --- |
+| `no-record-comment` | The pull request has no record comment. |
+| `record-comment`, `stale-pointer`, `stale-body`, or any code of `lint` | The record in the newest comment, or the body, fails what `lint --pr` checks. |
+| `empty-campaign` | That record's campaign counts no review round. |
+| `not-terminal-clean` | The campaign names no terminal commit, because its latest round did not end it clean. |
+| `head-moved` | The pull request's head is not the commit the record was published at. |
+| `head-not-cleared` | The pull request's head is not the campaign's terminal commit. |
+| `reach` | The record's reach flag does not fit the changed paths, which are read at this point. |
+| `stale-campaign` | `campaign`, run now, gives another campaign than the record holds. A review round posted after the record was published reads this way. Run `campaign` and `publish` again. |
+
+`merge` reads the head from the pull request itself and trusts no head a record carries. It hands that head to GitHub with the merge, so a commit pushed after the checks is not merged. `merge` runs `campaign` as it runs with no `--app`.
+
+`merge` makes these calls, in order:
+
+1. `gh api "repos/{owner}/{repo}/pulls/NUMBER"`, for the body and the head
+2. `gh api "repos/{owner}/{repo}/issues/NUMBER/comments?per_page=100&page=N"`, from page 1 until a page is empty
+3. `gh api "repos/{owner}/{repo}/pulls/NUMBER/files?per_page=100&page=N"`, from page 1 until a page is empty
+4. every call `campaign` makes, which `generators.md` beside this file lists
+5. `gh pr merge NUMBER --squash --match-head-commit HEAD --subject SUBJECT --body-file -`, with the message's body on standard input
+
+The first four are reads, and the fifth is the only write. A call that fails stops the run, and the message quotes the call.
+
+Exit 0 merged, 1 refused, 2 a call failed.
 
 ## `extract-prose`, `dispatch-prose` and `apply-prose`
 

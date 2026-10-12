@@ -28,7 +28,8 @@ uv run scripts/change_record.py lint [--pr NUMBER] record.json
 uv run scripts/change_record.py render body record.json --output body.md
 uv run scripts/change_record.py render commit record.json
 uv run scripts/change_record.py render reply record.json --finding ID
-uv run scripts/change_record.py publish [--dry-run] record.json
+uv run scripts/change_record.py publish [--dry-run | --create] record.json
+uv run scripts/change_record.py merge NUMBER
 uv run scripts/change_record.py extract-prose record.json --output request.json
 uv run scripts/change_record.py dispatch-prose request.json
 uv run scripts/change_record.py apply-prose record.json response.json
@@ -38,9 +39,10 @@ uv run scripts/change_record.py apply-prose record.json response.json
 - `context` fills `where_this_fits` from the tracker and from GitHub. It writes the ancestry, the owning item's scope table, and the pull requests this one builds on and runs beside.
 - `discovered` fills the filed rows of `discovered` from the tracker, and leaves the author's rows in place.
 - `campaign` fills `campaign` from the review verdicts posted on the pull request. It names each review it skips. Run the three generators from inside the pull request's repository, giving the script by its path. `references/generators.md` says how each part is derived.
-- `lint` checks the record against the schema, then against the writing rules a program can decide. It names each fault by field and by rule. `references/lint-rules.md` lists every rule under its code and says how `lint` counts and matches. With `--pr` it also checks the record's reach flag against the pull request's changed paths.
+- `lint` checks the record against the schema, then against the writing rules a program can decide. It names each fault by field and by rule. `references/lint-rules.md` lists every rule under its code and says how `lint` counts and matches. With `--pr` it also checks the record's reach flag against the pull request's changed paths, and the pull request's body against the newest record posted on it.
 - `render` fills one artifact's template from the record. It runs `lint` first and writes nothing for a record that fails. It never calls GitHub. When the pull request already has a body, pass that body with `--existing-body`, because another tool may keep a decisions block there and `render` carries it over.
-- `publish` posts the record on its pull request as a new comment, and sets the pull request body to the render that points at that comment. It runs `lint` first and checks every reason to refuse before it writes. `--dry-run` prints the comment and the body and writes nothing. Run it from inside the pull request's repository, as the generators are run.
+- `publish` posts the record on its pull request as a new comment, and sets the pull request body to the render that points at that comment. It runs `lint` first and checks every reason to refuse before it writes. `--dry-run` prints the comment and the body and writes nothing. Run it from inside the pull request's repository, as the generators are run. Open a pull request with `publish --create`, which opens it from the record and fills the generated parts itself.
+- `merge` squash-merges a pull request with the commit message that its newest record comment renders. It refuses when that record, the body, the review campaign or the head is not what a merge needs.
 - `extract-prose`, `dispatch-prose` and `apply-prose` are the rewrite pass, which has its own section below.
 
 ## The rewrite pass
