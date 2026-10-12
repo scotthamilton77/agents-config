@@ -45,6 +45,7 @@ LIMIT = 65536
 # says the gates ran at, so a case can tell the two apart.
 PULL_URL = f"https://github.com/example/repo/pull/{NUMBER}"
 HEAD = "89abcdef" * 5
+BASE = "main"
 assert HEAD != EXAMPLE["pr"]["head_sha"]
 
 # The id GitHub gives the comment a run creates, which is ten digits long as a real one is.
@@ -64,6 +65,15 @@ EDGES = f"work --format json dep list {WORK_ITEM}"
 OPEN_PULLS = "gh api repos/{owner}/{repo}/pulls?state=open&per_page=100&page="
 REVIEWS = f"gh api {PULL_PATH}/reviews?per_page=100&page=1"
 REVIEW_COMMENTS = f"gh api {PULL_PATH}/comments?per_page=100&page=1"
+
+# The comparison of the base branch with the head, which `campaign` reads once it counts a verdict.
+COMPARE = f"gh api repos/{{owner}}/{{repo}}/compare/{BASE}...{HEAD}"
+
+# The last verdict recorded for the example's pull request, which is a clean
+# round with no finding, and the merge base recorded with it.
+RECORDED = SKILL / "evals" / "pr-843"
+VERDICT_REVIEW = json.loads((RECORDED / "reviews.json").read_text(encoding="utf-8"))[7]
+MERGE_BASE = json.loads((RECORDED / "compare.json").read_text(encoding="utf-8"))["merge_base_commit"]["sha"]
 
 # The two markers another tool puts around the region of a body that it owns.
 OPENING = "<!-- prgroom:decisions:start -->"
@@ -200,10 +210,12 @@ def answers_for(
     The work item has no parent and no child, nothing was discovered from it,
     its pull request is the only open one, and no review round has run.
     ``pages`` are the pages of the pull request's comments, and an empty page
-    follows the last of them.
+    follows the last of them. The second page of reviews and the comparison
+    with the base branch are answered too. Nothing asks for either until a
+    case puts a review on the first page.
     """
     pull = {
-        "number": NUMBER, "html_url": PULL_URL, "body": body, "head": {"sha": head},
+        "number": NUMBER, "html_url": PULL_URL, "body": body, "head": {"sha": head}, "base": {"ref": BASE},
         "user": {"login": "the-author", "type": "User"},
     }
     item = {
@@ -220,7 +232,9 @@ def answers_for(
         OPEN_PULLS + "1": [{"number": NUMBER, "title": EXAMPLE["pr"]["title"]}],
         OPEN_PULLS + "2": [],
         REVIEWS: [],
+        REVIEWS.replace("&page=1", "&page=2"): [],
         REVIEW_COMMENTS: [],
+        f"gh api repos/{{owner}}/{{repo}}/compare/{BASE}...{head}": {"merge_base_commit": {"sha": MERGE_BASE}},
     }
     for number, page in enumerate([*(pages or []), []], start=1):
         answers[f"gh api {COMMENTS_PATH}?per_page=100&page={number}"] = page
@@ -1010,6 +1024,31 @@ class TestFailedCalls:
         assert f"`{EDIT}` exited 1" in ran.errors[0]["message"]
         assert hub.path.read_bytes() == before
 
+    @pytest.mark.parametrize(
+        "spoil",
+        [pytest.param(None, id="fails"), pytest.param(lambda answer: {"merge_base_commit": {}}, id="no-merge-base")],
+    )
+    def test_the_merge_base_read_of_a_reviewed_pull_request_stops_the_run_when_it_fails_or_answers_wrongly(
+        self, spoil: Callable[[Any], Any] | None, hub: Hub, current: dict[str, Any]
+    ):
+        # `campaign` compares the base branch with the head only once it counts a verdict, so this pull request has one.
+        reviewed = {REVIEWS: lambda page: [VERDICT_REVIEW]}
+        hub.serve(spoiled=reviewed)
+        hub.write(current)
+        assert change_record.main(["campaign", str(hub.path)]) == 0
+        assert hub.record()["campaign"]["reviewers"] and lint_clean(hub.record())
+        before = hub.path.read_bytes()
+        dry = hub.run("--dry-run")
+        assert dry.code == 0 and dry.calls[-1]["call"] == COMPARE
+        if spoil is None:
+            hub.serve(spoiled=reviewed, fail_on=len(dry.calls))
+        else:
+            hub.serve(spoiled={**reviewed, COMPARE: spoil})
+        ran = hub.run()
+        assert ran.code == 2 and f"`{COMPARE}`" in ran.errors[0]["message"]
+        assert ran.writes == [] and ran.out == ""
+        assert hub.path.read_bytes() == before
+
     def test_a_generator_that_reads_more_than_its_answer_s_shape_promises_fails_the_run_and_not_the_process(
         self, hub: Hub, current: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ):
@@ -1088,15 +1127,16 @@ class TestPublishInTheSkillText:
         calls = [
             'gh api "repos/{owner}/{repo}/pulls/NUMBER"',
             'gh api "repos/{owner}/{repo}/issues/NUMBER/comments?per_page=100&page=N"',
+            'gh api "repos/{owner}/{repo}/compare/BASE...HEAD"',
             'gh api "repos/{owner}/{repo}/issues/NUMBER/comments" --method POST -F body=@-',
             'gh api "repos/{owner}/{repo}/pulls/NUMBER" --method PATCH -F body=@-',
         ]
         places = [section.index(call) for call in calls]
         assert places == sorted(places)
         # The calls the reference gives are the calls the script makes.
-        for call in (READ_PULL, COMMENTS_1, CREATE, EDIT):
+        for call in (READ_PULL, COMMENTS_1, COMPARE, CREATE, EDIT):
             written = re.sub(r"(repos/\S+)", r'"\1"', call).replace(str(NUMBER), "NUMBER").replace("&page=1", "&page=N")
-            assert written in calls, written
+            assert written.replace(f"{BASE}...{HEAD}", "BASE...HEAD") in calls, written
 
     def test_the_lint_reference_lists_the_two_codes_publish_refuses_under(self):
         table = (REFERENCES / "lint-rules.md").read_text(encoding="utf-8")

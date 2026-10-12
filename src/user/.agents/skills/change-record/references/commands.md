@@ -152,7 +152,7 @@ The body points at the comment it was rendered from, in this line:
 
 1. `gh api "repos/{owner}/{repo}/pulls/NUMBER"`, for the current body, the head commit and the pull request's URL
 2. `gh api "repos/{owner}/{repo}/issues/NUMBER/comments?per_page=100&page=N"`, from page 1 until a page is empty
-3. every call `context`, `discovered` and `campaign` make, which `generators.md` beside this file lists
+3. every call `context`, `discovered` and `campaign` make, which `generators.md` beside this file lists, ending with `gh api "repos/{owner}/{repo}/compare/BASE...HEAD"` when `campaign` counts a verdict
 4. `gh api "repos/{owner}/{repo}/issues/NUMBER/comments" --method POST -F body=@-`, with the comment on standard input
 5. `gh api "repos/{owner}/{repo}/pulls/NUMBER" --method PATCH -F body=@-`, with the body on standard input
 
