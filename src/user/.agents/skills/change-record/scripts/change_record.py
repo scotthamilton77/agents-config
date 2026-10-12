@@ -16,7 +16,8 @@ Usage: uv run change_record.py init --type TYPE --component NAME --work-item ID 
        uv run change_record.py render body <record.json> [--existing-body FILE] [--comment-url URL]
        uv run change_record.py render commit <record.json>
        uv run change_record.py render reply <record.json> --finding ID
-       uv run change_record.py publish [--dry-run] <record.json>
+       uv run change_record.py publish [--dry-run | --create] <record.json>
+       uv run change_record.py merge NUMBER
        uv run change_record.py extract-prose <record.json> [--output FILE]
        uv run change_record.py dispatch-prose <request.json>
        uv run change_record.py apply-prose <record.json> <response.json>
@@ -28,8 +29,9 @@ file cannot be written or the call is wrong.
 ``lint`` checks a record against the record schema, then against the writing
 rules a program can decide, and prints a JSON result to stdout. With ``--pr``
 it also reads that pull request's changed paths through ``gh`` and checks the
-record against them. Exit 0 valid, 1 invalid, 2 unreadable, unparseable,
-called wrongly, or ``gh`` failed.
+record against them. It then checks that the pull request's body is the render
+of the newest record posted on it. Exit 0 valid, 1 invalid, 2 unreadable,
+unparseable, called wrongly, or ``gh`` failed.
 
 ``context`` and ``discovered`` fill the parts of a record that are copied
 from the tracker and from GitHub, which they read through ``work`` and ``gh``
@@ -53,8 +55,15 @@ refused, 2 unreadable, unparseable or called wrongly.
 through ``gh``. It lints first. It then posts the record as a new comment and
 sets the pull request body to the render that points at that comment. It never
 edits a comment. With ``--dry-run`` it prints the comment and the body to
-stdout and writes nothing. A record it refuses gets the JSON result on stderr.
-Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.
+stdout and writes nothing. With ``--create`` it first opens the pull request
+when the record names none, and fills the generated parts itself. A record it
+refuses gets the JSON result on stderr. Exit 0 published, 1 refused, 2
+unreadable or unparseable, or a call failed.
+
+``merge`` squash-merges a pull request with the commit message that the newest
+record posted on it renders. It takes no record file. It refuses before the
+merge when that record, the body, the review campaign or the head is not what
+a merge needs. Exit 0 merged, 1 refused, 2 a call failed.
 
 ``extract-prose`` writes the request an editor rewrites a record's wording
 from, to stdout or to the file ``--output`` names. The request holds the
@@ -1084,6 +1093,8 @@ def _lint(args: argparse.Namespace) -> int:
     try:
         record = read_record(args.record)
         findings = lint_record(record, None if args.pr is None else pr_changed_paths(args.pr))
+        if args.pr is not None:
+            findings += body_findings(*read_published(args.pr))
     except RecordError as exc:
         unreadable = [_finding(exc.code, "", exc.message)]
         print(json.dumps({"valid": False, "errors": unreadable}, sort_keys=True))
@@ -1150,7 +1161,7 @@ def _init(args: argparse.Namespace) -> int:
 
 
 def run_tool(command: list[str], sent: str | None = None) -> str:
-    """Run ``command``, a call to the ``gh`` or the ``work`` executable, and return what it printed.
+    """Run ``command``, a call to the ``gh``, the ``work`` or the ``git`` executable, and return what it printed.
 
     A command that cannot be run, or that exits with an error, raises a
     ``RecordError`` whose message quotes the whole command, so the message
@@ -2554,26 +2565,131 @@ def record_comment(record: dict[str, Any]) -> str:
     return f"{marker}\n{summary}\n\n```json\n{written}\n```\n\n</details>\n"
 
 
-def newest_record_comment(comments: list[dict[str, Any]], number: int) -> dict[str, Any] | None:
-    """Return the newest record comment of pull request ``number`` among ``comments``, or None when there is none.
+def record_comments(comments: list[dict[str, Any]], number: int) -> list[dict[str, Any]]:
+    """Return the record comments of pull request ``number`` among ``comments``, the newest last.
 
     A record comment is one whose first line is a marker that names this pull
     request. A comment that quotes a marker further down is not one. The
     newest has the highest revision, read as a number, so 10 follows 9. Where
     two carry one revision, the newest is the one with the higher id, which
     GitHub created later. The order GitHub lists the comments in decides
-    nothing. The comment comes back with the ``revision`` and the ``digest``
-    its marker gives.
+    nothing. Each comment comes back with the ``number``, the ``revision``
+    and the ``digest`` its marker gives.
     """
     found = []
     for comment in comments:
         marker = MARKER.fullmatch(LINE_END.split(comment["body"], maxsplit=1)[0])
         if marker and int(marker["pr"]) == number:
-            found.append({**comment, "revision": int(marker["revision"]), "digest": marker["digest"]})
-    return max(found, key=lambda comment: (comment["revision"], comment["id"]), default=None)
+            named = {"number": number, "revision": int(marker["revision"]), "digest": marker["digest"]}
+            found.append({**comment, **named})
+    return sorted(found, key=lambda comment: (comment["revision"], comment["id"]))
 
 
-def publish(record: dict[str, Any], path: Path, dry_run: bool) -> str:
+def read_published(number: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Return pull request ``number`` and its record comments, the newest last, read through ``gh``."""
+    pull = tool_json(["gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{number}"], PULL_TO_PUBLISH)
+    comments = gh_pages(f"repos/{{owner}}/{{repo}}/issues/{number}/comments?per_page=100", COMMENT)
+    return pull, record_comments(comments, number)
+
+
+def held_record(comment: dict[str, Any]) -> dict[str, Any]:
+    """Return the record that the record comment ``comment`` holds, or raise ``Refusal`` when it holds none to trust.
+
+    A comment can be edited after it is posted. Its fold is therefore taken
+    only when it reads as JSON, fits the record schema, and hashes to the
+    digest that the comment's own marker gives. The record must also name the
+    pull request its marker names, because whatever reads the record goes on
+    to read that pull request's reviews.
+    """
+    why = ""
+    try:
+        record = json.loads(fenced_json(comment["body"]) or "")
+    except ValueError:
+        why = "does not read as JSON"
+    faults = [] if why else sorted(_schema_faults(record))
+    if faults:
+        why = f"does not fit the record schema at {faults[0][0] or 'its root'}: {faults[0][1]}"
+    elif not why and record_digest(record) != comment["digest"]:
+        why = "does not hash to the digest in its marker"
+    elif not why and record["pr"]["number"] != comment["number"]:
+        why = f"names pull request {record['pr']['number']}, and its marker names {comment['number']}"
+    if why:
+        raise Refusal([_finding("record-comment", "", f"the record in the fold of {comment['html_url']} {why}")])
+    return record
+
+
+def body_findings(pull: dict[str, Any], records: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Report a pull request body that is not the render of the newest of its record comments ``records``.
+
+    The render is compared first, so a body that is the render passes
+    whatever else it holds. Its decisions block is carried over from the body
+    before it and may link to any comment. A body that differs and points at
+    an older record comment is reported as that, which covers a publish that
+    lost a race at one revision. Any other difference is a body edited by
+    hand. A pull request with no record comment has nothing to compare.
+    """
+    if not records:
+        return []
+    *older, newest = records
+    body = pull["body"] or ""
+    try:
+        if render_body(held_record(newest), body, newest["html_url"]) == body:
+            return []
+    except Refusal as refusal:
+        return refusal.findings
+    named = [comment for comment in older if comment["html_url"] in body]
+    if named:
+        message = (
+            f"the body points at {named[-1]['html_url']}, revision {named[-1]['revision']}, and the newest "
+            f"record comment is {newest['html_url']}, revision {newest['revision']}; run `publish` again"
+        )
+        return [_finding("stale-pointer", "", message)]
+    message = f"the body is not the render of the record in {newest['html_url']}; run `publish` again"
+    return [_finding("stale-body", "", message)]
+
+
+def fits(**texts: str) -> None:
+    """Raise ``Refusal`` when one of ``texts`` is longer than GitHub takes, naming it by its keyword and its length."""
+    too_long = [
+        _finding(
+            "too-long", "",
+            f"the {name.replace('_', ' ')} is {len(text)} characters long, and GitHub takes at most {GITHUB_LIMIT}",
+        )
+        for name, text in texts.items()
+        if len(text) > GITHUB_LIMIT
+    ]
+    if too_long:
+        raise Refusal(too_long)
+
+
+def opened_pull(record: dict[str, Any]) -> int:
+    """Return the number of the open pull request for the current branch, opening one from ``record`` when there is none.
+
+    The branch comes from git. A pull request that is already open for it is
+    taken as it is, so a run that stopped after opening one opens no second.
+    A new one takes the record's title, and the render with no line pointing
+    at a record comment as its body.
+    """
+    branch = run_tool(["git", "branch", "--show-current"]).strip()
+    if not branch:
+        # With no branch to ask for, GitHub would list every open pull request, and the first is not this one.
+        raise RecordError("no-branch", "the working directory is on no branch, so it has no pull request to open")
+    listed = ["gh", "pr", "list", "--head", branch, "--state", "open", "--json", "number"]
+    found = tool_json(listed, listing(holding({"number": COUNT})))
+    if found:
+        return found[0]["number"]
+    body = render_body(record)
+    # The comment cannot be shorter than it is now, so a record that is already too long opens nothing.
+    draft = {**record, "record": {**record["record"], "revision": 1, "digest": record_digest(record)}}
+    fits(record_comment=record_comment(draft), pull_request_body=body)
+    create = ["gh", "pr", "create", "--head", branch, "--title", record["pr"]["title"], "--body-file", "-"]
+    url = re.search(r"/pull/(\d+)\s*\Z", run_tool(create, body))
+    if not url:
+        raise unusable(create, "it does not end with the URL of a pull request")
+    return int(url[1])
+
+
+def publish(record: dict[str, Any], path: Path, dry_run: bool, create: bool = False) -> str:
     """Post ``record`` on its pull request, write what was posted into the file at ``path``, and say what was done.
 
     Every reason to refuse is checked before anything is written. The comment
@@ -2581,16 +2697,36 @@ def publish(record: dict[str, Any], path: Path, dry_run: bool) -> str:
     A run that stops between two of those is finished by the next run, which
     finds the comment by its digest and writes only what is still missing.
     ``dry_run`` prints the comment and the body and writes nothing.
+
+    ``create`` opens the pull request first when the record names none. No
+    generated part can be current before the pull request exists. A record
+    that named none, and any first publish under ``create``, therefore has
+    the three parts filled in place of checked. The filled record is linted
+    before it is posted, because a generator can bring in what the lint
+    refuses, such as a fixed finding with no reply. The file is written as
+    soon as the number is known, and again once the parts are filled, so the
+    next run starts from whatever this one reached.
     """
+    opening = create and record["pr"]["number"] is None
+    if opening:
+        record = {**record, "pr": {**record["pr"], "number": opened_pull(record)}}
+        write_record(path, record)
     number = record["pr"]["number"]
     if number is None:
-        message = "the record names no pull request; set `pr.number` to the number of the open pull request"
+        message = "the record names no pull request; set `pr.number`, or let `--create` open one"
         raise RecordError("no-pull-request", message)
     pull_path = f"repos/{{owner}}/{{repo}}/pulls/{number}"
     comments_path = f"repos/{{owner}}/{{repo}}/issues/{number}/comments"
-    pull = tool_json(["gh", "api", pull_path], PULL_TO_PUBLISH)
-    newest = newest_record_comment(gh_pages(f"{comments_path}?per_page=100", COMMENT), number)
-    if newest is None:
+    pull, records = read_published(number)
+    newest = records[-1] if records else None
+    if opening or (create and newest is None):
+        for _, fill in GENERATORS.values():
+            record = regenerated(record, fill)
+        write_record(path, record)
+        findings = lint_record(record)
+        if findings:
+            raise Refusal(findings)
+    elif newest is None:
         # A stamp shows only that a generated part was not edited after it was
         # stamped, and a stamp can be set by hand. Before the first comment is
         # posted, each generator therefore runs over a copy of the record, and
@@ -2615,13 +2751,7 @@ def publish(record: dict[str, Any], path: Path, dry_run: bool) -> str:
     comment = newest["body"] if posted else record_comment(posting)
     existing = pull["body"] or ""
     body = render_body(posting, existing, newest["html_url"] if posted else pull["html_url"] + NEW_COMMENT)
-    too_long = [
-        _finding("too-long", "", f"{name} is {len(text)} characters long, and GitHub takes at most {GITHUB_LIMIT}")
-        for name, text in (("the record comment", comment), ("the pull request body", body))
-        if len(text) > GITHUB_LIMIT
-    ]
-    if too_long:
-        raise Refusal(too_long)
+    fits(record_comment=comment, pull_request_body=body)
     what = "({}, {})".format(
         "comment already posted" if posted else "new comment",
         "new body" if body != existing else "body already current",
@@ -2640,14 +2770,52 @@ def publish(record: dict[str, Any], path: Path, dry_run: bool) -> str:
     return f"published revision {revision} at {newest['html_url']} {what}"
 
 
-def _publish(args: argparse.Namespace) -> int:
-    """Run ``publish``: post the record and set the body, or report on stderr why nothing was written."""
+def merge(number: int) -> str:
+    """Squash-merge pull request ``number`` with the commit message its newest record comment renders, and say so.
+
+    Nothing here comes from a local file, because the record on the pull
+    request is the one that was reviewed. Every reason to refuse is checked
+    before the merge is asked for. The reasons that cost no further read come
+    first, and the first one that applies is the one reported. The head is
+    read from the pull request itself, and GitHub is told to merge that commit
+    alone, so a push that lands after the checks is not merged.
+    """
+    pull, records = read_published(number)
+    if not records:
+        raise Refusal([_finding("no-record-comment", "", f"pull request {number} has no record comment to merge from")])
+    held = held_record(records[-1])
+    findings = lint_record(held) or body_findings(pull, records)
+    if findings:
+        raise Refusal(findings)
+    head, published_at = pull["head"]["sha"], held["record"].get("head_sha")
+    campaign = held.get("campaign", {})
+    cleared = campaign.get("terminal_sha")
+    reasons = (
+        (not campaign.get("reviewers"), _finding("empty-campaign", "", "the record's campaign counts no review round")),
+        (not cleared, _finding("not-terminal-clean", "", "the record's campaign names no terminal commit")),
+        (head != published_at, _finding("head-moved", "", f"the head is {head}, and the record names {published_at}")),
+        (head != cleared, _finding("head-not-cleared", "", f"the head is {head}, and review cleared {cleared}")),
+    )
+    findings = [finding for applies, finding in reasons if applies][:1]
+    findings = findings or list(_reach(held, pr_changed_paths(number)))
+    if not findings and regenerated(held, fill_campaign) != held:
+        message = "the reviews now give another campaign than the record holds; run `campaign` and `publish` again"
+        findings = [_finding("stale-campaign", "/campaign", message)]
+    if findings:
+        raise Refusal(findings)
+    subject, _, body = render_commit_message(held).partition("\n\n")
+    squash = ["gh", "pr", "merge", str(number), "--squash", "--match-head-commit", head]
+    run_tool([*squash, "--subject", subject, "--body-file", "-"], body)
+    return f"merged pull request {number} at {head}"
+
+
+def _answering(act: Callable[[], str], quiet: bool = False) -> int:
+    """Run ``act`` and print what it says, or report on stderr why it stopped, and return the exit status.
+
+    ``quiet`` sends what it says to stderr, for a run that keeps stdout for what it prints itself.
+    """
     try:
-        record = read_record(args.record)
-        findings = lint_record(record)
-        if findings:
-            raise Refusal(findings)
-        said = publish(record, args.record, args.dry_run)
+        said = act()
     except RecordError as exc:
         unreadable = [_finding(exc.code, "", exc.message)]
         print(json.dumps({"valid": False, "errors": unreadable}, sort_keys=True), file=sys.stderr)
@@ -2655,9 +2823,22 @@ def _publish(args: argparse.Namespace) -> int:
     except Refusal as refusal:
         print(json.dumps({"valid": False, "errors": refusal.findings}, sort_keys=True), file=sys.stderr)
         return EXIT_INVALID
-    # A dry run keeps stdout for the comment and the body alone.
-    print(said, file=sys.stderr if args.dry_run else sys.stdout)
+    print(said, file=sys.stderr if quiet else sys.stdout)
     return EXIT_VALID
+
+
+def _publish(args: argparse.Namespace) -> int:
+    """Run ``publish``: post the record and set the body, or report on stderr why nothing was written."""
+
+    def act() -> str:
+        record = read_record(args.record)
+        findings = lint_record(record)
+        if findings:
+            raise Refusal(findings)
+        return publish(record, args.record, args.dry_run, args.create)
+
+    # A dry run keeps stdout for the comment and the body alone.
+    return _answering(act, quiet=args.dry_run)
 
 
 def add_publish(commands: Any) -> None:
@@ -2671,10 +2852,25 @@ def add_publish(commands: Any) -> None:
         "Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.",
     )
     parser.add_argument("record", type=Path, help="path to the record's JSON file")
-    parser.add_argument(
+    # A dry run cannot show a pull request that does not exist yet, so the two do not go together.
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--dry-run", action="store_true", help="print the comment and the body to stdout, and write nothing"
     )
+    modes.add_argument(
+        "--create", action="store_true",
+        help="open the pull request first when the record names none, and fill the generated parts",
+    )
     parser.set_defaults(run=_publish)
+    merging = commands.add_parser(
+        "merge",
+        help="squash-merge a pull request with the commit message its newest record renders",
+        description="Squash-merge a pull request with the commit message that the newest record posted on it "
+        "renders. Every reason to refuse is checked before the merge is asked for, and a refusal gets the JSON "
+        "result on stderr. Exit 0 merged, 1 refused, 2 a call failed.",
+    )
+    merging.add_argument("number", type=int, metavar="NUMBER", help="the pull request to merge")
+    merging.set_defaults(run=lambda args: _answering(lambda: merge(args.number)))
 
 
 # Rewriting. An editor may reword the fields the schema marks rewritable and
@@ -3059,7 +3255,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--pr",
         type=int,
         metavar="NUMBER",
-        help="also check the record against this pull request's changed paths, which are read through gh",
+        help="also check the record against this pull request's changed paths, and its body against the newest "
+        "record posted on it, all read through gh",
     )
     lint.set_defaults(run=_lint)
     add_generator(commands, "context", fill_context, "fill where_this_fits from the tracker and from GitHub")

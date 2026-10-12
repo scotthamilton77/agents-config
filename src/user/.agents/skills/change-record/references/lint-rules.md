@@ -15,7 +15,7 @@
 | `commit-subject` | A commit subject over 100 characters or on more than one line, with a type that is not a commit type or not the record's, with no component, a tracker id as its component or a component that is not the record's, with no colon and space after the component, with no word of wording, or without a space and the work item's short id in brackets at its end. |
 | `commit-body` | A commit body missing one of its three sections, a `why` outside two to three sentences, a `change` outside three to four, an empty `verification`, or a total outside 80 to 150 words. Also a message with no body and no `trivial` reason, and one with both. |
 | `required-group` | A group the record's type or reach calls for, missing or in the wrong form: no criteria table on a type that carries one, a criteria on a `spec` that is not one line saying whether the criteria were attacked, more than one risk row on a type that takes one, or a missing diagram when the change reaches outside its package. A `spec` that reaches outside its package holds the items it mints in place of the diagrams, and fails when it names none. |
-| `reach` | Under `--pr` only: a record that says the change stays inside its package, when the pull request's changed paths span more than one top-level component. |
+| `reach` | Under `--pr` and `merge` only: a record that says the change stays inside its package, when the pull request's changed paths span more than one top-level component. |
 | `reply` | A reply outside 40 to 90 words, with a Change line that is empty or longer than two sentences, a Deferred reply that does not name the inheriting item, a Rejected reply with no URL, or one with no host or no path, for the comment that asked for it, or a phrase of campaign status. |
 | `reply-count` | A finding the campaign marks fixed that has no reply, or more than one. |
 | `stale-stamp` | A generated part whose content its stamp does not cover, or that has no stamp. |
@@ -26,6 +26,15 @@
 | `reply-entry` | Under `render reply` only: no reply entry, or more than one, matches the finding the command names. |
 | `stale-part` | Under `publish` only: a generated part that its generator would now write differently, on a pull request with no record comment yet. |
 | `too-long` | Under `publish` only: a record comment or a pull request body longer than 65,536 characters. |
+| `stale-pointer` | Under `--pr` and `merge` only: a pull request body that points at an older record comment than the newest. |
+| `record-comment` | Under `--pr` and `merge` only: a newest record comment whose fold does not read as JSON, does not fit the schema, does not hash to its marker's digest, or names another pull request than its marker. |
+| `stale-body` | Under `--pr` and `merge` only: a pull request body that is not the render of the newest record comment. |
+| `no-record-comment` | Under `merge` only: a pull request with no record comment. |
+| `empty-campaign` | Under `merge` only: a record whose campaign counts no review round. |
+| `not-terminal-clean` | Under `merge` only: a record whose campaign names no terminal commit. |
+| `head-moved` | Under `merge` only: a pull request whose head is not the commit its record was published at. |
+| `head-not-cleared` | Under `merge` only: a pull request whose head is not its campaign's terminal commit. |
+| `stale-campaign` | Under `merge` only: a record whose campaign is no longer what `campaign` writes from the reviews. |
 | `response-schema` | Under `apply-prose` only: a response that does not fit the response schema. |
 | `stale-record` | Under `apply-prose` only: a response written against another record. |
 | `stale-section` | Under `apply-prose` only: a replacement written against another wording of its section. |
