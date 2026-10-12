@@ -468,7 +468,7 @@
         "lens": "obligation-reduction",
         "target_ac": "RET-A4",
         "objection": "A completed attack of the whole spec can pass RET-A4 while omitting the required assessment of the retention job's criteria.",
-        "reason": "Objection A's ruling fixed how an attack's scope is shown: the record names the whole spec at the commit judged and revision 3 as what was attacked, and an attack against that revision applies its rules to the job criteria within the scope D3 names; doubting that a recorded attack applied its own rules is the ground of the earlier rejected objection that a record can stand in for the review."
+        "reason": "RET-A4 fails any record that does not name, as what its attack read, the whole spec at the commit judged and revision 3 of the standard, so a passing record shows the attack read the whole spec, job criteria included, against that revision. An attack against that revision applies its rules to the job criteria within the scope D3 states: the spec's answers to Q1 to Q3, and K1 and K2. The objection's scenario is a recorded attack that did not apply its own rules, which is a record standing in for a review that did not happen; that is misconduct, and no criterion can rule it out."
       },
       {
         "lens": "set-consistency",
@@ -486,7 +486,7 @@
         "lens": "what-if",
         "target_ac": "RET-A5",
         "objection": "The criteria let through a spec whose hold-coverage answer is undecided at the placement boundary: an event written at the same moment a hold is placed is neither required to be covered nor ruled out, and no criterion can fail that gap.",
-        "reason": "This restates the instant-of-placement objection already rejected: whether an event whose write completes as a hold is placed exists is the retention job's ordering of a write against a hold, which the job criteria state and RET-A4's attack examines with its own what-if questions; this item's criteria judge whether the answers meet K2, not the job's instant-level ordering."
+        "reason": "Whether an event whose write completes at the instant a hold is placed exists when the hold is placed is the retention job's ordering of a write against a hold. That ordering belongs to the job criteria the spec states, which RET-A4's attack examines, including with its own what-if questions. This item's criteria judge whether the spec's answers meet K2, not the job's instant-level ordering of events."
       }
     ]
   },

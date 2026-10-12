@@ -8,63 +8,48 @@
         {
           "id": "O1",
           "kind": "result",
-          "statement": "Authorize the four actions according to the caller's role on the requested project.",
-          "source": "What changes: \"The project API decides each of its four actions by the caller's role on the project, as the matrix in D1 gives.\" D1: \"A viewer may read. A commenter may read and comment. An owner may do all four. Every other pairing of role and action is refused.\"",
+          "statement": "Allow actions according to the caller's role on the requested project.",
+          "source": "\u201cThe project API decides each of its four actions by the caller's role on the project\u201d; D1: \u201cA viewer may read. A commenter may read and comment. An owner may do all four.\u201d",
           "parts": [
             {
               "id": "O1.1",
-              "statement": "Allow viewer read, commenter read and comment, and all four owner actions.",
+              "statement": "Allow a viewer to read the requested project.",
               "discharged_by": [
                 "PRM-A1"
               ]
             },
             {
               "id": "O1.2",
-              "statement": "Refuse viewer comment, edit and delete, and commenter edit and delete.",
+              "statement": "Allow a commenter to read and comment on the requested project.",
               "discharged_by": [
                 "PRM-A1"
               ]
             },
             {
               "id": "O1.3",
-              "statement": "Use the caller's role on P even after the caller accesses Q with different permissions.",
+              "statement": "Allow an owner to read, comment, edit and delete the requested project.",
               "discharged_by": [
-                "PRM-A1",
-                "PRM-A3"
+                "PRM-A1"
               ]
             }
           ]
         },
         {
           "id": "O2",
-          "kind": "result",
-          "statement": "Each allowed action produces its specified effect.",
-          "source": "D1: \"An allowed read returns the project, an allowed comment adds the comment to it, an allowed edit replaces its body with the one sent, and an allowed delete removes it.\"",
+          "kind": "failure",
+          "statement": "Refuse the five disallowed pairings of the named roles and actions with the specified response.",
+          "source": "D1: \u201cEvery other pairing of role and action is refused.\u201d D2: \u201cA refused action returns HTTP 403 with the body `{\"error\": \"forbidden\"}`.\u201d",
           "parts": [
             {
               "id": "O2.1",
-              "statement": "An allowed read returns the project's title, body, comments and revision list.",
+              "statement": "A viewer's comment, edit and delete requests return HTTP 403 with the specified forbidden body.",
               "discharged_by": [
                 "PRM-A1"
               ]
             },
             {
               "id": "O2.2",
-              "statement": "An allowed comment adds the submitted comment while retaining existing comments.",
-              "discharged_by": [
-                "PRM-A1"
-              ]
-            },
-            {
-              "id": "O2.3",
-              "statement": "An allowed edit replaces the project's body with the submitted body.",
-              "discharged_by": [
-                "PRM-A1"
-              ]
-            },
-            {
-              "id": "O2.4",
-              "statement": "An allowed delete removes the project from subsequent reads by every caller.",
+              "statement": "A commenter's edit and delete requests return HTTP 403 with the specified forbidden body.",
               "discharged_by": [
                 "PRM-A1"
               ]
@@ -73,13 +58,34 @@
         },
         {
           "id": "O3",
-          "kind": "failure",
-          "statement": "A refused action by a caller with a project role returns the specified forbidden response.",
-          "source": "D2: \"A refused action returns HTTP 403 with the body {\\\"error\\\": \\\"forbidden\\\"}.\"",
+          "kind": "result",
+          "statement": "Each allowed action produces its specified effect.",
+          "source": "D1: \u201cAn allowed read returns the project, an allowed comment adds the comment to it, an allowed edit replaces its body with the one sent, and an allowed delete removes it.\u201d",
           "parts": [
             {
               "id": "O3.1",
-              "statement": "Every refused viewer or commenter action returns HTTP 403 with the body {\"error\": \"forbidden\"}.",
+              "statement": "An allowed read returns the project's title, body, comments and revision list.",
+              "discharged_by": [
+                "PRM-A1"
+              ]
+            },
+            {
+              "id": "O3.2",
+              "statement": "An allowed comment adds the submitted comment while retaining existing comments.",
+              "discharged_by": [
+                "PRM-A1"
+              ]
+            },
+            {
+              "id": "O3.3",
+              "statement": "An allowed edit replaces the project's body with the submitted body.",
+              "discharged_by": [
+                "PRM-A1"
+              ]
+            },
+            {
+              "id": "O3.4",
+              "statement": "An allowed delete removes the project.",
               "discharged_by": [
                 "PRM-A1"
               ]
@@ -89,21 +95,14 @@
         {
           "id": "O4",
           "kind": "guarantee",
-          "statement": "Refused actions preserve the project as observable through an owner's read.",
-          "source": "What changes: \"A refused action leaves the project as it was.\" D2: \"the project, as an owner reads it afterwards, is unchanged.\" D3: \"The project is unchanged.\"",
+          "statement": "A refused action preserves the project as observed through an owner's read.",
+          "source": "\u201cA refused action leaves the project as it was.\u201d D2: \u201cthe project, as an owner reads it afterwards, is unchanged.\u201d",
           "parts": [
             {
               "id": "O4.1",
-              "statement": "Refused viewer and commenter actions preserve the title, body, comments and revision list byte for byte.",
+              "statement": "Each of the five refused role-action pairings leaves the owner's read of the project's title, body, comments and revision list byte-identical.",
               "discharged_by": [
                 "PRM-A2"
-              ]
-            },
-            {
-              "id": "O4.2",
-              "statement": "Each action attempted by a caller with no role preserves the title, body, comments and revision list byte for byte.",
-              "discharged_by": [
-                "PRM-A3"
               ]
             }
           ]
@@ -111,8 +110,8 @@
         {
           "id": "O5",
           "kind": "failure",
-          "statement": "For every action, a caller with no role receives the response for a nonexistent project, with only the permitted header-value differences.",
-          "source": "D3: \"A caller with no role on the project gets, for each of the four actions, the same response a request for a project that does not exist gets, apart from the values of the Date and X-Request-Id headers, which have the same format as for a project that does not exist.\"",
+          "statement": "For every action, a caller with no role on the requested project receives the same response as for a nonexistent project, subject only to the specified header exceptions.",
+          "source": "D3: \u201cA caller with no role on the project gets, for each of the four actions, the same response a request for a project that does not exist gets, apart from the values of the `Date` and `X-Request-Id` headers, which have the same format as for a project that does not exist.\u201d",
           "parts": [
             {
               "id": "O5.1",
@@ -123,7 +122,22 @@
             },
             {
               "id": "O5.2",
-              "statement": "Date and X-Request-Id have the same formats as in the corresponding nonexistent-project response.",
+              "statement": "For all four actions, Date and X-Request-Id have the same formats as in the corresponding nonexistent-project response.",
+              "discharged_by": [
+                "PRM-A3"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "O6",
+          "kind": "guarantee",
+          "statement": "Requests from a caller with no role on the project preserve the project.",
+          "source": "D3: \u201cThe project is unchanged.\u201d",
+          "parts": [
+            {
+              "id": "O6.1",
+              "statement": "Each of the four actions attempted without a project role leaves the owner's read of the project byte-identical.",
               "discharged_by": [
                 "PRM-A3"
               ]
@@ -142,18 +156,18 @@
     "transport": "codex",
     "model": "gpt-6.1-sol",
     "effort": "high",
-    "response_id": "01a12d2f-efb7-7683-83d0-b0b3e3a5165b",
-    "started": "2026-10-11T22:57:58Z"
+    "response_id": "01a12dc1-9204-7b32-b773-121bf2530153",
+    "started": "2026-10-12T01:37:02Z"
   },
   "decision": {
     "verdict": "accept",
     "digests": {
-      "control.md": "9c9403d3a9719d867e8744e01fb4fd181743205dbfc53317d66f58cde2f999ea",
-      "defective.md": "1533cf949cb8bfdf6193c422b3a78b15ae1a9b165f4400fec9bbb4688dd40a21"
+      "control.md": "099f7684c904f56c7f5b12fd91f34a88fa7ea103dacd64b9979e2e6e4858ebe3",
+      "defective.md": "28983834a141a31e829db3c27335f2e084d222ee9856a3b7d6fb5bfdde74eaa7"
     }
   },
   "digests": {
-    "control.md": "9c9403d3a9719d867e8744e01fb4fd181743205dbfc53317d66f58cde2f999ea",
-    "defective.md": "1533cf949cb8bfdf6193c422b3a78b15ae1a9b165f4400fec9bbb4688dd40a21"
+    "control.md": "099f7684c904f56c7f5b12fd91f34a88fa7ea103dacd64b9979e2e6e4858ebe3",
+    "defective.md": "28983834a141a31e829db3c27335f2e084d222ee9856a3b7d6fb5bfdde74eaa7"
   }
 }

@@ -311,49 +311,49 @@
         "lens": "obligation-reduction",
         "target_ac": "PWR-A1",
         "objection": "The criteria allow a link to stop opening the form before its full lifetime ends.",
-        "reason": "Rejected as a variant of an observed case: another elapsed time below the lifetime, a behaviour PWR-A1 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "PWR-A1 opens the link at 10:00:00, 10:29:59 and 10:30:00. The objection's scenario is another elapsed time: an opening at 10:29:59.500, whose specified outcome under D1 is the same, the new-password form, as at 10:29:59. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "PWR-A3",
         "objection": "The criteria allow a still-valid form to reject a timely password change.",
-        "reason": "Rejected as a variant of an observed case: another form-opening time within the lifetime, a behaviour PWR-A3 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "PWR-A3 submits forms opened at 10:05:00. The objection's scenario is another elapsed time: a form opened at 10:20:00, whose specified outcome under D1 is the same, the password set. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "PWR-A2",
         "objection": "The criteria allow an expired form to change the password after the checked boundary instant.",
-        "reason": "Rejected as a variant of an observed case: another elapsed time past the boundary, a behaviour PWR-A2 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "PWR-A2 submits at exactly 10:30:00 a form opened at 10:29:00. The objection's scenario is another elapsed time: a submission after 10:30:00, whose specified outcome under D1 is the same, no password set and the expired page. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "PWR-A3",
         "objection": "The criteria allow a race that the single checked concurrent execution does not expose.",
-        "reason": "Rejected as a variant of an observed case: another interleaving of the concurrent submission, a behaviour PWR-A3 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "PWR-A3 submits the two forms at the same moment in one run. The objection's scenario is another ordering: another interleaving of the same two submissions, whose specified outcome under D2 is the same, exactly one password set. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "none",
         "objection": "The criteria allow an older expired link to show a different failure page.",
-        "reason": "Rejected as a variant of an observed case: another elapsed time past the boundary, a behaviour PWR-A1 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "PWR-A1 opens the link at exactly 10:30:00. The objection's scenario is another elapsed time: an opening two hours after the link was sent, whose specified outcome under D3 is the same, the expired page. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "PWR-A4",
         "objection": "The criteria leave replacement delivery uncovered when the account has no other unused link.",
-        "reason": "Rejected as a variant of an observed case: another account state, with no other unused link, a behaviour PWR-A4 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "PWR-A4 runs on an account that also holds a second unused link. The objection's scenario is another population member: an account with no other unused link, whose specified outcome under D3 is the same, one new link emailed to the account's address. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "PWR-A4",
         "objection": "The criteria allow a replacement to reuse an older token that their comparisons do not include.",
-        "reason": "Rejected as a variant of an observed case: a longer history of earlier tokens, a behaviour PWR-A4 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "PWR-A4 compares the new token with the two earlier tokens it seeds. The objection's scenario is another population member: an account with three earlier tokens, whose specified outcome under D3 is the same, a new token. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "PWR-A5",
         "objection": "The criteria allow occasional emails containing tokens outside the required URL-safe shape.",
-        "reason": "Rejected as a variant of an observed case: other generated token values, a behaviour PWR-A5 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "PWR-A5 checks the links in the emails its run sends. The objection's scenario is another population member: another email's generated token, whose specified outcome under D4 is the same, a link of exactly the required shape. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       }
     ]
   },

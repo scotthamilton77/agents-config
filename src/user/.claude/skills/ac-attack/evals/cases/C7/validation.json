@@ -316,49 +316,49 @@
         "lens": "obligation-reduction",
         "target_ac": "none",
         "objection": "A run can leave stale pages unarchived while every criterion passes.",
-        "reason": "Rejected as a variant of an observed case: a larger page population, a behaviour WIK-A1 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "WIK-A1 runs one archiving run over a seven-page wiki. The objection's scenario is another population member: an eighth stale page, whose specified outcome under D1 and D2 is the same, archived. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "none",
         "objection": "Archived pages can remain discoverable through queries other than the two checked queries.",
-        "reason": "Rejected as a variant of an observed case: another search query, a behaviour WIK-A1 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "WIK-A1 checks each page with a title search and a search for one phrase from its content. The objection's scenario is another input: another query matching an archived page, whose specified outcome under D2 is the same, no result. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "none",
         "objection": "Previously archived pages can lack the required banner while the tested pages render correctly.",
-        "reason": "Rejected as a variant of an observed case: another archived page, one archived earlier, a behaviour WIK-A1 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "WIK-A1 opens the pages its own run archives. The objection's scenario is another population member: a page that reached the archived state through another history, whose specified outcome under D2 is the same, HTTP 200 with the banner above its content. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "none",
         "objection": "Other unarchived pages can fail content search while every criterion passes.",
-        "reason": "Rejected as a variant of an observed case: other unarchived pages, by last-edit age, a behaviour WIK-A1 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "WIK-A1 searches for its four unarchived pages, last edited 0, 1, 364 and exactly 365 days before the run. The objection's scenario is another population member: an unarchived page last edited between 30 and 60 days before the run, whose specified outcome under D2 is the same, found by a search for its content. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "none",
         "objection": "Restore can fail for an archived page shape absent from the restore test.",
-        "reason": "Rejected as a variant of an observed case: another page shape restored, a behaviour WIK-A3 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "WIK-A3 restores one page archived by a run. The objection's scenario is another population member: a restored page with two revisions, whose specified outcome under D3 is the same, not archived. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "none",
         "objection": "Restoration can reset the staleness clock to a later instant and still pass both checked boundaries.",
-        "reason": "Rejected as a variant of an observed case: another elapsed time after a restore, a behaviour WIK-A3 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "WIK-A3 runs archiving runs exactly 365 days and 365 days and one second after the restore. The objection's scenario is another elapsed time: a run 365 days and 250 milliseconds after the restore, whose specified outcome under D1 and D3 is the same, archived, as at 365 days and one second. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "none",
         "objection": "Archiving other page shapes can change their content or revision lists while every criterion passes.",
-        "reason": "Rejected as a variant of an observed case: another revision count, a behaviour WIK-A2 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "WIK-A2 archives pages with one revision and with five. The objection's scenario is another population member: a page with two revisions, whose specified outcome under D4 is the same, content and revision list unchanged. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       },
       {
         "lens": "obligation-reduction",
         "target_ac": "none",
         "objection": "A delayed repeat run can modify an already archived page while every criterion passes.",
-        "reason": "Rejected as a variant of an observed case: a further repeat run at a later time, a behaviour WIK-A2 observes; the standard does not demand exhaustive testing, and the objection names no promise that no criterion observes."
+        "reason": "WIK-A2 runs a second archiving run immediately after the first. The objection's scenario is another elapsed time: a repeat run on a later day, whose specified outcome under D4 is the same, content and revision list unchanged. The criteria fix the cases the check runs, and the standard does not demand a check of every such variant."
       }
     ]
   },
