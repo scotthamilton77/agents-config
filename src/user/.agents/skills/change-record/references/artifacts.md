@@ -33,7 +33,7 @@ The sections a body carries follow the record's `pr.type`.
 | Type | The body carries |
 | --- | --- |
 | `feat`, `fix`, `refactor`, `perf`, `test` | Every section, with Criteria as a table. |
-| `spec` | Every section, with Criteria as one line. |
+| `spec` | Every section, with Criteria as one line and the items the spec mints as its blast radius. |
 | `docs`, `chore`, `build`, `ci`, `style`, `revert` | Heads-up, Risk, Changes, Discovered work and Verification. |
 
 The type decides, and what the record holds does not. A `docs` record that holds `criteria`, `blast_radius` or `where_this_fits` renders with no Criteria section, no blast-radius fold and no Where this fits section. Its work item is still named in the commit message, which every body carries in a fold. `lint` accepts such a record, so look at the type before filling those groups.
@@ -41,6 +41,7 @@ The type decides, and what the record holds does not. A `docs` record that holds
 - **Summary.** It has no heading. It gives the problem, then what is true now, then what remains, in three to five sentences.
 - **Heads-up.** Anything that should lower a reader's confidence, one sentence each. Write `None.` when there is nothing.
 - **Where this fits.** The author writes one line, saying which slice of its parent item this pull request is. The rest comes from the tracker and from GitHub.
+- **Blast radius.** A fold under the risk table. It shows each diagram the record holds. It then shows the items a spec mints as a table, when the record holds them. An item that is not minted yet has an empty id.
 - **Discovered work.** A row is filed and names its tracker item, or is not filed, or is in flight and names the other pull request. An in-flight row says what this pull request told the other one. Write a single `None.` row when nothing was found.
 - **Verification.** Each gate with its exit status and where it ran, then what was not run and why.
 - **Criteria.** A table with one row for each criterion. On a `spec` it is the one line the record holds, set under the heading with no table.

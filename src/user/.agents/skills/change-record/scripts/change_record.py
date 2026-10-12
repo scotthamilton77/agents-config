@@ -365,7 +365,8 @@ def _body_scope(record: dict[str, Any]) -> Iterator[tuple[str | None, str]]:
     id for the text below it and is never itself at fault. A filed row of
     discovered work is the tracker's text, so only its id is read. A gate's
     command and a diagram's source are not read, because neither can take a
-    gloss and stay what it is.
+    gloss and stay what it is. An item a spec mints sets its id beside what
+    the item is, which the author words.
     """
     fits = record.get("where_this_fits", {})
     yield "/pr/title", record["pr"]["title"]
@@ -384,6 +385,9 @@ def _body_scope(record: dict[str, Any]) -> Iterator[tuple[str | None, str]]:
     for index, row in enumerate(record["risk"]["rows"]):
         for cell in ("failure", "exposed", "evidence", "recovery"):
             yield f"/risk/rows/{index}/{cell}", row[cell]
+    for index, item in enumerate(record.get("blast_radius", {}).get("mints", [])):
+        yield None, item.get("id", "")
+        yield f"/blast_radius/mints/{index}/what", item["what"]
     for index, change in enumerate(record["changes"]):
         yield f"/changes/{index}/topic", change["topic"]
         yield f"/changes/{index}/text", change["text"]
@@ -691,8 +695,19 @@ def _groups_by_type(record: dict[str, Any]) -> Iterator[dict[str, str]]:
         message = f"a `{kind}` pull request takes one risk row, and this table has {rows}"
         yield _finding("required-group", "/risk/rows", message)
     if record["risk"]["reaches_outside_package"]:
+        radius = record.get("blast_radius", {})
+        if kind == "spec":
+            # A spec changes no package. What it reaches is the tracker, through
+            # the items it mints, so those stand where the diagrams would.
+            if not any(item["what"].strip() for item in radius.get("mints", [])):
+                message = (
+                    "a `spec` pull request reaches outside its package through the items it mints, "
+                    "so the record names each one and says what it is"
+                )
+                yield _finding("required-group", "/blast_radius/mints", message)
+            return
         for name in ("reach_graph", "task_flow"):
-            if not record.get("blast_radius", {}).get(name, "").strip():
+            if not radius.get(name, "").strip():
                 message = "the change reaches outside its package, so the record holds this diagram"
                 yield _finding("required-group", f"/blast_radius/{name}", message)
 

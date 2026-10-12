@@ -143,7 +143,7 @@
       "properties": {
         "reaches_outside_package": {
           "type": "boolean",
-          "description": "True when the change affects anything outside its own package. A true value calls for both blast-radius diagrams."
+          "description": "True when the change affects anything outside its own package. A true value calls for both blast-radius diagrams, or on a spec pull request for the items the spec mints."
         },
         "rows": {
           "type": "array",
@@ -162,12 +162,25 @@
       }
     },
     "blast_radius": {
-      "description": "Two Mermaid diagram sources, written without their fences.",
+      "description": "What the change reaches: two Mermaid diagram sources, written without their fences, or on a spec pull request the items the spec mints.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "reach_graph": {"type": "string", "description": "A graph from the changed component outward, each edge labelled by its kind of impact."},
-        "task_flow": {"type": "string", "description": "The affected task flow with the changed steps marked."}
+        "task_flow": {"type": "string", "description": "The affected task flow with the changed steps marked."},
+        "mints": {
+          "type": "array",
+          "description": "The tracker items a spec mints, which are a spec pull request's blast radius.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["what"],
+            "properties": {
+              "id": {"type": "string", "description": "The item's tracker id. Left out until the item is minted."},
+              "what": {"type": "string", "description": "What the item is, such as its title."}
+            }
+          }
+        }
       }
     },
     "changes": {

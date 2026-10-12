@@ -96,6 +96,12 @@ HEADINGS = {
 
 ATTACK_LINE = "The criteria were attacked twice, and the attack record sits beside the spec."
 
+# The items a spec mints: one that has its tracker id, and one that is not minted yet.
+MINTS = [
+    {"id": "example-a1.2", "what": "The gate compares the effort a run used with its pin."},
+    {"what": "A lint rule reads the manifest."},
+]
+
 # What a commit message must never hold, as a pattern over the rendered text.
 COMMIT_MARKUP = {
     "table": re.compile(r"^(?=.*\|)(?=.*-)[ \t|:-]+$", re.MULTILINE),
@@ -257,6 +263,7 @@ def of_type(kind: str) -> dict[str, Any]:
         del record["risk"]["rows"][1:]
     if kind == "spec":
         record["criteria"] = ATTACK_LINE
+        record["blast_radius"]["mints"] = copy.deepcopy(MINTS)
     return record
 
 
@@ -488,13 +495,15 @@ class TestCrR1Body:
     ):
         # The body follows the record's type. This record holds a criteria table,
         # both diagrams and its place in the tracker, and its type shows none of them.
-        record = valid(of_type(kind))
+        record = of_type(kind)
+        record["blast_radius"]["mints"] = copy.deepcopy(MINTS)
+        valid(record)
         assert record["criteria"] and record["where_this_fits"]["ancestry"]
         assert record["blast_radius"]["reach_graph"] and record["blast_radius"]["task_flow"]
         body = change_record.render_body(record)
         shown_anyway = (
             "## Criteria", "| Criterion |", record["criteria"][0]["promise"],
-            "Blast radius", "```mermaid",
+            "Blast radius", "```mermaid", "mints", MINTS[0]["what"],
             "## Where this fits", "this PR:", "Builds on:", "Scope of the owning item",
             record["where_this_fits"]["ancestry"][0]["title"],
         )
@@ -511,6 +520,42 @@ class TestCrR1Body:
         body = change_record.render_body(record)
         assert f"\n\n## Criteria\n{ATTACK_LINE}\n\n<details><summary>Proposed commit message</summary>\n" in body
         assert "| Criterion |" not in body
+
+    def test_cr_r1_a_spec_body_names_the_items_the_spec_mints_in_its_blast_radius_fold(self):
+        record = of_type("spec")
+        record["blast_radius"] = {"mints": copy.deepcopy(MINTS)}
+        body = change_record.render_body(valid(record))
+        last = record["risk"]["rows"][-1]["recovery"]
+        # An item that is not minted yet has no id, and its first cell is empty.
+        assert (
+            f" | {last} |\n"
+            "<details><summary>Blast radius</summary>\n"
+            "\n"
+            "| Item the spec mints | What it is |\n"
+            "| --- | --- |\n"
+            f"| example-a1.2 | {MINTS[0]['what']} |\n"
+            f"|  | {MINTS[1]['what']} |\n"
+            "</details>\n"
+            "\n"
+            "## Changes\n"
+        ) in body
+        assert "mermaid" not in body
+
+    @pytest.mark.parametrize("held", [("reach_graph", "task_flow"), ("reach_graph",), ("task_flow",)])
+    def test_the_items_a_spec_mints_follow_whichever_diagram_the_record_holds_after_one_blank_line(
+        self, held: tuple[str, ...]
+    ):
+        record = of_type("spec")
+        for name in {"reach_graph", "task_flow"} - set(held):
+            del record["blast_radius"][name]
+        body = change_record.render_body(valid(record))
+        fold = body.split("<details><summary>Blast radius</summary>\n")[1].split("</details>")[0]
+        assert fold.count("```mermaid") == len(held)
+        assert fold.endswith(
+            "```\n\n| Item the spec mints | What it is |\n| --- | --- |\n"
+            f"| example-a1.2 | {MINTS[0]['what']} |\n|  | {MINTS[1]['what']} |\n"
+        )
+        assert "\n\n\n" not in body
 
     @pytest.mark.parametrize("kind", EVERY_SECTION_TYPES)
     def test_cr_r1_a_body_of_a_type_that_carries_criteria_gives_them_as_a_table(self, kind: str):
@@ -553,8 +598,11 @@ class TestCrR1Body:
         assert visible_words("- One.\n- Two | three.\n") == ["One.", "Two", "three."]
 
     def test_the_body_holds_every_static_line_of_its_template_in_order(self, tmp_path: Path):
+        # The example holds every group but the items a spec mints, and its type carries every section.
+        record = example()
+        record["blast_radius"]["mints"] = copy.deepcopy(MINTS)
         body = render(
-            example(), tmp_path, "body",
+            valid(record), tmp_path, "body",
             "--existing-body", existing_body(tmp_path, DECISIONS), "--comment-url", COMMENT_URL,
         )
         template = (REFERENCES / "pr-body.md").read_text(encoding="utf-8")

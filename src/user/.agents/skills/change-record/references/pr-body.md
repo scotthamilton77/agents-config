@@ -39,6 +39,12 @@ ${blast_radius.reach_graph}
 ${blast_radius.task_flow}
 ```
 {{/blast_radius.task_flow}}
+{{#blast_radius.mints}}
+
+| Item the spec mints | What it is |
+| --- | --- |
+| ${blast_radius.mints[].id} | ${blast_radius.mints[].what} |
+{{/blast_radius.mints}}
 </details>
 {{/blast_radius}}
 {{/pr.type}}
