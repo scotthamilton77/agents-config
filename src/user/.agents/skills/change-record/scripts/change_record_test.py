@@ -39,6 +39,17 @@ SCRIPT = HERE / "change_record.py"
 REFERENCES = SKILL / "references"
 SCHEMA = json.loads((REFERENCES / "record.schema.json").read_text(encoding="utf-8"))
 EXAMPLE = json.loads((SKILL / "examples" / "pr-843.json").read_text(encoding="utf-8"))
+
+# The example the skill ships, and the examples that exist only for the suites.
+# Those sit under a directory the installer never ships.
+EXAMPLES = sorted(
+    [*(SKILL / "examples").glob("*.json"), *(SKILL / "evals" / "records").glob("*.json")],
+    key=lambda path: path.name,
+)
+
+# The four feature pull requests that an example is built from.
+FOUR_EXAMPLES = ["pr-838", "pr-839", "pr-843", "pr-846"]
+
 PHRASES = json.loads((REFERENCES / "lint-phrases.json").read_text(encoding="utf-8"))
 COMMENTARY = PHRASES["document_commentary"]
 CAMPAIGN_STATUS = PHRASES["campaign_status"]
@@ -183,6 +194,12 @@ def assert_breaks(record: Any, rule: str, field: str, tmp_path: Path, *named: st
 
 def example() -> dict[str, Any]:
     return copy.deepcopy(EXAMPLE)
+
+
+# The path of an entry a test appends to the example's heads-up list, and of a
+# row it appends to the example's discovered work.
+APPENDED_HEADS_UP = f"/heads_up/{len(EXAMPLE['heads_up'])}"
+APPENDED_DISCOVERED = f"/discovered/rows/{len(EXAMPLE['discovered']['rows'])}"
 
 
 def slot_of(path: str) -> str:
@@ -336,8 +353,13 @@ TRAILING_NEWLINE: dict[str, Callable[[dict[str, Any]], None]] = {
 
 
 class TestLint:
-    def test_cr_l1_the_pr_843_example_passes(self, tmp_path: Path):
-        assert lint(EXAMPLE, tmp_path) == (0, {"valid": True})
+    @pytest.mark.parametrize("name", FOUR_EXAMPLES)
+    def test_cr_l1_each_of_the_four_example_records_passes(self, name: str, tmp_path: Path):
+        found = {path.stem: path for path in EXAMPLES}
+        assert name in found, f"{name}.json is missing"
+        record = json.loads(found[name].read_text(encoding="utf-8"))
+        assert (record["pr"]["type"], f"pr-{record['pr']['number']}") == ("feat", name)
+        assert lint(record, tmp_path) == (0, {"valid": True})
 
     def test_the_example_carries_every_group_the_schema_defines(self):
         assert set(EXAMPLE) == set(SCHEMA["properties"])
@@ -421,7 +443,7 @@ class TestCrL2Gloss:
     def test_cr_l2_a_bare_first_use_fails_naming_the_field_and_the_id(self, bare: str, tmp_path: Path):
         record = example()
         record["heads_up"].append(f"The gate still refuses what {bare} asks for.")
-        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, bare)
+        assert_breaks(record, "bare-id", APPENDED_HEADS_UP, tmp_path, bare)
 
     @pytest.mark.parametrize("glossed", ID_SHAPES)
     def test_cr_l2_a_glossed_first_use_passes(self, glossed: str, tmp_path: Path):
@@ -479,7 +501,7 @@ class TestCrL2Gloss:
         record = example()
         record["heads_up"].append("The gate still refuses what D16 asks for, and nothing else meets D16.")
         record["changes"][0]["text"] += " D16 stays open."
-        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "D16")
+        assert_breaks(record, "bare-id", APPENDED_HEADS_UP, tmp_path, "D16")
 
     def test_cr_l2_an_id_inside_a_parenthetical_is_glossed_by_the_words_around_it(self, tmp_path: Path):
         record = example()
@@ -489,13 +511,13 @@ class TestCrL2Gloss:
     def test_cr_l2_a_parenthetical_holding_only_another_id_is_no_gloss(self, tmp_path: Path):
         record = example()
         record["heads_up"].append("The gate still refuses what #843 (#844) asks for.")
-        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "#843")
+        assert_breaks(record, "bare-id", APPENDED_HEADS_UP, tmp_path, "#843")
 
     def test_cr_l2_backticks_do_not_stand_in_for_a_gloss(self, tmp_path: Path):
         record = example()
         record["heads_up"].append("The gate still refuses what `CR-L2` asks for.")
-        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "CR-L2")
-        record["heads_up"][5] = "The gate still refuses what `CR-L2` (the three-attempt bound) asks for."
+        assert_breaks(record, "bare-id", APPENDED_HEADS_UP, tmp_path, "CR-L2")
+        record["heads_up"][-1] = "The gate still refuses what `CR-L2` (the three-attempt bound) asks for."
         assert_passes(record, tmp_path)
 
     def test_cr_l2_the_tracker_tree_introduces_the_work_item_for_the_text_below_it(self, tmp_path: Path):
@@ -556,7 +578,7 @@ class TestCrL2Gloss:
     def test_cr_l2_an_id_alone_in_closing_brackets_is_passed_over_only_in_a_title_or_subject(self, tmp_path: Path):
         record = example()
         record["heads_up"].append("The gate still refuses a fourth claim [D16]")
-        assert_breaks(record, "bare-id", "/heads_up/5", tmp_path, "D16")
+        assert_breaks(record, "bare-id", APPENDED_HEADS_UP, tmp_path, "D16")
 
     def test_cr_l2_a_filed_row_is_the_trackers_text_and_introduces_its_item(self, tmp_path: Path):
         record = example()
@@ -636,7 +658,7 @@ class TestCrL5DiscoveredRows:
         record["discovered"]["rows"].append({
             "status": "filed", "what": "The gate compares used effort with the pin.", "reason": "It needs tests.",
         })
-        assert_breaks(record, "discovered-row", "/discovered/rows/6/item", tmp_path)
+        assert_breaks(record, "discovered-row", f"{APPENDED_DISCOVERED}/item", tmp_path)
 
     def test_cr_l5_a_filed_row_that_names_its_item_passes(self, tmp_path: Path):
         record = example()
@@ -794,7 +816,7 @@ class TestCrL7CommentaryAndMachineContent:
     def test_cr_l7_a_generated_part_is_not_read_for_commentary(self, tmp_path: Path):
         record = example()
         record["campaign"]["findings"][0]["claim"] += " Note that the grant writes a file."
-        record["where_this_fits"]["builds_on"][0]["gloss"] += ", see below"
+        record["where_this_fits"]["scope"][0]["covers"] += ", see below"
         assert_passes(change_record.stamp_generated(record), tmp_path)
 
     def test_cr_l7_a_command_and_a_diagram_source_are_quoted_and_not_read_for_commentary(self, tmp_path: Path):
@@ -2066,8 +2088,27 @@ class TestLintRules:
         record["discovered"]["rows"] = []
         _, result = lint(record, tmp_path)
         assert [(error["code"], error["path"]) for error in result["errors"]] == [
-            ("unstated-empty", "/discovered/rows"), ("bare-id", "/heads_up/5"), ("summary-length", "/summary"),
+            ("unstated-empty", "/discovered/rows"), ("bare-id", APPENDED_HEADS_UP), ("summary-length", "/summary"),
         ]
+
+
+class TestCrL9WhatShips:
+    def test_cr_l9_the_skill_holds_the_files_it_ships_and_one_example(self):
+        for name in (
+            "SKILL.md",
+            "references/record.schema.json",
+            "references/pr-body.md",
+            "references/commit-message.txt",
+            "references/review-reply.txt",
+            "scripts/change_record.py",
+        ):
+            assert (SKILL / name).is_file(), name
+        # The installer leaves behind a directory named evals, every suite, and
+        # the suites' support file. A second file under examples would ship, and
+        # so would a module beside the script that is no suite.
+        assert sorted(path.name for path in (SKILL / "examples").glob("[!.]*")) == ["pr-843.json"]
+        modules = sorted(path.name for path in HERE.glob("*.py") if not path.name.endswith("_test.py"))
+        assert modules == ["change_record.py", "conftest.py"]
 
 
 class TestCommandLine:

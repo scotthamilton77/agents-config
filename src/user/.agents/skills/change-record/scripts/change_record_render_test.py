@@ -7,8 +7,9 @@
 
 Run: uv run change_record_render_test.py
 
-The golden files hold the exact render of every example record. After an
-example record or a template changes on purpose, rewrite them all with:
+The golden files hold the exact render of every example record: the one the
+skill ships, and those under ``evals/records`` that exist only for the suites.
+After a record or a template changes on purpose, rewrite them all with:
 
     uv run change_record_render_test.py --regenerate
 """
@@ -39,8 +40,16 @@ HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 SCRIPT = HERE / "change_record.py"
 REFERENCES = SKILL / "references"
-EXAMPLES = sorted((SKILL / "examples").glob("*.json"))
+# The example the skill ships, and the examples that exist only for the suites.
+# Those sit under a directory the installer never ships.
+EXAMPLES = sorted(
+    [*(SKILL / "examples").glob("*.json"), *(SKILL / "evals" / "records").glob("*.json")],
+    key=lambda path: path.name,
+)
 EXAMPLE = json.loads((SKILL / "examples" / "pr-843.json").read_text(encoding="utf-8"))
+
+# The four feature pull requests that an example is built from.
+FOUR_EXAMPLES = ["pr-838", "pr-839", "pr-843", "pr-846"]
 
 # The golden files sit under a directory the installer never ships, because
 # they exist only for this suite.
@@ -61,6 +70,13 @@ DECISIONS = (
     f"{CLOSING}"
 )
 COMMENT_URL = "https://github.com/example/repo/pull/843#issuecomment-1"
+
+# The most words that the part of a body above its horizontal rule shows a reader.
+ONE_PAGER_WORDS = 400
+
+# A fold, from its opening tag to its closing one, and the horizontal rule that ends the one-pager.
+FOLD = re.compile(r"<details[\s>].*?</details>", re.DOTALL)
+RULE = re.compile(r"^---$", re.MULTILINE)
 
 FEAT_HEADINGS = [
     "## Heads-up",
@@ -264,6 +280,35 @@ def artifacts(record_path: Path) -> dict[str, bytes]:
     return rendered
 
 
+def visible_words(body: str) -> list[str]:
+    """Return the words a reader sees in a body's one-pager without opening a fold.
+
+    The one-pager is the text above the first horizontal rule. A fold is left
+    out whole, its label included. A word is a run of characters with no space
+    in it that holds a letter or a digit. A table's pipes, a heading's marks
+    and a list's bullets hold neither, so they are not words.
+    """
+    one_pager = RULE.split(FOLD.sub("", body), maxsplit=1)[0]
+    return [token for token in one_pager.split() if re.search(r"[^\W_]", token)]
+
+
+def assert_commit_message_form(record: dict[str, Any], message: str, labelled: bool = True) -> None:
+    """Assert that ``message`` opens with the record's work item and ends with exactly the three trailers.
+
+    ``labelled`` says whether the message carries its three labelled sections.
+    The trailers are read back with git, which is what reads them after a merge.
+    """
+    lines = message.split("\n")
+    item = record["work_item"]
+    assert lines[0] == record["commit"]["subject"]
+    assert lines[1] == ""
+    assert lines[2] == f"Work item {item['id']}, {item['gloss']}."
+
+    labels = [line for line in lines if line in ("Why", "Change", "Verification")]
+    assert labels == (["Why", "Change", "Verification"] if labelled else [])
+    assert read_trailers(message) == three_trailers(record)
+
+
 def golden_path(record_path: Path, suffix: str) -> Path:
     return GOLDEN / f"{record_path.stem}.{suffix}.txt"
 
@@ -383,8 +428,11 @@ class TestCrR1Body:
             for record_path in EXAMPLES
             for suffix in ("pr-body", "commit-message", "review-replies")
         }
-        assert EXAMPLES
         assert {path.name for path in GOLDEN.iterdir()} == expected, f"run: {REGENERATE}"
+
+    def test_cr_r1_the_four_feat_examples_are_all_among_those_rendered(self):
+        kinds = {path.stem: json.loads(path.read_text(encoding="utf-8"))["pr"]["type"] for path in EXAMPLES}
+        assert {name: kinds.get(name) for name in FOUR_EXAMPLES} == dict.fromkeys(FOUR_EXAMPLES, "feat")
 
     @pytest.mark.parametrize("record_path", EXAMPLES, ids=lambda path: path.stem)
     def test_cr_r1_a_feat_body_carries_the_seven_headings_in_order(self, record_path: Path):
@@ -393,6 +441,46 @@ class TestCrR1Body:
             pytest.skip("the heading set of another commit type is not this case's")
         body = golden_path(record_path, "pr-body").read_text(encoding="utf-8")
         assert [line for line in body.splitlines() if line.startswith("## ")] == FEAT_HEADINGS
+
+    @pytest.mark.parametrize("record_path", EXAMPLES, ids=lambda path: path.stem)
+    def test_cr_r1_a_feat_body_shows_at_most_400_words_above_its_rule(self, record_path: Path):
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        if record["pr"]["type"] != "feat":
+            pytest.skip("the bound on another commit type's body is not this case's")
+        body = golden_path(record_path, "pr-body").read_text(encoding="utf-8")
+        assert RULE.search(body), "the body has no horizontal rule to end its one-pager"
+        shown = len(visible_words(body))
+        assert shown <= ONE_PAGER_WORDS, f"{record_path.stem} shows {shown} words above its rule"
+
+    def test_the_word_count_is_of_what_a_reader_sees_without_opening_a_fold(self):
+        body = (
+            "The gate halts.\n"
+            "\n"
+            "## Risk\n"
+            "| What fails | Who |\n"
+            "| --- | --- |\n"
+            "| A pin reads low\\|high. | Round 12 |\n"
+            "<details><summary>Blast radius</summary>\n"
+            "\n"
+            "Every word here waits behind the fold.\n"
+            "</details>\n"
+            "- **Pins.** One more (#7).\n"
+            "\n"
+            "---\n"
+            "\n"
+            "## Verification\n"
+            "Nothing below the rule is counted.\n"
+        )
+        # The fold goes whole, label and all. The cells of the table stay, and its pipes are no words.
+        assert visible_words(body) == [
+            "The", "gate", "halts.",
+            "Risk",
+            "What", "fails", "Who",
+            "A", "pin", "reads", "low\\|high.", "Round", "12",
+            "**Pins.**", "One", "more", "(#7).",
+        ]
+        # A body with no fold and no rule is counted whole.
+        assert visible_words("- One.\n- Two | three.\n") == ["One.", "Two", "three."]
 
     def test_the_body_holds_every_static_line_of_its_template_in_order(self, tmp_path: Path):
         body = render(
@@ -686,27 +774,17 @@ class TestCrR3CommitMessage:
         self, kind: str, session_key: str, tmp_path: Path
     ):
         record = commit_fixture(kind)
-        message = render(record, tmp_path, "commit")
-        lines = message.split("\n")
-        item = record["work_item"]
-        assert lines[0] == record["commit"]["subject"]
-        assert lines[1] == ""
-        assert lines[2] == f"Work item {item['id']}, {item['gloss']}."
+        assert record["commit"]["attribution"]["session_key"] == session_key
+        assert_commit_message_form(record, render(record, tmp_path, "commit"), labelled=kind != "trivial")
 
-        labels = [line for line in lines if line in ("Why", "Change", "Verification")]
-        assert labels == ([] if kind == "trivial" else ["Why", "Change", "Verification"])
-
-        parsed = subprocess.run(
-            ["git", "interpret-trailers", "--parse"],
-            input=message, capture_output=True, text=True, check=True,
-        )
-        trailers = [line.split(": ", 1) for line in parsed.stdout.splitlines()]
-        assert [key for key, _ in trailers] == ["Work-item", "Co-authored-by", session_key]
-        assert dict(trailers) == {
-            "Work-item": item["id"],
-            "Co-authored-by": record["commit"]["attribution"]["co_author"],
-            session_key: record["commit"]["attribution"]["session_url"],
-        }
+    @pytest.mark.parametrize("record_path", EXAMPLES, ids=lambda path: path.stem)
+    def test_cr_r3_each_example_renders_a_message_with_its_work_item_and_exactly_three_trailers(
+        self, record_path: Path
+    ):
+        proc = run("render", "commit", record_path)
+        assert proc.returncode == 0, proc.stderr.decode("utf-8")
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        assert_commit_message_form(record, proc.stdout.decode("utf-8"))
 
     def test_cr_r3_a_trivial_message_is_the_subject_the_work_item_line_and_the_trailers(
         self, tmp_path: Path

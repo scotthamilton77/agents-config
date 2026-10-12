@@ -1,0 +1,25 @@
+feat(choosing-a-delegate): the content gate fails a model id the routing table omits [9k9.458.3]
+
+Work item agents-config-9k9.458.3, a lint that keeps the routing table the only model inventory.
+
+Why
+The routing table is meant to be the only inventory of model ids.
+Nothing enforced that.
+
+Change
+A pytest suite beside the delegation skill reads every Markdown file
+under src/, except those under an evals or node_modules directory. It
+fails on a model id the routing table does not list, and on a table row
+elsewhere that names one. It also fails on a routing table that has
+changed shape. The Providers table in the routing file becomes a list,
+because the lint allows two tables there.
+
+Verification
+make ci exits 0 at the head, with 20 content suites passing. All 34
+cases fail against a stub lint and pass at the head. One unlisted id
+appended to a skill made the gate exit 2 and name the line. Anthropic
+aliases are not caught, and no review round ran.
+
+Work-item: agents-config-9k9.458.3
+Co-authored-by: Claude Opus <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014WQjDer7srQKX1vaA8R8vD

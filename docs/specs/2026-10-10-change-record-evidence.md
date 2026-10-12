@@ -1,6 +1,6 @@
 # Evidence
 
-- CR-L1 | open
+- CR-L1 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestLint
 - CR-L2 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL2Gloss
 - CR-L3 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL3CommitSubject
 - CR-L4 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL4StatedEmptiness
@@ -8,7 +8,7 @@
 - CR-L6 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL6SummaryLength
 - CR-L7 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL7CommentaryAndMachineContent
 - CR-L8 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL8Init
-- CR-L9 | open
+- CR-L9 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL9WhatShips
 - CR-L10 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL10GroupsByTypeAndReach
 - CR-L11 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL11NoneBesideAnEntry
 - CR-L12 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL12CommitBody
