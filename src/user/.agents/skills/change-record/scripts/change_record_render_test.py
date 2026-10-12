@@ -299,25 +299,14 @@ def assert_commit_message_form(record: dict[str, Any], message: str, labelled: b
     The trailers are read back with git, which is what reads them after a merge.
     """
     lines = message.split("\n")
-    item, by = record["work_item"], record["commit"]["attribution"]
+    item = record["work_item"]
     assert lines[0] == record["commit"]["subject"]
     assert lines[1] == ""
     assert lines[2] == f"Work item {item['id']}, {item['gloss']}."
 
     labels = [line for line in lines if line in ("Why", "Change", "Verification")]
     assert labels == (["Why", "Change", "Verification"] if labelled else [])
-
-    parsed = subprocess.run(
-        ["git", "interpret-trailers", "--parse"],
-        input=message, capture_output=True, text=True, check=True,
-    )
-    trailers = [line.split(": ", 1) for line in parsed.stdout.splitlines()]
-    assert [key for key, _ in trailers] == ["Work-item", "Co-authored-by", by["session_key"]]
-    assert dict(trailers) == {
-        "Work-item": item["id"],
-        "Co-authored-by": by["co_author"],
-        by["session_key"]: by["session_url"],
-    }
+    assert read_trailers(message) == three_trailers(record)
 
 
 def golden_path(record_path: Path, suffix: str) -> Path:
