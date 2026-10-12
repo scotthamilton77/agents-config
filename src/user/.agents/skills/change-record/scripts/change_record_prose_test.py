@@ -43,6 +43,11 @@ SUBJECT = EXAMPLE["commit"]["subject"]
 INSTRUCTIONS = SKILL / "references" / "editor-instructions.md"
 PIN = SKILL / "references" / "editor-pin.json"
 
+# One recorded editor run for each fixture, in a directory named for it. A run
+# is the request that was sent, the response as the model returned it, and the
+# settings the model was run at.
+RUNS = {name: SKILL / "evals" / "rewrites" / f"pr-{name}" for name in FIXTURES}
+
 # The example with a row a generator wrote at the head of its heads-up list,
 # and a filed row closing its discovered work.
 SEEDED = copy.deepcopy(EXAMPLE)
@@ -538,6 +543,17 @@ class TestCrW7EditorInstructions:
         }
         assert words and all(f"`{word}`" in text for word in words)
 
+    @pytest.mark.parametrize("name", list(FIXTURES))
+    def test_cr_w7_the_recorded_response_passes_every_check_apply_prose_makes_ahead_of_the_lint(
+        self, desk: Desk, monkeypatch: pytest.MonkeyPatch, name: str
+    ):
+        # The lint judges the record the replacements leave, and an author who prunes
+        # a response settles that. Every refusal that judges the response still stands.
+        monkeypatch.setattr(change_record, "lint_record", lambda record: [])
+        desk.write(json.loads(FIXTURES[name].read_text(encoding="utf-8")))
+        ran = desk.run("apply-prose", str(desk.path), str(RUNS[name] / "response.json"))
+        assert ran.code == 0, ran.err
+
 
 class TestCrW11Dispatch:
     def dispatch(self, desk: Desk) -> Ran:
@@ -560,6 +576,12 @@ class TestCrW11Dispatch:
         monkeypatch.setattr(change_record, "EDITOR_PIN_PATH", copied)
         dispatch = json.loads(self.dispatch(desk).out)
         assert (dispatch["model"], dispatch["effort"]) == ("another-model", "another-effort")
+
+    @pytest.mark.parametrize("name", list(FIXTURES))
+    def test_cr_w11_the_recorded_run_was_made_at_the_pin_files_model_and_effort(self, name: str):
+        pin = json.loads(PIN.read_text(encoding="utf-8"))
+        settings = json.loads((RUNS[name] / "settings.json").read_text(encoding="utf-8"))
+        assert {key: settings.get(key) for key in pin} == pin
 
     @pytest.mark.parametrize(
         ("file", "written", "named"),
