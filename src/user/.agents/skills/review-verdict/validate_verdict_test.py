@@ -1255,6 +1255,8 @@ class TestRoundStatus:
             {**prior, "round": "1"},
             {**prior, "round": None},
             {**prior, "findings": "f1"},
+            {**prior, "findings": None},
+            {key: value for key, value in prior.items() if key != "findings"},
             {**prior, "findings": [None, "f1", {"type": "mechanical"},
                                    {"type": "mechanical", "id": ["f1"]}]},
             {**prior, "claim_id": ["claim-1"]},
