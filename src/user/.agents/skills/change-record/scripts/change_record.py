@@ -40,8 +40,10 @@ review it skips on stderr.
 
 ``render`` fills one of the three template files from a record and writes the
 result to stdout, or to the file ``--output`` names. It lints first. A record
-it refuses gets the JSON result on stderr and nothing written. Exit 0
-rendered, 1 refused, 2 unreadable, unparseable or called wrongly.
+it refuses gets the JSON result on stderr and nothing written. ``render body``
+warns on stderr when the body shows more words above its horizontal rule than
+a one-pager takes, and writes the body all the same. Exit 0 rendered, 1
+refused, 2 unreadable, unparseable or called wrongly.
 """
 
 from __future__ import annotations
@@ -363,7 +365,8 @@ def _body_scope(record: dict[str, Any]) -> Iterator[tuple[str | None, str]]:
     id for the text below it and is never itself at fault. A filed row of
     discovered work is the tracker's text, so only its id is read. A gate's
     command and a diagram's source are not read, because neither can take a
-    gloss and stay what it is.
+    gloss and stay what it is. An item a spec mints sets its id beside what
+    the item is, which the author words.
     """
     fits = record.get("where_this_fits", {})
     yield "/pr/title", record["pr"]["title"]
@@ -382,6 +385,11 @@ def _body_scope(record: dict[str, Any]) -> Iterator[tuple[str | None, str]]:
     for index, row in enumerate(record["risk"]["rows"]):
         for cell in ("failure", "exposed", "evidence", "recovery"):
             yield f"/risk/rows/{index}/{cell}", row[cell]
+    # A short body carries no blast radius, so an item named there introduces no id.
+    shown = record["pr"]["type"] not in ONE_RISK_ROW_TYPES
+    for index, item in enumerate(record.get("blast_radius", {}).get("mints", []) if shown else []):
+        yield None, item.get("id", "")
+        yield f"/blast_radius/mints/{index}/what", item["what"]
     for index, change in enumerate(record["changes"]):
         yield f"/changes/{index}/topic", change["topic"]
         yield f"/changes/{index}/text", change["text"]
@@ -689,10 +697,21 @@ def _groups_by_type(record: dict[str, Any]) -> Iterator[dict[str, str]]:
         message = f"a `{kind}` pull request takes one risk row, and this table has {rows}"
         yield _finding("required-group", "/risk/rows", message)
     if record["risk"]["reaches_outside_package"]:
-        for name in ("reach_graph", "task_flow"):
-            if not record.get("blast_radius", {}).get(name, "").strip():
-                message = "the change reaches outside its package, so the record holds this diagram"
-                yield _finding("required-group", f"/blast_radius/{name}", message)
+        radius = record.get("blast_radius", {})
+        if kind == "spec":
+            # A spec changes no package. What it reaches is the tracker, through
+            # the items it mints, so those stand where the diagrams would.
+            if not any(item["what"].strip() for item in radius.get("mints", [])):
+                message = (
+                    "a `spec` pull request reaches outside its package through the items it mints, "
+                    "so the record names each one and says what it is"
+                )
+                yield _finding("required-group", "/blast_radius/mints", message)
+        else:
+            for name in ("reach_graph", "task_flow"):
+                if not radius.get(name, "").strip():
+                    message = "the change reaches outside its package, so the record holds this diagram"
+                    yield _finding("required-group", f"/blast_radius/{name}", message)
 
 
 def pr_changed_paths(number: int) -> list[str]:
@@ -2016,8 +2035,18 @@ WORD = re.compile(r"(?:" + CODE_SPAN.pattern + r"|\S)+")
 # The most columns a line of commit prose takes, which is the width a log is read at.
 WRAP_COLUMN = 72
 
-_SECTION = re.compile(r"\{\{([#/])([a-z_.]+)\}\}")
-_PARENTHESIS = re.compile(r" \([^()$]*\$\{([^}]+)\}[^()$]*\)")
+# The most words that the part of a body above its horizontal rule shows a reader.
+ONE_PAGER_WORDS = 400
+
+# A fold, from its opening tag to its closing one, and the horizontal rule that ends the one-pager.
+# A tag straight after a backtick is quoted in a code span, so it opens no fold.
+FOLD = re.compile(r"(?<!`)<details[\s>].*?</details>", re.DOTALL)
+ONE_PAGER_END = re.compile(r"^---$", re.MULTILINE)
+
+# A line that opens or closes a block of a template. An opening line may name
+# the values its path takes, after an equals sign and with commas between them.
+_SECTION = re.compile(r"\{\{([#/])([a-z_.]+)(?:=([a-z,]+))?\}\}")
+_PARENTHESIS = re.compile(r" \((?:[^()$]*\$\{[^}]+\})+[^()$]*\)")
 
 
 class Refusal(Exception):
@@ -2086,8 +2115,9 @@ def _fill_line(line: str, record: dict[str, Any], bound: dict[str, Any]) -> str:
     A slot that stands alone on its line is a block, and its value keeps its
     own lines. Any other slot is set on the template's line. A table row keeps
     a line break as ``<br>`` and escapes a pipe, so the value stays in its
-    cell. Elsewhere a line break reads as a space. Text in parentheses around
-    a slot goes, parentheses and all, when the record has nothing there.
+    cell. Elsewhere a line break reads as a space. Text in parentheses goes,
+    parentheses and all, when the record holds a value for none of the slots
+    inside them.
     """
     in_table = line.startswith("|")
     is_block = bool(_Slots.pattern.fullmatch(line))
@@ -2098,7 +2128,10 @@ def _fill_line(line: str, record: dict[str, Any], bound: dict[str, Any]) -> str:
             return LINE_END.sub("<br>", text.replace("|", "\\|"))
         return text if is_block else _one_line(text)
 
-    line = _PARENTHESIS.sub(lambda found: found[0] if shown(found[1]) else "", line)
+    def kept(found: re.Match[str]) -> str:
+        return found[0] if any(shown(path) for path in _Slots(found[0]).get_identifiers()) else ""
+
+    line = _PARENTHESIS.sub(kept, line)
     return _Slots(line).substitute({path: shown(path) for path in _Slots(line).get_identifiers()})
 
 
@@ -2107,9 +2140,13 @@ def _fill(template: str, record: dict[str, Any], bound: dict[str, Any] | None = 
 
     A line whose slot passes through a list appears once per entry, unless the
     caller bound that list to one entry. The lines between ``{{#a.b}}`` and
-    ``{{/a.b}}`` appear only when the record holds a value at that path. A
-    blank line of the template is left out where the line before it is blank,
-    so the lines that vanish between two blank lines leave one behind.
+    ``{{/a.b}}`` appear only when the record holds a value at that path. The
+    lines between ``{{#a.b=x,y}}`` and ``{{/a.b}}`` appear only when the value
+    at that path is one of those named, which is how a template says which
+    commit types carry a block. A record that holds a group its type does not
+    carry therefore renders without it. A blank line of the template is left
+    out where the line before it is blank, so the lines that vanish between
+    two blank lines leave one behind.
     """
     bound = bound or {}
     lines: list[str] = []
@@ -2117,7 +2154,8 @@ def _fill(template: str, record: dict[str, Any], bound: dict[str, Any] | None = 
     for line in template.splitlines():
         section = _SECTION.fullmatch(line)
         if section and section[1] == "#":
-            open_sections.append(_holds_something(_look(record, section[2], bound)))
+            held = _look(record, section[2], bound)
+            open_sections.append(held in section[3].split(",") if section[3] else _holds_something(held))
         elif section:
             open_sections.pop()
         elif not line and lines and not lines[-1]:
@@ -2132,11 +2170,7 @@ def _fill(template: str, record: dict[str, Any], bound: dict[str, Any] | None = 
                 continue
             head, _, field = repeated[0].partition("[]")
             first = field.lstrip(".")
-            entries = _look(record, head, bound)
-            if isinstance(entries, str):
-                # A field holding one line where a table is usual renders as one row.
-                entries = [{first: entries}]
-            for entry in entries or []:
+            for entry in _look(record, head, bound) or []:
                 # The entry that states its list is empty stands in the line's first place.
                 if is_none(entry) and first:
                     entry = {first: NONE}
@@ -2264,8 +2298,28 @@ def render_body(record: dict[str, Any], existing_body: str = "", comment_url: st
             {**finding, "disposition": _outcome(finding, replies)}
             for finding in record["campaign"]["findings"]
         ]
+        # A finding's id tells it from every other while one claim and one
+        # artifact class cover the campaign. Its claim and class are shown
+        # only when they are needed to tell two findings apart.
+        if len({(finding["claim_id"], finding["artifact_class"]) for finding in findings}) <= 1:
+            findings = [
+                {name: value for name, value in finding.items() if name not in ("claim_id", "artifact_class")}
+                for finding in findings
+            ]
         view["campaign"] = {**record["campaign"], "findings": findings}
     return _fill(_template("pr-body.md"), view)
+
+
+def visible_words(body: str) -> list[str]:
+    """Return the words a reader sees in a body's one-pager without opening a fold.
+
+    The one-pager is the text above the first horizontal rule. A fold is left
+    out whole, its label included. A word is a run of characters with no space
+    in it that holds a letter or a digit. A table's pipes, a heading's marks
+    and a list's bullets hold neither, so they are not words.
+    """
+    one_pager = ONE_PAGER_END.split(FOLD.sub("", body), maxsplit=1)[0]
+    return [token for token in one_pager.split() if re.search(r"[^\W_]", token)]
 
 
 def _reply_entry(record: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
@@ -2319,6 +2373,15 @@ def _render(args: argparse.Namespace) -> int:
         args.output.write_bytes(text.encode("utf-8"))
     else:
         sys.stdout.buffer.write(text.encode("utf-8"))
+    shown = len(visible_words(text)) if args.artifact == "body" else 0
+    if shown > ONE_PAGER_WORDS:
+        # The body is written all the same, because lines a generator wrote
+        # count toward the bound and the author cannot shorten those.
+        said = (
+            f"warning: the body shows {shown} words above its horizontal rule, "
+            f"and a one-pager takes at most {ONE_PAGER_WORDS}; words inside a fold are not counted"
+        )
+        print(said, file=sys.stderr)
     return EXIT_VALID
 
 

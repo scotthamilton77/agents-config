@@ -41,13 +41,13 @@ uv run scripts/change_record.py render reply record.json --finding ID
 
 Each artifact has a template under `references/`: `pr-body.md`, `commit-message.txt` and `review-reply.txt`. `render` fills those files, so a template is the exact form of its artifact. `references/artifacts.md` gives the rules for what each artifact says, and how to read a template. Read it before filling a record, because `lint` holds the record to most of those rules.
 
-The body is for a human and carries no JSON. Everything above its horizontal rule is a one-pager of at most 400 words, counting only what a reader sees without opening a fold. Everything below is evidence a reader opens on purpose. What each commit type carries:
+The body is for a human and carries no JSON. Everything above its horizontal rule is a one-pager of at most 400 words, counting only what a reader sees without opening a fold. `render body` warns when a body shows more. Everything below is evidence a reader opens on purpose. What each commit type carries:
 
 | Type | Sections |
 | --- | --- |
 | `feat`, `fix`, `refactor`, `perf`, `test` | Every section. The blast-radius diagrams appear only when the change reaches outside its own package. |
 | `spec` | Every section. The blast radius is the items the spec will mint. Criteria is one line saying whether the criteria were attacked and where the attack record is. |
-| `docs`, `chore`, `build`, `ci`, `style`, `revert` | Heads-up, a one-row Risk table, Changes, Discovered work and Verification. No Criteria. |
+| `docs`, `chore`, `build`, `ci`, `style`, `revert` | Heads-up, a one-row Risk table, Changes, Discovered work and Verification. No Where this fits, blast radius or Criteria, whatever the record holds. |
 
 ## Writing checks
 

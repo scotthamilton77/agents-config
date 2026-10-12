@@ -14,7 +14,7 @@
 | `unfilled` | A field the author fills that is still empty: the title, the head commit, the work item's gloss or slice, the list of changes, or a field of the attribution. |
 | `commit-subject` | A commit subject over 100 characters or on more than one line, with a type that is not a commit type or not the record's, with no component, a tracker id as its component or a component that is not the record's, with no colon and space after the component, with no word of wording, or without a space and the work item's short id in brackets at its end. |
 | `commit-body` | A commit body missing one of its three sections, a `why` outside two to three sentences, a `change` outside three to four, an empty `verification`, or a total outside 80 to 150 words. Also a message with no body and no `trivial` reason, and one with both. |
-| `required-group` | A group the record's type or reach calls for, missing or in the wrong form: no criteria table on a type that carries one, a criteria on a `spec` that is not one line saying whether the criteria were attacked, more than one risk row on a type that takes one, or a missing diagram when the change reaches outside its package. |
+| `required-group` | A group the record's type or reach calls for, missing or in the wrong form: no criteria table on a type that carries one, a criteria on a `spec` that is not one line saying whether the criteria were attacked, more than one risk row on a type that takes one, or a missing diagram when the change reaches outside its package. A `spec` that reaches outside its package holds the items it mints in place of the diagrams, and fails when it names none. |
 | `reach` | Under `--pr` only: a record that says the change stays inside its package, when the pull request's changed paths span more than one top-level component. |
 | `reply` | A reply outside 40 to 90 words, with a Change line that is empty or longer than two sentences, a Deferred reply that does not name the inheriting item, a Rejected reply with no URL, or one with no host or no path, for the comment that asked for it, or a phrase of campaign status. |
 | `reply-count` | A finding the campaign marks fixed that has no reply, or more than one. |
@@ -52,7 +52,7 @@ A gloss is a parenthetical, in one of two places. It can follow the id, as in `X
 
 Only the first use of an id needs its gloss. `lint` finds the first use in each of three texts, because each is read alone: the title with the body, the commit message, and each reply. It reads the fields of a text in the order the text's template shows them.
 
-Some cells set an id beside its own gloss. `lint` takes such an id as introduced for the text below the cell. These cells are a line of the tracker tree, a pull request the body builds on or runs beside, a row of the scope table, the item or pull request of a discovered row, the id column of the criteria table, and the work-item line of the commit message.
+Some cells set an id beside its own gloss. `lint` takes such an id as introduced for the text below the cell. These cells are a line of the tracker tree, a pull request the body builds on or runs beside, a row of the scope table, the id of an item a spec mints, the item or pull request of a discovered row, the id column of the criteria table, and the work-item line of the commit message.
 
 `lint` cannot tell whether a gloss explains its id. That judgement stays with the author.
 
@@ -98,6 +98,9 @@ A message has all three body sections or none of them. In a body, `why` is two o
 - A `spec` record holds `criteria` as one line of text that says whether the criteria were attacked. `lint` checks that the line is there, is one line, and holds the word `attacked` outside a code span, as in "were attacked" or "were not attacked". Where the attack record is stays with the author, because criteria that were not attacked have no record to point at.
 - A `docs`, `chore`, `build`, `ci`, `style` or `revert` record holds exactly one risk row.
 - A record whose `risk.reaches_outside_package` is true holds both `blast_radius.reach_graph` and `blast_radius.task_flow`. A record whose flag is false needs neither.
+- A `spec` record whose flag is true holds `blast_radius.mints` in place of the two diagrams, with at least one item that says what it is. A spec changes no package, and what it reaches is the tracker, through the items it mints. On any other type the items stand in for no diagram.
+
+`lint` refuses no group for being more than its type's body shows. A `docs` record that holds `criteria` passes, and its body leaves the criteria out. `artifacts.md` beside this file says what each type's body carries.
 
 `lint --pr NUMBER` checks the flag against the pull request itself. It reads the pull request's list of files from GitHub through `gh api`, a page at a time, in the working directory's repository. A renamed file counts under its old path and its new one. A path's top-level component is its first segment. That is the directory at the root that holds the path, or the file itself when it sits at the root. A path under a `docs` directory at the root counts toward no component, because documentation describes a component and is not one. A record whose flag is false fails, under `reach`, when the paths span more than one component. A pull request that changes one component and its documentation therefore passes, and so does one that changes documentation alone.
 

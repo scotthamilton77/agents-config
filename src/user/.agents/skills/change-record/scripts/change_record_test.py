@@ -109,6 +109,7 @@ TEMPLATE_MARKERS = {
         "<details><summary>Blast radius</summary>",
         "```mermaid",
         "```mermaid",
+        "| Item the spec mints | What it is |",
         "## Changes",
         "<details><summary>Design notes</summary>",
         "## Discovered work",
@@ -590,6 +591,18 @@ class TestCrL2Gloss:
         })
         record["verification"]["not_run"] = ["The check filed as agents-config-9k9.470, because nothing runs it yet."]
         assert_passes(change_record.stamp_generated(record), tmp_path)
+
+    def test_cr_l2_a_minted_item_introduces_its_id_and_its_words_are_the_authors(self, tmp_path: Path):
+        record = of_type("spec")
+        # The row sets the item's id beside what the item is, so the id is introduced for the text below it.
+        record["changes"][0]["text"] += " The gate comes with example-a1.2."
+        assert_passes(record, tmp_path)
+        # The words of a row are the author's, so an id first named there takes its gloss.
+        record["blast_radius"]["mints"][1]["what"] = "A lint rule reads the manifest that D16 asks for."
+        assert_breaks(record, "bare-id", "/blast_radius/mints/1/what", tmp_path, "D16")
+        above = of_type("spec")
+        above["risk"]["rows"][0]["recovery"] += " Reopen example-a1.2."
+        assert_breaks(above, "bare-id", "/risk/rows/0/recovery", tmp_path, "example-a1.2")
 
     def test_cr_l2_a_gate_command_is_quoted_as_run_and_is_not_read(self, tmp_path: Path):
         record = example()
@@ -1270,6 +1283,12 @@ ONE_ROW_TYPES = ["build", "chore", "ci", "docs", "revert", "style"]
 
 ATTACK_LINE = "The criteria were attacked twice, and the attack record is beside the spec."
 
+# The items a spec mints: one that has its tracker id, and one that is not minted yet.
+MINTS = [
+    {"id": "example-a1.2", "what": "The gate compares the effort a run used with its pin."},
+    {"what": "A lint rule reads the manifest."},
+]
+
 
 def of_type(kind: str) -> dict[str, Any]:
     """Return the example as a pull request of type ``kind``, with the groups that type takes."""
@@ -1279,6 +1298,7 @@ def of_type(kind: str) -> dict[str, Any]:
         del record["risk"]["rows"][1:]
     if kind == "spec":
         record["criteria"] = ATTACK_LINE
+        record["blast_radius"] = {"mints": copy.deepcopy(MINTS)}
     return record
 
 
@@ -1406,6 +1426,56 @@ class TestCrL10GroupsByTypeAndReach:
         blank = example()
         blank["blast_radius"][source] = " \n"
         assert_breaks(blank, "required-group", f"/blast_radius/{source}", tmp_path, "reaches outside")
+
+    @pytest.mark.parametrize(
+        "radius",
+        [None, {}, {"mints": []}, {"mints": [{"what": " "}]}, EXAMPLE["blast_radius"]],
+        ids=["no group", "an empty group", "no item", "an item that says nothing", "both diagrams"],
+    )
+    def test_cr_l10_a_spec_that_reaches_outside_its_package_fails_without_the_items_it_mints(
+        self, radius: Any, tmp_path: Path
+    ):
+        record = of_type("spec")
+        assert record["risk"]["reaches_outside_package"] is True
+        del record["blast_radius"]
+        if radius is not None:
+            record["blast_radius"] = copy.deepcopy(radius)
+        assert_breaks(record, "required-group", "/blast_radius/mints", tmp_path, "`spec`", "the items it mints")
+
+    def test_cr_l10_a_spec_that_names_the_items_it_mints_needs_neither_diagram(self, tmp_path: Path):
+        record = of_type("spec")
+        assert record["risk"]["reaches_outside_package"] is True
+        assert set(record["blast_radius"]) == {"mints"}
+        assert_passes(record, tmp_path)
+
+    def test_cr_l10_a_spec_that_stays_inside_its_package_passes_without_the_items_it_mints(self, tmp_path: Path):
+        record = of_type("spec")
+        record["risk"]["reaches_outside_package"] = False
+        del record["blast_radius"]
+        assert_passes(record, tmp_path)
+
+    @pytest.mark.parametrize("kind", ["feat", "docs"])
+    def test_cr_l10_the_items_a_spec_mints_stand_in_for_no_diagram_on_another_type(self, kind: str, tmp_path: Path):
+        record = of_type(kind)
+        assert record["risk"]["reaches_outside_package"] is True
+        record["blast_radius"] = {"mints": copy.deepcopy(MINTS)}
+        found = findings(record, "required-group", tmp_path)
+        assert [path for path, _ in found] == ["/blast_radius/reach_graph", "/blast_radius/task_flow"]
+
+    def test_cr_l2_a_minted_item_on_a_body_that_shows_no_blast_radius_introduces_no_id(self, tmp_path: Path):
+        record = of_type("docs")
+        record["blast_radius"] = {"mints": copy.deepcopy(MINTS)}
+        record["changes"][0]["text"] += " The gate comes with example-a1.2."
+        assert_breaks(record, "bare-id", "/changes/0/text", tmp_path, "example-a1.2")
+
+    def test_a_minted_item_says_what_it_is_and_may_leave_out_its_id(self, tmp_path: Path):
+        record = of_type("spec")
+        assert "id" not in record["blast_radius"]["mints"][1]
+        assert_passes(record, tmp_path)
+        record["blast_radius"]["mints"][0] = {"id": "example-a1.2"}
+        assert_fails_naming(record, "/blast_radius/mints/0/what", tmp_path)
+        record["blast_radius"]["mints"][0] = {"what": "A gate.", "status": "open"}
+        assert_fails_naming(record, "/blast_radius/mints/0/status", tmp_path)
 
     def test_cr_l10_a_record_that_stays_inside_its_package_passes_without_the_diagrams(self, tmp_path: Path):
         record = example()

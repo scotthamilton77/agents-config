@@ -82,6 +82,7 @@ Exit 0 rendered, 1 refused, 2 unreadable, unparseable or called wrongly.
 - A body that holds one of the two markers, holds one twice, or holds them out of order is refused under the code `decisions-block`. `render` never treats such a body as one with no block.
 - `--comment-url URL` is the comment the record is posted in. It adds the line that points at that comment and gives the record's revision. Without it the body has no such line, which is the form a pull request is opened with.
 - The body carries the commit message in a fold, so a record whose commit message is refused has its body refused too.
+- A body that shows more than 400 words above its horizontal rule draws one line on stderr. The line opens with `warning:` and gives the count and the bound. The body is still written and the exit status is still 0, because lines the script filled count toward the bound and the author cannot shorten those. The count leaves out everything inside a fold. A word is a run of characters with no space in it that holds a letter or a digit.
 
 ### `render commit`
 

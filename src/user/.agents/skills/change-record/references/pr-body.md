@@ -3,6 +3,7 @@ ${summary}
 ## Heads-up
 - ${heads_up[]}
 
+{{#pr.type=feat,fix,perf,refactor,spec,test}}
 ## Where this fits
 ${where_this_fits.ancestry[].id}  ${where_this_fits.ancestry[].title} (${where_this_fits.ancestry[].type})
     this PR: ${work_item.slice}
@@ -18,10 +19,12 @@ Builds on: ${where_this_fits.builds_on}. Concurrent: ${where_this_fits.concurren
 </details>
 {{/where_this_fits.scope}}
 
+{{/pr.type}}
 ## Risk
 | What could go wrong | Who or what is exposed | How we know it did not | What to do if it did |
 | --- | --- | --- | --- |
 | ${risk.rows[].failure} | ${risk.rows[].exposed} | ${risk.rows[].evidence} | ${risk.rows[].recovery} |
+{{#pr.type=feat,fix,perf,refactor,spec,test}}
 {{#blast_radius}}
 <details><summary>Blast radius</summary>
 
@@ -36,8 +39,15 @@ ${blast_radius.reach_graph}
 ${blast_radius.task_flow}
 ```
 {{/blast_radius.task_flow}}
+{{#blast_radius.mints}}
+
+| Item the spec mints | What it is |
+| --- | --- |
+| ${blast_radius.mints[].id} | ${blast_radius.mints[].what} |
+{{/blast_radius.mints}}
 </details>
 {{/blast_radius}}
+{{/pr.type}}
 
 ## Changes
 - **${changes[].topic}.** ${changes[].text}
@@ -73,18 +83,25 @@ Terminal-clean at ${campaign.terminal_sha}. Approval is a machine attestation of
 
 | Round | Id | Finding in plain words | Disposition | Reason | Commit |
 | --- | --- | --- | --- | --- | --- |
-| ${campaign.findings[].round} | ${campaign.findings[].id} | ${campaign.findings[].claim} | ${campaign.findings[].disposition} | ${campaign.findings[].reason} | ${campaign.findings[].commit} |
+| ${campaign.findings[].round} | ${campaign.findings[].id} (claim ${campaign.findings[].claim_id}, ${campaign.findings[].artifact_class}) | ${campaign.findings[].claim} | ${campaign.findings[].disposition} | ${campaign.findings[].reason} | ${campaign.findings[].commit} |
 </details>
 {{/campaign.findings}}
 
 {{/campaign.reviewers}}
+{{#pr.type=feat,fix,perf,refactor,spec,test}}
 {{#criteria}}
 ## Criteria
+{{#pr.type=spec}}
+${criteria}
+{{/pr.type}}
+{{#pr.type=feat,fix,perf,refactor,test}}
 | Criterion | What it promises | Evidence |
 | --- | --- | --- |
 | ${criteria[].id} | ${criteria[].promise} | ${criteria[].evidence} |
+{{/pr.type}}
 
 {{/criteria}}
+{{/pr.type}}
 <details><summary>Proposed commit message</summary>
 
 ```text

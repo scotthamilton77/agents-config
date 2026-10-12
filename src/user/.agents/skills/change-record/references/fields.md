@@ -8,7 +8,7 @@ The record is one JSON document. The schema beside this file gives every field's
 | `work_item` | the tracker's full id, a gloss, and which slice of its parent item this pull request is | the author | the gloss |
 | `summary`, `heads_up` | the opening of the pull request body and its caveats | the author | yes |
 | `where_this_fits` | ancestry, the merged pull requests this one builds on, the open ones it runs beside, and the parent item's scope table | generated from the tracker and from GitHub | no |
-| `risk`, `blast_radius` | the risk rows, a flag saying whether the change reaches outside its package, and two Mermaid sources | the author | the risk rows' cells |
+| `risk`, `blast_radius` | the risk rows, a flag saying whether the change reaches outside its package, two Mermaid sources, and on a spec pull request the items the spec mints | the author | the risk rows' cells |
 | `changes`, `design_notes` | the changes by topic, and the reasoning behind them | the author | yes |
 | `discovered` | filed, not-filed and in-flight rows | generated from the tracker for filed rows; the author for the rest | the reason of a not-filed or in-flight row |
 | `verification` | each gate with its exit status and where it ran, and what was not run | the author | no |
@@ -27,4 +27,5 @@ The record is one JSON document. The schema beside this file gives every field's
 - **Facts are never reworded.** Ids, URLs, commands, commit ids, counts, statuses, dispositions and attribution are facts. In `pr.title` and `commit.subject` the type, the component and the bracketed id are facts too, and only the wording between them may change.
 - **A commit id is forty hex characters** in `pr.head_sha`, `campaign.terminal_sha` and `record.head_sha`. An empty string means the commit is not known.
 - **A Mermaid source carries no fence.** The pull request body's template supplies it.
+- **A spec's blast radius is the items it mints.** `blast_radius.mints` holds one entry for each tracker item the spec's implementation is cut into. An entry says what the item is in `what`, and gives the item's tracker id in `id` once the item is minted.
 - **`criteria` is one line on a spec pull request.** The line says whether the criteria were attacked and where the attack record is. Every other type that carries criteria holds the table.

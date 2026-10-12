@@ -17,7 +17,7 @@
 - CR-L15 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL15GeneratedStamps
 - CR-L16 | test: src/user/.agents/skills/change-record/scripts/conftest_test.py::TestCrL16Fence
 - CR-L17 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrL17TemplatesDriveTheRender
-- CR-R1 | open
+- CR-R1 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR1Body
 - CR-R2 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR2Decisions
 - CR-R3 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR3CommitMessage
 - CR-R4 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR4CommitMarkup

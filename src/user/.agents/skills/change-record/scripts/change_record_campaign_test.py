@@ -1410,10 +1410,10 @@ class TestCampaignCommand:
         assert "Terminal-clean" not in section
         entries = [line for line in fold.splitlines() if line.startswith("| ")][2:]
         assert len(entries) == 24
-        assert entries[3].startswith("| 1 | correctness.r1.f1 | A fourth dead-run claim can bypass")
+        assert entries[3].startswith("| 1 | correctness.r1.f1 (claim 9k9.408-r2, typed-code) | A fourth dead-run claim can bypass")
         assert " | Fixed | Reproduced: " in entries[3] and entries[3].endswith(" | 75bb090c |")
         # A finding no verdict gave a disposition to renders with those cells empty.
-        assert entries[0].startswith("| 1 | security.r1.f1 | ") and entries[0].endswith(" |  |  |  |")
+        assert entries[0].startswith("| 1 | security.r1.f1 (claim 9k9.408, typed-code) | ") and entries[0].endswith(" |  |  |  |")
 
 
 class TestCampaignInTheSkillText:

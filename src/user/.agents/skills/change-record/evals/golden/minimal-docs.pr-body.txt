@@ -1,0 +1,37 @@
+The renderer's suite had records of one commit type out of twelve, so nothing checked the sections a `docs` body carries. A made-up record of type `docs` now sits among the suite's fixtures, about as small as the lint accepts. No pull request, work item or commit stands behind it.
+
+## Heads-up
+- The record is a fixture, and it describes no real change.
+
+## Risk
+| What could go wrong | Who or what is exposed | How we know it did not | What to do if it did |
+| --- | --- | --- | --- |
+| A reader takes the record for a real change. | Anyone who reads the suite's fixtures. | The summary and the heads-up row both say it is made up. | Delete the record and its golden files. |
+
+## Changes
+- **Fixture.** A made-up record of type `docs` renders the sections that type's body carries.
+
+## Discovered work
+| Item | Status | What it is | Why not in this PR |
+| --- | --- | --- | --- |
+| None. |  |  |  |
+
+---
+
+## Verification
+- Not run: Every gate, because the record describes no change to run one on.
+
+<details><summary>Proposed commit message</summary>
+
+```text
+docs(fixture): a made-up record shows the sections a docs body carries [a1.1]
+
+Work item fixture-a1.1, a made-up item that no tracker holds.
+
+Work-item: fixture-a1.1
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Lev9kbzWTUGJHXFvpBXBFi
+```
+</details>
+
+Generated with Claude Code · https://claude.ai/code/session_01Lev9kbzWTUGJHXFvpBXBFi
