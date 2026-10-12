@@ -73,7 +73,7 @@ Terminal-clean at ${campaign.terminal_sha}. Approval is a machine attestation of
 
 | Round | Id | Finding in plain words | Disposition | Reason | Commit |
 | --- | --- | --- | --- | --- | --- |
-| ${campaign.findings[].round} | ${campaign.findings[].id} | ${campaign.findings[].claim} | ${campaign.findings[].disposition} | ${campaign.findings[].reason} | ${campaign.findings[].commit} |
+| ${campaign.findings[].round} | ${campaign.findings[].id} (claim ${campaign.findings[].claim_id}, ${campaign.findings[].artifact_class}) | ${campaign.findings[].claim} | ${campaign.findings[].disposition} | ${campaign.findings[].reason} | ${campaign.findings[].commit} |
 </details>
 {{/campaign.findings}}
 

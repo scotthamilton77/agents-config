@@ -9,7 +9,7 @@
 - The lines between `{{#a.b}}` and `{{/a.b}}` appear only when the record holds a value at that path. A group the record does not hold therefore takes its heading or its fold with it. So does a group whose every value is empty, such as a blast radius with two empty diagrams.
 - A slot that stands alone on its line is a block, and its value keeps its own lines. Any other slot is set on the template's line.
 - A blank line of a template is left out where the line before it is blank. Lines that vanish between two blank lines therefore leave one blank line behind.
-- Text in parentheses around a slot is left out, parentheses included, when the record has nothing for that slot.
+- Text in parentheses around one slot or more is left out, parentheses included, when the record has nothing for any slot inside them.
 
 Three slots name no record field. `${commit_message}` is the rendered commit message. `${decisions}` is the decisions block carried over from the pull request's existing body. `${record_comment_url}` is the comment the record is posted in.
 
@@ -40,6 +40,7 @@ A line ends at a line feed or a carriage return, alone or as a pair. What an art
 - A row in flight shows its pull request beside its status, as `in flight (#12)`.
 - In a table cell, a `|` is escaped and a line break becomes `<br>`, as the table above says.
 - The findings table shows each disposition as Fixed, Rejected or Deferred. A finding reads Superseded when the author's reply to that finding says so.
+- A row of the findings table names its finding's claim and artifact class beside the finding's id, as `lens.r1.f1 (claim a1b.3, prose)`, when the campaign's findings come from more than one claim or more than one class. Finding ids start again with each claim and each class, so two rows could otherwise carry one id. A campaign with one claim and one class shows the id alone.
 - The decisions block another tool keeps in the body is carried over byte for byte, in the place the template gives it.
 
 ## The commit message: `commit-message.txt`

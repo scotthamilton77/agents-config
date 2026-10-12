@@ -2026,7 +2026,7 @@ FOLD = re.compile(r"<details[\s>].*?</details>", re.DOTALL)
 ONE_PAGER_END = re.compile(r"^---$", re.MULTILINE)
 
 _SECTION = re.compile(r"\{\{([#/])([a-z_.]+)\}\}")
-_PARENTHESIS = re.compile(r" \([^()$]*\$\{([^}]+)\}[^()$]*\)")
+_PARENTHESIS = re.compile(r" \((?:[^()$]*\$\{[^}]+\})+[^()$]*\)")
 
 
 class Refusal(Exception):
@@ -2096,7 +2096,8 @@ def _fill_line(line: str, record: dict[str, Any], bound: dict[str, Any]) -> str:
     own lines. Any other slot is set on the template's line. A table row keeps
     a line break as ``<br>`` and escapes a pipe, so the value stays in its
     cell. Elsewhere a line break reads as a space. Text in parentheses around
-    a slot goes, parentheses and all, when the record has nothing there.
+    one slot or more goes, parentheses and all, when the record has nothing
+    for any slot inside them.
     """
     in_table = line.startswith("|")
     is_block = bool(_Slots.pattern.fullmatch(line))
@@ -2107,7 +2108,10 @@ def _fill_line(line: str, record: dict[str, Any], bound: dict[str, Any]) -> str:
             return LINE_END.sub("<br>", text.replace("|", "\\|"))
         return text if is_block else _one_line(text)
 
-    line = _PARENTHESIS.sub(lambda found: found[0] if shown(found[1]) else "", line)
+    def kept(found: re.Match[str]) -> str:
+        return found[0] if any(shown(path) for path in _Slots(found[0]).get_identifiers()) else ""
+
+    line = _PARENTHESIS.sub(kept, line)
     return _Slots(line).substitute({path: shown(path) for path in _Slots(line).get_identifiers()})
 
 
@@ -2273,6 +2277,14 @@ def render_body(record: dict[str, Any], existing_body: str = "", comment_url: st
             {**finding, "disposition": _outcome(finding, replies)}
             for finding in record["campaign"]["findings"]
         ]
+        # A finding's id tells it from every other while one claim and one
+        # artifact class cover the campaign. Its claim and class are shown
+        # only when they are needed to tell two findings apart.
+        if len({(finding["claim_id"], finding["artifact_class"]) for finding in findings}) <= 1:
+            findings = [
+                {name: value for name, value in finding.items() if name not in ("claim_id", "artifact_class")}
+                for finding in findings
+            ]
         view["campaign"] = {**record["campaign"], "findings": findings}
     return _fill(_template("pr-body.md"), view)
 

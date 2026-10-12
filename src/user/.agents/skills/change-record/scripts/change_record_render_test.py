@@ -744,6 +744,47 @@ class TestBodyDetails:
         # Only the author's reply calls a finding superseded, and only the finding it names.
         assert shown == ["Fixed", "Rejected", "Deferred", "Deferred", "", "Superseded", "Fixed"]
 
+    @pytest.mark.parametrize(("claims", "classes"), [(2, 1), (1, 2)], ids=["two-claims", "two-classes"])
+    def test_cr_c2_a_finding_names_its_claim_and_class_when_the_campaign_carries_more_than_one(
+        self, claims: int, classes: int
+    ):
+        # Finding ids start again with each claim and each class, so two rows can carry one id.
+        record = example()
+        record["replies"] = []
+        record["campaign"]["findings"] = [
+            {"claim_id": f"claim-{claim}", "artifact_class": f"class-{kind}", "round": 1, "id": "lens.r1.f1", "claim": "x"}
+            for claim in range(claims) for kind in range(classes)
+        ]
+        cells = [row[1] for row in self.findings_rows(change_record.render_body(valid(record)))]
+        assert cells == [
+            f"lens.r1.f1 (claim claim-{claim}, class-{kind})" for claim in range(claims) for kind in range(classes)
+        ]
+        assert len(set(cells)) == 2
+
+    def test_cr_c2_a_finding_names_neither_claim_nor_class_when_the_campaign_carries_one_of_each(self):
+        record = example()
+        record["replies"] = []
+        record["campaign"]["findings"] = [
+            {"claim_id": "claim-0", "artifact_class": "class-0", "round": 1, "id": f"lens.r1.f{n}", "claim": "x"}
+            for n in (1, 2)
+        ]
+        body = change_record.render_body(valid(record))
+        assert [row[1:3] for row in self.findings_rows(body)] == [["lens.r1.f1", "x"], ["lens.r1.f2", "x"]]
+        assert "claim-0" not in body
+        assert "class-0" not in body
+
+    def test_cr_c2_no_two_rows_of_the_shipped_examples_findings_table_read_alike(self):
+        # The example's campaign ran under two claims, and two finding ids appear under both.
+        findings = EXAMPLE["campaign"]["findings"]
+        ids = [finding["id"] for finding in findings]
+        assert len(set(ids)) == len(ids) - 2
+        body = golden_path(SKILL / "examples" / "pr-843.json", "pr-body").read_text(encoding="utf-8")
+        cells = [row[1] for row in self.findings_rows(body)]
+        assert cells == [
+            f"{finding['id']} (claim {finding['claim_id']}, {finding['artifact_class']})" for finding in findings
+        ]
+        assert len(set(cells)) == len(cells)
+
     def test_the_body_carries_the_commit_message_exactly_as_the_merge_will_use_it(self):
         message = change_record.render_commit_message(example())
         assert f"\n```text\n{message}```\n</details>\n" in change_record.render_body(example())
