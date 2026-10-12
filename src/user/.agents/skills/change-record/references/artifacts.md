@@ -6,10 +6,23 @@
 
 - `${a.b}` stands for the record field at that path.
 - A line whose slot passes through a list, written `[]`, appears once per entry of that list.
-- The lines between `{{#a.b}}` and `{{/a.b}}` appear only when the record holds a value at that path. A group the record does not hold therefore takes its heading or its fold with it.
+- The lines between `{{#a.b}}` and `{{/a.b}}` appear only when the record holds a value at that path. A group the record does not hold therefore takes its heading or its fold with it. So does a group whose every value is empty, such as a blast radius with two empty diagrams.
+- A slot that stands alone on its line is a block, and its value keeps its own lines. Any other slot is set on the template's line.
 - Text in parentheses around a slot is left out, parentheses included, when the record has nothing for that slot.
 
 Three slots name no record field. `${commit_message}` is the rendered commit message. `${decisions}` is the decisions block carried over from the pull request's existing body. `${record_comment_url}` is the comment the record is posted in.
+
+## Line breaks
+
+A line ends at a line feed or a carriage return, alone or as a pair. What an artifact does with a line break depends on the field that holds it.
+
+| Field | A line break in it |
+| --- | --- |
+| `pr.title`, `commit.subject`, `work_item.id`, `work_item.gloss`, `work_item.slice`, and the four fields of `commit.attribution` | `lint` refuses it. Each is a fact or is one line by form. A break there would change the fact, or would move the lines git reads the trailers from. |
+| Any value set in a table cell | It becomes `<br>`, so the value stays in its row. |
+| `design_notes` and the two diagram sources | It stays. Each is a block and keeps its own lines. |
+| `commit.why`, `commit.change` and `commit.verification` | It reads as a space. Each is one paragraph, which `render` wraps at 72 columns. |
+| Every other field, such as the summary, a heads-up entry, a change, and a reply's `change` and `verification` | It reads as one space, together with the space around it. The template gives the field one line or one paragraph. |
 
 ## The pull request body: `pr-body.md`
 
@@ -24,7 +37,7 @@ Three slots name no record field. `${commit_message}` is the rendered commit mes
 - A list that holds only `None.` renders as one bullet, or as one table row, that reads `None.`.
 - A reference to another pull request reads `#12 (its gloss)`. An empty list of them reads `none`.
 - A row in flight shows its pull request beside its status, as `in flight (#12)`.
-- In a table cell, a `|` is escaped and a line break becomes `<br>`.
+- In a table cell, a `|` is escaped and a line break becomes `<br>`, as the table above says.
 - The findings table shows each disposition as Fixed, Rejected or Deferred. A finding reads Superseded when the author's reply to that finding says so.
 - The decisions block another tool keeps in the body is carried over byte for byte, in the place the template gives it.
 
@@ -35,7 +48,8 @@ Three slots name no record field. `${commit_message}` is the rendered commit mes
 - Why is two or three sentences and Change is three or four. Why, Change and Verification total 80 to 150 words. A trivial change omits all three and keeps the work-item line and the trailers.
 - The trailers are `Work-item`, `Co-authored-by` and one session trailer whose key the authoring tool defines. Nothing else is a trailer.
 - The message carries no table, `<details>` fold, fenced block or HTML comment. `render` refuses a field that holds one. One quoted in a code span is a literal, so it passes.
-- `render` wraps Why, Change and Verification at 72 columns. It never wraps the subject, the work-item line or a trailer.
+- `render` wraps Why, Change and Verification at 72 columns. It never wraps the subject, the work-item line or a trailer. It never splits a code span, and a span longer than a line takes a line of its own.
+- `render` reads the wrapped message with the readers `lint` uses, and refuses prose whose wrapped form holds a construct. Three backticks or tildes in running prose open a fenced block where they come first on a line. Three hyphens standing alone end the message for git where they come first on a line, and the trailers below them are lost.
 
 ## The review reply: `review-reply.txt`
 
@@ -44,3 +58,4 @@ Three slots name no record field. `${commit_message}` is the rendered commit mes
 - A rejection gets a reply only when a reviewer asks on the thread. That reply gives the evidence against the finding.
 - Campaign status is stated once, in the body's Verification section, and never in a reply.
 - The commit follows the Change line in parentheses. A reply whose entry names no commit ends its Change line without one.
+- A reply is three lines whatever its entry holds, because a line break in `change` or `verification` reads as a space.

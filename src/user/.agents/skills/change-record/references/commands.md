@@ -53,7 +53,7 @@ Exit 0 rendered, 1 refused, 2 unreadable, unparseable or called wrongly.
 
 ### `render commit`
 
-A field of the commit message that holds a Markdown table, a `<details>` fold, a fenced block or an HTML comment is refused, and the result names the field. `lint` reports a fold, a comment and a fenced `json` block under `machine-content`. `render` reports a table and any other fenced block under `commit-markup`.
+A field of the commit message that holds a Markdown table, a `<details>` fold, a fenced block or an HTML comment is refused, and the result names the field. `lint` reports a fold, a comment and a fenced `json` block under `machine-content`. `render` reports a table and any other fenced block under `commit-markup`. It reports prose whose wrapped form opens a line with `---` under the same code, because git reads such a line as the end of the message.
 
 ### `render reply`
 

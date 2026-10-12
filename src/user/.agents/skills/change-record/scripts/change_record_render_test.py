@@ -168,6 +168,57 @@ def valid(record: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
+def constructs(text: str) -> list[str]:
+    """Name each construct ``text`` holds outside a code span, read with the readers the lint uses."""
+    plain = change_record.outside_code(text)
+    found = [name for name, pattern in change_record.MACHINE_CONTENT.items() if pattern.search(plain)]
+    if COMMIT_MARKUP["table"].search(text):
+        found.append("a table")
+    if list(change_record.fence_openings(text)):
+        found.append("a fenced block")
+    return found
+
+
+def read_trailers(message: str) -> list[list[str]]:
+    """Return each trailer git reads from ``message``, as a key and a value.
+
+    Git ends a line at a line feed alone, so its output is split on that
+    character and on nothing else a text reader would also take for a line end.
+    """
+    parsed = subprocess.run(
+        ["git", "interpret-trailers", "--parse"], input=message.encode("utf-8"), capture_output=True, check=True
+    )
+    return [line.split(": ", 1) for line in parsed.stdout.decode("utf-8").split("\n") if line]
+
+
+def three_trailers(record: dict[str, Any]) -> list[list[str]]:
+    """Return the three trailers a record's commit message must end with, and no other."""
+    by = record["commit"]["attribution"]
+    return [
+        ["Work-item", record["work_item"]["id"]],
+        ["Co-authored-by", by["co_author"]],
+        [by["session_key"], by["session_url"]],
+    ]
+
+
+def put(record: dict[str, Any], path: str, value: Any) -> dict[str, Any]:
+    """Set the field at ``path``, written as lint writes a path, and return the record."""
+    *parents, last = path.strip("/").split("/")
+    node: Any = record
+    for name in parents:
+        node = node[int(name)] if isinstance(node, list) else node[name]
+    node[int(last) if isinstance(node, list) else last] = value
+    return record
+
+
+def at(record: dict[str, Any], path: str) -> Any:
+    """Return what the record holds at ``path``, written as lint writes a path."""
+    node: Any = record
+    for name in path.strip("/").split("/"):
+        node = node[int(name)] if isinstance(node, list) else node[name]
+    return node
+
+
 def retyped(record: dict[str, Any], kind: str) -> dict[str, Any]:
     """Give the example record another commit type.
 
@@ -390,6 +441,33 @@ class TestBodyDetails:
         assert body.count("```mermaid") == 1
         assert "<details><summary>Blast radius</summary>" in body
 
+    @pytest.mark.parametrize(("path", "empty"), [
+        ("/blast_radius", {"reach_graph": "", "task_flow": ""}),
+        ("/blast_radius", {"reach_graph": " \n", "task_flow": "\t"}),
+        ("/blast_radius/task_flow", "  \n"),
+        ("/design_notes", " \n "),
+        ("/design_notes", ""),
+    ], ids=["both-diagrams-empty", "both-diagrams-blank", "one-diagram-blank", "notes-blank", "notes-empty"])
+    def test_a_group_whose_every_value_is_empty_renders_as_an_absent_group_does(self, path: str, empty: Any):
+        record = example()
+        # A record needs its diagrams only when the change reaches outside its package.
+        record["risk"]["reaches_outside_package"] = False
+        with_empty = put(copy.deepcopy(record), path, empty)
+        *parents, last = path.strip("/").split("/")
+        del (at(record, "/".join(parents)) if parents else record)[last]
+        assert change_record.render_body(valid(with_empty)) == change_record.render_body(valid(record))
+
+    @pytest.mark.parametrize(("path", "fold"), [
+        ("/where_this_fits/scope", "Scope of the owning item"),
+        ("/campaign/findings", "Findings by round"),
+    ])
+    def test_a_fold_over_an_empty_list_is_left_out(self, path: str, fold: str):
+        record = example()
+        assert f"<summary>{fold}</summary>" in change_record.render_body(record)
+        body = change_record.render_body(valid(put(record, path, [])))
+        assert fold not in body
+        assert "<details>\n\n</details>" not in body.replace("<summary></summary>", "")
+
     def test_a_campaign_with_no_clean_round_and_no_finding_renders_its_table_alone(self):
         record = example()
         record["campaign"]["terminal_sha"] = ""
@@ -446,14 +524,37 @@ class TestBodyDetails:
         body = change_record.render_body(valid(record))
         assert "\nBuilds on: none. Concurrent: #777 (a prose fix), #774 (the next slice).\n" in body
 
-    def test_a_table_cell_escapes_a_pipe_and_folds_a_line_break(self):
+    @pytest.mark.parametrize("ending", ["\n", "\r", "\r\n"], ids=["LF", "CR", "CRLF"])
+    def test_a_table_cell_escapes_a_pipe_and_keeps_a_line_break_inside_its_row(self, ending: str):
         record = example()
-        record["risk"]["rows"][0]["failure"] = "A pin reads low|high.\nNobody notices."
+        record["risk"]["rows"][0]["failure"] = f"A pin reads low|high.{ending}Nobody notices."
         record["blast_radius"]["reach_graph"] = "graph LR\n  A -->|writes| B"
         body = change_record.render_body(valid(record))
         assert "\n| A pin reads low\\|high.<br>Nobody notices. | " in body
-        # A diagram is not a table row, so its edge labels keep their pipes.
+        assert "\r" not in body
+        # A diagram is not a table row, so its edge labels keep their pipes and its lines.
         assert "```mermaid\ngraph LR\n  A -->|writes| B\n```" in body
+
+    @pytest.mark.parametrize("ending", ["\n", "\r", "\r\n", "\n\n", " \n  "], ids=["LF", "CR", "CRLF", "blank", "spaced"])
+    def test_prose_the_template_sets_on_one_line_reads_a_line_break_as_one_space(self, ending: str):
+        record = example()
+        first, rest = record["summary"].split(". ", 1)
+        record["summary"] = f"{first}.{ending}{rest}"
+        record["heads_up"][0] = f"The gates ran with the system bash first.{ending}Another shell hangs one test."
+        record["changes"][0]["text"] = f"One pin per slot.{ending}No pin names a model."
+        record["verification"]["not_run"] = [f"The browser run,{ending}because no page changed."]
+        body = change_record.render_body(valid(record))
+        assert body.startswith(f"{EXAMPLE['summary']}\n\n## Heads-up\n")
+        assert "\n- The gates ran with the system bash first. Another shell hangs one test.\n" in body
+        assert f"\n- **{record['changes'][0]['topic']}.** One pin per slot. No pin names a model.\n" in body
+        assert "\n- Not run: The browser run, because no page changed.\n" in body
+        assert "\r" not in body
+
+    def test_a_block_keeps_its_own_lines(self):
+        record = example()
+        record["design_notes"] = "The first reason.\n\nThe second reason.\nIts next line."
+        body = change_record.render_body(valid(record))
+        assert "</summary>\n\nThe first reason.\n\nThe second reason.\nIts next line.\n</details>" in body
 
     def test_the_pointer_line_appears_only_with_a_comment_url(self):
         record = example()
@@ -605,6 +706,72 @@ class TestCrR3CommitMessage:
             f"{by['session_key']}: {by['session_url']}\n"
         )
 
+    @pytest.mark.parametrize("path", [
+        "/commit/subject",
+        "/pr/title",
+        "/work_item/id",
+        "/work_item/gloss",
+        "/work_item/slice",
+        "/commit/attribution/tool",
+        "/commit/attribution/co_author",
+        "/commit/attribution/session_key",
+        "/commit/attribution/session_url",
+    ])
+    @pytest.mark.parametrize("tail", ["\nReviewed-by: A reader", "\nSee session.", "\rX-injected: yes", "\r\n"])
+    def test_cr_r3_lint_refuses_a_line_break_in_a_value_set_on_one_line_naming_the_field(
+        self, path: str, tail: str, tmp_path: Path
+    ):
+        record = example()
+        put(record, path, at(record, path) + tail)
+        found = [(error["code"], error["path"]) for error in refusal(record, tmp_path, "commit")]
+        assert ("line-break", path) in found, found
+
+    @pytest.mark.parametrize("key", ["Claude Session", "Claude_Session", "Claude.Session", " Claude-Session", "Claude-Session ", "Sesión", "a:b"])
+    def test_cr_r3_lint_refuses_a_session_key_git_would_not_read_as_a_trailer_key(self, key: str, tmp_path: Path):
+        record = example()
+        record["commit"]["attribution"]["session_key"] = key
+        # Git reads none of the three trailers once one line of the last paragraph is not a trailer.
+        assert read_trailers(change_record.render_commit_message(record)) != three_trailers(record)
+        found = [(error["code"], error["path"]) for error in refusal(record, tmp_path, "commit")]
+        assert found == [("session-key", "/commit/attribution/session_key")]
+
+    @pytest.mark.parametrize("edit", [
+        lambda record: None,
+        lambda record: record["commit"]["attribution"].update(session_key="X-1", session_url="urn:session:1?a=b#c"),
+        lambda record: record["work_item"].update(gloss="reviewer settings: effort and tools, as a cost control"),
+        lambda record: record["commit"].update(verification=record["commit"]["verification"] + " Signed-off-by: nobody."),
+        lambda record: record["commit"].update(why=record["commit"]["why"].replace(". ", ".\n", 1)),
+        lambda record: record["commit"].update(change=record["commit"]["change"].replace(". ", ". ---- ", 1)),
+    ], ids=["as-shipped", "odd-key-and-url", "gloss-with-a-colon", "trailer-shaped-prose", "line-break-in-why", "four-hyphens"])
+    def test_cr_r3_a_record_lint_accepts_renders_exactly_its_three_trailers(self, edit: Any):
+        record = example()
+        edit(record)
+        assert read_trailers(change_record.render_commit_message(valid(record))) == three_trailers(record)
+
+    @pytest.mark.parametrize("pad", range(1, 15))
+    def test_cr_r3_three_hyphens_never_open_a_line_and_end_the_message_for_git(self, pad: int):
+        # Git reads a line that opens with three hyphens as the end of the message.
+        # The hyphens slide across the wrap column, and every record that renders keeps its trailers.
+        record = example()
+        rest = record["commit"]["change"].split(". ", 1)[1]
+        opening = "The panel's configuration holds effort and tools for every slot"
+        record["commit"]["change"] = f"{opening} {'x' * pad} --- and so on. {rest}"
+        assert len(opening) == 63
+        assert change_record.lint_record(record) == []
+        try:
+            message = change_record.render_commit_message(record)
+        except change_record.Refusal as refused:
+            assert [(error["code"], error["path"]) for error in refused.findings] == [("commit-markup", "/commit/change")]
+        else:
+            assert read_trailers(message) == three_trailers(record)
+            assert not re.search(r"(?m)^---(\s|$)", message)
+
+    def test_cr_r3_a_section_that_opens_with_three_hyphens_is_refused(self, tmp_path: Path):
+        record = example()
+        record["commit"]["why"] = "--- " + record["commit"]["why"]
+        found = [(error["code"], error["path"]) for error in refusal(record, tmp_path, "commit")]
+        assert found == [("commit-markup", "/commit/why")]
+
     def test_each_section_follows_its_label_and_wraps_at_72_columns(self):
         record = example()
         record["work_item"]["gloss"] = "a gloss that runs well past the seventy-second column of the line it sits on"
@@ -631,10 +798,7 @@ class TestCrR4CommitMarkup:
         assert proc.returncode == 0, proc.stderr.decode("utf-8")
         message = proc.stdout.decode("utf-8")
         assert message
-        # A construct quoted in a code span is a literal, so it is read past. A fence is read by line.
-        plain = change_record.outside_code(message)
-        for kind, pattern in COMMIT_MARKUP.items():
-            assert not pattern.search(message if kind == "fence" else plain), kind
+        assert constructs(message) == []
 
     @pytest.mark.parametrize("kind", sorted(MARKUP_CASES))
     def test_cr_r4_a_commit_field_carrying_markup_is_refused_naming_the_field(
@@ -670,14 +834,40 @@ class TestCrR4CommitMarkup:
         record["commit"]["change"] = record["commit"]["change"].rstrip(".") + ", in a `<details>` fold."
         assert "`<details>`" in change_record.render_commit_message(valid(record))
 
-    def test_a_quoted_construct_stays_a_literal_where_the_message_wraps_inside_it(self):
+    @pytest.mark.parametrize("pad", range(12))
+    def test_cr_r4_a_quoted_construct_is_never_split_by_the_wrap_and_stays_a_literal(self, pad: int):
+        # The quoted comment slides across the wrap column. Wherever it lands, the span
+        # is whole on one line, so the readers the lint uses find no construct in the message.
+        quoted = "`a literal <!-- kept for the next reader -->`"
         record = example()
         record["commit"]["why"] = (
-            "A reader could not tell a note the author quoted, such as `<!-- kept for the next reader -->`, "
+            f"A reader could not tell a note the author quoted{' so' * pad}, such as {quoted}, "
             "from a real one. Review cost was unpredictable."
         )
         message = change_record.render_commit_message(valid(record))
-        assert re.search(r"`<!--[^`\n]*\n[^`\n]*-->`", message)
+        assert quoted in message
+        assert constructs(message) == []
+
+    def test_cr_r4_a_code_span_longer_than_the_wrap_column_stays_whole_on_its_own_line(self):
+        span = "`" + "<details> a quoted fold that runs on, " * 3 + "past the column`"
+        assert len(span) > 72
+        record = example()
+        record["commit"]["why"] = f"A reader met {span} in a note. Review cost was unpredictable."
+        message = change_record.render_commit_message(valid(record))
+        assert f"\n{span}\n" in message
+        assert constructs(message) == []
+
+    def test_cr_r4_a_construct_the_wrap_would_make_is_refused(self):
+        # Three backticks in running prose open a fence where the wrap puts them first on a line.
+        record = example()
+        record["commit"]["why"] = (
+            "A reader could not tell where the quoted note ended and the text began ``` and so on. "
+            "Review cost was unpredictable."
+        )
+        assert change_record.lint_record(record) == []
+        with pytest.raises(change_record.Refusal) as refused:
+            change_record.render_commit_message(record)
+        assert [(error["code"], error["path"]) for error in refused.value.findings] == [("commit-markup", "/commit/why")]
 
     def test_the_work_item_gloss_reaches_the_message_and_is_held_to_the_same_rule(self, tmp_path: Path):
         record = example()
@@ -721,6 +911,26 @@ class TestCrR5Reply:
             entry["commit"] = commit
         reply = render(record, tmp_path, "reply", *reply_flags(entry))
         assert reply.splitlines()[1] == f"Change: {entry['change']}"
+
+    @pytest.mark.parametrize("field", ["change", "verification"])
+    @pytest.mark.parametrize("ending", ["\n", "\r", "\r\n", "\n\n"], ids=["LF", "CR", "CRLF", "blank"])
+    def test_cr_r5_a_line_break_in_a_reply_s_prose_leaves_it_three_lines(
+        self, field: str, ending: str, tmp_path: Path
+    ):
+        record = example()
+        entry = first_reply(record, "Fixed")
+        whole = entry[field]
+        assert ". " in whole
+        entry[field] = whole.replace(". ", f".{ending}", 1)
+        reply = render(record, tmp_path, "reply", *reply_flags(entry))
+        entry[field] = whole
+        assert reply.split("\n") == [
+            "Outcome: Fixed.",
+            f"Change: {entry['change']} ({entry['commit']})",
+            f"Verification: {entry['verification']}",
+            "",
+        ]
+        assert "\r" not in reply
 
     def test_a_finding_with_no_reply_entry_is_refused(self, tmp_path: Path):
         errors = refusal(example(), tmp_path, "reply", "--finding", "nobody.r9.f9")

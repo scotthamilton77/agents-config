@@ -39,7 +39,6 @@ import re
 import string
 import subprocess
 import sys
-import textwrap
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
@@ -90,6 +89,25 @@ AUTHOR_FILLS = (
     "/commit/attribution/session_key",
     "/commit/attribution/session_url",
 )
+
+# The fields an artifact sets on one line, where a line break would change what
+# the artifact is. A break in the subject, in the work item's id or gloss, or in
+# an attribution value moves the lines git reads the commit message's trailers from.
+ONE_LINE_FIELDS = (
+    "/pr/title",
+    "/work_item/id",
+    "/work_item/gloss",
+    "/work_item/slice",
+    "/commit/subject",
+    "/commit/attribution/tool",
+    "/commit/attribution/co_author",
+    "/commit/attribution/session_key",
+    "/commit/attribution/session_url",
+)
+
+# The characters git reads a trailer's key from. A last paragraph with a line
+# git cannot read as a trailer loses every trailer it holds.
+TRAILER_KEY = re.compile(r"[A-Za-z0-9-]+")
 
 # The form of a link to a comment: a host, then a path that names something on
 # it. A query or a fragment may follow. No host is named here, because a
@@ -751,6 +769,32 @@ def stamp_generated(record: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
+def _line_breaks(record: dict[str, Any]) -> Iterator[dict[str, str]]:
+    """Report each field an artifact sets on one line that holds a line break.
+
+    These fields are facts, or are one line by their form, so no artifact can
+    set a break in one and stay what it is. Prose that an artifact sets on one
+    line may hold a break, and ``render`` reads it as a space.
+    """
+    for path in ONE_LINE_FIELDS:
+        value: Any = record
+        for name in path.split("/")[1:]:
+            value = value[name]
+        if LINE_END.search(value):
+            yield _finding("line-break", path, "this field is set on one line, and it holds a line break")
+
+
+def _session_key(record: dict[str, Any]) -> Iterator[dict[str, str]]:
+    """Report a session trailer key that git would not read as a trailer's key.
+
+    An empty key is left to the rule on unfilled fields.
+    """
+    key = record["commit"]["attribution"]["session_key"]
+    if key.strip() and not TRAILER_KEY.fullmatch(key):
+        message = "git reads a trailer's key from letters, digits and hyphens alone, and this key holds something else"
+        yield _finding("session-key", "/commit/attribution/session_key", message)
+
+
 def _unfilled(record: dict[str, Any]) -> Iterator[dict[str, str]]:
     """Report each field the author fills that is still empty.
 
@@ -934,6 +978,8 @@ RULES = (
     _replies,
     _reply_counts,
     _unfilled,
+    _line_breaks,
+    _session_key,
 )
 
 
@@ -1051,8 +1097,20 @@ OUTCOME_OF = {
     "transferred": "Deferred",
 }
 
-# The row under a table's header, which is what makes the lines around it a table.
-TABLE_RULE = re.compile(r"^(?=.*\|)(?=.*-)[ \t|:-]+$", re.MULTILINE)
+# A whole line that is the row under a table's header, which is what makes the
+# lines around it a table.
+TABLE_RULE = re.compile(r"(?=.*\|)(?=.*-)[ \t|:-]+")
+
+# A whole line that git reads as the end of a commit message. The trailers
+# below such a line are no longer read.
+DIVIDER = re.compile(r"---(?:\s.*)?")
+
+# A word of prose for the wrap: a run with no space in it, with any code span
+# it touches taken whole, spaces and all.
+WORD = re.compile(r"(?:" + CODE_SPAN.pattern + r"|\S)+")
+
+# The most columns a line of commit prose takes, which is the width a log is read at.
+WRAP_COLUMN = 72
 
 _SECTION = re.compile(r"\{\{([#/])([a-z_.]+)\}\}")
 _PARENTHESIS = re.compile(r" \([^()$]*\$\{([^}]+)\}[^()$]*\)")
@@ -1085,6 +1143,28 @@ def _look(record: dict[str, Any], path: str, bound: dict[str, Any]) -> Any:
     return node
 
 
+def _holds_something(value: Any) -> bool:
+    """Say whether a value has anything in it for a reader.
+
+    Text that is only space, a list of nothing and a group whose every value
+    is empty all render as a group the record does not hold.
+    """
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, dict):
+        return any(map(_holds_something, value.values()))
+    if isinstance(value, list):
+        return any(map(_holds_something, value))
+    return value is not None
+
+
+def _one_line(text: str) -> str:
+    """Return prose as one line, in which each line break and the space around it read as one space."""
+    if not LINE_END.search(text):
+        return text
+    return " ".join(filter(None, (part.strip() for part in LINE_END.split(text))))
+
+
 def _shown(value: Any) -> str:
     """Return a field's value as a reader sees it.
 
@@ -1099,14 +1179,20 @@ def _shown(value: Any) -> str:
 def _fill_line(line: str, record: dict[str, Any], bound: dict[str, Any]) -> str:
     """Fill one template line.
 
-    A table row escapes what would end a cell early. Text in parentheses
-    around a slot goes, parentheses and all, when the record has nothing there.
+    A slot that stands alone on its line is a block, and its value keeps its
+    own lines. Any other slot is set on the template's line. A table row keeps
+    a line break as ``<br>`` and escapes a pipe, so the value stays in its
+    cell. Elsewhere a line break reads as a space. Text in parentheses around
+    a slot goes, parentheses and all, when the record has nothing there.
     """
     in_table = line.startswith("|")
+    is_block = bool(_Slots.pattern.fullmatch(line))
 
     def shown(path: str) -> str:
         text = _shown(_look(record, path, bound))
-        return text.replace("|", "\\|").replace("\n", "<br>") if in_table else text
+        if in_table:
+            return LINE_END.sub("<br>", text.replace("|", "\\|"))
+        return text if is_block else _one_line(text)
 
     line = _PARENTHESIS.sub(lambda found: found[0] if shown(found[1]) else "", line)
     return _Slots(line).substitute({path: shown(path) for path in _Slots(line).get_identifiers()})
@@ -1125,7 +1211,7 @@ def _fill(template: str, record: dict[str, Any], bound: dict[str, Any] | None = 
     for line in template.splitlines():
         section = _SECTION.fullmatch(line)
         if section and section[1] == "#":
-            open_sections.append(_look(record, section[2], bound) not in (None, "", [], {}))
+            open_sections.append(_holds_something(_look(record, section[2], bound)))
         elif section:
             open_sections.pop()
         elif all(open_sections):
@@ -1155,11 +1241,20 @@ def _template(name: str) -> str:
 
 
 def _wrapped(text: str) -> str:
-    """Wrap prose at 72 columns, the width a commit log is read at."""
-    return "\n".join(
-        textwrap.fill(line, 72, break_long_words=False, break_on_hyphens=False)
-        for line in text.split("\n")
-    )
+    """Set prose as one paragraph, in lines of at most ``WRAP_COLUMN`` columns.
+
+    A line break in the text reads as a space. A code span is never split,
+    because a construct it quotes would stop being a literal at the start of
+    a line. A word or a span longer than a line takes a line of its own.
+    """
+    lines: list[str] = []
+    for found in WORD.finditer(_one_line(text)):
+        word = found.group()
+        if lines and len(lines[-1]) + 1 + len(word) <= WRAP_COLUMN:
+            lines[-1] += f" {word}"
+        else:
+            lines.append(word)
+    return "\n".join(lines)
 
 
 def commit_markup(written: str, laid_out: str) -> Iterator[str]:
@@ -1168,17 +1263,20 @@ def commit_markup(written: str, laid_out: str) -> Iterator[str]:
     A commit message is read as plain text in a log, where a table, a fold, a
     fenced block and an HTML comment do not render. ``written`` is the field as
     the record holds it, and ``laid_out`` is the same text as the message shows
-    it. A fold and a comment are read from the first, the way ``lint`` reads
-    them, so one quoted in a code span stays a literal where the message wraps
-    inside the span. A table and a fenced block are made of whole lines, so
-    they are read from the second.
+    it. The message is what a reader gets, so every construct is read from
+    ``laid_out``, with the readers ``lint`` uses. A table and a fenced block
+    are made of whole lines, which the wrap takes apart, so those two are read
+    from ``written`` as well.
     """
-    plain = outside_code(written)
+    plain = outside_code(laid_out)
     yield from (name for name, pattern in MACHINE_CONTENT.items() if pattern.search(plain))
-    if TABLE_RULE.search(laid_out):
+    shown = LINE_END.split(laid_out)
+    if any(TABLE_RULE.fullmatch(line) for line in [*LINE_END.split(written), *shown]):
         yield "a Markdown table"
-    if any(True for _ in fence_openings(laid_out)):
+    if any(True for text in (written, laid_out) for _ in fence_openings(text)):
         yield "a fenced block"
+    if any(DIVIDER.fullmatch(line) for line in shown):
+        yield "a line that opens with `---`, which git reads as the end of the message"
 
 
 def render_commit_message(record: dict[str, Any]) -> str:
@@ -1246,6 +1344,8 @@ def render_body(record: dict[str, Any], existing_body: str = "", comment_url: st
     """
     view = {
         **record,
+        # The summary stands alone on its template line and is one paragraph.
+        "summary": _one_line(record["summary"]),
         "commit_message": render_commit_message(record).rstrip("\n"),
         "decisions": _decisions_block(existing_body),
         "record_comment_url": comment_url,
