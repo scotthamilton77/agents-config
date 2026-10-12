@@ -1160,6 +1160,15 @@ class TestCrP4BodyChecks:
         (error,) = json.loads(ran.out)["errors"]
         assert ran.code == 1 and error["code"] == code and reason in error["message"], error
 
+    def test_cr_p4_a_link_to_an_older_record_comment_in_the_decisions_block_leaves_an_exact_render_passing(
+        self, hub: Hub, current: dict[str, Any]
+    ):
+        older, newest = behind(current)["pages"][0]
+        kept = f"{OPENING}\n## Decisions\n- Settled on {older['html_url']}.\n{CLOSING}\n"
+        hub.serve(change_record.render_body(posting(current, 2), kept, newest["html_url"]), [[older, newest]])
+        hub.write(current)
+        assert hub.lint().code == 0
+
     def test_lint_has_nothing_to_compare_on_a_pull_request_with_no_record_comment(
         self, hub: Hub, current: dict[str, Any]
     ):
@@ -1241,11 +1250,20 @@ def two_components(cleared: dict[str, Any]) -> dict[str, Any]:
     return reviewed(record, spoiled=widened)
 
 
+def naming_another(cleared: dict[str, Any]) -> dict[str, Any]:
+    """Return GitHub with a record comment whose marker names this pull request and whose record names the next."""
+    posted = posting({**cleared, "pr": {**cleared["pr"], "number": NUMBER + 1}}, 1, CLEARED)
+    held = record_comment(NEW_ID, 1, posted["record"]["digest"], held=canonical(posted))
+    body = change_record.render_body(posted, "", held["html_url"])
+    return {"body": body, "pages": [[held]], "head": CLEARED, "reviews": VERDICTS}
+
+
 # Each reason `merge` refuses for, by the code it reports: what GitHub then holds, given the record review
 # cleared and the record no round ran on, and whether `merge` got as far as reading the changed paths.
 State = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 REFUSED: dict[str, tuple[State, bool]] = {
     "no-record-comment": (lambda cleared, current: {"body": "A body someone wrote.", "head": CLEARED}, False),
+    "record-comment": (lambda cleared, current: naming_another(cleared), False),
     "summary-length": (lambda cleared, current: reviewed({**cleared, "summary": "One sentence is too few."}), False),
     "stale-body": (lambda cleared, current: reviewed(cleared, body="A body someone wrote."), False),
     "reach": (lambda cleared, current: two_components(cleared), True),
@@ -1261,7 +1279,7 @@ REFUSED: dict[str, tuple[State, bool]] = {
 
 
 # The reasons that are a missing record comment or a failure of what `lint --pr` checks.
-LINT_OR_NO_COMMENT = ["no-record-comment", "summary-length", "stale-body", "reach"]
+LINT_OR_NO_COMMENT = ["no-record-comment", "record-comment", "summary-length", "stale-body", "reach"]
 
 
 def assert_refused(hub: Hub, reason: str, cleared: dict[str, Any], current: dict[str, Any]) -> None:
@@ -1276,16 +1294,23 @@ def assert_refused(hub: Hub, reason: str, cleared: dict[str, Any], current: dict
 
 class TestCrP8Merge:
     def test_cr_p8_merge_squashes_that_head_with_the_message_the_newest_record_comment_renders(
-        self, hub: Hub, cleared: dict[str, Any]
+        self, hub: Hub, cleared: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ):
-        # No record file is written, so the message can only come from the comment.
-        hub.serve(**reviewed(cleared))
+        # No record file is written, so the message can only come from a comment. The older comment holds
+        # another subject, and the shim answers no merge call that carries it.
+        earlier = {**cleared, "commit": {**cleared["commit"], "subject": "feat(review-panel): an earlier wording [9k9.408]"}}
+        older = left(earlier, 1, CLEARED, comment_id=6000000001)["pages"][0][0]
+        newest = left(cleared, 2, CLEARED)
+        hub.serve(newest["body"], [[*newest["pages"][0], older]], head=CLEARED, reviews=VERDICTS)
+        commands, run = [], change_record.run_tool
+        monkeypatch.setattr(change_record, "run_tool", lambda command, sent=None: commands.append(command) or run(command, sent))
         ran = hub.merge()
         assert ran.code == 0, ran.err
         calls = [entry["call"] for entry in ran.calls]
         assert calls[-1] == MERGE and all(map(is_read, calls[:-1]))
-        message = change_record.render_commit_message(posting(cleared, 1, CLEARED))
-        assert f"{EXAMPLE['commit']['subject']}\n\n{ran.sent(MERGE)}" == message
+        subject = EXAMPLE["commit"]["subject"]
+        assert commands[-1][3:] == [str(NUMBER), "--squash", "--match-head-commit", CLEARED, "--subject", subject, "--body-file", "-"]
+        assert f"{subject}\n\n{ran.sent(MERGE)}" == change_record.render_commit_message(posting(cleared, 2, CLEARED))
         assert ran.out == f"merged pull request {NUMBER} at {CLEARED}\n"
 
     @pytest.mark.parametrize("reason", LINT_OR_NO_COMMENT)
@@ -1329,9 +1354,9 @@ def unopened() -> dict[str, Any]:
     return record
 
 
-def published(current: dict[str, Any]) -> dict[str, Any]:
-    """Return the record file a first publish of ``current`` leaves."""
-    return {**current, "record": {**posting(current, 1)["record"], "comment_id": NEW_ID}}
+def published(current: dict[str, Any], revision: int = 1) -> dict[str, Any]:
+    """Return the record file that publishing ``current`` at ``revision`` leaves."""
+    return {**current, "record": {**posting(current, revision)["record"], "comment_id": NEW_ID}}
 
 
 class TestCrP14Create:
@@ -1352,14 +1377,34 @@ class TestCrP14Create:
         assert ran.sent(EDIT) == change_record.render_body(posting(current, 1), "", new_url())
         assert hub.record() == published(current)
 
+    @pytest.mark.parametrize("holds_a_record_comment", [False, True], ids=["no-record-comment", "a-record-comment"])
     def test_cr_p14_create_adopts_the_open_pull_request_of_the_branch_and_opens_no_second(
-        self, hub: Hub, unopened: dict[str, Any], current: dict[str, Any]
+        self, holds_a_record_comment: bool, hub: Hub, unopened: dict[str, Any], current: dict[str, Any]
     ):
-        hub.serve(spoiled={OPEN_FOR_BRANCH: lambda found: [{"number": NUMBER}]})
+        # The parts are filled either way, because a record with no number holds none that are current.
+        pages = [[record_comment(6000000000, 1, "a" * 64)]] if holds_a_record_comment else None
+        hub.serve("", pages, spoiled={OPEN_FOR_BRANCH: lambda found: [{"number": NUMBER}]})
         hub.write(unopened)
         ran = hub.run("--create")
         assert (ran.code, ran.writes) == (0, [CREATE, EDIT]), ran.err
-        assert hub.record() == published(current)
+        assert hub.record() == published(current, 2 if holds_a_record_comment else 1)
+
+    def test_cr_p14_a_filled_record_that_fails_lint_posts_nothing_and_a_rerun_finishes_once_it_is_fixed(
+        self, hub: Hub, unopened: dict[str, Any]
+    ):
+        # The reviews hold fixed findings, and a record with no reply to one of them fails lint once it is filled.
+        del unopened["replies"]
+        hub.serve(head=CLEARED, reviews=VERDICTS)
+        hub.write(unopened)
+        ran = hub.run("--create")
+        assert ran.code == 1 and {error["code"] for error in ran.errors} == {"reply-count"}, ran.err
+        assert ran.writes == [OPEN]
+        filled = hub.record()
+        assert filled["pr"]["number"] == NUMBER and filled["campaign"]["findings"]
+        hub.serve(head=CLEARED, reviews=VERDICTS)
+        hub.write({**filled, "replies": EXAMPLE["replies"]})
+        ran = hub.run("--create")
+        assert (ran.code, ran.writes) == (0, [CREATE, EDIT]), ran.err
 
     @pytest.mark.parametrize(
         ("stops_at", "still_to_write"),
@@ -1522,6 +1567,9 @@ class TestPublishInTheSkillText:
         create = section[section.index("### `--create`") :].split("\n### ")[0]
         for words in ("This is the way a pull request is opened.", "opens no second", "runs the three generators into"):
             assert words in create, words
+        # A failed call leaves the file as it was only where the file is written last.
+        assert "the record file stays as it was." not in section
+        assert "Under `--create` the file keeps the number" in section
         calls = ["`git branch --show-current`", "`gh pr list --head BRANCH --state open --json number`",
                  "`gh pr create --head BRANCH --title TITLE --body-file -`"]
         places = [section.index(call) for call in calls]

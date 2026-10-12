@@ -2573,14 +2573,15 @@ def record_comments(comments: list[dict[str, Any]], number: int) -> list[dict[st
     newest has the highest revision, read as a number, so 10 follows 9. Where
     two carry one revision, the newest is the one with the higher id, which
     GitHub created later. The order GitHub lists the comments in decides
-    nothing. Each comment comes back with the ``revision`` and the ``digest``
-    its marker gives.
+    nothing. Each comment comes back with the ``number``, the ``revision``
+    and the ``digest`` its marker gives.
     """
     found = []
     for comment in comments:
         marker = MARKER.fullmatch(LINE_END.split(comment["body"], maxsplit=1)[0])
         if marker and int(marker["pr"]) == number:
-            found.append({**comment, "revision": int(marker["revision"]), "digest": marker["digest"]})
+            named = {"number": number, "revision": int(marker["revision"]), "digest": marker["digest"]}
+            found.append({**comment, **named})
     return sorted(found, key=lambda comment: (comment["revision"], comment["id"]))
 
 
@@ -2596,7 +2597,9 @@ def held_record(comment: dict[str, Any]) -> dict[str, Any]:
 
     A comment can be edited after it is posted. Its fold is therefore taken
     only when it reads as JSON, fits the record schema, and hashes to the
-    digest that the comment's own marker gives.
+    digest that the comment's own marker gives. The record must also name the
+    pull request its marker names, because whatever reads the record goes on
+    to read that pull request's reviews.
     """
     why = ""
     try:
@@ -2608,6 +2611,8 @@ def held_record(comment: dict[str, Any]) -> dict[str, Any]:
         why = f"does not fit the record schema at {faults[0][0] or 'its root'}: {faults[0][1]}"
     elif not why and record_digest(record) != comment["digest"]:
         why = "does not hash to the digest in its marker"
+    elif not why and record["pr"]["number"] != comment["number"]:
+        why = f"names pull request {record['pr']['number']}, and its marker names {comment['number']}"
     if why:
         raise Refusal([_finding("record-comment", "", f"the record in the fold of {comment['html_url']} {why}")])
     return record
@@ -2616,15 +2621,22 @@ def held_record(comment: dict[str, Any]) -> dict[str, Any]:
 def body_findings(pull: dict[str, Any], records: list[dict[str, Any]]) -> list[dict[str, str]]:
     """Report a pull request body that is not the render of the newest of its record comments ``records``.
 
-    A body that points at an older record comment is reported as that, which
-    covers a publish that lost a race at one revision. Any other difference
-    from the render is a body edited by hand, or a record comment that cannot
-    be read. A pull request with no record comment has nothing to compare.
+    The render is compared first, so a body that is the render passes
+    whatever else it holds. Its decisions block is carried over from the body
+    before it and may link to any comment. A body that differs and points at
+    an older record comment is reported as that, which covers a publish that
+    lost a race at one revision. Any other difference is a body edited by
+    hand. A pull request with no record comment has nothing to compare.
     """
     if not records:
         return []
     *older, newest = records
     body = pull["body"] or ""
+    try:
+        if render_body(held_record(newest), body, newest["html_url"]) == body:
+            return []
+    except Refusal as refusal:
+        return refusal.findings
     named = [comment for comment in older if comment["html_url"] in body]
     if named:
         message = (
@@ -2632,13 +2644,8 @@ def body_findings(pull: dict[str, Any], records: list[dict[str, Any]]) -> list[d
             f"record comment is {newest['html_url']}, revision {newest['revision']}; run `publish` again"
         )
         return [_finding("stale-pointer", "", message)]
-    try:
-        if render_body(held_record(newest), body, newest["html_url"]) != body:
-            message = f"the body is not the render of the record in {newest['html_url']}; run `publish` again"
-            return [_finding("stale-body", "", message)]
-    except Refusal as refusal:
-        return refusal.findings
-    return []
+    message = f"the body is not the render of the record in {newest['html_url']}; run `publish` again"
+    return [_finding("stale-body", "", message)]
 
 
 def fits(**texts: str) -> None:
@@ -2692,12 +2699,16 @@ def publish(record: dict[str, Any], path: Path, dry_run: bool, create: bool = Fa
     ``dry_run`` prints the comment and the body and writes nothing.
 
     ``create`` opens the pull request first when the record names none. No
-    generated part can be current before the pull request exists, so a first
-    publish under ``create`` fills the three parts in place of checking them.
-    The file is written as soon as the number is known, and again once the
-    parts are filled, so the next run starts from whatever this one reached.
+    generated part can be current before the pull request exists. A record
+    that named none, and any first publish under ``create``, therefore has
+    the three parts filled in place of checked. The filled record is linted
+    before it is posted, because a generator can bring in what the lint
+    refuses, such as a fixed finding with no reply. The file is written as
+    soon as the number is known, and again once the parts are filled, so the
+    next run starts from whatever this one reached.
     """
-    if create and record["pr"]["number"] is None:
+    opening = create and record["pr"]["number"] is None
+    if opening:
         record = {**record, "pr": {**record["pr"], "number": opened_pull(record)}}
         write_record(path, record)
     number = record["pr"]["number"]
@@ -2708,10 +2719,13 @@ def publish(record: dict[str, Any], path: Path, dry_run: bool, create: bool = Fa
     comments_path = f"repos/{{owner}}/{{repo}}/issues/{number}/comments"
     pull, records = read_published(number)
     newest = records[-1] if records else None
-    if newest is None and create:
+    if opening or (create and newest is None):
         for _, fill in GENERATORS.values():
             record = regenerated(record, fill)
         write_record(path, record)
+        findings = lint_record(record)
+        if findings:
+            raise Refusal(findings)
     elif newest is None:
         # A stamp shows only that a generated part was not edited after it was
         # stamped, and a stamp can be set by hand. Before the first comment is

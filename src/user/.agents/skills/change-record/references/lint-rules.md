@@ -27,7 +27,7 @@
 | `stale-part` | Under `publish` only: a generated part that its generator would now write differently, on a pull request with no record comment yet. |
 | `too-long` | Under `publish` only: a record comment or a pull request body longer than 65,536 characters. |
 | `stale-pointer` | Under `--pr` and `merge` only: a pull request body that points at an older record comment than the newest. |
-| `record-comment` | Under `--pr` and `merge` only: a newest record comment whose fold does not read as JSON, does not fit the schema, or does not hash to its marker's digest. |
+| `record-comment` | Under `--pr` and `merge` only: a newest record comment whose fold does not read as JSON, does not fit the schema, does not hash to its marker's digest, or names another pull request than its marker. |
 | `stale-body` | Under `--pr` and `merge` only: a pull request body that is not the render of the newest record comment. |
 | `no-record-comment` | Under `merge` only: a pull request with no record comment. |
 | `empty-campaign` | Under `merge` only: a record whose campaign counts no review round. |

@@ -66,9 +66,11 @@ With `--pr`, `lint` also checks the record's reach flag against the pull request
 
 With `--pr`, `lint` then checks the pull request's body against the newest record comment, which `publish` posts. This check compares what GitHub holds and does not read the record file. A pull request with no record comment passes it, because there is nothing to compare. Otherwise one of three findings can follow:
 
-- `stale-pointer`: the body points at an older record comment. A publish that lost a race reads this way too. Two comments then carry one revision, and the body names the one with the lower id.
-- `record-comment`: the record in the newest comment's fold does not read as JSON, does not fit the schema, or does not hash to the digest in the comment's marker.
-- `stale-body`: the body is not the render of that record with the body's own decisions block. A body edited by hand reads this way.
+- `record-comment`: the record in the newest comment's fold does not read as JSON, does not fit the schema, does not hash to the digest in the comment's marker, or names another pull request than the marker.
+- `stale-pointer`: the body is not the render of that record, and it points at an older record comment. A publish that lost a race reads this way too. Two comments then carry one revision, and the body names the one with the lower id.
+- `stale-body`: the body is not the render of that record with the body's own decisions block, and it points at no older record comment. A body edited by hand reads this way.
+
+A body that is the render passes whatever its decisions block links to.
 
 Under `--pr`, `lint` makes these calls, in order, and every one is a read:
 
@@ -148,7 +150,9 @@ When the comment is already posted, the output is that comment as GitHub holds i
 
 With `--create`, `publish` opens the pull request when the record's `pr.number` is not set. This is the way a pull request is opened. It reads the current branch from git. When a pull request is already open for that branch, it takes that one and opens no second. Otherwise it runs `gh pr create` with the record's title, and with the render that has no pointing line as the body.
 
-No generated part can be current before the pull request exists, because `campaign` reads the pull request and `context` reads its paths. A first publish under `--create` therefore runs the three generators into the record, in place of the check in the third step. The record file is written as soon as the number is known, and again once the parts are filled.
+No generated part can be current before the pull request exists, because `campaign` reads the pull request and `context` reads its paths. `publish --create` therefore runs the three generators into the record, in place of the check in the third step. It does so for a record that named no pull request, whether or not the pull request it takes already holds a record comment. It does so too on any first publish. The record file is written as soon as the number is known, and again once the parts are filled.
+
+The filled record is linted again before the comment is created, because a generator can bring in what `lint` refuses, such as a fixed finding with no reply. A record that then fails is refused with the lint's findings, and no comment is posted. The pull request stays open, and the file keeps the number and the filled parts. Fix the record and run `publish --create` again.
 
 A run that stops after the pull request is open is finished by running `publish --create` again. That run takes the number from the file, or finds the open pull request by its branch, and goes on from there. A record that already names its pull request is published there, and nothing is opened.
 
@@ -188,7 +192,7 @@ Under `--create`, on a record with no `pr.number`, these come before the five, i
 2. `gh pr list --head BRANCH --state open --json number`
 3. `gh pr create --head BRANCH --title TITLE --body-file -`, with the body on standard input, when no pull request is open for the branch
 
-A call that fails or cannot be run stops the run, and so does an answer that does not have the shape that call's answer has. The message quotes the call. Nothing is written to GitHub after it, and the record file stays as it was.
+A call that fails or cannot be run stops the run, and so does an answer that does not have the shape that call's answer has. The message quotes the call. Nothing is written to GitHub after it. Without `--create` the record file is written last, so a failed call leaves it unchanged. Under `--create` the file keeps the number once the pull request is known, and the filled parts once the generators have run.
 
 Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.
 
