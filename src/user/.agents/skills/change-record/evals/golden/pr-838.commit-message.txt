@@ -1,0 +1,25 @@
+feat(grillui): every answer typed in the human's own words goes to the expert seat [9k9.315.14]
+
+Work item agents-config-9k9.315.14, the expert weighs every answer typed in the human's own words.
+
+Why
+A typed answer reached the expert seat only when it marked or opened a
+decision. A typed note with nothing downstream was read by the fast
+first seat, against the spec's seating decision.
+
+Change
+Any answer carrying a note or free text goes to the expert. With nothing
+downstream, no impact task is recorded and nothing waits. A typed turn
+with no task runs at the task effort, and keeps the heavy effort on a
+channel the human moved to the expert. Three spec passages now say the
+same.
+
+Verification
+make ci exits 0, and make e2e-grillui exits 0 with 97 passed. Six new
+unit tests cover the change, and four of them failed before it. The
+map's escalation rules are now unreachable, and their code is not
+removed. No review round ran.
+
+Work-item: agents-config-9k9.315.14
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01PbsEMZWoDMTXQ2jMMP1XFV

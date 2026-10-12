@@ -39,6 +39,17 @@ SCRIPT = HERE / "change_record.py"
 REFERENCES = SKILL / "references"
 SCHEMA = json.loads((REFERENCES / "record.schema.json").read_text(encoding="utf-8"))
 EXAMPLE = json.loads((SKILL / "examples" / "pr-843.json").read_text(encoding="utf-8"))
+
+# The example the skill ships, and the examples that exist only for the suites.
+# Those sit under a directory the installer never ships.
+EXAMPLES = sorted(
+    [*(SKILL / "examples").glob("*.json"), *(SKILL / "evals" / "records").glob("*.json")],
+    key=lambda path: path.name,
+)
+
+# The four feature pull requests that an example is built from.
+FOUR_EXAMPLES = ["pr-838", "pr-839", "pr-843", "pr-846"]
+
 PHRASES = json.loads((REFERENCES / "lint-phrases.json").read_text(encoding="utf-8"))
 COMMENTARY = PHRASES["document_commentary"]
 CAMPAIGN_STATUS = PHRASES["campaign_status"]
@@ -342,8 +353,13 @@ TRAILING_NEWLINE: dict[str, Callable[[dict[str, Any]], None]] = {
 
 
 class TestLint:
-    def test_cr_l1_the_pr_843_example_passes(self, tmp_path: Path):
-        assert lint(EXAMPLE, tmp_path) == (0, {"valid": True})
+    @pytest.mark.parametrize("name", FOUR_EXAMPLES)
+    def test_cr_l1_each_of_the_four_example_records_passes(self, name: str, tmp_path: Path):
+        found = {path.stem: path for path in EXAMPLES}
+        assert name in found, f"{name}.json is missing"
+        record = json.loads(found[name].read_text(encoding="utf-8"))
+        assert (record["pr"]["type"], f"pr-{record['pr']['number']}") == ("feat", name)
+        assert lint(record, tmp_path) == (0, {"valid": True})
 
     def test_the_example_carries_every_group_the_schema_defines(self):
         assert set(EXAMPLE) == set(SCHEMA["properties"])
@@ -2074,6 +2090,25 @@ class TestLintRules:
         assert [(error["code"], error["path"]) for error in result["errors"]] == [
             ("unstated-empty", "/discovered/rows"), ("bare-id", APPENDED_HEADS_UP), ("summary-length", "/summary"),
         ]
+
+
+class TestCrL9WhatShips:
+    def test_cr_l9_the_skill_holds_the_files_it_ships_and_one_example(self):
+        for name in (
+            "SKILL.md",
+            "references/record.schema.json",
+            "references/pr-body.md",
+            "references/commit-message.txt",
+            "references/review-reply.txt",
+            "scripts/change_record.py",
+        ):
+            assert (SKILL / name).is_file(), name
+        # The installer leaves behind a directory named evals, every suite, and
+        # the suites' support file. A second file under examples would ship, and
+        # so would a module beside the script that is no suite.
+        assert sorted(path.name for path in (SKILL / "examples").glob("[!.]*")) == ["pr-843.json"]
+        modules = sorted(path.name for path in HERE.glob("*.py") if not path.name.endswith("_test.py"))
+        assert modules == ["change_record.py", "conftest.py"]
 
 
 class TestCommandLine:

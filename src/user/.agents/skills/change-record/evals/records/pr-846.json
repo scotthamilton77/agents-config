@@ -1,0 +1,242 @@
+{
+  "pr": {
+    "number": 846,
+    "title": "feat(acceptance-criteria): the attack panel files coverage gaps under one rule only [9k9.405.14]",
+    "type": "feat",
+    "component": "acceptance-criteria",
+    "head_sha": "fa70d702743d7b32580206808c684c520b1d6575"
+  },
+  "work_item": {
+    "id": "agents-config-9k9.405.14",
+    "gloss": "two overlapping rules of the criteria standard ask different questions",
+    "slice": "the fix for two overlapping rules of the standard"
+  },
+  "summary": "The standard for acceptance criteria had two rules that asked the same question, so the panel that attacks a criteria set reported one gap under two names. One rule now asks only about the check a criterion names. The other rule keeps the question of whether a commitment has a criterion at all. On a test document with no defect, 9 of 10 panel runs now return an empty report, up from 2 of 10. All 10 runs on the defective copy still catch the planted defect.",
+  "heads_up": [
+    "The run records behind the numbers are in an untracked scratch directory on the author's machine.",
+    "Every existing attack record's fingerprint changes, because the rule text is part of each emitted prompt."
+  ],
+  "where_this_fits": {
+    "ancestry": [
+      {
+        "id": "agents-config-9k9",
+        "title": "Harness rework",
+        "type": "milestone"
+      },
+      {
+        "id": "agents-config-9k9.405",
+        "title": "Acceptance-criteria lifecycle: one standard, one home, attacked before any claim and re-attacked on amendment",
+        "type": "feature"
+      },
+      {
+        "id": "agents-config-9k9.405.14",
+        "title": "The verification-contract rule judges a criterion's check, and the coverage rule alone asks whether a commitment has a criterion",
+        "type": "feature"
+      }
+    ],
+    "builds_on": [
+      {
+        "pr": 785,
+        "gloss": "feat(9k9.397): one acceptance-criteria standard, and the criteria attack judges against it"
+      }
+    ],
+    "concurrent": [],
+    "scope": [
+      {
+        "slice": "agents-config-9k9.397",
+        "covers": "Acceptance-criteria standard adopted, and the criteria attack judges against it (AC bootstrap)",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.405.1",
+        "covers": "Design: Acceptance-criteria lifecycle: one standard, one home, attacked before any claim and re-attacked on amendment",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.405.2",
+        "covers": "[Impl] Acceptance-criteria lifecycle: one standard, one home, attacked before any claim and re-attacked on amendment (scope: per spec)",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.405.3",
+        "covers": "Code over prose in the acceptance-criteria lifecycle slices: emitters render for themselves, one driver script for the tracker-item attack path, lint rules for the standard's mechanical subset",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.405.4",
+        "covers": "AC lifecycle rendering and references",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.405.5",
+        "covers": "AC lifecycle attestation and invalidation",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.405.6",
+        "covers": "AC lifecycle attack workflow and compatibility",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.405.7",
+        "covers": "AC lifecycle claim and delivery gates",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.405.8",
+        "covers": "AC lifecycle repository record gate",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.405.9",
+        "covers": "AC lifecycle review consumers",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.405.10",
+        "covers": "AC quality assessment and evaluation contract",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.405.11",
+        "covers": "AC brief fidelity and evidence mapping",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.405.12",
+        "covers": "A tracker-born attack record made in a consumer project has no home: the workcli rounds of 2026-09-30",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.405.13",
+        "covers": "AC attack rule ownership and record surface",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.405.14",
+        "covers": "The verification-contract rule judges a criterion's check, and the coverage rule alone asks whether a commitment has a criterion",
+        "status": "this PR"
+      }
+    ],
+    "digest": "79df1f6aba80132f648863adf6766d4cc2515f0ededca3675dd7f3a469cc3b62"
+  },
+  "risk": {
+    "reaches_outside_package": true,
+    "rows": [
+      {
+        "failure": "The panel stops catching a defect it caught before.",
+        "exposed": "Every spec attacked with the deployed standard, in every project.",
+        "evidence": "All 10 runs on the defective document still objected to the planted criterion under the planted rule.",
+        "recovery": "Revert."
+      },
+      {
+        "failure": "The gain on the clean control is noise.",
+        "exposed": "The owner, who would believe the panel is quieter than it is.",
+        "evidence": "Ten runs per document used the same model and effort. The one control objection left cites a flaw the document has in both versions.",
+        "recovery": "Run the pilot again."
+      }
+    ]
+  },
+  "blast_radius": {
+    "reach_graph": "graph LR\n  S[acceptance-criteria standard, one sentence] -->|every emitted prompt carries the new sentence| P[attack panel prompts]\n  S -->|fingerprints change| R[existing attack records]\n  S -.table gains a column.-> L[table of reviewers in the attack skill]\n  S -->|deployed to| ALL[every project with the standard installed]",
+    "task_flow": "flowchart LR\n  a[Spec drafted] --> b[Criteria written] --> c[Attack panel runs on prompts that carry the new rule text]:::chg\n  c --> d[Objections recorded] --> e[Work claimed]\n  classDef chg stroke-width:3px"
+  },
+  "changes": [
+    {
+      "topic": "The rule",
+      "text": "The `verification-contract` rule opened with a sentence that held the coverage rule's question. It now opens by judging each criterion's own check, and it sends the other question to coverage."
+    },
+    {
+      "topic": "The table of reviewers",
+      "text": "The attack skill's table gains a column naming what each reviewer reads, which decides who owns a rule."
+    }
+  ],
+  "design_notes": "The `verification-contract` rule opened by saying that every material commitment has a feasible check. That sentence holds the coverage rule's question, so the reviewer that owns `verification-contract` filed coverage gaps under it. On the pilot's second case, 18 of 20 runs raised such objections under the rule as it was.\n\nEach reviewer in the attack panel is defined by the unit it reads. One reads a single criterion on its own shape. One reads the set against the document's promises. One reads the set against itself. One asks a single criterion what it leaves untested. That unit decides which reviewer owns a rule. Two reviewers may share ground when one asks about a criterion and the other about the set.\n\nThe measurement used the pilot's second case, which is a realistic document of eight criteria with one planted defect, and a corrected control. Ten fresh runs per document read prompts emitted from each version of the standard. Runs objecting to the planted criterion under the planted rule stayed at 10 of 10. Defective runs with objections elsewhere fell from 10 of 10 to 1 of 10. Control runs returning an empty report rose from 2 of 10 to 9 of 10. The one control objection left cites a contradiction the test document carries in both versions.\n\nNo reviewer prompt changed. No existing attack record is reopened, because the record check binds to the document's revision and never to the rule text. Other sentences in the attack skill were shortened to keep its body under the size cap.",
+  "discovered": {
+    "rows": [
+      "None."
+    ],
+    "filed_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "verification": {
+    "gates": [
+      {
+        "gate": "make ci",
+        "exit_status": 0,
+        "location": "the worktree root"
+      }
+    ],
+    "not_run": [
+      "None."
+    ]
+  },
+  "campaign": {
+    "reviewers": [
+      {
+        "reviewer": "internal-consistency",
+        "rounds": "1",
+        "findings": 0,
+        "fixed": 0,
+        "rejected": 0,
+        "deferred": 0
+      },
+      {
+        "reviewer": "global-consistency",
+        "rounds": "1",
+        "findings": 0,
+        "fixed": 0,
+        "rejected": 0,
+        "deferred": 0
+      },
+      {
+        "reviewer": "standalone-read",
+        "rounds": "1",
+        "findings": 0,
+        "fixed": 0,
+        "rejected": 0,
+        "deferred": 0
+      }
+    ],
+    "terminal_sha": "",
+    "findings": [],
+    "digest": "1ad752ac6d3be70381061e925115c1cae870862e8a42443cef2e5ec1987d61fa"
+  },
+  "criteria": [
+    {
+      "id": "A1",
+      "promise": "The `verification-contract` rule judges whether each criterion names a feasible and complete check, and it sends the question of whether a commitment has a criterion to coverage.",
+      "evidence": "the rule's text in the standard"
+    },
+    {
+      "id": "A2",
+      "promise": "The attack skill states the unit each reviewer reads, beside its table of reviewers.",
+      "evidence": "the new column of that table and the sentence above it"
+    },
+    {
+      "id": "A3",
+      "promise": "At least 8 of 10 control runs come back empty, and at least 8 of 10 defective runs object to the planted criterion.",
+      "evidence": "9 of 10 control runs empty and 10 of 10 defective runs objecting, on the pilot's second case"
+    },
+    {
+      "id": "A4",
+      "promise": "`make content-tests` exits 0.",
+      "evidence": "`make ci`, which runs that gate, exited 0"
+    }
+  ],
+  "commit": {
+    "subject": "feat(acceptance-criteria): the attack panel files coverage gaps under one rule only [9k9.405.14]",
+    "why": "Two rules in the acceptance-criteria standard asked the same question, so the attack panel reported a missing check under two names. On a clean control document only 2 of 10 runs came back empty.",
+    "change": "The verification-contract rule now opens by judging the check each criterion names. Whether a commitment has a criterion at all stays with the coverage rule. The attack skill's table of reviewers names what each one reads, which is what decides who owns a rule.",
+    "verification": "make ci exits 0. On the pilot's second case, ten runs per document gave an empty control report in 9 of 10 runs. The planted defect was detected in 10 of 10. One prose review round came back clean.",
+    "attribution": {
+      "tool": "Claude Code",
+      "co_author": "Claude Fable 5.1 <noreply@anthropic.com>",
+      "session_key": "Claude-Session",
+      "session_url": "https://claude.ai/code/session_018CLkTLjLQ2ohANDFQ9qi41"
+    }
+  },
+  "record": {
+    "schema_version": 1,
+    "revision": 0
+  }
+}
