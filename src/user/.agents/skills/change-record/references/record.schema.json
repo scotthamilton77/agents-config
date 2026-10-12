@@ -278,10 +278,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["round", "id", "claim"],
+            "required": ["claim_id", "artifact_class", "round", "id", "claim"],
             "properties": {
-              "claim_id": {"type": "string", "description": "The completion claim the finding's round judged."},
-              "artifact_class": {"type": "string", "description": "The kind of artifact the finding's round reviewed."},
+              "claim_id": {"type": "string", "minLength": 1, "description": "The completion claim the finding's round judged. Finding ids start again with each claim, so the claim is part of what names a finding."},
+              "artifact_class": {"type": "string", "minLength": 1, "description": "The kind of artifact the finding's round reviewed. Finding ids start again with each kind, so the kind is part of what names a finding."},
               "round": {"type": "integer", "minimum": 1, "description": "The round the finding first appeared in."},
               "id": {"type": "string", "minLength": 1},
               "claim": {"type": "string", "description": "What the finding says."},
@@ -347,7 +347,7 @@
         "required": ["finding_id", "outcome", "change", "verification"],
         "properties": {
           "finding_id": {"type": "string", "minLength": 1},
-          "claim_id": {"type": "string", "description": "The completion claim the finding belongs to. Needed when two claims share a finding id."},
+          "claim_id": {"type": "string", "description": "The completion claim the finding belongs to. A reply answers a campaign finding only when it gives the finding's claim, artifact class and id."},
           "artifact_class": {"type": "string", "description": "The kind of artifact the finding's round reviewed."},
           "outcome": {"enum": ["Fixed", "Superseded", "Rejected", "Deferred"]},
           "change": {"type": "string", "x-rewritable": true, "description": "What is different now, in one or two sentences."},

@@ -65,7 +65,8 @@
         "status": "in flight",
         "pr": 774
       }
-    ]
+    ],
+    "digest": "a638b0b41410a4f9746423b0dae1bf30788ef2e02851c2c4022f4ad37f7b0f7f"
   },
   "risk": {
     "reaches_outside_package": true,
@@ -492,7 +493,8 @@
         "reason": "harvest.md 'Transport is symmetric' replaced 'Neither direction is the exceptional one, and neither transport is the more reliable one — both have been down while the other worked.' with 'Neither direction is the exceptional one, because either transport can be down while the other works.' The narrated outages are gone and the symmetric-failover rationale stays in one sentence. Commit e43ccecc. No test exercises prose.",
         "commit": ""
       }
-    ]
+    ],
+    "digest": "f03b31fd6e818540dd4ac9eb22994794d545da9c7c1a05f6516c3baf557efe5f"
   },
   "criteria": [
     {
@@ -562,8 +564,170 @@
       "claim_id": "9k9.408-r2",
       "artifact_class": "prose",
       "outcome": "Deferred",
-      "change": "Nothing changes here. The verdict schema's halt reasons do not name a halt caused by runs that died, and that is a change to a shared skill with its own tests and review. The notes on agents-config-9k9.408 (this pull request's work item) inherit it.",
-      "verification": "The finding is advisory and does not block. The schema reads transport-failure for this case until the follow-on lands."
+      "change": "Nothing changes in this pull request, because the verdict schema lives in another skill and is outside this change. The notes on agents-config-9k9.408 (this pull request's work item) carry the missing halt reason for a follow-on item.",
+      "verification": "The finding is advisory and does not block. The schema is not edited, so it still reads transport-failure for a halt caused by runs that died."
+    },
+    {
+      "finding_id": "correctness.r1.f2",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "The gate now gives halt guidance when the last failure on every route the reviewer ran on was a transport error or a run that died. The halt sentence in harvest.md states the same condition.",
+      "verification": "test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output failed before the change, with no halt key in the refusal, and passes after. Restoring the old check of every failure makes only that test fail.",
+      "commit": "75bb090c"
+    },
+    {
+      "finding_id": "test-adequacy.r1.f1",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "test_a9_the_round_record_names_each_lens_pin now checks each reviewer entry's tier against the roster before it checks the pin. Only the test changed.",
+      "verification": "A mutant that dispatched every reviewer at its declared tier in a sweep had passed all 219 emitter tests. That mutant now fails this test for the prose, spec and typed-code sweeps, and the branch passes it.",
+      "commit": "7774cae8"
+    },
+    {
+      "finding_id": "test-adequacy.r1.f2",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "All 27 scenario reads were run again on isolated readers that can reach only copies of the five named files. The scenario file now names that reader and says why an Agent-tool subagent does not qualify.",
+      "verification": "An isolation trial showed that the isolated reader sees no instruction file, and that a reader with default settings sees the global ones. The isolated readers gave the keyed answer in 27 of 27 reads. No unit test exercises a doctrine evaluation.",
+      "commit": "6643c534"
+    },
+    {
+      "finding_id": "simplification-efficiency.r1.f1",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "change_diffs now computes the diff for each distinct start revision once, and reuses its bytes for every reviewer that shares the revision pair.",
+      "verification": "An instrumented run had counted five git diff calls for one typed-code emission. test_a18_lenses_sharing_a_revision_pair_share_one_diff failed before the change and passes after. The file-content, empty-change and unknown-revision tests still pass.",
+      "commit": "cdd53cc1"
+    },
+    {
+      "finding_id": "documentation-quality.r1.f1",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "The transport-error example in harvest.md now claims the failover slot with `--effort low` in place of `--effort high`.",
+      "verification": "The failover slot in that example is the OpenRouter frontier slot for a whole-document read, and contracts.json pins it at low effort. test_a6_every_lens_pin_has_its_stated_effort holds that value. No test runs an example command, so the example was read against the pin.",
+      "commit": "a55b0e4d"
+    },
+    {
+      "finding_id": "documentation-quality.r1.f2",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "harvest.md now says that only an `attempts-exhausted` refusal ends a reviewer's run. A claim refused as `off-ladder`, or for a missing or malformed flag, spends no attempt and can be corrected and claimed again.",
+      "verification": "The gate raises those refusals before it writes the ledger, so they spend no attempt. test_a_refused_claim_rewrites_nothing_and_grants_no_attempt holds that behaviour.",
+      "commit": "a55b0e4d"
+    },
+    {
+      "finding_id": "documentation-quality.r1.f3",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "harvest.md now says that an attempt the watchdog killed for silence leaves no output and is a run that died. The gate's no-output message names `dead-run` for that case and `transport-error` otherwise.",
+      "verification": "test_a_claimed_path_holding_no_file_is_a_transport_failure gained an assertion that the message names `dead-run`. The test failed before the change and passes after.",
+      "commit": "837f8a4c"
+    },
+    {
+      "finding_id": "documentation-quality.r1.f4",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "The comment on MAX_ATTEMPTS no longer argues for another model on the same vendor, and now says why each attempt declares its transport and its model. The same argument is gone from the docstring of check_route.",
+      "verification": "No test exercises a comment, so both texts were read against the doctrine. The only recovery they describe is the failover slot that the routing table fixes, which is what harvest.md requires.",
+      "commit": "a55b0e4d"
+    },
+    {
+      "finding_id": "documentation-quality.r1.f5",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "The first line of the docstring of exhausted() now says halt guidance is given when the last failure on every route the reviewer ran on was a transport error or a run that died.",
+      "verification": "No test exercises a docstring, so it was read against the code it describes. It states the rule that test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output holds in dispatch_gate_test.py.",
+      "commit": "75bb090c"
+    },
+    {
+      "finding_id": "correctness.r2.f1",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "The gate now accepts a failover only onto the other provider of the Codex and OpenRouter pair, and a lower-effort retry only on the starting transport. A claim on any third transport is refused and spends no attempt.",
+      "verification": "test_a17_a_transport_that_is_not_the_failover_seat_is_refused failed before the change, because the gate authorised the claim, and passes after. A mutant that drops the same-transport guard from the lower-effort branch also fails it.",
+      "commit": "56130d01"
+    },
+    {
+      "finding_id": "test-adequacy.r2.f1",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "test_a17_a_dead_run_after_the_failover_is_out_of_attempts now runs for both requested transports, the failover one and the starting one, with the failover on the second attempt and on the third.",
+      "verification": "Against the reviewer's mutant, the two starting-transport cases failed and the other two passed. Against the unchanged gate all four cases pass.",
+      "commit": "56130d01"
+    },
+    {
+      "finding_id": "documentation-quality.r2.f1",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "typed-code",
+      "outcome": "Fixed",
+      "change": "The comment on ROUTE_FAILURES now says that a reviewer out of attempts halts the round when the last failure on every route it ran on is one of the listed failures.",
+      "verification": "No test exercises a comment, so it was read against exhausted(), which it now matches. test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output still holds the behaviour the comment describes.",
+      "commit": "e399db1d"
+    },
+    {
+      "finding_id": "internal-consistency.r1.f1",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "prose",
+      "outcome": "Fixed",
+      "change": "harvest.md now says that an `attempts-exhausted` refusal is the one that carries halt guidance. The sentence on an `off-ladder` refusal is unchanged, so each case has one sentence and the two no longer overlap.",
+      "verification": "The gate attaches halt guidance only to an `attempts-exhausted` refusal, and raises an `off-ladder` refusal without it. No test exercises prose, so the sentences were checked against that code.",
+      "commit": "78c49400"
+    },
+    {
+      "finding_id": "internal-consistency.r1.f2",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "prose",
+      "outcome": "Fixed",
+      "change": "harvest.md now says that a claimed path holding nothing is refused as `no-output`. It tells the reader to claim again as `dead-run` after a watchdog kill for silence, and as `transport-error` otherwise.",
+      "verification": "The new sentences restate the gate's own no-output message and agree with the section on runs that died. No test exercises prose. Another reviewer reported the same defect, and this one change answers both findings.",
+      "commit": "0fd61251"
+    },
+    {
+      "finding_id": "global-consistency.r1.f1",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "prose",
+      "outcome": "Fixed",
+      "change": "The sentence in harvest.md that classed every empty claimed path as a transport failure is replaced by the gate's own no-output guidance. That guidance is `dead-run` after a watchdog kill for silence, and `transport-error` otherwise.",
+      "verification": "No test exercises prose. Another reviewer reported the same defect, and one change answers both findings.",
+      "commit": "0fd61251"
+    },
+    {
+      "finding_id": "global-consistency.r1.f3",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "prose",
+      "outcome": "Fixed",
+      "change": "The scenario file now names its input files by skill and file name, in place of paths from the repository root. It names each scenario's round record as a file beside the scenario file.",
+      "verification": "The finding was advisory, and it was fixed because the fix is cheap and right. The keyed answers did not change. No test exercises prose.",
+      "commit": "5bc9e856"
+    },
+    {
+      "finding_id": "standalone-read.r1.f1",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "prose",
+      "outcome": "Fixed",
+      "change": "The introduction of harvest.md now says that each rule settles a case the invoker would otherwise improvise. The episode it used to narrate is gone.",
+      "verification": "The reason for the rules stays in the same sentence: an improvised rule is one nobody can audit afterwards. No test exercises prose.",
+      "commit": "e43ccecc"
+    },
+    {
+      "finding_id": "standalone-read.r1.f2",
+      "claim_id": "9k9.408-r2",
+      "artifact_class": "prose",
+      "outcome": "Fixed",
+      "change": "The section of harvest.md on symmetric transport now says that neither direction is the exceptional one, because either transport can be down while the other works. The outages it used to narrate are gone.",
+      "verification": "The reason for symmetric failover stays, in one sentence. No test exercises prose.",
+      "commit": "e43ccecc"
     }
   ],
   "record": {

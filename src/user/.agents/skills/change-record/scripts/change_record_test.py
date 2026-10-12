@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["jsonschema>=4", "pytest>=8"]
 # ///
-"""Tests for the change record's schema, its templates and the lint over a record.
+"""Tests for the change record's schema, its templates, the lint over a record and the start of a new one.
 
 Run: uv run change_record_test.py
 """
@@ -17,8 +17,10 @@ import conftest  # noqa: F401
 # isort: split
 
 import copy
+import hashlib
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -37,7 +39,9 @@ SCRIPT = HERE / "change_record.py"
 REFERENCES = SKILL / "references"
 SCHEMA = json.loads((REFERENCES / "record.schema.json").read_text(encoding="utf-8"))
 EXAMPLE = json.loads((SKILL / "examples" / "pr-843.json").read_text(encoding="utf-8"))
-COMMENTARY = json.loads((REFERENCES / "lint-phrases.json").read_text(encoding="utf-8"))["document_commentary"]
+PHRASES = json.loads((REFERENCES / "lint-phrases.json").read_text(encoding="utf-8"))
+COMMENTARY = PHRASES["document_commentary"]
+CAMPAIGN_STATUS = PHRASES["campaign_status"]
 
 # The groups a record of any commit type carries. The others depend on the type
 # or are filled by a generator, so their absence is not a structural fault.
@@ -128,12 +132,12 @@ TEMPLATE_MARKERS = {
 }
 
 
-def lint(record: Any, tmp_path: Path, script: Path = SCRIPT) -> tuple[int, dict[str, Any]]:
+def lint(record: Any, tmp_path: Path, script: Path = SCRIPT, *flags: str) -> tuple[int, dict[str, Any]]:
     """Run the lint subcommand over ``record`` in a child process and parse what it printed."""
     path = tmp_path / "record.json"
     path.write_text(json.dumps(record), encoding="utf-8")
     proc = subprocess.run(
-        [sys.executable, str(script), "lint", str(path)],
+        [sys.executable, str(script), "lint", *flags, str(path)],
         capture_output=True, text=True, check=False,
     )
     return proc.returncode, json.loads(proc.stdout)
@@ -154,6 +158,12 @@ def findings(record: Any, rule: str, tmp_path: Path, script: Path = SCRIPT) -> l
     """Return the path and message of each finding the lint reports under the code ``rule``."""
     _, result = lint(record, tmp_path, script)
     return [(error["path"], error["message"]) for error in result.get("errors", []) if error["code"] == rule]
+
+
+def findings_with(record: Any, rule: str, tmp_path: Path, *flags: str) -> list[str]:
+    """Return the path of each finding of ``rule`` when the lint runs with ``flags``."""
+    _, result = lint(record, tmp_path, SCRIPT, *flags)
+    return [error["path"] for error in result.get("errors", []) if error["code"] == rule]
 
 
 def assert_breaks(record: Any, rule: str, field: str, tmp_path: Path, *named: str) -> None:
@@ -371,7 +381,8 @@ class TestLint:
         assert_fails_naming(record, "/discovered/rows/0", tmp_path)
 
     def test_criteria_is_a_table_or_one_line(self, tmp_path: Path):
-        record = example()
+        # Only a spec pull request takes the one line, so the record is one.
+        record = of_type("spec")
         record["criteria"] = "Attacked twice; the record is beside the spec."
         assert lint(record, tmp_path) == (0, {"valid": True})
         record["criteria"] = [{"id": "A1"}]
@@ -513,6 +524,35 @@ class TestCrL2Gloss:
         record[group][name] = "feat(review-panel): use the retry bound [after D16 lands]"
         assert_breaks(record, "bare-id", field, tmp_path, "D16")
 
+    @pytest.mark.parametrize("field", ["/pr/title", "/commit/subject"])
+    @pytest.mark.parametrize("other", ["D16", "#843", "9k9.409", "agents-config-9k9.408"])
+    def test_cr_l2_an_id_alone_in_the_closing_brackets_is_passed_over_only_when_it_is_the_work_items_short_id(
+        self, field: str, other: str, tmp_path: Path
+    ):
+        record = example()
+        group, name = field.strip("/").split("/")
+        record[group][name] = swap(PLAIN_SUBJECT, "[9k9.408]", f"[{other}]")
+        assert_breaks(record, "bare-id", field, tmp_path, other)
+        record[group][name] = PLAIN_SUBJECT
+        assert findings(record, "bare-id", tmp_path) == []
+
+    @pytest.mark.parametrize("field", ["/pr/title", "/commit/subject"])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "feat(review-panel): finish what 9k9.408 began [9k9.408]",
+            "feat(review-panel): use the retry bound [see 9k9.408]",
+            "feat(review-panel): use the retry bound [9k9.408 and no other]",
+        ],
+    )
+    def test_cr_l2_the_work_items_short_id_needs_its_gloss_wherever_it_does_not_stand_alone_in_the_closing_brackets(
+        self, field: str, text: str, tmp_path: Path
+    ):
+        record = example()
+        group, name = field.strip("/").split("/")
+        record[group][name] = text
+        assert_breaks(record, "bare-id", field, tmp_path, "9k9.408")
+
     def test_cr_l2_an_id_alone_in_closing_brackets_is_passed_over_only_in_a_title_or_subject(self, tmp_path: Path):
         record = example()
         record["heads_up"].append("The gate still refuses a fourth claim [D16]")
@@ -527,7 +567,7 @@ class TestCrL2Gloss:
             "reason": "A19 was written after this pull request opened.",
         })
         record["verification"]["not_run"] = ["The check filed as agents-config-9k9.470, because nothing runs it yet."]
-        assert_passes(record, tmp_path)
+        assert_passes(change_record.stamp_generated(record), tmp_path)
 
     def test_cr_l2_a_gate_command_is_quoted_as_run_and_is_not_read(self, tmp_path: Path):
         record = example()
@@ -604,7 +644,7 @@ class TestCrL5DiscoveredRows:
             "status": "filed", "item": "agents-config-9k9.470",
             "what": "The gate compares used effort with the pin.", "reason": "It needs its own tests.",
         })
-        assert_passes(record, tmp_path)
+        assert_passes(change_record.stamp_generated(record), tmp_path)
 
     def test_cr_l5_an_in_flight_row_that_names_no_pull_request_fails(self, tmp_path: Path):
         record = example()
@@ -749,13 +789,13 @@ class TestCrL7CommentaryAndMachineContent:
             "what": "This section of the gate compares used effort with the pin.",
             "reason": "Note that it waits on the routing table.",
         })
-        assert_passes(record, tmp_path)
+        assert_passes(change_record.stamp_generated(record), tmp_path)
 
     def test_cr_l7_a_generated_part_is_not_read_for_commentary(self, tmp_path: Path):
         record = example()
         record["campaign"]["findings"][0]["claim"] += " Note that the grant writes a file."
         record["where_this_fits"]["builds_on"][0]["gloss"] += ", see below"
-        assert_passes(record, tmp_path)
+        assert_passes(change_record.stamp_generated(record), tmp_path)
 
     def test_cr_l7_a_command_and_a_diagram_source_are_quoted_and_not_read_for_commentary(self, tmp_path: Path):
         record = example()
@@ -776,6 +816,19 @@ class TestCrL7CommentaryAndMachineContent:
         assert found[0] == "/design_notes"
         assert "as you can see" in found[1]
 
+    def test_cr_l7_a_listed_phrase_may_stand_a_number_in_as_the_status_phrases_do(self, tmp_path: Path):
+        skill = copied_skill(tmp_path)
+        shipped = skill / "references" / "lint-phrases.json"
+        lists = json.loads(shipped.read_text(encoding="utf-8"))
+        lists["document_commentary"].append("see point <number>")
+        shipped.write_text(json.dumps(lists), encoding="utf-8")
+        record = example()
+        record["design_notes"] += " See point 12 for the reason."
+        assert_passes(record, tmp_path)
+        (found,) = findings(record, "commentary", tmp_path, skill / "scripts" / "change_record.py")
+        assert found[0] == "/design_notes"
+        assert "see point <number>" in found[1]
+
     @pytest.mark.parametrize("construct", sorted(MACHINE_CONTENT))
     def test_cr_l7_machine_content_in_an_author_written_field_fails_naming_the_construct(
         self, construct: str, tmp_path: Path
@@ -793,7 +846,7 @@ class TestCrL7CommentaryAndMachineContent:
         record = example()
         claim = " The reply held `<details>`, `<!-- a marker -->` and `` ```json ``."
         record["campaign"]["findings"][0]["claim"] += claim
-        assert_passes(record, tmp_path)
+        assert_passes(change_record.stamp_generated(record), tmp_path)
 
     @pytest.mark.parametrize(
         "notes",
@@ -897,6 +950,1025 @@ class TestCrL11NoneBesideAnEntry:
         assert_breaks(record, "none-beside-entry", field, tmp_path)
 
 
+# The eleven types of the conventional commit convention, and this skill's own.
+COMMIT_TYPES = ["build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "style", "test", "spec"]
+
+# A subject of the right form that is short enough to take a longer type, component or id.
+PLAIN_SUBJECT = "feat(review-panel): pin reviewer effort and tools as data [9k9.408]"
+
+
+def with_subject(subject: str) -> dict[str, Any]:
+    """Return the example with ``subject`` as its commit subject."""
+    record = example()
+    record["commit"]["subject"] = subject
+    return record
+
+
+class TestCrL3CommitSubject:
+    def test_cr_l3_a_subject_of_100_characters_and_the_right_form_passes(self, tmp_path: Path):
+        assert len(EXAMPLE["commit"]["subject"]) == 100
+        assert_passes(example(), tmp_path)
+
+    def test_cr_l3_a_subject_of_101_characters_fails_naming_its_length(self, tmp_path: Path):
+        record = with_subject(swap(EXAMPLE["commit"]["subject"], "and bound", "and bounds"))
+        assert len(record["commit"]["subject"]) == 101
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "101", "at most 100")
+
+    def test_cr_l3_the_types_are_the_conventional_eleven_and_spec(self):
+        assert sorted(SCHEMA["properties"]["pr"]["properties"]["type"]["enum"]) == sorted(COMMIT_TYPES)
+        assert len(COMMIT_TYPES) == 12
+
+    @pytest.mark.parametrize("kind", COMMIT_TYPES)
+    def test_cr_l3_each_of_the_twelve_types_is_a_commit_type(self, kind: str, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "feat(", f"{kind}("))
+        record["pr"]["type"] = kind
+        assert findings(record, "commit-subject", tmp_path) == []
+
+    def test_cr_l3_a_type_outside_the_twelve_fails_naming_it(self, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "feat(", "wip("))
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "`wip`", "not a commit type")
+
+    def test_cr_l3_a_type_that_differs_from_the_records_fails_naming_both(self, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "feat(", "fix("))
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "`fix`", "`pr.type`", "`feat`")
+
+    def test_cr_l3_a_component_that_differs_from_the_records_fails_naming_both(self, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "(review-panel)", "(panel)"))
+        assert_breaks(
+            record, "commit-subject", "/commit/subject", tmp_path, "`panel`", "`pr.component`", "`review-panel`"
+        )
+
+    @pytest.mark.parametrize("component", ["", "()", "( )"])
+    def test_cr_l3_a_subject_with_no_component_fails_saying_so(self, component: str, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "(review-panel)", component))
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "names no component")
+
+    @pytest.mark.parametrize("component", ["9k9.408", "agents-config-9k9.408"])
+    def test_cr_l3_a_component_that_is_a_tracker_id_fails_naming_it(self, component: str, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "(review-panel)", f"({component})"))
+        record["pr"]["component"] = component
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, f"`{component}`", "is a tracker id")
+
+    @pytest.mark.parametrize("component", ["S3", "v1.2", "panel-2"])
+    def test_cr_l3_a_component_of_another_shape_is_no_tracker_id(self, component: str, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "(review-panel)", f"({component})"))
+        record["pr"]["component"] = component
+        assert findings(record, "commit-subject", tmp_path) == []
+
+    @pytest.mark.parametrize(
+        "subject",
+        [
+            PLAIN_SUBJECT.removesuffix(" [9k9.408]"),
+            swap(PLAIN_SUBJECT, "tools as data [9k9.408]", "tools [9k9.408] as data"),
+        ],
+    )
+    def test_cr_l3_a_subject_that_does_not_end_with_a_bracketed_id_fails_naming_the_id(
+        self, subject: str, tmp_path: Path
+    ):
+        assert_breaks(
+            with_subject(subject), "commit-subject", "/commit/subject", tmp_path, "does not end", "`[9k9.408]`"
+        )
+
+    @pytest.mark.parametrize("found", ["agents-config-9k9.408", "config-9k9.408", "9k9.409", "9k9", "D16", "#843"])
+    def test_cr_l3_a_bracketed_id_that_is_not_the_short_id_fails_naming_both(self, found: str, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "[9k9.408]", f"[{found}]"))
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, f"`[{found}]`", "`9k9.408`")
+
+    @pytest.mark.parametrize("closing", ["[ 9k9.408 ]", "[9k9.408]  ", "[\t9k9.408]"])
+    def test_cr_l3_space_inside_the_closing_brackets_or_after_them_is_no_part_of_the_id(
+        self, closing: str, tmp_path: Path
+    ):
+        record = with_subject(swap(PLAIN_SUBJECT, "[9k9.408]", closing))
+        assert findings(record, "commit-subject", tmp_path) == []
+        assert findings(record, "bare-id", tmp_path) == []
+
+    @pytest.mark.parametrize(
+        ("full", "short"),
+        [
+            ("agents-config-9k9.484", "9k9.484"),
+            ("agents-config-9k9.484.2.1", "9k9.484.2.1"),
+            ("agents-config-9k9", "9k9"),
+            ("r25", "r25"),
+        ],
+    )
+    def test_cr_l3_the_short_id_is_the_work_items_id_without_its_project_prefix(
+        self, full: str, short: str, tmp_path: Path
+    ):
+        assert change_record.short_id(full) == short
+        record = with_subject(swap(PLAIN_SUBJECT, "[9k9.408]", f"[{short}]"))
+        record["work_item"]["id"] = full
+        assert findings(record, "commit-subject", tmp_path) == []
+
+    @pytest.mark.parametrize("separator", [" ", ":", " - "])
+    def test_cr_l3_a_subject_with_no_colon_and_space_after_its_component_fails_naming_it(
+        self, separator: str, tmp_path: Path
+    ):
+        record = with_subject(swap(PLAIN_SUBJECT, "(review-panel): ", f"(review-panel){separator}"))
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "no colon and space")
+
+    @pytest.mark.parametrize("wording", ["", "... ", "-- "])
+    def test_cr_l3_a_subject_with_no_word_of_wording_fails_naming_it(self, wording: str, tmp_path: Path):
+        record = with_subject(f"feat(review-panel): {wording}[9k9.408]")
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "says nothing")
+
+    def test_cr_l3_a_subject_with_neither_colon_nor_wording_fails_naming_both(self, tmp_path: Path):
+        found = findings(with_subject("feat(review-panel) [9k9.408]"), "commit-subject", tmp_path)
+        assert [path for path, _ in found] == ["/commit/subject"] * 2
+        assert sorted("no colon and space" in message for _, message in found) == [False, True]
+        assert sorted("says nothing" in message for _, message in found) == [False, True]
+
+    @pytest.mark.parametrize("line_end", ["\n", "\r", "\r\n"])
+    def test_cr_l3_a_subject_that_holds_a_line_break_fails_naming_it(self, line_end: str, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "effort and", f"effort{line_end}and"))
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "line break", "one line")
+
+    def test_cr_l3_a_subject_with_no_space_before_its_closing_brackets_fails_naming_it(self, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "data [", "data["))
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "no space before")
+
+    def test_cr_l3_one_word_of_wording_is_enough(self, tmp_path: Path):
+        assert findings(with_subject("feat(review-panel): pins [9k9.408]"), "commit-subject", tmp_path) == []
+
+    def test_cr_l3_an_empty_subject_fails_once_showing_the_form(self, tmp_path: Path):
+        assert_breaks(with_subject(""), "commit-subject", "/commit/subject", tmp_path, "is empty", "[9k9.408]")
+
+
+# The fields an author fills on a new record of any type, by the path the lint names each with.
+# A type that carries criteria adds "/criteria".
+TO_FILL = {
+    "/pr/title", "/pr/head_sha", "/work_item/gloss", "/work_item/slice", "/summary", "/heads_up", "/risk/rows",
+    "/changes", "/discovered/rows", "/verification", "/commit", "/commit/subject",
+    "/commit/attribution/tool", "/commit/attribution/co_author",
+    "/commit/attribution/session_key", "/commit/attribution/session_url",
+}
+
+# The fields of TO_FILL that no rule about their content reads, so only their emptiness can be at fault.
+BLANKS = {
+    "/pr/title": "", "/pr/head_sha": "", "/work_item/gloss": " ", "/work_item/slice": "", "/changes": [],
+    "/commit/attribution/tool": "", "/commit/attribution/co_author": "\n",
+    "/commit/attribution/session_key": "", "/commit/attribution/session_url": "",
+}
+
+
+def init(path: Path, kind: str = "feat", component: str = "review-panel") -> subprocess.CompletedProcess[str]:
+    """Run the init subcommand for the example's work item in a child process."""
+    argv = ["init", "--type", kind, "--component", component, "--work-item", "agents-config-9k9.408", str(path)]
+    return subprocess.run([sys.executable, str(SCRIPT), *argv], capture_output=True, text=True, check=False)
+
+
+def put(record: dict[str, Any], path: str, value: Any) -> None:
+    """Set the field of ``record`` at ``path`` to ``value``."""
+    *parents, last = path.split("/")[1:]
+    for name in parents:
+        record = record[name]
+    record[last] = value
+
+
+def from_example(path: str) -> Any:
+    """Return a copy of what the example holds at ``path``."""
+    node: Any = EXAMPLE
+    for name in path.split("/")[1:]:
+        node = node[name]
+    return copy.deepcopy(node)
+
+
+class TestCrL8Init:
+    def test_cr_l8_init_writes_a_record_the_schema_accepts_that_lint_fails_on_exactly_the_fields_to_fill(
+        self, tmp_path: Path
+    ):
+        path = tmp_path / "new.json"
+        proc = init(path)
+        assert proc.returncode == 0, proc.stderr
+        record = json.loads(path.read_text(encoding="utf-8"))
+        assert change_record._schema_faults(record) == set()
+        assert (record["pr"]["type"], record["pr"]["component"]) == ("feat", "review-panel")
+        assert record["work_item"]["id"] == "agents-config-9k9.408"
+        code, result = lint(record, tmp_path)
+        assert code == 1
+        assert {error["path"] for error in result["errors"]} == TO_FILL | {"/criteria"}
+        assert all(error["code"] != "schema" and error["message"] for error in result["errors"])
+
+    def test_cr_l8_a_second_init_refuses_and_leaves_the_file_unchanged(self, tmp_path: Path):
+        path = tmp_path / "new.json"
+        assert init(path).returncode == 0
+        written = path.read_bytes()
+        again = init(path, kind="fix", component="gate")
+        assert again.returncode == 1
+        assert str(path) in again.stderr and "already" in again.stderr
+        assert path.read_bytes() == written
+
+    def test_cr_l8_init_refuses_any_file_that_is_already_there(self, tmp_path: Path):
+        path = tmp_path / "new.json"
+        path.write_text("the author's notes, which are no record", encoding="utf-8")
+        assert init(path).returncode == 1
+        assert path.read_text(encoding="utf-8") == "the author's notes, which are no record"
+
+    @pytest.mark.parametrize("kind", COMMIT_TYPES)
+    def test_cr_l8_the_fields_to_fill_follow_the_type(self, kind: str, tmp_path: Path):
+        path = tmp_path / "new.json"
+        assert init(path, kind=kind).returncode == 0
+        record = json.loads(path.read_text(encoding="utf-8"))
+        assert change_record._schema_faults(record) == set()
+        expected = TO_FILL if kind in ONE_ROW_TYPES else TO_FILL | {"/criteria"}
+        criteria = {kind: [] for kind in TABLE_TYPES} | {"spec": ""}
+        assert record.get("criteria") == criteria.get(kind)
+        assert record["risk"]["reaches_outside_package"] is False
+        _, result = lint(record, tmp_path)
+        assert {error["path"] for error in result["errors"]} == expected
+        generated = ("/where_this_fits", "/campaign", "/record", "/discovered/filed_digest")
+        assert not [path for path in expected if path.startswith(generated)]
+
+    @pytest.mark.parametrize("kind", ["feat", "chore"])
+    def test_cr_l8_a_new_record_passes_once_the_named_fields_are_filled(self, kind: str, tmp_path: Path):
+        path = tmp_path / "new.json"
+        assert init(path, kind=kind).returncode == 0
+        record = json.loads(path.read_text(encoding="utf-8"))
+        _, result = lint(record, tmp_path)
+        for named in sorted({error["path"] for error in result["errors"]} - {"/commit"}):
+            put(record, named, from_example(named))
+        for section in BODY_SECTIONS:
+            record["commit"][section] = EXAMPLE["commit"][section]
+        if kind == "chore":
+            del record["risk"]["rows"][1:]
+            record["commit"]["subject"] = swap(PLAIN_SUBJECT, "feat(", "chore(")
+        assert_passes(record, tmp_path)
+
+    @pytest.mark.parametrize("field", sorted(BLANKS))
+    def test_cr_l8_a_field_the_author_fills_fails_while_it_is_empty_naming_it(self, field: str, tmp_path: Path):
+        record = example()
+        put(record, field, BLANKS[field])
+        assert_breaks(record, "unfilled", field, tmp_path, "empty")
+
+    def test_init_exits_2_when_the_file_cannot_be_written(self, tmp_path: Path):
+        proc = init(tmp_path / "no-such-directory" / "new.json")
+        assert proc.returncode == 2
+        assert "cannot write" in proc.stderr
+
+    @pytest.mark.parametrize("argument", ["--component", "--work-item"])
+    def test_init_refuses_an_argument_that_is_not_utf8_and_writes_nothing(self, argument: str, tmp_path: Path):
+        # A byte that is no text reaches the script as half of a surrogate pair.
+        argv = {"--type": "feat", "--component": "panel", "--work-item": "x-1", argument: "panel\udcff"}
+        path = tmp_path / "new.json"
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "init", *(part for pair in argv.items() for part in pair), str(path)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 2, proc.stderr
+        assert "usage:" in proc.stderr and "Traceback" not in proc.stderr
+        assert not path.exists()
+
+    def test_init_does_not_fail_on_a_path_that_is_not_utf8(self, tmp_path: Path):
+        # Some file systems take such a name and some refuse it. Neither outcome is a crash.
+        proc = init(tmp_path / "new\udcff.json")
+        assert proc.returncode in (0, 2), proc.stderr
+        assert "Traceback" not in proc.stderr
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ("--type", "wip", "--component", "panel", "--work-item", "x-1"),
+            ("--type", "feat", "--component", " ", "--work-item", "x-1"),
+            ("--type", "feat", "--component", "panel", "--work-item", ""),
+            ("--type", "feat", "--component", "panel"),
+        ],
+    )
+    def test_init_called_wrongly_exits_2_and_writes_nothing(self, argv: tuple[str, ...], tmp_path: Path):
+        path = tmp_path / "new.json"
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "init", *argv, str(path)], capture_output=True, text=True, check=False
+        )
+        assert proc.returncode == 2
+        assert "usage:" in proc.stderr
+        assert not path.exists()
+
+
+# The types whose body carries a criteria table, and the types whose risk table is one row.
+TABLE_TYPES = ["feat", "fix", "perf", "refactor", "test"]
+ONE_ROW_TYPES = ["build", "chore", "ci", "docs", "revert", "style"]
+
+ATTACK_LINE = "The criteria were attacked twice, and the attack record is beside the spec."
+
+
+def of_type(kind: str) -> dict[str, Any]:
+    """Return the example as a pull request of type ``kind``, with the groups that type takes."""
+    record = with_subject(swap(PLAIN_SUBJECT, "feat(", f"{kind}("))
+    record["pr"]["type"] = kind
+    if kind in ONE_ROW_TYPES:
+        del record["risk"]["rows"][1:]
+    if kind == "spec":
+        record["criteria"] = ATTACK_LINE
+    return record
+
+
+def gh_listing(shim_dir: Path, log: Path, *paths: str, status: int = 0) -> None:
+    """Put a ``gh`` on the search path that records its arguments in ``log``, prints ``paths`` and exits ``status``."""
+    shim = shim_dir / "gh"
+    listing = " ".join(shlex.quote(path) for path in paths)
+    shim.write_text(
+        f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {shlex.quote(str(log))}\n"
+        + (f"printf '%s\\n' {listing}\n" if paths else "")
+        + f"exit {status}\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+
+
+class TestCrL10GroupsByTypeAndReach:
+    def test_the_two_type_lists_and_spec_are_the_twelve_types(self):
+        assert sorted(TABLE_TYPES + ONE_ROW_TYPES + ["spec"]) == sorted(COMMIT_TYPES)
+
+    @pytest.mark.parametrize("kind", COMMIT_TYPES)
+    def test_cr_l10_a_record_of_each_type_passes_with_the_groups_its_type_takes(self, kind: str, tmp_path: Path):
+        assert_passes(of_type(kind), tmp_path)
+
+    @pytest.mark.parametrize("kind", TABLE_TYPES)
+    def test_cr_l10_a_type_that_carries_criteria_fails_without_the_group(self, kind: str, tmp_path: Path):
+        record = of_type(kind)
+        del record["criteria"]
+        assert_breaks(record, "required-group", "/criteria", tmp_path, f"`{kind}`", "table")
+
+    def test_cr_l10_a_type_that_carries_criteria_fails_with_one_line_in_place_of_the_table(self, tmp_path: Path):
+        record = of_type("feat")
+        record["criteria"] = ATTACK_LINE
+        assert_breaks(record, "required-group", "/criteria", tmp_path, "`feat`", "table")
+
+    @pytest.mark.parametrize("kind", ONE_ROW_TYPES)
+    def test_cr_l10_a_type_that_takes_one_risk_row_fails_with_two(self, kind: str, tmp_path: Path):
+        record = of_type(kind)
+        record["risk"]["rows"].append(EXAMPLE["risk"]["rows"][1])
+        assert_breaks(record, "required-group", "/risk/rows", tmp_path, f"`{kind}`", "one risk row", "2")
+
+    @pytest.mark.parametrize("kind", ONE_ROW_TYPES)
+    def test_cr_l10_a_type_that_takes_one_risk_row_fails_with_none(self, kind: str, tmp_path: Path):
+        record = of_type(kind)
+        record["risk"]["rows"] = []
+        assert_fails_naming(record, "/risk/rows", tmp_path)
+
+    def test_cr_l10_a_type_that_carries_criteria_takes_any_number_of_risk_rows(self, tmp_path: Path):
+        assert len(EXAMPLE["risk"]["rows"]) > 1
+        assert findings(of_type("spec"), "required-group", tmp_path) == []
+        assert_passes(of_type("feat"), tmp_path)
+
+    @pytest.mark.parametrize(
+        "criteria",
+        [EXAMPLE["criteria"], "", "  ", f"{ATTACK_LINE}\nIts second round found nothing."],
+        ids=["a table", "an empty line", "a blank line", "two lines"],
+    )
+    def test_cr_l10_a_spec_fails_unless_its_criteria_is_the_single_line(self, criteria: Any, tmp_path: Path):
+        record = of_type("spec")
+        record["criteria"] = criteria
+        assert_breaks(record, "required-group", "/criteria", tmp_path, "`spec`", "one line")
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "The attack record is in docs/attack.json.",
+            "The record is beside the spec.",
+            "The status is `attacked`, and the record is beside the spec.",
+        ],
+    )
+    def test_cr_l10_a_spec_line_that_does_not_say_whether_the_criteria_were_attacked_fails(
+        self, line: str, tmp_path: Path
+    ):
+        record = of_type("spec")
+        record["criteria"] = line
+        assert_breaks(record, "required-group", "/criteria", tmp_path, "`spec`", "whether the criteria were attacked")
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "The criteria were attacked.",
+            "The criteria were not attacked.",
+            "Unattacked so far, so there is no record to point at.",
+            "ATTACKED twice; the record is beside the spec.",
+        ],
+    )
+    def test_cr_l10_a_spec_line_that_says_whether_the_criteria_were_attacked_passes_with_or_without_a_location(
+        self, line: str, tmp_path: Path
+    ):
+        record = of_type("spec")
+        record["criteria"] = line
+        assert_passes(record, tmp_path)
+
+    def test_cr_l10_a_spec_fails_without_the_criteria_group(self, tmp_path: Path):
+        record = of_type("spec")
+        del record["criteria"]
+        assert_breaks(record, "required-group", "/criteria", tmp_path, "`spec`", "one line")
+
+    def test_cr_l10_a_record_that_reaches_outside_its_package_fails_without_both_diagrams(self, tmp_path: Path):
+        record = example()
+        assert record["risk"]["reaches_outside_package"] is True
+        del record["blast_radius"]
+        found = findings(record, "required-group", tmp_path)
+        assert [path for path, _ in found] == ["/blast_radius/reach_graph", "/blast_radius/task_flow"]
+
+    @pytest.mark.parametrize("source", ["reach_graph", "task_flow"])
+    def test_cr_l10_a_record_that_reaches_outside_its_package_fails_with_one_diagram(
+        self, source: str, tmp_path: Path
+    ):
+        missing = example()
+        del missing["blast_radius"][source]
+        assert_breaks(missing, "required-group", f"/blast_radius/{source}", tmp_path, "reaches outside")
+        blank = example()
+        blank["blast_radius"][source] = " \n"
+        assert_breaks(blank, "required-group", f"/blast_radius/{source}", tmp_path, "reaches outside")
+
+    def test_cr_l10_a_record_that_stays_inside_its_package_passes_without_the_diagrams(self, tmp_path: Path):
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert_passes(record, tmp_path)
+        del record["blast_radius"]
+        assert_passes(record, tmp_path)
+
+    def test_cr_l10_lint_pr_fails_a_record_that_stays_inside_when_the_paths_span_two_components(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        log = tmp_path / "gh.log"
+        gh_listing(shim_dir, log, "src/panel/gate.py", "packages/tool/cli.py", "docs/guides/panel.md")
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        code, result = lint(record, tmp_path, SCRIPT, "--pr", "843")
+        assert code == 1
+        assert [(error["code"], error["path"]) for error in result["errors"]] == [
+            ("reach", "/risk/reaches_outside_package")
+        ]
+        assert "2 top-level components: packages, src" in result["errors"][0]["message"]
+        assert log.read_text(encoding="utf-8").splitlines() == ["pr diff 843 --name-only"]
+
+    def test_cr_l10_lint_pr_passes_that_record_when_the_paths_are_one_component_and_docs(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", "docs/specs/ledger.md", "docs/guides/panel.md")
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert lint(record, tmp_path, SCRIPT, "--pr", "843") == (0, {"valid": True})
+
+    def test_cr_l10_lint_pr_passes_that_record_when_every_path_is_under_docs(self, shim_dir: Path, tmp_path: Path):
+        gh_listing(shim_dir, tmp_path / "gh.log", "docs/specs/ledger.md", "docs/guides/panel.md")
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert lint(record, tmp_path, SCRIPT, "--pr", "843") == (0, {"valid": True})
+
+    @pytest.mark.parametrize("other", ["docs", "docs-site/index.md", "src/docs/panel.md"])
+    def test_cr_l10_only_a_path_under_a_docs_directory_at_the_root_counts_toward_no_component(
+        self, other: str, shim_dir: Path, tmp_path: Path
+    ):
+        gh_listing(shim_dir, tmp_path / "gh.log", "packages/tool/cli.py", other)
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert findings_with(record, "reach", tmp_path, "--pr", "843") == ["/risk/reaches_outside_package"]
+
+    def test_cr_l10_lint_pr_passes_that_record_when_the_paths_stay_in_one_component(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", "src/other/gate_test.py")
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert lint(record, tmp_path, SCRIPT, "--pr", "843") == (0, {"valid": True})
+
+    def test_cr_l10_lint_pr_passes_a_record_that_reaches_outside_whatever_the_paths(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", "packages/tool/cli.py")
+        assert lint(example(), tmp_path, SCRIPT, "--pr", "843") == (0, {"valid": True})
+
+    def test_cr_l10_a_file_at_the_root_is_a_component_of_its_own(self, shim_dir: Path, tmp_path: Path):
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", "Makefile")
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert findings_with(record, "reach", tmp_path, "--pr", "843") == ["/risk/reaches_outside_package"]
+
+    def test_lint_pr_reports_the_other_findings_beside_the_reach(self, shim_dir: Path, tmp_path: Path):
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", "packages/tool/cli.py")
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        record["heads_up"] = []
+        _, result = lint(record, tmp_path, SCRIPT, "--pr", "843")
+        assert [error["code"] for error in result["errors"]] == ["unstated-empty", "reach"]
+
+    def test_lint_pr_reads_a_path_that_is_not_utf8_without_failing(self, shim_dir: Path, tmp_path: Path):
+        shim = shim_dir / "gh"
+        shim.write_bytes(b"#!/bin/sh\nprintf 'src/gate.py\\n\\377dir/tool.py\\n'\n")
+        shim.chmod(0o755)
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert findings_with(record, "reach", tmp_path, "--pr", "843") == ["/risk/reaches_outside_package"]
+
+    @pytest.mark.parametrize("status", [None, 1])
+    def test_lint_pr_exits_2_when_gh_is_missing_or_fails(self, status: int | None, shim_dir: Path, tmp_path: Path):
+        if status is not None:
+            gh_listing(shim_dir, tmp_path / "gh.log", status=status)
+        code, result = lint(example(), tmp_path, SCRIPT, "--pr", "843")
+        assert code == 2
+        assert [error["code"] for error in result["errors"]] == ["gh-failed"]
+
+    def test_plain_lint_does_not_call_gh(self, shim_dir: Path, tmp_path: Path):
+        log = tmp_path / "gh.log"
+        gh_listing(shim_dir, log, "src/panel/gate.py", "docs/guides/panel.md")
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert_passes(record, tmp_path)
+        assert not log.exists()
+
+
+def prose(sentences: int, words: int) -> str:
+    """Return ``sentences`` sentences that hold ``words`` words between them."""
+    assert words >= sentences > 0
+    each, spare = divmod(words, sentences)
+    return " ".join("The" + " gate" * (each - 1 + (index < spare)) + "." for index in range(sentences))
+
+
+BODY_SECTIONS = ["why", "change", "verification"]
+
+
+def with_body(
+    why: tuple[int, int] = (2, 30), change: tuple[int, int] = (3, 30), verification: tuple[int, int] = (1, 20)
+) -> dict[str, Any]:
+    """Return the example with a commit body of the given (sentences, words) per section, 80 words by default."""
+    record = example()
+    for name, shape in zip(BODY_SECTIONS, (why, change, verification)):
+        record["commit"][name] = prose(*shape)
+    return record
+
+
+def without_body() -> dict[str, Any]:
+    record = example()
+    for name in BODY_SECTIONS:
+        del record["commit"][name]
+    return record
+
+
+class TestCrL12CommitBody:
+    def test_the_helper_writes_the_sentences_and_words_it_is_asked_for(self):
+        for sentences, words in [(1, 1), (2, 30), (3, 31), (5, 151)]:
+            text = prose(sentences, words)
+            assert change_record.count_sentences(text) == sentences
+            assert change_record.count_words(text) == len(text.split()) == words
+
+    @pytest.mark.parametrize("count", [2, 3])
+    def test_cr_l12_a_why_of_two_or_three_sentences_passes(self, count: int, tmp_path: Path):
+        assert_passes(with_body(why=(count, 30)), tmp_path)
+
+    @pytest.mark.parametrize("count", [1, 4])
+    def test_cr_l12_a_why_outside_two_to_three_sentences_fails(self, count: int, tmp_path: Path):
+        assert_breaks(with_body(why=(count, 30)), "commit-body", "/commit/why", tmp_path, f"{count} sentence")
+
+    @pytest.mark.parametrize("count", [3, 4])
+    def test_cr_l12_a_change_of_three_or_four_sentences_passes(self, count: int, tmp_path: Path):
+        assert_passes(with_body(change=(count, 30)), tmp_path)
+
+    @pytest.mark.parametrize("count", [2, 5])
+    def test_cr_l12_a_change_outside_three_to_four_sentences_fails(self, count: int, tmp_path: Path):
+        assert_breaks(with_body(change=(count, 30)), "commit-body", "/commit/change", tmp_path, f"{count} sentences")
+
+    @pytest.mark.parametrize("words", [80, 150])
+    def test_cr_l12_a_body_of_80_to_150_words_passes(self, words: int, tmp_path: Path):
+        assert_passes(with_body(verification=(1, words - 60)), tmp_path)
+
+    @pytest.mark.parametrize("words", [79, 151])
+    def test_cr_l12_a_body_outside_80_to_150_words_fails(self, words: int, tmp_path: Path):
+        assert_breaks(with_body(verification=(1, words - 60)), "commit-body", "/commit", tmp_path, f"{words} words")
+
+    @pytest.mark.parametrize("text", ["", "  "])
+    def test_cr_l12_an_empty_verification_fails(self, text: str, tmp_path: Path):
+        record = with_body(why=(2, 40), change=(3, 40))
+        record["commit"]["verification"] = text
+        assert_breaks(record, "commit-body", "/commit/verification", tmp_path)
+
+    @pytest.mark.parametrize("section", BODY_SECTIONS)
+    def test_cr_l12_a_body_missing_one_of_its_three_sections_fails_naming_it(self, section: str, tmp_path: Path):
+        record = with_body()
+        del record["commit"][section]
+        assert_breaks(record, "commit-body", f"/commit/{section}", tmp_path, "missing")
+
+    def test_cr_l12_an_absent_body_with_no_trivial_reason_fails(self, tmp_path: Path):
+        assert_breaks(without_body(), "commit-body", "/commit", tmp_path, "`trivial`")
+
+    def test_cr_l12_an_absent_body_with_a_trivial_reason_passes(self, tmp_path: Path):
+        record = without_body()
+        record["commit"]["trivial"] = "The change corrects one misspelt word in a comment."
+        assert_passes(record, tmp_path)
+
+    @pytest.mark.parametrize("reason", ["", "  "])
+    def test_cr_l12_an_absent_body_with_an_empty_trivial_reason_fails(self, reason: str, tmp_path: Path):
+        record = without_body()
+        record["commit"]["trivial"] = reason
+        assert_breaks(record, "commit-body", "/commit/trivial", tmp_path)
+
+    def test_cr_l12_a_trivial_reason_beside_a_body_fails(self, tmp_path: Path):
+        record = with_body()
+        record["commit"]["trivial"] = "The change corrects one misspelt word in a comment."
+        assert_breaks(record, "commit-body", "/commit/trivial", tmp_path, "in place of")
+
+
+def with_reply(change: str, verification: str) -> dict[str, Any]:
+    """Return the example with its first reply holding ``change`` and ``verification``."""
+    record = example()
+    record["replies"][0].update(change=change, verification=verification)
+    return record
+
+
+def deferred(record: dict[str, Any]) -> tuple[int, dict[str, Any], dict[str, Any]]:
+    """Return the index of the example's Deferred reply, the reply, and the campaign finding it answers."""
+    (index,) = [index for index, reply in enumerate(record["replies"]) if reply["outcome"] == "Deferred"]
+    reply = record["replies"][index]
+    (finding,) = [
+        finding for finding in record["campaign"]["findings"]
+        if (finding["claim_id"], finding["artifact_class"], finding["id"])
+        == (reply["claim_id"], reply["artifact_class"], reply["finding_id"])
+    ]
+    return index, reply, finding
+
+
+# The words the example's Deferred reply names its inheriting item with.
+INHERITOR = "agents-config-9k9.408 (this pull request's work item)"
+REQUEST_URL = "https://github.com/example/repo/pull/843#discussion_r4207856339"
+
+
+class TestCrL13Replies:
+    def test_cr_l13_the_list_holds_the_phrases_of_campaign_status(self):
+        assert {"terminal-clean", "round <number>"} <= set(CAMPAIGN_STATUS)
+        assert len(set(CAMPAIGN_STATUS)) == len(CAMPAIGN_STATUS)
+
+    @pytest.mark.parametrize("words", [40, 90])
+    def test_cr_l13_a_reply_of_40_to_90_words_passes(self, words: int, tmp_path: Path):
+        assert_passes(with_reply(prose(2, 20), prose(2, words - 20)), tmp_path)
+
+    @pytest.mark.parametrize("words", [39, 91])
+    def test_cr_l13_a_reply_outside_40_to_90_words_fails(self, words: int, tmp_path: Path):
+        record = with_reply(prose(2, 20), prose(2, words - 20))
+        assert_breaks(record, "reply", "/replies/0", tmp_path, f"{words} words")
+
+    @pytest.mark.parametrize("change", ["", "  "])
+    def test_cr_l13_an_empty_change_line_fails(self, change: str, tmp_path: Path):
+        assert_breaks(with_reply(change, prose(2, 45)), "reply", "/replies/0/change", tmp_path, "empty")
+
+    def test_cr_l13_a_change_line_of_three_sentences_fails(self, tmp_path: Path):
+        record = with_reply(prose(3, 30), prose(1, 20))
+        assert_breaks(record, "reply", "/replies/0/change", tmp_path, "3 sentences")
+
+    @pytest.mark.parametrize("count", [1, 2])
+    def test_cr_l13_a_change_line_of_one_or_two_sentences_passes(self, count: int, tmp_path: Path):
+        assert_passes(with_reply(prose(count, 30), prose(1, 20)), tmp_path)
+
+    def test_cr_l13_a_deferred_reply_that_names_a_tracker_item_passes_when_the_finding_carries_none(
+        self, tmp_path: Path
+    ):
+        record = example()
+        _, reply, finding = deferred(record)
+        assert "work_item" not in finding
+        assert INHERITOR in reply["change"]
+        assert_passes(record, tmp_path)
+
+    def test_cr_l13_a_deferred_reply_that_names_no_tracker_item_fails(self, tmp_path: Path):
+        record = example()
+        index, reply, _ = deferred(record)
+        reply["change"] = swap(reply["change"], INHERITOR, "this pull request's work item")
+        assert_breaks(record, "reply", f"/replies/{index}", tmp_path, "names no tracker item")
+
+    def test_cr_l13_a_deferred_reply_may_name_an_item_of_the_work_items_project_that_has_no_dotted_suffix(
+        self, tmp_path: Path
+    ):
+        record = example()
+        _, reply, _ = deferred(record)
+        reply["change"] = swap(reply["change"], INHERITOR, "agents-config-9k9, the milestone this work belongs to,")
+        assert_passes(record, tmp_path)
+
+    def test_cr_l13_a_deferred_reply_may_name_an_item_of_another_project_by_its_dotted_id(self, tmp_path: Path):
+        record = example()
+        _, reply, _ = deferred(record)
+        reply["change"] = swap(reply["change"], INHERITOR, "verdicts-b2c.4 (the item for the halt reasons)")
+        assert_passes(record, tmp_path)
+
+    def test_cr_l13_a_deferred_reply_that_names_the_item_its_finding_carries_passes(self, tmp_path: Path):
+        record = example()
+        _, reply, finding = deferred(record)
+        finding["work_item"] = "agents-config-9k9.470"
+        reply["change"] = swap(reply["change"], INHERITOR, "agents-config-9k9.470 (the item filed for the halt reason)")
+        assert_passes(change_record.stamp_generated(record), tmp_path)
+
+    @pytest.mark.parametrize("named", [INHERITOR, "agents-config-9k9.4701 (another item)", "agents-config-9k9.470.2 (a child)"])
+    def test_cr_l13_a_deferred_reply_that_names_another_item_than_its_finding_carries_fails(
+        self, named: str, tmp_path: Path
+    ):
+        record = example()
+        index, reply, finding = deferred(record)
+        finding["work_item"] = "agents-config-9k9.470"
+        reply["change"] = swap(reply["change"], INHERITOR, named)
+        change_record.stamp_generated(record)
+        assert_breaks(record, "reply", f"/replies/{index}", tmp_path, "agents-config-9k9.470")
+
+    def test_cr_l13_a_rejected_reply_that_names_the_comment_that_asked_for_it_passes(self, tmp_path: Path):
+        record = example()
+        record["replies"][0].update(outcome="Rejected", request_url=REQUEST_URL)
+        assert_passes(record, tmp_path)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://?",
+            "https://example.com",
+            "https://example.com/",
+            "https://example.com?thread=7",
+            "https://example.com#discussion_r7",
+            "https:///owner/repo/pull/7",
+            "ftp://example.com/owner/repo/pull/7",
+        ],
+    )
+    def test_cr_l13_a_rejected_reply_whose_url_names_no_host_or_no_path_fails(self, url: str, tmp_path: Path):
+        record = example()
+        record["replies"][0].update(outcome="Rejected", request_url=url)
+        assert_breaks(record, "reply", "/replies/0/request_url", tmp_path, "asked for")
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            REQUEST_URL,
+            "https://git.example.org/team/repo/pull/7#discussion_r12",
+            "http://code.internal:8443/team/repo/pull/7/files?diff=split#r12",
+        ],
+    )
+    def test_cr_l13_a_rejected_reply_passes_with_a_comment_url_on_any_host(self, url: str, tmp_path: Path):
+        record = example()
+        record["replies"][0].update(outcome="Rejected", request_url=url)
+        assert_passes(record, tmp_path)
+
+    @pytest.mark.parametrize("url", [None, "", "the reviewer asked on the thread"])
+    def test_cr_l13_a_rejected_reply_that_names_no_comment_url_fails(self, url: str | None, tmp_path: Path):
+        record = example()
+        record["replies"][0]["outcome"] = "Rejected"
+        if url is not None:
+            record["replies"][0]["request_url"] = url
+        assert_breaks(record, "reply", "/replies/0/request_url", tmp_path, "asked for")
+
+    @pytest.mark.parametrize("phrase", CAMPAIGN_STATUS)
+    def test_cr_l13_a_listed_phrase_of_campaign_status_fails_naming_it(self, phrase: str, tmp_path: Path):
+        status = phrase.replace("<number>", "3")
+        record = example()
+        record["replies"][0]["verification"] += f" The {status} stands."
+        assert_breaks(record, "reply", "/replies/0/verification", tmp_path, f'"{status}"')
+
+    def test_cr_l13_campaign_status_in_the_change_line_fails_whatever_its_case(self, tmp_path: Path):
+        record = example()
+        reply = record["replies"][0]
+        reply["change"] = swap(reply["change"], "A fourth claim", "After Round 12, a fourth claim")
+        assert_breaks(record, "reply", "/replies/0/change", tmp_path, '"Round 12"')
+
+    def test_cr_l13_a_phrase_of_campaign_status_inside_a_code_span_passes(self, tmp_path: Path):
+        record = example()
+        record["replies"][0]["verification"] += " The doctrine file no longer says `terminal-clean` or `round 3`."
+        assert_passes(record, tmp_path)
+
+    def test_cr_l13_the_word_round_with_no_number_after_it_passes(self, tmp_path: Path):
+        record = example()
+        record["replies"][0]["verification"] += " Each round records the effort it used, and a round-2 claim does too."
+        assert_passes(record, tmp_path)
+
+    def test_cr_l13_a_longer_word_that_holds_a_listed_phrase_passes(self, tmp_path: Path):
+        record = example()
+        record["replies"][0]["verification"] += " The gate was run around 3 times."
+        assert_passes(record, tmp_path)
+
+    def test_cr_l13_the_lint_reads_the_status_list_the_skill_ships(self, tmp_path: Path):
+        skill = copied_skill(tmp_path)
+        shipped = skill / "references" / "lint-phrases.json"
+        lists = json.loads(shipped.read_text(encoding="utf-8"))
+        lists["campaign_status"].append("<number> findings remain")
+        shipped.write_text(json.dumps(lists), encoding="utf-8")
+        record = example()
+        record["replies"][0]["verification"] += " Only 2 findings remain."
+        assert_passes(record, tmp_path)
+        (found,) = findings(record, "reply", tmp_path, skill / "scripts" / "change_record.py")
+        assert found[0] == "/replies/0/verification"
+        assert '"2 findings remain"' in found[1]
+
+
+def identity(entry: dict[str, Any]) -> tuple[Any, Any, Any]:
+    """Return a campaign finding's or a reply's claim id, artifact class and finding id."""
+    return entry.get("claim_id"), entry.get("artifact_class"), entry.get("finding_id", entry.get("id"))
+
+
+def finding_of(record: dict[str, Any], claim: str, artifact_class: str, finding_id: str) -> dict[str, Any]:
+    """Return the one campaign finding of ``record`` with that identity."""
+    (finding,) = [
+        entry for entry in record["campaign"]["findings"] if identity(entry) == (claim, artifact_class, finding_id)
+    ]
+    return finding
+
+
+# The example's first reply answers this finding, which the campaign marks fixed.
+FIRST_REPLIED = ("9k9.408-r2", "typed-code", "correctness.r1.f1")
+FIRST_REPLIED_NAME = "correctness.r1.f1 (claim 9k9.408-r2, typed-code)"
+
+
+class TestCrL14OneReplyPerFixedFinding:
+    def test_cr_l14_each_fixed_finding_of_the_example_has_exactly_one_reply(self, tmp_path: Path):
+        fixed = [identity(entry) for entry in EXAMPLE["campaign"]["findings"] if entry.get("disposition") == "fixed"]
+        replied = [identity(reply) for reply in EXAMPLE["replies"]]
+        assert len(fixed) == len(set(fixed)) == 19
+        assert [replied.count(finding) for finding in fixed] == [1] * 19
+        assert identity(EXAMPLE["replies"][0]) == FIRST_REPLIED
+        assert_passes(example(), tmp_path)
+
+    def test_cr_l14_a_fixed_finding_with_no_reply_fails_naming_the_finding(self, tmp_path: Path):
+        record = example()
+        assert finding_of(record, *FIRST_REPLIED)["disposition"] == "fixed"
+        del record["replies"][0]
+        assert_breaks(record, "reply-count", "/replies", tmp_path, FIRST_REPLIED_NAME, "no reply")
+
+    @pytest.mark.parametrize("disposition", ["rebutted", "advisory-deferred", "transferred", None])
+    def test_cr_l14_a_finding_that_is_not_fixed_needs_no_reply(self, disposition: str | None, tmp_path: Path):
+        record = example()
+        finding = finding_of(record, *FIRST_REPLIED)
+        if disposition is None:
+            del finding["disposition"]
+        else:
+            finding["disposition"] = disposition
+        del record["replies"][0]
+        assert_passes(change_record.stamp_generated(record), tmp_path)
+
+    def test_cr_l14_a_fixed_finding_with_two_replies_fails_naming_the_finding(self, tmp_path: Path):
+        record = example()
+        record["replies"].append(copy.deepcopy(record["replies"][0]))
+        assert_breaks(record, "reply-count", "/replies", tmp_path, FIRST_REPLIED_NAME, "2 replies")
+
+    def test_cr_l14_two_fixed_findings_of_different_claims_that_share_an_id_and_one_reply_fail_naming_the_unreplied_one(
+        self, tmp_path: Path
+    ):
+        record = example()
+        shared = "documentation-quality.r1.f1"
+        replied = finding_of(record, "9k9.408-r2", "typed-code", shared)
+        unreplied = finding_of(record, "9k9.408", "typed-code", shared)
+        assert replied["disposition"] == "fixed" and "disposition" not in unreplied
+        assert [identity(reply) for reply in record["replies"] if reply["finding_id"] == shared] == [
+            ("9k9.408-r2", "typed-code", shared)
+        ]
+        unreplied["disposition"] = "fixed"
+        change_record.stamp_generated(record)
+        assert_breaks(record, "reply-count", "/replies", tmp_path, f"{shared} (claim 9k9.408, typed-code)", "no reply")
+
+    def test_cr_l14_two_fixed_findings_of_different_classes_that_share_a_claim_and_an_id_are_two_findings(
+        self, tmp_path: Path
+    ):
+        record = example()
+        twin = dict(finding_of(record, *FIRST_REPLIED), artifact_class="prose")
+        record["campaign"]["findings"].append(twin)
+        change_record.stamp_generated(record)
+        assert_breaks(record, "reply-count", "/replies", tmp_path, "correctness.r1.f1 (claim 9k9.408-r2, prose)")
+
+    @pytest.mark.parametrize("part", ["claim_id", "artifact_class"])
+    def test_cr_l14_a_reply_that_leaves_out_part_of_the_identity_answers_no_finding(self, part: str, tmp_path: Path):
+        record = example()
+        del record["replies"][0][part]
+        assert_breaks(record, "reply-count", "/replies", tmp_path, FIRST_REPLIED_NAME, "no reply")
+
+    def test_cr_l14_a_record_with_no_replies_fails_once_for_each_fixed_finding(self, tmp_path: Path):
+        record = example()
+        del record["replies"]
+        assert len(findings(record, "reply-count", tmp_path)) == 19
+
+    @pytest.mark.parametrize("part", ["claim_id", "artifact_class"])
+    def test_cr_l14_a_campaign_finding_carries_every_part_of_its_identity(self, part: str, tmp_path: Path):
+        missing = example()
+        del missing["campaign"]["findings"][0][part]
+        assert_fails_naming(missing, f"/campaign/findings/0/{part}", tmp_path)
+        empty = example()
+        empty["campaign"]["findings"][0][part] = ""
+        assert_fails_naming(empty, f"/campaign/findings/0/{part}", tmp_path)
+
+
+# A filed row of discovered work, as the tracker would give it.
+FILED_ROW = {
+    "status": "filed", "item": "agents-config-9k9.470",
+    "what": "The gate compares used effort with the pin.", "reason": "It needs its own tests.",
+}
+
+# One hand edit of each generated part, by the path of the stamp that the edit leaves stale.
+HAND_EDITS: dict[str, Callable[[dict[str, Any]], None]] = {
+    "/where_this_fits/digest": lambda record: record["where_this_fits"]["ancestry"][0].update(title="Harness rebuild"),
+    "/campaign/digest": lambda record: record["campaign"]["reviewers"][0].update(fixed=4),
+    "/discovered/filed_digest": lambda record: record["discovered"]["rows"][-1].update(reason="It is out of scope."),
+}
+
+# The words a finding names each generated part with.
+PART_NAMES = {
+    "/where_this_fits/digest": "`where_this_fits`",
+    "/campaign/digest": "`campaign`",
+    "/discovered/filed_digest": "the filed rows of `discovered`",
+}
+
+
+def with_filed_row() -> dict[str, Any]:
+    """Return the example with one filed row of discovered work, every generated part stamped."""
+    record = example()
+    record["discovered"]["rows"].append(dict(FILED_ROW))
+    return change_record.stamp_generated(record)
+
+
+def reversed_keys(node: Any) -> Any:
+    """Return ``node`` with the keys of every object in the opposite order."""
+    if isinstance(node, dict):
+        return {name: reversed_keys(node[name]) for name in reversed(node)}
+    if isinstance(node, list):
+        return [reversed_keys(child) for child in node]
+    return node
+
+
+class TestCrL15GeneratedStamps:
+    def test_cr_l15_a_record_with_every_generated_part_stamped_passes(self, tmp_path: Path):
+        record = with_filed_row()
+        assert set(PART_NAMES) == {f"/{group}/{key}" for group, key, _ in change_record.generated_parts(record)}
+        assert_passes(record, tmp_path)
+
+    @pytest.mark.parametrize("stamp", sorted(HAND_EDITS))
+    def test_cr_l15_a_hand_edited_part_fails_naming_it(self, stamp: str, tmp_path: Path):
+        record = with_filed_row()
+        HAND_EDITS[stamp](record)
+        assert_breaks(record, "stale-stamp", stamp, tmp_path, PART_NAMES[stamp], "no longer matches")
+
+    @pytest.mark.parametrize("stamp", sorted(PART_NAMES))
+    def test_cr_l15_an_unstamped_part_fails_the_same_way(self, stamp: str, tmp_path: Path):
+        record = with_filed_row()
+        _, group, key = stamp.split("/")
+        del record[group][key]
+        assert_breaks(record, "stale-stamp", stamp, tmp_path, PART_NAMES[stamp], "no stamp")
+
+    def test_cr_l15_a_generated_part_the_record_does_not_hold_needs_no_stamp(self, tmp_path: Path):
+        record = example()
+        del record["where_this_fits"]
+        del record["campaign"]
+        assert "filed_digest" not in record["discovered"]
+        assert list(change_record.generated_parts(record)) == []
+        assert_passes(record, tmp_path)
+
+    def test_cr_l15_the_filed_stamp_covers_the_filed_rows_and_no_other_row(self, tmp_path: Path):
+        record = with_filed_row()
+        assert record["discovered"]["rows"][0]["status"] == "not filed"
+        record["discovered"]["rows"][0]["reason"] = "It belongs to another skill."
+        assert_passes(record, tmp_path)
+        del record["discovered"]["rows"][-1]
+        assert_breaks(record, "stale-stamp", "/discovered/filed_digest", tmp_path, "no longer matches")
+
+    def test_cr_l15_a_filed_row_is_told_from_the_none_entry_by_type_as_every_rule_tells_it(self):
+        # The schema admits the entry only as written. A caller may hold a record
+        # the schema has not read yet, and no text of the entry may be taken for a row.
+        record = example()
+        record["discovered"]["rows"] = [" None.\n", dict(FILED_ROW), "None."]
+        parts = {group: content for group, _, content in change_record.generated_parts(record)}
+        assert parts["discovered"] == [FILED_ROW]
+
+    def test_cr_l15_a_filed_stamp_over_no_filed_row_is_the_stamp_of_an_empty_list(self, tmp_path: Path):
+        record = example()
+        record["discovered"]["filed_digest"] = change_record.stamp([])
+        assert_passes(record, tmp_path)
+        record["discovered"]["filed_digest"] = "0" * 64
+        assert_breaks(record, "stale-stamp", "/discovered/filed_digest", tmp_path, "no longer matches")
+
+    def test_cr_l15_a_stamp_survives_key_order_and_reserialization(self, tmp_path: Path):
+        for group in ("where_this_fits", "campaign"):
+            content = {name: value for name, value in EXAMPLE[group].items() if name != "digest"}
+            reordered = reversed_keys(content)
+            assert list(reordered) != list(content)
+            reserialized = json.loads(json.dumps(content, indent=4, ensure_ascii=True))
+            assert change_record.stamp(content) == EXAMPLE[group]["digest"]
+            assert change_record.stamp(reordered) == EXAMPLE[group]["digest"]
+            assert change_record.stamp(reserialized) == EXAMPLE[group]["digest"]
+        path = tmp_path / "reserialized.json"
+        path.write_text(json.dumps(reversed_keys(with_filed_row()), indent=4, ensure_ascii=True), encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "lint", str(path)], capture_output=True, text=True, check=False
+        )
+        assert (proc.returncode, json.loads(proc.stdout)) == (0, {"valid": True})
+
+    def test_cr_l15_a_stamp_changes_with_a_value_and_with_the_order_of_a_list(self):
+        rows = [dict(FILED_ROW), dict(FILED_ROW, item="agents-config-9k9.471")]
+        assert change_record.stamp(rows) != change_record.stamp(rows[::-1])
+        assert change_record.stamp(rows) != change_record.stamp([rows[0], dict(rows[1], reason="It needs a test.")])
+
+    def test_cr_l15_a_stamp_is_defined_for_text_that_utf8_cannot_hold(self):
+        # Half of a surrogate pair is a text Python holds and UTF-8 does not.
+        half, other = {"title": "a\ud800b"}, {"title": "a\ud801b"}
+        assert re.fullmatch(r"[0-9a-f]{64}", change_record.stamp(half))
+        assert change_record.stamp(half) == change_record.stamp(dict(half))
+        assert change_record.stamp(half) != change_record.stamp(other)
+        record = example()
+        record["where_this_fits"]["ancestry"][0]["title"] = "a\ud800b"
+        assert change_record.lint_record(change_record.stamp_generated(record)) == []
+
+    def test_cr_l15_a_stamp_is_the_sha256_of_sorted_compact_json_in_utf8(self):
+        content = {"b": [1, "é", {"d": None, "c": True}], "a": "x y"}
+        written = '{"a":"x y","b":[1,"é",{"c":true,"d":null}]}'
+        assert change_record.stamp(content) == hashlib.sha256(written.encode("utf-8")).hexdigest()
+
+    def test_stamp_generated_stamps_each_part_the_record_holds_and_adds_none(self):
+        record = example()
+        for group in ("where_this_fits", "campaign"):
+            record[group]["digest"] = "0" * 64
+        assert change_record.stamp_generated(record) == EXAMPLE
+        del record["campaign"]
+        assert "campaign" not in change_record.stamp_generated(record)
+
+
 class TestLintRules:
     def test_the_rule_table_names_exactly_the_codes_the_lint_reports(self):
         table = (REFERENCES / "lint-rules.md").read_text(encoding="utf-8")
@@ -933,6 +2005,27 @@ class TestCommandLine:
         proc = self.run("lint", str(tmp_path / "absent.json"))
         assert proc.returncode == 2
         assert json.loads(proc.stdout)["errors"][0]["code"] == "unreadable"
+
+    @pytest.mark.parametrize(
+        ("field", "put_half"),
+        [
+            ("/pr/title", lambda record: record["pr"].update(title="feat(review-panel): pin \ud800 effort [9k9.408]")),
+            ("/where_this_fits/ancestry/0/title", lambda record: record["where_this_fits"]["ancestry"][0].update(title="\ud800")),
+            ("/replies/3/verification", lambda record: record["replies"][3].update(verification="\udfff")),
+        ],
+    )
+    def test_a_record_holding_text_that_is_not_utf8_exits_2_naming_the_field(
+        self, field: str, put_half: Callable[[dict[str, Any]], None], tmp_path: Path
+    ):
+        record = example()
+        put_half(record)
+        path = tmp_path / "record.json"
+        path.write_text(json.dumps(record), encoding="ascii")
+        proc = self.run("lint", str(path))
+        assert proc.returncode == 2, proc.stderr
+        (error,) = json.loads(proc.stdout)["errors"]
+        assert error["code"] == "not-utf-8"
+        assert field in error["message"]
 
     def test_a_record_that_is_not_json_exits_2_with_the_reason(self, tmp_path: Path):
         path = tmp_path / "record.json"
