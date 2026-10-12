@@ -1,21 +1,22 @@
 # The generators
 
-Two subcommands fill the parts of a record that hold facts from the tracker and from GitHub. The author types neither part.
+Three subcommands fill the parts of a record that hold facts from the tracker and from GitHub. The author types none of those parts.
 
 | Subcommand | Fills | Reads |
 | --- | --- | --- |
 | `context` | `where_this_fits`, with its stamp | the tracker through `work`, and GitHub through `gh` |
 | `discovered` | the filed rows of `discovered`, with their stamp | the tracker through `work` |
+| `campaign` | `campaign`, with its stamp | GitHub through `gh` |
 
-`commands.md` beside this file gives the two command lines, where to run them and their exit statuses. This file says how each part is derived.
+`commands.md` beside this file gives the command lines, where to run them and their exit statuses. This file says how each part is derived.
 
-Every call either one makes is a read. Neither writes to the tracker or to GitHub.
+Every call any of them makes is a read. None writes to the tracker or to GitHub.
 
-Both copy titles and reasons that other people wrote. A title that holds a `<details>` fold, an HTML comment or a line that opens a `json` fence is written with that construct quoted as a code span. The reader then sees the same characters, and a generated part never fails `lint` under `machine-content`. When a span cannot quote the construct where it stands, the whole line is quoted. A fold whose tag breaks onto a second line has its first line quoted.
+All three copy text that other people wrote: a title, a reason, or a reviewer's claim and evidence. A text that holds a `<details>` fold, an HTML comment or a line that opens a `json` fence is written with that construct quoted as a code span. The reader then sees the same characters, and a generated part never fails `lint` under `machine-content`. When a span cannot quote the construct where it stands, the whole line is quoted. A fold whose tag breaks onto a second line has its first line quoted.
 
-A title is copied with any line break it holds. The pull request body shows such a break as a space where the title stands on a line, and as `<br>` in a table cell, so every line and every row stays whole. A byte in an answer that is not UTF-8 is replaced with the mark for an unreadable character. A title that holds half of a surrogate pair cannot be written at all, so the run fails and names the field.
+A text is copied with any line break it holds. The pull request body shows such a break as a space where the text stands on a line, and as `<br>` in a table cell, so every line and every row stays whole. A byte in an answer that is not UTF-8 is replaced with the mark for an unreadable character. A title that holds half of a surrogate pair cannot be written at all, so the run fails and names the field. A review verdict that holds one is skipped as unreadable, as the `campaign` section below says.
 
-Both check every answer before they read it. An answer must have the shape its call's answer has: a list where a list belongs, each entry with the fields the generator reads, and each field of its own type. An answer about several items must hold each item asked for once, and no other. An answer that fails the check stops the run. It is never read as an empty result.
+All three check every answer before they read it. An answer must have the shape its call's answer has: a list where a list belongs, each entry with the fields the generator reads, and each field of its own type. An answer about several items must hold each item asked for once, and no other. An answer that fails the check stops the run. It is never read as an empty result.
 
 ## `context`
 
@@ -64,9 +65,34 @@ An item with a discovered-from edge and no triage record in its description make
 
 `discovered` writes the stamp on every run, over an empty list when no item was found.
 
+## `campaign`
+
+`campaign` reads the pull request's reviews and builds the part from the verdicts they carry.
+
+**Which reviews count.** A review carries a verdict when its body ends in a fenced `json` block, which is how the reviewing App posts one. Every other review is passed over without a message. Of the reviews that carry a verdict, one counts when a bot account posted it, and `--app` narrows that to one login. A review by any other author is skipped. So is a review that is not a submitted review that still stands, which is one GitHub reports as pending or as dismissed. Each skipped review is named on stderr with the reason, so no verdict goes uncounted without a word.
+
+**Which verdicts are unreadable.** A verdict the reviewing App posted is skipped as unreadable in four cases. It cannot be loaded as JSON. It holds half of a surrogate pair. The `review-verdict` skill's validator rejects it. Or one of its identifiers holds a `<details>` fold, an HTML comment or a `json` fence. The identifiers are the claim id, the artifact class, a reviewer's name, a finding's id and the work item a disposition names. The record takes them as they are written, because a reply is matched to its finding by them, so they cannot be quoted the way a claim is.
+
+**Reviewer rows.** There is one row per reviewer that a counted verdict names. `rounds` gives the lowest and the highest round the reviewer ran in, across every claim and artifact class. It reads `1 to 4`, or one number when the two are equal. The range does not say that the reviewer ran every round between them. `findings` counts each finding the reviewer raised once. `fixed`, `rejected` and `deferred` count those findings by their latest disposition. `rebutted` counts as rejected, and `advisory-deferred` and `transferred` count as deferred. A finding that no verdict gives a disposition to is counted under `findings` alone, so the three columns can total less than it.
+
+**Findings.** There is one entry per finding, in the order the verdicts raised them. A finding is named by its verdict's claim id and artifact class together with its own id. The entry gives the round the finding first appeared in, its claim, its latest disposition, and the evidence given with that disposition as the reason. A finding with no disposition carries neither a disposition nor a reason.
+
+**The commit.** A finding's `commit` comes from the pull request author's reply on the finding's own thread, which the reviewing App opens with an inline comment. `campaign` reads the commit from one of two places in that reply. The first is in parentheses at the end of the reply's `Change:` line. The second, for a reply with no such line, is straight after the word "commit". When the author replies more than once, the latest reply that names a commit decides. The `commit` is empty for a finding with no thread and for a reply that names no commit in either place. It is empty for every finding when the pull request author's account is gone, because no reply is then the author's. `campaign` copies no commit from the record's `replies`, and it changes no entry there, so an outcome the author chose stays.
+
+**The terminal commit.** `campaign` leaves `terminal_sha` empty. Whether a round was complete is a rule the `review-verdict` skill states, and that skill ships no function that decides it.
+
+### An empty campaign
+
+`campaign` adds one row to `heads_up` when it counts no verdict. The row opens with `campaign:`.
+
+- When no review carried a verdict that counts, the row reads `campaign: No review round has run on this pull request.`
+- When every verdict the reviewing App posted was unreadable, the row gives their count, as in `campaign: 2 reviews carry verdicts that could not be read, so no review round is counted.`
+
+The row behaves as the row `context` writes does. It takes the place of a `None.` entry, and the next run that counts a verdict takes it out. When it goes and no other entry is left, `None.` comes back.
+
 ## Running again
 
-A second run over unchanged sources leaves the file byte for byte as it was. Run a generator again when its sources change. That is when the pull request opens, when a sibling item closes or a sibling pull request merges, and when new work is filed.
+A second run over unchanged sources leaves the file byte for byte as it was. Run a generator again when its sources change. That is when the pull request opens, when a sibling item closes or a sibling pull request merges, when new work is filed, and when a review round is posted or answered.
 
 A hand edit of a generated part fails `lint` under `stale-stamp`. Running the part's generator again replaces the edit and clears the finding.
 
@@ -89,3 +115,11 @@ A hand edit of a generated part fails `lint` under `stale-stamp`. Running the pa
 2. `work --format json show ID ...`, once, for every discovered item together
 
 `discovered` skips step 2 when no item was discovered.
+
+`campaign` makes these, in order:
+
+1. `gh api "repos/{owner}/{repo}/pulls/NUMBER"`, for the pull request's author
+2. `gh api "repos/{owner}/{repo}/pulls/NUMBER/reviews?per_page=100&page=N"`, from page 1 until a page is empty
+3. `gh api "repos/{owner}/{repo}/pulls/NUMBER/comments?per_page=100&page=N"`, the same way, for the author's replies
+
+`campaign` reads no issue comment.

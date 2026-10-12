@@ -33,14 +33,14 @@
 - CR-X6 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX6SecondRun
 - CR-X7 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX7NothingAround
 - CR-X8 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX8Concurrent
-- CR-C1 | open
-- CR-C2 | open
-- CR-C3 | open
-- CR-C4 | open
+- CR-C1 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC1ReviewersAndPages
+- CR-C2 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC2Findings
+- CR-C3 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC3EmptyCampaign
+- CR-C4 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC4SkippedReviews
 - CR-C5 | open
-- CR-C6 | open
+- CR-C6 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC6RerunAndReplies
 - CR-C7 | open
-- CR-C8 | open
+- CR-C8 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC8ReadsOnly
 - CR-P1 | open
 - CR-P2 | open
 - CR-P3 | open

@@ -1,6 +1,6 @@
 # The script's subcommands
 
-Run each from the skill's directory, as `uv run scripts/change_record.py` followed by the subcommand. `context`, `discovered` and `lint --pr` read the repository of the working directory. Run those three from inside that repository, and give the script by its path.
+Run each from the skill's directory, as `uv run scripts/change_record.py` followed by the subcommand. `context`, `discovered`, `campaign` and `lint --pr` read the repository of the working directory. Run those four from inside that repository, and give the script by its path.
 
 ## The result a fault is reported in
 
@@ -30,6 +30,23 @@ uv run path/to/scripts/change_record.py discovered record.json
 Neither takes an id on the command line. Both read the work item from the record's `work_item.id`, and `context` reads the pull request from `pr.number`. Both read the tracker through `work`, and `context` reads GitHub through `gh`. Every call is a read. Run both from inside the pull request's repository, because `work` and `gh` read the repository of the working directory.
 
 Each computes everything first and writes the record file once. The file stays exactly as it was when the record cannot be read or does not fit the schema, when the tracker does not know the work item, when a `work` or `gh` call fails or cannot be run, and when a call's answer does not have the shape that call's answer has. The message on stderr quotes the call at fault. A second run over unchanged sources writes nothing and says so.
+
+Exit 0 the record holds the part, 2 anything failed.
+
+## `campaign`
+
+```bash
+uv run path/to/scripts/change_record.py campaign [--pr NUMBER] [--app LOGIN] record.json
+```
+
+`campaign` fills the record's `campaign` part from the review verdicts posted on the pull request, and writes it with the stamp `lint` checks. `generators.md` beside this file says how the part is derived and which calls the subcommand makes.
+
+- `--pr NUMBER` names the pull request. Leave it out once the record's `pr.number` holds the number. A `--pr` that names a different pull request from the record's is refused.
+- `--app LOGIN` counts only the reviews that login posted. Without it, a review counts when a bot account posted it. Give it in a repository where more than one bot posts reviews.
+
+`campaign` reads GitHub through `gh`, and every call is a read. Run it from inside the pull request's repository, because `gh` reads the repository of the working directory. It checks each verdict with the validator the `review-verdict` skill ships, which it loads from that skill's directory beside this one. It names each review it skips on stderr, with the reason.
+
+`campaign` computes everything first and writes the record file once. The file stays exactly as it was when the record cannot be read or does not fit the schema, when the `review-verdict` skill is not there, when a `gh` call fails or cannot be run, and when a call's answer does not have the shape that call's answer has. The message on stderr quotes the call at fault. A second run over unchanged reviews writes nothing and says so.
 
 Exit 0 the record holds the part, 2 anything failed.
 

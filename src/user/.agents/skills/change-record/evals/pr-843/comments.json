@@ -1,0 +1,437 @@
+[
+ {
+  "id": 4179275912,
+  "pull_request_review_id": 5408167652,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**test-adequacy** (mechanical, fails A3)\n\nThe tests can accept a Codex lens using its re-review tier for a whole-artifact read. Add an independent tier assertion for architectural-fit, which declares frontier and re-review mid, across the full-read scenarios.\n\nEvidence: emit_prompts_test.py:2167–2211 checks only security in all six A3 scenarios. The cross-class test at lines 2215–2229 resolves its expected pin using the emitted tier_this_round rather than checking that tier against the roster. An in-memory mutation restricting lens_tier's full-read branch to OpenRouter produced architectural-fit with scope_this_round=full, tier=frontier, tier_this_round=mid and effort=medium; the actual A9 assertion function accepted that record. Security still resolved to frontier, preserving the A3 assertions.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A3\",\n  \"claim\": \"The tests can accept a Codex lens using its re-review tier for a whole-artifact read. Add an independent tier assertion for architectural-fit, which declares frontier and re-review mid, across the full-read scenarios.\",\n  \"evidence\": \"emit_prompts_test.py:2167\\u20132211 checks only security in all six A3 scenarios. The cross-class test at lines 2215\\u20132229 resolves its expected pin using the emitted tier_this_round rather than checking that tier against the roster. An in-memory mutation restricting lens_tier's full-read branch to OpenRouter produced architectural-fit with scope_this_round=full, tier=frontier, tier_this_round=mid and effort=medium; the actual A9 assertion function accepted that record. Security still resolved to frontier, preserving the A3 assertions.\",\n  \"id\": \"test-adequacy.r1.f1\",\n  \"lens\": \"test-adequacy\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/emit_prompts_test.py",
+  "commit_id": "2659f7f382573438dcc00e1920228bea1f3a1f50",
+  "created_at": "2026-10-04T20:52:27Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4207856339,
+  "pull_request_review_id": 5443483962,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**correctness** (mechanical, fails A17 — Preserve the three-attempt bound and its exhaustion guidance.)\n\nA fourth dead-run claim can bypass the exhaustion handler. It returns off-ladder, incorrectly says a failover is still accepted, omits halt guidance, and leaves the final failure unrecorded.\n\nEvidence: Reproduced through gate.main with an in-memory ledger: authorize codex/gpt-6.1-sol with initial/high, dead-run/medium, then transport-error/medium. A fourth claim with dead-run/low returns off-ladder without a halt block or refusal ledger entry. dispatch_gate.py:564–568 raises before the MAX_ATTEMPTS check at line 569.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A17 \\u2014 Preserve the three-attempt bound and its exhaustion guidance.\",\n  \"claim\": \"A fourth dead-run claim can bypass the exhaustion handler. It returns off-ladder, incorrectly says a failover is still accepted, omits halt guidance, and leaves the final failure unrecorded.\",\n  \"evidence\": \"Reproduced through gate.main with an in-memory ledger: authorize codex/gpt-6.1-sol with initial/high, dead-run/medium, then transport-error/medium. A fourth claim with dead-run/low returns off-ladder without a halt block or refusal ledger entry. dispatch_gate.py:564\\u2013568 raises before the MAX_ATTEMPTS check at line 569.\",\n  \"id\": \"correctness.r1.f1\",\n  \"lens\": \"correctness\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T14:02:48Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4207856351,
+  "pull_request_review_id": 5443483962,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**correctness** (mechanical, fails A17 — A dead run on the failover seat ends the ladder and halts the round.)\n\nA dead run on the failover seat loses halt guidance when an earlier attempt returned unusable output. The dispatcher consequently receives a refusal that closes only the lens instead of halting the round.\n\nEvidence: Reproduced through gate.main: initial codex/high; transport-error recovery on openrouter/low; unusable-output recovery on openrouter/low; then dead-run on openrouter with evidence. The final response is attempts-exhausted without a halt block. check_ladder at dispatch_gate.py:481–486 calls exhausted, whose all-failures check at lines 542–544 excludes the earlier unusable-output failure. harvest.md says refusals without halt guidance close only the lens.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A17 \\u2014 A dead run on the failover seat ends the ladder and halts the round.\",\n  \"claim\": \"A dead run on the failover seat loses halt guidance when an earlier attempt returned unusable output. The dispatcher consequently receives a refusal that closes only the lens instead of halting the round.\",\n  \"evidence\": \"Reproduced through gate.main: initial codex/high; transport-error recovery on openrouter/low; unusable-output recovery on openrouter/low; then dead-run on openrouter with evidence. The final response is attempts-exhausted without a halt block. check_ladder at dispatch_gate.py:481\\u2013486 calls exhausted, whose all-failures check at lines 542\\u2013544 excludes the earlier unusable-output failure. harvest.md says refusals without halt guidance close only the lens.\",\n  \"id\": \"correctness.r1.f2\",\n  \"lens\": \"correctness\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T14:02:48Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4207856359,
+  "pull_request_review_id": 5443483962,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**test-adequacy** (mechanical, fails A3)\n\nNo test independently pins the re-review tier for a later full read. Reverting security to frontier during a round-2 sweep could pass while dispatching the wrong model. Assert the expected tier from the roster and round number before checking its pin.\n\nEvidence: emit_prompts_test.py:2217–2232 covers sweeps but derives the expected pin from the emitted tier_this_round. The literal tier assertions at lines 549–573 cover round 1 and round-2 delta reads only. contracts.json gives OpenRouter mid/full and frontier/full identical effort and tools, so the sweep's pin assertion cannot distinguish those tiers.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A3\",\n  \"claim\": \"No test independently pins the re-review tier for a later full read. Reverting security to frontier during a round-2 sweep could pass while dispatching the wrong model. Assert the expected tier from the roster and round number before checking its pin.\",\n  \"evidence\": \"emit_prompts_test.py:2217\\u20132232 covers sweeps but derives the expected pin from the emitted tier_this_round. The literal tier assertions at lines 549\\u2013573 cover round 1 and round-2 delta reads only. contracts.json gives OpenRouter mid/full and frontier/full identical effort and tools, so the sweep's pin assertion cannot distinguish those tiers.\",\n  \"id\": \"test-adequacy.r1.f1\",\n  \"lens\": \"test-adequacy\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/emit_prompts_test.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T14:02:48Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4207856373,
+  "pull_request_review_id": 5443483962,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**test-adequacy** (mechanical, fails A13)\n\nThe doctrine evaluation uses readers with additional context, so its passing answers do not establish that the named files alone determine the dispatch. Repeat the twenty-seven scenarios with the required isolated inputs.\n\nEvidence: evals/dispatch-scenarios.md:10–12 requires readers given only the named files and question. /Users/scott/grilling-corpus/2026-10-04-pin-408/scenarios/results-2.md:8–10 records that the evaluation subagents inherit global CLAUDE.md and the memory index, and that one run quoted the memory index. This permits outside context to mask missing or ambiguous dispatch doctrine.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A13\",\n  \"claim\": \"The doctrine evaluation uses readers with additional context, so its passing answers do not establish that the named files alone determine the dispatch. Repeat the twenty-seven scenarios with the required isolated inputs.\",\n  \"evidence\": \"evals/dispatch-scenarios.md:10\\u201312 requires readers given only the named files and question. /Users/scott/grilling-corpus/2026-10-04-pin-408/scenarios/results-2.md:8\\u201310 records that the evaluation subagents inherit global CLAUDE.md and the memory index, and that one run quoted the memory index. This permits outside context to mask missing or ambiguous dispatch doctrine.\",\n  \"id\": \"test-adequacy.r1.f2\",\n  \"lens\": \"test-adequacy\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/evals/dispatch-scenarios.md",
+  "commit_id": "f801613c96aa8bf15c6a12f31c6579a137bd5e31",
+  "created_at": "2026-10-07T14:02:48Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4207856384,
+  "pull_request_review_id": 5443483962,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**simplification-efficiency** (mechanical, fails A18: Every lens receives a unified diff file over its scope.)\n\nchange_diffs recomputes and buffers the same diff separately for every lens sharing a revision pair. Reusing the computed bytes per pair would preserve every required file and refusal behavior while eliminating repeated Git work and duplicate memory.\n\nEvidence: src/user/.claude/skills/review-panel/emit_prompts.py:1067–1079 invokes git diff inside the lens loop and retains each stdout buffer. Calling change_diffs with the five typed-code lenses at full scope and an instrumented subprocess.run produced five calls with one distinct command and five distinct byte buffers.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A18: Every lens receives a unified diff file over its scope.\",\n  \"claim\": \"change_diffs recomputes and buffers the same diff separately for every lens sharing a revision pair. Reusing the computed bytes per pair would preserve every required file and refusal behavior while eliminating repeated Git work and duplicate memory.\",\n  \"evidence\": \"src/user/.claude/skills/review-panel/emit_prompts.py:1067\\u20131079 invokes git diff inside the lens loop and retains each stdout buffer. Calling change_diffs with the five typed-code lenses at full scope and an instrumented subprocess.run produced five calls with one distinct command and five distinct byte buffers.\",\n  \"id\": \"simplification-efficiency.r1.f1\",\n  \"lens\": \"simplification-efficiency\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/emit_prompts.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T14:02:48Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4207856394,
+  "pull_request_review_id": 5443483962,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**documentation-quality** (mechanical, fails A13)\n\nThe round-1 failover example uses effort high, contradicting the full-scope OpenRouter pin. A dispatcher following the example dispatches at the wrong effort.\n\nEvidence: src/user/.claude/skills/review-panel/harvest.md:159-161 claims correctness on OpenRouter in /tmp/round-1 with --effort high. The initial claim at lines 113-114 is round-1 correctness on Codex. Its failover seat is openrouter/frontier/full, whose effort in contracts.json is low.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A13\",\n  \"claim\": \"The round-1 failover example uses effort high, contradicting the full-scope OpenRouter pin. A dispatcher following the example dispatches at the wrong effort.\",\n  \"evidence\": \"src/user/.claude/skills/review-panel/harvest.md:159-161 claims correctness on OpenRouter in /tmp/round-1 with --effort high. The initial claim at lines 113-114 is round-1 correctness on Codex. Its failover seat is openrouter/frontier/full, whose effort in contracts.json is low.\",\n  \"id\": \"documentation-quality.r1.f1\",\n  \"lens\": \"documentation-quality\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/harvest.md",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T14:02:48Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4207856407,
+  "pull_request_review_id": 5443483962,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**documentation-quality** (mechanical, fails A13, A17)\n\nThe doctrine says every refusal ends the lens, although an off-ladder refusal permits a corrected claim. Following this instruction abandons a recoverable lens and leaves the round incomplete.\n\nEvidence: harvest.md:123 says 'A refusal (exit 2) ends that lens', and lines 181-183 say any refusal without halt guidance closes it. dispatch_gate.py:566-568 instead rejects off-ladder claims without spending an attempt, explicitly explaining that the dispatcher can claim the right step.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A13, A17\",\n  \"claim\": \"The doctrine says every refusal ends the lens, although an off-ladder refusal permits a corrected claim. Following this instruction abandons a recoverable lens and leaves the round incomplete.\",\n  \"evidence\": \"harvest.md:123 says 'A refusal (exit 2) ends that lens', and lines 181-183 say any refusal without halt guidance closes it. dispatch_gate.py:566-568 instead rejects off-ladder claims without spending an attempt, explicitly explaining that the dispatcher can claim the right step.\",\n  \"id\": \"documentation-quality.r1.f2\",\n  \"lens\": \"documentation-quality\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate.py",
+  "commit_id": "f801613c96aa8bf15c6a12f31c6579a137bd5e31",
+  "created_at": "2026-10-07T14:02:48Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4207856416,
+  "pull_request_review_id": 5443483962,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**documentation-quality** (mechanical, fails A13, A17)\n\nThe empty-output guidance asserts that the reviewer never ran and directs a transport-error recovery. A watchdog-ended dead run can also leave no output, so this guidance sends the dispatcher past the required effort step-down.\n\nEvidence: harvest.md:132-136 classifies a missing output file as transport-error and asserts 'The reviewer never ran'. dispatch_gate.py:781-783 repeats that assertion and instructs another claim with transport-error. harvest.md:142-151 and A17 classify watchdog kills for silence as dead-run, requiring the bounded ladder instead.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A13, A17\",\n  \"claim\": \"The empty-output guidance asserts that the reviewer never ran and directs a transport-error recovery. A watchdog-ended dead run can also leave no output, so this guidance sends the dispatcher past the required effort step-down.\",\n  \"evidence\": \"harvest.md:132-136 classifies a missing output file as transport-error and asserts 'The reviewer never ran'. dispatch_gate.py:781-783 repeats that assertion and instructs another claim with transport-error. harvest.md:142-151 and A17 classify watchdog kills for silence as dead-run, requiring the bounded ladder instead.\",\n  \"id\": \"documentation-quality.r1.f3\",\n  \"lens\": \"documentation-quality\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/harvest.md",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T14:02:48Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4207856420,
+  "pull_request_review_id": 5443483962,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**documentation-quality** (mechanical, fails A13)\n\nThe recovery comment still recommends another model on the same transport when one model is saturated. That rationale contradicts the pinned failover decision and suggests a free-hand model substitution.\n\nEvidence: dispatch_gate.py:64-69 explains recovery through another model of the same vendor and says a transport flip abandons a live vendor. harvest.md:164-165 now requires a dead route to use the failover seat, whose model is fixed by the other provider's routing-table cell.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A13\",\n  \"claim\": \"The recovery comment still recommends another model on the same transport when one model is saturated. That rationale contradicts the pinned failover decision and suggests a free-hand model substitution.\",\n  \"evidence\": \"dispatch_gate.py:64-69 explains recovery through another model of the same vendor and says a transport flip abandons a live vendor. harvest.md:164-165 now requires a dead route to use the failover seat, whose model is fixed by the other provider's routing-table cell.\",\n  \"id\": \"documentation-quality.r1.f4\",\n  \"lens\": \"documentation-quality\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/harvest.md",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T14:02:48Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4208252805,
+  "pull_request_review_id": 5443958100,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**correctness** (mechanical, fails A17: A dead-run claim is accepted in exactly two forms: a lower effort on the same transport and model, or the other transport.)\n\nThe gate accepts any different transport string as failover. After an initial Codex attempt, a dead-run claim with --transport openai is authorized and spends an attempt despite naming no valid failover seat. A subsequent claim for the actual OpenRouter failover is then refused as exhausted and halts the round.\n\nEvidence: dispatch_gate.py:485 returns acceptance whenever transport != start, without checking that it names the defined other transport. Reproduced through gate.main(), replacing only ledger reads and appends with memory-backed storage: initial codex/high exited 0; dead-run openai/low exited 0 with authorized=true; subsequent dead-run openrouter/low exited 2 with attempts-exhausted and halt guidance.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A17: A dead-run claim is accepted in exactly two forms: a lower effort on the same transport and model, or the other transport.\",\n  \"claim\": \"The gate accepts any different transport string as failover. After an initial Codex attempt, a dead-run claim with --transport openai is authorized and spends an attempt despite naming no valid failover seat. A subsequent claim for the actual OpenRouter failover is then refused as exhausted and halts the round.\",\n  \"evidence\": \"dispatch_gate.py:485 returns acceptance whenever transport != start, without checking that it names the defined other transport. Reproduced through gate.main(), replacing only ledger reads and appends with memory-backed storage: initial codex/high exited 0; dead-run openai/low exited 0 with authorized=true; subsequent dead-run openrouter/low exited 2 with attempts-exhausted and halt guidance.\",\n  \"id\": \"correctness.r2.f1\",\n  \"lens\": \"correctness\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate.py",
+  "commit_id": "6643c534031e6657f593849227da6e19e0f8b284",
+  "created_at": "2026-10-07T14:37:35Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4208252820,
+  "pull_request_review_id": 5443958100,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**test-adequacy** (mechanical, fails A17)\n\nThe tests do not pin exhaustion when a dead-run claim tries to return to the starting transport after failover. A regression could return off-ladder without halt guidance, telling the dispatcher to correct and retry an exhausted lens. Parameterize the post-failover test over both requested transports.\n\nEvidence: dispatch_gate_test.py:612–628 tests failover on attempts 2 and 3, but always requests openrouter again. An in-memory mutant changing check_ladder's failover-history condition to require transport != start passed all 14 TestDeadRunLadder cases with ledger I/O replaced by memory. For initial codex/high → dead-run failover openrouter → dead-run claim codex/medium, that mutant returned off-ladder without halt; the original returned attempts-exhausted with halt guidance.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A17\",\n  \"claim\": \"The tests do not pin exhaustion when a dead-run claim tries to return to the starting transport after failover. A regression could return off-ladder without halt guidance, telling the dispatcher to correct and retry an exhausted lens. Parameterize the post-failover test over both requested transports.\",\n  \"evidence\": \"dispatch_gate_test.py:612\\u2013628 tests failover on attempts 2 and 3, but always requests openrouter again. An in-memory mutant changing check_ladder's failover-history condition to require transport != start passed all 14 TestDeadRunLadder cases with ledger I/O replaced by memory. For initial codex/high \\u2192 dead-run failover openrouter \\u2192 dead-run claim codex/medium, that mutant returned off-ladder without halt; the original returned attempts-exhausted with halt guidance.\",\n  \"id\": \"test-adequacy.r2.f1\",\n  \"lens\": \"test-adequacy\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate_test.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T14:37:35Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4208252835,
+  "pull_request_review_id": 5443958100,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**documentation-quality** (mechanical, fails A17)\n\nThe ROUTE_FAILURES comment implies that an earlier unusable output prevents the round from halting. The current rule considers each route's last failure, so a route that produced unusable output and then died can still trigger a halt.\n\nEvidence: src/user/.claude/skills/review-panel/dispatch_gate.py:81 says a lens halts on these failures 'alone' and 'a reviewer that produced garbage does not'. exhausted() instead checks the last failure per transport/model. Calling it with transport-error on Codex followed by unusable-output and dead-run on OpenRouter returns halt guidance. dispatch_gate_test.py::test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output asserts that behavior.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A17\",\n  \"claim\": \"The ROUTE_FAILURES comment implies that an earlier unusable output prevents the round from halting. The current rule considers each route's last failure, so a route that produced unusable output and then died can still trigger a halt.\",\n  \"evidence\": \"src/user/.claude/skills/review-panel/dispatch_gate.py:81 says a lens halts on these failures 'alone' and 'a reviewer that produced garbage does not'. exhausted() instead checks the last failure per transport/model. Calling it with transport-error on Codex followed by unusable-output and dead-run on OpenRouter returns halt guidance. dispatch_gate_test.py::test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output asserts that behavior.\",\n  \"id\": \"documentation-quality.r2.f1\",\n  \"lens\": \"documentation-quality\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T14:37:35Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4208576733,
+  "pull_request_review_id": 5444337208,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**internal-consistency** (mechanical, fails A13 and A17: dispatch doctrine determines recovery and distinguishes correctable refusals from exhausted attempts.)\n\nThe refusal rules prescribe both retrying and halting after an off-ladder claim following a dead run.\n\nEvidence: src/user/.claude/skills/review-panel/harvest.md:123–124 says an off-ladder refusal spends no attempt and instructs the dispatcher to correct it and claim again. Lines 173–175 say a refusal carries halt guidance when every route's last failure was a dead route or dead run, and instruct the dispatcher to stop without retrying. After one dead run and an off-ladder recovery claim, both conditions apply. The halt rule needs to distinguish exhausted attempts from correctable refusals.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A13 and A17: dispatch doctrine determines recovery and distinguishes correctable refusals from exhausted attempts.\",\n  \"claim\": \"The refusal rules prescribe both retrying and halting after an off-ladder claim following a dead run.\",\n  \"evidence\": \"src/user/.claude/skills/review-panel/harvest.md:123\\u2013124 says an off-ladder refusal spends no attempt and instructs the dispatcher to correct it and claim again. Lines 173\\u2013175 say a refusal carries halt guidance when every route's last failure was a dead route or dead run, and instruct the dispatcher to stop without retrying. After one dead run and an off-ladder recovery claim, both conditions apply. The halt rule needs to distinguish exhausted attempts from correctable refusals.\",\n  \"id\": \"internal-consistency.r1.f1\",\n  \"lens\": \"internal-consistency\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/harvest.md",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T15:04:45Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4208576747,
+  "pull_request_review_id": 5444337208,
+  "user": {
+   "login": "pr-hater[bot]",
+   "id": 302648575,
+   "type": "Bot"
+  },
+  "body": "**internal-consistency** (mechanical, fails A13 and A17: a watchdog-ended attempt follows the dead-run ladder.)\n\nA watchdog-ended attempt that leaves no output file receives conflicting failure classifications.\n\nEvidence: src/user/.claude/skills/review-panel/harvest.md:136–148 explicitly classifies an attempt killed by the watchdog for silence as dead-run, including when it leaves nothing. Lines 216–217 unconditionally classify a claimed path with no file as a transport failure because the route wrote nothing. The same watchdog-ended attempt satisfies both descriptions. These classifications produce different recovery steps: dead-run first lowers effort when possible, while transport-error immediately fails over under lines 167–168.\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{\n  \"ac\": \"A13 and A17: a watchdog-ended attempt follows the dead-run ladder.\",\n  \"claim\": \"A watchdog-ended attempt that leaves no output file receives conflicting failure classifications.\",\n  \"evidence\": \"src/user/.claude/skills/review-panel/harvest.md:136\\u2013148 explicitly classifies an attempt killed by the watchdog for silence as dead-run, including when it leaves nothing. Lines 216\\u2013217 unconditionally classify a claimed path with no file as a transport failure because the route wrote nothing. The same watchdog-ended attempt satisfies both descriptions. These classifications produce different recovery steps: dead-run first lowers effort when possible, while transport-error immediately fails over under lines 167\\u2013168.\",\n  \"id\": \"internal-consistency.r1.f2\",\n  \"lens\": \"internal-consistency\",\n  \"type\": \"mechanical\"\n}\n```\n\n</details>",
+  "path": "src/user/.claude/skills/review-panel/harvest.md",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T15:04:45Z",
+  "author_association": "NONE"
+ },
+ {
+  "id": 4212288726,
+  "pull_request_review_id": 5448717082,
+  "in_reply_to_id": 4179275912,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed (superseded claim)** (superseded claim 9k9.408). The scope-keyed lens_tier and its tests are deleted; A3 keeps main's tier rule and main's tests (test_tier_round_one_always_resolves_declared_tier, test_tier_round_two_resolves_declared_re_review_tier, test_tier_round_two_without_declaration_keeps_declared_tier) decide it. This thread belongs to the claim the 2026-10-07 restatement superseded; the restated design settles it by construction.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/emit_prompts_test.py",
+  "commit_id": "2659f7f382573438dcc00e1920228bea1f3a1f50",
+  "created_at": "2026-10-07T21:41:43Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212288973,
+  "pull_request_review_id": 5448717406,
+  "in_reply_to_id": 4207856339,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 1). Reproduced: a fourth dead-run claim after initial/high, dead-run/medium, transport-error/medium on codex returned off-ladder with no halt block and no refusal ledger entry. Test dispatch_gate_test.py::TestDeadRunLadder::test_a17_a_dead_run_past_the_bound_is_out_of_attempts_not_off_ladder failed without the change (got ['off-ladder']) and passes with it; a mutant restoring the unconditional off-ladder raise was observed to fail only this test. Fix: claim() raises an off-ladder refusal only below MAX_ATTEMPTS, so a claim past the bound meets the bound's attempts-exhausted refusal with halt guidance and a refusal ledger record. Commit 75bb090c.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:41:45Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212289311,
+  "pull_request_review_id": 5448717868,
+  "in_reply_to_id": 4207856351,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 1). Reproduced: initial codex, transport-error to openrouter, unusable-output on openrouter, then a dead-run claim on openrouter returned attempts-exhausted without halt. Test dispatch_gate_test.py::TestDeadRunLadder::test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output failed without the change (KeyError 'halt') and passes with it; a mutant restoring the all-failures check was observed to fail only this test. Fix: exhausted() grants halt guidance when the last failure on every route (transport, model) was a transport error or a dead run. harvest.md's halt sentence was replaced to state the same condition. Commit 75bb090c.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:41:47Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212289481,
+  "pull_request_review_id": 5448718101,
+  "in_reply_to_id": 4207856359,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 1). Confirmed the gap: a mutant making a sweep round dispatch every lens at its declared tier passed all 219 emitter tests. emit_prompts_test.py::TestSeatPins::test_a9_the_round_record_names_each_lens_pin now asserts each entry's tier_this_round against the roster (declared tier in round one, re_review_tier or declared tier later) before checking the pin. Against the mutant it fails for prose-sweep, spec-sweep and typed-code-sweep; against the branch it passes. Test-only change. Commit 7774cae8.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/emit_prompts_test.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:41:48Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212289808,
+  "pull_request_review_id": 5448718507,
+  "in_reply_to_id": 4207856373,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 1). Re-ran all 27 A13 reads on isolated readers: headless claude -p --model sonnet in an empty directory with --setting-sources \"\", a replaced --system-prompt, --tools Read,Grep,Glob and only copies of the five named files (from 7774cae8) reachable via --add-dir. Isolation trial: the isolated reader reports only the userEmail and Environment blocks and three tools; a control run with default settings reports ~/.claude/CLAUDE.md, AGENTS.md, rules/delegation.md, plugin context and MCP tools. Result 27 of 27 keyed answers, no self-corrections, no revision needed. Recorded in /Users/scott/grilling-corpus/2026-10-04-pin-408/scenarios/results-3.md with raw outputs in scenarios/results-3-raw/. The sentence in evals/dispatch-scenarios.md that said 'a fresh native subagent' was replaced to name the isolated reader and why an Agent-tool subagent does not qualify. Commit 6643c534. No unit test in the suite exercises a doctrine evaluation; the check that decides this finding is A13's own protocol. Failing observation: scenarios/results-2.md, readers that inherited the global instruction files and the memory index (one quoted the index). Passing observation: scenarios/results-3.md, 27 of 27 reads on headless `claude -p --model sonnet` readers with `--setting-sources \"\"`, a replaced system prompt and only the five named files reachable, after an isolation trial showed such a reader sees no instruction file while a default reader sees CLAUDE.md, AGENTS.md, rules and plugin context.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/evals/dispatch-scenarios.md",
+  "commit_id": "f801613c96aa8bf15c6a12f31c6579a137bd5e31",
+  "created_at": "2026-10-07T21:41:50Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212290133,
+  "pull_request_review_id": 5448718952,
+  "in_reply_to_id": 4207856384,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 1). Reproduced: an instrumented subprocess.run saw 5 git diff calls for a round-one typed-code emission. Test emit_prompts_test.py::TestChangeFile::test_a18_lenses_sharing_a_revision_pair_share_one_diff failed without the change (assert 5 == 1) and passes with it. Fix: change_diffs computes each distinct start revision once and reuses its bytes; the A18 file-content, empty-change and unknown-revision tests still pass. Commit cdd53cc1.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/emit_prompts.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:41:51Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212290425,
+  "pull_request_review_id": 5448719282,
+  "in_reply_to_id": 4207856394,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 1). Confirmed: the round-1 correctness failover seat is openrouter/frontier/full, whose pin in contracts.json is effort low. In harvest.md's transport-error example the line '--transport openrouter --model <model> --effort high \\' was replaced with '--effort low'. Commit a55b0e4d. No test exercises an example command in harvest.md; the check is the replaced sentence read against the pin: the round-1 failover example now says `--effort low`, which is contracts.json's pin for the openrouter/frontier/full seat (A6's test_a6_every_lens_pin_has_its_stated_effort pins that value; the example's agreement with it was verified by reading).\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/harvest.md",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:41:53Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212290714,
+  "pull_request_review_id": 5448719613,
+  "in_reply_to_id": 4207856407,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 1). Confirmed: off-ladder and malformed-flag refusals are raised before any ledger write and spend no attempt (dispatch_gate.py claim(); test_a_refused_claim_rewrites_nothing_and_grants_no_attempt). In harvest.md, 'A refusal (exit 2) ends that lens.' was replaced with 'An `attempts-exhausted` refusal (exit 2) ends that lens. A claim refused as `off-ladder`, or for a missing or malformed flag, spends no attempt: correct it and claim again.', and 'Any other refusal closes that lens alone' with 'Any other `attempts-exhausted` refusal closes that lens alone'. Commit a55b0e4d.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate.py",
+  "commit_id": "f801613c96aa8bf15c6a12f31c6579a137bd5e31",
+  "created_at": "2026-10-07T21:41:55Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212290998,
+  "pull_request_review_id": 5448719930,
+  "in_reply_to_id": 4207856416,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 1). Confirmed: a watchdog kill for silence leaves the claimed output empty and is a dead run. In harvest.md 'The reviewer never ran.' was replaced with 'An attempt your watchdog killed for silence leaves nothing too, and it is a dead run.' The gate's no-output message, which said the reviewer never ran and named only transport-error, was replaced to name dead-run with the kill line for a watchdog kill and transport-error with the route's error otherwise. Test dispatch_gate_test.py::TestIngest::test_a_claimed_path_holding_no_file_is_a_transport_failure gained an assertion that the message names dead-run; it failed without the change and passes with it. Commit 837f8a4c.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/harvest.md",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:41:56Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212291229,
+  "pull_request_review_id": 5448720242,
+  "in_reply_to_id": 4207856420,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 1). The MAX_ATTEMPTS comment's sentences 'because a model can sit at capacity for the length of a round while another model of the same vendor answers: a single transport flip abandons a live vendor on one saturated model's say-so' were replaced with 'Every attempt declares transport AND model, so the ledger names the route each attempt ran on and the routes a halt reports as exhausted.' The same rationale in check_route's docstring ('a dead vendor and a saturated model recover in opposite directions') was removed. Commit a55b0e4d. No test exercises a code comment; the check is the comment read against the doctrine: the MAX_ATTEMPTS comment and check_route's docstring no longer argue for a same-vendor model swap, and the only recovery they describe is the failover seat the routing table fixes, which is what harvest.md and A13's scenarios 2 and 3 require.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/harvest.md",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:41:57Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212291449,
+  "pull_request_review_id": 5448720498,
+  "in_reply_to_id": 4208252805,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 2). Reproduced: before the fix, test dispatch_gate_test.py::TestDeadRunLadder::test_a17_a_transport_that_is_not_the_failover_seat_is_refused (initial codex/gpt-5.6-terra/high, then dead-run --transport openai --effort low) failed because the gate returned exit 0 with authorized=true at attempt 2. Fix: check_ladder now accepts a failover only onto FAILOVER_TRANSPORT[start] (codex<->openrouter), and the step-down branch also requires the starting transport, so any third transport is refused off-ladder and spends nothing. With the fix the test passes (observed both). A mutant dropping the same-transport guard from the step-down branch also fails this test. Commit 56130d01.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate.py",
+  "commit_id": "6643c534031e6657f593849227da6e19e0f8b284",
+  "created_at": "2026-10-07T21:41:59Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212291676,
+  "pull_request_review_id": 5448720835,
+  "in_reply_to_id": 4208252820,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 2). The test dispatch_gate_test.py::TestDeadRunLadder::test_a17_a_dead_run_after_the_failover_is_out_of_attempts is now parameterized over the requested transport (failover-transport: openrouter/z-ai/glm-5.3/low; starting-transport: codex/gpt-5.6-terra/medium) crossed with failover on attempt 2 and 3. Against the reviewer's mutant (history condition guarded by transport != start) the [2-starting-transport] and [3-starting-transport] cases failed and the other two passed; against the unmutated gate all four pass (observed both). Commit 56130d01.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate_test.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:42:00Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212291956,
+  "pull_request_review_id": 5448721181,
+  "in_reply_to_id": 4208252835,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (round 2). Replaced the ROUTE_FAILURES comment sentence 'A lens that runs out of attempts on these alone halts the round; a reviewer that produced garbage does not.' with 'A lens that runs out of attempts halts the round when the last failure on every route it ran on is one of these.', matching exhausted(). No test exercises a comment; the behaviour it describes stays pinned by test dispatch_gate_test.py::TestDeadRunLadder::test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output. Commit e399db1d.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/dispatch_gate.py",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:42:02Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212292458,
+  "pull_request_review_id": 5448721877,
+  "in_reply_to_id": 4208576733,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (prose round 1). Verified: dispatch_gate.py attaches halt guidance only through exhausted(), whose code is attempts-exhausted; an off-ladder refusal is raised without a halt block. harvest.md 'When the gate refuses' replaced 'A refusal carries halt guidance when the last failure on every route the lens ran on was a dead route or a dead run.' with 'An `attempts-exhausted` refusal carries halt guidance when the last failure on every route the lens ran on was a dead route or a dead run.' The off-ladder/malformed-flag sentence in 'Every dispatch is claimed first' (spends no attempt, correct it and claim again) is unchanged, so each case has one sentence and they no longer overlap. Commit 78c49400. No test exercises prose.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/harvest.md",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:42:05Z",
+  "author_association": "OWNER"
+ },
+ {
+  "id": 4212292689,
+  "pull_request_review_id": 5448722214,
+  "in_reply_to_id": 4208576747,
+  "user": {
+   "login": "scotthamilton77",
+   "id": 10354605,
+   "type": "User"
+  },
+  "body": "**fixed** (prose round 1). Same defect as global-consistency.r1.f1, fixed once. harvest.md 'Reading a lens report' replaced 'A claimed path holding no file at all is refused as a transport failure, not a reviewer one: the route wrote nothing.' with 'A claimed path holding nothing is refused as `no-output`, because the attempt wrote nothing. Claim again with reason `dead-run` and the kill line as the evidence when your watchdog killed it for silence, and with reason `transport-error` and the route's error otherwise.', which restates the gate's no-output refusal message in dispatch_gate.py and agrees with the dead-run section. Commit 0fd61251. Net growth two lines. No test exercises prose.\n\nCampaign terminal-clean at 5bc9e856 (typed-code sweep review 5444238529, prose sweep review 5444468938).",
+  "path": "src/user/.claude/skills/review-panel/harvest.md",
+  "commit_id": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+  "created_at": "2026-10-07T21:42:07Z",
+  "author_association": "OWNER"
+ }
+]

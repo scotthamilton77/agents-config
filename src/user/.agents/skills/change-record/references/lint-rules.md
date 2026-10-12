@@ -125,15 +125,15 @@ A stamp is the SHA-256 digest, in hex, of the content written as JSON with every
 
 A part the record does not hold needs no stamp. The filed rows need one as soon as the record has a filed row.
 
-`context` writes `where_this_fits` with its stamp, and `discovered` writes the filed rows with theirs. `generators.md` beside this file describes both. A stale stamp on either part clears when its generator runs again.
+The script fills all three generated parts. `context` writes `where_this_fits` with its stamp, `discovered` writes the filed rows with theirs, and `campaign` writes `campaign` with its own. `generators.md` beside this file describes all three. A stale stamp on a part clears when its generator runs again.
 
-Nothing in this skill generates `campaign` yet. Copy its facts from the posted review verdicts, then stamp the record from this skill's directory:
+A part that was copied by hand, where its generator could not run, is stamped from this skill's directory:
 
 ```bash
 python3 -c 'import json, sys; sys.path.insert(0, "scripts"); import change_record as c; p = sys.argv[1]; r = c.stamp_generated(json.load(open(p))); open(p, "w").write(json.dumps(r, indent=2, ensure_ascii=False) + "\n")' path/to/record.json
 ```
 
-That command stamps every generated part the record holds. Run it only after copying `campaign` from its source, and never to pass an edit of your own, because a stamp says the content is the source's.
+That command stamps every generated part the record holds. Run it only after copying a part from its source, and never to pass an edit of your own, because a stamp says the content is the source's.
 
 ## A record that cannot be read
 
