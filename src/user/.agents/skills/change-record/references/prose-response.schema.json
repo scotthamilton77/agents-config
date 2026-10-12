@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agents.local/schemas/change-record-prose-response/1",
+  "title": "Prose response",
+  "description": "What an editor returns for a request to rewrite a change record's wording: a replacement for each section it rewrote, and a question for each section it could not rewrite without inventing a fact. The author takes out each replacement they do not accept before the response is applied.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["record_digest", "proposed", "replacements"],
+  "properties": {
+    "record_digest": {
+      "$ref": "#/$defs/digest",
+      "description": "The request's record digest, copied. It shows which record the response was written against."
+    },
+    "proposed": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many replacements the editor returned. The editor writes it, and the author leaves it as it is, so it still says how many there were after some are taken out."
+    },
+    "replacements": {
+      "type": "array",
+      "description": "One entry per section the editor rewrote. A response with nothing to apply holds an empty list.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "section_digest", "text"],
+        "properties": {
+          "field": {"type": "string", "minLength": 1, "description": "The section, as the request names it."},
+          "section_digest": {
+            "$ref": "#/$defs/digest",
+            "description": "The digest the request gave for the section's text, copied."
+          },
+          "text": {"type": "string", "description": "The editor's wording for the section."},
+          "corrected": {
+            "type": "string",
+            "description": "The author's wording, added only when the author changes the editor's. It is applied in place of text, and text stays as the editor wrote it."
+          }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "description": "One entry per section the editor could not rewrite without inventing a fact.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "question"],
+        "properties": {
+          "field": {"type": "string", "minLength": 1, "description": "The section, as the request names it."},
+          "question": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "examples": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"]
+    }
+  }
+}

@@ -17,6 +17,8 @@ Usage: uv run change_record.py init --type TYPE --component NAME --work-item ID 
        uv run change_record.py render commit <record.json>
        uv run change_record.py render reply <record.json> --finding ID
        uv run change_record.py publish [--dry-run] <record.json>
+       uv run change_record.py extract-prose <record.json> [--output FILE]
+       uv run change_record.py apply-prose <record.json> <response.json>
 
 ``init`` writes a new record with every field the author fills left empty.
 It never replaces a file. Exit 0 written, 1 a file is already there, 2 the
@@ -52,6 +54,15 @@ sets the pull request body to the render that points at that comment. It never
 edits a comment. With ``--dry-run`` it prints the comment and the body to
 stdout and writes nothing. A record it refuses gets the JSON result on stderr.
 Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.
+
+``extract-prose`` writes the request an editor rewrites a record's wording
+from, to stdout or to the file ``--output`` names. The request holds the
+record, and each field an editor may rewrite as a section with its text and
+the digest of that text. ``apply-prose`` applies the replacements of a
+response to the record. It checks the whole response first, and one refused
+replacement leaves the record file as it was. Both only read and write
+files. A refusal gets the JSON result on stderr. Exit 0 done, 1 refused,
+2 unreadable or unparseable.
 """
 
 from __future__ import annotations
@@ -160,6 +171,16 @@ ID = re.compile(
     re.VERBOSE,
 )
 
+# A commit id as prose gives one, which is its first seven characters or more.
+# A word of seven letters from a to f reads as one too, and keeping such a word
+# costs a rewrite nothing.
+COMMIT_ID = re.compile(r"\b[0-9a-f]{7,40}\b")
+
+# A number as prose gives one: a run of digits, with each further run that a
+# full stop or a comma joins to it, so 65,536 is one number and so is 3.4. The
+# digits inside a word count as well, because the 2 of v2 is as much a fact.
+NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+
 # A line end as Markdown reads one. Any other separator, such as U+2028, is a
 # character within a line.
 LINE_END = re.compile(r"\r\n|\r|\n")
@@ -258,7 +279,7 @@ def _finding(code: str, path: str, message: str) -> dict[str, str]:
     return {"code": code, "path": path, "message": message}
 
 
-def _schema_faults(record: Any) -> set[tuple[str, str]]:
+def _schema_faults(record: Any, schema: dict[str, Any] | None = None) -> set[tuple[str, str]]:
     """Check the record's structure and return one (path, message) pair per fault.
 
     The validator reports a missing field and an undefined field at the object
@@ -266,18 +287,20 @@ def _schema_faults(record: Any) -> set[tuple[str, str]]:
     kinds are re-pointed at the field itself, so a reader of the path alone
     knows what to fix. The validator also raises the missing-field error once
     per missing field, which is why the faults are gathered in a set.
+    ``schema`` is the schema to check against when the document is not a
+    record.
     """
     from jsonschema import Draft202012Validator
 
     faults: set[tuple[str, str]] = set()
-    for err in Draft202012Validator(load_schema()).iter_errors(record):
+    for err in Draft202012Validator(load_schema() if schema is None else schema).iter_errors(record):
         parent = "".join(f"/{part}" for part in err.absolute_path)
         if err.validator == "required":
             missing = [name for name in err.validator_value if name not in err.instance]
             faults |= {(f"{parent}/{name}", "this required field is missing") for name in missing}
         elif err.validator == "additionalProperties":
             extra = [name for name in err.instance if name not in err.schema.get("properties", {})]
-            faults |= {(f"{parent}/{name}", "the record schema defines no such field") for name in extra}
+            faults |= {(f"{parent}/{name}", "the schema defines no such field") for name in extra}
         else:
             faults.add((parent, err.message))
     return faults
@@ -2646,6 +2669,292 @@ def add_publish(commands: Any) -> None:
     parser.set_defaults(run=_publish)
 
 
+# Rewriting. An editor may reword the fields the schema marks rewritable and
+# nothing else. `extract-prose` gives the editor those fields as sections, and
+# `apply-prose` takes back the replacements the author accepted. Both only
+# read and write files, so neither runs an executable.
+
+# The skill's own text, and the section of it that states the writing checks.
+# An editor is given that section as it stands, so the checks are stated once.
+SKILL_TEXT = REFERENCES.parent / "SKILL.md"
+WRITING_CHECKS = re.compile(r"^## Writing checks[ \t]*\n(?P<checks>.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
+
+RESPONSE_SCHEMA_PATH = REFERENCES / "prose-response.schema.json"
+
+# Where the record schema lists the words that are facts in any prose that
+# uses one: each disposition, each outcome and each status.
+FACT_WORDS = re.compile(r".*/(?:disposition|outcome|status)/enum/\d+")
+
+# What a sentence may set straight after a URL or an id without its being part of either.
+TRAILING = ".,;:!?)]>'\""
+
+
+def text_digest(text: str) -> str:
+    """Return the SHA-256 digest of ``text`` as UTF-8, which is what names one wording of a section."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _marked(node: Any, schema: dict[str, Any], path: str = "") -> Iterator[tuple[str, Any, Any]]:
+    """Yield each text under ``node`` that ``schema`` marks rewritable, as its path, what holds it, and its key there."""
+    children = node.items() if isinstance(node, dict) else enumerate(node) if isinstance(node, list) else ()
+    for key, child in children:
+        below = schema.get("properties", {}).get(key, {}) if isinstance(node, dict) else schema.get("items", {})
+        if isinstance(child, str) and below.get("x-rewritable") is True:
+            yield f"{path}/{key}", node, key
+        else:
+            yield from _marked(child, below, f"{path}/{key}")
+
+
+def editable_sections(record: dict[str, Any]) -> dict[str, tuple[Any, Any]]:
+    """Return each section of ``record`` an editor may rewrite, by its path, as what holds its text and its key there.
+
+    A section is a field the schema marks rewritable. A mark sits on a place
+    in the record and cannot tell one entry there from another, so three kinds
+    of marked text are left out here. A heads-up row that opens with a
+    generator's name is that generator's. The entry that says the heads-up
+    list is empty is no prose. The reason of a filed row of discovered work is
+    the tracker's.
+    """
+    generated = tuple(f"{name}: " for name, _ in GENERATORS.values())
+    sections = {}
+    for path, holder, key in _marked(record, load_schema()):
+        text = holder[key]
+        if path.startswith("/heads_up/") and (is_none(text) or text.startswith(generated)):
+            continue
+        if path.startswith("/discovered/") and holder["status"] == "filed":
+            continue
+        sections[path] = (holder, key)
+    return sections
+
+
+def writing_checks() -> str:
+    """Return the writing checks as the skill's own text states them, or raise a ``RecordError`` when it states none."""
+    found = WRITING_CHECKS.search(SKILL_TEXT.read_text(encoding="utf-8"))
+    if not found:
+        raise RecordError("no-writing-checks", f"{SKILL_TEXT} has no `## Writing checks` section to give an editor")
+    return found["checks"].strip()
+
+
+def prose_request(record: dict[str, Any]) -> dict[str, Any]:
+    """Return the request an editor works from: the record's digest, the writing checks, the record and its sections.
+
+    The record is there to be read. Only a section may be reworded. Each
+    section carries the digest of its text, which a replacement gives back to
+    show which wording it was written against.
+    """
+    return {
+        "record_digest": record_digest(record),
+        "writing_checks": writing_checks(),
+        "record": record,
+        "sections": [
+            {"field": path, "text": holder[key], "digest": text_digest(holder[key])}
+            for path, (holder, key) in editable_sections(record).items()
+        ],
+    }
+
+
+def protected_values(text: str, path: str, record: dict[str, Any]) -> set[str]:
+    """Return every fact in ``text``, the text of the section at ``path``, that a rewrite of it must still hold.
+
+    A code span is a fact whole. Outside the spans, each kind of fact is taken
+    out of the text before the next kind is read, so the number inside a URL
+    or an id is not reported a second time. A reference to a section of a spec
+    counts as its number alone, because the word before the number may change
+    its case or its place. A word the schema lists as a disposition, an
+    outcome or a status is a fact in any letter case. So is each attribution
+    value the text quotes. A title and a commit subject also hold their type,
+    their component and the id in their closing brackets.
+    """
+    found = {span.group() for span in CODE_SPAN.finditer(text)}
+    plain = outside_code(text)
+    kinds = [URL, ID, COMMIT_ID, NUMBER]
+    prefix = record["work_item"]["id"].removesuffix(short_id(record["work_item"]["id"]))
+    if prefix:
+        # A tracker id with no dotted suffix has the shape of any hyphenated
+        # word, so it is read by the project prefix of the record's own item.
+        kinds.insert(1, re.compile(r"(?<![\w.-])" + re.escape(prefix) + r"[\w.]+"))
+    for kind in kinds:
+        for match in kind.finditer(plain):
+            found.add((match.groupdict().get("section") or match.group()).rstrip(TRAILING))
+        plain = kind.sub(" ", plain)
+    words = {word.lower() for where, word in _strings(load_schema()) if FACT_WORDS.fullmatch(where)}
+    found |= {word for word in words if _phrase_pattern(word).search(plain)}
+    found |= {value for value in record["commit"]["attribution"].values() if value in text}
+    if path in CLOSED_BY_AN_ID:
+        opening = SUBJECT_OPENING.match(text)
+        found |= {opening["type"], f"({opening['component']})", f"[{closing_id(text)}]"}
+    return found
+
+
+def apply_prose(record: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
+    """Return ``record`` with every replacement of ``response`` applied, or raise ``Refusal`` and apply none.
+
+    Every check runs over the whole response before anything is returned, so
+    one refused replacement refuses them all, wherever it stands. Each
+    replacement is checked against the text as the replacements before it
+    left it. A second replacement for one section therefore fails on its
+    digest. The result is one revision on, and its ``record`` group gains an
+    entry that names each section applied and counts what the editor proposed
+    and what the author did with it. A result that fails ``lint`` is refused
+    with the lint's findings. A response with no replacement gives the record
+    back as it was.
+    """
+    held = record["record"]
+    replacements = response["replacements"]
+    findings = []
+    if response["record_digest"] != record_digest(record):
+        message = (
+            f"the response was written against a record whose digest is {response['record_digest']}, "
+            f"and this record's digest is {record_digest(record)}; extract a new request"
+        )
+        findings.append(_finding("stale-record", "/record_digest", message))
+    if any(entry["revision"] == held["revision"] for entry in held.get("rewrites", [])):
+        message = (
+            f"revision {held['revision']} came from a rewrite pass, and a revision takes one pass; "
+            "the next pass waits for a revision of the author's own"
+        )
+        findings.append(_finding("one-pass", "/record/revision", message))
+    if response["proposed"] < len(replacements):
+        message = (
+            f"the response holds {len(replacements)} replacements and says the editor proposed {response['proposed']}; "
+            "an author takes replacements out and adds none"
+        )
+        findings.append(_finding("proposed-count", "/proposed", message))
+    applied = copy.deepcopy(record)
+    sections = editable_sections(applied)
+    changed = []
+    for replacement in replacements:
+        field = replacement["field"]
+        if field not in sections:
+            message = "this is not a section an editor may rewrite; the request lists every one"
+            findings.append(_finding("not-rewritable", field, message))
+            continue
+        holder, key = sections[field]
+        old, new = holder[key], replacement.get("corrected", replacement["text"])
+        if text_digest(old) != replacement["section_digest"]:
+            message = "the replacement was written against another wording of this section; extract a new request"
+            findings.append(_finding("stale-section", field, message))
+            continue
+        for value in sorted(protected_values(old, field, record) - protected_values(new, field, record)):
+            message = f"the replacement drops or changes `{value}`, which this section holds; a fact is never reworded"
+            findings.append(_finding("protected-value", field, message))
+        holder[key] = new
+        changed.append({"field": field, "old_digest": text_digest(old), "new_digest": text_digest(new)})
+    if findings:
+        raise Refusal(findings)
+    if not replacements:
+        return record
+    entry = {
+        "revision": held["revision"] + 1,
+        "sections": changed,
+        "proposed": response["proposed"],
+        "pruned": response["proposed"] - len(replacements),
+        "corrected": sum(1 for each in replacements if each.get("corrected", each["text"]) != each["text"]),
+        "applied": len(replacements),
+    }
+    applied["record"] = {**held, "revision": entry["revision"], "rewrites": [*held.get("rewrites", []), entry]}
+    findings = lint_record(applied)
+    if findings:
+        raise Refusal(findings)
+    return applied
+
+
+def _fitting_record(path: Path) -> dict[str, Any]:
+    """Read the record at ``path``, or raise ``Refusal`` with the schema's findings when it does not fit the schema.
+
+    Both subcommands read fields by name, so both need the structure the schema promises.
+    """
+    record = read_record(path)
+    faults = [_finding("schema", where, fault) for where, fault in sorted(_schema_faults(record))]
+    if faults:
+        raise Refusal(faults)
+    return record
+
+
+def _response_faults(response: Any) -> list[dict[str, str]]:
+    """Return one finding for each place where ``response`` departs from the response schema.
+
+    A fault inside an entry names the section the entry is for, when the entry gives one.
+    """
+    schema = json.loads(RESPONSE_SCHEMA_PATH.read_text(encoding="utf-8"))
+    findings = []
+    for where, fault in sorted(_schema_faults(response, schema)):
+        entry = re.fullmatch(r"/(\w+)/(\d+)/.+", where)
+        section = response[entry[1]][int(entry[2])].get("field") if entry else None
+        if isinstance(section, str):
+            fault = f"in the entry for {section}: {fault}"
+        findings.append(_finding("response-schema", where, fault))
+    return findings
+
+
+def _extract_prose(args: argparse.Namespace) -> None:
+    """Run ``extract-prose``: write the request for the record, as JSON."""
+    request = prose_request(_fitting_record(args.record))
+    written = (json.dumps(request, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    if args.output:
+        args.output.write_bytes(written)
+    else:
+        sys.stdout.buffer.write(written)
+
+
+def _apply_prose(args: argparse.Namespace) -> None:
+    """Run ``apply-prose``: write the record with the response applied, and print what was done and each question."""
+    record = _fitting_record(args.record)
+    response = read_record(args.response)
+    faults = _response_faults(response)
+    if faults:
+        raise Refusal(faults)
+    applied = apply_prose(record, response)
+    if applied is record:
+        print("the response holds no replacement, so the record is as it was")
+    else:
+        write_record(args.record, applied)
+        entry = applied["record"]["rewrites"][-1]
+        counts = ", ".join(f"{name} {entry[name]}" for name in ("proposed", "pruned", "corrected", "applied"))
+        print(f"wrote revision {entry['revision']}: {counts}")
+    for question in response.get("questions", []):
+        print(f"question on {question['field']}: {question['question']}")
+
+
+def _run_prose(args: argparse.Namespace) -> int:
+    """Run ``extract-prose`` or ``apply-prose``, or report on stderr why nothing was written."""
+    try:
+        args.prose(args)
+    except RecordError as exc:
+        unreadable = [_finding(exc.code, "", exc.message)]
+        print(json.dumps({"valid": False, "errors": unreadable}, sort_keys=True), file=sys.stderr)
+        return EXIT_UNUSABLE
+    except Refusal as refusal:
+        print(json.dumps({"valid": False, "errors": refusal.findings}, sort_keys=True), file=sys.stderr)
+        return EXIT_INVALID
+    return EXIT_VALID
+
+
+def add_prose(commands: Any) -> None:
+    """Add the ``extract-prose`` and ``apply-prose`` subcommands to ``commands``."""
+    extract = commands.add_parser(
+        "extract-prose",
+        help="write the request an editor rewrites a record's wording from",
+        description="Write a request that holds the record, its digest, the writing checks, and each section an "
+        "editor may rewrite with its text and the digest of that text. "
+        "Exit 0 written, 1 the record does not fit the schema, 2 unreadable or unparseable.",
+    )
+    extract.add_argument("record", type=Path, help="path to the record's JSON file")
+    extract.add_argument("--output", type=Path, help="write the request to this file in place of stdout")
+    extract.set_defaults(run=_run_prose, prose=_extract_prose)
+    apply = commands.add_parser(
+        "apply-prose",
+        help="apply the replacements an author accepted to a record's wording",
+        description="Apply a response's replacements to the record, each to the section it names. The whole "
+        "response is checked first, and one refused replacement leaves the record file as it was. A response "
+        "that is refused gets the JSON result on stderr. Each question the response holds is printed. "
+        "Exit 0 applied or nothing to apply, 1 refused, 2 unreadable or unparseable.",
+    )
+    apply.add_argument("record", type=Path, help="path to the record's JSON file")
+    apply.add_argument("response", type=Path, help="path to the response's JSON file, as the author pruned it")
+    apply.set_defaults(run=_run_prose, prose=_apply_prose)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command line. Each subcommand names the function that runs it as ``run``."""
     parser = argparse.ArgumentParser(
@@ -2735,6 +3044,7 @@ def build_parser() -> argparse.ArgumentParser:
     reply.add_argument("--claim", help="the entry's claim id, when two entries share a finding id")
     reply.add_argument("--artifact-class", help="the entry's artifact class, when the claim id is shared too")
     add_publish(commands)
+    add_prose(commands)
     return parser
 
 

@@ -26,6 +26,15 @@
 | `reply-entry` | Under `render reply` only: no reply entry, or more than one, matches the finding the command names. |
 | `stale-part` | Under `publish` only: a generated part that its generator would now write differently, on a pull request with no record comment yet. |
 | `too-long` | Under `publish` only: a record comment or a pull request body longer than 65,536 characters. |
+| `response-schema` | Under `apply-prose` only: a response that does not fit the response schema. |
+| `stale-record` | Under `apply-prose` only: a response written against another record. |
+| `stale-section` | Under `apply-prose` only: a replacement written against another wording of its section. |
+| `not-rewritable` | Under `apply-prose` only: a replacement for a field that is no section an editor may reword. |
+| `protected-value` | Under `apply-prose` only: a replacement that drops or changes a protected value its section holds. |
+| `proposed-count` | Under `apply-prose` only: more replacements than the response says the editor returned. |
+| `one-pass` | Under `apply-prose` only: a response for a record whose revision a rewrite pass produced. |
+
+`rewriting.md` beside this file gives the check behind each `apply-prose` code.
 
 In `heads_up` and `verification.not_run`, an entry is `None.` with or without space around it. `discovered.rows` takes the entry only as written, and the schema checks that.
 
