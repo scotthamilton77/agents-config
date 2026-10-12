@@ -1,1 +1,11 @@
-{"record_digest":"1165715bd587917d3883d1864962e626853ca4c562a6ba059523098e07034edc","proposed":3,"replacements":[{"field":"/summary","section_digest":"e62e3f99c6fca99e1d1f9f582b693c30678aa4b458561c30770cb9ca27cac06a","text":"The panel's configuration now sets the effort and tools for each reviewer slot. Each reviewer receives the change as a diff file. A run that dies follows a fixed recovery sequence. The panel does not yet check that a run used its pinned effort."},{"field":"/commit/why","section_digest":"9303aff3727b9360082d73aaf455bc0855ffd7fd8187f64fefc898714ce1253d","text":"The agent running a review round chose each reviewer's effort and tool access. It also avoided one model for whole-document reads, although no run record supported that choice. Review cost and coverage were unpredictable."},{"field":"/commit/change","section_digest":"a51226cfdf3f7d0f096a25a23494f565efcb9ad1504b7a6b5ba941feebb73afd","text":"The panel's configuration pins effort and tools for every reviewer slot. Each round record copies those values from the slot's pin. Every reviewer receives the change as a diff file. A run that dies mid-reasoning retries one effort step lower, then on the other provider, then halts the round. The shared routing table still supplies the models."}]}
+{
+  "record_digest": "1165715bd587917d3883d1864962e626853ca4c562a6ba059523098e07034edc",
+  "proposed": 1,
+  "replacements": [
+    {
+      "field": "/summary",
+      "section_digest": "e62e3f99c6fca99e1d1f9f582b693c30678aa4b458561c30770cb9ca27cac06a",
+      "text": "The review agent chose each reviewer's effort and tools. The panel's configuration file now sets both for every reviewer slot. Each reviewer receives the change as a diff file. A run that dies follows a fixed recovery sequence. The panel does not yet check whether a run used its pinned effort."
+    }
+  ]
+}

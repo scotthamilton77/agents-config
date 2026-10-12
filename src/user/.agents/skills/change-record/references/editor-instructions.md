@@ -63,7 +63,7 @@ Add nothing the request does not hold. That covers a fact, a reason, an example 
 
 ## Values a replacement keeps
 
-A program compares each replacement with its section's original text. It refuses the whole response when one replacement drops or alters a protected value the original holds. A protected value may move within its section. These are protected:
+A program compares each replacement with its section's original text. It refuses the whole response when one replacement drops or alters a protected value the original holds. A protected value may move within its section. Do not put backticks around a value that has none, and do not take them off one that has them, because the program reads a value inside a code span as part of that span. These are protected:
 
 - a code span, with its backticks and every character between them
 - a URL

@@ -588,6 +588,8 @@ class TestCrW11Dispatch:
         [
             pytest.param("EDITOR_PIN_PATH", None, [], id="no-pin-file"),
             pytest.param("EDITOR_PIN_PATH", "{}", ["model", "effort"], id="pin-names-neither"),
+            pytest.param("EDITOR_PIN_PATH", '{"model": "m"}', ["effort"], id="pin-names-no-effort"),
+            pytest.param("EDITOR_PIN_PATH", '{"effort": "e"}', ["model"], id="pin-names-no-model"),
             pytest.param("EDITOR_INSTRUCTIONS_PATH", None, [], id="no-instruction-file"),
         ],
     )
