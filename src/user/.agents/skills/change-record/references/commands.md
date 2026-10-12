@@ -175,4 +175,4 @@ The two are the rewrite pass over the record's wording. `extract-prose` writes a
 
 `rewriting.md` beside this file gives the request, the response, every refusal, the values a replacement must keep, and the rule of one pass for each revision.
 
-`extract-prose` exits 0 written, 1 the record does not fit the schema, 2 unreadable or unparseable. `apply-prose` exits 0 applied or nothing to apply, 1 refused, 2 unreadable or unparseable.
+`extract-prose` exits 0 written, 1 the record does not fit the schema, 2 unreadable, unparseable or unwritable. `apply-prose` exits 0 applied or nothing to apply, 1 refused, 2 unreadable or unparseable.

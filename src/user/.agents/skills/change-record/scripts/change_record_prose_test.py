@@ -17,6 +17,7 @@ import conftest  # noqa: F401
 # isort: split
 
 import copy
+import difflib
 import hashlib
 import json
 import re
@@ -83,6 +84,7 @@ PROTECTED = {
         "/summary", "See https://example.com/a/b for more.", "See https://example.com/a/c for more.",
         "https://example.com/a/b",
     ),
+    "url-with-no-path": ("/summary", "See https://example.com first.", "See the page first.", "https://example.com"),
     "sha": ("/summary", "It landed in 3550f20d cleanly.", "It landed cleanly.", "3550f20d"),
     "number": ("/summary", "The limit is 65,536 characters.", "The limit is 65,535 characters.", "65,536"),
     "code-span": ("/summary", "Run `make ci` first.", "Run `make test` first.", "`make ci`"),
@@ -290,6 +292,11 @@ class TestCrW1ExtractProse:
         assert str(bare) in ran.errors[0]["message"]
         assert not (tmp_path / "request.json").exists()
 
+    def test_an_output_that_cannot_be_written_fails_as_an_unwritable_record_does(self, desk: Desk, tmp_path: Path):
+        ran = desk.run("extract-prose", str(desk.path), "--output", str(tmp_path / "no-such-directory" / "request"))
+        assert ran.code == 2
+        assert [finding["code"] for finding in ran.errors] == ["unwritable"]
+
     def test_a_record_that_does_not_fit_the_schema_is_refused_by_both_subcommands(self, desk: Desk):
         response = desk.response({"/summary": CORRECTED_SUMMARY})
         desk.write({name: group for name, group in EXAMPLE.items() if name != "discovered"})
@@ -334,9 +341,11 @@ class TestCrW2StaleAndMalformedResponses:
         (finding,) = desk.refuse(response)
         assert (finding["code"], finding["path"]) == ("stale-section", "/commit/why")
 
-    def test_cr_w2_a_second_replacement_for_one_section_is_stale(self, desk: Desk):
-        response = desk.response({"/summary": CORRECTED_SUMMARY})
-        response.update(proposed=2, replacements=response["replacements"] * 2)
+    @pytest.mark.parametrize("first", [CORRECTED_SUMMARY, EXAMPLE["summary"]], ids=["reworded", "restated"])
+    def test_cr_w2_a_second_replacement_for_one_section_is_stale(self, desk: Desk, first: str):
+        response = desk.response({"/summary": first})
+        second = {**response["replacements"][0], "text": PROPOSED_SUMMARY}
+        response.update(proposed=2, replacements=[*response["replacements"], second])
         (finding,) = desk.refuse(response)
         assert (finding["code"], finding["path"]) == ("stale-section", "/summary")
 
@@ -403,14 +412,25 @@ class TestCrW4ProtectedValues:
         assert (finding["code"], finding["path"]) == ("protected-value", field)
         assert f"`{value}`" in finding["message"]
 
-    def test_cr_w4_a_value_set_elsewhere_in_its_sentence_is_the_same_value(self):
-        old = "Follow section 3.4. The page is https://example.com/a/b."
-        new = "Section 3.4 applies, and https://example.com/a/b, the page, says how."
-        for text in (old, new):
-            assert change_record.protected_values(text, "/summary", EXAMPLE) == {"3.4", "https://example.com/a/b"}
-        # An id with no hyphen has no project prefix, and no word of the text is then read as an id of the project.
-        unprefixed = {**EXAMPLE, "work_item": {**EXAMPLE["work_item"], "id": "solo"}}
-        assert change_record.protected_values("Plain words alone.", "/summary", unprefixed) == set()
+    @pytest.mark.parametrize(
+        ("text", "work_item", "values"),
+        [
+            pytest.param(
+                "Follow section 3.4. The page is https://example.com/a/b.", EXAMPLE["work_item"]["id"],
+                {"3.4", "https://example.com/a/b"}, id="at-a-sentence-end",
+            ),
+            pytest.param(
+                "Section 3.4 applies, and https://example.com/a/b, the page, says how.", EXAMPLE["work_item"]["id"],
+                {"3.4", "https://example.com/a/b"}, id="elsewhere-in-a-sentence",
+            ),
+            # An id with no hyphen has no project prefix, and no word is then read as an id of the project.
+            pytest.param("Plain words alone.", "solo", set(), id="no-project-prefix"),
+            pytest.param("The page was defaced.", EXAMPLE["work_item"]["id"], set(), id="a-word-of-hex-letters"),
+        ],
+    )
+    def test_cr_w4_a_text_protects_exactly_these_values(self, text: str, work_item: str, values: set[str]):
+        record = {**EXAMPLE, "work_item": {**EXAMPLE["work_item"], "id": work_item}}
+        assert change_record.protected_values(text, "/summary", record) == values
 
 
 class TestCrW5AppliedSections:
@@ -440,10 +460,13 @@ class TestCrW5AppliedSections:
     )
     def test_a_render_changes_only_in_the_lines_of_the_applied_sections(self, passed: Passed, render: Any):
         before, after = render(EXAMPLE).splitlines(), render(passed.after).splitlines()
-        gone = {word for line in before if line not in after for word in line.split()}
-        come = {word for line in after if line not in before for word in line.split()}
-        assert gone and gone <= set(f"{EXAMPLE['summary']} {EXAMPLE['commit']['why']}".split())
-        assert come and come <= set(f"{CORRECTED_SUMMARY} {NEW_WHY}".split())
+        steps = difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
+        swaps = [step for step in steps if step[0] != "equal"]
+        # A line that is added, repeated or moved shows as a step that is no swap of lines in place.
+        assert swaps and {step[0] for step in swaps} == {"replace"}
+        for _, start, end, new_start, new_end in swaps:
+            assert any(" ".join(before[start:end]) in text for text in (EXAMPLE["summary"], EXAMPLE["commit"]["why"]))
+            assert any(" ".join(after[new_start:new_end]) in text for text in (CORRECTED_SUMMARY, NEW_WHY))
 
 
 class TestCrW6SecondRun:
@@ -455,6 +478,15 @@ class TestCrW6SecondRun:
         before = desk.path.read_bytes()
         response = desk.response({}, questions=QUESTIONS)
         assert [desk.apply(response).code, desk.apply(response).code] == [0, 0]
+        assert desk.path.read_bytes() == before
+
+    def test_cr_w6_a_response_of_questions_alone_is_accepted_at_a_revision_a_pass_produced(
+        self, desk: Desk, passed: Passed
+    ):
+        before = desk.path.read_bytes()
+        ran = desk.apply(desk.response({}, questions=QUESTIONS))
+        assert ran.code == 0, ran.err
+        assert QUESTIONS[0]["question"] in ran.out
         assert desk.path.read_bytes() == before
 
 

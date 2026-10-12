@@ -32,7 +32,7 @@
 | `not-rewritable` | Under `apply-prose` only: a replacement for a field that is no section an editor may reword. |
 | `protected-value` | Under `apply-prose` only: a replacement that drops or changes a protected value its section holds. |
 | `proposed-count` | Under `apply-prose` only: more replacements than the response says the editor returned. |
-| `one-pass` | Under `apply-prose` only: a response for a record whose revision a rewrite pass produced. |
+| `one-pass` | Under `apply-prose` only: a response that holds a replacement, for a record whose revision a rewrite pass produced. |
 
 `rewriting.md` beside this file gives the check behind each `apply-prose` code.
 

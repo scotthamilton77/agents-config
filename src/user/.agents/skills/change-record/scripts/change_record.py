@@ -154,6 +154,10 @@ TRAILER_KEY = re.compile(r"[A-Za-z0-9-]+")
 # comment lives wherever the repository is hosted.
 URL = re.compile(r"https?://[^\s/?#]+/[^\s?#]+(?:[?#]\S*)?")
 
+# A URL as prose gives one, which may name a host alone. The form of a link to
+# a comment asks for a path, so it passes over such a URL.
+ANY_URL = re.compile(r"https?://\S+")
+
 # The five shapes of id that a stranger cannot read without a gloss. A tracker
 # id is read only with its dotted suffix, because without one it looks like any
 # hyphenated word. The part before the first dot must hold a letter and a
@@ -172,9 +176,9 @@ ID = re.compile(
 )
 
 # A commit id as prose gives one, which is its first seven characters or more.
-# A word of seven letters from a to f reads as one too, and keeping such a word
-# costs a rewrite nothing.
-COMMIT_ID = re.compile(r"\b[0-9a-f]{7,40}\b")
+# It must hold a digit, because a word spelled from the letters a to f alone,
+# such as "defaced", is no commit id.
+COMMIT_ID = re.compile(r"\b(?=[a-f]*\d)[0-9a-f]{7,40}\b")
 
 # A number as prose gives one: a run of digits, with each further run that a
 # full stop or a comma joins to it, so 65,536 is one number and so is 3.4. The
@@ -2767,7 +2771,7 @@ def protected_values(text: str, path: str, record: dict[str, Any]) -> set[str]:
     """
     found = {span.group() for span in CODE_SPAN.finditer(text)}
     plain = outside_code(text)
-    kinds = [URL, ID, COMMIT_ID, NUMBER]
+    kinds = [ANY_URL, ID, COMMIT_ID, NUMBER]
     prefix = record["work_item"]["id"].removesuffix(short_id(record["work_item"]["id"]))
     if prefix:
         # A tracker id with no dotted suffix has the shape of any hyphenated
@@ -2790,14 +2794,14 @@ def apply_prose(record: dict[str, Any], response: dict[str, Any]) -> dict[str, A
     """Return ``record`` with every replacement of ``response`` applied, or raise ``Refusal`` and apply none.
 
     Every check runs over the whole response before anything is returned, so
-    one refused replacement refuses them all, wherever it stands. Each
-    replacement is checked against the text as the replacements before it
-    left it. A second replacement for one section therefore fails on its
-    digest. The result is one revision on, and its ``record`` group gains an
-    entry that names each section applied and counts what the editor proposed
-    and what the author did with it. A result that fails ``lint`` is refused
-    with the lint's findings. A response with no replacement gives the record
-    back as it was.
+    one refused replacement refuses them all, wherever it stands. A section
+    takes one replacement, so a second one for it is refused. A response that
+    holds a replacement is refused while the record's revision is one a
+    rewrite pass produced. The result is one revision on, and its ``record``
+    group gains an entry that names each section applied and counts what the
+    editor proposed and what the author did with it. A result that fails
+    ``lint`` is refused with the lint's findings. A response with no
+    replacement gives the record back as it was.
     """
     held = record["record"]
     replacements = response["replacements"]
@@ -2808,7 +2812,7 @@ def apply_prose(record: dict[str, Any], response: dict[str, Any]) -> dict[str, A
             f"and this record's digest is {record_digest(record)}; extract a new request"
         )
         findings.append(_finding("stale-record", "/record_digest", message))
-    if any(entry["revision"] == held["revision"] for entry in held.get("rewrites", [])):
+    if replacements and any(entry["revision"] == held["revision"] for entry in held.get("rewrites", [])):
         message = (
             f"revision {held['revision']} came from a rewrite pass, and a revision takes one pass; "
             "the next pass waits for a revision of the author's own"
@@ -2831,6 +2835,10 @@ def apply_prose(record: dict[str, Any], response: dict[str, Any]) -> dict[str, A
             continue
         holder, key = sections[field]
         old, new = holder[key], replacement.get("corrected", replacement["text"])
+        if any(entry["field"] == field for entry in changed):
+            message = "the response holds an earlier replacement for this section, and a section takes one"
+            findings.append(_finding("stale-section", field, message))
+            continue
         if text_digest(old) != replacement["section_digest"]:
             message = "the replacement was written against another wording of this section; extract a new request"
             findings.append(_finding("stale-section", field, message))
@@ -2891,10 +2899,13 @@ def _extract_prose(args: argparse.Namespace) -> None:
     """Run ``extract-prose``: write the request for the record, as JSON."""
     request = prose_request(_fitting_record(args.record))
     written = (json.dumps(request, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-    if args.output:
-        args.output.write_bytes(written)
-    else:
+    if not args.output:
         sys.stdout.buffer.write(written)
+        return
+    try:
+        args.output.write_bytes(written)
+    except OSError as exc:
+        raise RecordError("unwritable", f"cannot write {args.output}: {exc}") from exc
 
 
 def _apply_prose(args: argparse.Namespace) -> None:

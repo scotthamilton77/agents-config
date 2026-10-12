@@ -43,7 +43,7 @@ uv run scripts/change_record.py extract-prose record.json [--output FILE]
 - `record` is the whole record. It is there to be read, and nothing in it is edited in place.
 - `sections` gives each section's path as `field`, its `text`, and `digest`, the SHA-256 digest of that text as UTF-8.
 
-Exit 0 written, 1 the record does not fit the schema, 2 unreadable or unparseable, or the skill's text states no writing checks.
+Exit 0 written, 1 the record does not fit the schema, 2 unreadable or unparseable, the output file cannot be written, or the skill's text states no writing checks.
 
 ## The response
 
@@ -93,7 +93,7 @@ uv run scripts/change_record.py apply-prose record.json response.json
 | `not-rewritable` | A `field` that names no section. |
 | `protected-value` | Applied wording that drops or changes a protected value its section holds. The message names the value. |
 | `proposed-count` | More entries in `replacements` than `proposed` says the editor returned. |
-| `one-pass` | Any response, while the record's revision is one a rewrite pass produced. |
+| `one-pass` | A response that holds a replacement, while the record's revision is one a rewrite pass produced. |
 | a code of `lint` | A result that fails `lint`. The findings are the ones `lint` reports for the record with the replacements applied. |
 
 When nothing is refused, `apply-prose` writes the record file once:
@@ -113,7 +113,7 @@ A replacement keeps every protected value its section's text holds. These are pr
 - a code span, with its backticks
 - a URL
 - a tracker id, a criterion or decision id, and a pull request number such as `#843`
-- a commit id of seven hex characters or more
+- a commit id of seven hex characters or more, with a digit among them
 - a number, and the digits inside a word such as `v2`
 - a word the schema lists as a disposition, an outcome or a status, such as `fixed`, `Deferred` or `in flight`, in any letter case
 - a value of `commit.attribution` that the text quotes
@@ -125,6 +125,18 @@ The listed words are common ones. A section that says a run follows a fixed sequ
 
 ## One pass for each revision
 
-Each rewrite entry records the revision its pass produced. While the record's revision is one an entry records, `apply-prose` refuses every response. The next pass waits for a later revision. `publish` gives the record one when it posts an edit the author made after the rewritten revision was posted.
+Each rewrite entry records the revision its pass produced. While the record's revision is one an entry records, `apply-prose` refuses every response that holds a replacement. The next pass waits for a later revision. `publish` gives the record one when it posts an edit the author made after the rewritten revision was posted.
 
-A response with no replacement uses no pass.
+A response with no replacement uses no pass, and this rule never refuses one.
+
+## Known limits
+
+These checks are a net, and the author's read of each replacement is the safeguard. The protected-value check passes each of these:
+
+- a URL that changes only in a closing parenthesis at its end
+- a number that changes only in its sign, or in the parts of an exponent
+- a commit id that holds no digit
+- a tracker id with no dotted suffix, from a project other than the record's own
+- a code span that runs across a line break
+
+A heads-up row counts as a generator's only with the space after its colon, which is how every generator writes one. A replacement that restates its section's text is applied and counted like any other.
