@@ -162,7 +162,7 @@
       }
     },
     "blast_radius": {
-      "description": "What the change reaches: two Mermaid diagram sources, written without their fences, or on a spec pull request the items the spec mints.",
+      "description": "Two Mermaid diagram sources, written without their fences, and on a spec pull request the items the spec mints.",
       "type": "object",
       "additionalProperties": false,
       "properties": {

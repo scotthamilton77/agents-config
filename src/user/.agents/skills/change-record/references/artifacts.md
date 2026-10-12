@@ -10,7 +10,7 @@
 - The lines between `{{#a.b=x,y}}` and `{{/a.b}}` appear only when the record's value at that path is one of those named. The body's template does this with `pr.type`, so each such block names the commit types whose body carries it.
 - A slot that stands alone on its line is a block, and its value keeps its own lines. Any other slot is set on the template's line.
 - A blank line of a template is left out where the line before it is blank. Lines that vanish between two blank lines therefore leave one blank line behind.
-- Text in parentheses around one slot or more is left out, parentheses included, when the record has nothing for any slot inside them.
+- Text in parentheses is left out, parentheses included, when the record holds a value for none of the slots inside them.
 
 Three slots name no record field. `${commit_message}` is the rendered commit message. `${decisions}` is the decisions block carried over from the pull request's existing body. `${record_comment_url}` is the comment the record is posted in.
 

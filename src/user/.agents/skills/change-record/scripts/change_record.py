@@ -2112,9 +2112,9 @@ def _fill_line(line: str, record: dict[str, Any], bound: dict[str, Any]) -> str:
     A slot that stands alone on its line is a block, and its value keeps its
     own lines. Any other slot is set on the template's line. A table row keeps
     a line break as ``<br>`` and escapes a pipe, so the value stays in its
-    cell. Elsewhere a line break reads as a space. Text in parentheses around
-    one slot or more goes, parentheses and all, when the record has nothing
-    for any slot inside them.
+    cell. Elsewhere a line break reads as a space. Text in parentheses goes,
+    parentheses and all, when the record holds a value for none of the slots
+    inside them.
     """
     in_table = line.startswith("|")
     is_block = bool(_Slots.pattern.fullmatch(line))
