@@ -243,6 +243,10 @@ def paged(endpoint: str, pages: list[list[Any]]) -> dict[str, Any]:
     return {f"api {endpoint}?per_page=100&page={number}": page for number, page in enumerate([*pages, []], 1)}
 
 
+class Raw(str):
+    """An answer the shim prints as it is written, where every other answer is written as JSON."""
+
+
 class Ran(NamedTuple):
     code: int
     out: str
@@ -286,7 +290,7 @@ class Pull:
         cases = []
         for index, (call, answer) in enumerate(answers.items()):
             file = state / f"answer-{index}.json"
-            file.write_text(json.dumps(answer), encoding="utf-8")
+            file.write_text(answer if isinstance(answer, Raw) else json.dumps(answer), encoding="utf-8")
             cases.append(f"  {shlex.quote(call)}) /bin/cat {shlex.quote(str(file))} ;;\n")
         log = shlex.quote(str(self.log))
         shim = self.shim_dir / "gh"
@@ -976,6 +980,82 @@ class TestAnswerShapes:
         assert len(record["campaign"]["findings"]) == 21
         # No reply is the author's when the pull request has no author, so no finding has a commit.
         assert [entry["commit"] for entry in record["campaign"]["findings"]] == [""] * 21
+
+
+class TestSharedHelpers:
+    @pytest.mark.parametrize(("call", "answer"), [
+        (PULL_CALL, '{"user": {"login": ' + "7" * 5000 + "}}"),
+        (PULL_CALL, "[" * 100_000 + "]" * 100_000),
+        (REVIEWS_CALL, '[{"id": ' + "7" * 5000 + "}]"),
+        (COMMENTS_CALL, "[" * 100_000 + "]" * 100_000),
+    ])
+    def test_cr_x4_an_answer_that_cannot_be_loaded_fails_the_run_naming_its_call_and_leaves_the_record(
+        self, call: str, answer: str, pull: Pull
+    ):
+        pull.serve(REVIEWS, COMMENTS, spoiled={call: lambda _: Raw(answer)})
+        before = pull.write(example())
+        ran = pull.run()
+        assert ran.code == 2
+        assert f"`gh {call}` gave an answer that cannot be used" in ran.err
+        assert len(ran.err) < 1000
+        assert pull.path.read_bytes() == before
+
+    def test_two_writers_interleaved_leave_one_whole_record_and_nothing_beside_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        path = tmp_path / "record.json"
+        first, second = with_heads_up("The first writer wrote this."), with_heads_up("The second writer wrote this.")
+        path.write_text(json.dumps(example()), encoding="utf-8")
+        replace, beside = Path.replace, []
+
+        def interleaved(source: Path, target: Path) -> Path:
+            # The first writer has written beside the record. The second writes and replaces before the first replaces.
+            beside.append(source)
+            if len(beside) == 1:
+                change_record.write_record(path, second)
+            return replace(source, target)
+
+        monkeypatch.setattr(Path, "replace", interleaved)
+        change_record.write_record(path, first)
+        # Each writer wrote beside the record under a name of its own, and neither wrote through the other's file.
+        assert len(set(beside)) == 2
+        assert all(source.parent == tmp_path and source.name.startswith("record.json.") for source in beside)
+        assert json.loads(path.read_text(encoding="utf-8")) == first
+        assert sorted(tmp_path.iterdir()) == [path]
+
+    def test_a_writer_that_is_overtaken_mid_write_does_not_write_into_the_record(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        # The first writer has written half of its text beside the record when the second writes and replaces.
+        # Under one shared name the first would go on writing into what is by then the record.
+        path = tmp_path / "record.json"
+        first, second = with_heads_up("The first writer wrote this."), with_heads_up("The second writer wrote this.")
+        path.write_text(json.dumps(example()), encoding="utf-8")
+        opened, overtaken = Path.open, []
+
+        def halving(self: Path, *args: Any, **kwargs: Any) -> Any:
+            handle = opened(self, *args, **kwargs)
+            if overtaken or self.parent != tmp_path or self == path:
+                return handle
+            overtaken.append(self)
+            write = handle.write
+
+            def written(text: str) -> int:
+                count = write(text[: len(text) // 2])
+                handle.flush()
+                change_record.write_record(path, second)
+                assert json.loads(path.read_text(encoding="utf-8")) == second
+                return count + write(text[len(text) // 2 :])
+
+            handle.write = written
+            return handle
+
+        monkeypatch.setattr(Path, "open", halving)
+        change_record.write_record(path, first)
+        monkeypatch.undo()
+        assert len(overtaken) == 1
+        assert json.loads(path.read_text(encoding="utf-8")) == first
+        assert sorted(tmp_path.iterdir()) == [path]
 
 
 class TestVerdictText:

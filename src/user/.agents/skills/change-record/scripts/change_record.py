@@ -53,6 +53,7 @@ import importlib.util
 import itertools
 import json
 import re
+import secrets
 import string
 import subprocess
 import sys
@@ -1155,8 +1156,10 @@ def tool_json(command: list[str], shape: dict[str, Any] | None = None) -> Any:
     printed = run_tool(command)
     try:
         answer = json.loads(printed)
-    except json.JSONDecodeError as exc:
-        raise unusable(command, f"it is not JSON: {exc}") from exc
+    except (ValueError, RecursionError) as exc:
+        # Text that is no JSON fails to load, and so does JSON that holds a
+        # number thousands of digits long or is nested thousands deep.
+        raise unusable(command, f"it cannot be loaded as JSON: {exc}") from exc
     if shape is not None:
         from jsonschema import Draft202012Validator
         from jsonschema.exceptions import best_match
@@ -1196,19 +1199,24 @@ def write_record(path: Path, record: dict[str, Any]) -> None:
     """Replace the record file at ``path`` with ``record``, in one step.
 
     The text is written beside the file and then moved over it, so a reader
-    never finds half a record. The groups are written in the order the schema
-    lists them, so the file reads the same whichever generator ran first. A
-    record that holds text UTF-8 cannot hold is refused before anything is
-    written, because no file can take it and no later read would accept it.
+    never finds half a record. Each write has a file of its own there, so two
+    writers at once never write through one file, and the record is whichever
+    of their two records was moved last. The groups are written in the order
+    the schema lists them, so the file reads the same whichever generator ran
+    first. A record that holds text UTF-8 cannot hold is refused before
+    anything is written, because no file can take it and no later read would
+    accept it.
     """
     where = next(_not_utf8(record), None)
     if where is not None:
         message = f"cannot write {path}: the record would hold text that UTF-8 cannot hold, at {where or 'its root'}"
         raise RecordError("not-utf-8", message)
     ordered = {name: record[name] for name in load_schema()["properties"] if name in record}
-    beside = path.with_name(path.name + ".tmp")
+    beside = path.with_name(f"{path.name}.{secrets.token_hex(8)}.tmp")
     try:
-        beside.write_text(json.dumps(ordered, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        # Creating the file fails where one of that name exists, so no writer ever opens another's.
+        with beside.open("x", encoding="utf-8") as handle:
+            handle.write(json.dumps(ordered, indent=2, ensure_ascii=False) + "\n")
         beside.replace(path)
     except OSError as exc:
         # A failed run leaves nothing behind, and that includes the text written beside the record.
