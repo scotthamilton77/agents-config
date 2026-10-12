@@ -617,6 +617,10 @@ class TestCrR1Body:
         )
         assert table in change_record.render_body(record)
 
+    def test_a_fold_tag_quoted_in_a_code_span_hides_no_words(self):
+        body = "A `<details>` tag opens a fold, and `</details>` closes it.\n\n---\n\nBelow.\n"
+        assert len(visible_words(body)) == 10
+
     def test_the_word_count_is_of_what_a_reader_sees_without_opening_a_fold(self):
         body = (
             "The gate halts.\n"

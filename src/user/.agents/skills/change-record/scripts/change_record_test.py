@@ -1462,6 +1462,12 @@ class TestCrL10GroupsByTypeAndReach:
         found = findings(record, "required-group", tmp_path)
         assert [path for path, _ in found] == ["/blast_radius/reach_graph", "/blast_radius/task_flow"]
 
+    def test_cr_l2_a_minted_item_on_a_body_that_shows_no_blast_radius_introduces_no_id(self, tmp_path: Path):
+        record = of_type("docs")
+        record["blast_radius"] = {"mints": copy.deepcopy(MINTS)}
+        record["changes"][0]["text"] += " The gate comes with example-a1.2."
+        assert_breaks(record, "bare-id", "/changes/0/text", tmp_path, "example-a1.2")
+
     def test_a_minted_item_says_what_it_is_and_may_leave_out_its_id(self, tmp_path: Path):
         record = of_type("spec")
         assert "id" not in record["blast_radius"]["mints"][1]

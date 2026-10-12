@@ -385,7 +385,9 @@ def _body_scope(record: dict[str, Any]) -> Iterator[tuple[str | None, str]]:
     for index, row in enumerate(record["risk"]["rows"]):
         for cell in ("failure", "exposed", "evidence", "recovery"):
             yield f"/risk/rows/{index}/{cell}", row[cell]
-    for index, item in enumerate(record.get("blast_radius", {}).get("mints", [])):
+    # A short body carries no blast radius, so an item named there introduces no id.
+    shown = record["pr"]["type"] not in ONE_RISK_ROW_TYPES
+    for index, item in enumerate(record.get("blast_radius", {}).get("mints", []) if shown else []):
         yield None, item.get("id", "")
         yield f"/blast_radius/mints/{index}/what", item["what"]
     for index, change in enumerate(record["changes"]):
@@ -2037,7 +2039,8 @@ WRAP_COLUMN = 72
 ONE_PAGER_WORDS = 400
 
 # A fold, from its opening tag to its closing one, and the horizontal rule that ends the one-pager.
-FOLD = re.compile(r"<details[\s>].*?</details>", re.DOTALL)
+# A tag straight after a backtick is quoted in a code span, so it opens no fold.
+FOLD = re.compile(r"(?<!`)<details[\s>].*?</details>", re.DOTALL)
 ONE_PAGER_END = re.compile(r"^---$", re.MULTILINE)
 
 # A line that opens or closes a block of a template. An opening line may name
