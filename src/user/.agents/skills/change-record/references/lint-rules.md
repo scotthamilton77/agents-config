@@ -99,9 +99,9 @@ A message has all three body sections or none of them. In a body, `why` is two o
 - A `docs`, `chore`, `build`, `ci`, `style` or `revert` record holds exactly one risk row.
 - A record whose `risk.reaches_outside_package` is true holds both `blast_radius.reach_graph` and `blast_radius.task_flow`. A record whose flag is false needs neither.
 
-`lint --pr NUMBER` checks the flag against the pull request itself. It runs `gh pr diff NUMBER --name-only` in the working directory's repository and reads the changed paths. A path's top-level component is its first segment. That is the directory at the root that holds the path, or the file itself when it sits at the root. A path under a `docs` directory at the root counts toward no component, because documentation describes a component and is not one. A record whose flag is false fails, under `reach`, when the paths span more than one component. A pull request that changes one component and its documentation therefore passes, and so does one that changes documentation alone.
+`lint --pr NUMBER` checks the flag against the pull request itself. It reads the pull request's list of files from GitHub through `gh api`, a page at a time, in the working directory's repository. A renamed file counts under its old path and its new one. A path's top-level component is its first segment. That is the directory at the root that holds the path, or the file itself when it sits at the root. A path under a `docs` directory at the root counts toward no component, because documentation describes a component and is not one. A record whose flag is false fails, under `reach`, when the paths span more than one component. A pull request that changes one component and its documentation therefore passes, and so does one that changes documentation alone.
 
-This check is coarse. Two packages under one top-level directory count as one component, so a pass does not prove the flag. When `gh` cannot be run or exits with an error, `lint` reports the code `gh-failed` and exits 2, because it has decided nothing.
+This check is coarse. Two packages under one top-level directory count as one component, so a pass does not prove the flag. When `gh` cannot be run, exits with an error, or gives a page that is no list of files, `lint` reports the code `gh-failed` and exits 2, because it has decided nothing.
 
 ## Replies
 
@@ -125,13 +125,15 @@ A stamp is the SHA-256 digest, in hex, of the content written as JSON with every
 
 A part the record does not hold needs no stamp. The filed rows need one as soon as the record has a filed row.
 
-Nothing in this skill generates these parts yet. Copy a part's facts from the tracker's or GitHub's own output, then stamp the record from this skill's directory:
+`context` writes `where_this_fits` with its stamp, and `discovered` writes the filed rows with theirs. `generators.md` beside this file describes both. A stale stamp on either part clears when its generator runs again.
+
+Nothing in this skill generates `campaign` yet. Copy its facts from the posted review verdicts, then stamp the record from this skill's directory:
 
 ```bash
 python3 -c 'import json, sys; sys.path.insert(0, "scripts"); import change_record as c; p = sys.argv[1]; r = c.stamp_generated(json.load(open(p))); open(p, "w").write(json.dumps(r, indent=2, ensure_ascii=False) + "\n")' path/to/record.json
 ```
 
-Stamp a part only after copying it from its source. A stamp says the content is the source's, so never set one to pass an edit of your own.
+That command stamps every generated part the record holds. Run it only after copying `campaign` from its source, and never to pass an edit of your own, because a stamp says the content is the source's.
 
 ## A record that cannot be read
 

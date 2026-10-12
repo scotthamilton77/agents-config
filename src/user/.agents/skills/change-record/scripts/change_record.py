@@ -3,13 +3,15 @@
 # requires-python = ">=3.11"
 # dependencies = ["jsonschema>=4"]
 # ///
-"""Start and check a change record, and render a pull request's three artifacts from it.
+"""Start, fill and check a change record, and render a pull request's three artifacts from it.
 
 A change record is the JSON document a pull request's description, commit
 message and review replies are written from.
 
 Usage: uv run change_record.py init --type TYPE --component NAME --work-item ID <record.json>
        uv run change_record.py lint [--pr NUMBER] <record.json>
+       uv run change_record.py context <record.json>
+       uv run change_record.py discovered <record.json>
        uv run change_record.py render body <record.json> [--existing-body FILE] [--comment-url URL]
        uv run change_record.py render commit <record.json>
        uv run change_record.py render reply <record.json> --finding ID
@@ -24,6 +26,12 @@ it also reads that pull request's changed paths through ``gh`` and checks the
 record against them. Exit 0 valid, 1 invalid, 2 unreadable, unparseable,
 called wrongly, or ``gh`` failed.
 
+``context`` and ``discovered`` fill the parts of a record that are copied
+from the tracker and from GitHub, which they read through ``work`` and ``gh``
+in the working directory's repository. Each takes the work item and the pull
+request from the record, and writes the file once, after every call has
+succeeded. Exit 0 the record holds the part, 2 anything failed.
+
 ``render`` fills one of the three template files from a record and writes the
 result to stdout, or to the file ``--output`` names. It lints first. A record
 it refuses gets the JSON result on stderr and nothing written. Exit 0
@@ -33,13 +41,15 @@ rendered, 1 refused, 2 unreadable, unparseable or called wrongly.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
+import itertools
 import json
 import re
 import string
 import subprocess
 import sys
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -678,22 +688,19 @@ def _groups_by_type(record: dict[str, Any]) -> Iterator[dict[str, str]]:
 
 
 def pr_changed_paths(number: int) -> list[str]:
-    """Return the paths pull request ``number`` changes, read through the ``gh`` executable.
+    """Return every path pull request ``number`` changes, read from GitHub's list of its files through ``gh``.
 
     The pull request is looked up in the repository of the working directory.
-    A ``gh`` that cannot be run, or that fails, raises a ``RecordError``,
-    because a check that could not read the paths has decided nothing.
+    A renamed file counts under its old path and its new one, because a
+    change to either meets the rename. The list is read in pages, since
+    GitHub refuses to give the whole diff of a large pull request in one
+    answer. A ``gh`` that cannot be run, or that fails, raises a
+    ``RecordError``, because a check that could not read the paths has
+    decided nothing.
     """
-    command = ["gh", "pr", "diff", str(number), "--name-only"]
-    try:
-        # A path is bytes to git, and one that is no UTF-8 must not stop the read.
-        proc = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace", check=False)
-    except OSError as exc:
-        raise RecordError("gh-failed", f"cannot run `{' '.join(command)}`: {exc}") from exc
-    if proc.returncode != 0:
-        reason = proc.stderr.strip() or "it printed no reason"
-        raise RecordError("gh-failed", f"`{' '.join(command)}` exited {proc.returncode}: {reason}")
-    return [line for line in proc.stdout.splitlines() if line.strip()]
+    file = holding({"filename": NAME}, {"previous_filename": TEXT_OR_NONE})
+    files = gh_pages(f"repos/{{owner}}/{{repo}}/pulls/{number}/files?per_page=100", file)
+    return sorted({file[name] for file in files for name in ("filename", "previous_filename") if file.get(name)})
 
 
 def _reach(record: dict[str, Any], changed: list[str]) -> Iterator[dict[str, str]]:
@@ -951,14 +958,19 @@ def _commentary(record: dict[str, Any]) -> Iterator[dict[str, str]]:
                 yield _finding("commentary", path, f'"{phrase}" talks about the document; say the thing itself')
 
 
+def machine_constructs(text: str) -> list[str]:
+    """Name each construct in ``text`` that belongs in an artifact a machine reads."""
+    plain = outside_code(text)
+    found = [name for name, pattern in MACHINE_CONTENT.items() if pattern.search(plain)]
+    if holds_json_fence(text):
+        found.append("a fenced `json` block")
+    return found
+
+
 def _machine_content(record: dict[str, Any]) -> Iterator[dict[str, str]]:
     """Report each construct, anywhere in the record, that belongs in an artifact a machine reads."""
     for path, text in _strings(record):
-        plain = outside_code(text)
-        found = [name for name, pattern in MACHINE_CONTENT.items() if pattern.search(plain)]
-        if holds_json_fence(text):
-            found.append("a fenced `json` block")
-        for name in found:
+        for name in machine_constructs(text):
             message = f"this field holds {name}, which belongs in an artifact a machine reads"
             yield _finding("machine-content", path, message)
 
@@ -1065,6 +1077,538 @@ def _init(args: argparse.Namespace) -> int:
     # A path may hold bytes that are no text, which standard output refuses as they are.
     print(f"wrote {args.record}".encode("utf-8", "backslashreplace").decode("utf-8"))
     return EXIT_VALID
+
+
+# What every generator shares: running an executable, writing the record once,
+# and keeping its own heads-up rows.
+
+
+def run_tool(command: list[str]) -> str:
+    """Run ``command``, a call to the ``gh`` or the ``work`` executable, and return what it printed.
+
+    A command that cannot be run, or that exits with an error, raises a
+    ``RecordError`` whose message quotes the whole command, so the message
+    names the call and every id the call was given. The error's code is the
+    executable's name followed by ``-failed``. The reason is the message of
+    the error the tracker printed, or else what the command wrote to stderr.
+    """
+    quoted = f"`{' '.join(command)}`"
+    try:
+        # What an executable prints is bytes, and bytes that are no UTF-8 must not stop the read.
+        proc = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace", check=False)
+    except OSError as exc:
+        raise RecordError(f"{command[0]}-failed", f"cannot run {quoted}: {exc}") from exc
+    if proc.returncode != 0:
+        try:
+            reason = json.loads(proc.stdout)["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            reason = proc.stderr.strip() or proc.stdout.strip() or "it printed no reason"
+        raise RecordError(f"{command[0]}-failed", f"{quoted} exited {proc.returncode}: {reason}")
+    return proc.stdout
+
+
+# The shape of an answer says what the answer must hold before anything reads
+# it. A shape is a JSON Schema. An answer that fits no shape can be read as
+# something it is not: an object where a list belongs reads as an empty list,
+# and an entry with no name reads as no entry. Each read therefore states its
+# answer's shape, and these are the pieces the shapes are made of.
+TEXT = {"type": "string"}
+NAME = {"type": "string", "minLength": 1}
+TEXT_OR_NONE = {"type": ["string", "null"]}
+COUNT = {"type": "integer", "minimum": 1}
+
+
+def holding(needs: dict[str, Any], may_hold: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return the shape of an object that holds every field of ``needs``, each in the shape given for it.
+
+    The object may hold other fields too. A field of ``may_hold`` need not be
+    there, and has its shape when it is.
+    """
+    return {"type": "object", "required": sorted(needs), "properties": {**needs, **(may_hold or {})}}
+
+
+def listing(entry: dict[str, Any]) -> dict[str, Any]:
+    """Return the shape of a list whose every entry has the shape ``entry``."""
+    return {"type": "array", "items": entry}
+
+
+def unusable(command: list[str], why: str) -> RecordError:
+    """Return the error for an answer to ``command`` that cannot be used, which names the call and says why."""
+    return RecordError(f"{command[0]}-failed", f"`{' '.join(command)}` gave an answer that cannot be used: {why}")
+
+
+def tool_json(command: list[str], shape: dict[str, Any] | None = None) -> Any:
+    """Run ``command`` as ``run_tool`` does, and return what it printed, parsed as JSON.
+
+    ``shape`` is the shape the answer must have. An answer that does not fit
+    it raises a ``RecordError`` that names the call and the place where the
+    answer departs from the shape, so no caller goes on with it. A call that
+    gives no shape takes whatever JSON came back.
+    """
+    printed = run_tool(command)
+    try:
+        answer = json.loads(printed)
+    except json.JSONDecodeError as exc:
+        raise unusable(command, f"it is not JSON: {exc}") from exc
+    if shape is not None:
+        from jsonschema import Draft202012Validator
+        from jsonschema.exceptions import best_match
+
+        fault = best_match(Draft202012Validator(shape).iter_errors(answer))
+        if fault is not None:
+            where = "".join(f"/{part}" for part in fault.absolute_path) or "its root"
+            why = fault.message
+            if fault.validator == "type":
+                # The validator's own message for a wrong type quotes the whole value, which can run to pages.
+                kinds = fault.validator_value
+                why = f"the value is not of type {kinds if isinstance(kinds, str) else ' or '.join(kinds)}"
+            raise unusable(command, f"at {where}, {why}")
+    return answer
+
+
+def gh_pages(endpoint: str, entry: dict[str, Any] | None = None) -> list[Any]:
+    """Return every entry of a list the GitHub API serves in pages, read through ``gh api``.
+
+    The pages are asked for one at a time, and the reading stops at the first
+    page that comes back empty. ``endpoint`` is the path of the list, with or
+    without a query of its own. ``entry`` is the shape every entry must have.
+    Every page must be a list, whatever its entries.
+    """
+    entries: list[Any] = []
+    page = 1
+    while True:
+        command = ["gh", "api", f"{endpoint}{'&' if '?' in endpoint else '?'}page={page}"]
+        batch = tool_json(command, listing(entry or {}))
+        if not batch:
+            return entries
+        entries += batch
+        page += 1
+
+
+def write_record(path: Path, record: dict[str, Any]) -> None:
+    """Replace the record file at ``path`` with ``record``, in one step.
+
+    The text is written beside the file and then moved over it, so a reader
+    never finds half a record. The groups are written in the order the schema
+    lists them, so the file reads the same whichever generator ran first. A
+    record that holds text UTF-8 cannot hold is refused before anything is
+    written, because no file can take it and no later read would accept it.
+    """
+    where = next(_not_utf8(record), None)
+    if where is not None:
+        message = f"cannot write {path}: the record would hold text that UTF-8 cannot hold, at {where or 'its root'}"
+        raise RecordError("not-utf-8", message)
+    ordered = {name: record[name] for name in load_schema()["properties"] if name in record}
+    beside = path.with_name(path.name + ".tmp")
+    try:
+        beside.write_text(json.dumps(ordered, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        beside.replace(path)
+    except OSError as exc:
+        # A failed run leaves nothing behind, and that includes the text written beside the record.
+        beside.unlink(missing_ok=True)
+        raise RecordError("unwritable", f"cannot write {path}: {exc}") from exc
+
+
+def set_generator_rows(record: dict[str, Any], generator: str, rows: list[str]) -> None:
+    """Make ``rows`` the heads-up rows that ``generator`` holds in ``record``.
+
+    A generator's row opens with its name and a colon, which is how the next
+    run finds the rows to replace. A row takes the place of a ``None.`` entry.
+    When the generator's last row goes and no other entry is left, the list
+    holds ``None.``. That is so even where the list was empty before the
+    generator wrote into it, because the record keeps no trace of that. A
+    list the generator has no row in, and gives none to, is left as it is.
+    """
+    opening = f"{generator}: "
+    entries = record["heads_up"]
+    others = [entry for entry in entries if not entry.startswith(opening) and not (rows and is_none(entry))]
+    took_one_out = len(others) < len(entries)
+    record["heads_up"] = others + [opening + row for row in rows] or ([NONE] if took_one_out else [])
+
+
+# What ``inert`` quotes where it finds one outside a code span: the opening of
+# a fold with the rest of its tag, or the opening of an HTML comment with the
+# rest of the comment, as far as either runs before a backtick or the line's end.
+QUOTABLE = re.compile(r"<details\b[^>`\r\n]*>?|<!--(?:[^`\r\n]*?-->)?", re.IGNORECASE)
+
+
+def _inert_line(line: str, ending: str) -> str:
+    """Return one line of text with every construct a machine reads quoted as a code span.
+
+    ``ending`` is the line end that follows the line, or nothing after the
+    last line. The line is read with it, because a fold's tag may break
+    straight after its name, and the line end is then what makes it a fold.
+    """
+    if not machine_constructs(line + ending):
+        return line
+    parts, at = [], 0
+    for span in [*CODE_SPAN.finditer(line), None]:
+        between = line[at : span.start() if span else len(line)]
+        parts.append(QUOTABLE.sub(lambda found: f"`{found[0]}`", between))
+        if span:
+            parts.append(span[0])
+            at = span.end()
+    quoted = "".join(parts)
+    if not machine_constructs(quoted + ending):
+        return quoted
+    # A span cannot quote the construct where it stands. That is so for a line
+    # that opens a fence, and for a construct beside a backtick or a backslash.
+    # A span around the whole line, longer than any run of backticks in it,
+    # always can.
+    longest = max((len(run) for run in re.findall("`+", line)), default=0)
+    fence = "`" * (longest + 1)
+    return f"{fence} {line} {fence}"
+
+
+def inert(text: str) -> str:
+    """Return ``text`` with every construct a machine reads quoted as a code span, so that it stays a literal.
+
+    A generator copies titles and reasons that other people wrote. A fold, an
+    HTML comment or a line that opens a ``json`` fence would act as markup in
+    the pull request body, and the lint refuses each of them in any field. A
+    code span shows the same characters and does nothing. Text that holds no
+    such construct comes back as it was, so quoting twice changes nothing.
+    A code span stays on one line, so each line is quoted on its own, and it
+    is read together with the line end after it.
+    """
+    lines = re.split(f"({LINE_END.pattern})", text) + [""]
+    return "".join(_inert_line(line, ending) + ending for line, ending in zip(lines[::2], lines[1::2]))
+
+
+def run_generator(args: argparse.Namespace, fill: Callable[[dict[str, Any]], None]) -> int:
+    """Run one generator over the record file ``args.record`` names, and return the exit status.
+
+    ``fill`` computes every part its generator owns and sets them in the
+    record it is given. The file is written once, after ``fill`` returns, and
+    only when the record changed. A failure of any kind therefore leaves the
+    file as it was, and a second run over unchanged sources writes nothing.
+    """
+    try:
+        record = read_record(args.record)
+        faults = sorted(_schema_faults(record))
+        if faults:
+            where, fault = faults[0]
+            message = f"{args.record} does not fit the record schema at {where or 'its root'}: {fault}"
+            raise RecordError("schema", message)
+        filled = copy.deepcopy(record)
+        try:
+            fill(filled)
+        except (KeyError, IndexError, TypeError) as exc:
+            # Each read states the shape of its answer, and a wrong shape fails
+            # there, naming the call. This catches a read whose stated shape
+            # asks for less than the generator goes on to use.
+            message = f"an answer from the tracker or from GitHub lacks what the generator reads: {exc!r}"
+            raise RecordError("answer-shape", message) from exc
+        if filled != record:
+            write_record(args.record, filled)
+    except RecordError as exc:
+        print(exc.message, file=sys.stderr)
+        return EXIT_UNUSABLE
+    said = f"wrote {args.record}" if filled != record else f"{args.record} is already current"
+    # A path may hold bytes that are no text, which standard output refuses as they are.
+    print(said.encode("utf-8", "backslashreplace").decode("utf-8"))
+    return EXIT_VALID
+
+
+def add_generator(commands: Any, name: str, fill: Callable[[dict[str, Any]], None], does: str) -> None:
+    """Add the subcommand ``name`` to ``commands``: a generator that takes a record file and runs ``fill``.
+
+    ``does`` says what the generator does, as the words that follow "to" in a sentence.
+    """
+    generator = commands.add_parser(
+        name,
+        help=does,
+        description=f"Read a record to {does}. The record names the work item and the pull request to read about. "
+        "The file is written once, after every call has succeeded, so a failure leaves it as it was. "
+        "Exit 0 the record holds the part, 2 anything failed.",
+    )
+    generator.add_argument("record", type=Path, help="path to the record's JSON file")
+    generator.set_defaults(run=lambda args: run_generator(args, fill))
+
+
+# The two generators that read the tracker: `context` and `discovered`.
+
+# The list of a repository's open pull requests. The `gh` executable fills in
+# the owner and the name of the repository the working directory belongs to.
+OPEN_PULLS = "repos/{owner}/{repo}/pulls?state=open&per_page=100"
+
+# What `context` says in the heads-up list when it could not compare paths with the other open pull requests.
+NO_NUMBER = "The record names no pull request yet, so the other open pull requests were not checked for shared paths."
+
+# The line the tracker adds to an item's notes when the item is delivered, and
+# the evidence it was given. The tracker writes the evidence as the caller
+# gave it and checks nothing.
+DELIVERED = re.compile(r"\[work\] delivered:[ \t]*(?P<evidence>.*)")
+
+# Evidence that names a pull request: a number alone, a number after a `#`, or
+# a pull request's URL. The URL names a repository, and so does a `#` with an
+# owner and a name before it. Evidence of any other kind names no pull request.
+PULL_EVIDENCE = re.compile(r"(?:(?:.*[ \t])?(?:(?P<url>\S+)/pull/|(?P<before>[^\s#]*)#))?(?P<number>\d+)(?:[/#?]\S*)?")
+
+# The heading of the triage record the tracker writes at the end of a
+# discovered item's description, and the scope line under it with the reason
+# the line gives. The tracker writes a dash between the scope call and its
+# reason. A call that defers work names the route it took before that dash,
+# so the reason is what follows it.
+TRIAGE_HEADING = re.compile(r"## Triage[ \t]*")
+TRIAGE_SCOPE = re.compile(r"- Scope: (?:out-of-scope|in-scope — deferred: .+?) — (?P<reason>.+?)[ \t]*")
+
+
+def unfenced_lines(text: str) -> Iterator[str | None]:
+    """Yield each line of ``text``, with None in place of a line that belongs to a fenced block.
+
+    A fenced block quotes its content, so nothing in it says anything about
+    the text around it. A block runs from the line that opens it to a line
+    that holds only a fence of the same character and at least the same
+    length, or to the end of the text when no such line follows.
+    """
+    opener = ""
+    for line in LINE_END.split(text):
+        fence = FENCE.fullmatch(line)
+        run = re.search("(?:`+|~+)$", line[: fence.start("after")])[0] if fence else ""
+        if not opener and not run:
+            yield line
+            continue
+        if not opener:
+            opener = run
+        elif run[:1] == opener[0] and len(run) >= len(opener) and not fence["after"].strip():
+            opener = ""
+        yield None
+
+
+def triage_reason(description: str) -> str | None:
+    """Return the reason the triage record in ``description`` gives for its scope call, or None when it holds none.
+
+    The record is a heading with the scope line straight under it. The last
+    one in the description counts, because the tracker writes the record at
+    the end. A record quoted inside a fenced block is an example and does not
+    count.
+    """
+    reason = None
+    for heading, scope in itertools.pairwise(unfenced_lines(description)):
+        if heading is None or scope is None or not TRIAGE_HEADING.fullmatch(heading):
+            continue
+        found = TRIAGE_SCOPE.fullmatch(scope)
+        if found:
+            reason = found["reason"]
+    return reason
+
+
+def work_call(*arguments: str) -> list[str]:
+    """Return the command that makes a read of the tracker through the ``work`` executable."""
+    return ["work", "--format", "json", *arguments]
+
+
+def tracker(*arguments: str, shape: dict[str, Any] | None = None) -> Any:
+    """Return the data of the tracker's answer to a read, which must have the shape ``shape``."""
+    return tool_json(work_call(*arguments), holding({"data": shape or {}}))["data"]
+
+
+def tracked_items(ids: list[str], fields: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the tracker items ``ids`` in the order given, each holding ``fields`` in the shapes given.
+
+    The answer must hold each item asked for once, and no other. An answer
+    with an item missing would otherwise read as that item not existing, and
+    an answer with a stranger in it would put the stranger in the record.
+    """
+    item = holding({"id": NAME, **fields})
+    items = tracker("show", *ids, shape=holding({"items": listing(item)}))["items"]
+    found = [item["id"] for item in items]
+    if sorted(found) != sorted(ids):
+        why = f"it holds {', '.join(found) or 'no item'}, which is not each item asked for once"
+        raise unusable(work_call("show", *ids), why)
+    return sorted(items, key=lambda item: ids.index(item["id"]))
+
+
+def _children(owner_id: str) -> list[dict[str, Any]]:
+    """Return the tracker's children of ``owner_id`` in id order, each with its title, status, notes and parent."""
+    child = holding({"id": NAME, "title": TEXT, "status": TEXT, "notes": TEXT_OR_NONE, "parent": TEXT_OR_NONE})
+    children = tracker("list", "--parent", owner_id, shape=holding({"items": listing(child)}))["items"]
+    ids = [child["id"] for child in children]
+    strangers = [child["id"] for child in children if child["parent"] != owner_id]
+    if strangers or len(set(ids)) < len(ids):
+        why = f"{strangers[0]} is no child of {owner_id}" if strangers else "it lists an item twice"
+        raise unusable(work_call("list", "--parent", owner_id), why)
+    return sorted(children, key=lambda child: _in_id_order(child["id"]))
+
+
+def _ancestors(item_id: str) -> list[dict[str, Any]]:
+    """Return the tracker item ``item_id`` and every item above it, outermost first.
+
+    Each step reads the parent field of the item below. An id that looks like
+    a path says nothing about where its item sits now, so no step reads one.
+    """
+    chain: list[dict[str, Any]] = []
+    following: str | None = item_id
+    while following is not None:
+        if any(item["id"] == following for item in chain):
+            raise RecordError("work-failed", f"the tracker's parent fields lead from {following} back to itself")
+        chain.insert(0, tracked_items([following], {"title": TEXT, "type": TEXT, "parent": TEXT_OR_NONE})[0])
+        following = chain[0]["parent"]
+    return chain
+
+
+def _in_id_order(item_id: str) -> list[Any]:
+    """Return a sort key that puts tracker ids in the order a reader counts them, so .10 follows .9."""
+    return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", item_id)]
+
+
+def _scope(
+    work_item: dict[str, Any], children: list[dict[str, Any]], pulls: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Return the scope table: one row per child of the owning item, with its title and its status.
+
+    The record's own work item is this pull request, whatever else is true of
+    it. A closed child is done. A child is in flight when an open pull request
+    names it, which a title does by closing with the child's id in brackets,
+    short or full. The lowest-numbered such pull request is the one shown,
+    whichever form of the id it uses.
+    Every other child is open. An owning item with no child has one part, which
+    is this pull request.
+    """
+    naming: dict[str, int] = {}
+    for pull in pulls:
+        naming.setdefault(closing_id(pull["title"]), pull["number"])
+    rows: list[dict[str, Any]] = []
+    for child in children:
+        row = {"slice": child["id"], "covers": inert(child["title"])}
+        carriers = [naming[name] for name in (child["id"], short_id(child["id"])) if name in naming]
+        if child["id"] == work_item["id"]:
+            row["status"] = "this PR"
+        elif child["status"] == "closed":
+            row["status"] = "done"
+        elif carriers:
+            row.update(status="in flight", pr=min(carriers))
+        else:
+            row["status"] = "open"
+        rows.append(row)
+    return rows or [{"slice": work_item["id"], "covers": inert(work_item["title"]), "status": "this PR"}]
+
+
+def _delivering_pulls(children: list[dict[str, Any]]) -> set[int]:
+    """Return the numbers of this repository's pull requests that the deliveries of closed ``children`` name.
+
+    A delivery that names no repository is a pull request of this one. A
+    delivery that names a repository counts only when it names the working
+    directory's own, by its URL or by its owner and name. The same number in
+    another repository is another pull request, so it is neither listed nor
+    looked up here. GitHub is asked which repository this is once, and only
+    when a delivery names one.
+    """
+    numbers: set[int] = set()
+    this: dict[str, str] = {}
+    for child in children:
+        if child["status"] != "closed":
+            continue
+        for line in LINE_END.split(child["notes"] or ""):
+            marker = DELIVERED.fullmatch(line.strip())
+            evidence = marker and PULL_EVIDENCE.fullmatch(marker["evidence"])
+            if not evidence:
+                continue
+            named = evidence["url"] or ("/" in (evidence["before"] or "") and evidence["before"])
+            if named:
+                asked = ["gh", "repo", "view", "--json", "nameWithOwner,url"]
+                this = this or tool_json(asked, holding({"nameWithOwner": NAME, "url": NAME}))
+                own = this["url"].rstrip("/") if evidence["url"] else this["nameWithOwner"]
+                if named.rstrip("/").casefold() != own.casefold():
+                    continue
+            numbers.add(int(evidence["number"]))
+    return numbers
+
+
+def _builds_on(children: list[dict[str, Any]], apart_from: int | None) -> list[dict[str, Any]]:
+    """Return the merged pull requests that delivered ``children``, lowest number first, each with its title.
+
+    The number comes from the delivery the tracker recorded on a closed child.
+    The tracker records it as the caller gave it and checks nothing, so GitHub
+    is asked whether each one merged, and one that closed without merging is
+    left out. ``apart_from`` is the record's own pull request, which is never
+    something it builds on.
+    """
+    numbers = _delivering_pulls(children)
+    merged = []
+    for number in sorted(numbers - {apart_from}):
+        asked_for = holding({"number": {"const": number}, "state": TEXT, "title": TEXT})
+        pull = tool_json(["gh", "pr", "view", str(number), "--json", "number,state,title"], asked_for)
+        if pull["state"] == "MERGED":
+            merged.append({"pr": number, "gloss": inert(pull["title"])})
+    return merged
+
+
+def _concurrent(number: int, others: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return each of the open pull requests ``others`` that changes a path pull request ``number`` changes.
+
+    Each entry carries the pull request's title. The paths of ``number`` are
+    read only when there is another open pull request to compare them with.
+    Every open pull request costs two calls or more, so a repository with
+    hundreds open makes this slow.
+    """
+    own = set(pr_changed_paths(number)) if others else set()
+    return [
+        {"pr": pull["number"], "gloss": inert(pull["title"])}
+        for pull in others
+        if own.intersection(pr_changed_paths(pull["number"]))
+    ]
+
+
+def fill_context(record: dict[str, Any]) -> None:
+    """Set ``where_this_fits`` in ``record`` from the tracker and from GitHub, with its stamp.
+
+    The owning item is the work item's parent. A work item at the root of its
+    tree, or directly under the root, is its own owning item, because the
+    children of a root are every piece of work in the project.
+    """
+    number = record["pr"]["number"]
+    chain = _ancestors(record["work_item"]["id"])
+    owner = chain[-1] if len(chain) <= 2 else chain[-2]
+    children = _children(owner["id"])
+    # A pull request that opens or closes while the pages are read moves the
+    # ones after it, so one can come back on two pages. It is kept once.
+    open_pulls = {pull["number"]: pull for pull in gh_pages(OPEN_PULLS, holding({"number": COUNT, "title": TEXT}))}
+    others = [open_pulls[other] for other in sorted(open_pulls) if other != number]
+    fits = {
+        "ancestry": [{"id": item["id"], "title": inert(item["title"]), "type": inert(item["type"])} for item in chain],
+        "builds_on": _builds_on([child for child in children if child["id"] != chain[-1]["id"]], number),
+        "concurrent": [] if number is None else _concurrent(number, others),
+        "scope": _scope(chain[-1], children, others),
+    }
+    record["where_this_fits"] = {**fits, "digest": stamp(fits)}
+    # A pull request's paths are GitHub's to give, so a record with no number
+    # cannot be compared with the other open ones. The list then says so, and
+    # it says nothing when no other pull request is open.
+    set_generator_rows(record, "context", [NO_NUMBER] if number is None and others else [])
+
+
+def fill_discovered(record: dict[str, Any]) -> None:
+    """Set the filed rows of ``discovered`` in ``record`` from the tracker, with their stamp.
+
+    An item gets a row when its discovered-from edge points at the record's
+    work item. The row holds the item's id, its title, and the reason its
+    triage record gives for the scope call. The filed rows come first, in id
+    order, and every other row stays where the author put it. The ``None.``
+    entry goes when a filed row arrives. It never comes from here, because
+    only the author can say that the pull request found nothing.
+    """
+    work_item_id = record["work_item"]["id"]
+    edge = holding({"id": NAME, "type": TEXT})
+    edges = tracker("dep", "list", work_item_id, shape=holding({"dependents": listing(edge)}))["dependents"]
+    found = sorted({edge["id"] for edge in edges if edge["type"] == "discovered-from"}, key=_in_id_order)
+    items = tracked_items(found, {"title": TEXT, "description": TEXT_OR_NONE}) if found else []
+    filed = []
+    for item in items:
+        reason = triage_reason(item["description"] or "")
+        if reason is None:
+            message = (
+                f"{item['id']} was discovered from {work_item_id}, and its description holds no triage record "
+                "to take the reason from"
+            )
+            raise RecordError("no-triage", message)
+        filed.append({"status": "filed", "item": item["id"], "what": inert(item["title"]), "reason": inert(reason)})
+    rest = [row for row in record["discovered"]["rows"] if not (isinstance(row, dict) and row["status"] == "filed")]
+    if filed:
+        rest = [row for row in rest if isinstance(row, dict)]
+    record["discovered"]["rows"] = filed + rest
+    record["discovered"]["filed_digest"] = stamp(filed)
 
 
 def _filled(text: str) -> str:
@@ -1423,7 +1967,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the command line. Each subcommand names the function that runs it as ``run``."""
     parser = argparse.ArgumentParser(
         prog="change_record.py",
-        description="Start or check a change record, the JSON document a pull request's description, "
+        description="Start, fill or check a change record, the JSON document a pull request's description, "
         "commit message and review replies are written from, and render the three from it.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
@@ -1464,6 +2008,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="also check the record against this pull request's changed paths, which are read through gh",
     )
     lint.set_defaults(run=_lint)
+    add_generator(commands, "context", fill_context, "fill where_this_fits from the tracker and from GitHub")
+    add_generator(commands, "discovered", fill_discovered, "fill the filed rows of discovered from the tracker")
     render = commands.add_parser(
         "render",
         help="render the pull request body, the commit message or a review reply from a record",

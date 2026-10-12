@@ -25,14 +25,14 @@
 - CR-R6 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR6LintFirst
 - CR-R7 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR7Determinism
 - CR-R8 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR8Sentinels
-- CR-X1 | open
-- CR-X2 | open
-- CR-X3 | open
-- CR-X4 | open
-- CR-X5 | open
-- CR-X6 | open
-- CR-X7 | open
-- CR-X8 | open
+- CR-X1 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX1Ancestry
+- CR-X2 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX2Scope
+- CR-X3 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX3BuildsOn
+- CR-X4 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX4Failure
+- CR-X5 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX5Discovered
+- CR-X6 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX6SecondRun
+- CR-X7 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX7NothingAround
+- CR-X8 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX8Concurrent
 - CR-C1 | open
 - CR-C2 | open
 - CR-C3 | open

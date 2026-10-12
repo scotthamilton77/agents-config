@@ -1260,14 +1260,26 @@ def of_type(kind: str) -> dict[str, Any]:
     return record
 
 
-def gh_listing(shim_dir: Path, log: Path, *paths: str, status: int = 0) -> None:
-    """Put a ``gh`` on the search path that records its arguments in ``log``, prints ``paths`` and exits ``status``."""
+# The call that asks GitHub for one page of pull request 843's files, without the page's number.
+FILES_PAGE = "api repos/{owner}/{repo}/pulls/843/files?per_page=100&page="
+
+
+def gh_listing(shim_dir: Path, log: Path, *paths: str, status: int = 0, later: tuple[Any, ...] = ()) -> None:
+    """Put a ``gh`` on the search path that answers as GitHub lists a pull request's files, and exits ``status``.
+
+    The shim records its arguments in ``log``. Its first page holds a file for
+    each of ``paths``, its second holds the files in ``later``, and every page
+    after that is empty.
+    """
+    pages = [[{"filename": path, "status": "modified"} for path in paths], list(later)]
+    answers = "".join(
+        f"  *page={number}) printf '%s\\n' {shlex.quote(json.dumps(page))} ;;\n"
+        for number, page in enumerate(pages, start=1)
+    )
     shim = shim_dir / "gh"
-    listing = " ".join(shlex.quote(path) for path in paths)
     shim.write_text(
         f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {shlex.quote(str(log))}\n"
-        + (f"printf '%s\\n' {listing}\n" if paths else "")
-        + f"exit {status}\n",
+        f"case \"$*\" in\n{answers}  *) printf '[]\\n' ;;\nesac\nexit {status}\n",
         encoding="utf-8",
     )
     shim.chmod(0o755)
@@ -1393,7 +1405,7 @@ class TestCrL10GroupsByTypeAndReach:
             ("reach", "/risk/reaches_outside_package")
         ]
         assert "2 top-level components: packages, src" in result["errors"][0]["message"]
-        assert log.read_text(encoding="utf-8").splitlines() == ["pr diff 843 --name-only"]
+        assert log.read_text(encoding="utf-8").splitlines() == [FILES_PAGE + "1", FILES_PAGE + "2"]
 
     def test_cr_l10_lint_pr_passes_that_record_when_the_paths_are_one_component_and_docs(
         self, shim_dir: Path, tmp_path: Path
@@ -1447,12 +1459,75 @@ class TestCrL10GroupsByTypeAndReach:
         assert [error["code"] for error in result["errors"]] == ["unstated-empty", "reach"]
 
     def test_lint_pr_reads_a_path_that_is_not_utf8_without_failing(self, shim_dir: Path, tmp_path: Path):
+        # The second file's name holds a byte that is no UTF-8, as git may hand one over.
         shim = shim_dir / "gh"
-        shim.write_bytes(b"#!/bin/sh\nprintf 'src/gate.py\\n\\377dir/tool.py\\n'\n")
+        shim.write_bytes(
+            b"#!/bin/sh\ncase \"$*\" in\n"
+            b"  *page=1) printf '[{\"filename\": \"src/gate.py\"}, {\"filename\": \"\\377dir/tool.py\"}]\\n' ;;\n"
+            b"  *) printf '[]\\n' ;;\nesac\n"
+        )
         shim.chmod(0o755)
         record = example()
         record["risk"]["reaches_outside_package"] = False
         assert findings_with(record, "reach", tmp_path, "--pr", "843") == ["/risk/reaches_outside_package"]
+
+    def test_cr_l10_lint_pr_reads_the_files_a_page_at_a_time_until_a_page_is_empty(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        # A large pull request lists its files over several pages, and a path on a later page counts.
+        log = tmp_path / "gh.log"
+        gh_listing(shim_dir, log, "src/panel/gate.py", later=({"filename": "packages/tool/cli.py"},))
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert findings_with(record, "reach", tmp_path, "--pr", "843") == ["/risk/reaches_outside_package"]
+        assert log.read_text(encoding="utf-8").splitlines() == [FILES_PAGE + str(page) for page in (1, 2, 3)]
+
+    def test_cr_l10_lint_pr_counts_a_renamed_file_under_its_old_path_and_its_new_one(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        moved = {"filename": "src/panel/cli.py", "previous_filename": "packages/tool/cli.py", "status": "renamed"}
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", later=(moved,))
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        _, result = lint(record, tmp_path, SCRIPT, "--pr", "843")
+        assert "2 top-level components: packages, src" in result["errors"][0]["message"]
+
+    def test_lint_pr_reads_a_path_that_holds_half_a_surrogate_pair_without_failing(
+        self, shim_dir: Path, tmp_path: Path
+    ):
+        # JSON can escape half of a pair in a file's name. The path is compared and reported, and never written.
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", later=({"filename": "packages/\ud83d.py"},))
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        code, result = lint(record, tmp_path, SCRIPT, "--pr", "843")
+        assert code == 1
+        assert [error["code"] for error in result["errors"]] == ["reach"]
+
+    @pytest.mark.parametrize("printed", ["no json at all", '{"message": "Not Found"}'])
+    def test_lint_pr_exits_2_when_gh_prints_something_that_is_no_page_of_files(
+        self, printed: str, shim_dir: Path, tmp_path: Path
+    ):
+        shim = shim_dir / "gh"
+        shim.write_text(f"#!/bin/sh\nprintf '%s\\n' {shlex.quote(printed)}\n", encoding="utf-8")
+        shim.chmod(0o755)
+        code, result = lint(example(), tmp_path, SCRIPT, "--pr", "843")
+        assert code == 2
+        assert [error["code"] for error in result["errors"]] == ["gh-failed"]
+
+    @pytest.mark.parametrize(
+        "entry",
+        [{}, None, "src/panel/gate.py", {"filename": ""}, {"filename": 5}, {"filename": "a.py", "previous_filename": 5}],
+        ids=["empty", "null", "text", "an empty name", "a name that is no text", "an old name that is no text"],
+    )
+    def test_lint_pr_exits_2_when_a_page_holds_an_entry_that_is_no_file(self, entry: Any, shim_dir: Path, tmp_path: Path):
+        # Such a page read as a pull request with no changed path would pass a record it had not checked.
+        gh_listing(shim_dir, tmp_path / "gh.log", "src/panel/gate.py", later=(entry,))
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        code, result = lint(record, tmp_path, SCRIPT, "--pr", "843")
+        assert code == 2
+        assert [error["code"] for error in result["errors"]] == ["gh-failed"]
+        assert f"`gh {FILES_PAGE}2`" in result["errors"][0]["message"]
 
     @pytest.mark.parametrize("status", [None, 1])
     def test_lint_pr_exits_2_when_gh_is_missing_or_fails(self, status: int | None, shim_dir: Path, tmp_path: Path):
