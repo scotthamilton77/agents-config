@@ -109,6 +109,7 @@ TEMPLATE_MARKERS = {
         "<details><summary>Blast radius</summary>",
         "```mermaid",
         "```mermaid",
+        "| Item the spec mints | What it is |",
         "## Changes",
         "<details><summary>Design notes</summary>",
         "## Discovered work",

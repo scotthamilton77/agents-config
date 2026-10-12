@@ -705,11 +705,11 @@ def _groups_by_type(record: dict[str, Any]) -> Iterator[dict[str, str]]:
                     "so the record names each one and says what it is"
                 )
                 yield _finding("required-group", "/blast_radius/mints", message)
-            return
-        for name in ("reach_graph", "task_flow"):
-            if not radius.get(name, "").strip():
-                message = "the change reaches outside its package, so the record holds this diagram"
-                yield _finding("required-group", f"/blast_radius/{name}", message)
+        else:
+            for name in ("reach_graph", "task_flow"):
+                if not radius.get(name, "").strip():
+                    message = "the change reaches outside its package, so the record holds this diagram"
+                    yield _finding("required-group", f"/blast_radius/{name}", message)
 
 
 def pr_changed_paths(number: int) -> list[str]:
