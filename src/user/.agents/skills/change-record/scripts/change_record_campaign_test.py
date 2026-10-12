@@ -1551,7 +1551,7 @@ class TestCampaignCommand:
         assert rows(pull.record()) == ROWS_843
 
     def test_the_campaign_of_the_recorded_reviews_is_the_example_records(self, pull: Pull):
-        assert pull.filled(REVIEWS, COMMENTS)["campaign"] == EXAMPLE["campaign"]
+        assert pull.filled(REVIEWS, COMMENTS, without_campaign())["campaign"] == EXAMPLE["campaign"]
 
     def test_a_record_new_from_init_takes_a_campaign(self, pull: Pull):
         record = change_record.new_record("feat", "a-component", "proj-a1b.3")
