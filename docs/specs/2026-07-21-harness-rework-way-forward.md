@@ -93,6 +93,12 @@ quality dominates in the writer seat (fresh-context Anthropic frontier);
 cross-vendor diversity pays where blind spots correlate — AC-attack, scaffold
 review, PR verdict.
 
+*Amended 2026-10-11:* as one bounded exception, ruled on
+`agents-config-9k9.486` (the decision item for this seat), the `change-record`
+skill's rewrite pass seats a foreign model to propose prose replacements that
+the Anthropic author accepts, prunes or corrects, and the author's review of
+each replacement is the control.
+
 **D6 — Plan mode is the default for design sessions.** It is an
 interaction guardrail (read-only, converge-before-acting, explicit approval)
 at zero context cost. The spec contract defines what the session must produce.
