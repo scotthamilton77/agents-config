@@ -616,6 +616,50 @@ class TestCrC2Findings:
         ])
         assert found(record, "f1")["commit"] == "2222222"
 
+    def test_cr_c2_no_reply_is_the_authors_when_the_pull_request_has_no_author(self, pull: Pull):
+        # The pull request's author is gone, and so is the account that replied. Two missing accounts are not one.
+        raised = finding("f1")
+        posted = review(verdict(findings=[raised]))
+        opened = thread(posted, raised)
+        orphan = reply(opened, "Fixed. Commit 2222222.") | {"user": None}
+        pull.serve([posted], [opened, orphan], spoiled={PULL_CALL: lambda answer: answer | {"user": None}})
+        pull.write(example())
+        assert pull.run().code == 0
+        assert found(pull.record(), "f1")["commit"] == ""
+
+    @pytest.mark.parametrize("ending", ["\n", "\r\n", "\r"])
+    def test_cr_c2_the_commit_rule_reads_a_reply_alike_whichever_way_its_lines_end(self, ending: str, pull: Pull):
+        lines = ["Outcome: Fixed.", "Change: It is fixed. (1111111)", "Verification: Test of commit 2222222 passes."]
+        assert change_record.reply_commit(ending.join(lines)) == "1111111"
+        assert change_record.reply_commit(ending.join(lines) + ending) == "1111111"
+        assert change_record.reply_commit(ending.join([lines[0], "Change: It is fixed.", lines[2]])) == "2222222"
+        raised = finding("f1")
+        posted = review(verdict(findings=[raised]))
+        opened = thread(posted, raised)
+        record = pull.filled([posted], [opened, reply(opened, ending.join(lines))])
+        assert found(record, "f1")["commit"] == "1111111"
+
+    @pytest.mark.parametrize("record", [
+        '{"id": []}', '{"id": 7}', '{"id": {"f": 1}}', '{"id": null}', '{"lens": "correctness"}', "[1, 2]", '"f1"',
+        "7", "not json", '{"id": ' + "[" * 1100 + "]" * 1100 + "}", "[" * 100_000 + "]" * 100_000,
+        '{"id": "f1", "weight": ' + "9" * 5000 + "}",
+    ])
+    def test_cr_c2_a_comment_whose_finding_record_gives_no_id_as_text_opens_no_thread(self, record: str, pull: Pull):
+        raised = finding("f1")
+        posted = review(verdict(findings=[raised]))
+        opened = thread(posted, raised)
+        odd = thread(posted, raised)
+        odd["body"] = (
+            f"**correctness**\n\n<details>\n<summary>Finding record</summary>\n\n```json\n{record}\n```\n\n</details>"
+        )
+        replies = [reply(odd, "Fixed. Commit 1111111."), reply(opened, "Fixed. Commit 2222222.")]
+        pull.serve([posted], [opened, odd, *replies])
+        pull.write(example())
+        ran = pull.run()
+        assert (ran.code, ran.err) == (0, "")
+        # The odd comment opens no thread, so its reply is nobody's, and the whole thread beside it still counts.
+        assert found(pull.record(), "f1")["commit"] == "2222222"
+
     def test_cr_c2_a_thread_under_a_review_that_was_skipped_names_no_commit(self, pull: Pull):
         raised = finding("f1")
         counted = review(verdict(findings=[raised]))
@@ -753,11 +797,96 @@ class TestCrC4SkippedReviews:
         pull.write(example())
         ran = pull.run()
         assert ran.code == 0
-        assert ran.err.splitlines() == [f"campaign: review {REVIEWS[7]['id']} is skipped, because it was dismissed"]
+        why = "its state is DISMISSED, and only a submitted review that stands is a round"
+        assert ran.err.splitlines() == [f"campaign: review {REVIEWS[7]['id']} is skipped, because {why}"]
         record = pull.record()
         # The dismissed review was the last prose round, which carried the prose findings' dispositions forward.
         assert len(record["campaign"]["findings"]) == 24
         assert ("internal-consistency", "1 to 2", 2, 2, 0, 0) in rows(record)
+
+    @pytest.mark.parametrize("state", ["PENDING", "A_STATE_NOBODY_KNOWS"])
+    def test_cr_c1_a_review_that_was_never_submitted_is_no_round_and_is_named(self, state: str, pull: Pull):
+        drafted = review(verdict(findings=[finding("f1")]), state=state)
+        pull.serve([drafted])
+        pull.write(with_heads_up("None."))
+        ran = pull.run()
+        assert ran.code == 0
+        why = f"its state is {state}, and only a submitted review that stands is a round"
+        assert ran.err.splitlines() == [f"campaign: review {drafted['id']} is skipped, because {why}"]
+        record = pull.record()
+        assert record["campaign"] == empty_campaign()
+        # A draft is no envelope that could not be read, so the row is the one for no round at all.
+        assert record["heads_up"] == [NO_ROUND]
+
+    @pytest.mark.parametrize("state", ["COMMENTED", "APPROVED", "CHANGES_REQUESTED"])
+    def test_cr_c1_a_submitted_review_counts_in_each_state_github_gives_one(self, state: str, pull: Pull):
+        pull.serve([review(verdict(findings=[finding("f1")]), state=state)])
+        pull.write(example())
+        ran = pull.run()
+        assert (ran.code, ran.err) == (0, "")
+        assert rows(pull.record()) == [("correctness", "1", 1, 0, 0, 0)]
+
+    @pytest.mark.parametrize("depth", [1100, 100_000])
+    def test_cr_c4_a_verdict_nested_too_deeply_to_read_is_skipped_named_and_the_rest_are_counted(
+        self, depth: int, pull: Pull
+    ):
+        # The validator rejects a field it does not know. A field this deep stops a reader before the validator sees it.
+        text = json.dumps(verdict(findings=[finding("f1")]))[:-1] + ', "unused": ' + "[" * depth + "]" * depth + "}"
+        deep = review(text)
+        pull.serve([deep, review(verdict(claim="claim-b", findings=[finding("f1")]))])
+        pull.write(example())
+        ran = pull.run()
+        assert ran.code == 0
+        assert len(ran.err.splitlines()) == 1
+        assert ran.err.startswith(f"campaign: review {deep['id']} is skipped, because its verdict cannot be read: ")
+        record = pull.record()
+        assert [(entry["claim_id"], entry["id"]) for entry in record["campaign"]["findings"]] == [("claim-b", "f1")]
+        pull.serve([deep])
+        pull.write(with_heads_up("None."))
+        assert pull.run().code == 0
+        assert pull.record()["heads_up"][0].startswith("campaign: 1 review carries a verdict that could not be read")
+
+    @pytest.mark.parametrize(("field", "spoil"), [
+        ("/claim_id", lambda held: held.update(claim_id="claim-a <!-- identity -->")),
+        ("/artifact_class", lambda held: held.update(artifact_class="typed-code <details>")),
+        ("/lenses/0/lens", lambda held: held["lenses"][0].update(lens="<!-- correctness")),
+        ("/findings/0/id", lambda held: held["findings"][0].update(id="f1\n```json")),
+        ("/findings/0/lens", lambda held: held["findings"][0].update(lens="<DETAILS open>")),
+        ("/prior_dispositions/0/work_item", lambda held: held["prior_dispositions"][0].update(work_item="<!--a1-->")),
+    ])
+    def test_cr_c4_a_verdict_whose_identifier_holds_what_the_lint_refuses_is_skipped_named_and_counted(
+        self, field: str, spoil: Callable[[dict[str, Any]], Any], pull: Pull
+    ):
+        held = verdict(2, findings=[finding("f1")], priors=[prior("f0", "transferred", work_item="proj-a1b.3")])
+        spoil(held)
+        assert change_record.load_verdict_validator()(held) == {"valid": True}
+        spoiled = review(held)
+        pull.serve([spoiled, review(verdict(claim="claim-b", findings=[finding("f1")]))])
+        pull.write(example())
+        ran = pull.run()
+        assert ran.code == 0
+        assert len(ran.err.splitlines()) == 1
+        assert ran.err.startswith(f"campaign: review {spoiled['id']} is skipped, because its verdict cannot be read: ")
+        assert f"at {field}," in ran.err
+        record = pull.record()
+        assert [(entry["claim_id"], entry["id"]) for entry in record["campaign"]["findings"]] == [("claim-b", "f1")]
+        assert change_record.lint_record(record) == []
+        pull.serve([spoiled])
+        pull.write(with_heads_up("None."))
+        assert pull.run().code == 0
+        assert pull.record()["heads_up"][0].startswith("campaign: 1 review carries a verdict that could not be read")
+
+    def test_cr_c4_a_construct_in_text_the_record_does_not_take_leaves_the_verdict_counted(self, pull: Pull):
+        # A route's error is quoted in a verdict as the route gave it, and the record takes none of it.
+        held = verdict(findings=[finding("f1")])
+        held["lenses"][0]["model"] = "a model <!-- as its route named it -->"
+        held["findings"][0]["ac"] = "<details> are refused"
+        pull.serve([review(held)])
+        pull.write(example())
+        ran = pull.run()
+        assert (ran.code, ran.err) == (0, "")
+        assert rows(pull.record()) == [("correctness", "1", 1, 0, 0, 0)]
+        assert change_record.lint_record(pull.record()) == []
 
     def test_cr_c4_a_validator_that_rejects_everything_leaves_the_campaign_empty(
         self, pull: Pull, monkeypatch: pytest.MonkeyPatch
@@ -1336,8 +1465,8 @@ class TestCampaignInTheSkillText:
         text = (SKILL / "references" / "generators.md").read_text(encoding="utf-8")
         section = text[text.index("## `campaign`") :].split("\n## ")[0]
         for part in (
-            "**Which reviews count.**", "**Reviewer rows.**", "**Findings.**", "**The commit.**",
-            "**The terminal commit.**", "### An empty campaign",
+            "**Which reviews count.**", "**Which verdicts are unreadable.**", "**Reviewer rows.**", "**Findings.**",
+            "**The commit.**", "**The terminal commit.**", "### An empty campaign",
         ):
             assert part in section
         # The rows the reference quotes are the rows the generator writes.

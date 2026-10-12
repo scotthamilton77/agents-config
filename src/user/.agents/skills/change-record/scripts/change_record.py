@@ -1647,9 +1647,14 @@ DISPOSITION_COLUMNS = {
 }
 
 # The two places a reply names its commit: in parentheses at the end of its
-# Change line, and straight after the word "commit".
-CLOSING_COMMIT = re.compile(r"^Change:.*\(([0-9a-f]{7,40})\)[ \t]*$", re.MULTILINE)
+# Change line, which is matched whole, and straight after the word "commit".
+CLOSING_COMMIT = re.compile(r"Change:.*\(([0-9a-f]{7,40})\)[ \t]*")
 NAMED_COMMIT = re.compile(r"\bcommits?\b[\s:`]*\b([0-9a-f]{7,40})\b", re.IGNORECASE)
+
+# The states GitHub gives a review that was submitted and still stands. A
+# review in any other state is no round: it is a draft that was never
+# submitted, or it was dismissed.
+SUBMITTED = frozenset({"APPROVED", "CHANGES_REQUESTED", "COMMENTED"})
 
 
 def or_none(shape: dict[str, Any]) -> dict[str, Any]:
@@ -1716,10 +1721,26 @@ def reply_commit(body: str) -> str:
     The commit is the one in parentheses that ends the reply's Change line.
     A reply with no such line names the first commit that comes straight
     after the word "commit". A commit id anywhere else in a reply is not
-    read, because a reply also names commits that fixed nothing.
+    read, because a reply also names commits that fixed nothing. The reply's
+    lines end wherever ``LINE_END`` says a line ends.
     """
-    named = CLOSING_COMMIT.search(body) or NAMED_COMMIT.search(body)
+    closing = filter(None, map(CLOSING_COMMIT.fullmatch, LINE_END.split(body)))
+    named = next(closing, None) or NAMED_COMMIT.search(body)
     return named.group(1) if named else ""
+
+
+def _thread_finding(body: str) -> str | None:
+    """Return the finding id that the record ending the comment ``body`` gives, or ``None`` when it gives none.
+
+    The record is whatever the comment's last fenced ``json`` block holds, so
+    it can hold anything. Only a record that is an object with a text ``id``
+    names a finding. Any other opens no thread.
+    """
+    try:
+        finding_id = json.loads(fenced_json(body) or "")["id"]
+    except (ValueError, KeyError, TypeError, RecursionError):
+        return None
+    return finding_id if isinstance(finding_id, str) else None
 
 
 def _reply_commits(
@@ -1732,45 +1753,74 @@ def _reply_commits(
     verdict raised the finding. The verdict gives the claim id and the
     artifact class, and the record gives the finding id. The author's reply
     on that thread is the one read, and a later reply that names a commit
-    replaces an earlier one. A finding with no thread has no entry.
+    replaces an earlier one. A finding with no thread has no entry. A pull
+    request whose author's account is gone has no author, so no reply on it
+    is the author's, and that includes a reply from an account that is gone.
     """
     verdicts = dict(posted)
     threads: dict[int, tuple[str, str, str]] = {}
     for comment in comments:
         verdict = verdicts.get(comment["pull_request_review_id"])
-        if verdict is None or comment.get("in_reply_to_id") is not None:
-            continue
-        try:
-            finding_id = json.loads(fenced_json(comment["body"]) or "")["id"]
-        except (ValueError, KeyError, TypeError):
-            continue
-        threads[comment["id"]] = (verdict["claim_id"], verdict["artifact_class"], finding_id)
+        finding_id = _thread_finding(comment["body"])
+        if verdict is not None and finding_id is not None and comment.get("in_reply_to_id") is None:
+            threads[comment["id"]] = (verdict["claim_id"], verdict["artifact_class"], finding_id)
     commits: dict[tuple[str, str, str], str] = {}
     for comment in comments:
         finding = threads.get(comment.get("in_reply_to_id"))
         commit = reply_commit(comment["body"])
-        if finding and commit and (comment["user"] or {}).get("login") == author:
+        if finding and commit and author is not None and (comment["user"] or {}).get("login") == author:
             commits[finding] = commit
     return commits
+
+
+def _taken_as_written(verdict: dict[str, Any]) -> Iterator[tuple[str, str]]:
+    """Yield each identifier of ``verdict`` that a record takes as it is written, with its place in the verdict.
+
+    These are the claim id, the artifact class, each reviewer's name, each
+    finding's id, and the work item a disposition names. A reply is matched
+    to its finding by the first, the second and the fourth, so none of them
+    can be quoted the way a claim is.
+    """
+    yield "/claim_id", verdict["claim_id"]
+    yield "/artifact_class", verdict["artifact_class"]
+    for index, entry in enumerate(verdict["lenses"]):
+        yield f"/lenses/{index}/lens", entry["lens"]
+    for index, finding in enumerate(verdict["findings"]):
+        yield f"/findings/{index}/id", finding["id"]
+        yield f"/findings/{index}/lens", finding["lens"]
+    for index, prior in enumerate(verdict["prior_dispositions"]):
+        if "work_item" in prior:
+            yield f"/prior_dispositions/{index}/work_item", prior["work_item"]
 
 
 def _read_verdict(text: str, validate: Callable[[Any], dict[str, Any]]) -> dict[str, Any]:
     """Return the verdict that ``text`` holds, or raise a ``ValueError`` that says why it cannot be read.
 
-    A verdict that escapes half of a surrogate pair holds text no record can
-    take. It is refused here, where the review that carries it can be named.
+    Four kinds of verdict are refused here, where the review that carries
+    one can be named. One cannot be loaded as JSON. One is nested too deeply
+    for a reader to walk, which a loader, this function and the validator
+    each find in their own way. One escapes half of a surrogate pair, which
+    is text no record can take. One holds, in an identifier the record takes
+    as it is written, a construct the lint refuses in every field.
     """
     try:
-        verdict = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"it is not valid JSON: {exc}") from exc
-    where = next(_not_utf8(verdict), None)
-    if where is not None:
-        raise ValueError(f"it holds text that UTF-8 cannot hold, at {where or 'its root'}")
-    result = validate(verdict)
+        try:
+            verdict = json.loads(text)
+        except ValueError as exc:
+            raise ValueError(f"it cannot be loaded as JSON: {exc}") from exc
+        where = next(_not_utf8(verdict), None)
+        if where is not None:
+            raise ValueError(f"it holds text that UTF-8 cannot hold, at {where or 'its root'}")
+        result = validate(verdict)
+    except RecursionError as exc:
+        raise ValueError("it is nested too deeply to read") from exc
     if not result["valid"]:
         faults = "; ".join(str(error.get("message")) for error in result.get("errors", []))
         raise ValueError(f"the verdict validator rejects it: {faults}")
+    for where, identifier in _taken_as_written(verdict):
+        held = machine_constructs(identifier)
+        if held:
+            raise ValueError(f"at {where}, an identifier holds {held[0]}, and the record takes it as it is written")
     return verdict
 
 
@@ -1782,11 +1832,11 @@ def _posted_verdicts(
     Only a review whose body ends in a fenced ``json`` block carries a
     verdict, and every other review is passed over without a word. A review
     counts as the reviewing App's when a bot account posted it, and ``app``
-    narrows that to one login. A review by anyone else is skipped, and so is
-    a review that was dismissed. A verdict of the App's own that is not JSON,
-    that holds text UTF-8 cannot hold, or that ``validate`` rejects, is
-    skipped and counted as unreadable. Each review that is skipped is named
-    on stderr.
+    narrows that to one login. A review by anyone else is skipped. So is a
+    review in a state outside ``SUBMITTED``, which is a draft or a review
+    that was dismissed. A verdict of the App's own that ``_read_verdict``
+    refuses is skipped and counted as unreadable. Each review that is skipped
+    is named on stderr, so no verdict goes uncounted without a word.
     """
     posted: list[tuple[int, dict[str, Any]]] = []
     unreadable = 0
@@ -1797,8 +1847,8 @@ def _posted_verdicts(
         author = review["user"] or {}
         if author.get("type") != "Bot" or app not in (None, author.get("login")):
             reason = f"its author, {author.get('login')}, is not the reviewing App"
-        elif review["state"] == "DISMISSED":
-            reason = "it was dismissed"
+        elif review["state"] not in SUBMITTED:
+            reason = f"its state is {review['state']}, and only a submitted review that stands is a round"
         else:
             try:
                 posted.append((review["id"], _read_verdict(text, validate)))
