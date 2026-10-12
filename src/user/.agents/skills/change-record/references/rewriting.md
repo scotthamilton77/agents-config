@@ -1,12 +1,13 @@
 # The rewrite pass
 
-An editor may reword a record's wording and none of its facts. The pass has three steps:
+An editor may reword a record's wording and none of its facts. The editor is a model, and the author's session sends it the work. The pass has four steps:
 
 1. `extract-prose` writes a request that lists what may be reworded.
-2. An editor returns a response that holds a replacement for each field it reworded.
-3. The author takes out each replacement they do not accept, and `apply-prose` applies the rest.
+2. `dispatch-prose` prints what to send the editor and which model to run it on. The author's session sends it.
+3. The editor returns a response that holds a replacement for each field it reworded.
+4. The author takes out each replacement they do not accept, and `apply-prose` applies the rest.
 
-Both subcommands only read and write files. Neither calls GitHub, the tracker or any other program.
+The three subcommands only read and write files. None calls GitHub, the tracker, a model or any other program.
 
 ## What an editor may reword
 
@@ -44,6 +45,31 @@ uv run scripts/change_record.py extract-prose record.json [--output FILE]
 - `sections` gives each section's path as `field`, its `text`, and `digest`, the SHA-256 digest of that text as UTF-8.
 
 Exit 0 written, 1 the record does not fit the schema, 2 unreadable or unparseable, the output file cannot be written, or the skill's text states no writing checks.
+
+## `dispatch-prose`
+
+```bash
+uv run scripts/change_record.py dispatch-prose request.json
+```
+
+`dispatch-prose` prints what a session needs to run the editor on a request. It runs no model itself, because each tool reaches a model its own way.
+
+```json
+{
+  "model": "…",
+  "effort": "…",
+  "instructions": "/…/references/editor-instructions.md",
+  "request": "/…/request.json"
+}
+```
+
+- `model` and `effort` are read from `editor-pin.json` beside this file. That file is the one place that sets them, so a change of editor is an edit to it.
+- `instructions` is the path of `editor-instructions.md` beside this file. It tells the editor what the request holds, what to return, what a rewrite never does, and which values and lengths a replacement keeps.
+- `request` is the path the command was given, as an absolute path.
+
+The session sends the editor one prompt. The prompt is the text of the instruction file, then the text of the request file. The session runs it on `model` at `effort`, by the route its tool has to that model. The editor needs no tools and nothing else to read. The session saves the editor's reply, as it came, as the response file.
+
+Exit 0 printed, 2 the pin file or the instruction file is missing, or the pin file names no model or no effort.
 
 ## The response
 

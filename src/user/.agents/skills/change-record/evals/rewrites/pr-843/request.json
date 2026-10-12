@@ -1,0 +1,1063 @@
+{
+  "record_digest": "1165715bd587917d3883d1864962e626853ca4c562a6ba059523098e07034edc",
+  "writing_checks": "All seven apply to the summary, Heads-up, Risk and Changes. The first four also apply below the horizontal rule. The commit message is read alone in the log and each reply is read alone on its thread, so gloss an id again on its first use in each. `lint` decides part of the first check and part of the sixth. Everything else here is the author's to hold. For `lint`, a gloss is a parenthetical that follows the id, as in `X7 (the retry bound)`, or holds it, as in `the retry is bounded (X7)`.\n\n1. A stranger can read it. Every work item, criterion, decision, section and pull request number carries a gloss on first use. Every house term is defined where it first appears or replaced with a common word.\n2. Problem, then change, then what remains. No history of how the text got here.\n3. One clause per sentence.\n4. Say the number, then what it means.\n5. Verbs do the work.\n6. No commentary about the document. Nothing says \"this section describes\" or \"note that\".\n7. A caveat gets its own Heads-up row. It never rides in a clause.",
+  "record": {
+    "pr": {
+      "number": 843,
+      "title": "feat(review-panel): pin reviewer effort and tools as data and bound a dying run's recovery [9k9.408]",
+      "type": "feat",
+      "component": "review-panel",
+      "head_sha": "5bc9e8560c0d60a8f7133da167370b92ed1155bc"
+    },
+    "work_item": {
+      "id": "agents-config-9k9.408",
+      "gloss": "predictable reviewer settings, as an interim cost control",
+      "slice": "slice A of three in the item's acceptance text"
+    },
+    "summary": "The agent running a review round used to choose each reviewer's effort and tools itself. The panel's configuration file now holds both for every reviewer slot. Every reviewer receives the change as a diff file. A run that dies follows a fixed recovery sequence. The panel does not yet check that a run actually used its pinned effort.",
+    "heads_up": [
+      "The gates ran with the system bash first on PATH, because the Homebrew bash hangs one hook test.",
+      "The code reviewers last judged commit e399db1d, and four prose-only commits followed it.",
+      "The 27 raw answers that test the written dispatch rules are on the author's machine, outside the repository."
+    ],
+    "where_this_fits": {
+      "ancestry": [
+        {
+          "id": "agents-config-9k9",
+          "title": "Harness rework",
+          "type": "milestone"
+        },
+        {
+          "id": "agents-config-9k9.408",
+          "title": "review-panel routing: pin model, effort and tool grant per transport-and-tier slot, the recommender and the checkpoint, as an interim cost control",
+          "type": "chore"
+        }
+      ],
+      "builds_on": [],
+      "concurrent": [],
+      "scope": [
+        {
+          "slice": "agents-config-9k9.408",
+          "covers": "review-panel routing: pin model, effort and tool grant per transport-and-tier slot, the recommender and the checkpoint, as an interim cost control",
+          "status": "this PR"
+        }
+      ],
+      "digest": "8fd741a71c0f65f57882bdd3e2960441c10062c941a000802ae4286d85ccb852"
+    },
+    "risk": {
+      "reaches_outside_package": true,
+      "rows": [
+        {
+          "failure": "A reviewer runs at an effort or with tools it cannot work with.",
+          "exposed": "Every review round that uses the deployed skill.",
+          "evidence": "Tests check that every slot has a pin.",
+          "recovery": "Edit the pin in contracts.json."
+        },
+        {
+          "failure": "A run that dies is retried outside the sequence, or the round never stops.",
+          "exposed": "Review spend.",
+          "evidence": "Gate tests cover each step.",
+          "recovery": "Revert."
+        }
+      ]
+    },
+    "blast_radius": {
+      "reach_graph": "graph LR\n  P[review-panel skill] -->|effort pinned, recovery sequence, diff file| CX[Codex reviewer route]\n  P -->|effort and tools pinned, no shell, diff file| OR[OpenRouter reviewer route]\n  P -.reads.-> RT[model routing table]\n  P -->|halt reason missing: deferred| VS[review-verdict schema]\n  P -->|deployed to| ALL[every project with the panel]",
+      "task_flow": "flowchart LR\n  a[Author claims round] --> b[Emitter writes prompts and diff files]:::chg --> c[Gate claim records effort]:::chg --> d[Reviewer runs]\n  d --> e{Run died?}:::new -->|step down, other provider, halt| d\n  e -->|no| f[Ingest] --> g[Assemble and post verdict] --> h[Fix dispatch]\n  classDef chg stroke-width:3px\n  classDef new stroke-dasharray: 5 5,stroke-width:3px"
+    },
+    "changes": [
+      {
+        "topic": "Pins",
+        "text": "contracts.json pins effort and tools for every reviewer slot, and no reviewer gets a shell."
+      },
+      {
+        "topic": "The change as a file",
+        "text": "The emitter writes one diff file beside each prompt."
+      },
+      {
+        "topic": "Recovery sequence",
+        "text": "A run that died is retried one effort step lower, then on the other provider. The round halts when that attempt dies too."
+      }
+    ],
+    "design_notes": "The earlier design routed the OpenRouter mid-tier model away from whole-document reads. That constraint had no run record behind it, and the only recorded reads of that shape on that model had finished. A constraint stated without its variables cannot be scoped or falsified, so the design no longer encodes it. A slot that names a model runs that model. The recovery sequence answers for a death when one happens, and records every attempt. During this pull request's own review that model finished 20 whole-document reads in 20.\n\nLetting the dispatcher pick a fallback model freely was rejected, because vendors reprice and retire models under a remembered pick, and nobody can audit an improvised rule afterwards. A shell grant restricted by a command prefix was rejected, because both `git diff` and `git log` accept `--output`, so a prefix pattern is not read-only.\n\ncontracts.json holds eight slots by provider, tier and read scope, plus the staffing recommender and the trend checkpoint. OpenRouter reads a whole document at low effort and a diff at high. Codex frontier slots run at high and mid slots at medium. No pin names a model, because the routing table does that. Every tool grant is the Codex read-only sandbox, or a list drawn from Read, Grep and Glob. No reviewer gets a shell pattern, because `git diff --output=<path>` writes a file.\n\nThe emitter writes each diff file over that reviewer's scope for the round, so a reviewer with no shell can still read the change. Reviewers sharing a revision pair share one computed diff. Each reviewer entry in the round record gains effort and tools copied from its pin. A slot with no pin refuses the round and writes nothing.\n\nEach artifact class keeps exactly one OpenRouter reviewer. Four reviewers move to Codex. Declared tiers do not change.\n\nThe gate's claim command takes `--effort` and records it. A run that died may be claimed again only as the same model one effort step lower, or as the other provider at the same tier and scope. Anything else is refused and costs no attempt. A reviewer gets three attempts. Once it is out of attempts, the round halts only when the last failure on every route it ran on was a run that died or a transport error. A reviewer that runs out of attempts any other way is left without a report, and the round is incomplete. A revert restarts a round in flight, because its attempts ledger gained a field.\n\nharvest.md states the sequence, the failover slot, the diff file and the claim form. Nine scenarios with expected answers check that a reader holding only those files reaches the right dispatch.\n\nThe criteria attack panel needs the same pins, as slice B of this work item, and it is a different skill with its own configuration file.\n\nThe round record copies each pin, and tests check that too. This pull request's own first round ran every reviewer at its pin, on two vendors, with no substitution. Both recovery failures were real bugs found in review, reproduced, and fixed with a failing-then-passing test each. A stuck round also costs coverage, because it can look finished with one reviewer never having read the change.\n\nThe written doctrine could send whoever runs a round by hand down the wrong path. Nine written situations were answered by a model given only the doctrine files, and all 27 answers, three runs each, matched the expected dispatch. A reviewer without a shell could miss the change if its diff file were missing or covered the wrong scope. Tests cover the diff file's content, an empty change and an unknown revision, and a diff git cannot compute refuses the round before anything is dispatched.",
+    "discovered": {
+      "rows": [
+        {
+          "status": "not filed",
+          "what": "The gate does not compare the effort a run used against its pin.",
+          "reason": "No consumer asks for it yet."
+        },
+        {
+          "status": "in flight",
+          "pr": 774,
+          "what": "This pull request reshaped the claim record that the read-evidence gate adds two fields to.",
+          "reason": "That gate checks that a reviewer read what it was handed."
+        },
+        {
+          "status": "in flight",
+          "pr": 777,
+          "what": "The skill file's sentence naming the diff file waits for that pull request.",
+          "reason": "The file is at its size cap."
+        },
+        {
+          "status": "not filed",
+          "what": "Two advisory review findings wait on the work item's notes.",
+          "reason": "Each needs a change outside this skill."
+        }
+      ]
+    },
+    "verification": {
+      "gates": [
+        {
+          "gate": "make ci",
+          "exit_status": 0,
+          "location": "the worktree root"
+        },
+        {
+          "gate": "make doc-lint",
+          "exit_status": 0,
+          "location": "the worktree root"
+        },
+        {
+          "gate": "make content-lint",
+          "exit_status": 0,
+          "location": "the worktree root"
+        }
+      ],
+      "not_run": [
+        "None."
+      ]
+    },
+    "campaign": {
+      "reviewers": [
+        {
+          "reviewer": "correctness",
+          "rounds": "1 to 4",
+          "findings": 3,
+          "fixed": 3,
+          "rejected": 0,
+          "deferred": 0
+        },
+        {
+          "reviewer": "security",
+          "rounds": "1 to 4",
+          "findings": 1,
+          "fixed": 0,
+          "rejected": 0,
+          "deferred": 0
+        },
+        {
+          "reviewer": "test-adequacy",
+          "rounds": "1 to 3",
+          "findings": 4,
+          "fixed": 3,
+          "rejected": 0,
+          "deferred": 0
+        },
+        {
+          "reviewer": "simplification-efficiency",
+          "rounds": "1 to 2",
+          "findings": 1,
+          "fixed": 1,
+          "rejected": 0,
+          "deferred": 0
+        },
+        {
+          "reviewer": "documentation-quality",
+          "rounds": "1 to 3",
+          "findings": 7,
+          "fixed": 6,
+          "rejected": 0,
+          "deferred": 0
+        },
+        {
+          "reviewer": "internal-consistency",
+          "rounds": "1 to 3",
+          "findings": 2,
+          "fixed": 2,
+          "rejected": 0,
+          "deferred": 0
+        },
+        {
+          "reviewer": "global-consistency",
+          "rounds": "1 to 3",
+          "findings": 4,
+          "fixed": 2,
+          "rejected": 0,
+          "deferred": 2
+        },
+        {
+          "reviewer": "standalone-read",
+          "rounds": "1 to 2",
+          "findings": 2,
+          "fixed": 2,
+          "rejected": 0,
+          "deferred": 0
+        }
+      ],
+      "terminal_sha": "5bc9e8560c0d60a8f7133da167370b92ed1155bc",
+      "findings": [
+        {
+          "claim_id": "9k9.408",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "security.r1.f1",
+          "claim": "The `Bash(git diff *)` and `Bash(git log *)` grants pinned for every OpenRouter lens are not read-only: both commands accept `--output=<path>`, which writes the diff to an arbitrary file, and the prefix pattern also matches invocations with shell redirection (`git diff <a> <b> > <path>`). A seat granted these patterns can write attacker-influenced bytes to any user-writable path despite the change's stated trust boundary that a reviewer's run is never able to write.",
+          "commit": ""
+        },
+        {
+          "claim_id": "9k9.408",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "test-adequacy.r1.f1",
+          "claim": "The tests can accept a Codex lens using its re-review tier for a whole-artifact read. Add an independent tier assertion for architectural-fit, which declares frontier and re-review mid, across the full-read scenarios.",
+          "commit": ""
+        },
+        {
+          "claim_id": "9k9.408",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "documentation-quality.r1.f1",
+          "claim": "The tier tests still describe re-review pricing as a consequence of the round number. The docstring saying “Round 2 resolves the declared re_review_tier” omits the delta-scope condition, and the new test name saying OpenRouter “rereads at mid” reinforces that misreading. Full rereads retain the declared tier in every round.",
+          "commit": ""
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "correctness.r1.f1",
+          "claim": "A fourth dead-run claim can bypass the exhaustion handler. It returns off-ladder, incorrectly says a failover is still accepted, omits halt guidance, and leaves the final failure unrecorded.",
+          "disposition": "fixed",
+          "reason": "Reproduced: a fourth dead-run claim after initial/high, dead-run/medium, transport-error/medium on codex returned off-ladder with no halt block and no refusal ledger entry. Test dispatch_gate_test.py::TestDeadRunLadder::test_a17_a_dead_run_past_the_bound_is_out_of_attempts_not_off_ladder failed without the change (got ['off-ladder']) and passes with it; a mutant restoring the unconditional off-ladder raise was observed to fail only this test. Fix: claim() raises an off-ladder refusal only below MAX_ATTEMPTS, so a claim past the bound meets the bound's attempts-exhausted refusal with halt guidance and a refusal ledger record. Commit 75bb090c.",
+          "commit": "75bb090c"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "correctness.r1.f2",
+          "claim": "A dead run on the failover seat loses halt guidance when an earlier attempt returned unusable output. The dispatcher consequently receives a refusal that closes only the lens instead of halting the round.",
+          "disposition": "fixed",
+          "reason": "Reproduced: initial codex, transport-error to openrouter, unusable-output on openrouter, then a dead-run claim on openrouter returned attempts-exhausted without halt. Test dispatch_gate_test.py::TestDeadRunLadder::test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output failed without the change (KeyError 'halt') and passes with it; a mutant restoring the all-failures check was observed to fail only this test. Fix: exhausted() grants halt guidance when the last failure on every route (transport, model) was a transport error or a dead run. harvest.md's halt sentence was replaced to state the same condition. Commit 75bb090c.",
+          "commit": "75bb090c"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "test-adequacy.r1.f1",
+          "claim": "No test independently pins the re-review tier for a later full read. Reverting security to frontier during a round-2 sweep could pass while dispatching the wrong model. Assert the expected tier from the roster and round number before checking its pin.",
+          "disposition": "fixed",
+          "reason": "Confirmed the gap: a mutant making a sweep round dispatch every lens at its declared tier passed all 219 emitter tests. emit_prompts_test.py::TestSeatPins::test_a9_the_round_record_names_each_lens_pin now asserts each entry's tier_this_round against the roster (declared tier in round one, re_review_tier or declared tier later) before checking the pin. Against the mutant it fails for prose-sweep, spec-sweep and typed-code-sweep; against the branch it passes. Test-only change. Commit 7774cae8.",
+          "commit": "7774cae8"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "test-adequacy.r1.f2",
+          "claim": "The doctrine evaluation uses readers with additional context, so its passing answers do not establish that the named files alone determine the dispatch. Repeat the twenty-seven scenarios with the required isolated inputs.",
+          "disposition": "fixed",
+          "reason": "Re-ran all 27 A13 reads on isolated readers: headless claude -p --model sonnet in an empty directory with --setting-sources \"\", a replaced --system-prompt, --tools Read,Grep,Glob and only copies of the five named files (from 7774cae8) reachable via --add-dir. Isolation trial: the isolated reader reports only the userEmail and Environment blocks and three tools; a control run with default settings reports ~/.claude/CLAUDE.md, AGENTS.md, rules/delegation.md, plugin context and MCP tools. Result 27 of 27 keyed answers, no self-corrections, no revision needed. Recorded in /Users/scott/grilling-corpus/2026-10-04-pin-408/scenarios/results-3.md with raw outputs in scenarios/results-3-raw/. The sentence in evals/dispatch-scenarios.md that said 'a fresh native subagent' was replaced to name the isolated reader and why an Agent-tool subagent does not qualify. Commit 6643c534. No unit test in the suite exercises a doctrine evaluation; the check that decides this finding is A13's own protocol. Failing observation: scenarios/results-2.md, readers that inherited the global instruction files and the memory index (one quoted the index). Passing observation: scenarios/results-3.md, 27 of 27 reads on headless `claude -p --model sonnet` readers with `--setting-sources \"\"`, a replaced system prompt and only the five named files reachable, after an isolation trial showed such a reader sees no instruction file while a default reader sees CLAUDE.md, AGENTS.md, rules and plugin context.",
+          "commit": "6643c534"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "simplification-efficiency.r1.f1",
+          "claim": "change_diffs recomputes and buffers the same diff separately for every lens sharing a revision pair. Reusing the computed bytes per pair would preserve every required file and refusal behavior while eliminating repeated Git work and duplicate memory.",
+          "disposition": "fixed",
+          "reason": "Reproduced: an instrumented subprocess.run saw 5 git diff calls for a round-one typed-code emission. Test emit_prompts_test.py::TestChangeFile::test_a18_lenses_sharing_a_revision_pair_share_one_diff failed without the change (assert 5 == 1) and passes with it. Fix: change_diffs computes each distinct start revision once and reuses its bytes; the A18 file-content, empty-change and unknown-revision tests still pass. Commit cdd53cc1.",
+          "commit": "cdd53cc1"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "documentation-quality.r1.f1",
+          "claim": "The round-1 failover example uses effort high, contradicting the full-scope OpenRouter pin. A dispatcher following the example dispatches at the wrong effort.",
+          "disposition": "fixed",
+          "reason": "Confirmed: the round-1 correctness failover seat is openrouter/frontier/full, whose pin in contracts.json is effort low. In harvest.md's transport-error example the line '--transport openrouter --model <model> --effort high \\' was replaced with '--effort low'. Commit a55b0e4d. No test exercises an example command in harvest.md; the check is the replaced sentence read against the pin: the round-1 failover example now says `--effort low`, which is contracts.json's pin for the openrouter/frontier/full seat (A6's test_a6_every_lens_pin_has_its_stated_effort pins that value; the example's agreement with it was verified by reading).",
+          "commit": "a55b0e4d"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "documentation-quality.r1.f2",
+          "claim": "The doctrine says every refusal ends the lens, although an off-ladder refusal permits a corrected claim. Following this instruction abandons a recoverable lens and leaves the round incomplete.",
+          "disposition": "fixed",
+          "reason": "Confirmed: off-ladder and malformed-flag refusals are raised before any ledger write and spend no attempt (dispatch_gate.py claim(); test_a_refused_claim_rewrites_nothing_and_grants_no_attempt). In harvest.md, 'A refusal (exit 2) ends that lens.' was replaced with 'An `attempts-exhausted` refusal (exit 2) ends that lens. A claim refused as `off-ladder`, or for a missing or malformed flag, spends no attempt: correct it and claim again.', and 'Any other refusal closes that lens alone' with 'Any other `attempts-exhausted` refusal closes that lens alone'. Commit a55b0e4d.",
+          "commit": "a55b0e4d"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "documentation-quality.r1.f3",
+          "claim": "The empty-output guidance asserts that the reviewer never ran and directs a transport-error recovery. A watchdog-ended dead run can also leave no output, so this guidance sends the dispatcher past the required effort step-down.",
+          "disposition": "fixed",
+          "reason": "Confirmed: a watchdog kill for silence leaves the claimed output empty and is a dead run. In harvest.md 'The reviewer never ran.' was replaced with 'An attempt your watchdog killed for silence leaves nothing too, and it is a dead run.' The gate's no-output message, which said the reviewer never ran and named only transport-error, was replaced to name dead-run with the kill line for a watchdog kill and transport-error with the route's error otherwise. Test dispatch_gate_test.py::TestIngest::test_a_claimed_path_holding_no_file_is_a_transport_failure gained an assertion that the message names dead-run; it failed without the change and passes with it. Commit 837f8a4c.",
+          "commit": "837f8a4c"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "documentation-quality.r1.f4",
+          "claim": "The recovery comment still recommends another model on the same transport when one model is saturated. That rationale contradicts the pinned failover decision and suggests a free-hand model substitution.",
+          "disposition": "fixed",
+          "reason": "The MAX_ATTEMPTS comment's sentences 'because a model can sit at capacity for the length of a round while another model of the same vendor answers: a single transport flip abandons a live vendor on one saturated model's say-so' were replaced with 'Every attempt declares transport AND model, so the ledger names the route each attempt ran on and the routes a halt reports as exhausted.' The same rationale in check_route's docstring ('a dead vendor and a saturated model recover in opposite directions') was removed. Commit a55b0e4d. No test exercises a code comment; the check is the comment read against the doctrine: the MAX_ATTEMPTS comment and check_route's docstring no longer argue for a same-vendor model swap, and the only recovery they describe is the failover seat the routing table fixes, which is what harvest.md and A13's scenarios 2 and 3 require.",
+          "commit": "a55b0e4d"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 1,
+          "id": "documentation-quality.r1.f5",
+          "claim": "The exhausted helper's docstring still limits halt guidance to transport-class failures. It misstates the helper's current behavior for dead runs.",
+          "disposition": "fixed",
+          "reason": "exhausted()'s docstring first line 'carrying halt guidance when every recorded failure was transport-class' was replaced with 'carrying halt guidance when the last failure on every route the lens ran on was a transport error or a dead run', matching both ROUTE_FAILURES and the per-route rule the correctness.r1.f2 fix introduced. Commit 75bb090c. No test exercises a docstring; the check is the docstring read against the implementation it describes: exhausted()'s docstring now states the per-route last-failure rule that test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output pins in dispatch_gate_test.py.",
+          "commit": ""
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 2,
+          "id": "correctness.r2.f1",
+          "claim": "The gate accepts any different transport string as failover. After an initial Codex attempt, a dead-run claim with --transport openai is authorized and spends an attempt despite naming no valid failover seat. A subsequent claim for the actual OpenRouter failover is then refused as exhausted and halts the round.",
+          "disposition": "fixed",
+          "reason": "Reproduced: before the fix, test dispatch_gate_test.py::TestDeadRunLadder::test_a17_a_transport_that_is_not_the_failover_seat_is_refused (initial codex/gpt-5.6-terra/high, then dead-run --transport openai --effort low) failed because the gate returned exit 0 with authorized=true at attempt 2. Fix: check_ladder now accepts a failover only onto FAILOVER_TRANSPORT[start] (codex<->openrouter), and the step-down branch also requires the starting transport, so any third transport is refused off-ladder and spends nothing. With the fix the test passes (observed both). A mutant dropping the same-transport guard from the step-down branch also fails this test. Commit 56130d01.",
+          "commit": "56130d01"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 2,
+          "id": "test-adequacy.r2.f1",
+          "claim": "The tests do not pin exhaustion when a dead-run claim tries to return to the starting transport after failover. A regression could return off-ladder without halt guidance, telling the dispatcher to correct and retry an exhausted lens. Parameterize the post-failover test over both requested transports.",
+          "disposition": "fixed",
+          "reason": "The test dispatch_gate_test.py::TestDeadRunLadder::test_a17_a_dead_run_after_the_failover_is_out_of_attempts is now parameterized over the requested transport (failover-transport: openrouter/z-ai/glm-5.3/low; starting-transport: codex/gpt-5.6-terra/medium) crossed with failover on attempt 2 and 3. Against the reviewer's mutant (history condition guarded by transport != start) the [2-starting-transport] and [3-starting-transport] cases failed and the other two passed; against the unmutated gate all four pass (observed both). Commit 56130d01.",
+          "commit": "56130d01"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "typed-code",
+          "round": 2,
+          "id": "documentation-quality.r2.f1",
+          "claim": "The ROUTE_FAILURES comment implies that an earlier unusable output prevents the round from halting. The current rule considers each route's last failure, so a route that produced unusable output and then died can still trigger a halt.",
+          "disposition": "fixed",
+          "reason": "Replaced the ROUTE_FAILURES comment sentence 'A lens that runs out of attempts on these alone halts the round; a reviewer that produced garbage does not.' with 'A lens that runs out of attempts halts the round when the last failure on every route it ran on is one of these.', matching exhausted(). No test exercises a comment; the behaviour it describes stays pinned by test dispatch_gate_test.py::TestDeadRunLadder::test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output. Commit e399db1d.",
+          "commit": "e399db1d"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "prose",
+          "round": 1,
+          "id": "internal-consistency.r1.f1",
+          "claim": "The refusal rules prescribe both retrying and halting after an off-ladder claim following a dead run.",
+          "disposition": "fixed",
+          "reason": "Verified: dispatch_gate.py attaches halt guidance only through exhausted(), whose code is attempts-exhausted; an off-ladder refusal is raised without a halt block. harvest.md 'When the gate refuses' replaced 'A refusal carries halt guidance when the last failure on every route the lens ran on was a dead route or a dead run.' with 'An `attempts-exhausted` refusal carries halt guidance when the last failure on every route the lens ran on was a dead route or a dead run.' The off-ladder/malformed-flag sentence in 'Every dispatch is claimed first' (spends no attempt, correct it and claim again) is unchanged, so each case has one sentence and they no longer overlap. Commit 78c49400. No test exercises prose.",
+          "commit": "78c49400"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "prose",
+          "round": 1,
+          "id": "internal-consistency.r1.f2",
+          "claim": "A watchdog-ended attempt that leaves no output file receives conflicting failure classifications.",
+          "disposition": "fixed",
+          "reason": "Same defect as global-consistency.r1.f1, fixed once. harvest.md 'Reading a lens report' replaced 'A claimed path holding no file at all is refused as a transport failure, not a reviewer one: the route wrote nothing.' with 'A claimed path holding nothing is refused as `no-output`, because the attempt wrote nothing. Claim again with reason `dead-run` and the kill line as the evidence when your watchdog killed it for silence, and with reason `transport-error` and the route's error otherwise.', which restates the gate's no-output refusal message in dispatch_gate.py and agrees with the dead-run section. Commit 0fd61251. Net growth two lines. No test exercises prose.",
+          "commit": "0fd61251"
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "prose",
+          "round": 1,
+          "id": "global-consistency.r1.f1",
+          "claim": "The surviving sentence in 'Reading a lens report' still tells the dispatcher that a claimed output path holding no file 'is refused as a transport failure, not a reviewer one: the route wrote nothing', while the change's own updated doctrine says a watchdog-killed attempt also leaves no file and is a dead run, and the gate's rewritten no-output refusal message now directs a dead-run claim first and a transport-error claim only otherwise. A dispatcher following the stale sentence claims transport-error where the new doctrine requires dead-run.",
+          "disposition": "fixed",
+          "reason": "Same defect as internal-consistency.r1.f2, fixed once in commit 0fd61251: the stale sentence classifying every empty claimed path as a transport failure was replaced by the gate's no-output guidance (dead-run with the kill line after a watchdog kill for silence, transport-error with the route's error otherwise). No test exercises prose.",
+          "commit": ""
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "prose",
+          "round": 1,
+          "id": "global-consistency.r1.f2",
+          "claim": "The committed eval protocol in evals/dispatch-scenarios.md prescribes a headless 'claude -p --model sonnet' invocation and explicitly disqualifies the Agent tool ('An Agent-tool subagent is not, because it inherits the global instruction files and the memory index'), while the acceptance criterion that authorizes the scenarios specifies 'a fresh native subagent'. In this repository's vocabulary ('The native Agent tool and Workflow are the default substrate', src/user/.claude/rules/delegation.md), a native subagent is an Agent-tool subagent, so the committed protocol narrows the criterion's reader to a different mechanism without the criterion saying so.",
+          "disposition": "advisory-deferred",
+          "reason": "Deferred: the criterion's phrase 'fresh native subagent' and the committed protocol's headless reader will be aligned when the criteria are next restated. Neither the criteria file nor the protocol is edited in this round.",
+          "commit": ""
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "prose",
+          "round": 1,
+          "id": "global-consistency.r1.f3",
+          "claim": "evals/dispatch-scenarios.md ships inside the review-panel skill directory, which the installer copies as-is into ~/.claude/skills/, and it instructs its reader to load files by repository-relative source paths ('src/user/.claude/skills/review-panel/harvest.md', 'src/user/.claude/skills/choosing-a-delegate/references/model-routing.md', 'as paths from the repository root'). Deployed beside the skill in a user home or used from another project, those paths resolve to nothing, which is exactly the dead-end citation the deployed-prose rule exists to prevent.",
+          "disposition": "fixed",
+          "reason": "Advisory fixed because it is cheap and right. evals/dispatch-scenarios.md replaced the repository-relative list ('The files every scenario gives, as paths from the repository root:' and three src/user/... paths) with 'The files every scenario gives:' naming this skill's `harvest.md`, this skill's `contracts.json` and the `choosing-a-delegate` skill's `references/model-routing.md`, and replaced each scenario's 'Round record: `src/user/.claude/skills/review-panel/evals/round-N-typed-code.json`' with 'Round record: `round-N-typed-code.json` beside this file'. Keyed answers unchanged. Commit 5bc9e856. No test exercises prose.",
+          "commit": ""
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "prose",
+          "round": 1,
+          "id": "global-consistency.r1.f4",
+          "claim": "The gate's halt guidance and harvest.md now fire the halt when the last failure on every route was a dead run as well as a transport error, but the review-verdict schema offers only 'transport-failure' as the halt reason for route deaths and defines it as 'A transport failure' where 'a dispatch died on its route'. A halt caused purely by dead runs (the ladder's terminal case) must now be recorded under a reason whose definition excludes the failure that caused it, and neither the schema nor the change notes the stretch.",
+          "disposition": "advisory-deferred",
+          "reason": "Deferred: the review-verdict schema lives in another skill and is outside this change; the halt-reason vocabulary (no reason naming a dead-run halt) is noted for a follow-on item. The schema is not edited.",
+          "commit": ""
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "prose",
+          "round": 1,
+          "id": "standalone-read.r1.f1",
+          "claim": "The introduction narrates past improvisation that the deployed reader cannot resolve. Keep the current rationale about auditability and remove the episode.",
+          "disposition": "fixed",
+          "reason": "harvest.md introduction replaced 'Every rule here exists because a round hit the case and the invoker had to improvise; an improvised rule is one nobody can audit afterwards.' with 'Each rule settles a case the invoker would otherwise improvise, and an improvised rule is one nobody can audit afterwards.' The episode is gone and the auditability rationale stays. Commit e43ccecc. No test exercises prose.",
+          "commit": ""
+        },
+        {
+          "claim_id": "9k9.408-r2",
+          "artifact_class": "prose",
+          "round": 1,
+          "id": "standalone-read.r1.f2",
+          "claim": "The transport section narrates past outages without a resolvable reference. The present-tense rationale for symmetric failover can stand independently.",
+          "disposition": "fixed",
+          "reason": "harvest.md 'Transport is symmetric' replaced 'Neither direction is the exceptional one, and neither transport is the more reliable one — both have been down while the other worked.' with 'Neither direction is the exceptional one, because either transport can be down while the other works.' The narrated outages are gone and the symmetric-failover rationale stays in one sentence. Commit e43ccecc. No test exercises prose.",
+          "commit": ""
+        }
+      ],
+      "digest": "f03b31fd6e818540dd4ac9eb22994794d545da9c7c1a05f6516c3baf557efe5f"
+    },
+    "criteria": [
+      {
+        "id": "A1 to A12",
+        "promise": "Every slot has a pin, the round record carries it, a missing pin refuses the round, and no grant can write.",
+        "evidence": "emit_prompts_test.py, the pin and round-record cases"
+      },
+      {
+        "id": "A13",
+        "promise": "A reader holding only the doctrine files reaches the pinned dispatch, the failover slot and each recovery step.",
+        "evidence": "nine scenarios, three isolated reads each, 27 of 27 on the key at 5bc9e856"
+      },
+      {
+        "id": "A14, A17",
+        "promise": "The recovery sequence is one step down, then the other provider, then halt, and a claim outside it is refused at no cost.",
+        "evidence": "dispatch_gate_test.py::TestDeadRunLadder"
+      },
+      {
+        "id": "A15",
+        "promise": "A live round runs every reviewer on the routing table's model at its pin, on two vendors.",
+        "evidence": "this pull request's own first code round"
+      },
+      {
+        "id": "A16",
+        "promise": "No file outside the panel's own tree changes.",
+        "evidence": "the changed-files list"
+      },
+      {
+        "id": "A18",
+        "promise": "Every reviewer receives a diff file over its scope.",
+        "evidence": "emit_prompts_test.py::TestChangeFile"
+      }
+    ],
+    "commit": {
+      "subject": "feat(review-panel): pin reviewer effort and tools as data and bound a dying run's recovery [9k9.408]",
+      "why": "The agent running a review round chose each reviewer's effort and tool access itself, and avoided one model for whole-document reads on a belief no run record supported. Review cost and coverage were unpredictable.",
+      "change": "The panel's configuration holds effort and tools for every reviewer slot, and each round's record copies them from that slot's pin. Every reviewer receives the change as a diff file. A run that dies mid-reasoning retries one effort step lower, then on the other provider, then halts the round. Models still come from the shared routing table.",
+      "verification": "make ci, doc-lint and content-lint exit 0 at 5bc9e856. 27 of 27 isolated doctrine reads matched the key. Code and prose review circuits both reached a clean sweep. The gate does not yet check a run used its pinned effort.",
+      "attribution": {
+        "tool": "Claude Code",
+        "co_author": "Claude Fable 5.1 <noreply@anthropic.com>",
+        "session_key": "Claude-Session",
+        "session_url": "https://claude.ai/code/session_0117EMqtBiXVaPuAeWFr7LbY"
+      }
+    },
+    "replies": [
+      {
+        "finding_id": "correctness.r1.f1",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "A fourth claim for a run that died now meets the attempt-limit refusal, with halt guidance and a ledger entry. A claim outside the recovery sequence is refused only while attempts remain.",
+        "verification": "test_a17_a_dead_run_past_the_bound_is_out_of_attempts_not_off_ladder failed before the change and passes after. Restoring the old unconditional refusal makes only that test fail.",
+        "commit": "75bb090c"
+      },
+      {
+        "finding_id": "test-adequacy.r1.f1",
+        "claim_id": "9k9.408",
+        "artifact_class": "typed-code",
+        "outcome": "Superseded",
+        "change": "The restated design deletes the scope-keyed tier rule this finding challenged, and its tests with it. The tier rule on main stands unchanged.",
+        "verification": "The three existing tier tests pass on the branch: the declared tier in the first round, the re-review tier later, and the declared tier when no re-review tier is set. No scope-keyed test remains.",
+        "commit": "4b799fc1"
+      },
+      {
+        "finding_id": "global-consistency.r1.f4",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "prose",
+        "outcome": "Deferred",
+        "change": "Nothing changes in this pull request, because the verdict schema lives in another skill and is outside this change. The notes on agents-config-9k9.408 (this pull request's work item) carry the missing halt reason for a follow-on item.",
+        "verification": "The finding is advisory and does not block. The schema is not edited, so it still reads transport-failure for a halt caused by runs that died."
+      },
+      {
+        "finding_id": "correctness.r1.f2",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "The gate now gives halt guidance when the last failure on every route the reviewer ran on was a transport error or a run that died. The halt sentence in harvest.md states the same condition.",
+        "verification": "test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output failed before the change, with no halt key in the refusal, and passes after. Restoring the old check of every failure makes only that test fail.",
+        "commit": "75bb090c"
+      },
+      {
+        "finding_id": "test-adequacy.r1.f1",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "test_a9_the_round_record_names_each_lens_pin now checks each reviewer entry's tier against the roster before it checks the pin. Only the test changed.",
+        "verification": "A mutant that dispatched every reviewer at its declared tier in a sweep had passed all 219 emitter tests. That mutant now fails this test for the prose, spec and typed-code sweeps, and the branch passes it.",
+        "commit": "7774cae8"
+      },
+      {
+        "finding_id": "test-adequacy.r1.f2",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "All 27 scenario reads were run again on isolated readers that can reach only copies of the five named files. The scenario file now names that reader and says why an Agent-tool subagent does not qualify.",
+        "verification": "An isolation trial showed that the isolated reader sees no instruction file, and that a reader with default settings sees the global ones. The isolated readers gave the keyed answer in 27 of 27 reads. No unit test exercises a doctrine evaluation.",
+        "commit": "6643c534"
+      },
+      {
+        "finding_id": "simplification-efficiency.r1.f1",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "change_diffs now computes the diff for each distinct start revision once, and reuses its bytes for every reviewer that shares the revision pair.",
+        "verification": "An instrumented run had counted five git diff calls for one typed-code emission. test_a18_lenses_sharing_a_revision_pair_share_one_diff failed before the change and passes after. The file-content, empty-change and unknown-revision tests still pass.",
+        "commit": "cdd53cc1"
+      },
+      {
+        "finding_id": "documentation-quality.r1.f1",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "The transport-error example in harvest.md now claims the failover slot with `--effort low` in place of `--effort high`.",
+        "verification": "The failover slot in that example is the OpenRouter frontier slot for a whole-document read, and contracts.json pins it at low effort. test_a6_every_lens_pin_has_its_stated_effort holds that value. No test runs an example command, so the example was read against the pin.",
+        "commit": "a55b0e4d"
+      },
+      {
+        "finding_id": "documentation-quality.r1.f2",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "harvest.md now says that only an `attempts-exhausted` refusal ends a reviewer's run. A claim refused as `off-ladder`, or for a missing or malformed flag, spends no attempt and can be corrected and claimed again.",
+        "verification": "The gate raises those refusals before it writes the ledger, so they spend no attempt. test_a_refused_claim_rewrites_nothing_and_grants_no_attempt holds that behaviour.",
+        "commit": "a55b0e4d"
+      },
+      {
+        "finding_id": "documentation-quality.r1.f3",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "harvest.md now says that an attempt the watchdog killed for silence leaves no output and is a run that died. The gate's no-output message names `dead-run` for that case and `transport-error` otherwise.",
+        "verification": "test_a_claimed_path_holding_no_file_is_a_transport_failure gained an assertion that the message names `dead-run`. The test failed before the change and passes after.",
+        "commit": "837f8a4c"
+      },
+      {
+        "finding_id": "documentation-quality.r1.f4",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "The comment on MAX_ATTEMPTS no longer argues for another model on the same vendor, and now says why each attempt declares its transport and its model. The same argument is gone from the docstring of check_route.",
+        "verification": "No test exercises a comment, so both texts were read against the doctrine. The only recovery they describe is the failover slot that the routing table fixes, which is what harvest.md requires.",
+        "commit": "a55b0e4d"
+      },
+      {
+        "finding_id": "documentation-quality.r1.f5",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "The first line of the docstring of exhausted() now says halt guidance is given when the last failure on every route the reviewer ran on was a transport error or a run that died.",
+        "verification": "No test exercises a docstring, so it was read against the code it describes. It states the rule that test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output holds in dispatch_gate_test.py.",
+        "commit": "75bb090c"
+      },
+      {
+        "finding_id": "correctness.r2.f1",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "The gate now accepts a failover only onto the other provider of the Codex and OpenRouter pair, and a lower-effort retry only on the starting transport. A claim on any third transport is refused and spends no attempt.",
+        "verification": "test_a17_a_transport_that_is_not_the_failover_seat_is_refused failed before the change, because the gate authorised the claim, and passes after. A mutant that drops the same-transport guard from the lower-effort branch also fails it.",
+        "commit": "56130d01"
+      },
+      {
+        "finding_id": "test-adequacy.r2.f1",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "test_a17_a_dead_run_after_the_failover_is_out_of_attempts now runs for both requested transports, the failover one and the starting one, with the failover on the second attempt and on the third.",
+        "verification": "Against the reviewer's mutant, the two starting-transport cases failed and the other two passed. Against the unchanged gate all four cases pass.",
+        "commit": "56130d01"
+      },
+      {
+        "finding_id": "documentation-quality.r2.f1",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "typed-code",
+        "outcome": "Fixed",
+        "change": "The comment on ROUTE_FAILURES now says that a reviewer out of attempts halts the round when the last failure on every route it ran on is one of the listed failures.",
+        "verification": "No test exercises a comment, so it was read against exhausted(), which it now matches. test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output still holds the behaviour the comment describes.",
+        "commit": "e399db1d"
+      },
+      {
+        "finding_id": "internal-consistency.r1.f1",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "prose",
+        "outcome": "Fixed",
+        "change": "harvest.md now says that an `attempts-exhausted` refusal is the one that carries halt guidance. The sentence on an `off-ladder` refusal is unchanged, so each case has one sentence and the two no longer overlap.",
+        "verification": "The gate attaches halt guidance only to an `attempts-exhausted` refusal, and raises an `off-ladder` refusal without it. No test exercises prose, so the sentences were checked against that code.",
+        "commit": "78c49400"
+      },
+      {
+        "finding_id": "internal-consistency.r1.f2",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "prose",
+        "outcome": "Fixed",
+        "change": "harvest.md now says that a claimed path holding nothing is refused as `no-output`. It tells the reader to claim again as `dead-run` after a watchdog kill for silence, and as `transport-error` otherwise.",
+        "verification": "The new sentences restate the gate's own no-output message and agree with the section on runs that died. No test exercises prose. Another reviewer reported the same defect, and this one change answers both findings.",
+        "commit": "0fd61251"
+      },
+      {
+        "finding_id": "global-consistency.r1.f1",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "prose",
+        "outcome": "Fixed",
+        "change": "The sentence in harvest.md that classed every empty claimed path as a transport failure is replaced by the gate's own no-output guidance. That guidance is `dead-run` after a watchdog kill for silence, and `transport-error` otherwise.",
+        "verification": "No test exercises prose. Another reviewer reported the same defect, and one change answers both findings.",
+        "commit": "0fd61251"
+      },
+      {
+        "finding_id": "global-consistency.r1.f3",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "prose",
+        "outcome": "Fixed",
+        "change": "The scenario file now names its input files by skill and file name, in place of paths from the repository root. It names each scenario's round record as a file beside the scenario file.",
+        "verification": "The finding was advisory, and it was fixed because the fix is cheap and right. The keyed answers did not change. No test exercises prose.",
+        "commit": "5bc9e856"
+      },
+      {
+        "finding_id": "standalone-read.r1.f1",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "prose",
+        "outcome": "Fixed",
+        "change": "The introduction of harvest.md now says that each rule settles a case the invoker would otherwise improvise. The episode it used to narrate is gone.",
+        "verification": "The reason for the rules stays in the same sentence: an improvised rule is one nobody can audit afterwards. No test exercises prose.",
+        "commit": "e43ccecc"
+      },
+      {
+        "finding_id": "standalone-read.r1.f2",
+        "claim_id": "9k9.408-r2",
+        "artifact_class": "prose",
+        "outcome": "Fixed",
+        "change": "The section of harvest.md on symmetric transport now says that neither direction is the exceptional one, because either transport can be down while the other works. The outages it used to narrate are gone.",
+        "verification": "The reason for symmetric failover stays, in one sentence. No test exercises prose.",
+        "commit": "e43ccecc"
+      }
+    ],
+    "record": {
+      "schema_version": 1,
+      "revision": 0
+    }
+  },
+  "sections": [
+    {
+      "field": "/pr/title",
+      "text": "feat(review-panel): pin reviewer effort and tools as data and bound a dying run's recovery [9k9.408]",
+      "digest": "b189c7ce5e3daed9eb370a7e78112bf2f3217809cb306ca90dc1a4d0c26994d5"
+    },
+    {
+      "field": "/work_item/gloss",
+      "text": "predictable reviewer settings, as an interim cost control",
+      "digest": "36968cc7ea7984510fe916cab6e98f9d462f748292d4dd763b7a3c18855655a6"
+    },
+    {
+      "field": "/summary",
+      "text": "The agent running a review round used to choose each reviewer's effort and tools itself. The panel's configuration file now holds both for every reviewer slot. Every reviewer receives the change as a diff file. A run that dies follows a fixed recovery sequence. The panel does not yet check that a run actually used its pinned effort.",
+      "digest": "e62e3f99c6fca99e1d1f9f582b693c30678aa4b458561c30770cb9ca27cac06a"
+    },
+    {
+      "field": "/heads_up/0",
+      "text": "The gates ran with the system bash first on PATH, because the Homebrew bash hangs one hook test.",
+      "digest": "5a68f3c5f8b5035ab2171bd122fb8005a4567ae7f96d8732eec2af8f387ecbc8"
+    },
+    {
+      "field": "/heads_up/1",
+      "text": "The code reviewers last judged commit e399db1d, and four prose-only commits followed it.",
+      "digest": "21e9779c8d1e09bb0ba059b9347151975a50aa9ce2beb7d1e3c2f963209d5159"
+    },
+    {
+      "field": "/heads_up/2",
+      "text": "The 27 raw answers that test the written dispatch rules are on the author's machine, outside the repository.",
+      "digest": "f44806195d9bacecc553ba9121e8cd2e82f0b8f7dbceee1b89205e5176ad83c8"
+    },
+    {
+      "field": "/risk/rows/0/failure",
+      "text": "A reviewer runs at an effort or with tools it cannot work with.",
+      "digest": "6d22fc7f4ebaca1b9e3897612b6ad8cb54aa8af01802d83a7e4a4ef3db09d26c"
+    },
+    {
+      "field": "/risk/rows/0/exposed",
+      "text": "Every review round that uses the deployed skill.",
+      "digest": "3dc1faf6f3cc09791192e8b7153ca33443b6731f614c5f73f8389d7e386b64d0"
+    },
+    {
+      "field": "/risk/rows/0/evidence",
+      "text": "Tests check that every slot has a pin.",
+      "digest": "55cac077808522b6ae172673602b608c8c4210feb7f668ce0fae95306dd19b21"
+    },
+    {
+      "field": "/risk/rows/0/recovery",
+      "text": "Edit the pin in contracts.json.",
+      "digest": "b8899329bab98951ab2eeaa0795bb800572ce4666d3b5008ccb8a28d8cff34fc"
+    },
+    {
+      "field": "/risk/rows/1/failure",
+      "text": "A run that dies is retried outside the sequence, or the round never stops.",
+      "digest": "c22d259511a6fb3eabe978c439f12df7f452ecdf73f8df170865ecfa514317d6"
+    },
+    {
+      "field": "/risk/rows/1/exposed",
+      "text": "Review spend.",
+      "digest": "b0e35137e449ab3f4b86a8e595e90a8a905cc828703196a2aafb145f7a55de8e"
+    },
+    {
+      "field": "/risk/rows/1/evidence",
+      "text": "Gate tests cover each step.",
+      "digest": "cdcbde4ea9c944680ee37fae3a553e5b09e23bf12c053a58272b3bb671bc3bdb"
+    },
+    {
+      "field": "/risk/rows/1/recovery",
+      "text": "Revert.",
+      "digest": "34e6aa7c13c28ef3c45f97c77726d9d00bb169b50771089f6934e87e712fecdf"
+    },
+    {
+      "field": "/changes/0/topic",
+      "text": "Pins",
+      "digest": "64baafaacb1a6c1ad7ef320be35ff85041ab72cf61b8db9e739f9a4040048a92"
+    },
+    {
+      "field": "/changes/0/text",
+      "text": "contracts.json pins effort and tools for every reviewer slot, and no reviewer gets a shell.",
+      "digest": "fe3a06d2886a43191103568f220f801afdc9dddec944e4942eb560e09b467300"
+    },
+    {
+      "field": "/changes/1/topic",
+      "text": "The change as a file",
+      "digest": "844aadf0e875a6434dae80182ba539adfadf79c07743ca430ef0592b9abf67e7"
+    },
+    {
+      "field": "/changes/1/text",
+      "text": "The emitter writes one diff file beside each prompt.",
+      "digest": "0c3c9ba3af82826efbf14ea2a0eb3d70c1415af08c9d6d491da98b7d67d1e1b1"
+    },
+    {
+      "field": "/changes/2/topic",
+      "text": "Recovery sequence",
+      "digest": "b5b81480bdfa00fc30b596fddb2cb46c41ed76868cb9cfee04a2d6a48c608672"
+    },
+    {
+      "field": "/changes/2/text",
+      "text": "A run that died is retried one effort step lower, then on the other provider. The round halts when that attempt dies too.",
+      "digest": "a5c6b9e783b6abb443a0d862f249994abd59728b88603eea46ea62f52160e805"
+    },
+    {
+      "field": "/design_notes",
+      "text": "The earlier design routed the OpenRouter mid-tier model away from whole-document reads. That constraint had no run record behind it, and the only recorded reads of that shape on that model had finished. A constraint stated without its variables cannot be scoped or falsified, so the design no longer encodes it. A slot that names a model runs that model. The recovery sequence answers for a death when one happens, and records every attempt. During this pull request's own review that model finished 20 whole-document reads in 20.\n\nLetting the dispatcher pick a fallback model freely was rejected, because vendors reprice and retire models under a remembered pick, and nobody can audit an improvised rule afterwards. A shell grant restricted by a command prefix was rejected, because both `git diff` and `git log` accept `--output`, so a prefix pattern is not read-only.\n\ncontracts.json holds eight slots by provider, tier and read scope, plus the staffing recommender and the trend checkpoint. OpenRouter reads a whole document at low effort and a diff at high. Codex frontier slots run at high and mid slots at medium. No pin names a model, because the routing table does that. Every tool grant is the Codex read-only sandbox, or a list drawn from Read, Grep and Glob. No reviewer gets a shell pattern, because `git diff --output=<path>` writes a file.\n\nThe emitter writes each diff file over that reviewer's scope for the round, so a reviewer with no shell can still read the change. Reviewers sharing a revision pair share one computed diff. Each reviewer entry in the round record gains effort and tools copied from its pin. A slot with no pin refuses the round and writes nothing.\n\nEach artifact class keeps exactly one OpenRouter reviewer. Four reviewers move to Codex. Declared tiers do not change.\n\nThe gate's claim command takes `--effort` and records it. A run that died may be claimed again only as the same model one effort step lower, or as the other provider at the same tier and scope. Anything else is refused and costs no attempt. A reviewer gets three attempts. Once it is out of attempts, the round halts only when the last failure on every route it ran on was a run that died or a transport error. A reviewer that runs out of attempts any other way is left without a report, and the round is incomplete. A revert restarts a round in flight, because its attempts ledger gained a field.\n\nharvest.md states the sequence, the failover slot, the diff file and the claim form. Nine scenarios with expected answers check that a reader holding only those files reaches the right dispatch.\n\nThe criteria attack panel needs the same pins, as slice B of this work item, and it is a different skill with its own configuration file.\n\nThe round record copies each pin, and tests check that too. This pull request's own first round ran every reviewer at its pin, on two vendors, with no substitution. Both recovery failures were real bugs found in review, reproduced, and fixed with a failing-then-passing test each. A stuck round also costs coverage, because it can look finished with one reviewer never having read the change.\n\nThe written doctrine could send whoever runs a round by hand down the wrong path. Nine written situations were answered by a model given only the doctrine files, and all 27 answers, three runs each, matched the expected dispatch. A reviewer without a shell could miss the change if its diff file were missing or covered the wrong scope. Tests cover the diff file's content, an empty change and an unknown revision, and a diff git cannot compute refuses the round before anything is dispatched.",
+      "digest": "58296140e5ada203f2b3f6238072c41b4a316df247a4f09571a60b1ef404afb8"
+    },
+    {
+      "field": "/discovered/rows/0/reason",
+      "text": "No consumer asks for it yet.",
+      "digest": "3a872f93c8d5cf545d200c2acd2ee7287f66f727cdcd7c8ffdd1bd0269cf9fa6"
+    },
+    {
+      "field": "/discovered/rows/1/reason",
+      "text": "That gate checks that a reviewer read what it was handed.",
+      "digest": "5f6deb7370269c6a0a69d2e3addda6d0c77c68ac693403ba39f4b1249d97c026"
+    },
+    {
+      "field": "/discovered/rows/2/reason",
+      "text": "The file is at its size cap.",
+      "digest": "6e5ce9676abe5527befa060fa310abc7a5eb5f347559af3aa70b9fb25c46a24a"
+    },
+    {
+      "field": "/discovered/rows/3/reason",
+      "text": "Each needs a change outside this skill.",
+      "digest": "6dd297ab8a9b2baa157d45011873277644591ccf52d4dd23fe7a87a8f123582e"
+    },
+    {
+      "field": "/criteria/0/promise",
+      "text": "Every slot has a pin, the round record carries it, a missing pin refuses the round, and no grant can write.",
+      "digest": "ff77018d52c9d14de1d4a9fe5baf53693a9b94ab0e30c31abfc2be196c07d4af"
+    },
+    {
+      "field": "/criteria/1/promise",
+      "text": "A reader holding only the doctrine files reaches the pinned dispatch, the failover slot and each recovery step.",
+      "digest": "c3b3d0c49578fa4b5c485571b49423345faafa4a9bbedf2dc1c2ce631baa3fbc"
+    },
+    {
+      "field": "/criteria/2/promise",
+      "text": "The recovery sequence is one step down, then the other provider, then halt, and a claim outside it is refused at no cost.",
+      "digest": "21c5420ebaa0854c9efceaa789f770de2f894240f0a7e1ef9cfa6a337a4bad27"
+    },
+    {
+      "field": "/criteria/3/promise",
+      "text": "A live round runs every reviewer on the routing table's model at its pin, on two vendors.",
+      "digest": "a6b8f265635452ac38280f3ad936f1f8a499ad841744533043df52f9ba8a5bb2"
+    },
+    {
+      "field": "/criteria/4/promise",
+      "text": "No file outside the panel's own tree changes.",
+      "digest": "9ad574a2b1ee1a6f7e1374aeced9c5b9d56ac370dfee3af5b738268138c80d94"
+    },
+    {
+      "field": "/criteria/5/promise",
+      "text": "Every reviewer receives a diff file over its scope.",
+      "digest": "4110ad6c2c55728155908794986d5b45f46f0236d4a1a709e15034022de5df6c"
+    },
+    {
+      "field": "/commit/subject",
+      "text": "feat(review-panel): pin reviewer effort and tools as data and bound a dying run's recovery [9k9.408]",
+      "digest": "b189c7ce5e3daed9eb370a7e78112bf2f3217809cb306ca90dc1a4d0c26994d5"
+    },
+    {
+      "field": "/commit/why",
+      "text": "The agent running a review round chose each reviewer's effort and tool access itself, and avoided one model for whole-document reads on a belief no run record supported. Review cost and coverage were unpredictable.",
+      "digest": "9303aff3727b9360082d73aaf455bc0855ffd7fd8187f64fefc898714ce1253d"
+    },
+    {
+      "field": "/commit/change",
+      "text": "The panel's configuration holds effort and tools for every reviewer slot, and each round's record copies them from that slot's pin. Every reviewer receives the change as a diff file. A run that dies mid-reasoning retries one effort step lower, then on the other provider, then halts the round. Models still come from the shared routing table.",
+      "digest": "a51226cfdf3f7d0f096a25a23494f565efcb9ad1504b7a6b5ba941feebb73afd"
+    },
+    {
+      "field": "/commit/verification",
+      "text": "make ci, doc-lint and content-lint exit 0 at 5bc9e856. 27 of 27 isolated doctrine reads matched the key. Code and prose review circuits both reached a clean sweep. The gate does not yet check a run used its pinned effort.",
+      "digest": "305c5bacd4db6d4b894825167f7bfb948f7a6cfca53d5a4414f3cd24e6d5f805"
+    },
+    {
+      "field": "/replies/0/change",
+      "text": "A fourth claim for a run that died now meets the attempt-limit refusal, with halt guidance and a ledger entry. A claim outside the recovery sequence is refused only while attempts remain.",
+      "digest": "675d39c684e7e16fecbef58a5f68f6f1a69cc5961b29823663550fe712db5d22"
+    },
+    {
+      "field": "/replies/0/verification",
+      "text": "test_a17_a_dead_run_past_the_bound_is_out_of_attempts_not_off_ladder failed before the change and passes after. Restoring the old unconditional refusal makes only that test fail.",
+      "digest": "1d1338108e25da294468f9f00a2855bfb79548610692b32ca21e7d26d8807ee3"
+    },
+    {
+      "field": "/replies/1/change",
+      "text": "The restated design deletes the scope-keyed tier rule this finding challenged, and its tests with it. The tier rule on main stands unchanged.",
+      "digest": "ca070441a91525f4cc1daac8a11fd3a2ad956634d5f38e016474bf3e360f827d"
+    },
+    {
+      "field": "/replies/1/verification",
+      "text": "The three existing tier tests pass on the branch: the declared tier in the first round, the re-review tier later, and the declared tier when no re-review tier is set. No scope-keyed test remains.",
+      "digest": "a19b721d368a33a39caf335f415272ce8a1760e7bf8aabd9671e83995f81d44b"
+    },
+    {
+      "field": "/replies/2/change",
+      "text": "Nothing changes in this pull request, because the verdict schema lives in another skill and is outside this change. The notes on agents-config-9k9.408 (this pull request's work item) carry the missing halt reason for a follow-on item.",
+      "digest": "d535f5be4024c75005f12507203010215050e903bbf2ff8688803c37982d2a3d"
+    },
+    {
+      "field": "/replies/2/verification",
+      "text": "The finding is advisory and does not block. The schema is not edited, so it still reads transport-failure for a halt caused by runs that died.",
+      "digest": "f7ce29beb58c3301f28d60b12bd021230849b2649ec2ef833491ec5fc9fbd111"
+    },
+    {
+      "field": "/replies/3/change",
+      "text": "The gate now gives halt guidance when the last failure on every route the reviewer ran on was a transport error or a run that died. The halt sentence in harvest.md states the same condition.",
+      "digest": "892db0c392efe25ff194aeb3585b811fdf7bb1445d3936ea5831c1725354faf6"
+    },
+    {
+      "field": "/replies/3/verification",
+      "text": "test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output failed before the change, with no halt key in the refusal, and passes after. Restoring the old check of every failure makes only that test fail.",
+      "digest": "fb8cd13f16fbaee4f1736e6c98d475bc717232e93b6776d92301871afa997d0c"
+    },
+    {
+      "field": "/replies/4/change",
+      "text": "test_a9_the_round_record_names_each_lens_pin now checks each reviewer entry's tier against the roster before it checks the pin. Only the test changed.",
+      "digest": "856316b5808b67ffffce9d24ecc7c00085c0e8abfba43a6a3d1da8bd6038f5a9"
+    },
+    {
+      "field": "/replies/4/verification",
+      "text": "A mutant that dispatched every reviewer at its declared tier in a sweep had passed all 219 emitter tests. That mutant now fails this test for the prose, spec and typed-code sweeps, and the branch passes it.",
+      "digest": "7f7c92af3cb30d2c812dfdb88f553940f269e4a449e526415bf1499e39ab6d58"
+    },
+    {
+      "field": "/replies/5/change",
+      "text": "All 27 scenario reads were run again on isolated readers that can reach only copies of the five named files. The scenario file now names that reader and says why an Agent-tool subagent does not qualify.",
+      "digest": "0fb308be4895b1a214dd70af6274e1441340c02ba29cec488f96d4155ce9ae6a"
+    },
+    {
+      "field": "/replies/5/verification",
+      "text": "An isolation trial showed that the isolated reader sees no instruction file, and that a reader with default settings sees the global ones. The isolated readers gave the keyed answer in 27 of 27 reads. No unit test exercises a doctrine evaluation.",
+      "digest": "5708a0a6061f1086dfeebcc8107d1b3ce12dd50feb881f8716521e07daf25120"
+    },
+    {
+      "field": "/replies/6/change",
+      "text": "change_diffs now computes the diff for each distinct start revision once, and reuses its bytes for every reviewer that shares the revision pair.",
+      "digest": "95e8e7de5c8d610df6347a2c18d2364f3e179cee31c221780ee2687acc45c8a4"
+    },
+    {
+      "field": "/replies/6/verification",
+      "text": "An instrumented run had counted five git diff calls for one typed-code emission. test_a18_lenses_sharing_a_revision_pair_share_one_diff failed before the change and passes after. The file-content, empty-change and unknown-revision tests still pass.",
+      "digest": "5e824ae1e1b4a9b6be12d11a85b624c1cde4bf352a0aeaac3d8256efc81c0e4e"
+    },
+    {
+      "field": "/replies/7/change",
+      "text": "The transport-error example in harvest.md now claims the failover slot with `--effort low` in place of `--effort high`.",
+      "digest": "ea00ee4f2480612d419b89f4d7c5a700ffce14ccc9a35efa57e4eab678cb4f2d"
+    },
+    {
+      "field": "/replies/7/verification",
+      "text": "The failover slot in that example is the OpenRouter frontier slot for a whole-document read, and contracts.json pins it at low effort. test_a6_every_lens_pin_has_its_stated_effort holds that value. No test runs an example command, so the example was read against the pin.",
+      "digest": "7c04d3f82babeb2ec9b1a7bd59caffe89bd2a95498409e9587693e225c2def8a"
+    },
+    {
+      "field": "/replies/8/change",
+      "text": "harvest.md now says that only an `attempts-exhausted` refusal ends a reviewer's run. A claim refused as `off-ladder`, or for a missing or malformed flag, spends no attempt and can be corrected and claimed again.",
+      "digest": "3c0945ae586b9c002d352f22367983efbda81e623282359bee7dcb13424ea6a3"
+    },
+    {
+      "field": "/replies/8/verification",
+      "text": "The gate raises those refusals before it writes the ledger, so they spend no attempt. test_a_refused_claim_rewrites_nothing_and_grants_no_attempt holds that behaviour.",
+      "digest": "dd968578cd6e53887ea6a22c0785168fae4bb023f18015cfd9aae677b7359db2"
+    },
+    {
+      "field": "/replies/9/change",
+      "text": "harvest.md now says that an attempt the watchdog killed for silence leaves no output and is a run that died. The gate's no-output message names `dead-run` for that case and `transport-error` otherwise.",
+      "digest": "93470a3f0c012a0323699719d41053090983164522b585e41834fc1fa45bb75a"
+    },
+    {
+      "field": "/replies/9/verification",
+      "text": "test_a_claimed_path_holding_no_file_is_a_transport_failure gained an assertion that the message names `dead-run`. The test failed before the change and passes after.",
+      "digest": "72dcf908b5a720c1eab6ce27ec621b9db0bafa3543a6f01a3c2a6295bce50db4"
+    },
+    {
+      "field": "/replies/10/change",
+      "text": "The comment on MAX_ATTEMPTS no longer argues for another model on the same vendor, and now says why each attempt declares its transport and its model. The same argument is gone from the docstring of check_route.",
+      "digest": "f6f100aa93593caf44833a647e05898866b78885fed976aaf13573ba0de6ecb6"
+    },
+    {
+      "field": "/replies/10/verification",
+      "text": "No test exercises a comment, so both texts were read against the doctrine. The only recovery they describe is the failover slot that the routing table fixes, which is what harvest.md requires.",
+      "digest": "27aea08cf6621406fc9f349362103146c7eb88360d7bd002338daabd58c5b1bb"
+    },
+    {
+      "field": "/replies/11/change",
+      "text": "The first line of the docstring of exhausted() now says halt guidance is given when the last failure on every route the reviewer ran on was a transport error or a run that died.",
+      "digest": "57254bbcd030436fc1ee3e3dd2827f643980b69dd97e6e442c8fd4f3083e9b4c"
+    },
+    {
+      "field": "/replies/11/verification",
+      "text": "No test exercises a docstring, so it was read against the code it describes. It states the rule that test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output holds in dispatch_gate_test.py.",
+      "digest": "50bfd6fe6b002fe0b7fcd7a5372735710707cd77893e5342891f2a8d2b48e5f0"
+    },
+    {
+      "field": "/replies/12/change",
+      "text": "The gate now accepts a failover only onto the other provider of the Codex and OpenRouter pair, and a lower-effort retry only on the starting transport. A claim on any third transport is refused and spends no attempt.",
+      "digest": "6056cc5d4a380fc2834fde0beba9977b69b96e23312d4c4f42a6fad2cbc87f44"
+    },
+    {
+      "field": "/replies/12/verification",
+      "text": "test_a17_a_transport_that_is_not_the_failover_seat_is_refused failed before the change, because the gate authorised the claim, and passes after. A mutant that drops the same-transport guard from the lower-effort branch also fails it.",
+      "digest": "74f2d489cb94116816b34a2d1553b46a960bff05a77013ac52cbf515d68ff113"
+    },
+    {
+      "field": "/replies/13/change",
+      "text": "test_a17_a_dead_run_after_the_failover_is_out_of_attempts now runs for both requested transports, the failover one and the starting one, with the failover on the second attempt and on the third.",
+      "digest": "917a01f35bc3138e695445cee071e5efb88bc90306a5534c1861b314de6eb1d8"
+    },
+    {
+      "field": "/replies/13/verification",
+      "text": "Against the reviewer's mutant, the two starting-transport cases failed and the other two passed. Against the unchanged gate all four cases pass.",
+      "digest": "9d9021464eff80c6149439f7bebb66db48c6ff0f37c92bf731d46276f2d6b979"
+    },
+    {
+      "field": "/replies/14/change",
+      "text": "The comment on ROUTE_FAILURES now says that a reviewer out of attempts halts the round when the last failure on every route it ran on is one of the listed failures.",
+      "digest": "04d11bb9880c58380e54c37e102641f078156ead8c7bafd6ccb792fb22b5cf7e"
+    },
+    {
+      "field": "/replies/14/verification",
+      "text": "No test exercises a comment, so it was read against exhausted(), which it now matches. test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output still holds the behaviour the comment describes.",
+      "digest": "ea117a7c1238e48313a3112ef402cd4eaf3835d76a001c06572851552a90bd08"
+    },
+    {
+      "field": "/replies/15/change",
+      "text": "harvest.md now says that an `attempts-exhausted` refusal is the one that carries halt guidance. The sentence on an `off-ladder` refusal is unchanged, so each case has one sentence and the two no longer overlap.",
+      "digest": "9ed1619b1e57df5f5f4240885a650d21f437c59dcb8c68ebdbfd45b27f67dacc"
+    },
+    {
+      "field": "/replies/15/verification",
+      "text": "The gate attaches halt guidance only to an `attempts-exhausted` refusal, and raises an `off-ladder` refusal without it. No test exercises prose, so the sentences were checked against that code.",
+      "digest": "053c586954b5e21bbfcf8faf97ec006ffa1755fa528ae16584e16449b4307a2d"
+    },
+    {
+      "field": "/replies/16/change",
+      "text": "harvest.md now says that a claimed path holding nothing is refused as `no-output`. It tells the reader to claim again as `dead-run` after a watchdog kill for silence, and as `transport-error` otherwise.",
+      "digest": "a64554c14e886b385fd16fca027565464990c5976e0adbcb2fa437e6b89a94cc"
+    },
+    {
+      "field": "/replies/16/verification",
+      "text": "The new sentences restate the gate's own no-output message and agree with the section on runs that died. No test exercises prose. Another reviewer reported the same defect, and this one change answers both findings.",
+      "digest": "447eb6878bbf57c552418077963acc955726bd064a190554bad67c9ec42619f8"
+    },
+    {
+      "field": "/replies/17/change",
+      "text": "The sentence in harvest.md that classed every empty claimed path as a transport failure is replaced by the gate's own no-output guidance. That guidance is `dead-run` after a watchdog kill for silence, and `transport-error` otherwise.",
+      "digest": "c3e97528b3e9039d7f34ffd5211a8f936390f3fdc0f8ef3e77b15e59c4d670df"
+    },
+    {
+      "field": "/replies/17/verification",
+      "text": "No test exercises prose. Another reviewer reported the same defect, and one change answers both findings.",
+      "digest": "3b461bafd864605132e6b4d96f22f472a44964c16f41c577c012db0b9d7f1525"
+    },
+    {
+      "field": "/replies/18/change",
+      "text": "The scenario file now names its input files by skill and file name, in place of paths from the repository root. It names each scenario's round record as a file beside the scenario file.",
+      "digest": "659d80004d04a907a0a5638b55d6b0dd16c28807c2539e996b06cddf95f65522"
+    },
+    {
+      "field": "/replies/18/verification",
+      "text": "The finding was advisory, and it was fixed because the fix is cheap and right. The keyed answers did not change. No test exercises prose.",
+      "digest": "c95057bf92003d28f619ee842f8e20c115eef91a4d99f3704f8a51d9c410dc15"
+    },
+    {
+      "field": "/replies/19/change",
+      "text": "The introduction of harvest.md now says that each rule settles a case the invoker would otherwise improvise. The episode it used to narrate is gone.",
+      "digest": "1b941cbb4c85ed221acf91f9d102334124d1d9c0e5c2df27bc7973d31ccecd64"
+    },
+    {
+      "field": "/replies/19/verification",
+      "text": "The reason for the rules stays in the same sentence: an improvised rule is one nobody can audit afterwards. No test exercises prose.",
+      "digest": "931319d92418b533bd9310f5b7d44064b3c8d7485469df5cc47c3da7b0a3cec7"
+    },
+    {
+      "field": "/replies/20/change",
+      "text": "The section of harvest.md on symmetric transport now says that neither direction is the exceptional one, because either transport can be down while the other works. The outages it used to narrate are gone.",
+      "digest": "6871d50860c13d33952923604d39c14543251983b618dd41b1aa68dc9592acfa"
+    },
+    {
+      "field": "/replies/20/verification",
+      "text": "The reason for symmetric failover stays, in one sentence. No test exercises prose.",
+      "digest": "4c5f101f48b3f40804b57cdddb073c0e81c30197df01e0afc69bb11c1ab08a7c"
+    }
+  ]
+}

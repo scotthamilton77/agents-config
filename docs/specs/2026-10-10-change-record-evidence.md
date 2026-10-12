@@ -61,11 +61,11 @@
 - CR-W4 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW4ProtectedValues
 - CR-W5 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW5AppliedSections
 - CR-W6 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW6SecondRun
-- CR-W7 | open
+- CR-W7 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW7EditorInstructions
 - CR-W8 | open
 - CR-W9 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW9OnePassPerRevision
 - CR-W10 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW10Counts
-- CR-W11 | open
+- CR-W11 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW11Dispatch
 - CR-G1 | open
 - CR-G2 | open
 - CR-G3 | open

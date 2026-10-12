@@ -40,6 +40,13 @@ FIXTURES = {
 }
 EXAMPLE = json.loads(FIXTURES["843"].read_text(encoding="utf-8"))
 SUBJECT = EXAMPLE["commit"]["subject"]
+INSTRUCTIONS = SKILL / "references" / "editor-instructions.md"
+PIN = SKILL / "references" / "editor-pin.json"
+
+# One recorded editor run for each fixture, in a directory named for it. A run
+# is the request that was sent, the response as the model returned it, and the
+# settings the model was run at.
+RUNS = {name: SKILL / "evals" / "rewrites" / f"pr-{name}" for name in FIXTURES}
 
 # The example with a row a generator wrote at the head of its heads-up list,
 # and a filed row closing its discovered work.
@@ -509,6 +516,93 @@ class TestCrW10Counts:
         entry = passed.after["record"]["rewrites"][-1]
         counts = {name: entry[name] for name in ("proposed", "pruned", "corrected", "applied")}
         assert counts == {"proposed": 3, "pruned": 1, "corrected": 1, "applied": 2}
+
+
+class TestCrW7EditorInstructions:
+    def test_cr_w7_the_instructions_show_a_response_with_exactly_the_fields_an_editor_writes(self):
+        schema = json.loads(change_record.RESPONSE_SCHEMA_PATH.read_text(encoding="utf-8"))["properties"]
+        shown = json.loads(re.search(r"```json\n(.*?)```", INSTRUCTIONS.read_text(encoding="utf-8"), re.DOTALL)[1])
+        assert set(shown) == set(schema)
+        for group in ("replacements", "questions"):
+            assert shown[group]
+            for entry in shown[group]:
+                # The one field left out is the author's correction, which no editor writes.
+                assert set(entry) == set(schema[group]["items"]["required"])
+        assert shown["proposed"] == len(shown["replacements"])
+
+    @pytest.mark.parametrize("prohibition", ["strengthens a claim", "drops an exception", "erases deferred work"])
+    def test_cr_w7_the_instructions_state_each_prohibition(self, prohibition: str):
+        assert prohibition in INSTRUCTIONS.read_text(encoding="utf-8")
+
+    def test_the_instructions_name_each_word_the_schema_makes_a_fact(self):
+        text = INSTRUCTIONS.read_text(encoding="utf-8").lower()
+        words = {
+            word.lower()
+            for where, word in change_record._strings(change_record.load_schema())
+            if change_record.FACT_WORDS.fullmatch(where)
+        }
+        assert words and all(f"`{word}`" in text for word in words)
+
+    @pytest.mark.parametrize("name", list(FIXTURES))
+    def test_cr_w7_the_recorded_response_passes_every_check_apply_prose_makes_ahead_of_the_lint(
+        self, desk: Desk, monkeypatch: pytest.MonkeyPatch, name: str
+    ):
+        # The lint judges the record the replacements leave, and an author who prunes
+        # a response settles that. Every refusal that judges the response still stands.
+        monkeypatch.setattr(change_record, "lint_record", lambda record: [])
+        desk.write(json.loads(FIXTURES[name].read_text(encoding="utf-8")))
+        ran = desk.run("apply-prose", str(desk.path), str(RUNS[name] / "response.json"))
+        assert ran.code == 0, ran.err
+
+
+class TestCrW11Dispatch:
+    def dispatch(self, desk: Desk) -> Ran:
+        return desk.run("dispatch-prose", str(desk.path.with_name("request.json")))
+
+    def test_cr_w11_the_dispatch_names_the_pin_files_model_and_effort_and_the_two_files_to_send(self, desk: Desk):
+        ran = self.dispatch(desk)
+        assert ran.code == 0, ran.err
+        pin = json.loads(PIN.read_text(encoding="utf-8"))
+        assert json.loads(ran.out) == {
+            "model": pin["model"],
+            "effort": pin["effort"],
+            "instructions": str(INSTRUCTIONS),
+            "request": str(desk.path.with_name("request.json").resolve()),
+        }
+
+    def test_cr_w11_a_pin_changed_in_a_copy_changes_the_dispatch(self, desk: Desk, monkeypatch: pytest.MonkeyPatch):
+        copied = desk.path.with_name("editor-pin.json")
+        copied.write_text(json.dumps({"model": "another-model", "effort": "another-effort"}), encoding="utf-8")
+        monkeypatch.setattr(change_record, "EDITOR_PIN_PATH", copied)
+        dispatch = json.loads(self.dispatch(desk).out)
+        assert (dispatch["model"], dispatch["effort"]) == ("another-model", "another-effort")
+
+    @pytest.mark.parametrize("name", list(FIXTURES))
+    def test_cr_w11_the_recorded_run_was_made_at_the_pin_files_model_and_effort(self, name: str):
+        pin = json.loads(PIN.read_text(encoding="utf-8"))
+        settings = json.loads((RUNS[name] / "settings.json").read_text(encoding="utf-8"))
+        assert {key: settings.get(key) for key in pin} == pin
+
+    @pytest.mark.parametrize(
+        ("file", "written", "named"),
+        [
+            pytest.param("EDITOR_PIN_PATH", None, [], id="no-pin-file"),
+            pytest.param("EDITOR_PIN_PATH", "{}", ["model", "effort"], id="pin-names-neither"),
+            pytest.param("EDITOR_PIN_PATH", '{"model": "m"}', ["effort"], id="pin-names-no-effort"),
+            pytest.param("EDITOR_PIN_PATH", '{"effort": "e"}', ["model"], id="pin-names-no-model"),
+            pytest.param("EDITOR_INSTRUCTIONS_PATH", None, [], id="no-instruction-file"),
+        ],
+    )
+    def test_a_missing_file_or_a_pin_file_missing_a_key_fails_naming_the_file(
+        self, desk: Desk, monkeypatch: pytest.MonkeyPatch, file: str, written: str | None, named: list[str]
+    ):
+        path = desk.path.with_name("stand-in")
+        if written is not None:
+            path.write_text(written, encoding="utf-8")
+        monkeypatch.setattr(change_record, file, path)
+        ran = self.dispatch(desk)
+        assert (ran.code, ran.out) == (2, "")
+        assert all(word in ran.errors[0]["message"] for word in [str(path), *named])
 
 
 if __name__ == "__main__":

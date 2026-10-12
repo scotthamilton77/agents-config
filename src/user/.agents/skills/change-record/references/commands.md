@@ -10,7 +10,7 @@ Run each from the skill's directory, as `uv run scripts/change_record.py` follow
 
 `publish` prints the same result on stderr when it refuses a record, and when a call fails.
 
-`extract-prose` and `apply-prose` print the same result on stderr when they refuse a record or a response.
+`extract-prose` and `apply-prose` print the same result on stderr when they refuse a record or a response. `dispatch-prose` prints it there when a file it reads is missing.
 
 ## `init`
 
@@ -164,15 +164,16 @@ A call that fails or cannot be run stops the run, and so does an answer that doe
 
 Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.
 
-## `extract-prose` and `apply-prose`
+## `extract-prose`, `dispatch-prose` and `apply-prose`
 
 ```bash
 uv run scripts/change_record.py extract-prose record.json [--output FILE]
+uv run scripts/change_record.py dispatch-prose request.json
 uv run scripts/change_record.py apply-prose record.json response.json
 ```
 
-The two are the rewrite pass over the record's wording. `extract-prose` writes a request that lists each field an editor may reword, with its text and the digest of that text. `apply-prose` applies the replacements of a response to the record. It checks the whole response first, and one refused replacement leaves the record file as it was. Both only read and write files.
+The three are the rewrite pass over the record's wording. `extract-prose` writes a request that lists each field an editor may reword, with its text and the digest of that text. `dispatch-prose` prints the model and the effort to run the editor at, and the paths of the editor's instruction file and of the request. `apply-prose` applies the replacements of a response to the record. It checks the whole response first, and one refused replacement leaves the record file as it was. All three only read and write files.
 
-`rewriting.md` beside this file gives the request, the response, every refusal, the values a replacement must keep, and the rule of one pass for each revision.
+`rewriting.md` beside this file gives the request, the dispatch, the response, every refusal, the values a replacement must keep, and the rule of one pass for each revision.
 
-`extract-prose` exits 0 written, 1 the record does not fit the schema, 2 unreadable, unparseable or unwritable. `apply-prose` exits 0 applied or nothing to apply, 1 refused, 2 unreadable or unparseable.
+`extract-prose` exits 0 written, 1 the record does not fit the schema, 2 unreadable, unparseable or unwritable. `dispatch-prose` exits 0 printed, 2 the pin file or the instruction file is missing, or the pin file names no model or no effort. `apply-prose` exits 0 applied or nothing to apply, 1 refused, 2 unreadable or unparseable.

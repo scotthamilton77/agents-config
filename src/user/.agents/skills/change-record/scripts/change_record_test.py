@@ -2170,6 +2170,8 @@ class TestCrL9WhatShips:
             "references/pr-body.md",
             "references/commit-message.txt",
             "references/review-reply.txt",
+            "references/editor-instructions.md",
+            "references/editor-pin.json",
             "scripts/change_record.py",
         ):
             assert (SKILL / name).is_file(), name
@@ -2177,6 +2179,9 @@ class TestCrL9WhatShips:
         # the suites' support file. A second file under examples would ship, and
         # so would a module beside the script that is no suite.
         assert sorted(path.name for path in (SKILL / "examples").glob("[!.]*")) == ["pr-843.json"]
+        # The recorded editor runs and the judgments of what they wrote are kept
+        # in one directory under evals, so neither ships.
+        assert (SKILL / "evals" / "rewrites" / "judgments.md").is_file()
         modules = sorted(path.name for path in HERE.glob("*.py") if not path.name.endswith("_test.py"))
         assert modules == ["change_record.py", "conftest.py"]
 

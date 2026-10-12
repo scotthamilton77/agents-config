@@ -18,6 +18,7 @@ Usage: uv run change_record.py init --type TYPE --component NAME --work-item ID 
        uv run change_record.py render reply <record.json> --finding ID
        uv run change_record.py publish [--dry-run] <record.json>
        uv run change_record.py extract-prose <record.json> [--output FILE]
+       uv run change_record.py dispatch-prose <request.json>
        uv run change_record.py apply-prose <record.json> <response.json>
 
 ``init`` writes a new record with every field the author fills left empty.
@@ -58,11 +59,14 @@ Exit 0 published, 1 refused, 2 unreadable or unparseable, or a call failed.
 ``extract-prose`` writes the request an editor rewrites a record's wording
 from, to stdout or to the file ``--output`` names. The request holds the
 record, and each field an editor may rewrite as a section with its text and
-the digest of that text. ``apply-prose`` applies the replacements of a
-response to the record. It checks the whole response first, and one refused
-replacement leaves the record file as it was. Both only read and write
-files. A refusal gets the JSON result on stderr. Exit 0 done, 1 refused,
-2 unreadable or unparseable.
+the digest of that text. ``dispatch-prose`` prints what a session sends an
+editor for a request: the model and the effort the skill's pin file names,
+and the paths of the editor's instruction file and of the request. It runs
+no model. ``apply-prose`` applies the replacements of a response to the
+record. It checks the whole response first, and one refused replacement
+leaves the record file as it was. All three only read and write files. A
+refusal gets the JSON result on stderr. Exit 0 done, 1 refused, 2 unreadable
+or unparseable.
 """
 
 from __future__ import annotations
@@ -2675,8 +2679,10 @@ def add_publish(commands: Any) -> None:
 
 # Rewriting. An editor may reword the fields the schema marks rewritable and
 # nothing else. `extract-prose` gives the editor those fields as sections, and
-# `apply-prose` takes back the replacements the author accepted. Both only
-# read and write files, so neither runs an executable.
+# `apply-prose` takes back the replacements the author accepted. Between the
+# two, `dispatch-prose` says what to send the editor and where, and a session
+# does the sending. All three only read and write files, so none runs an
+# executable.
 
 # The skill's own text, and the section of it that states the writing checks.
 # An editor is given that section as it stands, so the checks are stated once.
@@ -2684,6 +2690,12 @@ SKILL_TEXT = REFERENCES.parent / "SKILL.md"
 WRITING_CHECKS = re.compile(r"^## Writing checks[ \t]*\n(?P<checks>.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 
 RESPONSE_SCHEMA_PATH = REFERENCES / "prose-response.schema.json"
+
+# What an editor is sent ahead of the request, and the one file that names the
+# model and the effort an editor runs at. A recorded run names the same two, so
+# a pass that is evaluated and a pass that is not cannot run on different ones.
+EDITOR_INSTRUCTIONS_PATH = REFERENCES / "editor-instructions.md"
+EDITOR_PIN_PATH = REFERENCES / "editor-pin.json"
 
 # Where the record schema lists the words that are facts in any prose that
 # uses one: each disposition, each outcome and each status.
@@ -2754,6 +2766,29 @@ def prose_request(record: dict[str, Any]) -> dict[str, Any]:
             {"field": path, "text": holder[key], "digest": text_digest(holder[key])}
             for path, (holder, key) in editable_sections(record).items()
         ],
+    }
+
+
+def editor_dispatch(request: Path) -> dict[str, str]:
+    """Return what a session sends an editor for ``request``, and the model and the effort to run the editor at.
+
+    Each tool reaches a model its own way, so this names what to send and
+    where, and leaves the sending to the session. The model and the effort
+    are read from the pin file and from nowhere else. Raises a ``RecordError``
+    that names the file when the pin file or the instruction file is missing,
+    or when the pin file leaves out the model or the effort.
+    """
+    pin = read_record(EDITOR_PIN_PATH)
+    unnamed = [name for name in ("model", "effort") if name not in pin]
+    if unnamed:
+        raise RecordError("editor-pin", f"{EDITOR_PIN_PATH} names no {' and no '.join(unnamed)}")
+    if not EDITOR_INSTRUCTIONS_PATH.is_file():
+        raise RecordError("unreadable", f"cannot read {EDITOR_INSTRUCTIONS_PATH}: no such file")
+    return {
+        "model": pin["model"],
+        "effort": pin["effort"],
+        "instructions": str(EDITOR_INSTRUCTIONS_PATH),
+        "request": str(request.resolve()),
     }
 
 
@@ -2927,8 +2962,13 @@ def _apply_prose(args: argparse.Namespace) -> None:
         print(f"question on {question['field']}: {question['question']}")
 
 
+def _dispatch_prose(args: argparse.Namespace) -> None:
+    """Run ``dispatch-prose``: print what to send an editor for the request, and where, as JSON."""
+    print(json.dumps(editor_dispatch(args.request), indent=2))
+
+
 def _run_prose(args: argparse.Namespace) -> int:
-    """Run ``extract-prose`` or ``apply-prose``, or report on stderr why nothing was written."""
+    """Run one of the rewrite pass's subcommands, or report on stderr why nothing was written."""
     try:
         args.prose(args)
     except RecordError as exc:
@@ -2942,7 +2982,7 @@ def _run_prose(args: argparse.Namespace) -> int:
 
 
 def add_prose(commands: Any) -> None:
-    """Add the ``extract-prose`` and ``apply-prose`` subcommands to ``commands``."""
+    """Add the rewrite pass's three subcommands to ``commands``."""
     extract = commands.add_parser(
         "extract-prose",
         help="write the request an editor rewrites a record's wording from",
@@ -2953,6 +2993,17 @@ def add_prose(commands: Any) -> None:
     extract.add_argument("record", type=Path, help="path to the record's JSON file")
     extract.add_argument("--output", type=Path, help="write the request to this file in place of stdout")
     extract.set_defaults(run=_run_prose, prose=_extract_prose)
+    dispatch = commands.add_parser(
+        "dispatch-prose",
+        help="print what to send an editor for a request, and the model and effort to run the editor at",
+        description="Print, as JSON, the model and the effort the skill's pin file names, the path of the "
+        "editor's instruction file, and the path of the request. A session sends that model, at that effort, "
+        "the instruction file's text and then the request's. "
+        "Exit 0 printed, 2 the pin file or the instruction file is missing, or the pin file names no model "
+        "or no effort.",
+    )
+    dispatch.add_argument("request", type=Path, help="path to the request's JSON file, as extract-prose wrote it")
+    dispatch.set_defaults(run=_run_prose, prose=_dispatch_prose)
     apply = commands.add_parser(
         "apply-prose",
         help="apply the replacements an author accepted to a record's wording",
