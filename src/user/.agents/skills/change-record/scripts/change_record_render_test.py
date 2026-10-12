@@ -7,9 +7,12 @@
 
 Run: uv run change_record_render_test.py
 
-The golden files hold the exact render of every example record: the one the
-skill ships, and those under ``evals/records`` that exist only for the suites.
-After a record or a template changes on purpose, rewrite them all with:
+The golden files hold the exact render of every fixture record: the example
+the skill ships, and those under ``evals/records`` that exist only for the
+suites. A record named ``pr-N`` is built from pull request N of the repository
+the skill is developed in. A record named ``minimal-TYPE`` is made up, and is
+about as small as the lint accepts for that commit type. After a record or a
+template changes on purpose, rewrite every golden file with:
 
     uv run change_record_render_test.py --regenerate
 """
@@ -50,6 +53,10 @@ EXAMPLE = json.loads((SKILL / "examples" / "pr-843.json").read_text(encoding="ut
 
 # The four feature pull requests that an example is built from.
 FOUR_EXAMPLES = ["pr-838", "pr-839", "pr-843", "pr-846"]
+
+# The fixtures drawn from no pull request, one for each commit type but two.
+# Each is made up for this suite and is about as small as the lint accepts.
+MADE_UP = [path for path in EXAMPLES if path.stem.startswith("minimal-")]
 
 # The golden files sit under a directory the installer never ships, because
 # they exist only for this suite.
@@ -93,6 +100,10 @@ HEADINGS = {
     **dict.fromkeys([*EVERY_SECTION_TYPES, "spec"], FEAT_HEADINGS),
     **dict.fromkeys(SHORT_BODY_TYPES, SHORT_HEADINGS),
 }
+
+# The fixtures the suite renders, by commit type: the four feature pull requests,
+# and one fixture of every other type.
+FIXTURES_BY_TYPE = {"feat": 4, **dict.fromkeys(sorted(set(HEADINGS) - {"feat"}), 1)}
 
 ATTACK_LINE = "The criteria were attacked twice, and the attack record sits beside the spec."
 
@@ -466,23 +477,57 @@ class TestCrR1Body:
         kinds = {path.stem: json.loads(path.read_text(encoding="utf-8"))["pr"]["type"] for path in EXAMPLES}
         assert {name: kinds.get(name) for name in FOUR_EXAMPLES} == dict.fromkeys(FOUR_EXAMPLES, "feat")
 
-    @pytest.mark.parametrize("record_path", EXAMPLES, ids=lambda path: path.stem)
-    def test_cr_r1_a_feat_body_carries_the_seven_headings_in_order(self, record_path: Path):
+    def test_cr_r1_the_heading_walk_over_fifteen_fixtures_finds_each_types_headings_in_order(self):
+        walked: dict[str, list[str]] = {}
+        for record_path in EXAMPLES:
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            kind = record["pr"]["type"]
+            assert change_record.lint_record(record) == [], record_path.name
+            body = change_record.render_body(record)
+            assert headings(body) == HEADINGS[kind], record_path.name
+            assert ("<summary>Blast radius</summary>" in body) == (
+                kind not in SHORT_BODY_TYPES and "blast_radius" in record
+            ), record_path.name
+            walked.setdefault(kind, []).append(record_path.stem)
+        # A fixture of any type the criterion names that is missing fails here, and so does a stray one.
+        assert {kind: len(names) for kind, names in walked.items()} == FIXTURES_BY_TYPE, walked
+        assert sum(FIXTURES_BY_TYPE.values()) == 15
+        assert sorted(walked["feat"]) == FOUR_EXAMPLES
+        assert walked["spec"] == ["pr-851"]
+        assert len(MADE_UP) == 10
+
+    def test_cr_r1_the_spec_fixture_gives_one_line_of_criteria_and_names_the_items_the_spec_mints(self):
+        (record_path,) = [path for path in EXAMPLES if path.stem == "pr-851"]
         record = json.loads(record_path.read_text(encoding="utf-8"))
-        if record["pr"]["type"] != "feat":
-            pytest.skip("the heading set of another commit type is not this case's")
+        assert record["pr"]["type"] == "spec"
         body = golden_path(record_path, "pr-body").read_text(encoding="utf-8")
-        assert headings(body) == FEAT_HEADINGS
+        assert "attacked" in record["criteria"]
+        assert f"\n\n## Criteria\n{record['criteria']}\n\n<details>" in body
+        assert "| Criterion |" not in body
+        fold = body.split("<details><summary>Blast radius</summary>\n")[1].split("</details>")[0]
+        minted = record["blast_radius"]["mints"]
+        assert len(minted) == 8
+        assert fold == "\n| Item the spec mints | What it is |\n| --- | --- |\n" + "".join(
+            f"| {item['id']} | {item['what']} |\n" for item in minted
+        )
 
     @pytest.mark.parametrize("record_path", EXAMPLES, ids=lambda path: path.stem)
-    def test_cr_r1_a_feat_body_shows_at_most_400_words_above_its_rule(self, record_path: Path):
-        record = json.loads(record_path.read_text(encoding="utf-8"))
-        if record["pr"]["type"] != "feat":
-            pytest.skip("the bound on another commit type's body is not this case's")
+    def test_cr_r1_a_fixture_body_shows_at_most_400_words_above_its_rule(self, record_path: Path):
         body = golden_path(record_path, "pr-body").read_text(encoding="utf-8")
         assert "\n---\n" in body, "the body has no horizontal rule to end its one-pager"
         shown = len(visible_words(body))
         assert shown <= ONE_PAGER_WORDS, f"{record_path.stem} shows {shown} words above its rule"
+
+    @pytest.mark.parametrize("record_path", MADE_UP, ids=lambda path: path.stem)
+    def test_a_fixture_that_is_made_up_says_so_where_a_reader_looks_first(self, record_path: Path):
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        assert record_path.stem == f"minimal-{record['pr']['type']}"
+        assert record["pr"]["number"] is None
+        body = change_record.render_body(record)
+        opening = body.split("\n## Risk\n")[0]
+        assert "made-up record" in opening
+        assert "No pull request" in opening
+        assert "fixture" in body.split("\n## Heads-up\n")[1].split("\n\n")[0]
 
     @pytest.mark.parametrize("kind", sorted(HEADINGS))
     def test_cr_r1_a_body_carries_the_headings_of_its_commit_type_in_order(self, kind: str):
@@ -985,7 +1030,9 @@ class TestCrR3CommitMessage:
         proc = run("render", "commit", record_path)
         assert proc.returncode == 0, proc.stderr.decode("utf-8")
         record = json.loads(record_path.read_text(encoding="utf-8"))
-        assert_commit_message_form(record, proc.stdout.decode("utf-8"))
+        # A record that gives a reason in place of a body renders no labelled section.
+        labelled = "trivial" not in record["commit"]
+        assert_commit_message_form(record, proc.stdout.decode("utf-8"), labelled=labelled)
 
     def test_cr_r3_a_trivial_message_is_the_subject_the_work_item_line_and_the_trailers(
         self, tmp_path: Path

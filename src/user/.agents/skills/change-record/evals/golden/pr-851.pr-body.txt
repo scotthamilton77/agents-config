@@ -1,0 +1,147 @@
+Agents write pull request descriptions, commit messages and review replies with no template. The owner has to re-read or ask before approving one. This spec decides the three templates and a pipeline that renders them from one linted JSON record. The implementation remains, in seven slices of one pull request each.
+
+## Heads-up
+- The pull request's body was written by hand, before a renderer existed.
+- Each review round ran two reviewers on the owner's authorization, so no round counts as complete.
+- Commit 49149572 answers the third round's seven findings, and no fourth round recorded that.
+- One finding waits on agents-config-9k9.486 (the owner's ruling on a foreign model proposing prose), and so does the rewrite slice.
+- The author posted no reply on a finding, so the findings table names no commit.
+
+## Where this fits
+agents-config-9k9  Harness rework (milestone)
+agents-config-9k9.484  Change records: PR descriptions, commit messages and review replies rendered from a linted machine-readable record (feature)
+    this PR: the spec itself
+Builds on: none. Concurrent: #865 (feat(change-record): campaign fills the review campaign from posted review verdicts [9k9.484.2.4]).
+<details><summary>Scope of the owning item</summary>
+
+| Slice | What it covers | Status |
+| --- | --- | --- |
+| agents-config-9k9.484.1 | Design: Change records: PR descriptions, commit messages and review replies rendered from a linted machine-readable record | done |
+| agents-config-9k9.484.2 | [Impl] Change records: PR descriptions, commit messages and review replies rendered from a linted machine-readable record (scope: per spec) | open |
+| agents-config-9k9.484.3 | The change-record spec's errata are amended in one pass and re-attacked once | open |
+</details>
+
+## Risk
+| What could go wrong | Who or what is exposed | How we know it did not | What to do if it did |
+| --- | --- | --- | --- |
+| The squash setting flips before sessions supply a commit body, and a plain merge lands none. | Every merge to main. | The spec puts the flip last, behind five merges that carry the trailer. | Revert the setting. |
+| The retired grooming loop of prgroom (this repository's pull request grooming tool) reads a record comment as review feedback. | Any pull request with a record. | The loop has no caller, and the charter deletes it. | Teach its poller the record's marker. |
+<details><summary>Blast radius</summary>
+
+| Item the spec mints | What it is |
+| --- | --- |
+| agents-config-9k9.484.2.1 | The change-record skill, its schema, the record lint and the init stub |
+| agents-config-9k9.484.2.2 | The renderer produces the PR body, the commit message and the replies from a change record |
+| agents-config-9k9.484.2.3 | The context and discovered generators fill the record from the tracker and from GitHub |
+| agents-config-9k9.484.2.4 | The campaign generator fills the review campaign from the verdict envelopes |
+| agents-config-9k9.484.2.5 | Publish posts the record as a marked append-only comment, renders the body from it, and merge supplies the commit message |
+| agents-config-9k9.484.2.6 | The rewrite pass proposes per-section prose replacements that the author accepts or prunes |
+| agents-config-9k9.484.2.7 | The review-panel skill, the root AGENTS.md and the squash settings point at the change record |
+| agents-config-9k9.484.2.8 | A commit or PR hook enforces the record lint, deferred on minting |
+</details>
+
+## Changes
+- **Templates.** The spec gives a template for the body, the commit message and the review reply.
+- **Decisions.** Ten decisions settle where the record lives, how it is published and what may rewrite it.
+- **The record.** A table names each field group and its owner.
+- **Slices.** Seven slices carry 69 criteria, and each says what the owner checks it by.
+<details><summary>Design notes</summary>
+
+The spec states each refuted alternative under its decision. Two of them mattered most.
+
+A Markdown template that the agent fills in can be linted only by regex. It also gives a rewrite pass no boundary between fact and wording.
+
+A fold of JSON at the end of the body spends the body's budget and puts machine content before the reader. A hand edit of the body could then change the record silently.
+</details>
+
+## Discovered work
+| Item | Status | What it is | Why not in this PR |
+| --- | --- | --- | --- |
+|  | not filed | The review panel prices its architecture seat at the middle tier on every re-review. | The panel's contract is the owner's to change. |
+|  | not filed | The tracker facade's manifest parser folds a paragraph after the last Continuations bullet into that bullet. | It is the facade's behaviour, outside this spec. |
+
+---
+
+## Verification
+- make spec-lint: exit 0, run standalone from the worktree root at b5a85b10bdc53c253ccb931c0d717fa3e04b2719.
+- make doc-lint: exit 0, run standalone from the worktree root at b5a85b10bdc53c253ccb931c0d717fa3e04b2719.
+- Not run: `make ci`, because no package changed.
+
+### Review campaign
+| Reviewer | Rounds | Findings | Fixed | Rejected | Deferred |
+| --- | --- | --- | --- | --- | --- |
+| architectural-fit | 1 to 3 | 11 | 7 | 0 | 1 |
+| clarity-standalone-concision | 1 to 2 | 12 | 12 | 0 | 0 |
+| internal-consistency-decidability | 3 | 4 | 0 | 0 | 0 |
+
+<details><summary>Findings by round</summary>
+
+| Round | Id | Finding in plain words | Disposition | Reason | Commit |
+| --- | --- | --- | --- | --- | --- |
+| 1 | architectural-fit.r1.f1 | The campaign generator reads the wrong GitHub surface. Live verdict envelopes reside in submitted PR reviews, so scanning ordinary comments can report that no review ran when a verdict exists. | Fixed | Commit ca39bcdb on PR 851: CR-D2, CR-D7, CR-C1, CR-C3 and the Terms subsection now say envelopes are read from the collapsed JSON block of each submitted pull request review by the reviewing App; CR-C1's check adds an envelope-shaped issue comment that must not be read. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | architectural-fit.r1.f2 | The design substitutes its own terminal-clean rule for the canonical review-verdict contract. It rejects legitimate advisory-only terminal rounds and can label a schema-valid but incomplete or unauthenticated round terminal-clean. | Fixed | Commit ca39bcdb on PR 851: CR-D7 and CR-C5 now set the terminal sha only from an envelope the review-verdict skill's validator and completeness rule accept, advisory-only rounds included, and CR-C4 skips an envelope the validator rejects or that is not App-authored; the Terms subsection says that rule, not this spec, decides terminal-clean. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | architectural-fit.r1.f3 | The mandatory replies on rejected findings contradict the delivery contract's rule that only findings producing changes receive PR replies. | Fixed | Commit ca39bcdb on PR 851: Section 3.3 now requires a reply only on a finding that changed code or prose, as the root AGENTS.md delivery contract does; a rejection reaches the PR through the next envelope's dispositions and the campaign table. CR-L14 now requires a reply only for a fixed finding. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | architectural-fit.r1.f4 | The shared skill's templates require Claude-specific attribution without a variant for the other supported tools. A Codex, Gemini or OpenCode session must fabricate Claude attribution or fail to produce the prescribed artifacts. | Fixed | Commit ca39bcdb on PR 851: Section 3.2 and CR-R3 now name the trailers as Work-item, Co-authored-by and one session trailer whose key the authoring tool's harness defines and the record carries; the PR footer reads 'Generated with <the authoring tool>'. CR-R3's check runs one fixture with Claude-Session and one with another tool's key. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | architectural-fit.r1.f5 | The rewrite design assigns prose authoring to a foreign model despite the charter reserving foreign models for review seats. | Deferred | The conflict with charter D5 is the owner's ruling, not the author's reinterpretation. Decision item agents-config-9k9.486 records the three options; CR-D6 and CR-W7 now state that slice W does not start until it is recorded. |  |
+| 1 | architectural-fit.r1.f6 | The rewrite boundary conflicts with ownership of generated discovery rows. Filed reasons are source-derived and protected by generator stamps, yet the editor may replace those same reasons without a defined way to preserve source ownership. | Fixed | Commit ca39bcdb on PR 851: Section 5 and CR-W1 now make only the reason cells of not-filed and in-flight discovered rows rewritable; a filed row's reason is the tracker's and stays under the generator's stamp. CR-W1's check asserts a filed row's reason is absent from the request. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | clarity-standalone-concision.r1.f1 | House terms appear before their definitions, and several remain undefined. An outside reader cannot determine what qualifies as terminal-clean or what operational actions minting and admission require. | Fixed | Commit ca39bcdb on PR 851: A Terms subsection (2.1) defines work item, owning item, slice, short id, minting, the Continuations manifest, admission record, shared tree, review round, campaign, verdict envelope and terminal-clean before section 3 uses them. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | clarity-standalone-concision.r1.f2 | Referenced PR numbers lack individual glosses, and slice P is referenced before its purpose is stated. The reader cannot identify the changes used as fixtures or understand the first implementation milestone mentioned in the decisions. | Fixed | Commit ca39bcdb on PR 851: CR-L1 glosses pull requests 838, 839, 843 and 846 individually; CR-D3 now reads 'slice P (publication and merge, section 6)' at its first mention. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | clarity-standalone-concision.r1.f3 | The spec never defines the relationship between the owning item and the record's work item. Should context enumerate the record item's children or its parent's children? | Fixed | Commit ca39bcdb on PR 851: Terms 2.1 defines the owning item as the record's work item's parent container and the slices as its children; CR-X2 and CR-X7 are reworded to that definition. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | clarity-standalone-concision.r1.f4 | The short tracker id has no defined format or derivation. An author cannot tell which portion of a full id belongs in the commit subject, and an implementer cannot determine what equality the lint checks. | Fixed | Commit ca39bcdb on PR 851: Terms 2.1 defines the short id as the full id with the project prefix removed up to and including the first hyphen, with the example 9k9.484; CR-L3 checks equality against that derivation. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | clarity-standalone-concision.r1.f5 | The allowed commit types exceed the defined PR variants. Which template and required groups apply to an allowed type outside the eight named variants? | Fixed | Commit ca39bcdb on PR 851: Section 3.1's variants now map build, ci, style and revert to the chore variant, so every allowed type has one. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | clarity-standalone-concision.r1.f6 | The Discovered work template introduces 'informed' without explaining whether it is a status, a separate field or a requirement attached to in-flight work. The author cannot determine what to record or whom to inform. | Fixed | Commit ca39bcdb on PR 851: The Discovered work template's statuses are filed, not filed and in flight; 'informed' is gone, and the template says an in-flight row's 'what it is' cell states what this PR told the other PR. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | clarity-standalone-concision.r1.f7 | The model escalation rule does not specify a comparison or decision point. What correction counts must be compared, and when should effort or model change? | Fixed | Commit ca39bcdb on PR 851: CR-D6 now states the rule: over the first ten real PRs, if mean corrections per PR on PRs six to ten is not below the mean on PRs one to five, effort steps to medium for the next ten, and the same comparison decides the step to gpt-6.1-sol. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | clarity-standalone-concision.r1.f8 | The hook's activation timing has two readings. Should the owner react to failures among the first ten PRs or begin observing failures after those ten? | Fixed | Commit ca39bcdb on PR 851: Section 2, CR-D9 and the Continuations bullet now carry one trigger: a merged PR among the first ten merged after the wiring slice lands whose body fails the record lint. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | clarity-standalone-concision.r1.f9 | The authorship decision narrates a previous settlement instead of stating only the current rule. | Fixed | Commit ca39bcdb on PR 851: CR-D8 now states the rule without narration: record comments and replies post from the author's account, verdicts from the reviewing App. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 1 | clarity-standalone-concision.r1.f10 | The assurance about future template changes adds words without another decision, boundary or check. The adjacent sentences already state the permitted writes and preservation requirement. | Fixed | Commit ca39bcdb on PR 851: The 'holds by construction' sentence is removed from CR-D8. spec-lint and doc-lint exit 0 at that head; the re-attack record follows in the next commit. |  |
+| 2 | architectural-fit.r2.f1 | The record-comment marker has no integration with prgroom's comment ingestion. Every published revision becomes a new review item for grooming, so machine records introduce review work instead of remaining a separate data surface. | Superseded | Commit 30946264 on PR 851: CR-D10 and CR-Q1 (new slice Q) make prgroom's poller skip an issue comment whose first line is a change-record marker, checked by the package's suite with a three-comment fixture. |  |
+| 2 | architectural-fit.r2.f2 | The design introduces a second reply renderer without connecting it to or retiring prgroom's existing reply writer. The new record cannot be the single source of review replies while the live writer continues generating its own incompatible text. | Superseded | Commit 30946264 on PR 851: CR-D10 and CR-Q2 make prgroom's reply verb render the Outcome, Change, Verification form from its disposition, pinned by the package's suite beside CR-R5's golden form; slice Q runs make ci and bumps the release. |  |
+| 2 | clarity-standalone-concision.r2.f1 | An implementer cannot tell whether the rewrite editor may change the PR title, work-item gloss and criterion promise wording. The decision excludes them, while the field table and acceptance criterion explicitly permit them. | Fixed | Commit 30946264 on PR 851: CR-D6's editable list now names every field the section 5 table and CR-W1 mark rewritable, including the title wording, the work item gloss, the criteria promise cells and the not-filed and in-flight discovered reasons. |  |
+| 2 | clarity-standalone-concision.r2.f2 | The wiring instructions give different sizes for the required prose change. Should the implementer add one sentence or three to the root delivery contract? | Fixed | Commit 30946264 on PR 851: Section 2, CR-D9 and the section 7 table now agree with CR-G2: one sentence in review-panel, three in the root AGENTS.md. |  |
+| 3 | internal-consistency-decidability.r3.f1 | The script's exhaustive GitHub write allowance excludes the merge operation that the same script must perform. |  |  |  |
+| 3 | internal-consistency-decidability.r3.f2 | The dry-run contract requires an accurate publication preview while prohibiting the GitHub reads needed to produce it. |  |  |  |
+| 3 | internal-consistency-decidability.r3.f3 | A repeated questions-only response must both remain valid and be refused for a changed section digest. |  |  |  |
+| 3 | internal-consistency-decidability.r3.f4 | The single-source contract for every reply conflicts with the separate prgroom reply source and renderer. |  |  |  |
+| 3 | architectural-fit.r3.f1 | Slice Q makes hardening prgroom's obsolete grooming pipeline a required delivery step without reconciling its architectural retirement. The charter retains other prgroom components and explicitly schedules poll and reply for deletion. |  |  |  |
+| 3 | architectural-fit.r3.f2 | The proposed prgroom reply renderer requires verification evidence that its disposition interface does not supply. The design specifies a renderer change but does not establish how the check and observed result reach it. |  |  |  |
+| 3 | architectural-fit.r3.f3 | The campaign design collapses independent review claims and class partitions into one PR-wide ledger. Finding ids and round numbers are not unique across those campaigns, so unrelated findings can be merged and dispositions attributed to the wrong claim. |  |  |  |
+</details>
+
+## Criteria
+The criteria were attacked four times, and the attack record is `docs/specs/2026-10-10-change-record-ac-attack.json`.
+
+<details><summary>Proposed commit message</summary>
+
+```text
+spec(change-record): one linted record behind the PR body, commit message and review reply [9k9.484]
+
+Work item agents-config-9k9.484, the change-record spec.
+
+Why
+Agents write pull request descriptions, commit messages and review
+replies with no template. The owner has to re-read or ask before
+approving, because ids go unexplained and no description places the
+change or lists its risk.
+
+Change
+The spec decides the three templates and a JSON change record as their
+single source. The record lives in a marked, append-only pull request
+comment, and a merge command supplies the commit message from it. A
+bounded rewrite pass on a second model proposes prose that the author
+accepts or prunes. Seven slices carry 69 criteria, and the squash
+setting flips last.
+
+Verification
+make spec-lint and make doc-lint exit 0 at b5a85b10. The tracker
+facade's own parser reads eight items from the Continuations list. The
+attack record is complete against this revision after four attacks.
+Three review rounds raised 27 findings, and one is deferred to
+agents-config-9k9.486 (the owner's ruling on the rewrite pass).
+
+Work-item: agents-config-9k9.484
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QYRWFxiSCkMVvks81d2LYB
+```
+</details>
+
+Generated with Claude Code · https://claude.ai/code/session_01QYRWFxiSCkMVvks81d2LYB

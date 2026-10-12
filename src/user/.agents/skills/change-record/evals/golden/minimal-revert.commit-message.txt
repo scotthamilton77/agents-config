@@ -1,0 +1,7 @@
+revert(fixture): a made-up record shows the sections a revert body carries [a1.1]
+
+Work item fixture-a1.1, a made-up item that no tracker holds.
+
+Work-item: fixture-a1.1
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Lev9kbzWTUGJHXFvpBXBFi

@@ -1,0 +1,75 @@
+Outcome: Fixed.
+Change: The spec now has the campaign generator read verdict envelopes from the pull request reviews that the reviewing App submits. An ordinary comment is never read for one. (ca39bcdb)
+Verification: The criterion on reading reviews gained a check that a comment shaped like an envelope is not read. `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The spec now takes the terminal commit only from an envelope that the review-verdict skill's validator and completeness rule accept. A round whose findings are all advisory can therefore end a campaign. (ca39bcdb)
+Verification: The terms now say that the skill's rule decides when a campaign has ended, and the spec does not. `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: A reply is now required only on a finding that changed code or prose, as the delivery contract in the root `AGENTS.md` says. A rejection reaches the pull request through the next verdict's dispositions. (ca39bcdb)
+Verification: The lint criterion on replies now asks for a reply only where a finding is fixed. `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The commit message's trailers are now the work item, the co-author and one session trailer whose key the authoring tool defines. The record carries that key, and the body's last line names the authoring tool. (ca39bcdb)
+Verification: The criterion on trailers now runs one fixture with a Claude session key and one with another tool's key. `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The rewrite pass may now change the reason of a discovered row only when the row is not filed or is in flight. A filed row's reason is the tracker's and stays under the generator's stamp. (ca39bcdb)
+Verification: The criterion on the rewrite request now checks that a filed row's reason is absent from the request. `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: A terms subsection now defines twelve house terms before the templates use them. They include work item, owning item, slice, minting, verdict envelope and `terminal-clean`. (ca39bcdb)
+Verification: `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The spec now glosses each of the four fixture pull requests where it names them. Slice P carries its purpose, which is publication and merge, at its first mention. (ca39bcdb)
+Verification: `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The terms now define the owning item as the parent of the record's work item, and the slices as that parent's children. The two criteria on the scope table use that definition. (ca39bcdb)
+Verification: `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The terms now define the short tracker id as the full id without its project prefix, and give an example. The criterion on the commit subject checks the bracketed id against that derivation. (ca39bcdb)
+Verification: `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The body's variants now cover every allowed commit type. The four types that had no variant, which are build, ci, style and revert, take the chore variant. (ca39bcdb)
+Verification: `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The Discovered work template now names three statuses, which are filed, not filed and in flight. The word that had no meaning is gone, and an in-flight row says what this pull request told the other one. (ca39bcdb)
+Verification: `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The decision on the rewrite pass now states the comparison. Effort steps up when the mean corrections on pull requests six to ten are not below the mean on pull requests one to five. (ca39bcdb)
+Verification: `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The scope, the decision on the hook and the Continuations list now carry one trigger. The hook is added when a pull request among the first ten merged after the wiring slice fails the record lint. (ca39bcdb)
+Verification: `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The decision on who posts now states the rule alone. Record comments and replies post from the author's account, and verdicts post from the reviewing App. (ca39bcdb)
+Verification: `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Fixed.
+Change: The sentence that said the rule holds by construction is removed from the decision on comment writes. The sentences beside it already state the permitted writes. (ca39bcdb)
+Verification: `make spec-lint` and `make doc-lint` exit 0 at the fixing commit. The criteria were attacked again in the next commit.
+
+Outcome: Superseded.
+Change: The spec now leaves prgroom (this repository's pull request grooming tool) alone, because its poller has no caller and the charter deletes it. The slice that taught the poller to skip a record comment is withdrawn. (49149572)
+Verification: The decision on that tool says that only its verdict-posting verb is invoked. The spec holds no criterion for the withdrawn slice.
+
+Outcome: Superseded.
+Change: The spec now leaves the reply writer of prgroom (this repository's pull request grooming tool) alone, because nothing calls it and the charter deletes it. The slice that gave that writer the reply form is withdrawn. (49149572)
+Verification: The decision on that tool says every reply has one renderer, which is the skill's. The spec holds no criterion for the withdrawn slice.
+
+Outcome: Fixed.
+Change: The decision on the rewrite pass now lists every field that the field table and the criterion on the rewrite request mark as rewritable. The list includes the title's wording, the work item's gloss and the promise cells of the criteria table. (30946264)
+Verification: The decision now says in its own text that the field table and that criterion carry the same list.
+
+Outcome: Fixed.
+Change: The scope, the decision on the hook and the table of slices now agree with the wiring criterion. The wiring adds one sentence to the review-panel skill and three to the root `AGENTS.md`. (30946264)
+Verification: All four passages now give the same two counts, which are one and three.
