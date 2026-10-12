@@ -44,9 +44,9 @@ uv run path/to/scripts/change_record.py campaign [--pr NUMBER] [--app LOGIN] rec
 - `--pr NUMBER` names the pull request. Leave it out once the record's `pr.number` holds the number. A `--pr` that names a different pull request from the record's is refused.
 - `--app LOGIN` counts only the reviews that login posted. Without it, a review counts when a bot account posted it. Give it in a repository where more than one bot posts reviews.
 
-`campaign` reads GitHub through `gh`, and every call is a read. Run it from inside the pull request's repository, because `gh` reads the repository of the working directory. It checks each verdict with the validator the `review-verdict` skill ships, which it loads from that skill's directory beside this one. It names each review it skips on stderr, with the reason.
+`campaign` reads GitHub through `gh`, and every call is a read. Run it from inside the pull request's repository, because `gh` reads the repository of the working directory. It checks each verdict with the validator the `review-verdict` skill ships. It asks that skill's `round_status` whether the latest round is terminal-clean. It loads both from that skill's directory beside this one. It names each review it skips on stderr, with the reason.
 
-`campaign` computes everything first and writes the record file once. The file stays exactly as it was when the record cannot be read or does not fit the schema, when the `review-verdict` skill is not there, when a `gh` call fails or cannot be run, and when a call's answer does not have the shape that call's answer has. The message on stderr quotes the call at fault. A second run over unchanged reviews writes nothing and says so.
+`campaign` computes everything first and writes the record file once. The file stays exactly as it was when the record cannot be read or does not fit the schema, when the `review-verdict` skill is not there, when a `gh` call fails or cannot be run, and when a call's answer does not have the shape that call's answer has. The message on stderr quotes the call at fault. A second run over an unchanged pull request writes nothing and says so.
 
 Exit 0 the record holds the part, 2 anything failed.
 

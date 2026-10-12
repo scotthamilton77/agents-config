@@ -38,17 +38,26 @@ SCRIPT = HERE / "change_record.py"
 EXAMPLE = json.loads((SKILL / "examples" / "pr-843.json").read_text(encoding="utf-8"))
 
 # What `gh api` printed for pull request 843 of the repository this skill was
-# written in: the pull request, its reviews and its review comments. Each entry
-# keeps the fields a reader of the listing uses and its author's login, id and
-# type. The link fields, the node ids, the reactions and the diff hunks are left
-# out, because they are most of the bytes and nothing reads them.
+# written in: the pull request, its reviews, its review comments, and the
+# comparison of its head with its base branch. Each entry keeps the fields a
+# reader of the listing uses and its author's login, id and type. The link
+# fields, the node ids, the reactions and the diff hunks are left out, because
+# they are most of the bytes and nothing reads them.
 RECORDED = SKILL / "evals" / "pr-843"
 PULL = json.loads((RECORDED / "pull.json").read_text(encoding="utf-8"))
 REVIEWS = json.loads((RECORDED / "reviews.json").read_text(encoding="utf-8"))
 COMMENTS = json.loads((RECORDED / "comments.json").read_text(encoding="utf-8"))
+COMPARISON = json.loads((RECORDED / "compare.json").read_text(encoding="utf-8"))
 
 APP = "pr-hater[bot]"
 AUTHOR = PULL["user"]["login"]
+
+# Where the recorded pull request stands: its head, its base branch, and the
+# merge base of the two. A round the helpers below build judged that head from
+# that merge base, so it is a round on the pull request as it stands.
+HEAD = PULL["head"]["sha"]
+BASE = PULL["base"]["ref"]
+MERGE_BASE = COMPARISON["merge_base_commit"]["sha"]
 
 # The recorded reviews in the order GitHub lists them: the eight that carry a
 # verdict, then the fifteen empty ones that hold the author's thread replies,
@@ -73,9 +82,14 @@ ROWS_843 = [
 SHA = "0123456789abcdef0123456789abcdef01234567"
 REAL_ENTRY = "The gates ran on one machine only."
 NO_ROUND = "campaign: No review round has run on this pull request."
+NOT_CLEAN = "campaign: The latest review round is not terminal-clean, so no commit is recorded as cleared by review."
 
-# The only calls `campaign` makes: the pull request, then a page of its reviews or of its review comments.
-READ = re.compile(r"api repos/\{owner\}/\{repo\}/pulls/\d+(?:/(?:reviews|comments)\?per_page=100&page=\d+)?")
+# The only calls `campaign` makes: the pull request, a page of its reviews or of its
+# review comments, and the comparison of its base branch with its head commit.
+READ = re.compile(
+    r"api repos/\{owner\}/\{repo\}/"
+    r"(?:pulls/\d+(?:/(?:reviews|comments)\?per_page=100&page=\d+)?|compare/[\w./-]+\.\.\.[0-9a-f]{40})"
+)
 
 _review_ids = itertools.count(7000)
 _comment_ids = itertools.count(8000)
@@ -183,8 +197,8 @@ def verdict(
         "schema_version": "3",
         "artifact_class": kind,
         "round": number,
-        "base_sha": "f" * 40,
-        "head_sha": SHA,
+        "base_sha": MERGE_BASE,
+        "head_sha": HEAD,
         "claim_id": claim,
         "retained_categories": [],
         "staffing_record": {"digest": "sha256:" + "0" * 64},
@@ -199,6 +213,17 @@ def verdict(
         "verdict": "findings" if findings else "clean",
         "findings": findings,
     }
+
+
+def halted(number: int = 1) -> dict[str, Any]:
+    """Return a verdict for a round that stopped when a reviewer's route died and its failover died too."""
+    failure = {"lens": "security", "transport": "a route", "error": "HTTP 529: the route is overloaded"}
+    halt = {
+        "reason": "transport-failure",
+        "failures": [failure, failure | {"transport": "a failover"}],
+        "abandoned_lenses": [],
+    }
+    return verdict(number) | {"verdict": "halted", "halt": halt}
 
 
 def thread(posted: dict[str, Any], raised: dict[str, Any]) -> dict[str, Any]:
@@ -243,6 +268,11 @@ def paged(endpoint: str, pages: list[list[Any]]) -> dict[str, Any]:
     return {f"api {endpoint}?per_page=100&page={number}": page for number, page in enumerate([*pages, []], 1)}
 
 
+def comparison_of(head: str = HEAD, target: str = BASE) -> str:
+    """Return the call that compares the base branch ``target`` with the commit ``head``."""
+    return f"api repos/{{owner}}/{{repo}}/compare/{target}...{head}"
+
+
 class Ran(NamedTuple):
     code: int
     out: str
@@ -263,24 +293,29 @@ class Pull:
     def serve(
         self, reviews: list[Any], comments: list[Any] | None = None, *, pages: int = 1, comment_pages: int = 1,
         issue_comments: list[Any] | None = None, fail_on: int | None = None, number: int = 843,
-        spoiled: dict[str, Callable[[Any], Any]] | None = None,
+        spoiled: dict[str, Callable[[Any], Any]] | None = None, head: str = HEAD, target: str = BASE,
+        merge_base: str = MERGE_BASE,
     ) -> None:
         """Put a ``gh`` on the search path that answers for the pull request and logs each call.
 
         The shim answers the pull request, each page of its reviews and of its
-        review comments, and each page of its issue comments. It exits 1 on
-        any other call, and on call number ``fail_on``. ``spoiled`` names a
-        call and gives what changes that call's answer.
+        review comments, each page of its issue comments, and the comparison
+        of its base branch with its head. It exits 1 on any other call, and on
+        call number ``fail_on``. ``spoiled`` names a call and gives what
+        changes that call's answer. ``head`` is the commit the pull request
+        stands at, ``target`` is its base branch, and ``merge_base`` is what
+        the comparison of the two gives.
         """
         self.served += 1
         state = self.tmp_path / f"gh-{self.served}"
         state.mkdir()
         self.log = state / "calls.log"
         base = f"repos/{{owner}}/{{repo}}/pulls/{number}"
-        answers = {f"api {base}": {**PULL, "number": number}}
+        answers = {f"api {base}": {**PULL, "number": number, "head": {"sha": head}, "base": {"ref": target}}}
         answers |= paged(f"{base}/reviews", split(reviews, pages))
         answers |= paged(f"{base}/comments", split(comments or [], comment_pages))
         answers |= paged(f"repos/{{owner}}/{{repo}}/issues/{number}/comments", split(issue_comments or [], 1))
+        answers[comparison_of(head, target)] = {"merge_base_commit": {"sha": merge_base}}
         for call, change in (spoiled or {}).items():
             answers[call] = change(answers[call])
         cases = []
@@ -345,6 +380,13 @@ def with_heads_up(*entries: str) -> dict[str, Any]:
     return record
 
 
+def without_campaign() -> dict[str, Any]:
+    """Return the example record before any run of ``campaign``, so that a run over the recorded reviews writes it."""
+    record = example()
+    del record["campaign"]
+    return record
+
+
 def unreadable(count: int) -> list[dict[str, Any]]:
     """Return ``count`` reviews by the reviewing App whose verdicts the verdict validator rejects."""
     posted = []
@@ -377,6 +419,7 @@ class TestCrC1ReviewersAndPages:
             base,
             *(f"{base}/reviews?per_page=100&page={page}" for page in (1, 2, 3, 4)),
             *(f"{base}/comments?per_page=100&page={page}" for page in (1, 2, 3)),
+            comparison_of(),
         ]
 
     def test_cr_c1_a_verdict_alone_on_the_third_page_is_counted(self, pull: Pull):
@@ -916,10 +959,131 @@ class TestCrC4SkippedReviews:
         assert pull.calls() == []
 
 
+class TestCrC5TerminalCommit:
+    def test_cr_c5_a_clean_latest_round_gives_its_head_as_the_terminal_commit(self, pull: Pull):
+        latest = envelope_of(VERDICT_REVIEWS[-1])
+        assert (latest["verdict"], latest["head_sha"]) == ("clean", HEAD)
+        record = pull.filled(REVIEWS, COMMENTS, with_heads_up("None."))
+        assert record["campaign"]["terminal_sha"] == HEAD
+        assert record["heads_up"] == ["None."]
+
+    def test_cr_c5_an_advisory_only_latest_round_gives_its_head_as_the_terminal_commit(self, pull: Pull):
+        advisory = review(verdict(findings=[finding("f1", kind="advisory")]))
+        record = pull.filled([advisory], None, with_heads_up("None."))
+        assert record["campaign"]["terminal_sha"] == HEAD
+        assert record["heads_up"] == ["None."]
+
+    @pytest.mark.parametrize("latest", [
+        pytest.param(verdict(findings=[finding("f1")]), id="mechanical"),
+        pytest.param(halted(), id="halted"),
+    ])
+    @pytest.mark.parametrize(("heads_up", "left"), [
+        pytest.param(["None."], [], id="none"),
+        pytest.param([REAL_ENTRY], [REAL_ENTRY], id="entry"),
+    ])
+    def test_cr_c5_a_latest_round_that_is_not_terminal_clean_leaves_the_commit_empty_and_gets_the_row(
+        self, latest: dict[str, Any], heads_up: list[str], left: list[str], pull: Pull
+    ):
+        record = pull.filled([review(latest)], None, with_heads_up(*heads_up))
+        assert record["campaign"]["terminal_sha"] == ""
+        assert record["heads_up"] == [*left, NOT_CLEAN]
+        assert record["heads_up"][-1].startswith("campaign: ")
+        assert change_record.lint_record(record) == []
+
+    def test_cr_c5_a_rule_that_accepts_nothing_leaves_the_terminal_commit_empty_over_the_clean_reviews(
+        self, pull: Pull, monkeypatch: pytest.MonkeyPatch
+    ):
+        asked: list[tuple[Any, dict[str, Any]]] = []
+
+        def accept_nothing(envelope: Any, **facts: Any) -> dict[str, Any]:
+            asked.append((envelope, facts))
+            return {
+                "complete": False, "terminal_clean": False, "failed": ["a-stub"], "not_compared": [], "errors": [],
+                "unaccounted": [],
+            }
+
+        monkeypatch.setattr(change_record, "load_round_status", lambda: accept_nothing)
+        record = pull.filled(REVIEWS, COMMENTS, with_heads_up("None."))
+        assert record["campaign"]["terminal_sha"] == ""
+        assert record["heads_up"] == [NOT_CLEAN]
+        # The rule is asked once, about the latest round. It is given the facts
+        # only its caller has, and it is given no staffing record.
+        counted = [envelope_of(posted) for posted in VERDICT_REVIEWS]
+        facts = {"head_sha": HEAD, "merge_base": MERGE_BASE, "other_envelopes": counted[:-1]}
+        assert asked == [(counted[-1], facts)]
+
+    def test_cr_c5_the_rule_is_the_one_the_review_verdict_skill_ships(self):
+        rule = change_record.load_round_status()
+        assert rule.__name__ == "round_status"
+        assert Path(inspect.getsourcefile(rule)) == SKILL.parent / "review-verdict" / "validate_verdict.py"
+
+    def test_cr_c5_a_review_verdict_skill_that_ships_no_such_rule_fails_the_run_before_any_call(
+        self, pull: Pull, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ):
+        older = tmp_path / "review-verdict"
+        older.mkdir()
+        source = "def validate_document(document):\n    return {'valid': True}\n"
+        (older / "validate_verdict.py").write_text(source, encoding="utf-8")
+        monkeypatch.setattr(change_record, "VERDICT_SKILL", older)
+        pull.serve(REVIEWS, COMMENTS)
+        before = pull.write(example())
+        ran = pull.run()
+        assert ran.code == 2
+        assert "round_status" in ran.err
+        assert (pull.path.read_bytes(), pull.calls()) == (before, [])
+
+    def test_cr_c5_an_earlier_clean_round_never_names_the_terminal_commit(self, pull: Pull):
+        # The round posted last decides, even where its number is the lower one. The clean round before it does not.
+        posted = [review(verdict(3)), review(verdict(1, claim="claim-b", findings=[finding("f1")]))]
+        record = pull.filled(posted, None, with_heads_up("None."))
+        assert record["campaign"]["terminal_sha"] == ""
+        assert record["heads_up"] == [NOT_CLEAN]
+
+    def test_cr_c5_a_clean_round_at_a_head_the_pull_request_has_left_names_no_terminal_commit(self, pull: Pull):
+        pull.serve([review(verdict())], head="a" * 40)
+        pull.write(with_heads_up("None."))
+        assert pull.run().code == 0
+        record = pull.record()
+        assert record["campaign"]["terminal_sha"] == ""
+        assert record["heads_up"] == [NOT_CLEAN]
+
+    def test_cr_c5_a_clean_round_judged_from_a_base_the_branch_has_left_names_no_terminal_commit(self, pull: Pull):
+        pull.serve([review(verdict())], merge_base="b" * 40)
+        pull.write(with_heads_up("None."))
+        assert pull.run().code == 0
+        record = pull.record()
+        assert record["campaign"]["terminal_sha"] == ""
+        assert record["heads_up"] == [NOT_CLEAN]
+
+    def test_cr_c5_a_clean_round_that_leaves_an_earlier_finding_unanswered_names_no_terminal_commit(self, pull: Pull):
+        # The rule is given the earlier rounds, and it finds the finding the latest round does not answer.
+        raised = review(verdict(1, findings=[finding("f1")]))
+        record = pull.filled([raised, review(verdict(2))], None, with_heads_up("None."))
+        assert (record["campaign"]["terminal_sha"], record["heads_up"]) == ("", [NOT_CLEAN])
+        answered = review(verdict(2, priors=[prior("f1", "fixed")]))
+        record = pull.filled([raised, answered], None, with_heads_up("None."))
+        assert (record["campaign"]["terminal_sha"], record["heads_up"]) == (HEAD, ["None."])
+
+    def test_cr_c5_the_merge_base_is_read_against_the_base_branch_the_pull_request_names(self, pull: Pull):
+        # A pull request stacked on another has that one's branch as its base, and a branch name can hold a slash.
+        pull.serve([review(verdict())], target="feat/a1b.3-the-gate")
+        pull.write(with_heads_up("None."))
+        assert pull.run().code == 0
+        assert pull.calls()[-1] == comparison_of(HEAD, "feat/a1b.3-the-gate")
+        assert pull.record()["campaign"]["terminal_sha"] == HEAD
+
+    def test_cr_c5_a_pull_request_with_no_counted_round_is_not_compared_with_its_base(self, pull: Pull):
+        pull.serve([*OTHER_REVIEWS, *unreadable(1)])
+        pull.write(example())
+        assert pull.run().code == 0
+        assert pull.record()["campaign"]["terminal_sha"] == ""
+        assert [call for call in pull.calls() if "/compare/" in call] == []
+
+
 class TestCrC6RerunAndReplies:
     def test_cr_c6_a_second_run_over_unchanged_reviews_leaves_the_record_byte_identical(self, pull: Pull):
         pull.serve(REVIEWS, COMMENTS, pages=3)
-        before = pull.write(example())
+        before = pull.write(without_campaign())
         assert pull.run().code == 0
         first = pull.path.read_bytes()
         assert first != before
@@ -932,6 +1096,21 @@ class TestCrC6RerunAndReplies:
         assert pull.run().code == 0
         first = pull.path.read_bytes()
         assert pull.run().code == 0
+        assert pull.path.read_bytes() == first
+
+    @pytest.mark.parametrize("latest", [
+        pytest.param(verdict(), id="clean"),
+        pytest.param(verdict(findings=[finding("f1")]), id="mechanical"),
+    ])
+    def test_cr_c6_a_second_run_leaves_the_terminal_commit_and_the_row_about_it_byte_identical(
+        self, latest: dict[str, Any], pull: Pull
+    ):
+        pull.serve([review(latest)])
+        before = pull.write(with_heads_up("None."))
+        assert pull.run().code == 0
+        first = pull.path.read_bytes()
+        assert first != before
+        assert pull.run().out == f"{pull.path} is already current\n"
         assert pull.path.read_bytes() == first
 
     def test_cr_c6_a_superseded_reply_survives_for_a_finding_the_envelope_marks_fixed(self, pull: Pull):
@@ -956,7 +1135,23 @@ class TestCrC6RerunAndReplies:
 
 
 class TestCrC7StaleRows:
-    """The two cases that turn on a readable envelope arriving. The terminal state has no row here."""
+    """Each row `campaign` writes goes when a later run finds that its condition no longer holds."""
+
+    @pytest.mark.parametrize(("heads_up", "restored"), [(["None."], ["None."]), ([REAL_ENTRY], [REAL_ENTRY])])
+    def test_cr_c7_the_not_terminal_clean_row_goes_and_the_commit_is_set_when_the_latest_round_turns_clean(
+        self, heads_up: list[str], restored: list[str], pull: Pull
+    ):
+        raised = review(verdict(1, findings=[finding("f1")]))
+        record = pull.filled([raised], None, with_heads_up(*heads_up))
+        assert (record["campaign"]["terminal_sha"], record["heads_up"][-1]) == ("", NOT_CLEAN)
+        # The fix moved the head. The next round judged the new head and answered the finding.
+        fixed = "a" * 40
+        cleared = review(verdict(2, priors=[prior("f1", "fixed")]) | {"head_sha": fixed})
+        pull.serve([raised, cleared], head=fixed)
+        assert pull.run().code == 0
+        record = pull.record()
+        assert record["heads_up"] == restored
+        assert record["campaign"]["terminal_sha"] == fixed
 
     @pytest.mark.parametrize(("heads_up", "restored"), [(["None."], ["None."]), ([REAL_ENTRY], [REAL_ENTRY])])
     def test_cr_c7_the_no_round_row_goes_when_a_readable_envelope_arrives(
@@ -1008,6 +1203,7 @@ class TestCrC7StaleRows:
 PULL_CALL = "api repos/{owner}/{repo}/pulls/843"
 REVIEWS_CALL = f"{PULL_CALL}/reviews?per_page=100&page=1"
 COMMENTS_CALL = f"{PULL_CALL}/comments?per_page=100&page=1"
+COMPARE_CALL = comparison_of()
 
 
 def with_first(**fields: Any) -> Callable[[list[Any]], list[Any]]:
@@ -1029,6 +1225,12 @@ MISSHAPEN: dict[str, dict[str, Callable[[Any], Any]]] = {
         "an author with no login": lambda answer: answer | {"user": {"type": "User"}},
         "a login that is a number": lambda answer: answer | {"user": {"login": 7}},
         "an author that is text": lambda answer: answer | {"user": "someone"},
+        "no head field": lambda answer: {name: value for name, value in answer.items() if name != "head"},
+        "a head with no commit": lambda answer: answer | {"head": {"ref": "a-branch"}},
+        "a head commit that is null": lambda answer: answer | {"head": {"sha": None}},
+        "no base field": lambda answer: {name: value for name, value in answer.items() if name != "base"},
+        "a base with no branch name": lambda answer: answer | {"base": {"sha": MERGE_BASE}},
+        "a base branch name that is empty": lambda answer: answer | {"base": {"ref": ""}},
     },
     REVIEWS_CALL: {
         "an object where the page belongs": lambda page: {"reviews": page},
@@ -1054,6 +1256,13 @@ MISSHAPEN: dict[str, dict[str, Callable[[Any], Any]]] = {
         "an entry with no author field": without_first("user"),
         "an author with no login": with_first(user={"type": "User"}),
     },
+    COMPARE_CALL: {
+        "a list where the comparison belongs": lambda answer: [answer],
+        "no merge base": lambda answer: {"status": "diverged"},
+        "a merge base that is null": lambda answer: {"merge_base_commit": None},
+        "a merge base with no commit": lambda answer: {"merge_base_commit": {"node_id": "a-node"}},
+        "a merge base commit that is a number": lambda answer: {"merge_base_commit": {"sha": 7}},
+    },
 }
 MISSHAPEN_CASES = [(call, fault) for call, faults in MISSHAPEN.items() for fault in faults]
 
@@ -1072,8 +1281,8 @@ class TestAnswerShapes:
         assert pull.path.read_bytes() == before
         assert [path.name for path in tmp_path.iterdir() if path.is_file()] == ["record.json"]
 
-    def test_each_of_the_three_reads_has_misshapen_answers_here(self):
-        assert sorted(MISSHAPEN) == sorted([PULL_CALL, REVIEWS_CALL, COMMENTS_CALL])
+    def test_each_of_the_four_reads_has_misshapen_answers_here(self):
+        assert sorted(MISSHAPEN) == sorted([PULL_CALL, REVIEWS_CALL, COMMENTS_CALL, COMPARE_CALL])
         assert all(len(faults) >= 5 for faults in MISSHAPEN.values())
 
     def test_an_account_that_is_gone_is_nobody_and_the_run_goes_on(self, pull: Pull):
@@ -1223,9 +1432,18 @@ class TestCrC8ReadsOnly:
         pull.write(example())
         assert pull.run().code == 0
         calls = pull.calls()
-        assert len(calls) == 5
+        assert len(calls) == 6
         assert other_than_reads(calls) == []
         assert all(call.split()[0] == "api" and len(call.split()) == 2 for call in calls)
+
+    def test_cr_c8_the_comparison_is_a_read_and_the_same_call_with_anything_added_is_not(self):
+        assert other_than_reads([comparison_of(), comparison_of().replace("main", "feat/a1b.3-the_gate")]) == []
+        others = [
+            comparison_of().replace("api ", "api -X POST "),
+            f"{comparison_of()} -f body=text",
+            comparison_of("0123abc"),
+        ]
+        assert other_than_reads(others) == others
 
     def test_cr_c8_the_check_every_case_runs_tells_a_write_from_a_read(self):
         base = "api repos/{owner}/{repo}/pulls/843"
@@ -1258,11 +1476,11 @@ class TestCrX4FailedCall:
         assert len(pull.calls()) == 2
         assert [path.name for path in tmp_path.iterdir() if path.is_file()] == ["record.json"]
 
-    @pytest.mark.parametrize("failing", [1, 3, 4, 5, 6, 7, 8])
+    @pytest.mark.parametrize("failing", [1, 3, 4, 5, 6, 7, 8, 9])
     def test_cr_x4_a_gh_call_that_fails_anywhere_in_the_run_leaves_the_record_byte_identical(
         self, failing: int, pull: Pull
     ):
-        # The run over these pages makes eight calls, and the record is written only after the last of them.
+        # The run over these pages makes nine calls, and the record is written only after the last of them.
         pull.serve(REVIEWS, COMMENTS, pages=3, comment_pages=2, fail_on=failing)
         before = pull.write(with_heads_up("None."))
         ran = pull.run()
@@ -1271,11 +1489,23 @@ class TestCrX4FailedCall:
         assert pull.path.read_bytes() == before
         assert len(pull.calls()) == failing
 
-    def test_cr_x4_a_run_with_no_failing_call_makes_all_eight(self, pull: Pull):
-        pull.serve(REVIEWS, COMMENTS, pages=3, comment_pages=2, fail_on=9)
+    def test_cr_x4_a_run_with_no_failing_call_makes_all_nine(self, pull: Pull):
+        pull.serve(REVIEWS, COMMENTS, pages=3, comment_pages=2, fail_on=10)
         pull.write(with_heads_up("None."))
         assert pull.run().code == 0
-        assert len(pull.calls()) == 8
+        assert len(pull.calls()) == 9
+
+    def test_cr_x4_a_comparison_that_fails_is_named_and_the_record_is_byte_identical(self, pull: Pull, tmp_path: Path):
+        # The comparison is the last call of the run, after two pages of reviews and two of review comments.
+        pull.serve(REVIEWS, COMMENTS, fail_on=6)
+        before = pull.write(with_heads_up("None."))
+        ran = pull.run()
+        assert ran.code == 2
+        assert f"`gh {comparison_of()}` exited 1" in ran.err
+        assert "HTTP 502" in ran.err
+        assert pull.path.read_bytes() == before
+        assert pull.calls()[-1] == comparison_of()
+        assert [path.name for path in tmp_path.iterdir() if path.is_file()] == ["record.json"]
 
     def test_cr_x4_a_gh_that_cannot_be_run_is_named_and_the_record_is_byte_identical(self, pull: Pull):
         before = pull.write(example())
@@ -1320,16 +1550,8 @@ class TestCampaignCommand:
         assert change_record.lint_record(pull.record()) == []
         assert rows(pull.record()) == ROWS_843
 
-    def test_the_campaign_of_the_recorded_reviews_is_the_example_records_but_for_the_terminal_commit(self, pull: Pull):
-        record = pull.filled(REVIEWS, COMMENTS)
-        part = {**record["campaign"], "terminal_sha": EXAMPLE["campaign"]["terminal_sha"]}
-        del part["digest"]
-        assert {**part, "digest": change_record.stamp(part)} == EXAMPLE["campaign"]
-
-    def test_campaign_names_no_terminal_commit_and_writes_no_row_about_one(self, pull: Pull):
-        record = pull.filled(REVIEWS, COMMENTS, with_heads_up("None."))
-        assert record["campaign"]["terminal_sha"] == ""
-        assert record["heads_up"] == ["None."]
+    def test_the_campaign_of_the_recorded_reviews_is_the_example_records(self, pull: Pull):
+        assert pull.filled(REVIEWS, COMMENTS)["campaign"] == EXAMPLE["campaign"]
 
     def test_a_record_new_from_init_takes_a_campaign(self, pull: Pull):
         record = change_record.new_record("feat", "a-component", "proj-a1b.3")
@@ -1382,7 +1604,7 @@ class TestCampaignCommand:
 
     def test_campaign_runs_from_the_command_line_and_says_what_it_wrote(self, pull: Pull):
         pull.serve(REVIEWS, COMMENTS)
-        pull.write(example())
+        pull.write(without_campaign())
         proc = subprocess.run(
             [sys.executable, str(SCRIPT), "campaign", "--pr", "843", "--app", APP, str(pull.path)],
             capture_output=True, text=True, check=False,
@@ -1394,7 +1616,7 @@ class TestCampaignCommand:
 
     def test_a_second_run_over_unchanged_reviews_says_the_record_is_already_current(self, pull: Pull):
         pull.serve(REVIEWS, COMMENTS)
-        pull.write(example())
+        pull.write(without_campaign())
         assert pull.run().out == f"wrote {pull.path}\n"
         assert pull.run().out == f"{pull.path} is already current\n"
 
@@ -1406,8 +1628,8 @@ class TestCampaignCommand:
         assert [line for line in table.splitlines() if line.startswith("| ")][2:] == [
             "| " + " | ".join(str(cell) for cell in row) + " |" for row in ROWS_843
         ]
-        # The generator names no terminal commit, so the body carries no line about one.
-        assert "Terminal-clean" not in section
+        # The last recorded round is terminal-clean, so the body names the commit it ended at.
+        assert f"Terminal-clean at {HEAD}." in section
         entries = [line for line in fold.splitlines() if line.startswith("| ")][2:]
         assert len(entries) == 24
         assert entries[3].startswith("| 1 | correctness.r1.f1 (claim 9k9.408-r2, typed-code) | A fourth dead-run claim can bypass")
@@ -1447,6 +1669,15 @@ class TestCampaignInTheSkillText:
         calls = text[text.index("`campaign` makes these, in order:") :]
         for listing in ('pulls/NUMBER"`', "pulls/NUMBER/reviews?per_page=100&page=N", "pulls/NUMBER/comments?per_page=100&page=N"):
             assert listing in calls
+
+    def test_the_generators_reference_says_who_decides_the_terminal_commit_and_quotes_the_row_for_none(self):
+        text = (SKILL / "references" / "generators.md").read_text(encoding="utf-8")
+        section = text[text.index("## `campaign`") :].split("\n## ")[0]
+        assert "`round_status`" in section
+        assert "leaves `terminal_sha` empty" not in section
+        assert f"`{NOT_CLEAN}`" in section
+        calls = text[text.index("`campaign` makes these, in order:") :]
+        assert 'compare/BASE...HEAD"`' in calls
 
     def test_the_lint_reference_says_the_script_fills_all_three_generated_parts(self):
         text = (SKILL / "references" / "lint-rules.md").read_text(encoding="utf-8")

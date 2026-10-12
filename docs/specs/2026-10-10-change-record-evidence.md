@@ -37,9 +37,9 @@
 - CR-C2 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC2Findings
 - CR-C3 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC3EmptyCampaign
 - CR-C4 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC4SkippedReviews
-- CR-C5 | open
+- CR-C5 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC5TerminalCommit
 - CR-C6 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC6RerunAndReplies
-- CR-C7 | open
+- CR-C7 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC7StaleRows
 - CR-C8 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC8ReadsOnly
 - CR-P1 | open
 - CR-P2 | open
