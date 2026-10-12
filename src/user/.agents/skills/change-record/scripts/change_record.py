@@ -12,6 +12,7 @@ Usage: uv run change_record.py init --type TYPE --component NAME --work-item ID 
        uv run change_record.py lint [--pr NUMBER] <record.json>
        uv run change_record.py context <record.json>
        uv run change_record.py discovered <record.json>
+       uv run change_record.py campaign [--pr NUMBER] [--app LOGIN] <record.json>
        uv run change_record.py render body <record.json> [--existing-body FILE] [--comment-url URL]
        uv run change_record.py render commit <record.json>
        uv run change_record.py render reply <record.json> --finding ID
@@ -32,6 +33,11 @@ in the working directory's repository. Each takes the work item and the pull
 request from the record, and writes the file once, after every call has
 succeeded. Exit 0 the record holds the part, 2 anything failed.
 
+``campaign`` fills the record's review campaign the same way, from the review
+verdicts posted on its pull request, which it reads through ``gh``. It checks
+each verdict with the ``review-verdict`` skill's validator and names each
+review it skips on stderr.
+
 ``render`` fills one of the three template files from a record and writes the
 result to stdout, or to the file ``--output`` names. It lints first. A record
 it refuses gets the JSON result on stderr and nothing written. Exit 0
@@ -43,6 +49,7 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import importlib.util
 import itertools
 import json
 import re
@@ -1275,14 +1282,17 @@ def inert(text: str) -> str:
     return "".join(_inert_line(line, ending) + ending for line, ending in zip(lines[::2], lines[1::2]))
 
 
-def run_generator(args: argparse.Namespace, fill: Callable[[dict[str, Any]], None]) -> int:
+def run_generator(args: argparse.Namespace, fill: Callable[..., None]) -> int:
     """Run one generator over the record file ``args.record`` names, and return the exit status.
 
     ``fill`` computes every part its generator owns and sets them in the
-    record it is given. The file is written once, after ``fill`` returns, and
-    only when the record changed. A failure of any kind therefore leaves the
-    file as it was, and a second run over unchanged sources writes nothing.
+    record it is given. Each option the subcommand takes besides the record's
+    path reaches ``fill`` as a keyword argument of the option's name. The file
+    is written once, after ``fill`` returns, and only when the record changed.
+    A failure of any kind therefore leaves the file as it was, and a second
+    run over unchanged sources writes nothing.
     """
+    options = {name: value for name, value in vars(args).items() if name not in ("command", "record", "run")}
     try:
         record = read_record(args.record)
         faults = sorted(_schema_faults(record))
@@ -1292,7 +1302,7 @@ def run_generator(args: argparse.Namespace, fill: Callable[[dict[str, Any]], Non
             raise RecordError("schema", message)
         filled = copy.deepcopy(record)
         try:
-            fill(filled)
+            fill(filled, **options)
         except (KeyError, IndexError, TypeError) as exc:
             # Each read states the shape of its answer, and a wrong shape fails
             # there, naming the call. This catches a read whose stated shape
@@ -1310,10 +1320,12 @@ def run_generator(args: argparse.Namespace, fill: Callable[[dict[str, Any]], Non
     return EXIT_VALID
 
 
-def add_generator(commands: Any, name: str, fill: Callable[[dict[str, Any]], None], does: str) -> None:
+def add_generator(commands: Any, name: str, fill: Callable[..., None], does: str) -> argparse.ArgumentParser:
     """Add the subcommand ``name`` to ``commands``: a generator that takes a record file and runs ``fill``.
 
-    ``does`` says what the generator does, as the words that follow "to" in a sentence.
+    ``does`` says what the generator does, as the words that follow "to" in a
+    sentence. The subcommand's parser is returned, so a generator that takes
+    options adds them to it.
     """
     generator = commands.add_parser(
         name,
@@ -1324,6 +1336,7 @@ def add_generator(commands: Any, name: str, fill: Callable[[dict[str, Any]], Non
     )
     generator.add_argument("record", type=Path, help="path to the record's JSON file")
     generator.set_defaults(run=lambda args: run_generator(args, fill))
+    return generator
 
 
 # The two generators that read the tracker: `context` and `discovered`.
@@ -1609,6 +1622,299 @@ def fill_discovered(record: dict[str, Any]) -> None:
         rest = [row for row in rest if isinstance(row, dict)]
     record["discovered"]["rows"] = filed + rest
     record["discovered"]["filed_digest"] = stamp(filed)
+
+
+# The generator that reads the review verdicts posted on a pull request: `campaign`.
+
+# The skill that defines a review verdict. Every skill sits beside the others in
+# one skills directory, in a source tree and wherever the skills are installed.
+VERDICT_SKILL = Path(__file__).resolve().parent.parent.parent / "review-verdict"
+
+# The column of a reviewer's row that counts a finding, by the finding's disposition.
+DISPOSITION_COLUMNS = {
+    "fixed": "fixed",
+    "rebutted": "rejected",
+    "advisory-deferred": "deferred",
+    "transferred": "deferred",
+}
+
+# The two places a reply names its commit: in parentheses at the end of its
+# Change line, and straight after the word "commit".
+CLOSING_COMMIT = re.compile(r"^Change:.*\(([0-9a-f]{7,40})\)[ \t]*$", re.MULTILINE)
+NAMED_COMMIT = re.compile(r"\bcommits?\b[\s:`]*\b([0-9a-f]{7,40})\b", re.IGNORECASE)
+
+
+def or_none(shape: dict[str, Any]) -> dict[str, Any]:
+    """Return ``shape`` widened to take null too, which GitHub gives where an account or a review is gone."""
+    return {**shape, "type": [shape["type"], "null"]}
+
+
+# The shape of each answer `campaign` reads from GitHub, which holds what
+# `campaign` reads from that answer and nothing else: the pull request, an
+# entry of its reviews, and an entry of its review comments.
+PULL = holding({"user": or_none(holding({"login": NAME}))})
+REVIEW = holding({
+    "id": COUNT,
+    "body": TEXT_OR_NONE,
+    "state": TEXT,
+    "user": or_none(holding({"login": NAME, "type": TEXT})),
+})
+REVIEW_COMMENT = holding(
+    {"id": COUNT, "pull_request_review_id": or_none(COUNT), "body": TEXT, "user": or_none(holding({"login": NAME}))},
+    {"in_reply_to_id": or_none(COUNT)},
+)
+
+
+def load_verdict_validator() -> Callable[[Any], dict[str, Any]]:
+    """Return the validator that the ``review-verdict`` skill ships, loaded from the skill directory beside this one.
+
+    The validator takes a parsed verdict and returns ``{"valid": True}``, or
+    ``{"valid": False, "errors": [...]}`` with a message in each error. It is
+    that skill's own function. This script holds no copy of the verdict's
+    rules, so the two cannot come to disagree.
+    """
+    path = VERDICT_SKILL / "validate_verdict.py"
+    try:
+        spec = importlib.util.spec_from_file_location("validate_verdict", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.validate_document
+    except (OSError, ImportError, SyntaxError, AttributeError) as exc:
+        message = f"the `review-verdict` skill's validator checks each verdict, and {path} cannot be loaded: {exc}"
+        raise RecordError("no-verdict-skill", message) from exc
+
+
+def fenced_json(body: str) -> str | None:
+    """Return the text of the last fenced ``json`` block in ``body``, or ``None`` when it ends with no such block.
+
+    The reviewing App posts a verdict, and the record of one finding, as the
+    last fenced block of a comment. The last line that is only backticks
+    closes that block. The last line above it that is the same run of
+    backticks and then ``json`` opens it. That run is longer than any run of
+    backticks inside the block, so no line of the block's own text closes it.
+    """
+    lines = LINE_END.split(body)
+    close = next((at for at in reversed(range(len(lines))) if len(lines[at]) >= 3 and set(lines[at]) == {"`"}), None)
+    if close is None:
+        return None
+    opener = lines[close] + "json"
+    start = next((at for at in reversed(range(close)) if lines[at] == opener), None)
+    return None if start is None else "\n".join(lines[start + 1 : close])
+
+
+def reply_commit(body: str) -> str:
+    """Return the commit that the reply ``body`` names, or an empty string when it names none.
+
+    The commit is the one in parentheses that ends the reply's Change line.
+    A reply with no such line names the first commit that comes straight
+    after the word "commit". A commit id anywhere else in a reply is not
+    read, because a reply also names commits that fixed nothing.
+    """
+    named = CLOSING_COMMIT.search(body) or NAMED_COMMIT.search(body)
+    return named.group(1) if named else ""
+
+
+def _reply_commits(
+    comments: list[Any], author: str | None, posted: list[tuple[int, dict[str, Any]]]
+) -> dict[tuple[str, str, str], str]:
+    """Return the commit the pull request's author names in reply to each finding, by the finding.
+
+    The reviewing App opens a thread for a finding with a comment that ends
+    in the finding's record, and that comment belongs to the review whose
+    verdict raised the finding. The verdict gives the claim id and the
+    artifact class, and the record gives the finding id. The author's reply
+    on that thread is the one read, and a later reply that names a commit
+    replaces an earlier one. A finding with no thread has no entry.
+    """
+    verdicts = dict(posted)
+    threads: dict[int, tuple[str, str, str]] = {}
+    for comment in comments:
+        verdict = verdicts.get(comment["pull_request_review_id"])
+        if verdict is None or comment.get("in_reply_to_id") is not None:
+            continue
+        try:
+            finding_id = json.loads(fenced_json(comment["body"]) or "")["id"]
+        except (ValueError, KeyError, TypeError):
+            continue
+        threads[comment["id"]] = (verdict["claim_id"], verdict["artifact_class"], finding_id)
+    commits: dict[tuple[str, str, str], str] = {}
+    for comment in comments:
+        finding = threads.get(comment.get("in_reply_to_id"))
+        commit = reply_commit(comment["body"])
+        if finding and commit and (comment["user"] or {}).get("login") == author:
+            commits[finding] = commit
+    return commits
+
+
+def _read_verdict(text: str, validate: Callable[[Any], dict[str, Any]]) -> dict[str, Any]:
+    """Return the verdict that ``text`` holds, or raise a ``ValueError`` that says why it cannot be read.
+
+    A verdict that escapes half of a surrogate pair holds text no record can
+    take. It is refused here, where the review that carries it can be named.
+    """
+    try:
+        verdict = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"it is not valid JSON: {exc}") from exc
+    where = next(_not_utf8(verdict), None)
+    if where is not None:
+        raise ValueError(f"it holds text that UTF-8 cannot hold, at {where or 'its root'}")
+    result = validate(verdict)
+    if not result["valid"]:
+        faults = "; ".join(str(error.get("message")) for error in result.get("errors", []))
+        raise ValueError(f"the verdict validator rejects it: {faults}")
+    return verdict
+
+
+def _posted_verdicts(
+    reviews: list[Any], app: str | None, validate: Callable[[Any], dict[str, Any]]
+) -> tuple[list[tuple[int, dict[str, Any]]], int]:
+    """Return the verdicts the reviewing App posted, each with its review's id, and the count that could not be read.
+
+    Only a review whose body ends in a fenced ``json`` block carries a
+    verdict, and every other review is passed over without a word. A review
+    counts as the reviewing App's when a bot account posted it, and ``app``
+    narrows that to one login. A review by anyone else is skipped, and so is
+    a review that was dismissed. A verdict of the App's own that is not JSON,
+    that holds text UTF-8 cannot hold, or that ``validate`` rejects, is
+    skipped and counted as unreadable. Each review that is skipped is named
+    on stderr.
+    """
+    posted: list[tuple[int, dict[str, Any]]] = []
+    unreadable = 0
+    for review in reviews:
+        text = fenced_json(review["body"] or "")
+        if text is None:
+            continue
+        author = review["user"] or {}
+        if author.get("type") != "Bot" or app not in (None, author.get("login")):
+            reason = f"its author, {author.get('login')}, is not the reviewing App"
+        elif review["state"] == "DISMISSED":
+            reason = "it was dismissed"
+        else:
+            try:
+                posted.append((review["id"], _read_verdict(text, validate)))
+                continue
+            except ValueError as exc:
+                unreadable += 1
+                reason = f"its verdict cannot be read: {exc}"
+        print(f"campaign: review {review['id']} is skipped, because {reason}", file=sys.stderr)
+    return posted, unreadable
+
+
+def _empty_campaign_rows(counted: int, unreadable: int) -> list[str]:
+    """Return the heads-up rows that say why a campaign is empty, which is none when a verdict was counted."""
+    if counted:
+        return []
+    if not unreadable:
+        return ["No review round has run on this pull request."]
+    carried = "review carries a verdict" if unreadable == 1 else "reviews carry verdicts"
+    return [f"{unreadable} {carried} that could not be read, so no review round is counted."]
+
+
+def _terminal_sha(verdicts: list[dict[str, Any]]) -> str:
+    """Return the head commit at which the campaign in ``verdicts`` ended clean, which is always an empty string.
+
+    A campaign ends clean at the head of a round that is complete and holds no
+    blocking finding. Whether a round is complete is for the skill that
+    defines a review verdict to decide, and that skill ships no function that
+    decides it. This script does not decide it in that skill's place, so it
+    names no commit for any campaign.
+    """
+    return ""
+
+
+def campaign_part(verdicts: list[dict[str, Any]], commits: dict[tuple[str, str, str], str]) -> dict[str, Any]:
+    """Return the campaign part of a record, built from review verdicts in the order they were posted.
+
+    ``commits`` gives the commit the author's reply names, by the finding.
+
+    A finding is named by its verdict's claim id and artifact class together
+    with its own id, because finding ids start again with each claim and each
+    class. A reviewer's row gives the lowest and the highest round the
+    reviewer ran in, across every claim and class. It counts each finding the
+    reviewer raised once, and counts it again under the column of the
+    finding's latest disposition. A finding with no disposition is in none of
+    those columns, so the columns can total less than the findings.
+
+    A finding's entry gives the round it first appeared in and the claim as
+    that round worded it. Its disposition is the latest one a verdict gives
+    it, with that disposition's evidence as the reason. A disposition for a
+    finding that none of ``verdicts`` raised is passed over.
+    """
+    rounds: dict[str, list[int]] = {}
+    findings: dict[tuple[str, str, str], dict[str, Any]] = {}
+    raised_by: dict[tuple[str, str, str], str] = {}
+    settled: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for verdict in verdicts:
+        claim, kind = verdict["claim_id"], verdict["artifact_class"]
+        for name in [entry["lens"] for entry in verdict["lenses"] + verdict["findings"]]:
+            rounds.setdefault(name, []).append(verdict["round"])
+        for finding in verdict["findings"]:
+            key = (claim, kind, finding["id"])
+            if key not in findings:
+                raised_by[key] = finding["lens"]
+                findings[key] = {
+                    "claim_id": claim,
+                    "artifact_class": kind,
+                    "round": verdict["round"],
+                    "id": finding["id"],
+                    "claim": inert(finding["claim"]),
+                }
+        for prior in verdict["prior_dispositions"]:
+            settled[(claim, kind, prior["id"])] = prior
+    reviewers = []
+    for name, ran in rounds.items():
+        raised = [key for key in findings if raised_by[key] == name]
+        row = {
+            "reviewer": name,
+            "rounds": str(min(ran)) if min(ran) == max(ran) else f"{min(ran)} to {max(ran)}",
+            "findings": len(raised),
+            "fixed": 0,
+            "rejected": 0,
+            "deferred": 0,
+        }
+        for key in raised:
+            if key in settled:
+                row[DISPOSITION_COLUMNS[settled[key]["disposition"]]] += 1
+        reviewers.append(row)
+    for key, entry in findings.items():
+        if key in settled:
+            entry["disposition"] = settled[key]["disposition"]
+            entry["reason"] = inert(settled[key].get("evidence", ""))
+            if "work_item" in settled[key]:
+                entry["work_item"] = settled[key]["work_item"]
+        entry["commit"] = commits.get(key, "")
+    part = {"reviewers": reviewers, "terminal_sha": _terminal_sha(verdicts), "findings": list(findings.values())}
+    return {**part, "digest": stamp(part)}
+
+
+def fill_campaign(record: dict[str, Any], pr: int | None = None, app: str | None = None) -> None:
+    """Set ``campaign`` in ``record`` from the review verdicts posted on its pull request, with its stamp.
+
+    The pull request is ``pr``, or else the one the record names, and a
+    ``pr`` that is not the record's own is refused. The validator is loaded
+    before the first call, so a missing skill costs no call. The pull request
+    is read for its author, whose replies name the commits. A campaign that
+    comes out empty gets a heads-up row that says why, and that row goes when
+    a later run counts a verdict.
+    """
+    held = record["pr"]["number"]
+    number = held if pr is None else pr
+    if number is None:
+        raise RecordError("no-pull-request", "the record names no pull request yet; give its number with --pr")
+    if held not in (None, number):
+        message = f"the record is for pull request {held}, and --pr names pull request {number}"
+        raise RecordError("other-pull-request", message)
+    validate = load_verdict_validator()
+    pull = f"repos/{{owner}}/{{repo}}/pulls/{number}"
+    author = (tool_json(["gh", "api", pull], PULL)["user"] or {}).get("login")
+    reviews = gh_pages(f"{pull}/reviews?per_page=100", REVIEW)
+    comments = gh_pages(f"{pull}/comments?per_page=100", REVIEW_COMMENT)
+    posted, unreadable = _posted_verdicts(reviews, app, validate)
+    verdicts = [verdict for _, verdict in posted]
+    record["campaign"] = campaign_part(verdicts, _reply_commits(comments, author, posted))
+    set_generator_rows(record, "campaign", _empty_campaign_rows(len(verdicts), unreadable))
 
 
 def _filled(text: str) -> str:
@@ -2010,6 +2316,17 @@ def build_parser() -> argparse.ArgumentParser:
     lint.set_defaults(run=_lint)
     add_generator(commands, "context", fill_context, "fill where_this_fits from the tracker and from GitHub")
     add_generator(commands, "discovered", fill_discovered, "fill the filed rows of discovered from the tracker")
+    campaign = add_generator(
+        commands, "campaign", fill_campaign, "fill campaign from the review verdicts posted on the pull request"
+    )
+    campaign.add_argument(
+        "--pr", type=int, metavar="NUMBER",
+        help="the pull request to read; leave it out when the record already holds the number",
+    )
+    campaign.add_argument(
+        "--app", type=_filled, metavar="LOGIN",
+        help="count only the reviews this login posted; without it, a review counts when a bot account posted it",
+    )
     render = commands.add_parser(
         "render",
         help="render the pull request body, the commit message or a review reply from a record",

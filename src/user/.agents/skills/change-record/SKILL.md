@@ -13,7 +13,7 @@ Every change is described in the pull request body, in the commit message, and i
 
 `references/record.schema.json` defines every field. `references/fields.md` says what each group holds, who writes it, and which fields hold wording an editor may change. `examples/pr-843.json` is a worked record for a feature pull request that went through eight review rounds.
 
-The author writes most of the record. Three parts hold facts that are copied and never composed. They are `where_this_fits`, the filed rows of `discovered`, and `campaign`. The script fills the first two. Nothing fills `campaign` yet, so copy it from the posted review verdicts. Each part carries a stamp over its content, and `references/lint-rules.md` shows how to set one by hand. The `record` group is bookkeeping the author leaves alone.
+The author writes most of the record. Three parts hold facts that are copied and never composed. They are `where_this_fits`, the filed rows of `discovered`, and `campaign`. The script fills all three. Each part carries a stamp over its content, and `references/lint-rules.md` shows how to set one by hand. The `record` group is bookkeeping the author leaves alone.
 
 ## The script
 
@@ -23,6 +23,7 @@ Run the script from this skill's directory. `references/commands.md` gives each 
 uv run scripts/change_record.py init --type feat --component NAME --work-item ID record.json
 uv run scripts/change_record.py context record.json
 uv run scripts/change_record.py discovered record.json
+uv run scripts/change_record.py campaign [--pr NUMBER] record.json
 uv run scripts/change_record.py lint [--pr NUMBER] record.json
 uv run scripts/change_record.py render body record.json --output body.md
 uv run scripts/change_record.py render commit record.json
@@ -31,7 +32,8 @@ uv run scripts/change_record.py render reply record.json --finding ID
 
 - `init` starts a record with the author's fields empty. It never replaces a file.
 - `context` fills `where_this_fits` from the tracker and from GitHub. It writes the ancestry, the owning item's scope table, and the pull requests this one builds on and runs beside.
-- `discovered` fills the filed rows of `discovered` from the tracker, and leaves the author's rows in place. Run it and `context` from inside the pull request's repository, giving the script by its path. `references/generators.md` says how each part is derived.
+- `discovered` fills the filed rows of `discovered` from the tracker, and leaves the author's rows in place.
+- `campaign` fills `campaign` from the review verdicts posted on the pull request. It names each review it skips. Run the three generators from inside the pull request's repository, giving the script by its path. `references/generators.md` says how each part is derived.
 - `lint` checks the record against the schema, then against the writing rules a program can decide. It names each fault by field and by rule. `references/lint-rules.md` lists every rule under its code and says how `lint` counts and matches. With `--pr` it also checks the record's reach flag against the pull request's changed paths.
 - `render` fills one artifact's template from the record. It runs `lint` first and writes nothing for a record that fails. It never calls GitHub. When the pull request already has a body, pass that body with `--existing-body`, because another tool may keep a decisions block there and `render` carries it over.
 
