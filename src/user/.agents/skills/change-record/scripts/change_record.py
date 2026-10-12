@@ -40,8 +40,10 @@ review it skips on stderr.
 
 ``render`` fills one of the three template files from a record and writes the
 result to stdout, or to the file ``--output`` names. It lints first. A record
-it refuses gets the JSON result on stderr and nothing written. Exit 0
-rendered, 1 refused, 2 unreadable, unparseable or called wrongly.
+it refuses gets the JSON result on stderr and nothing written. ``render body``
+warns on stderr when the body shows more words above its horizontal rule than
+a one-pager takes, and writes the body all the same. Exit 0 rendered, 1
+refused, 2 unreadable, unparseable or called wrongly.
 """
 
 from __future__ import annotations
@@ -2016,6 +2018,13 @@ WORD = re.compile(r"(?:" + CODE_SPAN.pattern + r"|\S)+")
 # The most columns a line of commit prose takes, which is the width a log is read at.
 WRAP_COLUMN = 72
 
+# The most words that the part of a body above its horizontal rule shows a reader.
+ONE_PAGER_WORDS = 400
+
+# A fold, from its opening tag to its closing one, and the horizontal rule that ends the one-pager.
+FOLD = re.compile(r"<details[\s>].*?</details>", re.DOTALL)
+ONE_PAGER_END = re.compile(r"^---$", re.MULTILINE)
+
 _SECTION = re.compile(r"\{\{([#/])([a-z_.]+)\}\}")
 _PARENTHESIS = re.compile(r" \([^()$]*\$\{([^}]+)\}[^()$]*\)")
 
@@ -2268,6 +2277,18 @@ def render_body(record: dict[str, Any], existing_body: str = "", comment_url: st
     return _fill(_template("pr-body.md"), view)
 
 
+def visible_words(body: str) -> list[str]:
+    """Return the words a reader sees in a body's one-pager without opening a fold.
+
+    The one-pager is the text above the first horizontal rule. A fold is left
+    out whole, its label included. A word is a run of characters with no space
+    in it that holds a letter or a digit. A table's pipes, a heading's marks
+    and a list's bullets hold neither, so they are not words.
+    """
+    one_pager = ONE_PAGER_END.split(FOLD.sub("", body), maxsplit=1)[0]
+    return [token for token in one_pager.split() if re.search(r"[^\W_]", token)]
+
+
 def _reply_entry(record: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     """Return the one reply entry the arguments name, or raise ``Refusal`` when they name none or several."""
     wanted = {"finding_id": args.finding, "claim_id": args.claim, "artifact_class": args.artifact_class}
@@ -2319,6 +2340,15 @@ def _render(args: argparse.Namespace) -> int:
         args.output.write_bytes(text.encode("utf-8"))
     else:
         sys.stdout.buffer.write(text.encode("utf-8"))
+    shown = len(visible_words(text)) if args.artifact == "body" else 0
+    if shown > ONE_PAGER_WORDS:
+        # The body is written all the same, because lines a generator wrote
+        # count toward the bound and the author cannot shorten those.
+        said = (
+            f"warning: the body shows {shown} words above its horizontal rule, "
+            f"and a one-pager takes at most {ONE_PAGER_WORDS}; words inside a fold are not counted"
+        )
+        print(said, file=sys.stderr)
     return EXIT_VALID
 
 

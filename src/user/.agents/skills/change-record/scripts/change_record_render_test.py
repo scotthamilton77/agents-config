@@ -72,11 +72,8 @@ DECISIONS = (
 COMMENT_URL = "https://github.com/example/repo/pull/843#issuecomment-1"
 
 # The most words that the part of a body above its horizontal rule shows a reader.
+# The number is written out here, so a bound that moves in the script fails a case.
 ONE_PAGER_WORDS = 400
-
-# A fold, from its opening tag to its closing one, and the horizontal rule that ends the one-pager.
-FOLD = re.compile(r"<details[\s>].*?</details>", re.DOTALL)
-RULE = re.compile(r"^---$", re.MULTILINE)
 
 FEAT_HEADINGS = [
     "## Heads-up",
@@ -280,16 +277,17 @@ def artifacts(record_path: Path) -> dict[str, bytes]:
     return rendered
 
 
-def visible_words(body: str) -> list[str]:
-    """Return the words a reader sees in a body's one-pager without opening a fold.
+# The script's own counter of the words a one-pager shows. The suite counts with it, so the two cannot disagree.
+visible_words = change_record.visible_words
 
-    The one-pager is the text above the first horizontal rule. A fold is left
-    out whole, its label included. A word is a run of characters with no space
-    in it that holds a letter or a digit. A table's pipes, a heading's marks
-    and a list's bullets hold neither, so they are not words.
-    """
-    one_pager = RULE.split(FOLD.sub("", body), maxsplit=1)[0]
-    return [token for token in one_pager.split() if re.search(r"[^\W_]", token)]
+
+def showing(words: int) -> dict[str, Any]:
+    """Return the example with one more heads-up row, sized so that its body shows exactly ``words`` words."""
+    record = example()
+    short = words - len(visible_words(change_record.render_body(record)))
+    assert short > 0
+    record["heads_up"].append(" ".join(["Padding"] * short))
+    return record
 
 
 def assert_commit_message_form(record: dict[str, Any], message: str, labelled: bool = True) -> None:
@@ -448,7 +446,7 @@ class TestCrR1Body:
         if record["pr"]["type"] != "feat":
             pytest.skip("the bound on another commit type's body is not this case's")
         body = golden_path(record_path, "pr-body").read_text(encoding="utf-8")
-        assert RULE.search(body), "the body has no horizontal rule to end its one-pager"
+        assert "\n---\n" in body, "the body has no horizontal rule to end its one-pager"
         shown = len(visible_words(body))
         assert shown <= ONE_PAGER_WORDS, f"{record_path.stem} shows {shown} words above its rule"
 
@@ -497,6 +495,55 @@ class TestCrR1Body:
             position = found + len(line)
         assert "{{" not in body
         assert "${" not in body
+
+
+class TestOnePagerBound:
+    def test_render_body_warns_on_stderr_with_the_count_and_the_bound_and_still_writes_the_body(
+        self, tmp_path: Path
+    ):
+        record = showing(ONE_PAGER_WORDS + 1)
+        body = change_record.render_body(record)
+        assert len(visible_words(body)) == 401
+        proc = run("render", "body", write(record, tmp_path))
+        assert proc.returncode == 0
+        assert proc.stdout.decode("utf-8") == body
+        warning = proc.stderr.decode("utf-8")
+        assert warning.count("\n") == 1
+        assert warning.startswith("warning: ")
+        assert "401 words" in warning
+        assert "at most 400" in warning
+
+        output = tmp_path / "body.md"
+        to_file = run("render", "body", write(record, tmp_path), "--output", output)
+        assert to_file.returncode == 0
+        assert to_file.stderr == proc.stderr
+        assert output.read_text(encoding="utf-8") == body
+
+    def test_render_body_says_nothing_about_a_body_that_shows_exactly_400_words(self, tmp_path: Path):
+        record = showing(ONE_PAGER_WORDS)
+        body = change_record.render_body(record)
+        assert len(visible_words(body)) == 400
+        proc = run("render", "body", write(record, tmp_path))
+        assert (proc.returncode, proc.stderr) == (0, b"")
+        assert proc.stdout.decode("utf-8") == body
+
+    def test_the_warning_counts_what_a_fold_hides_out(self, tmp_path: Path):
+        # The design notes sit in a fold, so no length of them draws the warning.
+        record = showing(ONE_PAGER_WORDS)
+        record["design_notes"] += "\n\n" + " ".join(["Folded"] * 500)
+        proc = run("render", "body", write(record, tmp_path))
+        assert (proc.returncode, proc.stderr) == (0, b"")
+
+    @pytest.mark.parametrize("artifact", ["commit", "reply"])
+    def test_only_the_body_is_held_to_the_bound(self, artifact: str, tmp_path: Path):
+        record = showing(ONE_PAGER_WORDS + 1)
+        flags = reply_flags(record["replies"][0]) if artifact == "reply" else []
+        proc = run("render", artifact, write(record, tmp_path), *flags)
+        assert (proc.returncode, proc.stderr) == (0, b"")
+
+    def test_the_suite_and_the_script_count_with_one_function_and_one_bound(self):
+        assert visible_words is change_record.visible_words
+        assert change_record.ONE_PAGER_WORDS == ONE_PAGER_WORDS == 400
 
 
 class TestBodyDetails:
