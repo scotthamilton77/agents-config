@@ -30,6 +30,7 @@ uv run scripts/change_record.py render commit record.json
 uv run scripts/change_record.py render reply record.json --finding ID
 uv run scripts/change_record.py publish [--dry-run] record.json
 uv run scripts/change_record.py extract-prose record.json --output request.json
+uv run scripts/change_record.py dispatch-prose request.json
 uv run scripts/change_record.py apply-prose record.json response.json
 ```
 
@@ -40,7 +41,17 @@ uv run scripts/change_record.py apply-prose record.json response.json
 - `lint` checks the record against the schema, then against the writing rules a program can decide. It names each fault by field and by rule. `references/lint-rules.md` lists every rule under its code and says how `lint` counts and matches. With `--pr` it also checks the record's reach flag against the pull request's changed paths.
 - `render` fills one artifact's template from the record. It runs `lint` first and writes nothing for a record that fails. It never calls GitHub. When the pull request already has a body, pass that body with `--existing-body`, because another tool may keep a decisions block there and `render` carries it over.
 - `publish` posts the record on its pull request as a new comment, and sets the pull request body to the render that points at that comment. It runs `lint` first and checks every reason to refuse before it writes. `--dry-run` prints the comment and the body and writes nothing. Run it from inside the pull request's repository, as the generators are run.
-- `extract-prose` writes a request that lists each field an editor may reword. `apply-prose` applies the replacements the author accepts from the editor's response. It refuses the whole response when one replacement is stale, names another field, or drops a fact. `references/rewriting.md` gives both formats and every refusal.
+- `extract-prose`, `dispatch-prose` and `apply-prose` are the rewrite pass, which has its own section below.
+
+## The rewrite pass
+
+An editor on a cheaper model may reword the record's wording. The author decides what is kept. `references/rewriting.md` gives each format, every refusal and what a replacement must keep. The pass is these steps, in this order:
+
+- `extract-prose` writes a request that lists each field the editor may reword.
+- `dispatch-prose` prints a model, an effort, and the paths of the editor's instruction file and of the request. Send that model, at that effort, the instruction file's text and then the request's. Use whatever route this tool has to the model. Save the reply as the response file.
+- Read each replacement against its section. Look for a claim made stronger, an exception dropped, and deferred work that is no longer mentioned.
+- Delete each replacement you reject. Add `corrected` to one you change, with the wording to apply.
+- `apply-prose` applies what is left. It refuses the whole response when one replacement is stale, names another field, or drops a fact.
 
 ## The three artifacts
 
