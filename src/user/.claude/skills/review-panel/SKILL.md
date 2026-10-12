@@ -46,7 +46,7 @@ Every round's emission consumes a staffing record: the staffed subset (subtract-
 roster), the recommending model (foreign, mid-tier), a
 rationale per excluded roster lens, and, interactively, the user's edit as the decision. The emitter checks the record against the roster, and the ceiling on any
 round but a sweep; the verdict validator checks lens coverage against the record. A zero-lens decision with a
-justification is itself the terminal record, and no verdict exists; a zero-lens outcome from a
+justification is the terminal record, and no verdict exists; a zero-lens outcome from a
 missing or failed recommendation is refused instead.
 
 ## Rounds and scope
@@ -100,7 +100,9 @@ item; a blocking one is not transferable. A finding indicting the criteria
 assembles the round `halted` with the upstream-defect reason; emission refuses to resume until
 the indicted artifact changes.
 
-A trend checkpoint is due after every second consecutive non-clean round, the first after round 2,
+A reply on a finding takes the `change-record` reply form.
+
+A trend checkpoint is due after every second consecutive non-clean round,
 never after a clean round. A Fable-high trend-analysis dispatch over the campaign's retained
 records is standing-authorized; if that authorization is withdrawn, the checkpoint resolves as
 escalate-to-human. Its verdict — continue two rounds with staffing
@@ -116,7 +118,7 @@ A findings round emits its dispatch (`emit_fix_dispatch.py --verdict --out`): ev
 mechanical finding referenced in full, advisories non-blocking, and the four
 clauses — smallest net change; mutation evidence for code fixes; replacement-first for prose,
 growth beyond the triviality boundary justified and paid with a diff-scoped
-consistency read next round; the narration sweep. A clean round emits none.
+consistency read next round; the narration sweep.
 
 Run `dispatch_gate.py preflight` once, then `claim` before every dispatch and `ingest` on every
 reply. `assemble_verdict.py` builds the schema-v3 envelope from `round.json`, the gate's attempts
