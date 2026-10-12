@@ -48,8 +48,10 @@ CRITERIA_TABLE_TYPES = frozenset({"feat", "fix", "refactor", "perf", "test"})
 # The commit types whose pull request body carries a risk table of one row.
 ONE_RISK_ROW_TYPES = frozenset({"docs", "chore", "build", "ci", "style", "revert"})
 
-# The type that opens a commit subject, and the component in parentheses after it.
-SUBJECT_OPENING = re.compile(r"(?P<type>[^\s(:]*)(?:\((?P<component>[^)]*)\))?")
+# What opens a commit subject: the type, the component in parentheses, and the
+# colon and space that set them off from the wording. Each part may be missing,
+# so the pattern matches any subject and a rule can say which part is.
+SUBJECT_OPENING = re.compile(r"(?P<type>[^\s(:]*)(?:\((?P<component>[^)]*)\))?(?P<separator>: )?")
 
 # The most characters a commit subject takes.
 SUBJECT_LIMIT = 100
@@ -76,8 +78,10 @@ AUTHOR_FILLS = (
     "/commit/attribution/session_url",
 )
 
-# The form of a link to a comment.
-URL = re.compile(r"https?://\S+")
+# The form of a link to a comment: a host, then a path that names something on
+# it. A query or a fragment may follow. No host is named here, because a
+# comment lives wherever the repository is hosted.
+URL = re.compile(r"https?://[^\s/?#]+/[^\s?#]+(?:[?#]\S*)?")
 
 # The five shapes of id that a stranger cannot read without a gloss. A tracker
 # id is read only with its dotted suffix, because without one it looks like any
@@ -160,9 +164,32 @@ def read_record(path: Path) -> Any:
     except (OSError, UnicodeDecodeError) as exc:
         raise RecordError("unreadable", f"cannot read {path}: {exc}") from exc
     try:
-        return json.loads(text)
+        record = json.loads(text)
     except json.JSONDecodeError as exc:
         raise RecordError("invalid-json", f"{path} is not valid JSON: {exc}") from exc
+    # JSON can escape half of a surrogate pair, which is a text no file and no
+    # digest can take. Refusing it here keeps it from every rule and every writer.
+    where = next(_not_utf8(record), None)
+    if where is not None:
+        message = f"{path} holds text that UTF-8 cannot hold, at {where or 'its root'}; half of a surrogate pair is such text"
+        raise RecordError("not-utf-8", message)
+    return record
+
+
+def _not_utf8(node: Any, path: str = "") -> Iterator[str]:
+    """Yield the path of each text under ``node`` that UTF-8 cannot hold, be it a value or a field's name."""
+    if isinstance(node, str):
+        try:
+            node.encode("utf-8")
+        except UnicodeEncodeError:
+            yield path
+    elif isinstance(node, dict):
+        for name, child in node.items():
+            yield from _not_utf8(name, f"{path}/{name}")
+            yield from _not_utf8(child, f"{path}/{name}")
+    elif isinstance(node, list):
+        for index, child in enumerate(node):
+            yield from _not_utf8(child, f"{path}/{index}")
 
 
 def _finding(code: str, path: str, message: str) -> dict[str, str]:
@@ -382,6 +409,13 @@ def _glossed(text: str, match: re.Match[str]) -> bool:
     return depth > 0 or bool(following and re.search(r"[^\W\d_]", ID.sub("", following.group(1))))
 
 
+def _closing_brackets(text: str) -> int | None:
+    """Return where the brackets that close ``text`` open, or None when no brackets close it."""
+    body = text.rstrip()
+    opening = body.rfind("[")
+    return opening if opening >= 0 and body.endswith("]") else None
+
+
 def closing_id(text: str) -> str | None:
     """Return what stands in the brackets that close ``text``, or None when no brackets close it.
 
@@ -389,11 +423,8 @@ def closing_id(text: str) -> str | None:
     brackets. Space inside the brackets and after them is no part of what
     they hold.
     """
-    body = text.rstrip()
-    opening = body.rfind("[")
-    if opening < 0 or not body.endswith("]"):
-        return None
-    return body[opening + 1 : -1].strip()
+    opening = _closing_brackets(text)
+    return None if opening is None else text.rstrip()[opening + 1 : -1].strip()
 
 
 def _closes_the_text(text: str, match: re.Match[str]) -> bool:
@@ -486,9 +517,11 @@ def short_id(work_item_id: str) -> str:
 def _commit_subject(record: dict[str, Any]) -> Iterator[dict[str, str]]:
     """Report each way the commit subject departs from its form.
 
-    The form is a type, a component in parentheses, the wording, and the work
-    item's short id in brackets at the end. The type and the component are the
-    record's own, so the subject and the pull request cannot name different ones.
+    The form is one line: a type, a component in parentheses, a colon and a
+    space, at least one word of wording, a space, and the work item's short id
+    in brackets at the end. The type and the component are the record's own,
+    so the subject and the pull request cannot name different ones. Each part
+    is checked on its own, so a finding names the part that is missing.
     """
     subject = record["commit"]["subject"]
     kind, component = record["pr"]["type"], record["pr"]["component"]
@@ -502,6 +535,8 @@ def _commit_subject(record: dict[str, Any]) -> Iterator[dict[str, str]]:
         return
     if len(subject) > SUBJECT_LIMIT:
         yield broken(f"the subject is {len(subject)} characters long, and it takes at most {SUBJECT_LIMIT}")
+    if LINE_END.search(subject):
+        yield broken("the subject holds a line break, and a subject is one line")
     opening = SUBJECT_OPENING.match(subject)
     types = load_schema()["properties"]["pr"]["properties"]["type"]["enum"]
     if opening["type"] not in types:
@@ -516,6 +551,14 @@ def _commit_subject(record: dict[str, Any]) -> Iterator[dict[str, str]]:
         yield broken(f"the subject's component `{named}` is a tracker id; name the thing a reader would search for")
     elif named != component:
         yield broken(f"the subject's component is `{named}`, and the record's `pr.component` is `{component}`")
+    if not opening["separator"]:
+        yield broken("the subject has no colon and space after its type and component")
+    brackets = _closing_brackets(subject)
+    wording = subject[opening.end() : brackets]
+    if not re.search(r"\w", wording):
+        yield broken("the subject says nothing between its component and its closing id; say what is true now")
+    elif brackets is not None and not wording[-1].isspace():
+        yield broken("the subject has no space before its closing brackets")
     closing = closing_id(subject)
     if closing is None:
         yield broken(f"the subject does not end with the work item's short id in brackets, `[{short}]`")
@@ -567,10 +610,20 @@ def _groups_by_type(record: dict[str, Any]) -> Iterator[dict[str, str]]:
     criteria = record.get("criteria")
     if kind in CRITERIA_TABLE_TYPES and not isinstance(criteria, list):
         yield _finding("required-group", "/criteria", f"a `{kind}` pull request carries its criteria as a table")
-    one_line = isinstance(criteria, str) and criteria.strip() and len(criteria.splitlines()) == 1
-    if kind == "spec" and not one_line:
-        message = "a `spec` pull request's criteria is one line, saying whether they were attacked and where the record is"
-        yield _finding("required-group", "/criteria", message)
+    if kind == "spec":
+        one_line = isinstance(criteria, str) and criteria.strip() and not LINE_END.search(criteria.strip())
+        if not one_line:
+            message = "a `spec` pull request's criteria is one line, saying whether they were attacked and where the record is"
+            yield _finding("required-group", "/criteria", message)
+        elif "attacked" not in outside_code(criteria).lower():
+            # The word is all a program can hold the line to. Where the record
+            # is cannot be asked for, because criteria that were not attacked
+            # have no record.
+            message = (
+                "a `spec` pull request's criteria says whether the criteria were attacked, "
+                "in that word, as in \"were attacked\" or \"were not attacked\""
+            )
+            yield _finding("required-group", "/criteria", message)
     rows = len(record["risk"]["rows"])
     if kind in ONE_RISK_ROW_TYPES and rows > 1:
         message = f"a `{kind}` pull request takes one risk row, and this table has {rows}"
@@ -591,7 +644,8 @@ def pr_changed_paths(number: int) -> list[str]:
     """
     command = ["gh", "pr", "diff", str(number), "--name-only"]
     try:
-        proc = subprocess.run(command, capture_output=True, text=True, check=False)
+        # A path is bytes to git, and one that is no UTF-8 must not stop the read.
+        proc = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace", check=False)
     except OSError as exc:
         raise RecordError("gh-failed", f"cannot run `{' '.join(command)}`: {exc}") from exc
     if proc.returncode != 0:
@@ -631,11 +685,16 @@ def stamp(content: Any) -> str:
     the content was read from therefore change nothing. Any change to a
     value, or to the order of a list, changes the stamp.
 
+    Half of a surrogate pair is a text UTF-8 cannot hold. It is encoded as the
+    three bytes its code point would take, so every content has a stamp and
+    this function never raises on one. A record read from a file never holds
+    such text, because reading refuses it.
+
     ``content`` is a generated part as ``generated_parts`` gives it: a group
     without its own stamp field, or the list of filed rows.
     """
     written = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(written.encode("utf-8")).hexdigest()
+    return hashlib.sha256(written.encode("utf-8", "surrogatepass")).hexdigest()
 
 
 def generated_parts(record: dict[str, Any]) -> Iterator[tuple[str, str, Any]]:
@@ -752,7 +811,10 @@ def _replies(record: dict[str, Any]) -> Iterator[dict[str, str]]:
                 message = "a deferral names the item that inherits the finding, and this reply names no tracker item"
                 yield _finding("reply", path, message)
         if reply["outcome"] == "Rejected" and not URL.fullmatch(reply.get("request_url", "")):
-            message = "a rejection gets a reply only when a reviewer asks; give the URL of the comment that asked for it"
+            message = (
+                "a rejection gets a reply only when a reviewer asks; "
+                "give the URL of the comment that asked for it, with its host and its path"
+            )
             yield _finding("reply", f"{path}/request_url", message)
         for name in ("change", "verification"):
             plain = outside_code(reply[name])
@@ -930,14 +992,21 @@ def _init(args: argparse.Namespace) -> int:
     except OSError as exc:
         print(f"cannot write {args.record}: {exc}", file=sys.stderr)
         return EXIT_UNUSABLE
-    print(f"wrote {args.record}")
+    # A path may hold bytes that are no text, which standard output refuses as they are.
+    print(f"wrote {args.record}".encode("utf-8", "backslashreplace").decode("utf-8"))
     return EXIT_VALID
 
 
 def _filled(text: str) -> str:
-    """Return ``text`` as a command-line argument's value, and refuse it when it is blank."""
+    """Return ``text`` as a command-line argument's value, and refuse it when it is blank or is no text.
+
+    A byte on the command line that is no UTF-8 arrives as half of a surrogate
+    pair. The record is written as UTF-8, so such a value cannot go into it.
+    """
     if not text.strip():
         raise argparse.ArgumentTypeError("the value is blank")
+    if next(_not_utf8(text), None) is not None:
+        raise argparse.ArgumentTypeError("the value holds a byte that is not UTF-8 text")
     return text
 
 

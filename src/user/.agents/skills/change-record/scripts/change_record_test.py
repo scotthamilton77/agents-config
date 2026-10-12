@@ -1059,6 +1059,36 @@ class TestCrL3CommitSubject:
         record["work_item"]["id"] = full
         assert findings(record, "commit-subject", tmp_path) == []
 
+    @pytest.mark.parametrize("separator", [" ", ":", " - "])
+    def test_cr_l3_a_subject_with_no_colon_and_space_after_its_component_fails_naming_it(
+        self, separator: str, tmp_path: Path
+    ):
+        record = with_subject(swap(PLAIN_SUBJECT, "(review-panel): ", f"(review-panel){separator}"))
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "no colon and space")
+
+    @pytest.mark.parametrize("wording", ["", "... ", "-- "])
+    def test_cr_l3_a_subject_with_no_word_of_wording_fails_naming_it(self, wording: str, tmp_path: Path):
+        record = with_subject(f"feat(review-panel): {wording}[9k9.408]")
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "says nothing")
+
+    def test_cr_l3_a_subject_with_neither_colon_nor_wording_fails_naming_both(self, tmp_path: Path):
+        found = findings(with_subject("feat(review-panel) [9k9.408]"), "commit-subject", tmp_path)
+        assert [path for path, _ in found] == ["/commit/subject"] * 2
+        assert sorted("no colon and space" in message for _, message in found) == [False, True]
+        assert sorted("says nothing" in message for _, message in found) == [False, True]
+
+    @pytest.mark.parametrize("line_end", ["\n", "\r", "\r\n"])
+    def test_cr_l3_a_subject_that_holds_a_line_break_fails_naming_it(self, line_end: str, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "effort and", f"effort{line_end}and"))
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "line break", "one line")
+
+    def test_cr_l3_a_subject_with_no_space_before_its_closing_brackets_fails_naming_it(self, tmp_path: Path):
+        record = with_subject(swap(PLAIN_SUBJECT, "data [", "data["))
+        assert_breaks(record, "commit-subject", "/commit/subject", tmp_path, "no space before")
+
+    def test_cr_l3_one_word_of_wording_is_enough(self, tmp_path: Path):
+        assert findings(with_subject("feat(review-panel): pins [9k9.408]"), "commit-subject", tmp_path) == []
+
     def test_cr_l3_an_empty_subject_fails_once_showing_the_form(self, tmp_path: Path):
         assert_breaks(with_subject(""), "commit-subject", "/commit/subject", tmp_path, "is empty", "[9k9.408]")
 
@@ -1174,6 +1204,25 @@ class TestCrL8Init:
         assert proc.returncode == 2
         assert "cannot write" in proc.stderr
 
+    @pytest.mark.parametrize("argument", ["--component", "--work-item"])
+    def test_init_refuses_an_argument_that_is_not_utf8_and_writes_nothing(self, argument: str, tmp_path: Path):
+        # A byte that is no text reaches the script as half of a surrogate pair.
+        argv = {"--type": "feat", "--component": "panel", "--work-item": "x-1", argument: "panel\udcff"}
+        path = tmp_path / "new.json"
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "init", *(part for pair in argv.items() for part in pair), str(path)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 2, proc.stderr
+        assert "usage:" in proc.stderr and "Traceback" not in proc.stderr
+        assert not path.exists()
+
+    def test_init_does_not_fail_on_a_path_that_is_not_utf8(self, tmp_path: Path):
+        # Some file systems take such a name and some refuse it. Neither outcome is a crash.
+        proc = init(tmp_path / "new\udcff.json")
+        assert proc.returncode in (0, 2), proc.stderr
+        assert "Traceback" not in proc.stderr
+
     @pytest.mark.parametrize(
         "argv",
         [
@@ -1270,6 +1319,37 @@ class TestCrL10GroupsByTypeAndReach:
         record["criteria"] = criteria
         assert_breaks(record, "required-group", "/criteria", tmp_path, "`spec`", "one line")
 
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "The attack record is in docs/attack.json.",
+            "The record is beside the spec.",
+            "The status is `attacked`, and the record is beside the spec.",
+        ],
+    )
+    def test_cr_l10_a_spec_line_that_does_not_say_whether_the_criteria_were_attacked_fails(
+        self, line: str, tmp_path: Path
+    ):
+        record = of_type("spec")
+        record["criteria"] = line
+        assert_breaks(record, "required-group", "/criteria", tmp_path, "`spec`", "whether the criteria were attacked")
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "The criteria were attacked.",
+            "The criteria were not attacked.",
+            "Unattacked so far, so there is no record to point at.",
+            "ATTACKED twice; the record is beside the spec.",
+        ],
+    )
+    def test_cr_l10_a_spec_line_that_says_whether_the_criteria_were_attacked_passes_with_or_without_a_location(
+        self, line: str, tmp_path: Path
+    ):
+        record = of_type("spec")
+        record["criteria"] = line
+        assert_passes(record, tmp_path)
+
     def test_cr_l10_a_spec_fails_without_the_criteria_group(self, tmp_path: Path):
         record = of_type("spec")
         del record["criteria"]
@@ -1365,6 +1445,14 @@ class TestCrL10GroupsByTypeAndReach:
         record["heads_up"] = []
         _, result = lint(record, tmp_path, SCRIPT, "--pr", "843")
         assert [error["code"] for error in result["errors"]] == ["unstated-empty", "reach"]
+
+    def test_lint_pr_reads_a_path_that_is_not_utf8_without_failing(self, shim_dir: Path, tmp_path: Path):
+        shim = shim_dir / "gh"
+        shim.write_bytes(b"#!/bin/sh\nprintf 'src/gate.py\\n\\377dir/tool.py\\n'\n")
+        shim.chmod(0o755)
+        record = example()
+        record["risk"]["reaches_outside_package"] = False
+        assert findings_with(record, "reach", tmp_path, "--pr", "843") == ["/risk/reaches_outside_package"]
 
     @pytest.mark.parametrize("status", [None, 1])
     def test_lint_pr_exits_2_when_gh_is_missing_or_fails(self, status: int | None, shim_dir: Path, tmp_path: Path):
@@ -1573,6 +1661,36 @@ class TestCrL13Replies:
     def test_cr_l13_a_rejected_reply_that_names_the_comment_that_asked_for_it_passes(self, tmp_path: Path):
         record = example()
         record["replies"][0].update(outcome="Rejected", request_url=REQUEST_URL)
+        assert_passes(record, tmp_path)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://?",
+            "https://example.com",
+            "https://example.com/",
+            "https://example.com?thread=7",
+            "https://example.com#discussion_r7",
+            "https:///owner/repo/pull/7",
+            "ftp://example.com/owner/repo/pull/7",
+        ],
+    )
+    def test_cr_l13_a_rejected_reply_whose_url_names_no_host_or_no_path_fails(self, url: str, tmp_path: Path):
+        record = example()
+        record["replies"][0].update(outcome="Rejected", request_url=url)
+        assert_breaks(record, "reply", "/replies/0/request_url", tmp_path, "asked for")
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            REQUEST_URL,
+            "https://git.example.org/team/repo/pull/7#discussion_r12",
+            "http://code.internal:8443/team/repo/pull/7/files?diff=split#r12",
+        ],
+    )
+    def test_cr_l13_a_rejected_reply_passes_with_a_comment_url_on_any_host(self, url: str, tmp_path: Path):
+        record = example()
+        record["replies"][0].update(outcome="Rejected", request_url=url)
         assert_passes(record, tmp_path)
 
     @pytest.mark.parametrize("url", [None, "", "the reviewer asked on the thread"])
@@ -1827,6 +1945,16 @@ class TestCrL15GeneratedStamps:
         assert change_record.stamp(rows) != change_record.stamp(rows[::-1])
         assert change_record.stamp(rows) != change_record.stamp([rows[0], dict(rows[1], reason="It needs a test.")])
 
+    def test_cr_l15_a_stamp_is_defined_for_text_that_utf8_cannot_hold(self):
+        # Half of a surrogate pair is a text Python holds and UTF-8 does not.
+        half, other = {"title": "a\ud800b"}, {"title": "a\ud801b"}
+        assert re.fullmatch(r"[0-9a-f]{64}", change_record.stamp(half))
+        assert change_record.stamp(half) == change_record.stamp(dict(half))
+        assert change_record.stamp(half) != change_record.stamp(other)
+        record = example()
+        record["where_this_fits"]["ancestry"][0]["title"] = "a\ud800b"
+        assert change_record.lint_record(change_record.stamp_generated(record)) == []
+
     def test_cr_l15_a_stamp_is_the_sha256_of_sorted_compact_json_in_utf8(self):
         content = {"b": [1, "é", {"d": None, "c": True}], "a": "x y"}
         written = '{"a":"x y","b":[1,"é",{"c":true,"d":null}]}'
@@ -1877,6 +2005,27 @@ class TestCommandLine:
         proc = self.run("lint", str(tmp_path / "absent.json"))
         assert proc.returncode == 2
         assert json.loads(proc.stdout)["errors"][0]["code"] == "unreadable"
+
+    @pytest.mark.parametrize(
+        ("field", "put_half"),
+        [
+            ("/pr/title", lambda record: record["pr"].update(title="feat(review-panel): pin \ud800 effort [9k9.408]")),
+            ("/where_this_fits/ancestry/0/title", lambda record: record["where_this_fits"]["ancestry"][0].update(title="\ud800")),
+            ("/replies/3/verification", lambda record: record["replies"][3].update(verification="\udfff")),
+        ],
+    )
+    def test_a_record_holding_text_that_is_not_utf8_exits_2_naming_the_field(
+        self, field: str, put_half: Callable[[dict[str, Any]], None], tmp_path: Path
+    ):
+        record = example()
+        put_half(record)
+        path = tmp_path / "record.json"
+        path.write_text(json.dumps(record), encoding="ascii")
+        proc = self.run("lint", str(path))
+        assert proc.returncode == 2, proc.stderr
+        (error,) = json.loads(proc.stdout)["errors"]
+        assert error["code"] == "not-utf-8"
+        assert field in error["message"]
 
     def test_a_record_that_is_not_json_exits_2_with_the_reason(self, tmp_path: Path):
         path = tmp_path / "record.json"

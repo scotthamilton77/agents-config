@@ -12,11 +12,11 @@
 | `commentary` | A phrase of commentary about the document, in any text the author wrote. |
 | `machine-content` | A `<details>` fold, an HTML comment or a fenced `json` block, in any field. |
 | `unfilled` | A field the author fills that is still empty: the title, the head commit, the work item's gloss or slice, the list of changes, or a field of the attribution. |
-| `commit-subject` | A commit subject over 100 characters, with a type that is not a commit type or not the record's, with no component, a tracker id as its component or a component that is not the record's, or without the work item's short id in brackets at its end. |
+| `commit-subject` | A commit subject over 100 characters or on more than one line, with a type that is not a commit type or not the record's, with no component, a tracker id as its component or a component that is not the record's, with no colon and space after the component, with no word of wording, or without a space and the work item's short id in brackets at its end. |
 | `commit-body` | A commit body missing one of its three sections, a `why` outside two to three sentences, a `change` outside three to four, an empty `verification`, or a total outside 80 to 150 words. Also a message with no body and no `trivial` reason, and one with both. |
-| `required-group` | A group the record's type or reach calls for, missing or in the wrong form: no criteria table on a type that carries one, a criteria that is not one line on a `spec`, more than one risk row on a type that takes one, or a missing diagram when the change reaches outside its package. |
+| `required-group` | A group the record's type or reach calls for, missing or in the wrong form: no criteria table on a type that carries one, a criteria on a `spec` that is not one line saying whether the criteria were attacked, more than one risk row on a type that takes one, or a missing diagram when the change reaches outside its package. |
 | `reach` | Under `--pr` only: a record that says the change stays inside its package, when the pull request's changed paths span more than one top-level component. |
-| `reply` | A reply outside 40 to 90 words, with a Change line that is empty or longer than two sentences, a Deferred reply that does not name the inheriting item, a Rejected reply with no URL of the comment that asked for it, or a phrase of campaign status. |
+| `reply` | A reply outside 40 to 90 words, with a Change line that is empty or longer than two sentences, a Deferred reply that does not name the inheriting item, a Rejected reply with no URL, or one with no host or no path, for the comment that asked for it, or a phrase of campaign status. |
 | `reply-count` | A finding the campaign marks fixed that has no reply, or more than one. |
 | `stale-stamp` | A generated part whose content its stamp does not cover, or that has no stamp. |
 
@@ -67,9 +67,10 @@ A new record holds no generated part and no reply. Its reach flag, `risk.reaches
 
 ## The commit message
 
-The subject has the form `type(component): what is true after this merges [short id]`.
+The subject is one line of the form `type(component): what is true after this merges [short id]`. Its parts are the type, the component in parentheses, a colon and a space, at least one word of wording, a space, and the short id in the brackets that close the line. `lint` checks each part on its own, so a finding names the part that is missing.
 
 - Its length is counted in characters, and 100 characters pass.
+- It holds no line feed and no carriage return.
 - The type is one of the types the schema lists for `pr.type`, and it is the record's own `pr.type`.
 - The component is the record's own `pr.component`. A component with the shape of a tracker id fails whatever the record says. That shape is the first one listed under ids above.
 - The short id is the work item's full id after its last hyphen, so `proj-a1b.3` gives `a1b.3`. An id with no hyphen is its own short id.
@@ -79,7 +80,7 @@ A message has all three body sections or none of them. In a body, `why` is two o
 ## Groups by type and reach
 
 - A `feat`, `fix`, `refactor`, `perf` or `test` record holds `criteria` as a table.
-- A `spec` record holds `criteria` as one line of text. `lint` checks that the line is there and is one line. It cannot tell what the line says.
+- A `spec` record holds `criteria` as one line of text that says whether the criteria were attacked. `lint` checks that the line is there, is one line, and holds the word `attacked` outside a code span, as in "were attacked" or "were not attacked". Where the attack record is stays with the author, because criteria that were not attacked have no record to point at.
 - A `docs`, `chore`, `build`, `ci`, `style` or `revert` record holds exactly one risk row.
 - A record whose `risk.reaches_outside_package` is true holds both `blast_radius.reach_graph` and `blast_radius.task_flow`. A record whose flag is false needs neither.
 
@@ -97,7 +98,7 @@ Each finding the campaign marks `fixed` takes exactly one reply. A finding with 
 
 A Deferred reply names the item that inherits the finding. When the campaign finding carries a `work_item`, the reply names that id. Otherwise the reply names some tracker item. That is an id with a dotted suffix, or an id that opens with the project prefix of the record's own work item.
 
-A Rejected reply gives, in `request_url`, the URL of the reviewer's comment that asked for it.
+A Rejected reply gives, in `request_url`, the URL of the reviewer's comment that asked for it. The URL opens with `http://` or `https://` and names a host and a path on it, so a bare host fails. `lint` holds it to no one host, and cannot tell whether the URL is a reviewer's comment.
 
 The phrases of campaign status are in `lint-phrases.json`, under `campaign_status`. `lint` matches each phrase whole, in any letter case, in `change` and in `verification`.
 
@@ -116,6 +117,10 @@ python3 -c 'import json, sys; sys.path.insert(0, "scripts"); import change_recor
 ```
 
 Stamp a part only after copying it from its source. A stamp says the content is the source's, so never set one to pass an edit of your own.
+
+## A record that cannot be read
+
+When `lint` cannot read the record at all, it exits 2 with one finding that has no path. The code is `unreadable` for a file it cannot open or decode, and `invalid-json` for text that is not JSON. The code is `not-utf-8` for a record that holds text UTF-8 cannot hold. A JSON escape for half of a surrogate pair is such text, and the finding names the field. That record is refused before any rule runs, because nothing after the lint could write it.
 
 ## Commentary and machine content
 
