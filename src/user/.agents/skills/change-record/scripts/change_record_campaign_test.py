@@ -826,6 +826,19 @@ class TestCrC4SkippedReviews:
         assert (ran.code, ran.err) == (0, "")
         assert rows(pull.record()) == [("correctness", "1", 1, 0, 0, 0)]
 
+    @pytest.mark.parametrize("text", ['{"verdict": "clean"', '{"round": ' + "7" * 5000 + "}"])
+    def test_cr_c4_a_verdict_that_cannot_be_loaded_as_json_is_skipped_and_named_as_one(self, text: str, pull: Pull):
+        # Text that is no JSON cannot be loaded, and neither can JSON that holds a number thousands of digits long.
+        broken = review(text)
+        pull.serve([broken, review(verdict(lenses=["correctness"]))])
+        pull.write(example())
+        ran = pull.run()
+        assert ran.code == 0
+        assert len(ran.err.splitlines()) == 1
+        why = "its verdict cannot be read: it cannot be loaded as JSON: "
+        assert ran.err.startswith(f"campaign: review {broken['id']} is skipped, because {why}")
+        assert rows(pull.record()) == [("correctness", "1", 0, 0, 0, 0)]
+
     @pytest.mark.parametrize("depth", [1100, 100_000])
     def test_cr_c4_a_verdict_nested_too_deeply_to_read_is_skipped_named_and_the_rest_are_counted(
         self, depth: int, pull: Pull
