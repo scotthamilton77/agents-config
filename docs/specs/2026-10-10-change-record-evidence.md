@@ -53,7 +53,7 @@
 - CR-P10 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP10Race
 - CR-P11 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP11Digest
 - CR-P12 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP12DryRun
-- CR-P13 | open
+- CR-P13 | observed: #873 2026-10-12 scotthamilton77
 - CR-P14 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP14Create
 - CR-W1 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW1ExtractProse
 - CR-W2 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW2StaleAndMalformedResponses
