@@ -8,6 +8,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   createSSEFixer,
+  uniqueToolUseId,
   splitMixedMessages,
   stripDeferredTools,
   isAnthropicModel,
@@ -45,6 +46,11 @@ const blockStart = (index, type) =>
 const blockDelta = (index, text) =>
   block("content_block_delta", { type: "content_block_delta", index, delta: { type: "text_delta", text } });
 const blockStop = (index) => block("content_block_stop", { type: "content_block_stop", index });
+const toolUseStart = (index, id) =>
+  block("content_block_start", {
+    type: "content_block_start", index,
+    content_block: { type: "tool_use", id, name: "Read", input: {} },
+  });
 
 /** Fake `res`: records writes, tracks whether `end()` was called. */
 function fakeRes() {
@@ -60,10 +66,10 @@ function fakeRes() {
 
 /** Run a full stream through the fixer in one shot and return the parsed
  *  output events plus the fixture (res, logs). */
-function runFixer(text) {
+function runFixer(text, seenToolUseIds = new Set()) {
   const res = fakeRes();
   const logs = [];
-  const fixer = createSSEFixer(res, (msg) => logs.push(msg));
+  const fixer = createSSEFixer(res, (msg) => logs.push(msg), seenToolUseIds);
   fixer.processChunk(text);
   fixer.finish();
   const events = res.output()
@@ -256,6 +262,49 @@ test("reassembles an event split across chunk boundaries", () => {
   const events = res.output().split("\n\n").filter((s) => s.trim()).map(parseSSEBlock);
   const delta = events.find((e) => e.event === "content_block_delta");
   assert.equal(delta.data.delta.text, "hello world");
+});
+
+// ─── createSSEFixer: tool_use id repair ────────────────────────────
+
+/** The tool_use ids a parsed output stream hands the client, in order. */
+function toolUseIds(events) {
+  return events
+    .filter((e) => e.event === "content_block_start" && e.data.content_block.type === "tool_use")
+    .map((e) => e.data.content_block.id);
+}
+
+/** One response calling Read with the given ids, as a per-turn-numbering
+ *  provider emits it. */
+function toolCallStream(ids) {
+  return streamText([
+    msgStart(),
+    ...ids.flatMap((id, i) => [toolUseStart(i, id), blockStop(i)]),
+    msgDelta(), msgStop(), done(),
+  ]);
+}
+
+test("renames a tool_use id a later response repeats, and leaves the first use alone", () => {
+  const seen = new Set();
+  const first = runFixer(toolCallStream(["Read:0", "Read:1"]), seen);
+  const second = runFixer(toolCallStream(["Read:0", "Read:2"]), seen);
+
+  assert.deepEqual(toolUseIds(first.events), ["Read:0", "Read:1"]);
+  assert.deepEqual(toolUseIds(second.events), ["Read:0_2", "Read:2"]);
+  assert.deepEqual(first.logs, []);
+  assert.deepEqual(second.logs, ["renamed tool_use id Read:0 to Read:0_2: this run already used it"]);
+});
+
+test("a third use of the same id gets a name the run has not used either", () => {
+  const seen = new Set();
+  for (let i = 0; i < 2; i++) runFixer(toolCallStream(["Glob:0"]), seen);
+  const third = runFixer(toolCallStream(["Glob:0"]), seen);
+  assert.deepEqual(toolUseIds(third.events), ["Glob:0_3"]);
+});
+
+test("uniqueToolUseId skips a rename the run already used as an upstream id", () => {
+  const seen = new Set(["Read:0", "Read:0_2"]);
+  assert.equal(uniqueToolUseId("Read:0", seen), "Read:0_3");
+  assert.ok(seen.has("Read:0_3"));
 });
 
 // ─── splitMixedMessages ─────────────────────────────────────────────
@@ -513,6 +562,62 @@ test("still writes a held heartbeat through once the stream turns out to be pass
   const { res } = runFixer(text);
 
   assert.equal(res.output(), text, "the held heartbeat must reach the client, not be lost");
+});
+
+// ─── start(): the tool_use id record spans the run ─────────────────
+//
+// The fixer renames a repeated id only if every response of the run is
+// checked against one record. That record is created in start() and threaded
+// through proxyRequest, which the unit tests above cannot see, so this drives
+// two completions through a started proxy against a stand-in upstream that
+// numbers its calls per turn.
+
+/** A stand-in OpenRouter that answers every completion with one Read call
+ *  carrying the same tool_use id, the way a per-turn-numbering provider does. */
+function startRepeatingUpstream() {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(streamText([msgStart(), toolUseStart(0, "Read:0"), blockStop(0), msgDelta(), msgStop(), done()]));
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve({
+      url: `http://127.0.0.1:${server.address().port}`,
+      close: () => new Promise((done) => server.close(done)),
+    }));
+  });
+}
+
+/** POST one streaming completion through the proxy and resolve with the
+ *  tool_use ids its response carried. */
+function completion(port) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ model: "vendor/model", messages: [] });
+    const req = http.request({
+      host: "127.0.0.1", port, method: "POST", path: "/v1/messages",
+      headers: { "content-type": "application/json", accept: "text/event-stream", "content-length": Buffer.byteLength(body) },
+    }, (res) => {
+      let data = "";
+      res.on("data", (c) => { data += c; });
+      res.on("end", () => resolve(toolUseIds(data.split("\n\n").filter((s) => s.trim()).map(parseSSEBlock))));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+test("a tool_use id repeated by a later completion of the same run reaches the client renamed", async () => {
+  const upstream = await startRepeatingUpstream();
+  const proxy = await start({ port: 0, upstream: upstream.url, log: () => {} });
+  try {
+    assert.deepEqual(await completion(proxy.port), ["Read:0"]);
+    assert.deepEqual(await completion(proxy.port), ["Read:0_2"]);
+  } finally {
+    await proxy.close();
+    await upstream.close();
+  }
 });
 
 // ─── proxyRequest: malformed request target survives the process ────

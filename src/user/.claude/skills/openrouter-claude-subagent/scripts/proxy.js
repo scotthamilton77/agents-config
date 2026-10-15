@@ -1,15 +1,16 @@
 // OpenRouter SSE-repair proxy.
 //
-// Forwards Anthropic-protocol traffic to OpenRouter unmodified, with one
-// repair: an assistant response must not END on a `thinking` or
-// `redacted_thinking` block. When it does, Claude Code yields an empty
-// result with exit 0 and no stderr while still billing the tokens. The fix
-// moves the most recent text block to the end of the response.
+// Forwards Anthropic-protocol traffic to OpenRouter unmodified, with two
+// repairs to the response stream. An assistant response must not END on a
+// `thinking` or `redacted_thinking` block: when it does, Claude Code yields an
+// empty result with exit 0 and no stderr while still billing the tokens, so
+// the most recent text block is moved to the end of the response. And every
+// tool_use id must be unique across the run: a repeated one is renamed, see
+// uniqueToolUseId.
 //
-// The repair is deliberately narrow. The evidence supports only the
-// must-not-end-on-reasoning constraint, so blocks are otherwise left in
-// upstream order: the client replays that order back on the next turn, and
-// rewriting it would corrupt the conversation record the model reads.
+// Both repairs are deliberately narrow. Blocks are otherwise left in upstream
+// order: the client replays that order back on the next turn, and rewriting
+// it would corrupt the conversation record the model reads.
 
 const http = require("http");
 const https = require("https");
@@ -310,6 +311,31 @@ function refuse(clientRes, message) {
   clientRes.end(body);
 }
 
+// ─── Tool-use id repair ────────────────────────────────────────────
+
+/** Return `id` if the run has not used it as a tool_use id yet, else a renamed
+ *  one it has not used, and record the result in `seen`.
+ *
+ *  The client pairs a tool_result to its tool_use by id across the whole
+ *  conversation, and it drops a tool_use whose id it has already seen. A turn
+ *  emptied that way is replayed to the model as the placeholder text
+ *  "[Tool use interrupted]", which the model reads as its calls failing; after
+ *  enough of them it gives up and answers with the placeholder itself, and the
+ *  run exits 0 with no report. Some providers number calls per turn — `Read:0`,
+ *  `Read:1`, then `Read:0` again on the next turn — so every turn after the
+ *  first collides.
+ *
+ *  The client replays the renamed id back upstream on later turns, and the
+ *  model accepts any id string, so nothing maps it back. One set serves the
+ *  run: a nested run's ids are renamed against the same set, which is harmless
+ *  for the same reason. */
+function uniqueToolUseId(id, seen) {
+  let candidate = id;
+  for (let n = 2; seen.has(candidate); n++) candidate = `${id}_${n}`;
+  seen.add(candidate);
+  return candidate;
+}
+
 // ─── SSE stream processor ──────────────────────────────────────────
 
 /**
@@ -323,8 +349,11 @@ function refuse(clientRes, message) {
  * message_stop, so a repaired response is assembled in full and replayed —
  * the client sees it at once rather than incrementally. Passthrough streams
  * stream normally.
+ *
+ * `seenToolUseIds` is the run's record of every tool_use id it has handed the
+ * client, shared by every response of the run; see uniqueToolUseId.
  */
-function createSSEFixer(res, log = defaultLog) {
+function createSSEFixer(res, log = defaultLog, seenToolUseIds = new Set()) {
   let buffer = "";
   let mode = "detecting"; // detecting | repair | passthrough
   let sawMessageStop = false;
@@ -364,6 +393,14 @@ function createSSEFixer(res, log = defaultLog) {
       if (blocks.has(data?.index)) {
         log(`WARNING: duplicate content_block_start at index ${data?.index} — ignoring the repeat`);
         return;
+      }
+      const started = data?.content_block;
+      if (started?.type === "tool_use" && typeof started.id === "string") {
+        const id = uniqueToolUseId(started.id, seenToolUseIds);
+        if (id !== started.id) {
+          log(`renamed tool_use id ${started.id} to ${id}: this run already used it`);
+          data = { ...data, content_block: { ...started, id } };
+        }
       }
       blocks.set(data?.index, {
         type: data?.content_block?.type || "unknown",
@@ -514,7 +551,7 @@ function createSSEFixer(res, log = defaultLog) {
 
 // ─── HTTP proxy ────────────────────────────────────────────────────
 
-function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, onForward, upstream }) {
+function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, onForward, upstream, seenToolUseIds }) {
   // The request target must not be able to choose the upstream host. In
   // absolute-form (RFC 9112 §3.2.2) `new URL(target, base)` ignores the base
   // entirely, so `GET http://elsewhere/x` would send this request — carrying
@@ -598,7 +635,7 @@ function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, 
     if (sse && !encoded) {
       // The fixer classifies the stream itself and passes through anything
       // that isn't Anthropic-format, so it is safe to install unconditionally.
-      const fixer = createSSEFixer(clientRes, log);
+      const fixer = createSSEFixer(clientRes, log, seenToolUseIds);
       proxyRes.on("data", fixer.processChunk);
       proxyRes.on("end", fixer.finish);
     } else {
@@ -791,13 +828,17 @@ function start({
   onForward = () => {},
   upstream = null,
 } = {}) {
+  // Every tool_use id this proxy has handed the client, for the life of the
+  // run; see uniqueToolUseId.
+  const seenToolUseIds = new Set();
+
   // The parse guard in proxyRequest covers the one throw we know about. This
   // covers the ones we don't: because the proxy shares a process with the
   // launcher, an unhandled throw here would kill the running claude child
   // too. A failed request must never be able to end the session.
   const server = http.createServer((req, res) => {
     try {
-      proxyRequest(req, res, { log, pinnedModel, userInstructed, onForward, upstream });
+      proxyRequest(req, res, { log, pinnedModel, userInstructed, onForward, upstream, seenToolUseIds });
     } catch (err) {
       log(`request handler error: ${err.message}`);
       if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain" });
@@ -834,6 +875,7 @@ module.exports = {
   modelSlug,
   describeModel,
   createSSEFixer,
+  uniqueToolUseId,
   splitMixedMessages,
   toolResultsCarried,
   stripDeferredTools,

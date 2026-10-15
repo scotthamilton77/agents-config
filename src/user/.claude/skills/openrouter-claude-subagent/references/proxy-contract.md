@@ -29,6 +29,25 @@ tools granted via `--allowedTools`.
 Practical consequence: **the subagent can use only the tools you list.** There
 is no deferred pool to fall back on. List everything the task needs.
 
+## The third repair: one tool_use id per call
+
+Claude Code pairs every tool result to its call by the call's `tool_use` id,
+across the whole conversation, and it drops a call whose id it has already
+seen. A turn emptied that way is replayed to the model as the placeholder
+`[Tool use interrupted]`, which the model reads as its calls failing. Some
+providers number calls per turn (`Read:0`, `Read:1`, then `Read:0` again on
+the next turn), so every turn after the first collides, and after enough of
+them the model gives up and answers with the placeholder itself: exit 0, no
+stderr, no report, tokens billed.
+
+The proxy keeps every id it has handed the client for the life of the run and
+renames a repeat with a numeric suffix (`Read:0_2`), logging one
+`[proxy] renamed tool_use id … ` line per rename. The client replays the
+renamed id back upstream, and the model accepts any id string, so nothing maps
+it back. A run whose stderr shows those lines was served by such a provider
+and ran to completion anyway; a run whose result is `[Tool use interrupted]`
+is a run that reached the model some other way.
+
 ## The model pin
 
 A nested run can start runs of its own, and each of those picks its own model
