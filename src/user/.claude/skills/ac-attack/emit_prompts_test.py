@@ -1408,12 +1408,26 @@ DECLARED_ROUTES = {
     "behavioural-outcome": ("codex", "frontier"), "obligation-reduction": ("codex", "frontier"),
 }
 # Every attack read is a whole-document read with the text inline: an OpenRouter lens needs no
-# tool and runs at the lowest effort, a Codex lens runs its read-only sandbox at the effort
-# every recorded attack round has run it at.
+# tool and runs at the lowest effort, a Codex lens runs its read-only sandbox at high.
 PINNED = {"openrouter": ("low", []), "codex": ("high", CODEX_SANDBOX)}
-# The ladder's failover step is pinned once in SKILL.md rather than per lens: a lens failing
-# over to Codex runs the sandbox at medium, one failing over to OpenRouter runs no tools at low.
-FAILOVER_PIN = {"codex": ("medium", CODEX_SANDBOX), "openrouter": ("low", [])}
+# The ladder's failover step is pinned once in SKILL.md rather than per lens, in one sentence per
+# transport a lens can arrive on. Each pattern captures that transport's failover effort, and
+# the words around the capture are the tool grant the sentence states.
+FAILOVER_SENTENCE = {
+    "codex": re.compile(r"arriving\s+on\s+Codex\s+runs\s+the\s+read-only\s+sandbox\s+at\s+`(\w+)`"),
+    "openrouter": re.compile(r"arriving\s+on\s+OpenRouter\s+runs\s+no\s+tools\s+at\s+`(\w+)`"),
+}
+
+
+def failover_pins() -> dict[str, str]:
+    """The failover effort SKILL.md states for a lens arriving on each transport."""
+    text = SKILL_PATH.read_text(encoding="utf-8")
+    pins = {}
+    for transport, pattern in FAILOVER_SENTENCE.items():
+        found = pattern.findall(text)
+        assert len(found) == 1, f"SKILL.md states the {transport} failover pin {len(found)} times"
+        pins[transport] = found[0]
+    return pins
 
 
 def _markdown_table(text: str, heading: str) -> list[list[str]]:
@@ -1474,9 +1488,16 @@ class TestSeatPins:
             assert lens["tools"] == tools, lens["lens"]
             model = grid[PROVIDER_OF[lens["transport"]]][lens["tier"]]
             assert effort in efforts[model], f"{lens['lens']}: {model} does not accept {effort}"
-        for transport, (effort, _) in FAILOVER_PIN.items():
-            model = grid[PROVIDER_OF[transport]]["mid"]
-            assert effort in efforts[model], f"failover to {transport}: {model} rejects {effort}"
+        for transport, effort in failover_pins().items():
+            for tier in {lens["tier"] for lens in LENSES}:
+                model = grid[PROVIDER_OF[transport]][tier]
+                assert effort in efforts[model], f"failover to {transport}: {model} rejects {effort}"
+
+    def test_b2_the_failover_pins_are_the_ones_the_doctrine_states(self):
+        """The failover pin is read from SKILL.md, so a doctrine that names another effort, or
+        grants a failed-over lens anything but the sandbox or nothing, fails here rather than in a
+        dispatch. The sentence carries the tool grant, so matching it is matching the grant."""
+        assert failover_pins() == {"codex": "medium", "openrouter": "low"}
 
     def test_b2_no_openrouter_lens_is_granted_a_tool(self):
         """An OpenRouter lens holds the whole document in its prompt and has nothing else to

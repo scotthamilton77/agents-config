@@ -214,9 +214,9 @@ def load_lenses() -> list[dict[str, Any]]:
     permissions.
 
     Every key a lens owes is checked here too, because `tier`, `transport` and the pin are read
-    only when the round file is assembled — by then every prompt is on disk, so a lens short one of them
-    would leave a directory of prompts for this document beside a round file naming the last one.
-    A lens citing another standard, or a rule the standard lacks, would go out without the rule it
+    only when the round file is assembled, where a missing key would surface as a traceback the
+    round reports as its own failure rather than as a refusal naming the lens and the key. A lens
+    citing another standard, or a rule the standard lacks, would go out without the rule it
     judges by, and a lens requiring workings with no schema beside it returns an inventory nothing
     can judge. Rules are asked last, since only a registry that is otherwise whole needs the
     standard read.
