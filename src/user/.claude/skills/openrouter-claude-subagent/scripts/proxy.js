@@ -28,8 +28,11 @@ const MAX_REQUEST_BODY_BYTES = 100 * 1024 * 1024;
 const SSE_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 // Headers a proxy must own: connection-scoped hop-by-hop headers
-// (RFC 9110 §7.6.1) plus the routing headers rebuilt for the upstream hop.
-const HEADERS_REMOVE = new Set(["host", "x-forwarded-for"]);
+// (RFC 9110 §7.6.1), the routing headers rebuilt for the upstream hop, and
+// the client's accept-encoding. The response repairs read the body as text,
+// which only an identity-encoded stream permits, so upstream is not offered
+// a compression it would otherwise be free to apply.
+const HEADERS_REMOVE = new Set(["host", "x-forwarded-for", "accept-encoding"]);
 const HOP_BY_HOP = new Set([
   "connection", "keep-alive", "proxy-authenticate",
   "proxy-authorization", "te", "trailers",
@@ -370,9 +373,12 @@ function createSSEFixer(res, log = defaultLog, seenToolUseIds = new Set()) {
    *  lines with no event name at all. */
   function classify(raw, event, data) {
     if (ANTHROPIC_EVENTS.has(event) || ANTHROPIC_EVENTS.has(data?.type)) return "repair";
-    // Blank lines and ":" heartbeats carry no evidence — keep looking.
+    // Blank lines, ":" heartbeats and Anthropic's own ping events carry no
+    // evidence — keep looking. A ping can open a stream, and a stream judged
+    // passthrough on it would be left unrepaired to its end.
     const trimmed = raw.trim();
     if (!trimmed || trimmed.startsWith(":")) return "detecting";
+    if (event === "ping" || data?.type === "ping") return "detecting";
     return "passthrough";
   }
 
@@ -393,14 +399,6 @@ function createSSEFixer(res, log = defaultLog, seenToolUseIds = new Set()) {
       if (blocks.has(data?.index)) {
         log(`WARNING: duplicate content_block_start at index ${data?.index} — ignoring the repeat`);
         return;
-      }
-      const started = data?.content_block;
-      if (started?.type === "tool_use" && typeof started.id === "string") {
-        const id = uniqueToolUseId(started.id, seenToolUseIds);
-        if (id !== started.id) {
-          log(`renamed tool_use id ${started.id} to ${id}: this run already used it`);
-          data = { ...data, content_block: { ...started, id } };
-        }
       }
       blocks.set(data?.index, {
         type: data?.content_block?.type || "unknown",
@@ -453,6 +451,21 @@ function createSSEFixer(res, log = defaultLog, seenToolUseIds = new Set()) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 
+  /** A tool_use block's start event with its id made unique for the run. The
+   *  id is recorded here, as it is handed to the client, so a response that
+   *  dies upstream before replay consumes nothing and its retry delivers the
+   *  same id unrenamed. The log line flattens the id the way the ledger
+   *  flattens a model id: both arrive from upstream, and a newline in either
+   *  would forge a second line on the run's record. */
+  function withUniqueToolUseId(data) {
+    const started = data?.content_block;
+    if (started?.type !== "tool_use" || typeof started.id !== "string") return data;
+    const id = uniqueToolUseId(started.id, seenToolUseIds);
+    if (id === started.id) return data;
+    log(`renamed tool_use id ${describeModel(started.id)} to ${describeModel(id)}: this run already used it`);
+    return { ...data, content_block: { ...started, id } };
+  }
+
   /** Emit the assembled response, renumbering block indexes to match their new
    *  positions — deltas reference the index, so it cannot be left stale. */
   function replay() {
@@ -462,7 +475,8 @@ function createSSEFixer(res, log = defaultLog, seenToolUseIds = new Set()) {
       const block = blocks.get(originalIdx);
       if (!block) return;
       for (const { event, data } of block.events) {
-        emit(event, { ...data, index: position });
+        const out = event === "content_block_start" ? withUniqueToolUseId(data) : data;
+        emit(event, { ...out, index: position });
       }
       emit("content_block_stop", { type: "content_block_stop", index: position });
     });

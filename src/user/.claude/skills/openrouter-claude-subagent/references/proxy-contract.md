@@ -15,7 +15,8 @@ at `openrouter.ai` is not a shortcut but a silent, billable dead end.
 `scripts/proxy.js` moves the trailing text block to the end of the response so
 it never terminates on reasoning. The repair is deliberately narrow — block
 order is otherwise preserved, because the client replays that order back
-upstream on the next turn.
+upstream on the next turn. The proxy drops the client's `accept-encoding`
+header, so upstream sends the identity-encoded body every repair reads.
 
 ## The second repair, and its consequence for tool grants
 
@@ -44,9 +45,10 @@ The proxy keeps every id it has handed the client for the life of the run and
 renames a repeat with a numeric suffix (`Read:0_2`), logging one
 `[proxy] renamed tool_use id … ` line per rename. The client replays the
 renamed id back upstream, and the model accepts any id string, so nothing maps
-it back. A run whose stderr shows those lines was served by such a provider
-and ran to completion anyway; a run whose result is `[Tool use interrupted]`
-is a run that reached the model some other way.
+it back. A rename line says the repair fired on that response and nothing
+about how the run ended; read the ending as `run-bounds.md` says. Every id
+the proxy forwards is unique, so a result that still reads
+`[Tool use interrupted]` is text the model wrote, not a dropped call.
 
 ## The model pin
 

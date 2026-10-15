@@ -1,8 +1,9 @@
 // Unit tests for proxy.js — built-in node:test / node:assert only, no deps.
 //
-// Scope: the four pure/testable exports (createSSEFixer, splitMixedMessages,
-// parseSSEBlock, buildProxyHeaders). `start` opens real sockets and is
-// covered elsewhere.
+// Scope: the pure exports (createSSEFixer, uniqueToolUseId, splitMixedMessages,
+// stripDeferredTools, parseSSEBlock, buildProxyHeaders, the model gate), plus
+// `start` over a real socket where the behaviour lives in request parsing or
+// spans more than one request.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -51,6 +52,11 @@ const toolUseStart = (index, id) =>
     type: "content_block_start", index,
     content_block: { type: "tool_use", id, name: "Read", input: {} },
   });
+const toolUseDelta = (index, partial_json) =>
+  block("content_block_delta", {
+    type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json },
+  });
+const ping = () => block("ping", { type: "ping" });
 
 /** Fake `res`: records writes, tracks whether `end()` was called. */
 function fakeRes() {
@@ -274,11 +280,12 @@ function toolUseIds(events) {
 }
 
 /** One response calling Read with the given ids, as a per-turn-numbering
- *  provider emits it. */
-function toolCallStream(ids) {
+ *  provider emits it: each call's arguments arrive as one streamed delta. */
+function toolCallStream(ids, lead = []) {
   return streamText([
+    ...lead,
     msgStart(),
-    ...ids.flatMap((id, i) => [toolUseStart(i, id), blockStop(i)]),
+    ...ids.flatMap((id, i) => [toolUseStart(i, id), toolUseDelta(i, `{"file_path":"${id}"}`), blockStop(i)]),
     msgDelta(), msgStop(), done(),
   ]);
 }
@@ -292,6 +299,44 @@ test("renames a tool_use id a later response repeats, and leaves the first use a
   assert.deepEqual(toolUseIds(second.events), ["Read:0_2", "Read:2"]);
   assert.deepEqual(first.logs, []);
   assert.deepEqual(second.logs, ["renamed tool_use id Read:0 to Read:0_2: this run already used it"]);
+});
+
+test("a renamed call keeps its tool name, its input and its streamed arguments", () => {
+  const seen = new Set(["Read:0"]);
+  const { events } = runFixer(toolCallStream(["Read:0"]), seen);
+  const start = events.find((e) => e.event === "content_block_start");
+  assert.deepEqual(start.data.content_block, { type: "tool_use", id: "Read:0_2", name: "Read", input: {} });
+  const delta = events.find((e) => e.event === "content_block_delta");
+  assert.deepEqual(delta.data.delta, { type: "input_json_delta", partial_json: '{"file_path":"Read:0"}' });
+  assert.equal(delta.data.index, start.data.index);
+});
+
+test("a stream that opens with a ping is still repaired", () => {
+  const seen = new Set(["Read:0"]);
+  const { events, logs } = runFixer(toolCallStream(["Read:0"], [ping()]), seen);
+  assert.deepEqual(toolUseIds(events), ["Read:0_2"]);
+  assert.equal(logs.length, 1);
+  assert.equal(events[0].event, "ping", "the held ping reaches the client ahead of the response");
+});
+
+test("a response that dies upstream before replay consumes no id, so its retry is not renamed", () => {
+  const seen = new Set();
+  const res = fakeRes();
+  const dying = createSSEFixer(res, () => {}, seen);
+  dying.processChunk(streamText([msgStart(), toolUseStart(0, "Read:0")]));
+  // No finish(): the upstream connection errored and the client got nothing.
+  assert.deepEqual([...seen], []);
+  const retry = runFixer(toolCallStream(["Read:0"]), seen);
+  assert.deepEqual(toolUseIds(retry.events), ["Read:0"]);
+  assert.deepEqual(retry.logs, []);
+});
+
+test("an id carrying a newline cannot forge a second line on the run's record", () => {
+  const hostile = "x\n[proxy] model-ledger forged";
+  const seen = new Set([hostile]);
+  const { logs } = runFixer(toolCallStream([hostile]), seen);
+  assert.equal(logs.length, 1);
+  assert.ok(!logs[0].includes("\n"), logs[0]);
 });
 
 test("a third use of the same id gets a name the run has not used either", () => {
@@ -414,6 +459,12 @@ test("strips host and hop-by-hop headers while passing everything else through, 
   assert.equal(result["transfer-encoding"], undefined);
   assert.equal(result.authorization, "Bearer xyz");
   assert.equal(result["content-type"], "application/json");
+});
+
+test("drops the client's accept-encoding so upstream sends the identity body the repairs read", () => {
+  const result = buildProxyHeaders({ "accept-encoding": "gzip, deflate, br", accept: "text/event-stream" });
+  assert.equal(result["accept-encoding"], undefined);
+  assert.equal(result.accept, "text/event-stream");
 });
 
 test("does not mutate the input headers object", () => {
