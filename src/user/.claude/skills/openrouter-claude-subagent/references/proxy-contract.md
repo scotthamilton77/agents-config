@@ -84,7 +84,8 @@ Alias redirection also covers the background chores the harness runs on the
 cheap alias, which would otherwise bill the model you named. `run.js` switches
 those off with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`. Note the semantics:
 **any non-empty value enables the setting, `"0"` included.** It reads as a
-switch, not a boolean, so there is no way to spell "off" except by unsetting it.
+switch, not a boolean, so the only ways to spell "off" are unsetting it and
+leaving it empty.
 
 Every completion request leaves one line on stderr naming the method, path,
 model, and decision (`forward`, `deny-pin`, or `deny-denylist`). A forwarded
