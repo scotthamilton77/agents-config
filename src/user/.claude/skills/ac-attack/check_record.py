@@ -32,8 +32,8 @@ SCHEMA_PATH = HERE / "attack-record.schema.json"
 LENSES_DIR = HERE / "lenses"
 WORKINGS_SCHEMA = "workings.schema.json"
 STANDARD = "acceptance-criteria"
-FRONT_MATTER_KEYS = ("tier", "transport", "standard", "enforces", "workings")
-REQUIRED_KEYS = ("lens", "tier", "transport", "standard", "enforces", "body")
+FRONT_MATTER_KEYS = ("tier", "transport", "standard", "enforces", "workings", "effort", "tools")
+REQUIRED_KEYS = ("lens", "tier", "transport", "standard", "enforces", "effort", "tools", "body")
 
 # Where the emitter looks for the acceptance-criteria standard: installed beside this skill, then
 # where the source tree keeps shared skills.
@@ -126,6 +126,8 @@ def carries(lens: dict[str, Any], key: str) -> bool:
     value = lens.get(key)
     if key == "enforces":
         return isinstance(value, list) and bool(value) and all(usable(item) for item in value)
+    if key == "tools" and isinstance(value, list):
+        return all(usable(item) for item in value)
     return usable(value)
 
 
