@@ -293,11 +293,17 @@ function screenModel(model, pinnedModel, userInstructed = false) {
 function describeModel(model) {
   if (model === undefined || model === null) return "none";
   if (model === "") return "(empty)";
-  // A model id is a routing token, not prose. Flattening whitespace stops a
-  // value carrying a newline from forging a second ledger line, and the length
-  // cap stops one from burying the real lines; the ledger is only evidence for
-  // as long as one request means exactly one line.
-  return String(model).replace(/\s+/g, " ").slice(0, 120);
+  return inert(model, 120);
+}
+
+/** A value from the wire, made safe to put on one line of the run's record.
+ *  Flattening whitespace stops a value carrying a newline from forging a
+ *  second line, and the length cap stops one from burying the real lines; the
+ *  record is only evidence for as long as one event means exactly one line.
+ *  A model id is a routing token and fits in 120; a tool_use id or an error
+ *  body is the model's or the provider's own text and gets 1,000. */
+function inert(value, max) {
+  return String(value).replace(/\s+/g, " ").slice(0, max);
 }
 
 /** Anthropic-shaped refusal. The client renders the message verbatim as an API
@@ -397,7 +403,7 @@ function createSSEFixer(res, log = defaultLog, seenToolUseIds = new Set()) {
       // index twice. Upstream should never do it; if it does, say so rather
       // than losing content quietly.
       if (blocks.has(data?.index)) {
-        log(`WARNING: duplicate content_block_start at index ${data?.index} — ignoring the repeat`);
+        log(`WARNING: duplicate content_block_start at index ${inert(data?.index, 120)} — ignoring the repeat`);
         return;
       }
       blocks.set(data?.index, {
@@ -410,7 +416,7 @@ function createSSEFixer(res, log = defaultLog, seenToolUseIds = new Set()) {
     if (event === "content_block_delta") {
       const block = blocks.get(data?.index);
       if (!block) {
-        log(`WARNING: content_block_delta for unstarted index ${data?.index} — dropped`);
+        log(`WARNING: content_block_delta for unstarted index ${inert(data?.index, 120)} — dropped`);
         return;
       }
       block.events.push({ event, data });
@@ -435,12 +441,12 @@ function createSSEFixer(res, log = defaultLog, seenToolUseIds = new Set()) {
       if (blocks.get(order[i])?.type !== "text") continue;
       const [moved] = order.splice(i, 1);
       order.push(moved);
-      log(`reordered: response ended on ${lastType}; moved trailing text block to the end`);
+      log(`reordered: response ended on ${inert(lastType, 120)}; moved trailing text block to the end`);
       return;
     }
     // Nothing to promote. The response is already broken and the proxy cannot
     // invent content, so it ships as-is with the reason recorded.
-    log(`WARNING: response ends on ${lastType} and contains no text block to promote`);
+    log(`WARNING: response ends on ${inert(lastType, 120)} and contains no text block to promote`);
   }
 
   function emit(event, data, raw) {
@@ -454,15 +460,15 @@ function createSSEFixer(res, log = defaultLog, seenToolUseIds = new Set()) {
   /** A tool_use block's start event with its id made unique for the run. The
    *  id is recorded here, as it is handed to the client, so a response that
    *  dies upstream before replay consumes nothing and its retry delivers the
-   *  same id unrenamed. The log line flattens the id the way the ledger
-   *  flattens a model id: both arrive from upstream, and a newline in either
-   *  would forge a second line on the run's record. */
+   *  same id unrenamed. The log line carries the ids as inert text: a tool_use
+   *  id is the provider's own text, and a newline in it would forge a second
+   *  line on the run's record. */
   function withUniqueToolUseId(data) {
     const started = data?.content_block;
     if (started?.type !== "tool_use" || typeof started.id !== "string") return data;
     const id = uniqueToolUseId(started.id, seenToolUseIds);
     if (id === started.id) return data;
-    log(`renamed tool_use id ${describeModel(started.id)} to ${describeModel(id)}: this run already used it`);
+    log(`renamed tool_use id ${inert(started.id, 1000)} to ${inert(id, 1000)}: this run already used it`);
     return { ...data, content_block: { ...started, id } };
   }
 
@@ -671,7 +677,7 @@ function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, 
       });
       proxyRes.on("end", () => {
         const errBody = Buffer.concat(errChunks).toString("utf8");
-        log(`upstream ${proxyRes.statusCode} ${clientReq.method} ${targetUrl.pathname} — ${errBody.trim().slice(0, 1000)}`);
+        log(`upstream ${proxyRes.statusCode} ${clientReq.method} ${targetUrl.pathname} — ${inert(errBody.trim(), 1000)}`);
       });
     }
 
