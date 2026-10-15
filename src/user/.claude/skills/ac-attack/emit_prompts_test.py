@@ -53,6 +53,9 @@ def read_lens(name: str) -> dict:
     _, head, body = text.split("---\n", 2)
     fields = dict(line.split(": ", 1) for line in head.splitlines())
     fields["enforces"] = [part.strip() for part in fields["enforces"].strip("[]").split(",")]
+    if fields["tools"].startswith("["):
+        fields["tools"] = [part.strip() for part in fields["tools"].strip("[]").split(",")
+                           if part.strip()]
     return {"lens": name, **fields, "body": body.strip()}
 
 
@@ -179,11 +182,13 @@ def distinctive_phrases(name: str, shared_text: str) -> set[str]:
 def lens_text(tier: object = "mid", transport: object = "openrouter",
               standard: object = "acceptance-criteria",
               enforces: object = ("what-if-questions",), workings: object = None,
+              effort: object = "low", tools: object = (),
               body: str = "Ask the what-if questions.") -> str:
     """A lens prompt file, each front matter key written unless it is passed as None."""
     head = []
     for key, value in (("tier", tier), ("transport", transport), ("standard", standard),
-                       ("enforces", enforces), ("workings", workings)):
+                       ("enforces", enforces), ("workings", workings), ("effort", effort),
+                       ("tools", tools)):
         if value is None:
             continue
         head.append(f"{key}: [{', '.join(value)}]" if isinstance(value, (list, tuple))
@@ -676,7 +681,8 @@ class TestRefusals:
         assert not out_dir.exists()
         assert not (tmp_path / "escaped.md").exists()
 
-    @pytest.mark.parametrize("key", ("tier", "transport", "standard", "enforces", "body"))
+    @pytest.mark.parametrize("key", ("tier", "transport", "standard", "enforces", "effort",
+                                     "tools", "body"))
     def test_c7_a_lens_short_a_key_is_refused_before_anything_is_written(self, document,
                                                                           tmp_path, key):
         """S6-C7: `tier` and `transport` are read only when the round file is assembled, so a lens
@@ -687,6 +693,7 @@ class TestRefusals:
         so the reader can fix it without reading the emitter."""
         damaged = {"tier": {"tier": None}, "transport": {"transport": None},
                    "standard": {"standard": None}, "enforces": {"enforces": None},
+                   "effort": {"effort": None}, "tools": {"tools": None},
                    "body": {"body": ""}}[key]
         skill = skill_copy(tmp_path, {"lenses/what-if/prompt.md": lens_text(**damaged)})
         out_dir = tmp_path / "out"
@@ -699,7 +706,8 @@ class TestRefusals:
     @pytest.mark.parametrize("key,damage", (
         ("tier", {"tier": " "}), ("transport", {"transport": ["codex"]}),
         ("enforces", {"enforces": []}), ("enforces", {"enforces": "what-if-questions"}),
-        ("standard", {"standard": ["acceptance-criteria"]}), ("body", {"body": "  \n\n"})))
+        ("standard", {"standard": ["acceptance-criteria"]}), ("body", {"body": "  \n\n"}),
+        ("effort", {"effort": " "}), ("tools", {"tools": "  "})))
     def test_c7_a_lens_value_that_is_present_but_unusable_is_refused(self, document, tmp_path,
                                                                       key, damage):
         """S6-C7: a key is owed a value an attacker can be built from, not merely a key. A lens
@@ -817,7 +825,8 @@ class TestOneLens:
         meta = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))
         edge = next(lens for lens in LENSES if lens["lens"] == "what-if")
         assert meta["lenses"] == [{"lens": "what-if", "tier": edge["tier"],
-                                   "transport": edge["transport"]}]
+                                   "transport": edge["transport"], "effort": edge["effort"],
+                                   "tools": edge["tools"]}]
 
     def test_an_unknown_lens_is_refused_and_writes_nothing(self, document, tmp_path, capsys):
         """A lens the registry does not hold has no prompt to emit, so the round refuses rather
@@ -1177,7 +1186,8 @@ class TestRoundFile:
         assert meta == {
             "spec_path": document.name,
             "spec_revision": "sha256:" + hashlib.sha256(document.read_bytes()).hexdigest(),
-            "lenses": [{"lens": lens["lens"], "tier": lens["tier"], "transport": lens["transport"]}
+            "lenses": [{"lens": lens["lens"], "tier": lens["tier"], "transport": lens["transport"],
+                        "effort": lens["effort"], "tools": lens["tools"]}
                        for lens in LENSES],
         }
 
@@ -1381,6 +1391,136 @@ class TestSurface:
             assert stated(key), f"{key} is absent or blank"
         assert re.search(r"^admission:", front, re.MULTILINE), "no admission block"
         assert stated("prevents") or stated("provides"), "the record states no worth"
+
+
+# The routing table lives in a sibling skill of the source tree. Only these tests read it; the
+# emitter never does, so a deployed skill runs whether or not that skill is installed beside it.
+ROUTING_TABLE_PATH = (
+    HERE / ".." / "choosing-a-delegate" / "references" / "model-routing.md"
+).resolve()
+PROVIDER_OF = {"codex": "openai", "openrouter": "openrouter"}
+EFFORT_TOKENS = ("low", "medium", "high", "xhigh", "max")
+CODEX_SANDBOX = "read-only-sandbox"
+# The routes every lens declares on the default branch. The pins change what a seat runs with
+# and move no lens between transports or tiers.
+DECLARED_ROUTES = {
+    "set-consistency": ("openrouter", "mid"), "what-if": ("openrouter", "mid"),
+    "behavioural-outcome": ("codex", "frontier"), "obligation-reduction": ("codex", "frontier"),
+}
+# Every attack read is a whole-document read with the text inline: an OpenRouter lens needs no
+# tool and runs at the lowest effort, a Codex lens runs its read-only sandbox at the effort
+# every recorded attack round has run it at.
+PINNED = {"openrouter": ("low", []), "codex": ("high", CODEX_SANDBOX)}
+# The ladder's failover step is pinned once in SKILL.md rather than per lens: a lens failing
+# over to Codex runs the sandbox at medium, one failing over to OpenRouter runs no tools at low.
+FAILOVER_PIN = {"codex": ("medium", CODEX_SANDBOX), "openrouter": ("low", [])}
+
+
+def _markdown_table(text: str, heading: str) -> list[list[str]]:
+    """The rows of the first table under a heading, header row first, separator dropped."""
+    lines = text.splitlines()
+    rows: list[list[str]] = []
+    for line in lines[lines.index(heading) + 1:]:
+        if line.startswith("## "):
+            break
+        if line.startswith("|"):
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if not all(set(cell) <= set("-: ") for cell in cells):
+                rows.append(cells)
+        elif rows:
+            break
+    assert rows, f"no table under {heading!r}"
+    return rows
+
+
+def _backticked(cell: str) -> list[str]:
+    return re.findall(r"`([^`]+)`", cell)
+
+
+def routing_table() -> tuple[dict[str, dict[str, str]], dict[str, list[str]]]:
+    """The model each provider names per tier, and the efforts each model accepts."""
+    text = ROUTING_TABLE_PATH.read_text(encoding="utf-8")
+    grid_rows = _markdown_table(text, "## Pick by tier")
+    providers = [_backticked(cell)[0] for cell in grid_rows[0][1:]]
+    grid: dict[str, dict[str, str]] = {provider: {} for provider in providers}
+    for row in grid_rows[1:]:
+        tier = _backticked(row[0])[0]
+        for provider, cell in zip(providers, row[1:]):
+            if names := _backticked(cell):
+                grid[provider][tier] = names[0]
+    efforts = {_backticked(row[1])[0]: [token for token in _backticked(row[-1])
+                                        if token in EFFORT_TOKENS]
+               for row in _markdown_table(text, "## Models")[1:]}
+    assert grid and efforts, "the routing table parsed to nothing"
+    return grid, efforts
+
+
+class TestSeatPins:
+    def test_b1_every_lens_keeps_the_route_it_declares_on_main(self):
+        """The pins decide what a seat runs with; they move no lens between transports or tiers,
+        so the roster still reaches two vendors and two tiers the way it did before."""
+        assert {lens["lens"]: (lens["transport"], lens["tier"]) for lens in LENSES} == DECLARED_ROUTES
+
+    def test_b2_every_lens_carries_a_pin_its_model_accepts(self):
+        """Each lens's front matter names its effort and tool grant: an OpenRouter lens reads the
+        document inline at the lowest effort with no tool, a Codex lens runs its read-only sandbox
+        at high. Every effort, the failover pins included, is one the routing table lists for the
+        model that provider serves at that tier, so a dispatch following the pin is never refused
+        by its launcher."""
+        grid, efforts = routing_table()
+        for lens in LENSES:
+            effort, tools = PINNED[lens["transport"]]
+            assert lens["effort"] == effort, lens["lens"]
+            assert lens["tools"] == tools, lens["lens"]
+            model = grid[PROVIDER_OF[lens["transport"]]][lens["tier"]]
+            assert effort in efforts[model], f"{lens['lens']}: {model} does not accept {effort}"
+        for transport, (effort, _) in FAILOVER_PIN.items():
+            model = grid[PROVIDER_OF[transport]]["mid"]
+            assert effort in efforts[model], f"failover to {transport}: {model} rejects {effort}"
+
+    def test_b2_no_openrouter_lens_is_granted_a_tool(self):
+        """An OpenRouter lens holds the whole document in its prompt and has nothing else to
+        read, so any tool in its grant is an exploratory walk at the dispatcher's expense."""
+        for lens in LENSES:
+            if lens["transport"] == "openrouter":
+                assert lens["tools"] == [], lens["lens"]
+
+    @pytest.mark.parametrize("name", (LENS_NAMES[0], LENS_NAMES[-1]))
+    @pytest.mark.parametrize("key", ("effort", "tools"))
+    def test_b3_a_lens_without_a_pin_refuses_the_round(self, document, tmp_path, name, key):
+        """A lens short its effort or its tool grant would be dispatched at whatever the
+        dispatcher picked, which is the failure the pins exist to prevent. The round refuses
+        before anything is written, names the lens and the key, and the code is documented."""
+        shipped = next(lens for lens in LENSES if lens["lens"] == name)
+        fields = {"tier": shipped["tier"], "transport": shipped["transport"],
+                  "enforces": shipped["enforces"], "effort": shipped["effort"],
+                  "tools": shipped["tools"], key: None}
+        skill = skill_copy(tmp_path, {f"lenses/{name}/prompt.md": lens_text(**fields)})
+        out_dir = tmp_path / "out"
+        code, result = run_copy(skill, "--spec", str(document), "--out-dir", str(out_dir))
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["no-lenses"]
+        assert name in result["errors"][0]["message"]
+        assert key in result["errors"][0]["message"]
+        assert not out_dir.exists()
+        assert "`no-lenses`" in ERRORS_PATH.read_text(encoding="utf-8")
+
+    def test_b4_the_round_record_carries_each_lens_pin_beside_its_route(self, document,
+                                                                         tmp_path, capsys):
+        """The dispatcher reads the pin from the round record, not from the lens files, so each
+        entry names the effort and the tool grant its own front matter states beside the fields
+        it carried before, and a second emission writes the same bytes."""
+        emit(document, tmp_path / "one", capsys)
+        emit(document, tmp_path / "two", capsys)
+        first = (tmp_path / "one" / "round.json").read_bytes()
+        assert first == (tmp_path / "two" / "round.json").read_bytes()
+        entries = {entry["lens"]: entry for entry in json.loads(first)["lenses"]}
+        assert sorted(entries) == LENS_NAMES
+        for lens in LENSES:
+            entry = entries[lens["lens"]]
+            assert set(entry) == {"lens", "tier", "transport", "effort", "tools"}
+            assert entry["tier"] == lens["tier"] and entry["transport"] == lens["transport"]
+            assert entry["effort"] == lens["effort"] and entry["tools"] == lens["tools"]
 
 
 if __name__ == "__main__":

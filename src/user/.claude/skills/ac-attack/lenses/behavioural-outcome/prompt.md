@@ -1,6 +1,8 @@
 ---
 tier: frontier
 transport: codex
+effort: high
+tools: read-only-sandbox
 standard: acceptance-criteria
 enforces: [observable-obligation, document-deliverable, one-obligation, verification-contract, human-measurement, human-judgment, pending-until-performed, stochastic-and-window]
 ---

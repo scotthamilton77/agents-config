@@ -1,6 +1,8 @@
 ---
 tier: mid
 transport: openrouter
+effort: low
+tools: []
 standard: acceptance-criteria
 enforces: [what-if-questions]
 ---
