@@ -112,11 +112,12 @@ The proxy line the dead-run scenarios quote is
 
 ## Scenario 6
 
-- Question: the `set-consistency` lens's pinned attempt and its failover attempt both ended with
-  the proxy line `response ends on thinking and contains no text block to promote`; what does
-  the dispatcher do next, and can the round close?
+- Question: the `set-consistency` lens's pinned attempt ended with the proxy line
+  `response ends on thinking and contains no text block to promote`, and its failover attempt was
+  ended by the watchdog for silence; what does the dispatcher do next, and can the round close?
 - Key: no further dispatch; the lens has no report for the round; the round does not close.
-- Derivation: a dead run on the failover attempt ends the ladder. The lens has no report, and
+- Derivation: a watchdog kill for silence is a dead run on either transport, and a dead run on
+  the failover attempt ends the ladder. The lens has no report, and
   the record's own rules give a lens that returned nothing usable no entry: the round closes
   only by running that lens again later, never by recording it empty.
 - Wrong answers to watch for: a step down on the failover model, a third model, or closing the
