@@ -1,6 +1,8 @@
 ---
 tier: frontier
 transport: codex
+effort: high
+tools: read-only-sandbox
 standard: acceptance-criteria
 enforces: [coverage, sufficiency, can-fail, has-basis, restraint]
 workings: required

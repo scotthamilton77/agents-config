@@ -1087,8 +1087,8 @@ class TestLensCoverage:
 
 COMPLETE_ENTRY = {"lens": "what-if", "tier": "mid", "transport": "openrouter",
                   "standard": "acceptance-criteria", "enforces": ["what-if-questions"],
-                  "body": "Ask the what-if questions."}
-FRONT_MATTER = ("tier", "transport", "standard", "enforces", "workings")
+                  "effort": "low", "tools": [], "body": "Ask the what-if questions."}
+FRONT_MATTER = ("tier", "transport", "standard", "enforces", "workings", "effort", "tools")
 
 
 def lens_text(entry: dict[str, Any]) -> str:
@@ -1105,6 +1105,9 @@ def shipped(name: str, spelled: str | None = None) -> dict[str, Any]:
     head = (LENSES_DIR / name / "prompt.md").read_text(encoding="utf-8").split("---\n", 2)[1]
     fields = dict(line.split(": ", 1) for line in head.splitlines())
     fields["enforces"] = [part.strip() for part in fields["enforces"].strip("[]").split(",")]
+    if fields["tools"].startswith("["):
+        fields["tools"] = [part.strip() for part in fields["tools"].strip("[]").split(",")
+                           if part.strip()]
     schema = LENSES_DIR / name / "workings.schema.json"
     return {**fields, "lens": spelled or name, "body": "Instructions.",
             **({"workings_schema": schema.read_text(encoding="utf-8")} if schema.exists() else {})}
@@ -1142,6 +1145,11 @@ REGISTRIES = [
     ("a lens whose tier is blank", [lens_entry(tier=" ")]),
     ("a lens with no transport", [lens_entry(transport=DELETE)]),
     ("a lens whose transport is a list", [lens_entry(transport=["codex"])]),
+    ("a lens with no effort", [lens_entry(effort=DELETE)]),
+    ("a lens whose effort is blank", [lens_entry(effort=" ")]),
+    ("a lens with no tools", [lens_entry(tools=DELETE)]),
+    ("a lens whose tools is blank", [lens_entry(tools="  ")]),
+    ("a lens granted a sandbox", [lens_entry(transport="codex", tools="read-only-sandbox")]),
     ("a lens with no standard", [lens_entry(standard=DELETE)]),
     ("a lens naming another standard", [lens_entry(standard="house-style")]),
     ("a lens whose standard is a list", [lens_entry(standard=["acceptance-criteria"])]),
@@ -1173,6 +1181,8 @@ BAD_REGISTRY = [
     ([lens_entry(workings="sometimes")], "workings"),
     ([lens_entry(tier=DELETE)], "what-if without a usable tier"),
     ([lens_entry(transport=DELETE)], "what-if without a usable transport"),
+    ([lens_entry(effort=DELETE)], "what-if without a usable effort"),
+    ([lens_entry(tools=DELETE)], "what-if without a usable tools"),
     ([lens_entry(), lens_entry()], "names one lens twice"),
     ([lens_entry(), lens_entry(lens="What-If")], "names one lens twice"),
     ([lens_entry(lens="../what-if")], "not a bare filename"),
