@@ -1,0 +1,35 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 9,
+  "actual_replacement_count": 8,
+  "raw_count_matches": false,
+  "questions": [],
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [
+    {
+      "code": "summary-length",
+      "path": "/summary",
+      "message": "the summary has 6 sentences, and it takes three to five"
+    }
+  ],
+  "introduced_lint": [
+    {
+      "code": "summary-length",
+      "path": "/summary",
+      "message": "the summary has 6 sentences, and it takes three to five"
+    }
+  ],
+  "resolved_lint": [],
+  "full_apply": "refused",
+  "full_apply_findings": [
+    {
+      "code": "summary-length",
+      "path": "/summary",
+      "message": "the summary has 6 sentences, and it takes three to five"
+    }
+  ],
+  "tool_calls": []
+}

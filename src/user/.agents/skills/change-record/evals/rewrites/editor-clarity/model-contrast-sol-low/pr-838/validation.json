@@ -1,0 +1,41 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 12,
+  "actual_replacement_count": 12,
+  "raw_count_matches": true,
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the unreachable map escalation rules whose code remains. The existing Heads-up rows do not cover this caveat."
+    },
+    {
+      "field": "/pr/title",
+      "question": "How should the required parenthetical gloss for the closing identifier be accommodated while preserving the mandated title structure?"
+    },
+    {
+      "field": "/commit/subject",
+      "question": "How should the required parenthetical gloss for the closing identifier be accommodated while preserving the mandated subject structure and 100-character limit?"
+    },
+    {
+      "field": "/risk/rows/0/failure",
+      "question": "What does an effort level control? The record names task, medium and heavy effort without explaining the term."
+    },
+    {
+      "field": "/changes/1/text",
+      "question": "What do task effort and heavy effort mean, and what is a channel? These terms need definitions before this section can be rewritten for a stranger."
+    },
+    {
+      "field": "/design_notes",
+      "question": "What are the two readings supplied by the escalation module, and what do impact task, downstream, channel, task effort and heavy effort mean? The record does not supply enough definitions to make this section readable to a stranger."
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": []
+}

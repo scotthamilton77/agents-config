@@ -1,0 +1,18 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 4,
+  "actual_replacement_count": 4,
+  "raw_count_matches": true,
+  "questions": [],
+  "questions_outside_sections": [],
+  "no_op_replacements": [
+    "/heads_up/0"
+  ],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": []
+}

@@ -1,0 +1,33 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 14,
+  "actual_replacement_count": 14,
+  "raw_count_matches": true,
+  "questions": [
+    {
+      "field": "/pr/title",
+      "question": "How should the required first-use gloss for 9k9.405.14 be accommodated while preserving the closing bracketed id and restricting edits to the wording before it?"
+    },
+    {
+      "field": "/commit/subject",
+      "question": "How should the required first-use gloss for 9k9.405.14 be accommodated within the 100-character limit while preserving the subject prefix and closing bracketed id?"
+    },
+    {
+      "field": "/heads_up/1",
+      "question": "What does an attack record's fingerprint identify? The record does not supply a definition for its first use."
+    },
+    {
+      "field": "/risk/rows/1/evidence",
+      "question": "Please add a separate Heads-up row for the remaining control objection to a flaw present in both document versions. No existing Heads-up row covers this caveat."
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": []
+}

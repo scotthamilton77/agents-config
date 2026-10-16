@@ -1,0 +1,70 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 17,
+  "actual_replacement_count": 24,
+  "raw_count_matches": false,
+  "questions": [
+    {
+      "field": "/heads_up/0",
+      "question": "Please add a separate Heads-up row stating that no review round has run on this pull request."
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [
+    "/heads_up/0",
+    "/risk/rows/0/exposed",
+    "/risk/rows/0/recovery",
+    "/risk/rows/1/failure",
+    "/risk/rows/1/exposed",
+    "/risk/rows/1/evidence",
+    "/risk/rows/1/recovery",
+    "/changes/0/text",
+    "/changes/1/text",
+    "/changes/2/text",
+    "/criteria/2/promise",
+    "/criteria/3/promise",
+    "/criteria/4/promise"
+  ],
+  "baseline_lint": [],
+  "structural_findings": [
+    {
+      "code": "proposed-count",
+      "path": "/proposed",
+      "message": "the response holds 24 replacements and says the editor proposed 17; an author takes replacements out and adds none"
+    },
+    {
+      "code": "protected-value",
+      "path": "/commit/verification",
+      "message": "the replacement drops or changes `2`, which this section holds; a fact is never reworded"
+    }
+  ],
+  "raw_result_lint": [
+    {
+      "code": "commit-body",
+      "path": "/commit/change",
+      "message": "this section has 6 sentences, and it takes 3 to 4"
+    }
+  ],
+  "introduced_lint": [
+    {
+      "code": "commit-body",
+      "path": "/commit/change",
+      "message": "this section has 6 sentences, and it takes 3 to 4"
+    }
+  ],
+  "resolved_lint": [],
+  "full_apply": "refused",
+  "full_apply_findings": [
+    {
+      "code": "proposed-count",
+      "path": "/proposed",
+      "message": "the response holds 24 replacements and says the editor proposed 17; an author takes replacements out and adds none"
+    },
+    {
+      "code": "protected-value",
+      "path": "/commit/verification",
+      "message": "the replacement drops or changes `2`, which this section holds; a fact is never reworded"
+    }
+  ],
+  "tool_calls": []
+}

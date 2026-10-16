@@ -1,0 +1,54 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 16,
+  "actual_replacement_count": 20,
+  "raw_count_matches": false,
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the remaining control objection: it cites a contradiction present in both document versions."
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [
+    "/pr/title",
+    "/heads_up/0",
+    "/risk/rows/0/failure",
+    "/risk/rows/0/exposed",
+    "/risk/rows/0/evidence",
+    "/risk/rows/1/failure",
+    "/risk/rows/1/exposed"
+  ],
+  "baseline_lint": [],
+  "structural_findings": [
+    {
+      "code": "proposed-count",
+      "path": "/proposed",
+      "message": "the response holds 20 replacements and says the editor proposed 16; an author takes replacements out and adds none"
+    }
+  ],
+  "raw_result_lint": [
+    {
+      "code": "summary-length",
+      "path": "/summary",
+      "message": "the summary has 6 sentences, and it takes three to five"
+    }
+  ],
+  "introduced_lint": [
+    {
+      "code": "summary-length",
+      "path": "/summary",
+      "message": "the summary has 6 sentences, and it takes three to five"
+    }
+  ],
+  "resolved_lint": [],
+  "full_apply": "refused",
+  "full_apply_findings": [
+    {
+      "code": "proposed-count",
+      "path": "/proposed",
+      "message": "the response holds 20 replacements and says the editor proposed 16; an author takes replacements out and adds none"
+    }
+  ],
+  "tool_calls": []
+}

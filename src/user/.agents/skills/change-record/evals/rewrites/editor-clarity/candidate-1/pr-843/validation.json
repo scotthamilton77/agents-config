@@ -1,0 +1,38 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 6,
+  "actual_replacement_count": 6,
+  "raw_count_matches": true,
+  "questions": [
+    {
+      "field": "/risk/rows/0/evidence",
+      "question": "The tests establish that every slot has a pin, but do they establish that a reviewer cannot run with incompatible effort or tools? Please provide evidence for that risk or revise the evidence claim."
+    },
+    {
+      "field": "/changes/2/text",
+      "question": "Please move the caveat that the round halts only when the last failure on every route was a run that died or a transport error to a Heads-up row. The current change text omits this limiting condition to meet the one-clause-per-sentence check."
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [
+    {
+      "code": "protected-value",
+      "path": "/summary",
+      "message": "the replacement drops or changes `fixed`, which this section holds; a fact is never reworded"
+    }
+  ],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "refused",
+  "full_apply_findings": [
+    {
+      "code": "protected-value",
+      "path": "/summary",
+      "message": "the replacement drops or changes `fixed`, which this section holds; a fact is never reworded"
+    }
+  ],
+  "tool_calls": []
+}
