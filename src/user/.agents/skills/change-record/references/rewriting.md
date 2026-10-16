@@ -94,7 +94,7 @@ The editor writes these:
 - `record_digest`, copied from the request.
 - One entry in `replacements` for each section it reworded. `section_digest` is that section's `digest`, copied from the request.
 - `proposed`, the number of replacements it returned. Once an entry is gone, nothing can check that number beyond its not being lower than the number of entries left.
-- One entry in `questions` for each section it could not reword without inventing a fact. `questions` may be left out.
+- An entry in `questions` for each missing fact or author action needed to finish an edit. A missing fact that prevents a faithful rewrite leaves the section without a replacement. A structural question may accompany a replacement that improves the wording while retaining the caveat or other text that needs to move. `questions` may be left out.
 
 The author then decides, and edits the response in two ways only:
 
@@ -102,6 +102,17 @@ The author then decides, and edits the response in two ways only:
 - To change a replacement, add `corrected` with the wording to apply. Leave `text` as the editor wrote it.
 
 The script cannot judge meaning. Read each replacement against its section for a claim made stronger, an exception dropped, or deferred work that is no longer mentioned.
+
+Read the questions before accepting replacements. The editor can reword a
+section but cannot add, remove or move sections. Structural changes, such as
+moving a caveat to Heads-up, remain the author's responsibility. The script
+prints questions; it does not resolve them or block an application on them.
+
+Assess omissions too. Check unchanged sections for writing defects that the
+editor could have repaired within its authority. A response with no proposals
+needs no corrections, so correction counts alone do not measure whether the
+pass improved the prose. When evaluating the editor, record necessary edits
+missed, useful edits accepted, unnecessary edits and meaning corrections.
 
 ## `apply-prose`
 

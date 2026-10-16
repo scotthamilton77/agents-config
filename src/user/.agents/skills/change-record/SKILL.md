@@ -52,6 +52,7 @@ An editor on a cheaper model may reword the record's wording. The author decides
 - `extract-prose` writes a request that lists each field the editor may reword.
 - `dispatch-prose` prints a model, an effort, and the paths of the editor's instruction file and of the request. Send that model, at that effort, the instruction file's text and then the request's. Use whatever route this tool has to the model. Save the reply as the response file.
 - Read each replacement against its section. Look for a claim made stronger, an exception dropped, and deferred work that is no longer mentioned.
+- Resolve questions about missing facts or structural changes. Check unchanged sections for necessary edits the editor missed. A low correction count can also mean the editor proposed too little.
 - Delete each replacement you reject. Add `corrected` to one you change, with the wording to apply.
 - `apply-prose` applies what is left. It refuses the whole response when one replacement is stale, names another field, or drops a fact.
 
