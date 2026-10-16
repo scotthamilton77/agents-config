@@ -1,0 +1,412 @@
+{
+  "report": {
+    "behavioural-outcome": {
+      "lens": "behavioural-outcome",
+      "objections": [],
+      "report": "empty"
+    },
+    "obligation-reduction": {
+      "lens": "obligation-reduction",
+      "objections": [
+        {
+          "ground": {
+            "reason": "D3 promises an actual adversarial review that reads the whole spec and checks the job criteria against Q1\u2013Q3, K1 and K2. RET-A4 checks the existence and contents of attack records, including their declared revision and attacked document. Those observations do not establish that the attack performed the promised substantive checks.",
+            "rule": "sufficiency"
+          },
+          "lens": "obligation-reduction",
+          "objection": "The item can close with complete, correctly labelled attack records even though the attack omitted part of its agreed scope.",
+          "obligation": "O7.2",
+          "scenario": {
+            "expect": "All five checks pass and the item closes, while the promised review against K1 and K2 has not occurred.",
+            "given": "The spec answers every question, satisfies K1 and K2, and states retention-job criteria. An attack receives the whole closing commit and produces a finished record identifying revision 3, the whole spec and every objection raised. Its analysis checks the criteria against Q1\u2013Q3 but omits K1 and K2; every objection it raises is rejected with a scenario-addressing reason.",
+            "when": "The named judges perform RET-A1 through RET-A5, and Mara checks the attack records using RET-A4."
+          },
+          "target_ac": "RET-A4"
+        }
+      ],
+      "report": "objections",
+      "workings": {
+        "obligations": [
+          {
+            "id": "O1",
+            "kind": "result",
+            "statement": "Deliver one decision spec at specs/audit-log-retention.md recording the complete retention decision.",
+            "source": "Problem: \u201cno retention job can be built until one document records the whole decision.\u201d This item: \u201cThis item delivers a decision spec, `specs/audit-log-retention.md`.\u201d",
+            "parts": [
+              {
+                "id": "O1.1",
+                "statement": "Deliver the defined spec containing the complete decision on the closing commit.",
+                "discharged_by": [
+                  "RET-A1",
+                  "RET-A2",
+                  "RET-A3",
+                  "RET-A4",
+                  "RET-A5"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O2",
+            "kind": "result",
+            "statement": "Answer every part of Q1, Q2 and Q3.",
+            "source": "Q1: \u201cAt what age, in days, does an audit event leave live storage?\u201d Q2: \u201cWhere does an event go when it leaves live storage, and at what age, in days, is it finally deleted?\u201d Q3: \u201cHow does a legal hold stop the deletion of the events it covers, and what ends a hold?\u201d",
+            "parts": [
+              {
+                "id": "O2.1",
+                "statement": "Choose the event age in days at which it leaves live storage.",
+                "discharged_by": [
+                  "RET-A1"
+                ]
+              },
+              {
+                "id": "O2.2",
+                "statement": "Choose the destination after live storage and the age in days of final deletion.",
+                "discharged_by": [
+                  "RET-A1"
+                ]
+              },
+              {
+                "id": "O2.3",
+                "statement": "Choose how a legal hold prevents deletion and what ends a hold.",
+                "discharged_by": [
+                  "RET-A1"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O3",
+            "kind": "result",
+            "statement": "For every question part, record exactly one chosen answer, an alternative considered and a reason for preferring the choice.",
+            "source": "D1: \u201cFor each part of each question the spec records one chosen answer, at least one alternative it considered, and why the choice is preferred over that alternative.\u201d",
+            "parts": [
+              {
+                "id": "O3.1",
+                "statement": "Every answer has the required choice, alternative and comparative reason.",
+                "discharged_by": [
+                  "RET-A1"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O4",
+            "kind": "guarantee",
+            "statement": "Leave no inconclusive or deferred answer to any part of Q1\u2013Q3.",
+            "source": "D2: \u201cAn inconclusive or deferred answer to any part of Q1 to Q3 is not acceptable.\u201d What-if answers: \u201cAn unanswered part of a question fails RET-A1, and D2 rules out an inconclusive answer.\u201d",
+            "parts": [
+              {
+                "id": "O4.1",
+                "statement": "Every question part has a conclusive, non-deferred chosen answer.",
+                "discharged_by": [
+                  "RET-A1"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O5",
+            "kind": "guarantee",
+            "statement": "The chosen policy preserves retrieval of every event\u2019s full content within 24 hours of any request made through its age of 400 days, measured since writing.",
+            "source": "K1: \u201cevery event stays retrievable until it is 400 days old, an event's age being the time since it was written. Retrievable means that the compliance team, asking at any time up to then, obtains the event's full content within 24 hours of asking.\u201d What-if answers: \u201cAn event exactly 400 days old is inside K1.\u201d",
+            "parts": [
+              {
+                "id": "O5.1",
+                "statement": "Preserve the complete K1 retrieval guarantee for every event, including requests at exactly 400 days.",
+                "discharged_by": [
+                  "RET-A2"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O6",
+            "kind": "guarantee",
+            "statement": "Legal holds prevent deletion of covered events wherever stored, and cover only events existing when placed.",
+            "source": "K2: \u201can event a legal hold covers is never deleted while the hold is in force, wherever it is stored. A hold covers only events that exist when it is placed.\u201d",
+            "parts": [
+              {
+                "id": "O6.1",
+                "statement": "No covered event can be deleted during its hold, including events outside live storage when the hold is placed.",
+                "discharged_by": [
+                  "RET-A3"
+                ]
+              },
+              {
+                "id": "O6.2",
+                "statement": "A hold cannot cover an event written after the hold was placed.",
+                "discharged_by": [
+                  "RET-A5"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O7",
+            "kind": "result",
+            "statement": "Provide retention-job acceptance criteria that undergo and survive the specified adversarial review before closure.",
+            "source": "D3: \u201cThe spec states the acceptance criteria the retention job will be built against. Those criteria are attacked by an adversarial review against the team's acceptance-criteria standard before this item closes \u2026 The attack reads the spec whole, and checks the job criteria against the spec's answers to Q1 to Q3, and against K1 and K2, as their agreed scope. The standard is revision 3.\u201d",
+            "parts": [
+              {
+                "id": "O7.1",
+                "statement": "The spec states acceptance criteria for the retention job.",
+                "discharged_by": [
+                  "RET-A4"
+                ]
+              },
+              {
+                "id": "O7.2",
+                "statement": "Before closure, an actual adversarial review applies revision 3 to the whole spec and checks the job criteria against every answer to Q1\u2013Q3 and against K1 and K2.",
+                "discharged_by": []
+              },
+              {
+                "id": "O7.3",
+                "statement": "The closing commit has no accepted attack objection requiring amendment.",
+                "discharged_by": [
+                  "RET-A4"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O8",
+            "kind": "guarantee",
+            "statement": "Use the pre-agreed judges and standards.",
+            "source": "D4: \u201cThe judges and the standards in the criteria below were agreed with each judge on 2026-10-05, before writing started.\u201d",
+            "parts": [
+              {
+                "id": "O8.1",
+                "statement": "Each criterion is judged by its agreed named judge against its stated standard.",
+                "discharged_by": [
+                  "RET-A1",
+                  "RET-A2",
+                  "RET-A3",
+                  "RET-A4",
+                  "RET-A5"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O9",
+            "kind": "failure",
+            "statement": "A failed spec requires revision, with fresh judgments and a fresh attack on the revised commit before closure.",
+            "source": "What-if answers: \u201cA recorded fail sends the spec back for revision. A revision is a new commit, which needs a fresh judgment on every criterion and a fresh attack for RET-A4.\u201d",
+            "parts": [
+              {
+                "id": "O9.1",
+                "statement": "A failed commit cannot close the item; a revised commit must obtain fresh passes on every criterion.",
+                "discharged_by": [
+                  "RET-A1",
+                  "RET-A2",
+                  "RET-A3",
+                  "RET-A4",
+                  "RET-A5"
+                ]
+              },
+              {
+                "id": "O9.2",
+                "statement": "A revised commit requires its own attack before it can close.",
+                "discharged_by": [
+                  "RET-A4"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O10",
+            "kind": "failure",
+            "statement": "Missing required judges or an unavailable attack keep the item open, without substitute judgments.",
+            "source": "What-if answers: \u201cA named judge who is unavailable, or an attack that cannot run, leaves the criterion without a pass, so the item stays open. Nobody else's judgment discharges it.\u201d",
+            "parts": [
+              {
+                "id": "O10.1",
+                "statement": "Without a judgment by the required named judge, the corresponding criterion cannot discharge closure.",
+                "discharged_by": [
+                  "RET-A1",
+                  "RET-A2",
+                  "RET-A3",
+                  "RET-A4",
+                  "RET-A5"
+                ]
+              },
+              {
+                "id": "O10.2",
+                "statement": "Without an attack record satisfying RET-A4, the item remains open.",
+                "discharged_by": [
+                  "RET-A4"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O11",
+            "kind": "guarantee",
+            "statement": "Handle repeated and concurrent judgments and attacks consistently on a single commit.",
+            "source": "What-if answers: \u201cJudgments on different commits do not combine, and two judgments of one criterion on one commit close the item only if neither is a fail. Two attacks on one commit are both read by RET-A4.\u201d \u201cJudging the same commit again with the same verdict changes nothing.\u201d",
+            "parts": [
+              {
+                "id": "O11.1",
+                "statement": "Closure uses judgments from one commit, with any fail vetoing closure; repeating an unchanged verdict does not alter eligibility.",
+                "discharged_by": [
+                  "RET-A1",
+                  "RET-A2",
+                  "RET-A3",
+                  "RET-A4",
+                  "RET-A5"
+                ]
+              },
+              {
+                "id": "O11.2",
+                "statement": "Every attack record on the judged commit is considered.",
+                "discharged_by": [
+                  "RET-A4"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "O12",
+            "kind": "guarantee",
+            "statement": "An attack finding no objections is a valid result.",
+            "source": "What-if answers: \u201cAn attack that raises no objection is a valid result, and its record passes RET-A4.\u201d",
+            "parts": [
+              {
+                "id": "O12.1",
+                "statement": "A finished attack with an empty objection list can satisfy RET-A4 when its other record requirements hold.",
+                "discharged_by": [
+                  "RET-A4"
+                ]
+              }
+            ]
+          }
+        ],
+        "criteria": [
+          "RET-A1",
+          "RET-A2",
+          "RET-A3",
+          "RET-A4",
+          "RET-A5"
+        ]
+      }
+    },
+    "set-consistency": {
+      "lens": "set-consistency",
+      "objections": [
+        {
+          "ground": {
+            "reason": "RET-A4's fail conditions enumerate what the attack record must show \u2014 revision 3 of the standard, the whole spec at the commit judged, the objection list, a finished statement, rejections with reasons \u2014 but never require the record to show the attack checked the job criteria against the spec's answers to Q1 to Q3 and against K1 and K2, which D3 defines as the attack's agreed scope. The decision left open: does RET-A4 incorporate D3's scope, or only its own enumerated fail conditions? Reading one: Mara fails a record whose attack never cross-checked the job criteria against Q1\u2013Q3/K1/K2, because that is not the attack D3 defines. Reading two: such a record shows everything RET-A4 lists, so it passes.",
+            "rule": "decision-closure"
+          },
+          "lens": "set-consistency",
+          "objection": "An attack that checks the retention-job criteria only for internal quality, without the cross-checks against the spec's answers and K1/K2 that D3 makes the attack's scope, can satisfy every fail condition RET-A4 enumerates and close the item \u2014 so the later item can start from criteria never attacked against the constraints they must honor.",
+          "scenario": {
+            "given": "A spec commit whose attack record names the whole spec at that commit, shows the attack ran against revision 3 of the standard, lists every objection raised, states the attack finished, and rejects each objection with a reason \u2014 but whose attack examined only the job criteria's internal consistency and never checked them against the answers to Q1\u2013Q3 or against K1 and K2.",
+            "when": "Mara Lind judges RET-A4 on that commit.",
+            "expect": "Under the reading that RET-A4 incorporates D3's scope, she fails it because the agreed attack never ran; under the reading that only the enumerated fail conditions apply, she passes it and the item closes. The same record yields opposite verdicts."
+          },
+          "target_ac": "RET-A4"
+        }
+      ],
+      "report": "objections"
+    },
+    "what-if": {
+      "lens": "what-if",
+      "objections": [
+        {
+          "ground": {
+            "reason": "The 'empty or at a limit' question asks for the boundary of 'exists when it is placed'. RET-A5's fail condition reaches only an event written after the hold is placed, and K2 covers only events that exist when it is placed; an event whose write completes at the placement instant is neither, and the What-if answers section rules on the 400-day boundary and the no-objection attack but never on this one.",
+            "rule": "what-if-questions"
+          },
+          "lens": "what-if",
+          "objection": "The criteria leave the simultaneity boundary of hold coverage untested and undecided: whether an event being written at the exact instant a hold is placed is covered by that hold. The later item must build deletion and hold logic against the spec, and either resolution (covered, so never deleted while the hold is in force, or not covered, so deletable on schedule) is consistent with every criterion as written, so two specs giving opposite answers could both close the item.",
+          "scenario": {
+            "given": "an audit event whose write completes at the same instant a legal hold is placed",
+            "when": "Ines Achebe judges RET-A5 on a spec whose Q3 answer does not state whether that simultaneous event is covered by the hold",
+            "expect": "the criterion cannot fail, because the event was not written after the hold was placed, and no other criterion or what-if answer decides coverage at the placement instant"
+          },
+          "target_ac": "RET-A5"
+        }
+      ],
+      "report": "objections"
+    }
+  },
+  "run": {
+    "behavioural-outcome": {
+      "transport": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "response_id": "01a12df3-9807-7091-b41d-ecdb0dc52e3c",
+      "started": "2026-10-12T02:31:41Z",
+      "isolation": {
+        "cwd": "/private/tmp/codex-cwd-iso.xMAolX",
+        "agents_md": {},
+        "agents_md_injections": 0
+      }
+    },
+    "obligation-reduction": {
+      "transport": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "response_id": "01a12df4-6ec9-70a1-b337-208f9830a982",
+      "started": "2026-10-12T02:32:36Z",
+      "isolation": {
+        "cwd": "/private/tmp/codex-cwd-iso.9aDOsw",
+        "agents_md": {},
+        "agents_md_injections": 0
+      }
+    },
+    "set-consistency": {
+      "transport": "openrouter",
+      "model": "moonshotai/kimi-k3",
+      "effort": "low",
+      "response_id": "894ea27b-892a-4866-8bbe-a689059fcec0",
+      "started": "2026-10-12T02:30:17Z",
+      "isolation": {
+        "tools_declared": "",
+        "tool_use_events": 0
+      }
+    },
+    "what-if": {
+      "transport": "openrouter",
+      "model": "moonshotai/kimi-k3",
+      "effort": "low",
+      "response_id": "954df993-0bfb-4dc9-9e93-0ddbc78c5f6e",
+      "started": "2026-10-12T02:31:41Z",
+      "isolation": {
+        "tools_declared": "",
+        "tool_use_events": 0
+      }
+    }
+  },
+  "decision": {
+    "verdict": "accept",
+    "digests": {
+      "control.md": "735568fc2174e094164daddb545c801a44cd91cc694c22c0293142c70fd3182d"
+    },
+    "rejected": [
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "RET-A4",
+        "objection": "The item can close with complete, correctly labelled attack records even though the attack omitted part of its agreed scope.",
+        "reason": "RET-A4 runs the case of attack records on the commit judged that name the whole spec at that commit and revision 3 of the standard, list every objection the attack raised, state that the attack finished, and reject each objection with a reason that addresses its scenario. The objection's scenario is that same record for an attack that checked the job criteria against Q1 to Q3 and left out K1 and K2: a variant of D3's attack in how much of its stated scope the attack applied."
+      },
+      {
+        "lens": "set-consistency",
+        "target_ac": "RET-A4",
+        "objection": "An attack that checks the retention-job criteria only for internal quality, without the cross-checks against the spec's answers and K1/K2 that D3 makes the attack's scope, can satisfy every fail condition RET-A4 enumerates and close the item \u2014 so the later item can start from criteria never attacked against the constraints they must honor.",
+        "reason": "RET-A4 runs the case of attack records on the commit judged that name the whole spec at that commit and revision 3 of the standard, list every objection the attack raised, state that the attack finished, and reject each objection with a reason that addresses its scenario. The objection's scenario is that same record for an attack that checked the job criteria for internal consistency only, applying part of the scope D3 states: a variant of D3's attack in how much of its stated scope the attack applied."
+      },
+      {
+        "lens": "what-if",
+        "target_ac": "RET-A5",
+        "objection": "The criteria leave the simultaneity boundary of hold coverage untested and undecided: whether an event being written at the exact instant a hold is placed is covered by that hold.",
+        "reason": "RET-A5 runs the case of an event written after a hold is placed, and RET-A3 the case of an event a hold covers, including one that has left live storage. The objection's scenario is an event whose write completes at the instant the hold is placed: a variant of the ordering of a write against a hold, at its boundary."
+      }
+    ]
+  },
+  "digests": {
+    "control.md": "735568fc2174e094164daddb545c801a44cd91cc694c22c0293142c70fd3182d"
+  }
+}
