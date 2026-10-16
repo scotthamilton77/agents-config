@@ -15,7 +15,8 @@ at `openrouter.ai` is not a shortcut but a silent, billable dead end.
 `scripts/proxy.js` moves the trailing text block to the end of the response so
 it never terminates on reasoning. The repair is deliberately narrow — block
 order is otherwise preserved, because the client replays that order back
-upstream on the next turn.
+upstream on the next turn. The proxy drops the client's `accept-encoding`
+header, so upstream sends the identity-encoded body every repair reads.
 
 ## The second repair, and its consequence for tool grants
 
@@ -28,6 +29,26 @@ tools granted via `--allowedTools`.
 
 Practical consequence: **the subagent can use only the tools you list.** There
 is no deferred pool to fall back on. List everything the task needs.
+
+## The third repair: one tool_use id per call
+
+Claude Code pairs every tool result to its call by the call's `tool_use` id,
+across the whole conversation, and it drops a call whose id it has already
+seen. A turn emptied that way is replayed to the model as the placeholder
+`[Tool use interrupted]`, which the model reads as its calls failing. Some
+providers number calls per turn (`Read:0`, `Read:1`, then `Read:0` again on
+the next turn), so every turn after the first collides, and after enough of
+them the model gives up and answers with the placeholder itself: exit 0, no
+stderr, no report, tokens billed.
+
+The proxy keeps every id it has handed the client for the life of the run and
+renames a repeat with a numeric suffix (`Read:0_2`), logging one
+`[proxy] renamed tool_use id … ` line per rename. The client replays the
+renamed id back upstream, and the model accepts any id string, so nothing maps
+it back. A rename line says the repair fired on that response and nothing
+about how the run ended; read the ending as `run-bounds.md` says. Every id
+the proxy forwards is unique, so a result that still reads
+`[Tool use interrupted]` is text the model wrote, not a dropped call.
 
 ## The model pin
 
@@ -63,7 +84,8 @@ Alias redirection also covers the background chores the harness runs on the
 cheap alias, which would otherwise bill the model you named. `run.js` switches
 those off with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`. Note the semantics:
 **any non-empty value enables the setting, `"0"` included.** It reads as a
-switch, not a boolean, so there is no way to spell "off" except by unsetting it.
+switch, not a boolean, so the only ways to spell "off" are unsetting it and
+leaving it empty.
 
 Every completion request leaves one line on stderr naming the method, path,
 model, and decision (`forward`, `deny-pin`, or `deny-denylist`). A forwarded
