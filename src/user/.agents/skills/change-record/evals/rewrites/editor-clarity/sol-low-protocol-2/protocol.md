@@ -30,8 +30,10 @@ fixed.
 Each candidate gets one run per fixture, four runs in all. Every run uses
 model `gpt-6.1-sol` at effort `low`, which is the skill's pin file.
 
-Every run goes through `codex exec` with the same isolation the Sol-low model
-comparison records. The working directory is empty. The user configuration
+Every run goes through `codex exec` under a private Codex home that holds
+only the sign-in file, so no user-level instruction file loads. The Sol-low
+model comparison ran with the real home, where such a file exists, so this
+isolation is stricter than that comparison's. The working directory is empty. The user configuration
 file is not loaded, and execution-policy rules are not loaded. Project
 documents are limited to zero bytes. Developer instructions are empty. The
 shell tool is off and web search is disabled. The sandbox is read-only, and
@@ -41,7 +43,10 @@ editor receives no repository context and no critique.
 Each fixture directory in the candidate's directory retains the raw response,
 the event log, standard error, the settings with usage and timing, and the
 local validation. A call that exits non-zero or returns no response is a
-failed run of that candidate. It is retained as it is. No retry replaces a
+failed run of that candidate. It is retained as it is. One case is not a
+run: a call the provider refused before producing any model output, such as
+an exhausted usage limit or a network failure, as its standard error shows.
+That call is retained beside the fixture and the fixture is called again. No retry replaces a
 run, and no later run replaces an earlier one.
 
 ## Candidates
