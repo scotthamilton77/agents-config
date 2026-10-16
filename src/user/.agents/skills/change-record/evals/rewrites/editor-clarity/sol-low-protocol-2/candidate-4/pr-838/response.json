@@ -1,0 +1,86 @@
+{
+  "record_digest": "7cf9c57f73a93ca88347230956abb624fabb385e06c9bb797f0714f6645a1727",
+  "proposed": 10,
+  "replacements": [
+    {
+      "field": "/summary",
+      "section_digest": "70446f4f33a055f8acd235053d45439e6a95b5c4af8ef52277a28d605e93d885",
+      "text": "The grilling board sent a typed answer to its slower expert seat only when the answer marked or opened a decision. Any answer carrying a note or free text now goes to the expert. The rules that escalated a typed answer on the board's map can no longer fire. Their code remains."
+    },
+    {
+      "field": "/heads_up/0",
+      "section_digest": "b55784141f73dc3052e94ee637d014b2d7e791830673436c5f5f2996b661b7f0",
+      "text": "Twelve existing tests now either select an option or run on a thread."
+    },
+    {
+      "field": "/risk/rows/0/evidence",
+      "section_digest": "88035ee3a3c130cc222408bd0e76b66c8ec01bf9aecd6609ead94f0791d93665",
+      "text": "Six new unit tests cover the change. Four of them failed before it."
+    },
+    {
+      "field": "/risk/rows/1/failure",
+      "section_digest": "0f0013ee9122f8f7cf7a8c83690463743cbb7eee746338c01a6c2f5f9432ac61",
+      "text": "Selecting an option with no text changes the answer's route."
+    },
+    {
+      "field": "/risk/rows/1/evidence",
+      "section_digest": "15d651510e6698b7edb0445b4297bd29351c65d539dc83f553405642fcf1e5ae",
+      "text": "An existing test checks that an answer selecting an option with no text records no task."
+    },
+    {
+      "field": "/changes/2/text",
+      "section_digest": "0f36ec7a42a87db6c3edf164fe1e4645b0b5451a14bdf463336536e289f59beb",
+      "text": "Three specification passages now say the expert weighs the note."
+    },
+    {
+      "field": "/discovered/rows/0/reason",
+      "section_digest": "b25d1d71c8e1954178482085ce684df03a62f13e6f969d2a70400a016d5d9ba5",
+      "text": "Removing the map's unreachable escalation rules and the page's map-toggle highlight is separate work."
+    },
+    {
+      "field": "/criteria/0/promise",
+      "section_digest": "80831c6170a6a7fedf5956ff2fd520c15e6c0f44b526e52f6500c5ae92b6191b",
+      "text": "A typed answer with nothing downstream goes to the expert. Such an answer records no task. It makes nothing wait."
+    },
+    {
+      "field": "/commit/why",
+      "section_digest": "6dfb8b693fec4adc74aadfd98208a2aa58c7758b7a25e5c16882d98e3e79d445",
+      "text": "A typed answer reached the expert seat (the slower seat) only when it marked or opened a decision. The fast first seat read a typed note with nothing downstream. That routing contradicted the specification's seating decision."
+    },
+    {
+      "field": "/commit/verification",
+      "section_digest": "6381f832c960298123686c1f8dd7da98ce1967ab9a72cea5258ed75518e6934f",
+      "text": "make ci exits 0. make e2e-grillui exits 0 with 97 passed. Six new unit tests cover the change. Four of them failed before it. The map's escalation rules are now unreachable. Their code is not removed. No review round ran."
+    }
+  ],
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the caveat that the map's unreachable escalation code remains."
+    },
+    {
+      "field": "/changes/1/text",
+      "question": "What do “task effort” and “heavy effort” mean? The record explains when each applies but does not define the effort levels."
+    },
+    {
+      "field": "/design_notes",
+      "question": "What do “task effort,” “heavy effort,” and the escalation module's “two readings” mean? These undefined terms prevent a complete edit of this section."
+    },
+    {
+      "field": "/criteria/1/promise",
+      "question": "What does “task effort” mean so it can be explained without changing this criterion's promise?"
+    },
+    {
+      "field": "/criteria/2/promise",
+      "question": "What does “heavy effort” mean so it can be explained without changing this criterion's promise?"
+    },
+    {
+      "field": "/criteria/3/promise",
+      "question": "What does “task effort” mean so it can be explained without changing this criterion's promise?"
+    },
+    {
+      "field": "/commit/change",
+      "question": "What do “task effort” and “heavy effort” mean? The commit needs definitions because it is read independently."
+    }
+  ]
+}

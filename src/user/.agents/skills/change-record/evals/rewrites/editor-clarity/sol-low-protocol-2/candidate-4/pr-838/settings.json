@@ -1,0 +1,29 @@
+{
+  "model": "gpt-6.1-sol",
+  "effort": "low",
+  "request_sha256": "80e77009d030e04c649f356f151aab550b1ee29fc4c99c006d0009a0e3269a41",
+  "route": "codex exec",
+  "user_config": false,
+  "project_doc_max_bytes": 0,
+  "shell_tool": false,
+  "web_search": "disabled",
+  "request": "../../../../pr-838/request.json",
+  "instructions_sha256": "89eede8af9a4173c4c84f02c985d96f8f4a9a983a966b99003a9d87127528730",
+  "codex_home": "private, sign-in file only",
+  "protocol": "sol-low-protocol-2",
+  "candidate": "candidate-4",
+  "working_directory": "/tmp/cr-502/eval/empty",
+  "status": "completed",
+  "started_at": "2026-10-16T11:35:46.893960+00:00",
+  "exit_status": 0,
+  "elapsed_seconds": 37.368,
+  "usage": [
+    {
+      "input_tokens": 19240,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 1685,
+      "reasoning_output_tokens": 417
+    }
+  ]
+}
