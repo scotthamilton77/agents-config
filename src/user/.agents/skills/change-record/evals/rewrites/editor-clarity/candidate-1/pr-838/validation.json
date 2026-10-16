@@ -1,0 +1,33 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 3,
+  "actual_replacement_count": 3,
+  "raw_count_matches": true,
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please move the caveat that the escalation rules' code remains into its own Heads-up row."
+    },
+    {
+      "field": "/heads_up/0",
+      "question": "Please add the caveat that the map's escalation rules' code remains. This caveat currently appears in the summary."
+    },
+    {
+      "field": "/design_notes",
+      "question": "Please add a Heads-up row for the caveat that the map's prose escalation conditions are unreachable, while their code and the page's map-toggle highlight remain."
+    },
+    {
+      "field": "/commit/verification",
+      "question": "Please add a Heads-up row for the caveat that the map's escalation rules are unreachable while their code remains."
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": []
+}

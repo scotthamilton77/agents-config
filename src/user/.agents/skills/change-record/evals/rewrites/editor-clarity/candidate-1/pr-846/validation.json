@@ -1,0 +1,27 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 6,
+  "actual_replacement_count": 6,
+  "raw_count_matches": true,
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please move the caveat about the untracked run records into a Heads-up row; the summary's five-sentence limit leaves no room to include it there."
+    },
+    {
+      "field": "/risk/rows/0/evidence",
+      "question": "Please move the caveat that existing attack record fingerprints change into a Heads-up row."
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [
+    "/risk/rows/0/evidence"
+  ],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": []
+}

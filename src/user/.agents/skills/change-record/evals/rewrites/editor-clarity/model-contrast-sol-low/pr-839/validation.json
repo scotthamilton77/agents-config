@@ -1,0 +1,33 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 15,
+  "actual_replacement_count": 15,
+  "raw_count_matches": true,
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the uncaught Anthropic aliases; the existing row covers only the missing review round. Keep the caveat in the summary as required by the editing boundaries."
+    },
+    {
+      "field": "/design_notes",
+      "question": "What do PEP 723 and the tier grid mean here? The record does not explain them, so I cannot faithfully define them in this section."
+    },
+    {
+      "field": "/pr/title",
+      "question": "The closing [9k9.458.3] needs a first-use parenthetical gloss, but only wording before the closing brackets may change. May the title place a parenthetical containing this id and its supplied work-item meaning before the required closing identifier?"
+    },
+    {
+      "field": "/commit/subject",
+      "question": "The required closing [9k9.458.3] needs a first-use parenthetical gloss. Keeping the protected title structure and adding its supplied meaning cannot fit the 100-character cap. Which constraint should the author relax?"
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": []
+}

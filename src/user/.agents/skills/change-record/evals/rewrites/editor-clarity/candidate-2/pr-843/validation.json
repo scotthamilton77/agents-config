@@ -1,0 +1,21 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 0,
+  "actual_replacement_count": 0,
+  "raw_count_matches": true,
+  "questions": [
+    {
+      "field": "/risk/rows/0/evidence",
+      "question": "What evidence supports the risk that a reviewer runs at an effort or with tools it cannot work with? The listed tests check that each slot has a pin, but do not establish that a run uses its pinned settings."
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": []
+}

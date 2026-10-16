@@ -1,0 +1,44 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 17,
+  "actual_replacement_count": 17,
+  "raw_count_matches": true,
+  "questions": [
+    {
+      "field": "/risk/rows/0/evidence",
+      "question": "What evidence supports the risk that the lint rejects a word that is not a model id? The current evidence says the real tree of 94 files lints clean."
+    },
+    {
+      "field": "/changes/1/text",
+      "question": "Please add a Heads-up row for the caveat that Anthropic aliases such as `sonnet` are not caught."
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [
+    {
+      "code": "commit-body",
+      "path": "/commit/change",
+      "message": "this section has 6 sentences, and it takes 3 to 4"
+    }
+  ],
+  "introduced_lint": [
+    {
+      "code": "commit-body",
+      "path": "/commit/change",
+      "message": "this section has 6 sentences, and it takes 3 to 4"
+    }
+  ],
+  "resolved_lint": [],
+  "full_apply": "refused",
+  "full_apply_findings": [
+    {
+      "code": "commit-body",
+      "path": "/commit/change",
+      "message": "this section has 6 sentences, and it takes 3 to 4"
+    }
+  ],
+  "tool_calls": []
+}
