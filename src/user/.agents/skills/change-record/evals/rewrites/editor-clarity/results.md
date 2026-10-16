@@ -267,7 +267,6 @@ retained files. The copied experiment artifacts match the original worktree;
 only this report changes to state the evidence-only scope. No model run is
 repeated or substituted.
 
-The evidence-only branch's repository and documentation gates are pending.
-Their collected exit statuses must be recorded before this PR claims them.
-The earlier experimental timeout remains recorded above; a new gate result
-cannot replace that outcome.
+The PR verification section records this evidence-only branch's gate results
+against its reviewed commit. The earlier experimental timeout remains recorded
+above; a new gate result cannot replace that outcome.
