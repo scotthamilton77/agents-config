@@ -54,9 +54,13 @@ run, and no later run replaces an earlier one.
 This protocol admits at most two candidates. Candidate 4 runs first.
 Candidate 5 runs only when candidate 4 fails. Each candidate has its own
 directory holding its instruction snapshot and its four runs. A failed
-candidate's directory is retained unchanged. Candidate 5's snapshot hash is
-recorded in its run settings before its first call. Everything else here
-applies to it unchanged.
+candidate's directory is retained unchanged. The candidate 5 snapshot is
+`instructions.md` in the `candidate-5` directory beside this protocol. Its
+SHA-256 is
+`385ce30a1e88fb60e136f8db571a576c4c23fb811cafae6e7819c2415f8ed6c0`, and its
+run settings record the same hash. Everything else here applies to it
+unchanged, except the threshold, which the last section states for each
+candidate.
 
 A failed candidate 4 leaves the evaluation pending and permits candidate 5.
 When candidate 5 also fails, the evaluation is failed and the owner decides
@@ -97,6 +101,10 @@ An omitted necessary edit counts as a failure even when the editor proposes
 other good edits. A question alone does not repair an independently editable
 defect.
 
+### Candidate 4 threshold
+
+Candidate 4 ran under this threshold, and its failed result stands under it.
+
 The selected-case threshold is four repaired defects and four unchanged
 controls. Every response must fit the response schema, retain the request and
 section digests, name only editable sections and preserve protected values.
@@ -105,7 +113,27 @@ separately. Existing fixture lint failures must be distinguished from faults
 introduced by the editor. Report every semantic rejection and correction; a
 raw response requiring either does not pass the meaning-preservation check.
 
-A candidate passes only when all four of its runs meet every threshold above.
+Candidate 4 passes only when all four of its runs meet every threshold above.
+
+### Candidate 5 threshold
+
+This threshold was set after candidate 4 failed and before any candidate 5
+run. Candidate 5 passes only when all of these hold:
+
+- It repairs all four selected defects.
+- It keeps all four controls unchanged.
+- Every raw response fits the response schema, keeps its record and section
+  digests, and states its exact proposal count.
+- Every raw response is accepted in full by apply-prose, with no lint finding
+  the editor introduced.
+- Corrections plus rejections are at most 10% of all candidate 5 proposals
+  across the four fixtures.
+
+A failed candidate 5 fails the evaluation, and the owner decides the next
+step.
+
+### Reporting
+
 Record the counts, all selected-case judgments and the proposal and question
 judgments. Report failures without lowering the threshold. The four runs
 establish behaviour on these inputs only.

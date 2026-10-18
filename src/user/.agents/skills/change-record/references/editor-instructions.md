@@ -1,8 +1,8 @@
 # Instructions for the editor
 
-Edit the wording of every text listed in the request's `sections`. A change record describes one software change; its sections become a pull request description, a commit message and replies to reviewers. Return useful replacements that meet the supplied `writing_checks` and keep each section's meaning. The author reviews the proposals before applying them.
+Read every text listed in the request's `sections`, and replace a section only when it fails a writing check that applies to it. A change record describes one software change; its sections become a pull request description, a commit message and replies to reviewers. Each replacement meets the supplied `writing_checks` and keeps the section's meaning. The author reviews the proposals before applying them.
 
-Each section is an independent editing unit. Complete the rest of the edit when one section needs a question. The pass covers evidence cells, criterion promises, design notes, commit text and reply text as well as the summary and changes. A sentence with independent assertions joined by commas or "and" needs repair even when the assertions share a topic. Clean labels and clear text stay unchanged.
+Each section is an independent editing unit. Complete the rest of the edit when one section needs a question. The pass covers evidence cells, criterion promises, design notes, commit text and reply text as well as the summary and changes. A sentence with independent assertions joined by commas or "and" needs repair even when the assertions share a topic. A section that passes every applicable check stays unchanged, even when another wording would read more smoothly.
 
 The request follows these instructions. Work only from it, without tools or outside information.
 
@@ -47,13 +47,15 @@ The author rejects a replacement for any of these four failures.
 1. It strengthens a claim. Preserve its source, scope and hedge, including words such as "meant to", "only" and "still". "The gate reported exit 0" stays a reported result, and "no alert was logged" stays a statement about the log.
 2. It drops an exception. Preserve every condition, exclusion, limit and caveat, including "unless" and "only when".
 3. It erases deferred work. Preserve unfinished or unchecked work and any named follow-up item, including qualifications such as "not yet".
-4. It loses a name or a relationship. Keep each named phase, step, file and role, and every explanation the text already gives. Keep where a value comes from, what a rule or limit applies to, and what a check asks: "checks whether each job has an owner" never becomes a check of an existing owner.
+4. It loses a name or a relationship. Keep each named phase, step, file and role, and every explanation the text already gives. Keep where a value comes from, what a rule or limit applies to, and what a check asks: "checks whether each job has an owner" never becomes a check of an existing owner. A split keeps each cause, so a "because" or "so" stays or becomes "therefore".
 
 Keep counts attached to the groups they count. A total covering several categories stays that total; splitting the sentence must not make it a separate total for each category. Add no unsupported fact, reason, example or assurance, including inside an explanation.
 
-Explain a term by adding its meaning in a parenthetical beside it, as in "the soak (a 24-hour load test) passed". Replace a term only with a word that means exactly the same thing.
+Add an explanation only where the first check needs one: an identifier on its first use in its artifact, or a house term a stranger cannot read. A word any software engineer knows needs none. Explain a term by adding its meaning in a parenthetical beside it, as in "the soak (a 24-hour load test) passed". Replace a term only with a word that means exactly the same thing.
 
-For example, "The queue uses a fixed order, and the audit is not yet done" becomes "The queue uses a fixed order. The audit is not yet done." Both assertions remain, including "fixed", "done" and "not yet". Before returning a replacement, compare it with the original: every named term, number, qualifier and relationship is still there, and nothing new is claimed.
+The fourth check is met when a number sits beside what it counts. It never requires a sentence to begin with its number.
+
+For example, "The queue uses a fixed order, and the audit is not yet done" becomes "The queue uses a fixed order. The audit is not yet done." Both assertions remain, including "fixed", "done" and "not yet". Before returning a replacement, compare it with the original. Every named term, number, qualifier and relationship is still there, and nothing new is claimed. Every protected value appears in its original form. Each sentence is complete and grammatical. When a split would start a sentence with a lowercase protected word or number, reorder that sentence. A new `/commit/subject` has at most 100 characters, counted.
 
 Every replacement retains these protected values exactly. They may move within their original section:
 
@@ -64,7 +66,7 @@ Every replacement retains these protected values exactly. They may move within t
 - These words and phrases, ignoring case: `fixed`, `rebutted`, `advisory-deferred`, `transferred`, `superseded`, `rejected`, `deferred`, `filed`, `not filed`, `in flight`, `done`, `open`, `this PR`.
 - In `/pr/title` and `/commit/subject`, the type, parenthesized component and closing bracketed id. Only the wording between the colon and closing brackets may change.
 
-Protected common words stay even in an ordinary use: "fixed sequence" retains "fixed", and "opened" does not retain "open". Keep the original backtick wrapping of protected values. The program rejects the entire response if a replacement loses a protected value or violates a length limit.
+Protected common words stay even in an ordinary use: "fixed sequence" retains "fixed", and "opened" does not retain "open". A protected verb keeps its form, so a sentence rebuilt around "rejected" still says "rejected", never "reject". Keep the original backtick wrapping of protected values. The program rejects the entire response if a replacement loses a protected value or violates a length limit.
 
 ## Output
 
