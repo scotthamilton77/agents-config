@@ -23,7 +23,7 @@ The nightly export job sends each batch of invoices to the ledger service. Today
 
 ## Acceptance criteria
 
-Criteria EXP-A1 to EXP-A9 are each checked by an automated test in the job's integration suite. The suite runs the job against a stub ledger service, and each test scripts the stub's responses. The stub records the time of every send it receives. A criterion passes when its test passes in CI on the pull request's head. The CI result decides, and the pull request does not merge until each of them passes. EXP-A10 is observed in production after release, as it states. The operations lead decides it from the job's run logs, and the item stays open after merge until EXP-A10 passes.
+Criteria EXP-A1 to EXP-A9 and EXP-A11 are each checked by an automated test in the job's integration suite. The suite runs the job against a stub ledger service, and each test scripts the stub's responses. The stub records the time of every send it receives. A criterion passes when its test passes in CI on the pull request's head. The CI result decides, and the pull request does not merge until each of them passes. EXP-A10 is observed in production after release, as it states. The operations lead decides it from the job's run logs, and the item stays open after merge until EXP-A10 passes.
 
 - **EXP-A1** Given a batch whose first send fails with a dropped connection, whose second returns 503 and whose third returns 200, when the job runs, the stub records exactly three sends for that batch, the second at least 1 second after the first and the third at least 5 seconds after the second, and no record for the batch exists under `parked/`.
 - **EXP-A2** Given a batch whose first send returns 422, when the job runs, the stub records exactly one send for that batch and `parked/<batch-id>.json` exists for it.
@@ -35,6 +35,7 @@ Criteria EXP-A1 to EXP-A9 are each checked by an automated test in the job's int
 - **EXP-A8** Given an id that names no parked batch, when the operator runs `export release` with it, the command prints `not parked: <id>` to stderr, exits 2 and leaves every file under `parked/` unchanged.
 - **EXP-A9** Given a run in which every batch is delivered, the job exits 0. Given a run in which any batch is parked, whether after three sends or on a 4xx response, the job exits 3.
 - **EXP-A10** After release, at least 99% of batches sent during normal service are delivered without being parked.
+- **EXP-A11** Given an input directory of five batches and the stub answering 200 to every send, when the job runs, its run log for that run lists each of the five batch ids exactly once, each with the outcome `delivered`, and lists no other batch id. Given the same input with every send of the third batch answered 503, the run log lists the five ids exactly once, the third with the outcome `parked` and the rest `delivered`.
 
 ## Out of scope
 
