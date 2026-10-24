@@ -4,32 +4,18 @@
     "objections": [
       {
         "ground": {
-          "reason": "No criterion checks checkout's tax against the maintained tax_for implementation. TAX-A1 checks captured values; TAX-A2 checks a substituted implementation.",
+          "reason": "TAX-A2 covers a zero-rate change for one region and the reference-corpus orders. It does not establish D3 for other rate changes, regions or orders.",
           "rule": "sufficiency"
         },
         "lens": "obligation-reduction",
-        "objection": "Checkout can pass every criterion while failing D3: \u201cFor every order in the reference corpus, the tax checkout returns is exactly the value tax_for returns for that order.\u201d",
-        "obligation": "O3.1",
+        "objection": "Checkout can pass every criterion while continuing to use copied rates for cases outside TAX-A2's zero-rate scenario.",
+        "obligation": "O3.2",
         "scenario": {
-          "expect": "Every criterion passes, but checkout returns the captured tax for the differing order instead of the maintained library's tax.",
-          "given": "The maintained tax_for returns a different tax from the captured value for one corpus order. Checkout forwards values when the seeded stub is installed, otherwise returns captured taxes and totals, and preserves all required refusals.",
-          "when": "All three criterion checks run, followed by replaying the differing order with the maintained library installed."
+          "expect": "Every criterion passes, but checkout returns tax calculated using the old nonzero rate instead of the changed shared-library rate, violating D3.",
+          "given": "Checkout preserves the captured results and required refusals, and honors the shared library's zero rate for TAX-A2's selected region, but otherwise uses copied pre-change rates.",
+          "when": "The CI checks run, followed by replaying a taxable order against a test library with its region's rate changed to a different nonzero rate."
         },
         "target_ac": "none"
-      },
-      {
-        "ground": {
-          "reason": "The check establishes agreement with seeded stub outputs. No obligation outside the acceptance criteria commits checkout to those substituted outputs, and this check does not discharge the commitment concerning the maintained implementation.",
-          "rule": "has-basis"
-        },
-        "lens": "obligation-reduction",
-        "objection": "TAX-A2 discharges no inventoried part. The author must reconcile its test-double requirement with the document's obligations.",
-        "scenario": {
-          "expect": "The check reports whether checkout matches the stub's recorded values, although no document obligation depends on agreement with those particular substituted values.",
-          "given": "Checkout is built with tax_for replaced by the seeded random stub specified in TAX-A2.",
-          "when": "TAX-A2 replays the corpus and compares response taxes with the stub's recorded outputs."
-        },
-        "target_ac": "TAX-A2"
       }
     ],
     "report": "objections",
@@ -38,12 +24,12 @@
         {
           "id": "O1",
           "kind": "guarantee",
-          "statement": "Preserve the captured pre-change tax and total, to the cent, for every reference-corpus order.",
-          "source": "D1: \u201cFor each order in the reference corpus, checkout returns the same tax and total, to the cent, as the pre-change service returned for it.\u201d",
+          "statement": "Preserve the captured tax and total, to the cent, for every reference-corpus order.",
+          "source": "D1: \"For each order in the reference corpus, checkout returns the same tax and total, to the cent, as the pre-change service returned for it.\"",
           "parts": [
             {
               "id": "O1.1",
-              "statement": "Every reference-corpus response preserves its captured tax and total to the cent.",
+              "statement": "Every captured request returns its captured tax and total, to the cent.",
               "discharged_by": [
                 "TAX-A1"
               ]
@@ -53,12 +39,12 @@
         {
           "id": "O2",
           "kind": "failure",
-          "statement": "Refuse every reference-corpus request whose shipping region is replaced by an unsupported two-letter code, with HTTP 422 and unknown_tax_region.",
-          "source": "D2: \u201cEach reference-corpus request, with its shipping region replaced by a two-letter code that the tax tables do not hold, is still refused with HTTP 422 and the error code unknown_tax_region.\u201d",
+          "statement": "Refuse every reference-corpus request when its shipping region is replaced by any two-letter code absent from the tax tables, returning HTTP 422 and unknown_tax_region.",
+          "source": "D2: \"Each reference-corpus request, with its shipping region replaced by a two-letter code that the tax tables do not hold, is still refused with HTTP 422 and the error code `unknown_tax_region`.\"",
           "parts": [
             {
               "id": "O2.1",
-              "statement": "Every corpus request with every unsupported two-letter shipping-region code receives HTTP 422 and unknown_tax_region.",
+              "statement": "Every reference-corpus request with each unsupported two-letter shipping-region code returns HTTP 422 and unknown_tax_region.",
               "discharged_by": [
                 "TAX-A3"
               ]
@@ -68,12 +54,19 @@
         {
           "id": "O3",
           "kind": "result",
-          "statement": "Take checkout's tax for every reference-corpus order from the maintained shared-library tax_for, returning exactly its value.",
-          "source": "What changes: \u201cCheckout takes the tax for every reference-corpus order from tax_for in the shared pricing library, as D3 states.\u201d D3: \u201cFor every order in the reference corpus, the tax checkout returns is exactly the value tax_for returns for that order.\u201d",
+          "statement": "Checkout's tax follows the shared pricing library's tax tables, including reflecting changed regional rates without changing checkout.",
+          "source": "D3: \"Checkout's tax follows the shared pricing library's tax tables. A rate changed in those tables changes the tax checkout returns for orders shipped to that region, with no change to checkout itself.\"",
           "parts": [
             {
               "id": "O3.1",
-              "statement": "With the maintained shared library installed, every reference-corpus order receives its tax from tax_for and checkout returns exactly that value.",
+              "statement": "Setting TAX-A2's selected region's shared-library rate to zero produces tax of 0.00 for every reference-corpus order shipped there, without changing checkout.",
+              "discharged_by": [
+                "TAX-A2"
+              ]
+            },
+            {
+              "id": "O3.2",
+              "statement": "Checkout follows the shared tax tables in all remaining cases, including other rate changes, changes in other regions, and orders outside the reference corpus.",
               "discharged_by": []
             }
           ]
@@ -90,10 +83,10 @@
     "transport": "codex",
     "model": "gpt-6.1-sol",
     "effort": "high",
-    "response_id": "01a12df1-264a-7432-8fb8-fc8ee7b66173",
-    "started": "2026-10-12T02:29:01Z",
+    "response_id": "01a16db6-7fc4-70b2-9543-fb3c3dab23f3",
+    "started": "2026-10-24T11:40:39Z",
     "isolation": {
-      "cwd": "/private/tmp/codex-cwd-iso.IOp8w3",
+      "cwd": "/private/tmp/codex-cwd-iso.V9JrVg",
       "agents_md": {},
       "agents_md_injections": 0
     }
@@ -101,26 +94,20 @@
   "decision": {
     "verdict": "accept",
     "digests": {
-      "control.md": "7ed18071c0faf063ec372bb4441e22fa88100482fe31b983c09875efdc47d388",
-      "defective.md": "2d37e03b069158302b957a349428b6a17c9112ee418c703ee771bb9b7416dadd"
+      "control.md": "c61e304b075eaf19bad4b5ee352172939820689d37683e8fcff449e36443f897",
+      "defective.md": "208dca6073310196813f54dbc4456d0abdef4fb6cedb25a9a72f4fe724edaba2"
     },
     "rejected": [
       {
         "lens": "obligation-reduction",
         "target_ac": "none",
-        "objection": "Checkout can pass every criterion while failing D3: \u201cFor every order in the reference corpus, the tax checkout returns is exactly the value tax_for returns for that order.\u201d.",
-        "reason": "TAX-A2 runs D3's equality over the reference corpus with tax_for replaced by a seeded random stub. The objection's scenario is a variant of that case, another input: the maintained tax_for in place of the stub, whose specified outcome under D3 is the same, checkout's tax equal to the value tax_for returns. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
-      },
-      {
-        "lens": "obligation-reduction",
-        "target_ac": "TAX-A2",
-        "objection": "TAX-A2 discharges no inventoried part.",
-        "reason": "TAX-A2 runs checkout over the reference corpus with tax_for replaced by a seeded random stub, which is the case in which D3's stated outcome, checkout's tax equal to the value tax_for returns, is checked. The objection names no decision outcome left unchecked; it reads that run as serving no obligation while D3 states the one it serves, and is rejected."
+        "objection": "Checkout can pass every criterion while continuing to use copied rates for cases outside TAX-A2's zero-rate scenario.",
+        "reason": "TAX-A2 runs the case of a test build of the shared pricing library whose tables set one region's rate to zero, replaying every reference-corpus order shipped to that region and expecting a tax of 0.00. That is D3's stated outcome, the tax checkout returns following the library's tables, checked under that input. The objection's scenario is the same outcome under another input, a nonzero rate in another region, and is a variant of TAX-A2's case. The criteria fix the cases the check runs, so the objection is rejected."
       }
     ]
   },
   "digests": {
-    "control.md": "7ed18071c0faf063ec372bb4441e22fa88100482fe31b983c09875efdc47d388",
-    "defective.md": "2d37e03b069158302b957a349428b6a17c9112ee418c703ee771bb9b7416dadd"
+    "control.md": "c61e304b075eaf19bad4b5ee352172939820689d37683e8fcff449e36443f897",
+    "defective.md": "208dca6073310196813f54dbc4456d0abdef4fb6cedb25a9a72f4fe724edaba2"
   }
 }
