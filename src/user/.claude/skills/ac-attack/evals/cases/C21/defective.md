@@ -26,27 +26,15 @@ The purpose of this change is that each release's section in `CHANGELOG.md` list
 Every criterion is checked by an automated test that builds a temporary repository holding the stated `VERSION`, `changes/` and `CHANGELOG.md`, runs `relnotes build` in it, and compares the repository's files, stderr and the exit status with the expected values, and checks that stdout is empty. A criterion passes when its test passes in CI on the pull request's head. The CI result decides, and the pull request does not merge until every criterion passes.
 
 - **REL-A1** Given `VERSION` holding `2.4.0`, `changes/` holding `b-fix.md` titled `Fix timeout`, `a-add.md` titled `Add export`, `c-fix.md` also titled `Fix timeout`, a file `notes.txt`, and a subdirectory `old.md/` holding `d-old.md` titled `Old entry`, and a `CHANGELOG.md` holding a `## 2.3.0` section whose last line has no line ending, when `relnotes build` runs, `CHANGELOG.md` is the lines `## 2.4.0`, `- Add export`, `- Fix timeout`, `- Fix timeout` and an empty line, followed by the old file's bytes unchanged, no other file in the repository changes, and the command exits 0.
-
-### What-if answers
-
-**What if it fails?**
-
 - **REL-A2** Given a run that cannot complete, because `changes` exists but is not a directory or cannot be listed, because one entry file cannot be read or breaks D1, by being empty, by a first line that does not start with `# `, or by an empty title, or because `CHANGELOG.md` cannot be read, written or created, when `relnotes build` runs, no file in the repository changes, stderr names the file at fault, and the command exits 2.
 - **REL-A3** Given a run whose writing of the new `CHANGELOG.md` fails partway, which the test forces with a file-size limit smaller than the new file, the run exits with a status other than 0 and no file in the repository changes, so no temporary file is left behind.
-
-**What if the input is empty or at a limit?**
-
 - **REL-A4** Given a `changes/` that is missing or holds no entry file, when `relnotes build` runs, no file in the repository changes, stderr holds `no change entries`, and the command exits 2.
 - **REL-A5** Given a first release, with no `CHANGELOG.md` or an empty one, `VERSION` holding `0.0.0`, the smallest version D2 admits, and `changes/` as in REL-A1, when `relnotes build` runs, `CHANGELOG.md` then holds exactly the `0.0.0` section and the empty line after it, and the command exits 0.
 - The command sets no limit on the number of entries, the length of a title or the size of a version's numbers, because it handles the version and the titles only as text.
-
-**What if something it relies on is missing?**
-
 - **REL-A6** Given no `VERSION` file, or a `VERSION` file that cannot be read, is empty or does not hold a version in D2's form, when `relnotes build` runs, no file in the repository changes, stderr holds `no valid version in VERSION`, and the command exits 2.
 - **REL-A7** Given a `VERSION` holding `next` and a `changes/` holding no entry file, when `relnotes build` runs, stderr holds both `no valid version in VERSION` and `no change entries`, no file in the repository changes, and the command exits 2.
 - A missing `CHANGELOG.md` is REL-A5, and a missing `changes/` is REL-A4.
-
-**What if it runs twice, or at the same time?** Two runs at once do not apply, because only the release job runs the command and CI runs one release job at a time (D6).
+- Only the release job runs the command, and CI runs one release job at a time (D6), so two runs at once cannot happen.
 
 ## Out of scope
 

@@ -1,44 +1,15 @@
 {
   "report": {
     "lens": "what-if",
-    "objections": [
-      {
-        "ground": {
-          "reason": "Asking 'what if it fails?' of the service-answer handling exposes a realistic answer shape that two clauses classify differently: D3 describes a valid answer as a list of advisories each naming a pinned package, a severity and an ID, which permits one advisory ID to appear against two pinned packages (one vulnerability published against both), while AUD-A7's 'the same advisory twice' clause sends 'the same advisory' to exit 3 without saying whether sameness is the advisory ID alone or the package-and-ID pair. No criterion tests the case, and the document neither covers it nor rules it out.",
-          "rule": "what-if-questions"
-        },
-        "lens": "what-if",
-        "objection": "The criteria let through either behaviour for a legitimate multi-package advisory: reporting both advisory lines and exiting 1 (the D2/D3 reading), or discarding the answer as a service failure and exiting 3 with 'advisory service unavailable' (the AUD-A7 reading). The two outcomes diverge sharply for CI: one blocks the pull request on a real high advisory, the other blocks it with a misleading service-unavailable error, and an implementer can pick either and pass every stated criterion.",
-        "scenario": {
-          "expect": "stdout is two lines, 'liba@1.0.0 high ADV-9' then 'libb@2.0.0 high ADV-9', and the command exits 1, as D2 and D3 imply for a well-formed answer; AUD-A7's duplicate clause implies exit 3 with empty stdout instead, and no criterion checks which outcome is correct.",
-          "given": "a deps.lock pinning liba@1.0.0 and libb@2.0.0, and a stub answering two entries that carry the same advisory ID ADV-9 with severity high, one naming liba and one naming libb",
-          "when": "deps audit runs"
-        },
-        "target_ac": "AUD-A7"
-      },
-      {
-        "ground": {
-          "reason": "Asking 'what if it fails?' of the advisory-found path shows its full observable behaviour is unpinned: the error paths (AUD-A6, AUD-A7) state both that stdout is empty and what stderr holds, but no criterion states what stderr holds on an exit-0 or exit-1 run. The suite preamble says each test asserts on stderr, yet no criterion gives the expected value for those runs, so that assertion has no contract to check against.",
-          "rule": "what-if-questions"
-        },
-        "lens": "what-if",
-        "objection": "The criteria let through an implementation that prints summaries, warnings or diagnostics to stderr while reporting advisories or while passing cleanly. Every stated criterion still passes, because stderr is pinned only on the exit-2 and exit-3 paths, leaving the designed-failure path's observable behaviour partially unspecified for CI logs and for the humans reading them.",
-        "scenario": {
-          "expect": "stderr is empty, the behaviour the document implies by pinning stderr content on both error paths; no criterion checks stderr on this run, so an implementation writing a warning or summary there passes every criterion",
-          "given": "a deps.lock pinning left-pad@1.0.0 and a stub answering one high advisory ADV-17 for it",
-          "when": "deps audit runs"
-        },
-        "target_ac": "AUD-A1"
-      }
-    ],
-    "report": "objections"
+    "objections": [],
+    "report": "empty"
   },
   "run": {
     "transport": "openrouter",
     "model": "moonshotai/kimi-k3",
     "effort": "low",
-    "response_id": "4e1aa3b1-fcd2-422e-9113-d243e0cf3f3b",
-    "started": "2026-10-12T02:30:58Z",
+    "response_id": "58cabac0-d55c-4a59-bee0-943c9e030c31",
+    "started": "2026-10-24T22:41:58Z",
     "isolation": {
       "tools_declared": "",
       "tool_use_events": 0
@@ -47,26 +18,12 @@
   "decision": {
     "verdict": "accept",
     "digests": {
-      "control.md": "a254757ef0cff0db1c1da7ea504c22eb48cd7140fb960ee8242b6e52b05865bd",
-      "defective.md": "42488fafa3a1b7747eed5ef289b0dd3564c111455b51ed1dafaa6c6ff4cb3dac"
-    },
-    "rejected": [
-      {
-        "lens": "what-if",
-        "target_ac": "AUD-A7",
-        "objection": "The criteria let through either behaviour for a legitimate multi-package advisory: reporting both advisory lines and exiting 1 (the D2/D3 reading), or discarding the answer as a service failure and exiting 3 with 'advisory service unavailable' (the AUD-A7 reading).",
-        "reason": "AUD-A3 runs the case of advisories spread over two pinned packages, with one line per advisory in sorted order; one advisory ID published against two packages is that case under other IDs, a variant of AUD-A3's case, and D3 defines an advisory by its package, severity and ID, so two entries naming different packages are two advisories, not the same advisory twice."
-      },
-      {
-        "lens": "what-if",
-        "target_ac": "AUD-A1",
-        "objection": "The criteria let through an implementation that prints summaries, warnings or diagnostics to stderr while reporting advisories or while passing cleanly.",
-        "reason": "AUD-A1 runs the case of one high advisory for `left-pad@1.0.0`, with its stated stdout line and exit 1; stderr on that run is a variant of AUD-A1's case in a part of the output no decision promises, since no decision states stderr content on a pass or a finding."
-      }
-    ]
+      "control.md": "ea1c5425f65129b59ac4d70946b15a81a86db3363db2ed25c57fd8bd1fa75bd1",
+      "defective.md": "39fa9eeda4ebad6ead731df0fbd988521912f8a2b03de9a9600f19c991a52597"
+    }
   },
   "digests": {
-    "control.md": "a254757ef0cff0db1c1da7ea504c22eb48cd7140fb960ee8242b6e52b05865bd",
-    "defective.md": "42488fafa3a1b7747eed5ef289b0dd3564c111455b51ed1dafaa6c6ff4cb3dac"
+    "control.md": "ea1c5425f65129b59ac4d70946b15a81a86db3363db2ed25c57fd8bd1fa75bd1",
+    "defective.md": "39fa9eeda4ebad6ead731df0fbd988521912f8a2b03de9a9600f19c991a52597"
   }
 }

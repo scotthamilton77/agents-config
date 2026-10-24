@@ -26,23 +26,12 @@ Every criterion is checked by an automated test in the command's integration sui
 - **AUD-A2** Given a `deps.lock` pinning three packages and the stub answering one medium advisory for the first, one low advisory for the second and nothing for the third, when `deps audit` runs, stdout is exactly the two advisory lines and the command exits 0.
 - **AUD-A3** Given a `deps.lock` pinning `zlib@1.3.0` and `acorn@8.0.0`, and the stub answering critical advisories `ADV-9` and `ADV-17` for `zlib` and a low advisory `ADV-2` for `acorn`, when `deps audit` runs, stdout is the `acorn` line for `ADV-2`, then the `zlib` line for `ADV-17`, then the `zlib` line for `ADV-9`, and the command exits 1, because one failing advisory fails the audit whatever else it finds.
 - **AUD-A4** Given a `deps.lock` pinning three packages and the stub answering no advisory, when `deps audit` runs, the stub receives one request naming all three packages, stdout is `no advisories` and the command exits 0.
-
-### What-if answers
-
-**What if it fails?** An audit that finds a high or critical advisory fails the check, which AUD-A1 and AUD-A3 test. An audit that cannot run is answered under the missing-dependency question below.
-
-**What if the input is empty or at a limit?**
-
+- An audit that finds a high or critical advisory fails the check, which AUD-A1 and AUD-A3 test. An audit that cannot run because something it relies on is unusable or unavailable is covered by the criteria for those dependencies.
 - **AUD-A5** Given a `deps.lock` that parses and pins no package, when `deps audit` runs, the stub receives no request, stdout is `no advisories` and the command exits 0.
 - The severity boundary is tested by AUD-A1, which fails on high, the lowest failing severity, and by AUD-A2, which passes on medium, the highest passing one. A package with several advisories is AUD-A3. The number of pinned packages has no limit the command depends on, because D3's endpoint takes any number in one request.
-
-**What if something it relies on is missing?**
-
 - **AUD-A6** Given no `deps.lock` in the directory, or a `deps.lock` that cannot be read, is empty, holds only whitespace, does not parse, or pins one package more than once, when `deps audit` runs, the stub receives no request, stdout is empty, stderr holds `cannot read deps.lock` and the command exits 2.
-
-**What if it runs twice, or at the same time?** This does not apply. The command only reads (D4), so neither a repeated run nor two runs at once can change what another run reads or prints.
-
-**What if it runs again with nothing changed?** This does not apply, for the same reason. A run changes nothing, so a second run has nothing to change beyond the first.
+- The command only reads (D4), so neither a repeated run nor two runs at once can change what another run reads or prints.
+- A run changes nothing, so a second run with nothing changed has nothing to change beyond the first.
 
 ## Out of scope
 

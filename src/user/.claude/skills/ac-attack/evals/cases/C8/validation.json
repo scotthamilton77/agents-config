@@ -4,17 +4,17 @@
     "objections": [
       {
         "ground": {
-          "reason": "The missing-dependency question asks what happens when a dependency errors. AUD-A7 fixes stdout, stderr and the exit status for a failing service, but unlike AUD-A4 it asserts nothing about the requests the stub received. D3 says the command sends its packages in one request, yet no criterion pins that on the failure path, so an implementation that retries a refused connection or a timed-out request satisfies every criterion while sending the service two or more requests per run.",
-          "rule": "What if something it relies on is missing?"
+          "reason": "what-if-it-fails: the failing-audit path (exit 1) pins stdout and exit status, but the integration suite asserts on stderr for every criterion and no criterion or decision states what stderr holds when advisories are found. The document neither requires stderr to be empty nor permits content, leaving the test to encode an arbitrary choice.",
+          "rule": "what-if-questions"
         },
         "lens": "what-if",
-        "objection": "The criteria let through an implementation that retries the advisory service on failure. A retrying command still prints nothing to stdout, writes `advisory service unavailable` to stderr and exits 3, so AUD-A7 passes, but CI latency and load on the advisory service multiply, and D3's single-request contract is unenforced exactly where it is most likely to be broken.",
+        "objection": "The criteria let through a command that prints diagnostics to stderr on the exit-1 path (or one that must keep stderr silent there), with nothing deciding which behaviour is correct even though every test asserts on stderr.",
         "scenario": {
-          "given": "a `deps.lock` pinning three packages and a stub that refuses the first connection attempt (or lets the first request run past 30 seconds) and would answer a second one",
-          "when": "`deps audit` runs",
-          "expect": "the stub receives exactly one request before the command prints `advisory service unavailable` and exits 3 \u2014 an outcome the document implies through D3's one-request contract, which no criterion checks on the failure path"
+          "expect": "stderr's expected content for the exit-1 outcome, which no criterion states, so the test's assertion on stderr is undetermined by the document",
+          "given": "a deps.lock pinning left-pad@1.0.0 and the stub answering one high advisory ADV-17",
+          "when": "deps audit runs and finds the advisory"
         },
-        "target_ac": "AUD-A7"
+        "target_ac": "AUD-A1"
       }
     ],
     "report": "objections"
@@ -23,8 +23,8 @@
     "transport": "openrouter",
     "model": "moonshotai/kimi-k3",
     "effort": "low",
-    "response_id": "50d6d15e-0800-43ce-86f1-27adefb21875",
-    "started": "2026-10-12T02:29:46Z",
+    "response_id": "e0ce6757-09e6-4997-92dc-53f970f7d5ff",
+    "started": "2026-10-24T22:41:58Z",
     "isolation": {
       "tools_declared": "",
       "tool_use_events": 0
@@ -33,21 +33,20 @@
   "decision": {
     "verdict": "accept",
     "digests": {
-      "control.md": "a254757ef0cff0db1c1da7ea504c22eb48cd7140fb960ee8242b6e52b05865bd",
-      "defective.md": "fe7c12339c519d204c937ad85ee50fe4f088ed53063dae14b457088e91b933c8"
+      "control.md": "f8d5fb3cdd0a3a94686118de0c765cef656af81d3e2723a1bee5b41db93cf239",
+      "defective.md": "255173e6dc9ad742848855236166e245d4e1c6efbd1bd837772401fc8c5a5a86"
     },
     "rejected": [
       {
         "lens": "what-if",
-        "target_ac": "AUD-A7",
-        "objection": "The criteria let through an implementation that retries the advisory service on failure.",
-        "reason": "AUD-A4 runs the case of three pinned packages and a stub that answers, and its stated outcome is that the stub receives one request; a stub that refuses or times out the first request is that one-request case under another stub input, a variant of AUD-A4's case."
+        "target_ac": "AUD-A1",
+        "objection": "The criteria let through a command that prints diagnostics to stderr on the exit-1 path (or one that must keep stderr silent there), with nothing deciding which behaviour is correct even though every test asserts on stderr.",
+        "reason": "No decision in the document promises anything about stderr when advisories are found: D1 fixes the exit status and D2 fixes stdout, and AUD-A1 observes both under one high advisory. The sentence that the suite asserts on stderr describes the tests' method, not an outcome the command commits to. The objection names no decision's stated outcome that a criterion leaves unobserved; it asks for a criterion on a behaviour the document does not promise, which the standard does not require, and is rejected."
       }
-    ],
-    "ruling": "The owner rejected the recurring objection that the not-applicable answers to the twice and nothing-changed questions need a criterion for D4: D4 makes the command read-only with no state between runs, so those questions are answered by that reason, which the standard accepts; a cached-answer scenario invents state the decision rules out, and a re-run with a changed advisory is a run with something changed. Demanding a criterion for the inapplicable dimension is the finding the parent criterion says a correct review does not raise."
+    ]
   },
   "digests": {
-    "control.md": "a254757ef0cff0db1c1da7ea504c22eb48cd7140fb960ee8242b6e52b05865bd",
-    "defective.md": "fe7c12339c519d204c937ad85ee50fe4f088ed53063dae14b457088e91b933c8"
+    "control.md": "f8d5fb3cdd0a3a94686118de0c765cef656af81d3e2723a1bee5b41db93cf239",
+    "defective.md": "255173e6dc9ad742848855236166e245d4e1c6efbd1bd837772401fc8c5a5a86"
   }
 }

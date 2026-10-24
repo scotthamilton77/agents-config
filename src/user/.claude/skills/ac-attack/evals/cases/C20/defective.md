@@ -23,33 +23,16 @@ The purpose of this change is that finance finds one complete, correct report fo
 Every criterion is checked by an automated test that runs `sales-report build` against a stub warehouse whose orders, delays and failures the test scripts, with a temporary `reports/` directory, and asserts on the files in that directory, stderr and the exit status. A criterion passes when its test passes in CI on the pull request's head. The CI result decides, and the pull request does not merge until every criterion passes.
 
 - **SLS-A1** Given the stub holding, for 2026-10-01, two orders totalling 30.00 in `north` and one order of 12.50 in `east`, when `sales-report build --date 2026-10-01` runs, `reports/sales-2026-10-01.csv` holds exactly the lines `region,orders,revenue`, `east,1,12.50` and `north,2,30.00`, and the command exits 0.
-
-### What-if answers
-
-**What if it fails?**
-
 - **SLS-A2** Given the stub answering normally and writing the report failing, which the test forces by removing `reports/`, making it read-only, replacing it with a regular file, or setting a file-size limit smaller than the report, when the build for 2026-10-01 runs, every file in `reports/` is byte-identical to before, no other file appears there, stderr holds `cannot write report` and the command exits 5.
 - **SLS-A3** Given a build for 2026-10-01 that ended without writing its report, because it was killed while waiting for the warehouse, killed after the stub had sent half of the rows, killed after the last row but before the report was replaced, at a point the test sets with a test-only pause hook, or exited under SLS-A2 or SLS-A7, when a new build for that date runs with the stub answering normally, it writes the report SLS-A1 describes, `reports/` holds no other new file, and it exits 0.
-- A warehouse that cannot answer is answered under the missing-dependency question below.
-
-**What if the input is empty or at a limit?**
-
+- A warehouse that cannot answer is a failure SLS-A7 tests.
 - **SLS-A4** Given the stub holding no order for 2026-10-01, whether or not a report for that date already exists, when the build for that date runs, the report holds only the header line and the command exits 0.
 - **SLS-A5** Given an invocation that does not carry exactly one `--date` and no other argument, or a date that is not valid or is today or later in UTC, when the build runs, no file in `reports/` changes, stderr holds `invalid date` and the command exits 2.
 - **SLS-A6** Given the stub holding, in `north`, orders of 1.00 at 2026-09-30T23:59:59Z, 2.00 at 2026-10-01T00:00:00Z, 4.00 at 2026-10-01T23:59:59Z and 8.00 at 2026-10-02T00:00:00Z, when the build for 2026-10-01 runs, the report's only row is `north,2,6.00`.
 - The command sets no limit on the number of orders or regions in a day.
-
-**What if something it relies on is missing?**
-
 - **SLS-A7** Given the stub refusing connections, failing the query after returning some rows, sending nothing for 60 seconds, or sending a row whose amount is not whole cents or whose region is not a lowercase ASCII word, when the build for 2026-10-01 runs, every file in `reports/` is byte-identical to before, no other file appears there, stderr holds `bad warehouse answer` and the command exits 3.
 - A missing or unusable `reports/` is a write failure, which SLS-A2 tests.
-
-**What if it runs twice, or at the same time?**
-
 - **SLS-A8** Given a report for 2026-10-01 already built and the stub now holding a corrected set of orders for that date, when the build for that date runs again, the report holds the rows for the corrected orders and the command exits 0.
-
-**What if it runs again with nothing changed?**
-
 - **SLS-A10** Given a report for 2026-10-01 already built and the stub's orders for that date unchanged, when the build for that date runs again, the report is byte-identical to before and the command exits 0.
 
 ## Out of scope
