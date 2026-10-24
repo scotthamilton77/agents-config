@@ -1,0 +1,246 @@
+{
+  "pr": {
+    "number": 838,
+    "title": "feat(grillui): every answer typed in the human's own words goes to the expert seat [9k9.315.14]",
+    "type": "feat",
+    "component": "grillui",
+    "head_sha": "26ed444a0d6996d444cf60af7064f94450d92028"
+  },
+  "work_item": {
+    "id": "agents-config-9k9.315.14",
+    "gloss": "the expert weighs every answer typed in the human's own words",
+    "slice": "the last item of the seating slice"
+  },
+  "summary": "The grilling board sent a typed answer to its slower expert seat only when the answer marked or opened a decision. Any answer carrying a note or free text now goes to the expert. The rules that escalated a typed answer on the board's map can no longer fire, and their code remains.",
+  "heads_up": [
+    "Twelve existing tests now use an option pick or run on a thread.",
+    "campaign: No review round has run on this pull request."
+  ],
+  "where_this_fits": {
+    "ancestry": [
+      {
+        "id": "agents-config-9k9",
+        "title": "Harness rework",
+        "type": "milestone"
+      },
+      {
+        "id": "agents-config-9k9.315",
+        "title": "Grilling board: pending analysis, impact tasks, and the terminal review phase (spec)",
+        "type": "feature"
+      },
+      {
+        "id": "agents-config-9k9.315.14",
+        "title": "grillui: every answer carrying a note or free text is weighed by the expert at the task effort, whether or not it opens anything",
+        "type": "feature"
+      }
+    ],
+    "builds_on": [
+      {
+        "pr": 808,
+        "gloss": "feat(9k9.315.3): a decision a ruling in flight may move waits until the ruling lands"
+      },
+      {
+        "pr": 829,
+        "gloss": "feat(9k9.315.4): an answer in the human's own words holds what it opens, and the expert weighs every task at medium effort"
+      },
+      {
+        "pr": 830,
+        "gloss": "feat(9k9.315.5): a ruling changes its own decision directly, and everything wider waits in the inbox showing before and after"
+      },
+      {
+        "pr": 833,
+        "gloss": "feat(9k9.315.6): the map doctor proposes and lands nothing directly"
+      },
+      {
+        "pr": 840,
+        "gloss": "feat(9k9.315.7): the likely rulings are weighed before the human clicks, and a taken one costs no wait"
+      }
+    ],
+    "concurrent": [],
+    "scope": [
+      {
+        "slice": "agents-config-9k9.315.1",
+        "covers": "Design: Grilling board: pending analysis, impact tasks, and the terminal review phase (spec)",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.315.2",
+        "covers": "[Impl] Grilling board: pending analysis, impact tasks, and the terminal review phase (spec) (scope: per spec)",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.315.3",
+        "covers": "grillui S1: the task on the log and the frontier as the lock (PND-D1, PND-D5; PND-A1, PND-A3, PND-A15)",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.315.4",
+        "covers": "grillui S2: what goes waiting, and on which seat (PND-D2, PND-D4, PND-D15; PND-A2, PND-A11)",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.315.5",
+        "covers": "grillui S3: what a result may touch (PND-D3, PND-D16; PND-A4, PND-A12)",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.315.6",
+        "covers": "grillui S4: failure as a named blocker, retry, and the doctor's contract (PND-D9, PND-D11, PND-D13; PND-A5, PND-A8, PND-A13)",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.315.7",
+        "covers": "grillui S5: pre-rulings — one hop, consumed on the click, stale by basis (PND-D6; PND-A6, PND-A14)",
+        "status": "done"
+      },
+      {
+        "slice": "agents-config-9k9.315.8",
+        "covers": "grillui S6: the conflict-resolution turn (PND-D8; PND-A7)",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.315.9",
+        "covers": "grillui S7: notices that need no attention, and the legend (PND-D14; PND-A9, PND-A10)",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.315.10",
+        "covers": "grillui T1: criteria and taxonomy entries on the log, and the review phase (TRV-D1; TRV-A1, TRV-A6)",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.315.11",
+        "covers": "grillui T2: dispositions, discussion and the result's criteria section (TRV-D3, TRV-D2; TRV-A2, TRV-A5)",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.315.12",
+        "covers": "grillui T3: edit, add and reopen (TRV-D2; TRV-A3, TRV-A4, TRV-A7, TRV-A8)",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.315.13",
+        "covers": "Grilling glossary reflects built vocabulary: drop 'proposed, not built' and turn Design: into Contract: for task, waiting, pre-ruling, review, entry, criterion, taxonomy row, disposition as the 9k9.315 slices land",
+        "status": "open"
+      },
+      {
+        "slice": "agents-config-9k9.315.14",
+        "covers": "grillui: every answer carrying a note or free text is weighed by the expert at the task effort, whether or not it opens anything",
+        "status": "this PR"
+      }
+    ],
+    "digest": "99e8038cee8ebfffbc3595529061f1c11a412fda24f530a2ff7076866c667849"
+  },
+  "risk": {
+    "reaches_outside_package": false,
+    "rows": [
+      {
+        "failure": "A typed answer is weighed at the wrong effort.",
+        "exposed": "The human in a grilling session.",
+        "evidence": "Six new unit tests cover the change, and four of them failed before it.",
+        "recovery": "Revert."
+      },
+      {
+        "failure": "An option pick with no text changes route.",
+        "exposed": "Every ordinary answer.",
+        "evidence": "An existing test pins that such an answer records no task.",
+        "recovery": "Revert."
+      }
+    ]
+  },
+  "blast_radius": {
+    "reach_graph": "graph LR\n  G[grillui answer routing] -->|typed answers skip the first seat| M[map channel]\n  G -->|effort picked from the task and from who moved the channel| E[expert seat driver]\n  G -.unchanged.-> T[thread channels]\n  G -->|escalation rules unreachable, code kept| D[map escalation rules]\n  G -->|three passages amended| S[grilling specs]",
+    "task_flow": "flowchart LR\n  a[Human answers on the map] --> b{Typed text?}:::chg -->|yes| c[Expert seat]:::chg --> d[Pick the effort]:::chg\n  d --> e[Expert composes the reply] --> f[Impact task recorded when something is downstream]\n  b -->|no| g[Seat chosen as before]\n  classDef chg stroke-width:3px"
+  },
+  "changes": [
+    {
+      "topic": "Routing",
+      "text": "A human answer with a note or free text always goes to the expert."
+    },
+    {
+      "topic": "Effort",
+      "text": "A typed answer that opens nothing runs at the task effort. It keeps the heavy effort on a channel the human moved to the expert."
+    },
+    {
+      "topic": "Spec text",
+      "text": "Three spec passages now say the expert weighs the note."
+    }
+  ],
+  "design_notes": "The expert picks the effort by one rule. A turn that carries an impact task runs at the task effort on every channel, including one the human moved to the expert. A typed turn with no task runs at the task effort on a channel the human has not moved. The same turn runs at the heavy effort on a channel the human moved to the expert themselves, because they chose that effort for the channel. A channel the escalation policy moved counts as not moved by the human.\n\nThe expert driver tells a human move from a policy move off the log, at the moment it picks the effort. It uses the two readings the escalation module already provides. When nothing is downstream of a typed answer, no impact task is recorded and nothing waits.\n\nThe map's first seat never reads the human's prose from this change on, because every map answer carrying text goes straight to the expert. The map's prose escalation conditions are therefore unreachable there, and threads keep them. Their code and the page's map-toggle highlight stay, because pruning them is separate work.\n\nThe three amended passages sit in two specs, and each now cites PND-D4 (the spec decision that seats every typed answer on the expert). They are GUI-A33 (the criterion on highlighting a channel's way to the expert), GUI-D48 (the decision on which channels the escalation conditions reach) and that decision's third trigger.\n\nSix existing tests used a typed map answer only as a vehicle, and they now pick a plain option. Five tests of the map's prose conditions now run on a thread. One browser test moved to a thread and was renamed, and its evidence row was re-pointed. In the evidence ledgers, PND-A2 (the criterion on seating a typed answer) goes from open to twelve test rows. PND-A11 (the criterion on the backpressure paragraph) goes from open to four.",
+  "discovered": {
+    "rows": [
+      {
+        "status": "not filed",
+        "what": "The map's unreachable escalation rules and the page's map-toggle highlight are still in the code.",
+        "reason": "Pruning them is separate work."
+      }
+    ],
+    "filed_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "verification": {
+    "gates": [
+      {
+        "gate": "make ci",
+        "exit_status": 0,
+        "location": "the worktree root"
+      },
+      {
+        "gate": "make e2e-grillui",
+        "exit_status": 0,
+        "location": "the worktree root"
+      }
+    ],
+    "not_run": [
+      "A review round. The pull request does not say why."
+    ]
+  },
+  "campaign": {
+    "reviewers": [],
+    "terminal_sha": "",
+    "findings": [],
+    "digest": "7cdecf8c11deef5b92b3e8b4c6fdbc8bbee897b3764232a6f092e3378a0b46a0"
+  },
+  "criteria": [
+    {
+      "id": "PND-A2",
+      "promise": "A typed answer with nothing downstream goes to the expert, records no task, and makes nothing wait.",
+      "evidence": "test_pnd_a2_custom_text_that_opens_nothing_is_still_weighed_by_the_expert, two cases that failed before the change"
+    },
+    {
+      "id": "PND-A2, rule 2",
+      "promise": "A typed answer with no task runs at the task effort on a channel the human has not moved, including one the policy moved.",
+      "evidence": "two tests, of which the first failed before the change and the second pins behaviour that already held"
+    },
+    {
+      "id": "PND-A2, rule 3",
+      "promise": "A typed answer keeps the heavy effort on a channel the human moved to the expert.",
+      "evidence": "one parametrised test, which failed before the change because the turn ran at medium effort"
+    },
+    {
+      "id": "PND-A2, rule 1",
+      "promise": "A turn with an impact task runs at the task effort on a channel the human moved.",
+      "evidence": "one test, which pins behaviour no test covered before"
+    },
+    {
+      "id": "PND-A11",
+      "promise": "Every dispatch of a typed answer carries the paragraph headed `Backpressure:`.",
+      "evidence": "one parametrised test, which failed before the change because no expert dispatch existed"
+    }
+  ],
+  "commit": {
+    "subject": "feat(grillui): every answer typed in the human's own words goes to the expert seat [9k9.315.14]",
+    "why": "A typed answer reached the expert seat only when it marked or opened a decision. A typed note with nothing downstream was read by the fast first seat, against the spec's seating decision.",
+    "change": "Any answer carrying a note or free text goes to the expert. With nothing downstream, no impact task is recorded and nothing waits. A typed turn with no task runs at the task effort, and keeps the heavy effort on a channel the human moved to the expert. Three spec passages now say the same.",
+    "verification": "make ci exits 0, and make e2e-grillui exits 0 with 97 passed. Six new unit tests cover the change, and four of them failed before it. The map's escalation rules are now unreachable, and their code is not removed. No review round ran.",
+    "attribution": {
+      "tool": "Claude Code",
+      "co_author": "Claude Opus 5.5 <noreply@anthropic.com>",
+      "session_key": "Claude-Session",
+      "session_url": "https://claude.ai/code/session_01PbsEMZWoDMTXQ2jMMP1XFV"
+    }
+  },
+  "record": {
+    "schema_version": 1,
+    "revision": 0
+  }
+}

@@ -1,0 +1,17 @@
+{
+ "number": 843,
+ "state": "closed",
+ "merged": true,
+ "title": "feat(9k9.408): every review seat's effort and tool grant is pinned in the panel's own data",
+ "user": {
+  "login": "scotthamilton77",
+  "id": 10354605,
+  "type": "User"
+ },
+ "head": {
+  "sha": "5bc9e8560c0d60a8f7133da167370b92ed1155bc"
+ },
+ "base": {
+  "ref": "main"
+ }
+}

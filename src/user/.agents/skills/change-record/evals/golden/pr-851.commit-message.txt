@@ -1,0 +1,28 @@
+spec(change-record): one linted record behind the PR body, commit message and review reply [9k9.484]
+
+Work item agents-config-9k9.484, the change-record spec.
+
+Why
+Agents write pull request descriptions, commit messages and review
+replies with no template. The owner has to re-read or ask before
+approving, because ids go unexplained and no description places the
+change or lists its risk.
+
+Change
+The spec decides the three templates and a JSON change record as their
+single source. The record lives in a marked, append-only pull request
+comment, and a merge command supplies the commit message from it. A
+bounded rewrite pass on a second model proposes prose that the author
+accepts or prunes. Seven slices carry 69 criteria, and the squash
+setting flips last.
+
+Verification
+make spec-lint and make doc-lint exit 0 at b5a85b10. The tracker
+facade's own parser reads eight items from the Continuations list. The
+attack record is complete against this revision after four attacks.
+Three review rounds raised 27 findings, and one is deferred to
+agents-config-9k9.486 (the owner's ruling on the rewrite pass).
+
+Work-item: agents-config-9k9.484
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QYRWFxiSCkMVvks81d2LYB

@@ -1,0 +1,92 @@
+{
+  "record_digest": "7cf9c57f73a93ca88347230956abb624fabb385e06c9bb797f0714f6645a1727",
+  "proposed": 12,
+  "replacements": [
+    {
+      "field": "/summary",
+      "section_digest": "70446f4f33a055f8acd235053d45439e6a95b5c4af8ef52277a28d605e93d885",
+      "text": "The grilling board sent a typed answer to its slower expert seat only when the answer marked or opened a decision. Any answer carrying a note or free text now goes to the expert. The rules for escalating a typed answer on the board's map can no longer fire. Their code remains."
+    },
+    {
+      "field": "/heads_up/0",
+      "section_digest": "b55784141f73dc3052e94ee637d014b2d7e791830673436c5f5f2996b661b7f0",
+      "text": "Twelve existing tests now either select a predefined option or run on a discussion thread."
+    },
+    {
+      "field": "/risk/rows/0/evidence",
+      "section_digest": "88035ee3a3c130cc222408bd0e76b66c8ec01bf9aecd6609ead94f0791d93665",
+      "text": "Six new unit tests cover the change. Four of them failed before it."
+    },
+    {
+      "field": "/risk/rows/1/failure",
+      "section_digest": "0f0013ee9122f8f7cf7a8c83690463743cbb7eee746338c01a6c2f5f9432ac61",
+      "text": "Selecting a predefined option with no text changes the answer's route."
+    },
+    {
+      "field": "/risk/rows/1/evidence",
+      "section_digest": "15d651510e6698b7edb0445b4297bd29351c65d539dc83f553405642fcf1e5ae",
+      "text": "An existing test checks that an answer selecting a predefined option with no text records no task."
+    },
+    {
+      "field": "/changes/2/text",
+      "section_digest": "0f36ec7a42a87db6c3edf164fe1e4645b0b5451a14bdf463336536e289f59beb",
+      "text": "Three passages in the specifications now require the expert to weigh the note."
+    },
+    {
+      "field": "/discovered/rows/0/reason",
+      "section_digest": "b25d1d71c8e1954178482085ce684df03a62f13e6f969d2a70400a016d5d9ba5",
+      "text": "Removing the map's unreachable escalation rules and the page's map-toggle highlight is separate work."
+    },
+    {
+      "field": "/criteria/0/promise",
+      "section_digest": "80831c6170a6a7fedf5956ff2fd520c15e6c0f44b526e52f6500c5ae92b6191b",
+      "text": "A typed answer with nothing downstream goes to the expert. Such an answer records no task. It makes nothing wait."
+    },
+    {
+      "field": "/criteria/1/promise",
+      "section_digest": "d790ea741408ba4f4521ae6cb0d027990a29c80853861847be6da281f0fa2b58",
+      "text": "A typed answer with no task runs at the task effort on any channel not moved by the human, including a channel moved by the escalation policy."
+    },
+    {
+      "field": "/commit/why",
+      "section_digest": "6dfb8b693fec4adc74aadfd98208a2aa58c7758b7a25e5c16882d98e3e79d445",
+      "text": "A typed answer reached the expert seat only when it marked or opened a decision. The fast first seat read a typed note with nothing downstream. That routing violated the specification's seating decision."
+    },
+    {
+      "field": "/commit/change",
+      "section_digest": "2eb14e96fffe3ca12b4fa5338fe602eda9d1b90d8972fdf2ad23d68596217db3",
+      "text": "Any answer carrying a note or free text goes to the expert. With nothing downstream, the answer produces neither an impact task nor a wait. A typed turn with no task uses the task effort except for the retained heavy effort on a channel the human moved to the expert. Three spec passages now say the same."
+    },
+    {
+      "field": "/commit/verification",
+      "section_digest": "6381f832c960298123686c1f8dd7da98ce1967ab9a72cea5258ed75518e6934f",
+      "text": "make ci exits 0. make e2e-grillui exits 0 with 97 passed. Six new unit tests cover the change. Four of them failed before it. The map's escalation rules are now unreachable. Their code is not removed. No review round ran."
+    }
+  ],
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the unreachable map escalation rules whose code remains. The existing Heads-up rows do not cover this caveat."
+    },
+    {
+      "field": "/pr/title",
+      "question": "How should the required parenthetical gloss for the closing identifier be accommodated while preserving the mandated title structure?"
+    },
+    {
+      "field": "/commit/subject",
+      "question": "How should the required parenthetical gloss for the closing identifier be accommodated while preserving the mandated subject structure and 100-character limit?"
+    },
+    {
+      "field": "/risk/rows/0/failure",
+      "question": "What does an effort level control? The record names task, medium and heavy effort without explaining the term."
+    },
+    {
+      "field": "/changes/1/text",
+      "question": "What do task effort and heavy effort mean, and what is a channel? These terms need definitions before this section can be rewritten for a stranger."
+    },
+    {
+      "field": "/design_notes",
+      "question": "What are the two readings supplied by the escalation module, and what do impact task, downstream, channel, task effort and heavy effort mean? The record does not supply enough definitions to make this section readable to a stranger."
+    }
+  ]
+}

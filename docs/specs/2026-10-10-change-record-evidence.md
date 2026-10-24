@@ -1,71 +1,71 @@
 # Evidence
 
-- CR-L1 | open
-- CR-L2 | open
-- CR-L3 | open
-- CR-L4 | open
-- CR-L5 | open
-- CR-L6 | open
-- CR-L7 | open
-- CR-L8 | open
-- CR-L9 | open
-- CR-L10 | open
-- CR-L11 | open
-- CR-L12 | open
-- CR-L13 | open
-- CR-L14 | open
-- CR-L15 | open
-- CR-L16 | open
-- CR-L17 | open
-- CR-R1 | open
-- CR-R2 | open
-- CR-R3 | open
-- CR-R4 | open
-- CR-R5 | open
-- CR-R6 | open
-- CR-R7 | open
-- CR-R8 | open
-- CR-X1 | open
-- CR-X2 | open
-- CR-X3 | open
-- CR-X4 | open
-- CR-X5 | open
-- CR-X6 | open
-- CR-X7 | open
-- CR-X8 | open
-- CR-C1 | open
-- CR-C2 | open
-- CR-C3 | open
-- CR-C4 | open
-- CR-C5 | open
-- CR-C6 | open
-- CR-C7 | open
-- CR-C8 | open
-- CR-P1 | open
-- CR-P2 | open
-- CR-P3 | open
-- CR-P4 | open
-- CR-P5 | open
-- CR-P6 | open
-- CR-P7 | open
-- CR-P8 | open
-- CR-P9 | open
-- CR-P10 | open
-- CR-P11 | open
-- CR-P12 | open
-- CR-P13 | open
-- CR-P14 | open
-- CR-W1 | open
-- CR-W2 | open
-- CR-W3 | open
-- CR-W4 | open
-- CR-W5 | open
-- CR-W6 | open
-- CR-W7 | open
+- CR-L1 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestLint
+- CR-L2 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL2Gloss
+- CR-L3 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL3CommitSubject
+- CR-L4 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL4StatedEmptiness
+- CR-L5 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL5DiscoveredRows
+- CR-L6 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL6SummaryLength
+- CR-L7 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL7CommentaryAndMachineContent
+- CR-L8 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL8Init
+- CR-L9 | observed: #874 2026-10-12 scotthamilton77
+- CR-L10 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL10GroupsByTypeAndReach
+- CR-L11 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL11NoneBesideAnEntry
+- CR-L12 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL12CommitBody
+- CR-L13 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL13Replies
+- CR-L14 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL14OneReplyPerFixedFinding
+- CR-L15 | test: src/user/.agents/skills/change-record/scripts/change_record_test.py::TestCrL15GeneratedStamps
+- CR-L16 | test: src/user/.agents/skills/change-record/scripts/conftest_test.py::TestCrL16Fence
+- CR-L17 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrL17TemplatesDriveTheRender
+- CR-R1 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR1Body
+- CR-R2 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR2Decisions
+- CR-R3 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR3CommitMessage
+- CR-R4 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR4CommitMarkup
+- CR-R5 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR5Reply
+- CR-R6 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR6LintFirst
+- CR-R7 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR7Determinism
+- CR-R8 | test: src/user/.agents/skills/change-record/scripts/change_record_render_test.py::TestCrR8Sentinels
+- CR-X1 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX1Ancestry
+- CR-X2 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX2Scope
+- CR-X3 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX3BuildsOn
+- CR-X4 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX4Failure
+- CR-X5 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX5Discovered
+- CR-X6 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX6SecondRun
+- CR-X7 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX7NothingAround
+- CR-X8 | test: src/user/.agents/skills/change-record/scripts/change_record_context_test.py::TestCrX8Concurrent
+- CR-C1 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC1ReviewersAndPages
+- CR-C2 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC2Findings
+- CR-C3 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC3EmptyCampaign
+- CR-C4 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC4SkippedReviews
+- CR-C5 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC5TerminalCommit
+- CR-C6 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC6RerunAndReplies
+- CR-C7 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC7StaleRows
+- CR-C8 | test: src/user/.agents/skills/change-record/scripts/change_record_campaign_test.py::TestCrC8ReadsOnly
+- CR-P1 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP1FirstPublish
+- CR-P2 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP2NextRevision
+- CR-P3 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP3Rerun
+- CR-P4 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP4BodyChecks
+- CR-P5 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP5Newest
+- CR-P6 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP6Size
+- CR-P7 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP7OnlyTwoWrites
+- CR-P8 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP8Merge
+- CR-P9 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP9HeadAndCampaign
+- CR-P10 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP10Race
+- CR-P11 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP11Digest
+- CR-P12 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP12DryRun
+- CR-P13 | observed: #873 2026-10-12 scotthamilton77
+- CR-P14 | test: src/user/.agents/skills/change-record/scripts/change_record_publish_test.py::TestCrP14Create
+- CR-W1 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW1ExtractProse
+- CR-W2 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW2StaleAndMalformedResponses
+- CR-W3 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW3OnlyRewritableFields
+- CR-W4 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW4ProtectedValues
+- CR-W5 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW5AppliedSections
+- CR-W6 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW6SecondRun
+- CR-W7 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW7EditorInstructions
 - CR-W8 | open
-- CR-W9 | open
-- CR-W10 | open
-- CR-W11 | open
-- CR-G1 | open
-- CR-G2 | open
+- CR-W9 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW9OnePassPerRevision
+- CR-W10 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW10Counts
+- CR-W11 | test: src/user/.agents/skills/change-record/scripts/change_record_prose_test.py::TestCrW11Dispatch
+- CR-G1 | observed: #874 2026-10-12 scotthamilton77
+- CR-G2 | test: packages/installer/tests/unit/test_delivery_contract.py::test_cr_g2_the_delivery_contract_states_each_change_record_sentence
 - CR-G3 | open

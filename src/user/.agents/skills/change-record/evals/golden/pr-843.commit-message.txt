@@ -1,0 +1,26 @@
+feat(review-panel): pin reviewer effort and tools as data and bound a dying run's recovery [9k9.408]
+
+Work item agents-config-9k9.408, predictable reviewer settings, as an interim cost control.
+
+Why
+The agent running a review round chose each reviewer's effort and tool
+access itself, and avoided one model for whole-document reads on a
+belief no run record supported. Review cost and coverage were
+unpredictable.
+
+Change
+The panel's configuration holds effort and tools for every reviewer
+slot, and each round's record copies them from that slot's pin. Every
+reviewer receives the change as a diff file. A run that dies
+mid-reasoning retries one effort step lower, then on the other provider,
+then halts the round. Models still come from the shared routing table.
+
+Verification
+make ci, doc-lint and content-lint exit 0 at 5bc9e856. 27 of 27 isolated
+doctrine reads matched the key. Code and prose review circuits both
+reached a clean sweep. The gate does not yet check a run used its pinned
+effort.
+
+Work-item: agents-config-9k9.408
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0117EMqtBiXVaPuAeWFr7LbY

@@ -1,0 +1,101 @@
+The routing table in the delegation skill is meant to be the only inventory of model ids. Nothing enforced that. A new test suite now reads the Markdown files under `src/`, except those under an `evals` or `node_modules` directory, and fails `make ci` on a model id the table does not list. Anthropic aliases such as `sonnet` are not caught.
+
+## Heads-up
+- campaign: No review round has run on this pull request.
+
+## Where this fits
+agents-config-9k9  Harness rework (milestone)
+agents-config-9k9.458  Subagent and delegation skills and rules read as one coherent system (feature)
+agents-config-9k9.458.2  [Impl] Subagent and delegation skills and rules read as one coherent system (scope: per spec) (task)
+agents-config-9k9.458.3  A lint keeps the routing table the only model inventory (feature)
+    this PR: slice A of the delegation-coherence spec
+Builds on: #835 (feat(9k9.469): the agy launcher passes --model and --effort to agy unchanged), #841 (feat(9k9.458.4): the OpenRouter launcher times and kills its own run), #852 (feat(9k9.458.7): the OpenRouter launcher refuses GPT and Gemini models unless the user instructed the run), #854 (feat(9k9.458.5): the launcher skills answer the same four questions). Concurrent: none.
+<details><summary>Scope of the owning item</summary>
+
+| Slice | What it covers | Status |
+| --- | --- | --- |
+| agents-config-9k9.458.3 | A lint keeps the routing table the only model inventory | this PR |
+| agents-config-9k9.458.4 | The OpenRouter launcher times and kills its own run | done |
+| agents-config-9k9.458.5 | The launcher skills answer the same four questions | done |
+| agents-config-9k9.458.6 | One word, provider, through the panel's prose, data, scripts and verdict schema | open |
+| agents-config-9k9.458.7 | The OpenRouter launcher refuses GPT and Gemini models unless the user instructed the run | done |
+| agents-config-9k9.469 | The agy launcher and its skill take effort the way agy itself accepts it | done |
+</details>
+
+## Risk
+| What could go wrong | Who or what is exposed | How we know it did not | What to do if it did |
+| --- | --- | --- | --- |
+| The lint rejects a word that is not a model id and blocks every pull request. | Anyone opening a pull request in this repository. | The patterns are case-sensitive, and the real tree of 94 files lints clean. | Delete the test file, because nothing ships from it. |
+| A stale model id still ships in a skill. | Every project with the skill installed. | An unlisted id appended to a skill made `make content-tests` exit 2 and name the line. | Add the missing pattern. |
+
+## Changes
+- **The lint.** A pytest suite beside the delegation skill fails on an unlisted model id, on a table row elsewhere that names any id, and on a routing table that changes shape.
+- **Id patterns.** Each vendor naming scheme has one case-sensitive pattern, so a family name in prose is not an id.
+- **Providers list.** The routing file's Providers table became a list, because the lint allows two tables there.
+<details><summary>Design notes</summary>
+
+The lint is a PEP 723 pytest suite. The content gate discovers it by its `*_test.py` name. The installer's ignore file already keeps such a file out of the deploy, so nothing here ships.
+
+The suite reads every Markdown file under `src/` except paths under an `evals` or `node_modules` directory. It fails when a file names a model id the routing table's models table does not list. It fails when a table row outside the routing table names any model id, because such a table is a second inventory. It fails when the tier grid gains a column, when the models table gains, drops or renames one, and when the routing file holds a third table. It fails when the routing table is absent or lists no model id.
+
+The six patterns cover the Claude, GPT and Gemini schemes and the three OpenRouter schemes for Gemini, Kimi and GLM. An OpenRouter id needs its vendor prefix, so a file name that holds a model family is not an id. The Anthropic aliases are ordinary words, so no pattern reads them as ids.
+
+The Providers table was a third table in the routing file. Each of its rows became one sentence with the same three facts, and every other line of the file is unchanged.
+
+All 34 cases failed against a stub lint that returned no files and no violations, and every case passes at the head.
+</details>
+
+## Discovered work
+| Item | Status | What it is | Why not in this PR |
+| --- | --- | --- | --- |
+|  | not filed | A table row that names only an Anthropic alias is not caught. | The spec defines ids by vendor naming scheme, and an alias is not one. |
+
+---
+
+## Verification
+- make ci: exit 0, run standalone from a directory the pull request does not name at da6819097499a42da97a6b9f735491a6ff531edc.
+- Not run: A review round. The pull request does not say why.
+
+## Criteria
+| Criterion | What it promises | Evidence |
+| --- | --- | --- |
+| DEL-A1 | An unlisted model id in any Markdown file the lint reads under `src/` fails, naming the file and the id. | 12 cases with an invented id and a version-bumped id per vendor scheme, a depth case and a listed-id control |
+| DEL-A2 | The landed tree passes. | test_del_a2_landed_tree_passes, which read 94 files |
+| DEL-A3 | A fenced example with a listed id fails once its row is removed. | one fixture case |
+| DEL-A4 | An `evals` directory is not read. | two cases at different depths |
+| DEL-A5 | An absent or empty routing table fails, naming it. | two cases |
+| DEL-A6 | A table row elsewhere that names a listed id fails, and the same id in prose passes. | four row shapes and the prose control |
+| DEL-A7 | The routing table keeps its two tables and their columns. | four cases |
+
+<details><summary>Proposed commit message</summary>
+
+```text
+feat(choosing-a-delegate): the content gate fails a model id the routing table omits [9k9.458.3]
+
+Work item agents-config-9k9.458.3, a lint that keeps the routing table the only model inventory.
+
+Why
+The routing table is meant to be the only inventory of model ids.
+Nothing enforced that.
+
+Change
+A pytest suite beside the delegation skill reads every Markdown file
+under src/, except those under an evals or node_modules directory. It
+fails on a model id the routing table does not list, and on a table row
+elsewhere that names one. It also fails on a routing table that has
+changed shape. The Providers table in the routing file becomes a list,
+because the lint allows two tables there.
+
+Verification
+make ci exits 0 at the head, with 20 content suites passing. All 34
+cases fail against a stub lint and pass at the head. One unlisted id
+appended to a skill made the gate exit 2 and name the line. Anthropic
+aliases are not caught, and no review round ran.
+
+Work-item: agents-config-9k9.458.3
+Co-authored-by: Claude Opus <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014WQjDer7srQKX1vaA8R8vD
+```
+</details>
+
+Generated with Claude Code · https://claude.ai/code/session_014WQjDer7srQKX1vaA8R8vD

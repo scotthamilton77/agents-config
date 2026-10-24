@@ -1,0 +1,52 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 13,
+  "actual_replacement_count": 12,
+  "raw_count_matches": false,
+  "questions": [
+    {
+      "field": "/heads_up/0",
+      "question": "Please add a separate Heads-up row for the caveat that Anthropic aliases such as `sonnet` are not caught."
+    },
+    {
+      "field": "/risk/rows/0",
+      "question": "The risk claims the lint can reject a non-id and block every pull request, while the evidence only says the patterns are case-sensitive and the real tree lints clean. What evidence supports this failure claim?"
+    },
+    {
+      "field": "/risk/rows/1",
+      "question": "Please add a separate Heads-up row for the caveat that a table row naming only an Anthropic alias is not caught."
+    }
+  ],
+  "questions_outside_sections": [
+    "/heads_up/0",
+    "/risk/rows/0",
+    "/risk/rows/1"
+  ],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [
+    {
+      "code": "commit-body",
+      "path": "/commit/change",
+      "message": "this section has 5 sentences, and it takes 3 to 4"
+    }
+  ],
+  "introduced_lint": [
+    {
+      "code": "commit-body",
+      "path": "/commit/change",
+      "message": "this section has 5 sentences, and it takes 3 to 4"
+    }
+  ],
+  "resolved_lint": [],
+  "full_apply": "refused",
+  "full_apply_findings": [
+    {
+      "code": "commit-body",
+      "path": "/commit/change",
+      "message": "this section has 5 sentences, and it takes 3 to 4"
+    }
+  ],
+  "tool_calls": []
+}

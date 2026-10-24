@@ -1,0 +1,42 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 8,
+  "actual_replacement_count": 8,
+  "raw_count_matches": true,
+  "questions": [
+    {
+      "field": "/heads_up",
+      "question": "Add a separate Heads-up row noting that Anthropic aliases such as `sonnet` are not caught."
+    }
+  ],
+  "questions_outside_sections": [
+    "/heads_up"
+  ],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [
+    {
+      "code": "summary-length",
+      "path": "/summary",
+      "message": "the summary has 6 sentences, and it takes three to five"
+    }
+  ],
+  "introduced_lint": [
+    {
+      "code": "summary-length",
+      "path": "/summary",
+      "message": "the summary has 6 sentences, and it takes three to five"
+    }
+  ],
+  "resolved_lint": [],
+  "full_apply": "refused",
+  "full_apply_findings": [
+    {
+      "code": "summary-length",
+      "path": "/summary",
+      "message": "the summary has 6 sentences, and it takes three to five"
+    }
+  ],
+  "tool_calls": []
+}

@@ -25,9 +25,10 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 # The registry is every directory here holding a `prompt.md`: its name is the lens's name, its
-# front matter the lens's tier, transport, standard, the rules it enforces and whether it returns
-# workings, and its body the lens's own instructions. A lens returning workings keeps the schema
-# that judges them beside its prompt.
+# front matter the lens's tier, transport, standard, the rules it enforces, whether it returns
+# workings, and its pin, the effort and the tool grant it is dispatched with, and its body the
+# lens's own instructions. A lens returning workings keeps the schema that judges them beside its
+# prompt. The pin travels in the round file so the dispatcher never picks either value itself.
 LENSES_DIR = HERE / "lenses"
 WORKINGS_SCHEMA = "workings.schema.json"
 STANDARD = "acceptance-criteria"
@@ -40,8 +41,8 @@ STANDARD_CANDIDATES = (
     HERE.parent / "acceptance-criteria" / "SKILL.md",
     HERE.parents[2] / ".agents" / "skills" / "acceptance-criteria" / "SKILL.md",
 )
-FRONT_MATTER_KEYS = ("tier", "transport", "standard", "enforces", "workings")
-REQUIRED_KEYS = ("lens", "tier", "transport", "standard", "enforces", "body")
+FRONT_MATTER_KEYS = ("tier", "transport", "standard", "enforces", "workings", "effort", "tools")
+REQUIRED_KEYS = ("lens", "tier", "transport", "standard", "enforces", "effort", "tools", "body")
 
 EXIT_OK = 0
 EXIT_REFUSED = 2
@@ -149,11 +150,15 @@ def carries(lens: dict[str, Any], key: str) -> bool:
     """Whether a lens holds a usable value for a key it owes.
 
     `enforces` is owed a list naming at least one rule, since a lens enforcing nothing judges
-    against no rule; every other key is owed a usable string.
+    against no rule. `tools` is owed the grant the lens runs with: a list of tool names, empty
+    when the lens is handed the document inline and reads nothing else, or a string naming a
+    runtime's sandbox. Every other key is owed a usable string.
     """
     value = lens.get(key)
     if key == "enforces":
         return isinstance(value, list) and bool(value) and all(usable(item) for item in value)
+    if key == "tools" and isinstance(value, list):
+        return all(usable(item) for item in value)
     return usable(value)
 
 
@@ -208,10 +213,10 @@ def load_lenses() -> list[dict[str, Any]]:
     filename escapes the owner-only directory the round just created and lands where it set no
     permissions.
 
-    Every key a lens owes is checked here too, because `tier` and `transport` are read only when
-    the round file is assembled — by then every prompt is on disk, so a lens short one of them
-    would leave a directory of prompts for this document beside a round file naming the last one.
-    A lens citing another standard, or a rule the standard lacks, would go out without the rule it
+    Every key a lens owes is checked here too, because `tier`, `transport` and the pin are read
+    only when the round file is assembled, where a missing key would surface as a traceback the
+    round reports as its own failure rather than as a refusal naming the lens and the key. A lens
+    citing another standard, or a rule the standard lacks, would go out without the rule it
     judges by, and a lens requiring workings with no schema beside it returns an inventory nothing
     can judge. Rules are asked last, since only a registry that is otherwise whole needs the
     standard read.
@@ -609,7 +614,8 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
     round_meta = {
         "spec_path": spec_name, "spec_revision": revision,
         "lenses": [
-            {"lens": lens["lens"], "tier": lens["tier"], "transport": lens["transport"]}
+            {"lens": lens["lens"], "tier": lens["tier"], "transport": lens["transport"],
+             "effort": lens["effort"], "tools": lens["tools"]}
             for lens in lenses
         ],
     }

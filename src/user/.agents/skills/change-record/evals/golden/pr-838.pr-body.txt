@@ -1,0 +1,127 @@
+The grilling board sent a typed answer to its slower expert seat only when the answer marked or opened a decision. Any answer carrying a note or free text now goes to the expert. The rules that escalated a typed answer on the board's map can no longer fire, and their code remains.
+
+## Heads-up
+- Twelve existing tests now use an option pick or run on a thread.
+- campaign: No review round has run on this pull request.
+
+## Where this fits
+agents-config-9k9  Harness rework (milestone)
+agents-config-9k9.315  Grilling board: pending analysis, impact tasks, and the terminal review phase (spec) (feature)
+agents-config-9k9.315.14  grillui: every answer carrying a note or free text is weighed by the expert at the task effort, whether or not it opens anything (feature)
+    this PR: the last item of the seating slice
+Builds on: #808 (feat(9k9.315.3): a decision a ruling in flight may move waits until the ruling lands), #829 (feat(9k9.315.4): an answer in the human's own words holds what it opens, and the expert weighs every task at medium effort), #830 (feat(9k9.315.5): a ruling changes its own decision directly, and everything wider waits in the inbox showing before and after), #833 (feat(9k9.315.6): the map doctor proposes and lands nothing directly), #840 (feat(9k9.315.7): the likely rulings are weighed before the human clicks, and a taken one costs no wait). Concurrent: none.
+<details><summary>Scope of the owning item</summary>
+
+| Slice | What it covers | Status |
+| --- | --- | --- |
+| agents-config-9k9.315.1 | Design: Grilling board: pending analysis, impact tasks, and the terminal review phase (spec) | done |
+| agents-config-9k9.315.2 | [Impl] Grilling board: pending analysis, impact tasks, and the terminal review phase (spec) (scope: per spec) | done |
+| agents-config-9k9.315.3 | grillui S1: the task on the log and the frontier as the lock (PND-D1, PND-D5; PND-A1, PND-A3, PND-A15) | done |
+| agents-config-9k9.315.4 | grillui S2: what goes waiting, and on which seat (PND-D2, PND-D4, PND-D15; PND-A2, PND-A11) | done |
+| agents-config-9k9.315.5 | grillui S3: what a result may touch (PND-D3, PND-D16; PND-A4, PND-A12) | done |
+| agents-config-9k9.315.6 | grillui S4: failure as a named blocker, retry, and the doctor's contract (PND-D9, PND-D11, PND-D13; PND-A5, PND-A8, PND-A13) | done |
+| agents-config-9k9.315.7 | grillui S5: pre-rulings — one hop, consumed on the click, stale by basis (PND-D6; PND-A6, PND-A14) | done |
+| agents-config-9k9.315.8 | grillui S6: the conflict-resolution turn (PND-D8; PND-A7) | open |
+| agents-config-9k9.315.9 | grillui S7: notices that need no attention, and the legend (PND-D14; PND-A9, PND-A10) | open |
+| agents-config-9k9.315.10 | grillui T1: criteria and taxonomy entries on the log, and the review phase (TRV-D1; TRV-A1, TRV-A6) | open |
+| agents-config-9k9.315.11 | grillui T2: dispositions, discussion and the result's criteria section (TRV-D3, TRV-D2; TRV-A2, TRV-A5) | open |
+| agents-config-9k9.315.12 | grillui T3: edit, add and reopen (TRV-D2; TRV-A3, TRV-A4, TRV-A7, TRV-A8) | open |
+| agents-config-9k9.315.13 | Grilling glossary reflects built vocabulary: drop 'proposed, not built' and turn Design: into Contract: for task, waiting, pre-ruling, review, entry, criterion, taxonomy row, disposition as the 9k9.315 slices land | open |
+| agents-config-9k9.315.14 | grillui: every answer carrying a note or free text is weighed by the expert at the task effort, whether or not it opens anything | this PR |
+</details>
+
+## Risk
+| What could go wrong | Who or what is exposed | How we know it did not | What to do if it did |
+| --- | --- | --- | --- |
+| A typed answer is weighed at the wrong effort. | The human in a grilling session. | Six new unit tests cover the change, and four of them failed before it. | Revert. |
+| An option pick with no text changes route. | Every ordinary answer. | An existing test pins that such an answer records no task. | Revert. |
+<details><summary>Blast radius</summary>
+
+```mermaid
+graph LR
+  G[grillui answer routing] -->|typed answers skip the first seat| M[map channel]
+  G -->|effort picked from the task and from who moved the channel| E[expert seat driver]
+  G -.unchanged.-> T[thread channels]
+  G -->|escalation rules unreachable, code kept| D[map escalation rules]
+  G -->|three passages amended| S[grilling specs]
+```
+
+```mermaid
+flowchart LR
+  a[Human answers on the map] --> b{Typed text?}:::chg -->|yes| c[Expert seat]:::chg --> d[Pick the effort]:::chg
+  d --> e[Expert composes the reply] --> f[Impact task recorded when something is downstream]
+  b -->|no| g[Seat chosen as before]
+  classDef chg stroke-width:3px
+```
+</details>
+
+## Changes
+- **Routing.** A human answer with a note or free text always goes to the expert.
+- **Effort.** A typed answer that opens nothing runs at the task effort. It keeps the heavy effort on a channel the human moved to the expert.
+- **Spec text.** Three spec passages now say the expert weighs the note.
+<details><summary>Design notes</summary>
+
+The expert picks the effort by one rule. A turn that carries an impact task runs at the task effort on every channel, including one the human moved to the expert. A typed turn with no task runs at the task effort on a channel the human has not moved. The same turn runs at the heavy effort on a channel the human moved to the expert themselves, because they chose that effort for the channel. A channel the escalation policy moved counts as not moved by the human.
+
+The expert driver tells a human move from a policy move off the log, at the moment it picks the effort. It uses the two readings the escalation module already provides. When nothing is downstream of a typed answer, no impact task is recorded and nothing waits.
+
+The map's first seat never reads the human's prose from this change on, because every map answer carrying text goes straight to the expert. The map's prose escalation conditions are therefore unreachable there, and threads keep them. Their code and the page's map-toggle highlight stay, because pruning them is separate work.
+
+The three amended passages sit in two specs, and each now cites PND-D4 (the spec decision that seats every typed answer on the expert). They are GUI-A33 (the criterion on highlighting a channel's way to the expert), GUI-D48 (the decision on which channels the escalation conditions reach) and that decision's third trigger.
+
+Six existing tests used a typed map answer only as a vehicle, and they now pick a plain option. Five tests of the map's prose conditions now run on a thread. One browser test moved to a thread and was renamed, and its evidence row was re-pointed. In the evidence ledgers, PND-A2 (the criterion on seating a typed answer) goes from open to twelve test rows. PND-A11 (the criterion on the backpressure paragraph) goes from open to four.
+</details>
+
+## Discovered work
+| Item | Status | What it is | Why not in this PR |
+| --- | --- | --- | --- |
+|  | not filed | The map's unreachable escalation rules and the page's map-toggle highlight are still in the code. | Pruning them is separate work. |
+
+---
+
+## Verification
+- make ci: exit 0, run standalone from the worktree root at 26ed444a0d6996d444cf60af7064f94450d92028.
+- make e2e-grillui: exit 0, run standalone from the worktree root at 26ed444a0d6996d444cf60af7064f94450d92028.
+- Not run: A review round. The pull request does not say why.
+
+## Criteria
+| Criterion | What it promises | Evidence |
+| --- | --- | --- |
+| PND-A2 | A typed answer with nothing downstream goes to the expert, records no task, and makes nothing wait. | test_pnd_a2_custom_text_that_opens_nothing_is_still_weighed_by_the_expert, two cases that failed before the change |
+| PND-A2, rule 2 | A typed answer with no task runs at the task effort on a channel the human has not moved, including one the policy moved. | two tests, of which the first failed before the change and the second pins behaviour that already held |
+| PND-A2, rule 3 | A typed answer keeps the heavy effort on a channel the human moved to the expert. | one parametrised test, which failed before the change because the turn ran at medium effort |
+| PND-A2, rule 1 | A turn with an impact task runs at the task effort on a channel the human moved. | one test, which pins behaviour no test covered before |
+| PND-A11 | Every dispatch of a typed answer carries the paragraph headed `Backpressure:`. | one parametrised test, which failed before the change because no expert dispatch existed |
+
+<details><summary>Proposed commit message</summary>
+
+```text
+feat(grillui): every answer typed in the human's own words goes to the expert seat [9k9.315.14]
+
+Work item agents-config-9k9.315.14, the expert weighs every answer typed in the human's own words.
+
+Why
+A typed answer reached the expert seat only when it marked or opened a
+decision. A typed note with nothing downstream was read by the fast
+first seat, against the spec's seating decision.
+
+Change
+Any answer carrying a note or free text goes to the expert. With nothing
+downstream, no impact task is recorded and nothing waits. A typed turn
+with no task runs at the task effort, and keeps the heavy effort on a
+channel the human moved to the expert. Three spec passages now say the
+same.
+
+Verification
+make ci exits 0, and make e2e-grillui exits 0 with 97 passed. Six new
+unit tests cover the change, and four of them failed before it. The
+map's escalation rules are now unreachable, and their code is not
+removed. No review round ran.
+
+Work-item: agents-config-9k9.315.14
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01PbsEMZWoDMTXQ2jMMP1XFV
+```
+</details>
+
+Generated with Claude Code · https://claude.ai/code/session_01PbsEMZWoDMTXQ2jMMP1XFV

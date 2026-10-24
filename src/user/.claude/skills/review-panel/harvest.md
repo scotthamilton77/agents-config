@@ -54,7 +54,7 @@ indictment already names the remediation.
 
 The `transport` in `contracts.json` is a claim about vendor diversity, not about today's
 credentials. **Any lens may run on any transport that is actually up.** An `openrouter` lens runs
-through the codex command-line tool when OpenRouter is down; a `codex` lens runs through the
+as the Codex delegation skill's read-only run when OpenRouter is down; a `codex` lens runs through the
 `openrouter-claude-subagent` skill when the codex credential has expired. Neither direction is the
 exceptional one, because either transport can be down while the other works.
 
@@ -153,20 +153,25 @@ record: it double-counts coverage.
 Three failures look alike from outside and recover differently, so tell them apart before
 claiming again — the reason you declare is what the gate bounds.
 
+The launcher's own skill says which of four outcomes the run ended in. Usable output is ingested
+under "Reading a lens report", whose read-evidence check may still send it back. A refused
+invocation is yours to fix; it says nothing about the provider or the reviewer. A run the provider
+did not serve is `transport-error`, the launcher's own clock included. Unusable output is
+`unusable-output`, except the two signals the dead-run ladder below owns, a response that ended
+inside the model's reasoning and a run your watchdog killed for silence, which are `dead-run`. A
+run you stopped on purpose ends there with no claim.
+
 **The route died** (`transport-error`). What came back describes the *transport*, not the review:
 an HTTP status, an authentication or credit error, a refused connection, a dead broker or session
 — or nothing at all, including no output file where one was claimed. An attempt your watchdog
-killed for silence leaves nothing too, and it is a dead run. Judge this on the body rather than
-the exit status: a dead route shows up as an exit 1 carrying a short provider error, and equally
-as an exit 0 carrying nothing.
+killed for silence leaves nothing too, and it is a dead run.
 
 **The reviewer failed** (`unusable-output`). A body came back that is the model's own output, and
 no report survives the tolerance ladder under "Reading a lens report". The route worked; what
 came over it is unusable.
 
 **The run died** (`dead-run`). The model's response ended inside its reasoning and no report
-came back. On the OpenRouter launcher the proxy logs
-`response ends on thinking and contains no text block to promote`; on either transport, an
+came back. The launcher's own skill names the signal that marks it; on either transport, an
 attempt your watchdog killed for silence is the same failure. Follow the ladder, one step per
 dead run:
 
@@ -237,10 +242,8 @@ It walks the tolerance ladder — the whole body as JSON, then a single fenced b
 found in the body with the surrounding text ignored — and prints the report it recovered. Output
 from a dispatch it never authorized is refused rather than read, so a dispatch that went around
 the gate shows up as a hole in the ledger instead of as a lens entry. A claimed path holding
-nothing is refused as `no-output`, because the attempt wrote nothing. Claim again with reason
-`dead-run` when your watchdog killed it for silence or the launcher's own skill says the response
-ended inside the model's reasoning, with that signal as the evidence, and with reason
-`transport-error` and the route's error otherwise.
+nothing is refused as `no-output`, because the attempt wrote nothing. What follows is the
+launcher's outcome, read under "A dispatch that came back with no report".
 
 Some transports wrap the reviewer's output in their own harness log lines — a banner before it, an
 exit line after it, and command echoes that may themselves contain braces. **Ingest the claimed
@@ -250,15 +253,20 @@ returned, and the ledger records the trimmed version as the reviewer's.
 
 A transport may also replay the whole prompt ahead of the reviewer's output. The Codex
 command-line tool does, in the transcript it writes to stderr; its stdout carries the final message
-alone. The ladder reads only what follows the **last** line of the claimed output holding nothing but
-the prompt's closing untrusted-content marker, the same boundary the read-evidence check below
-applies to the retained stderr, and it never accepts
-the prompt's own report schema, so an echoed prompt yields the reviewer's report or nothing. The
-target under review sits inside the echoed prompt, so a target that plants a marker line and a
-report-shaped object of its own still sits before the boundary and cannot pose as the report. A
-finding may quote the marker inside its text, where it shares its line with the JSON around it; a
-marker alone on a line anywhere in the output moves the boundary, which is why the completion
-contract asks for one JSON object and nothing else.
+alone. The emitter closes each prompt's fenced data with a marker line it mints for the round from
+the reviewed head, the claim and the round number, and records that line in `round.json`. The
+ladder reads only what follows the **first** line of the claimed output holding nothing but that
+marker, the same boundary the read-evidence check below applies to the retained stderr, and it
+never accepts the prompt's own report schema, so an echoed prompt yields the reviewer's report or
+nothing. The target under review sits inside the echoed prompt, and it cannot hold the marker: a
+tree cannot contain the digest of its own commit. A target that plants the static marker line and a
+report-shaped object of its own therefore still sits before the boundary and cannot pose as the
+report, and a reviewer that quotes the target, or the marker itself, after its report moves nothing.
+A round record that carries no marker is an older emitter's, and there the gate falls back to the
+static marker and cuts at the **last** line holding only it, since a target can write that marker.
+The completion contract tells the reviewer never to reproduce the closing line alone or inside a
+fence; a finding that must cite it quotes it inside its own text, where it shares its line with the
+JSON around it.
 
 A **clean** report is checked against the attempt's retained stderr before it is accepted, because
 a reviewer that answers clean without opening the change costs the round a lens while looking like
@@ -270,7 +278,7 @@ carried none called no tool, however many requests the client around it made. A 
 forward lines carry no count came from a launcher that records none and is unread the same way.
 On `codex` both entry points count: the plugin job runner tags each tool line with `[codex] `, and
 the command-line tool opens each call with a bare `exec` line and reports the result beneath it.
-Only what follows the prompt's last closing marker counts, so a target that quotes these patterns
+Only what follows the prompt's closing marker counts, so a target that quotes these patterns
 cannot vouch for the reviewer that was sent to read it.
 
 A clean report with nothing recorded is **unread** — its own refusal, and neither a transport

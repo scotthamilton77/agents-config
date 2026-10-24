@@ -1,0 +1,26 @@
+{
+  "model": "gpt-6-luna",
+  "effort": "low",
+  "instructions_sha256": "9bf1abe73343d387cf286e2f8c74cdd92a1527a1fc01f098a6ad112ff8fce47c",
+  "request_sha256": "40d13064ed3279bc71511c0a9ad67d0b5badaa5a1a2ffe93113f0f3500353745",
+  "route": "codex exec",
+  "user_config": false,
+  "project_doc_max_bytes": 0,
+  "shell_tool": false,
+  "web_search": "disabled",
+  "status": "completed",
+  "request": "../../../pr-846/request.json",
+  "started_at": "2026-10-15T22:19:05.091651+00:00",
+  "authorization": "Owner explicitly authorized sending the four eval requests and revised instructions to Luna in this conversation.",
+  "exit_status": 0,
+  "elapsed_seconds": 7.574,
+  "usage": [
+    {
+      "input_tokens": 21637,
+      "cached_input_tokens": 4864,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 701,
+      "reasoning_output_tokens": 0
+    }
+  ]
+}

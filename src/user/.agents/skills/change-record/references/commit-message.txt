@@ -1,0 +1,22 @@
+${commit.subject}
+
+Work item ${work_item.id}, ${work_item.gloss}.
+{{#commit.why}}
+
+Why
+${commit.why}
+{{/commit.why}}
+{{#commit.change}}
+
+Change
+${commit.change}
+{{/commit.change}}
+{{#commit.verification}}
+
+Verification
+${commit.verification}
+{{/commit.verification}}
+
+Work-item: ${work_item.id}
+Co-authored-by: ${commit.attribution.co_author}
+${commit.attribution.session_key}: ${commit.attribution.session_url}

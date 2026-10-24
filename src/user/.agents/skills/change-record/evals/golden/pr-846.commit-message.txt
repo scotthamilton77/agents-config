@@ -1,0 +1,24 @@
+feat(acceptance-criteria): the attack panel files coverage gaps under one rule only [9k9.405.14]
+
+Work item agents-config-9k9.405.14, two overlapping rules of the criteria standard ask different questions.
+
+Why
+One rule in the acceptance-criteria standard opened with a sentence that
+held the coverage rule's question, so the reviewer that owns that rule
+filed coverage gaps under it. On the corrected control document only 2
+of 10 runs came back empty.
+
+Change
+The verification-contract rule now opens by judging the check each
+criterion names. Whether a commitment has a criterion at all stays with
+the coverage rule. The attack skill's table of reviewers names what each
+one reads, which is what decides who owns a rule.
+
+Verification
+make ci exits 0. On the pilot's second case, ten runs per document gave
+an empty control report in 9 of 10 runs. The planted defect was detected
+in 10 of 10. One prose review round came back clean.
+
+Work-item: agents-config-9k9.405.14
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018CLkTLjLQ2ohANDFQ9qi41

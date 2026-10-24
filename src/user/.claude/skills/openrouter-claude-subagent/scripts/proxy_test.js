@@ -1,13 +1,15 @@
 // Unit tests for proxy.js — built-in node:test / node:assert only, no deps.
 //
-// Scope: the four pure/testable exports (createSSEFixer, splitMixedMessages,
-// parseSSEBlock, buildProxyHeaders). `start` opens real sockets and is
-// covered elsewhere.
+// Scope: the pure exports (createSSEFixer, uniqueToolUseId, splitMixedMessages,
+// stripDeferredTools, parseSSEBlock, buildProxyHeaders, the model gate), plus
+// `start` over a real socket where the behaviour lives in request parsing or
+// spans more than one request.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   createSSEFixer,
+  uniqueToolUseId,
   splitMixedMessages,
   stripDeferredTools,
   isAnthropicModel,
@@ -45,6 +47,16 @@ const blockStart = (index, type) =>
 const blockDelta = (index, text) =>
   block("content_block_delta", { type: "content_block_delta", index, delta: { type: "text_delta", text } });
 const blockStop = (index) => block("content_block_stop", { type: "content_block_stop", index });
+const toolUseStart = (index, id) =>
+  block("content_block_start", {
+    type: "content_block_start", index,
+    content_block: { type: "tool_use", id, name: "Read", input: {} },
+  });
+const toolUseDelta = (index, partial_json) =>
+  block("content_block_delta", {
+    type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json },
+  });
+const ping = () => block("ping", { type: "ping" });
 
 /** Fake `res`: records writes, tracks whether `end()` was called. */
 function fakeRes() {
@@ -60,10 +72,10 @@ function fakeRes() {
 
 /** Run a full stream through the fixer in one shot and return the parsed
  *  output events plus the fixture (res, logs). */
-function runFixer(text) {
+function runFixer(text, seenToolUseIds = new Set()) {
   const res = fakeRes();
   const logs = [];
-  const fixer = createSSEFixer(res, (msg) => logs.push(msg));
+  const fixer = createSSEFixer(res, (msg) => logs.push(msg), seenToolUseIds);
   fixer.processChunk(text);
   fixer.finish();
   const events = res.output()
@@ -258,6 +270,102 @@ test("reassembles an event split across chunk boundaries", () => {
   assert.equal(delta.data.delta.text, "hello world");
 });
 
+// ─── createSSEFixer: tool_use id repair ────────────────────────────
+
+/** The tool_use ids a parsed output stream hands the client, in order. */
+function toolUseIds(events) {
+  return events
+    .filter((e) => e.event === "content_block_start" && e.data.content_block.type === "tool_use")
+    .map((e) => e.data.content_block.id);
+}
+
+/** One response calling Read with the given ids, as a per-turn-numbering
+ *  provider emits it: each call's arguments arrive as one streamed delta. */
+function toolCallStream(ids, lead = []) {
+  return streamText([
+    ...lead,
+    msgStart(),
+    ...ids.flatMap((id, i) => [toolUseStart(i, id), toolUseDelta(i, `{"file_path":"${id}"}`), blockStop(i)]),
+    msgDelta(), msgStop(), done(),
+  ]);
+}
+
+test("renames a tool_use id a later response repeats, and leaves the first use alone", () => {
+  const seen = new Set();
+  const first = runFixer(toolCallStream(["Read:0", "Read:1"]), seen);
+  const second = runFixer(toolCallStream(["Read:0", "Read:2"]), seen);
+
+  assert.deepEqual(toolUseIds(first.events), ["Read:0", "Read:1"]);
+  assert.deepEqual(toolUseIds(second.events), ["Read:0_2", "Read:2"]);
+  assert.deepEqual(first.logs, []);
+  assert.deepEqual(second.logs, ["renamed tool_use id Read:0 to Read:0_2: this run already used it"]);
+});
+
+test("a renamed call keeps its tool name, its input and its streamed arguments", () => {
+  const seen = new Set(["Read:0"]);
+  const { events } = runFixer(toolCallStream(["Read:0"]), seen);
+  const start = events.find((e) => e.event === "content_block_start");
+  assert.deepEqual(start.data.content_block, { type: "tool_use", id: "Read:0_2", name: "Read", input: {} });
+  const delta = events.find((e) => e.event === "content_block_delta");
+  assert.deepEqual(delta.data.delta, { type: "input_json_delta", partial_json: '{"file_path":"Read:0"}' });
+  assert.equal(delta.data.index, start.data.index);
+});
+
+test("a stream that opens with a ping is still repaired", () => {
+  const seen = new Set(["Read:0"]);
+  const { events, logs } = runFixer(toolCallStream(["Read:0"], [ping()]), seen);
+  assert.deepEqual(toolUseIds(events), ["Read:0_2"]);
+  assert.equal(logs.length, 1);
+  assert.equal(events[0].event, "ping", "the held ping reaches the client ahead of the response");
+});
+
+test("a response that dies upstream before replay consumes no id, so its retry is not renamed", () => {
+  const seen = new Set();
+  const res = fakeRes();
+  const dying = createSSEFixer(res, () => {}, seen);
+  dying.processChunk(streamText([msgStart(), toolUseStart(0, "Read:0")]));
+  // No finish(): the upstream connection errored and the client got nothing.
+  assert.deepEqual([...seen], []);
+  const retry = runFixer(toolCallStream(["Read:0"]), seen);
+  assert.deepEqual(toolUseIds(retry.events), ["Read:0"]);
+  assert.deepEqual(retry.logs, []);
+});
+
+test("a rename of a long id still names the issued id on the record", () => {
+  const long = "x".repeat(120);
+  const seen = new Set([long]);
+  const { logs } = runFixer(toolCallStream([long]), seen);
+  assert.equal(logs.length, 1);
+  assert.ok(logs[0].endsWith(`${long} to ${long}_2: this run already used it`), logs[0]);
+});
+
+test("a block index or type carrying a newline cannot forge a second line either", () => {
+  const forged = "0\n[proxy] model-ledger forged";
+  const { logs } = runFixer(streamText([msgStart(), blockStart(forged, "thinking"), blockStart(forged, "thinking"), msgStop()]));
+  assert.ok(logs.length >= 2 && logs.every((line) => !line.includes("\n")), logs.join(" | "));
+});
+
+test("an id carrying a newline cannot forge a second line on the run's record", () => {
+  const hostile = "x\n[proxy] model-ledger forged";
+  const seen = new Set([hostile]);
+  const { logs } = runFixer(toolCallStream([hostile]), seen);
+  assert.equal(logs.length, 1);
+  assert.ok(!logs[0].includes("\n"), logs[0]);
+});
+
+test("a third use of the same id gets a name the run has not used either", () => {
+  const seen = new Set();
+  for (let i = 0; i < 2; i++) runFixer(toolCallStream(["Glob:0"]), seen);
+  const third = runFixer(toolCallStream(["Glob:0"]), seen);
+  assert.deepEqual(toolUseIds(third.events), ["Glob:0_3"]);
+});
+
+test("uniqueToolUseId skips a rename the run already used as an upstream id", () => {
+  const seen = new Set(["Read:0", "Read:0_2"]);
+  assert.equal(uniqueToolUseId("Read:0", seen), "Read:0_3");
+  assert.ok(seen.has("Read:0_3"));
+});
+
 // ─── splitMixedMessages ─────────────────────────────────────────────
 
 test("splits a user message mixing tool_result and text into tool_result-first, then a new text-only user message", () => {
@@ -365,6 +473,12 @@ test("strips host and hop-by-hop headers while passing everything else through, 
   assert.equal(result["transfer-encoding"], undefined);
   assert.equal(result.authorization, "Bearer xyz");
   assert.equal(result["content-type"], "application/json");
+});
+
+test("drops the client's accept-encoding so upstream sends the identity body the repairs read", () => {
+  const result = buildProxyHeaders({ "accept-encoding": "gzip, deflate, br", accept: "text/event-stream" });
+  assert.equal(result["accept-encoding"], undefined);
+  assert.equal(result.accept, "text/event-stream");
 });
 
 test("does not mutate the input headers object", () => {
@@ -515,13 +629,84 @@ test("still writes a held heartbeat through once the stream turns out to be pass
   assert.equal(res.output(), text, "the held heartbeat must reach the client, not be lost");
 });
 
+// ─── start(): the tool_use id record spans the run ─────────────────
+//
+// The fixer renames a repeated id only if every response of the run is
+// checked against one record. That record is created in start() and threaded
+// through proxyRequest, which the unit tests above cannot see, so this drives
+// two completions through a started proxy against a stand-in upstream that
+// numbers its calls per turn.
+
+/** A stand-in OpenRouter that answers every completion with one Read call
+ *  carrying the same tool_use id, the way a per-turn-numbering provider does. */
+function startRepeatingUpstream() {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(streamText([msgStart(), toolUseStart(0, "Read:0"), blockStop(0), msgDelta(), msgStop(), done()]));
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve({
+      url: `http://127.0.0.1:${server.address().port}`,
+      close: () => new Promise((done) => server.close(done)),
+    }));
+  });
+}
+
+/** POST one streaming completion through the proxy and resolve with the
+ *  tool_use ids its response carried. */
+function completion(port) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ model: "vendor/model", messages: [] });
+    const req = http.request({
+      host: "127.0.0.1", port, method: "POST", path: "/v1/messages",
+      headers: { "content-type": "application/json", accept: "text/event-stream", "content-length": Buffer.byteLength(body) },
+    }, (res) => {
+      let data = "";
+      res.on("data", (c) => { data += c; });
+      res.on("end", () => resolve(toolUseIds(data.split("\n\n").filter((s) => s.trim()).map(parseSSEBlock))));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+test("an upstream error body carrying newlines lands on the record as one line", async () => {
+  const server = http.createServer((req, res) => req.resume().on("end", () => res.writeHead(400).end("x\n[proxy] forged\n")));
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const logs = [];
+  const proxy = await start({ port: 0, upstream: `http://127.0.0.1:${server.address().port}`, log: (m) => logs.push(m) });
+  try {
+    await completion(proxy.port);
+    const line = logs.find((l) => l.startsWith("upstream 400"));
+    assert.ok(line && !line.includes("\n") && line.endsWith("— x [proxy] forged"), logs.join(" | "));
+  } finally {
+    await proxy.close();
+    await new Promise((r) => server.close(r));
+  }
+});
+
+test("a tool_use id repeated by a later completion of the same run reaches the client renamed", async () => {
+  const upstream = await startRepeatingUpstream();
+  const proxy = await start({ port: 0, upstream: upstream.url, log: () => {} });
+  try {
+    assert.deepEqual(await completion(proxy.port), ["Read:0"]);
+    assert.deepEqual(await completion(proxy.port), ["Read:0_2"]);
+  } finally {
+    await proxy.close();
+    await upstream.close();
+  }
+});
+
 // ─── proxyRequest: malformed request target survives the process ────
 //
 // Node's HTTP parser accepts absolute-form request targets that WHATWG
-// `URL` rejects outright (e.g. `GET http://[/x`). Before the try/catch guard
-// in proxyRequest, `new URL(clientReq.url, base)` threw an uncaught
-// TypeError and killed the process — and the proxy runs in-process with the
-// launcher, so that would strand the running claude child mid-session.
+// `URL` rejects outright (e.g. `GET http://[/x`). Without the try/catch guard
+// in proxyRequest, `new URL(clientReq.url, base)` throws an uncaught
+// TypeError and kills the process — and the proxy runs in-process with the
+// launcher, so that strands the running claude child mid-session.
 // "Responds 400" and "the process is still alive" are separate claims; this
 // test asserts both, on the same proxy instance, across every malformed
 // shape known to trigger the throw.
@@ -566,9 +751,10 @@ test("rejects a request body over MAX_REQUEST_BODY_BYTES with 413 instead of buf
   // so a smaller body can never exercise it; asserting 413 against a body
   // that cannot reach the cap would be a tautology dressed as a real test.
   // Skip honestly rather than fake the coverage. The guard's wiring —
-  // `bodyBytes > MAX_REQUEST_BODY_BYTES` triggers `proxyReq.destroy()` and a
-  // 413 write, immediately on the `data` event, before `end` — is read
-  // directly from proxy.js's clientReq.on("data", ...) handler.
+  // `bodyBytes > MAX_REQUEST_BODY_BYTES` drops the buffered chunks and writes
+  // a 413, immediately on the `data` event, before `end` and before anything
+  // is dialed — is read directly from proxy.js's clientReq.on("data", ...)
+  // handler and the bodyTooLarge check in adjudicateAndForward.
   t.skip(
     "MAX_REQUEST_BODY_BYTES is 100MB; exercising the cap for real requires " +
     "streaming that many bytes in-process, which is impractical for a unit " +
@@ -604,10 +790,10 @@ test("a normal origin-form request is not rejected by the target-pin, body-size,
 
 // ─── createSSEFixer: multibyte characters split across chunks ───────
 //
-// Before the stateful StringDecoder, each chunk was decoded independently
-// with `chunk.toString()`. A multibyte character straddling a chunk
-// boundary would have its bytes split across two `Buffer.toString()` calls,
-// and each half decodes on its own to the replacement character (U+FFFD),
+// Decoding each chunk independently with `chunk.toString()` splits a
+// multibyte character straddling a chunk boundary across two
+// `Buffer.toString()` calls, and each half decodes on its own to the
+// replacement character (U+FFFD),
 // silently corrupting any non-ASCII model output. These tests split a
 // Buffer mid-character on purpose and assert both that the original text
 // survives AND that no U+FFFD appears — the latter is what actually
@@ -669,11 +855,10 @@ test("reassembles an astral-plane emoji (4-byte UTF-8 surrogate pair) split acro
 
 // ─── createSSEFixer: CRLF-delimited streams ──────────────────────────
 //
-// SSE permits CRLF line endings. Before EVENT_DELIMITER accounted for it,
-// splitting only on "\n\n" left a CRLF stream as one giant unsplit block
-// that never crossed the classifier, so it was forwarded byte-for-byte
-// unrepaired — reproducing the exact empty-result bug (response ending on
-// a reasoning block) this proxy exists to fix.
+// SSE permits CRLF line endings. Splitting only on "\n\n" leaves a CRLF
+// stream as one giant unsplit block that never crosses the classifier, so it
+// is forwarded byte-for-byte unrepaired — the exact empty-result bug
+// (response ending on a reasoning block) this proxy exists to fix.
 
 /** Build a CRLF-delimited SSE stream from the same [event, data] blocks the
  *  LF helpers use, joined with "\r\n\r\n" and each internal line ending in
@@ -981,10 +1166,10 @@ test("describeModel separates a body that named no model from one that named an 
 // an error the caller can read.
 
 /** Send one raw request and hand back both the socket and the response.
- *  Callers expecting a refusal await `response`. Callers testing a request
- *  that gets *forwarded* call `abort()` instead and assert on the log: the
- *  real upstream is not reachable from a test sandbox, and waiting for it to
- *  give up costs a minute per test. */
+ *  Callers expecting a refusal, or a reply from a local stand-in upstream,
+ *  await `response`. Callers forwarding toward the real upstream call
+ *  `abort()` instead and assert on the log: it is not reachable from a test
+ *  sandbox, and waiting for it to give up costs a minute per test. */
 function rawSend(port, method, urlPath, body) {
   const payload = body === null ? "" : body;
   const request =

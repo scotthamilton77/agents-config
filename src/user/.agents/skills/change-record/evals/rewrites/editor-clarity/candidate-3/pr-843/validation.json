@@ -1,0 +1,76 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 17,
+  "actual_replacement_count": 19,
+  "raw_count_matches": false,
+  "questions": [
+    {
+      "field": "/risk/rows/0/evidence",
+      "question": "The failure concerns a reviewer using effort or tools it cannot work with, but the evidence only says tests check that slots have pins. What evidence, if any, supports this failure claim?"
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [
+    {
+      "code": "proposed-count",
+      "path": "/proposed",
+      "message": "the response holds 19 replacements and says the editor proposed 17; an author takes replacements out and adds none"
+    }
+  ],
+  "raw_result_lint": [
+    {
+      "code": "commit-body",
+      "path": "/commit/change",
+      "message": "this section has 5 sentences, and it takes 3 to 4"
+    },
+    {
+      "code": "reply",
+      "path": "/replies/1/change",
+      "message": "the Change line has 3 sentences, and it takes one or two"
+    },
+    {
+      "code": "reply",
+      "path": "/replies/10/change",
+      "message": "the Change line has 3 sentences, and it takes one or two"
+    },
+    {
+      "code": "reply",
+      "path": "/replies/2/change",
+      "message": "the Change line has 3 sentences, and it takes one or two"
+    }
+  ],
+  "introduced_lint": [
+    {
+      "code": "commit-body",
+      "path": "/commit/change",
+      "message": "this section has 5 sentences, and it takes 3 to 4"
+    },
+    {
+      "code": "reply",
+      "path": "/replies/1/change",
+      "message": "the Change line has 3 sentences, and it takes one or two"
+    },
+    {
+      "code": "reply",
+      "path": "/replies/10/change",
+      "message": "the Change line has 3 sentences, and it takes one or two"
+    },
+    {
+      "code": "reply",
+      "path": "/replies/2/change",
+      "message": "the Change line has 3 sentences, and it takes one or two"
+    }
+  ],
+  "resolved_lint": [],
+  "full_apply": "refused",
+  "full_apply_findings": [
+    {
+      "code": "proposed-count",
+      "path": "/proposed",
+      "message": "the response holds 19 replacements and says the editor proposed 17; an author takes replacements out and adds none"
+    }
+  ],
+  "tool_calls": []
+}

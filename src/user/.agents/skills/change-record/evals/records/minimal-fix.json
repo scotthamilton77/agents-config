@@ -1,0 +1,67 @@
+{
+  "pr": {
+    "number": null,
+    "title": "fix(fixture): a made-up record shows the sections a fix body carries [a1.1]",
+    "type": "fix",
+    "component": "fixture",
+    "head_sha": "0000000000000000000000000000000000000000"
+  },
+  "work_item": {
+    "id": "fixture-a1.1",
+    "gloss": "a made-up item that no tracker holds",
+    "slice": "a fixture, which belongs to no item"
+  },
+  "summary": "The renderer's suite had records of one commit type out of twelve, so nothing checked the sections a `fix` body carries. A made-up record of type `fix` now sits among the suite's fixtures, about as small as the lint accepts. No pull request, work item or commit stands behind it.",
+  "heads_up": [
+    "The record is a fixture, and it describes no real change."
+  ],
+  "risk": {
+    "reaches_outside_package": false,
+    "rows": [
+      {
+        "failure": "A reader takes the record for a real change.",
+        "exposed": "Anyone who reads the suite's fixtures.",
+        "evidence": "The summary and the heads-up row both say it is made up.",
+        "recovery": "Delete the record and its golden files."
+      }
+    ]
+  },
+  "changes": [
+    {
+      "topic": "Fixture",
+      "text": "A made-up record of type `fix` renders the sections that type's body carries."
+    }
+  ],
+  "discovered": {
+    "rows": [
+      "None."
+    ]
+  },
+  "verification": {
+    "gates": [],
+    "not_run": [
+      "Every gate, because the record describes no change to run one on."
+    ]
+  },
+  "criteria": [
+    {
+      "id": "CR-R1",
+      "promise": "A small record of type `fix` renders all seven headings.",
+      "evidence": "the heading walk in the renderer's suite"
+    }
+  ],
+  "commit": {
+    "subject": "fix(fixture): a made-up record shows the sections a fix body carries [a1.1]",
+    "trivial": "The record is a fixture, so no change exists to give an account of.",
+    "attribution": {
+      "tool": "Claude Code",
+      "co_author": "Claude Opus 5.5 <noreply@anthropic.com>",
+      "session_key": "Claude-Session",
+      "session_url": "https://claude.ai/code/session_01Lev9kbzWTUGJHXFvpBXBFi"
+    }
+  },
+  "record": {
+    "schema_version": 1,
+    "revision": 0
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "lenses": [
+    {
+      "effort": "high",
+      "lens": "behavioural-outcome",
+      "tier": "frontier",
+      "tools": "read-only-sandbox",
+      "transport": "codex"
+    },
+    {
+      "effort": "high",
+      "lens": "obligation-reduction",
+      "tier": "frontier",
+      "tools": "read-only-sandbox",
+      "transport": "codex"
+    },
+    {
+      "effort": "low",
+      "lens": "set-consistency",
+      "tier": "mid",
+      "tools": [],
+      "transport": "openrouter"
+    },
+    {
+      "effort": "low",
+      "lens": "what-if",
+      "tier": "mid",
+      "tools": [],
+      "transport": "openrouter"
+    }
+  ],
+  "spec_path": "ledger-export.md",
+  "spec_revision": "sha256:4a42c5ca34613a1ba73a16471ec3691c6d1cef63826fab3d301b93847ae34442"
+}

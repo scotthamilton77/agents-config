@@ -1,0 +1,61 @@
+{
+  "response_schema_findings": [],
+  "raw_proposed_count": 40,
+  "actual_replacement_count": 40,
+  "raw_count_matches": true,
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the unchecked use of pinned effort. The caveat must also remain in the summary."
+    },
+    {
+      "field": "/pr/title",
+      "question": "The closing [9k9.408] must stay unchanged, but its first use needs a parenthetical gloss. May the title add the work item's meaning before that closing identifier?"
+    },
+    {
+      "field": "/commit/subject",
+      "question": "The subject needs a parenthetical gloss for [9k9.408] while preserving its closing position and the 100-character cap. May its wording be shortened to make room for the work item's meaning?"
+    },
+    {
+      "field": "/design_notes",
+      "question": "Which files does 'only those files' name in the scenario paragraph, and what do 'staffing recommender', 'trend checkpoint', 'frontier', 'mid', 'artifact class' and 'criteria attack panel' mean? The record does not supply enough definitions for a faithful standalone rewrite of this section."
+    },
+    {
+      "field": "/replies/4/change",
+      "question": "What do the roster's 'tier' and a reviewer's 'pin' mean here? The test name can be glossed as the round-record pin test, but the record does not define the tier categories."
+    },
+    {
+      "field": "/replies/10/change",
+      "question": "What does check_route check? Its meaning is needed for the first-use gloss. Please also allow more than two sentences or approve a single description covering the comment and docstring without losing either assertion."
+    },
+    {
+      "field": "/replies/14/change",
+      "question": "What failures does ROUTE_FAILURES list? The record names transport errors and dead runs elsewhere, but does not explicitly define this identifier."
+    },
+    {
+      "field": "/replies/14/verification",
+      "question": "What does exhausted() do? Its first-use gloss needs an explicit meaning."
+    },
+    {
+      "field": "/replies/15/change",
+      "question": "This section independently asserts the unchanged off-ladder sentence, one sentence per case and no overlap, in addition to the halt-guidance change. May the two-sentence cap be relaxed so these claims can be separated faithfully?"
+    },
+    {
+      "field": "/replies/17/verification",
+      "question": "Separating the independent claims gives 'No test exercises prose. Another reviewer reported the same defect. One change answers both findings.' Together with the unchanged change text, this reply has fewer than 40 words. May the minimum be relaxed rather than adding unsupported content?"
+    },
+    {
+      "field": "/replies/20/change",
+      "question": "Separating the transport rule, its reason and the removed outage narrative requires three sentences. May the two-sentence cap be relaxed, or may one of those claims move to another section?"
+    }
+  ],
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": []
+}

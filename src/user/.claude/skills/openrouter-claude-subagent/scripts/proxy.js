@@ -1,15 +1,16 @@
 // OpenRouter SSE-repair proxy.
 //
-// Forwards Anthropic-protocol traffic to OpenRouter unmodified, with one
-// repair: an assistant response must not END on a `thinking` or
-// `redacted_thinking` block. When it does, Claude Code yields an empty
-// result with exit 0 and no stderr while still billing the tokens. The fix
-// moves the most recent text block to the end of the response.
+// Forwards Anthropic-protocol traffic to OpenRouter unmodified, with two
+// repairs to the response stream. An assistant response must not END on a
+// `thinking` or `redacted_thinking` block: when it does, Claude Code yields an
+// empty result with exit 0 and no stderr while still billing the tokens, so
+// the most recent text block is moved to the end of the response. And every
+// tool_use id must be unique across the run: a repeated one is renamed, see
+// uniqueToolUseId.
 //
-// The repair is deliberately narrow. The evidence supports only the
-// must-not-end-on-reasoning constraint, so blocks are otherwise left in
-// upstream order: the client replays that order back on the next turn, and
-// rewriting it would corrupt the conversation record the model reads.
+// Both repairs are deliberately narrow. Blocks are otherwise left in upstream
+// order: the client replays that order back on the next turn, and rewriting
+// it would corrupt the conversation record the model reads.
 
 const http = require("http");
 const https = require("https");
@@ -27,8 +28,11 @@ const MAX_REQUEST_BODY_BYTES = 100 * 1024 * 1024;
 const SSE_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 // Headers a proxy must own: connection-scoped hop-by-hop headers
-// (RFC 9110 §7.6.1) plus the routing headers rebuilt for the upstream hop.
-const HEADERS_REMOVE = new Set(["host", "x-forwarded-for"]);
+// (RFC 9110 §7.6.1), the routing headers rebuilt for the upstream hop, and
+// the client's accept-encoding. The response repairs read the body as text,
+// which only an identity-encoded stream permits, so upstream is not offered
+// a compression it would otherwise be free to apply.
+const HEADERS_REMOVE = new Set(["host", "x-forwarded-for", "accept-encoding"]);
 const HOP_BY_HOP = new Set([
   "connection", "keep-alive", "proxy-authenticate",
   "proxy-authorization", "te", "trailers",
@@ -289,11 +293,17 @@ function screenModel(model, pinnedModel, userInstructed = false) {
 function describeModel(model) {
   if (model === undefined || model === null) return "none";
   if (model === "") return "(empty)";
-  // A model id is a routing token, not prose. Flattening whitespace stops a
-  // value carrying a newline from forging a second ledger line, and the length
-  // cap stops one from burying the real lines; the ledger is only evidence for
-  // as long as one request means exactly one line.
-  return String(model).replace(/\s+/g, " ").slice(0, 120);
+  return inert(model, 120);
+}
+
+/** A value from the wire, made safe to put on one line of the run's record.
+ *  Flattening whitespace stops a value carrying a newline from forging a
+ *  second line, and the length cap stops one from burying the real lines; the
+ *  record is only evidence for as long as one event means exactly one line.
+ *  A model id is a routing token and fits in 120; a tool_use id or an error
+ *  body is the model's or the provider's own text and gets 1,000. */
+function inert(value, max) {
+  return String(value).replace(/\s+/g, " ").slice(0, max);
 }
 
 /** Anthropic-shaped refusal. The client renders the message verbatim as an API
@@ -310,6 +320,31 @@ function refuse(clientRes, message) {
   clientRes.end(body);
 }
 
+// ─── Tool-use id repair ────────────────────────────────────────────
+
+/** Return `id` if the run has not used it as a tool_use id yet, else a renamed
+ *  one it has not used, and record the result in `seen`.
+ *
+ *  The client pairs a tool_result to its tool_use by id across the whole
+ *  conversation, and it drops a tool_use whose id it has already seen. A turn
+ *  emptied that way is replayed to the model as the placeholder text
+ *  "[Tool use interrupted]", which the model reads as its calls failing; after
+ *  enough of them it gives up and answers with the placeholder itself, and the
+ *  run exits 0 with no report. Some providers number calls per turn — `Read:0`,
+ *  `Read:1`, then `Read:0` again on the next turn — so every turn after the
+ *  first collides.
+ *
+ *  The client replays the renamed id back upstream on later turns, and the
+ *  model accepts any id string, so nothing maps it back. One set serves the
+ *  run: a nested run's ids are renamed against the same set, which is harmless
+ *  for the same reason. */
+function uniqueToolUseId(id, seen) {
+  let candidate = id;
+  for (let n = 2; seen.has(candidate); n++) candidate = `${id}_${n}`;
+  seen.add(candidate);
+  return candidate;
+}
+
 // ─── SSE stream processor ──────────────────────────────────────────
 
 /**
@@ -323,8 +358,11 @@ function refuse(clientRes, message) {
  * message_stop, so a repaired response is assembled in full and replayed —
  * the client sees it at once rather than incrementally. Passthrough streams
  * stream normally.
+ *
+ * `seenToolUseIds` is the run's record of every tool_use id it has handed the
+ * client, shared by every response of the run; see uniqueToolUseId.
  */
-function createSSEFixer(res, log = defaultLog) {
+function createSSEFixer(res, log = defaultLog, seenToolUseIds = new Set()) {
   let buffer = "";
   let mode = "detecting"; // detecting | repair | passthrough
   let sawMessageStop = false;
@@ -341,9 +379,12 @@ function createSSEFixer(res, log = defaultLog) {
    *  lines with no event name at all. */
   function classify(raw, event, data) {
     if (ANTHROPIC_EVENTS.has(event) || ANTHROPIC_EVENTS.has(data?.type)) return "repair";
-    // Blank lines and ":" heartbeats carry no evidence — keep looking.
+    // Blank lines, ":" heartbeats and Anthropic's own ping events carry no
+    // evidence — keep looking. A ping can open a stream, and a stream judged
+    // passthrough on it would be left unrepaired to its end.
     const trimmed = raw.trim();
     if (!trimmed || trimmed.startsWith(":")) return "detecting";
+    if (event === "ping" || data?.type === "ping") return "detecting";
     return "passthrough";
   }
 
@@ -362,7 +403,7 @@ function createSSEFixer(res, log = defaultLog) {
       // index twice. Upstream should never do it; if it does, say so rather
       // than losing content quietly.
       if (blocks.has(data?.index)) {
-        log(`WARNING: duplicate content_block_start at index ${data?.index} — ignoring the repeat`);
+        log(`WARNING: duplicate content_block_start at index ${inert(data?.index, 120)} — ignoring the repeat`);
         return;
       }
       blocks.set(data?.index, {
@@ -375,7 +416,7 @@ function createSSEFixer(res, log = defaultLog) {
     if (event === "content_block_delta") {
       const block = blocks.get(data?.index);
       if (!block) {
-        log(`WARNING: content_block_delta for unstarted index ${data?.index} — dropped`);
+        log(`WARNING: content_block_delta for unstarted index ${inert(data?.index, 120)} — dropped`);
         return;
       }
       block.events.push({ event, data });
@@ -400,12 +441,12 @@ function createSSEFixer(res, log = defaultLog) {
       if (blocks.get(order[i])?.type !== "text") continue;
       const [moved] = order.splice(i, 1);
       order.push(moved);
-      log(`reordered: response ended on ${lastType}; moved trailing text block to the end`);
+      log(`reordered: response ended on ${inert(lastType, 120)}; moved trailing text block to the end`);
       return;
     }
     // Nothing to promote. The response is already broken and the proxy cannot
     // invent content, so it ships as-is with the reason recorded.
-    log(`WARNING: response ends on ${lastType} and contains no text block to promote`);
+    log(`WARNING: response ends on ${inert(lastType, 120)} and contains no text block to promote`);
   }
 
   function emit(event, data, raw) {
@@ -414,6 +455,21 @@ function createSSEFixer(res, log = defaultLog) {
       return;
     }
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+
+  /** A tool_use block's start event with its id made unique for the run. The
+   *  id is recorded here, as it is handed to the client, so a response that
+   *  dies upstream before replay consumes nothing and its retry delivers the
+   *  same id unrenamed. The log line carries the ids as inert text: a tool_use
+   *  id is the provider's own text, and a newline in it would forge a second
+   *  line on the run's record. */
+  function withUniqueToolUseId(data) {
+    const started = data?.content_block;
+    if (started?.type !== "tool_use" || typeof started.id !== "string") return data;
+    const id = uniqueToolUseId(started.id, seenToolUseIds);
+    if (id === started.id) return data;
+    log(`renamed tool_use id ${inert(started.id, 1000)} to ${inert(id, 1000)}: this run already used it`);
+    return { ...data, content_block: { ...started, id } };
   }
 
   /** Emit the assembled response, renumbering block indexes to match their new
@@ -425,7 +481,8 @@ function createSSEFixer(res, log = defaultLog) {
       const block = blocks.get(originalIdx);
       if (!block) return;
       for (const { event, data } of block.events) {
-        emit(event, { ...data, index: position });
+        const out = event === "content_block_start" ? withUniqueToolUseId(data) : data;
+        emit(event, { ...out, index: position });
       }
       emit("content_block_stop", { type: "content_block_stop", index: position });
     });
@@ -514,7 +571,7 @@ function createSSEFixer(res, log = defaultLog) {
 
 // ─── HTTP proxy ────────────────────────────────────────────────────
 
-function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, onForward, upstream }) {
+function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, onForward, upstream, seenToolUseIds }) {
   // The request target must not be able to choose the upstream host. In
   // absolute-form (RFC 9112 §3.2.2) `new URL(target, base)` ignores the base
   // entirely, so `GET http://elsewhere/x` would send this request — carrying
@@ -598,7 +655,7 @@ function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, 
     if (sse && !encoded) {
       // The fixer classifies the stream itself and passes through anything
       // that isn't Anthropic-format, so it is safe to install unconditionally.
-      const fixer = createSSEFixer(clientRes, log);
+      const fixer = createSSEFixer(clientRes, log, seenToolUseIds);
       proxyRes.on("data", fixer.processChunk);
       proxyRes.on("end", fixer.finish);
     } else {
@@ -620,7 +677,7 @@ function proxyRequest(clientReq, clientRes, { log, pinnedModel, userInstructed, 
       });
       proxyRes.on("end", () => {
         const errBody = Buffer.concat(errChunks).toString("utf8");
-        log(`upstream ${proxyRes.statusCode} ${clientReq.method} ${targetUrl.pathname} — ${errBody.trim().slice(0, 1000)}`);
+        log(`upstream ${proxyRes.statusCode} ${clientReq.method} ${targetUrl.pathname} — ${inert(errBody.trim(), 1000)}`);
       });
     }
 
@@ -791,13 +848,17 @@ function start({
   onForward = () => {},
   upstream = null,
 } = {}) {
+  // Every tool_use id this proxy has handed the client, for the life of the
+  // run; see uniqueToolUseId.
+  const seenToolUseIds = new Set();
+
   // The parse guard in proxyRequest covers the one throw we know about. This
   // covers the ones we don't: because the proxy shares a process with the
   // launcher, an unhandled throw here would kill the running claude child
   // too. A failed request must never be able to end the session.
   const server = http.createServer((req, res) => {
     try {
-      proxyRequest(req, res, { log, pinnedModel, userInstructed, onForward, upstream });
+      proxyRequest(req, res, { log, pinnedModel, userInstructed, onForward, upstream, seenToolUseIds });
     } catch (err) {
       log(`request handler error: ${err.message}`);
       if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain" });
@@ -834,6 +895,7 @@ module.exports = {
   modelSlug,
   describeModel,
   createSSEFixer,
+  uniqueToolUseId,
   splitMixedMessages,
   toolResultsCarried,
   stripDeferredTools,

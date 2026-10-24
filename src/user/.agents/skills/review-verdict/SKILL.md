@@ -121,8 +121,7 @@ verdict, and one whose `head_sha` is not the current head is stale and treated a
 
 ## When a round is complete
 
-A `halted` verdict is incomplete by construction. For every other verdict, hand-verify all five
-against the pull request:
+A `halted` verdict is incomplete by construction. Every other verdict must pass all five:
 
 1. **Base sync** — `base_sha` equals the merge base of the branch and its target; a mismatch means
    the reviewer read an unsynced checkout.
@@ -136,9 +135,12 @@ against the pull request:
 
 **Terminal-clean** = a complete, unhalted round carrying zero `mechanical` findings — `verdict`
 `clean`, or `findings` that are all advisory (a blocking-only sweep returning only advisories
-confirmed no blocking defect; they route to the backlog). A halted round is never terminal-clean,
-however few findings it holds. The schema checks
-one artifact's shape; these five compare it against the world, so a person checks them by hand.
+confirmed no blocking defect). A halted round is never terminal-clean, however few findings it
+holds.
+
+`round_status` in `validate_verdict.py` decides both. Its caller supplies the current head, the
+merge base, the pull request's other envelopes and any staffing record. Without one, it reports
+lens coverage as not compared. The caller still checks App authorship and picks the round to judge.
 
 ## Validating
 
@@ -148,9 +150,8 @@ From this directory (without `uv`: `pip install jsonschema`, then run it under `
 uv run validate_verdict.py path/to/verdict.json [--staffing path/to/staffing.json]
 ```
 
-The staffing record is a second positional or the value of `--staffing`. Given one, the validator
-also checks that its bytes hash to the digest the verdict names, and that the reported lenses are
-exactly the set it staffs; given none, it checks the envelope alone.
+The staffing record may also be a second positional. Given one, the validator also checks its
+digest against the verdict's, and lens coverage.
 
 Stdout is JSON: `{"valid": true}` or `{"valid": false, "errors": [{"code", "path", "message"}, …]}`.
 Error codes are `unreadable`, `invalid-json`, `schema`, `duplicate-finding-id`, `duplicate-lens`,
