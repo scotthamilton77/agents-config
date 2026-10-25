@@ -1,0 +1,441 @@
+{
+  "report": {
+    "lens": "obligation-reduction",
+    "objections": [
+      {
+        "ground": {
+          "reason": "The opening checks exercise selected unexpired ages, leaving the remaining ages below 30 minutes unchecked.",
+          "rule": "coverage"
+        },
+        "lens": "obligation-reduction",
+        "objection": "An unused link can fail to show the new-password form during part of its promised lifetime.",
+        "obligation": "O1.2",
+        "scenario": {
+          "expect": "Every criterion passes, but opening the link at 10:15:00 shows an error instead of the new-password form.",
+          "given": "An implementation handles the tested opening times correctly but rejects unused links aged exactly 15 minutes; the link was sent at 10:00:00.",
+          "when": "The user opens the link at 10:15:00."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "A1 checks form availability near expiry, and A2 checks rejection at expiry. Neither checks a successful submission just before expiry.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "The implementation can stop accepting valid password changes before the promised lifetime ends.",
+        "obligation": "O2.2",
+        "scenario": {
+          "expect": "Every criterion passes, but the valid submission leaves the password unchanged.",
+          "given": "An implementation permits the successful submissions exercised by A3 but rejects submissions during the final minute; an unused link was sent at 10:00:00.",
+          "when": "A valid new password is submitted through its form at 10:29:59."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "Checking expiration at exactly 30 minutes does not check continued expiration after that boundary.",
+          "rule": "coverage"
+        },
+        "lens": "obligation-reduction",
+        "objection": "A link can become usable again after the checked expiration instant.",
+        "obligation": "O3.2",
+        "scenario": {
+          "expect": "Every criterion passes, but the opening shows the new-password form.",
+          "given": "An implementation expires links at the checked boundary and in A4's setup but allows an unused link at a later, untested age; the link was sent at 10:00:00.",
+          "when": "The user opens it at that age, more than 30 minutes after sending."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "A2 checks one form-opening time and submission at exactly 30 minutes. Other submissions after expiry remain unchecked.",
+          "rule": "coverage"
+        },
+        "lens": "obligation-reduction",
+        "objection": "An already-open form can change the password after the link's lifetime.",
+        "obligation": "O3.4",
+        "scenario": {
+          "expect": "Every criterion passes, but the account's password changes after expiry.",
+          "given": "An implementation rejects A2's submission at exactly 10:30:00 but accepts a later submission; the link was sent at 10:00:00 and its form opened at 10:29:00.",
+          "when": "The form is submitted at 10:30:01."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "A3 exercises a sequential pair and one simultaneous pair. It does not cover other overlapping schedules or larger groups of submissions.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "Multiple overlapping submissions can each set a password using the same link.",
+        "obligation": "O4.3",
+        "scenario": {
+          "expect": "Every criterion passes, but both submissions set their requested passwords.",
+          "given": "An implementation handles strictly sequential submissions and A3's simultaneous setup correctly, but its consumption check fails when a second request arrives during the first request's unfinished password update.",
+          "when": "Two valid forms from the same link are submitted with staggered, overlapping execution."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "The used-link checks establish the expired page at the exercised reopening points, without checking that this behaviour persists at other times.",
+          "rule": "coverage"
+        },
+        "lens": "obligation-reduction",
+        "objection": "A used link can later show the new-password form again.",
+        "obligation": "O5.2",
+        "scenario": {
+          "expect": "Every criterion passes, but reopening the used link shows the new-password form.",
+          "given": "An implementation shows the expired page in A3 and A4 but forgets the used state at a later, untested time before the link's 30-minute lifetime ends.",
+          "when": "The user reopens the used link at that time."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "A4 checks one button press in each page state. It does not check subsequent presses after returning to the page.",
+          "rule": "coverage"
+        },
+        "lens": "obligation-reduction",
+        "objection": "The button can stop emailing a replacement after its first successful use.",
+        "obligation": "O6.2",
+        "scenario": {
+          "expect": "Every criterion passes, but the second press sends no new email.",
+          "given": "An implementation sends exactly one correctly addressed email on the first press in both A4 setups, then permanently suppresses further sends from that link's expired page.",
+          "when": "The user returns to the expired page and presses \"Send a new link\" again."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "A4 checks token freshness against two earlier tokens. That does not establish freshness for histories containing other earlier tokens.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "A replacement can reuse a token from an older link outside the checked two-token history.",
+        "obligation": "O6.4",
+        "scenario": {
+          "expect": "Every criterion passes, but the replacement email contains a previously issued token.",
+          "given": "An implementation generates fresh tokens in A4's two-earlier-link setups but recycles an older token when the account has at least three earlier links.",
+          "when": "The user presses \"Send a new link\" from an expired or used link in that longer history."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "A5 observes emailed URL strings. No criterion observes whether the mobile app opens reset links itself.",
+          "rule": "coverage"
+        },
+        "lens": "obligation-reduction",
+        "objection": "Correctly shaped emailed links can fail to open in the mobile app.",
+        "obligation": "O8.1",
+        "scenario": {
+          "expect": "Every account-service criterion passes, but the link opens in the browser instead of the mobile app.",
+          "given": "The account service satisfies all five criteria, while the mobile app's reset-link registration is broken.",
+          "when": "A user with the app installed follows an emailed reset link."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "Checking the shape of emitted links does not check the mobile parser's accepted shapes.",
+          "rule": "coverage"
+        },
+        "lens": "obligation-reduction",
+        "objection": "The mobile app can accept reset-link shapes beyond the stated shape.",
+        "obligation": "O8.2",
+        "scenario": {
+          "expect": "Every account-service criterion passes, but the app accepts the alternative path as a reset link.",
+          "given": "The service emits only A5-compliant URLs, while the mobile parser also accepts https://example.com/reset/<token>.",
+          "when": "The alternative URL is delivered to the mobile app."
+        },
+        "target_ac": "none"
+      }
+    ],
+    "report": "objections",
+    "workings": {
+      "obligations": [
+        {
+          "id": "O1",
+          "kind": "result",
+          "statement": "An unused reset link opens the new-password form throughout its lifetime of less than 30 minutes.",
+          "source": "D1: \"A link opens the new-password form ... only while less than 30 minutes have passed since the link was sent.\" D2 supplies the used-link exception.",
+          "parts": [
+            {
+              "id": "O1.1",
+              "statement": "The form opens at the send time and at 29 minutes 59 seconds, and newly emailed replacement links open the form in the two resend setups.",
+              "discharged_by": [
+                "PWR-A1",
+                "PWR-A4"
+              ]
+            },
+            {
+              "id": "O1.2",
+              "statement": "Unused links open the form at the remaining unexpired ages.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O2",
+          "kind": "result",
+          "statement": "A valid form submission from an unused link can set a new password before the 30-minute lifetime ends.",
+          "source": "D1: \"a form opened from it sets a new password, only while less than 30 minutes have passed since the link was sent.\"",
+          "parts": [
+            {
+              "id": "O2.1",
+              "statement": "A password is successfully set in each of the sequential and simultaneous two-form setups opened at 10:05:00.",
+              "discharged_by": [
+                "PWR-A3"
+              ]
+            },
+            {
+              "id": "O2.2",
+              "statement": "Valid submissions in the remaining unexpired cases can set the requested new password, including submissions immediately before expiry.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O3",
+          "kind": "failure",
+          "statement": "At or after 30 minutes, the link cannot open a usable new-password form or set a password; attempts encounter the expired page.",
+          "source": "What changes: \"A reset link stops working 30 minutes after it is sent\" and \"A link that has stopped working shows a page saying so\". D1 limits both opening and submission to less than 30 minutes. D3 specifies \"This link has expired\", a \"Send a new link\" button, and no new-password form.",
+          "parts": [
+            {
+              "id": "O3.1",
+              "statement": "Opening at exactly 30 minutes shows the specified expired page, as does the expired link exercised in the resend setup.",
+              "discharged_by": [
+                "PWR-A1",
+                "PWR-A4"
+              ]
+            },
+            {
+              "id": "O3.2",
+              "statement": "Other openings after the lifetime ends show the specified expired page and no new-password form.",
+              "discharged_by": []
+            },
+            {
+              "id": "O3.3",
+              "statement": "A form opened at 29 minutes and submitted at exactly 30 minutes leaves the password unchanged and returns the expired page.",
+              "discharged_by": [
+                "PWR-A2"
+              ]
+            },
+            {
+              "id": "O3.4",
+              "statement": "The remaining submissions at or after expiry cannot change the password and encounter the expired page.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O4",
+          "kind": "guarantee",
+          "statement": "A reset link sets a new password at most once, including under concurrent submissions.",
+          "source": "D2: \"A link sets a new password at most once, even when two forms opened from it are submitted at the same moment.\"",
+          "parts": [
+            {
+              "id": "O4.1",
+              "statement": "In the checked sequential pair, the second submission cannot replace the first submission's password.",
+              "discharged_by": [
+                "PWR-A3"
+              ]
+            },
+            {
+              "id": "O4.2",
+              "statement": "In the checked simultaneous pair, exactly one submission sets its password and the other receives the expired page.",
+              "discharged_by": [
+                "PWR-A3"
+              ]
+            },
+            {
+              "id": "O4.3",
+              "statement": "Other submission schedules and counts also permit at most one successful password change.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O5",
+          "kind": "failure",
+          "statement": "Once a link has set a password, reopening it shows the specified expired page and no new-password form.",
+          "source": "D2: \"Once it has, opening it again does not show the form.\" D3: \"An expired or used link opens a page showing 'This link has expired' and a 'Send a new link' button, and no new-password form.\"",
+          "parts": [
+            {
+              "id": "O5.1",
+              "statement": "The used link shows the expired page when reopened in the sequential-use setup and before and after the checked resend.",
+              "discharged_by": [
+                "PWR-A3",
+                "PWR-A4"
+              ]
+            },
+            {
+              "id": "O5.2",
+              "statement": "At other reopening times before lifetime expiry, a used link continues to show the expired page.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O6",
+          "kind": "result",
+          "statement": "Pressing the expired page's button emails exactly one replacement link with a new token to the account's address, for either an expired or used link.",
+          "source": "D3: \"Pressing the button emails one new link, carrying a new token, to the account's address.\"",
+          "parts": [
+            {
+              "id": "O6.1",
+              "statement": "The first checked button press from each of the expired-link and used-link pages sends exactly one new email to the account's address.",
+              "discharged_by": [
+                "PWR-A4"
+              ]
+            },
+            {
+              "id": "O6.2",
+              "statement": "Subsequent button presses after returning to either page also email exactly one replacement to the account's address.",
+              "discharged_by": []
+            },
+            {
+              "id": "O6.3",
+              "statement": "In each checked two-earlier-link history, the replacement token differs from both earlier tokens.",
+              "discharged_by": [
+                "PWR-A4"
+              ]
+            },
+            {
+              "id": "O6.4",
+              "statement": "In other token histories, the replacement also carries a new token rather than reusing a previously issued token.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O7",
+          "kind": "guarantee",
+          "statement": "Every emailed reset link has exactly the specified URL shape, including replacements sent from the expired page.",
+          "source": "D4: \"Every reset link the service emails, including one sent from the expired page, has exactly that shape\" \u2014 https://example.com/reset?token=<token>.",
+          "parts": [
+            {
+              "id": "O7.1",
+              "statement": "Links emailed from reset requests and expired-page button presses have the specified origin, path and sole token parameter.",
+              "discharged_by": [
+                "PWR-A5"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "O8",
+          "kind": "guarantee",
+          "statement": "The mobile app opens reset links itself and parses only the specified URL shape.",
+          "source": "D4: \"The mobile app opens reset links itself and parses only the shape https://example.com/reset?token=<token>.\"",
+          "parts": [
+            {
+              "id": "O8.1",
+              "statement": "Reset links open in the mobile app itself.",
+              "discharged_by": []
+            },
+            {
+              "id": "O8.2",
+              "statement": "The mobile app's reset-link parser accepts only the specified URL shape.",
+              "discharged_by": []
+            }
+          ]
+        }
+      ],
+      "criteria": [
+        "PWR-A1",
+        "PWR-A2",
+        "PWR-A3",
+        "PWR-A4",
+        "PWR-A5"
+      ]
+    }
+  },
+  "run": {
+    "transport": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "response_id": "01a12df9-5fc2-7000-92fe-39eb864b1a28",
+    "started": "2026-10-12T02:38:00Z",
+    "isolation": {
+      "cwd": "/private/tmp/codex-cwd-iso.mD6TkB",
+      "agents_md": {},
+      "agents_md_injections": 0
+    }
+  },
+  "decision": {
+    "verdict": "accept",
+    "digests": {
+      "control.md": "418eba3b612afc1d6e53fd0808854fb0af4632ff8b0417d86c0a43dbd43c30c4",
+      "defective.md": "0b28cf2d5b8cadc6e67e23911b9a9d16850dc49f34fbeac78bac9cc2174270b3"
+    },
+    "rejected": [
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "An unused link can fail to show the new-password form during part of its promised lifetime.",
+        "reason": "PWR-A1 opens a link sent at 10:00:00 at 10:00:00, 10:29:59 and 10:30:00. The objection's scenario is a variant of that case, another elapsed time: an opening at 10:15:00, whose specified outcome under D1 is the same, the new-password form. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "The implementation can stop accepting valid password changes before the promised lifetime ends.",
+        "reason": "PWR-A3 submits forms opened at 10:05:00. The objection's scenario is a variant of that case, another elapsed time: a submission in the final minute of the lifetime, whose specified outcome under D1 is the same, the password set. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "A link can become usable again after the checked expiration instant.",
+        "reason": "PWR-A1 opens the link at exactly 10:30:00. The objection's scenario is a variant of that case, another elapsed time: an opening at a later age, whose specified outcome under D1 and D3 is the same, the expired page. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "An already-open form can change the password after the link's lifetime.",
+        "reason": "PWR-A2 submits at exactly 10:30:00 a form opened at 10:29:00. The objection's scenario is a variant of that case, another elapsed time: a later submission, whose specified outcome under D1 is the same, no password set. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "Multiple overlapping submissions can each set a password using the same link.",
+        "reason": "PWR-A3 submits two forms sequentially and, in a second run, at the same moment. The objection's scenario is a variant of that case, another ordering: a second submission arriving during the first's update, whose specified outcome under D2 is the same, exactly one password set. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "A used link can later show the new-password form again.",
+        "reason": "PWR-A3 reopens the used link after the first form sets a password. The objection's scenario is a variant of that case, another elapsed time: a reopening later within the lifetime, whose specified outcome under D2 and D3 is the same, the expired page. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "The button can stop emailing a replacement after its first successful use.",
+        "reason": "PWR-A4 presses \"Send a new link\" once from the page an expired link reaches and once from the page a used link reaches. The objection's scenario is a variant of that case, a further repetition: a second press on the same page, whose specified outcome under D3 is the same, one new link emailed. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "A replacement can reuse a token from an older link outside the checked two-token history.",
+        "reason": "PWR-A4 compares the new token with the two earlier tokens it seeds. The objection's scenario is a variant of that case, another population member: an account with three earlier links, whose specified outcome under D3 is the same, a new token. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "Correctly shaped emailed links can fail to open in the mobile app.",
+        "reason": "PWR-A5 checks the shape of the links in the emails a reset request and a press of \"Send a new link\" send. The objection's scenario turns on the mobile app's link registration, which D4 names as a fact about the app rather than an outcome of this change, for which no decision states an outcome, so it names no stated outcome left unchecked and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "The mobile app can accept reset-link shapes beyond the stated shape.",
+        "reason": "PWR-A5 checks the shape of the links in the emails a reset request and a press of \"Send a new link\" send. The objection's scenario turns on which shapes the mobile app accepts, while D4's stated outcome is the shape of every link the service emails, for which no decision states an outcome, so it names no stated outcome left unchecked and is rejected."
+      }
+    ]
+  },
+  "digests": {
+    "control.md": "418eba3b612afc1d6e53fd0808854fb0af4632ff8b0417d86c0a43dbd43c30c4",
+    "defective.md": "0b28cf2d5b8cadc6e67e23911b9a9d16850dc49f34fbeac78bac9cc2174270b3"
+  }
+}

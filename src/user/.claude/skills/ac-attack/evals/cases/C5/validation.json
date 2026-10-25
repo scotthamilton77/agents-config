@@ -1,0 +1,113 @@
+{
+  "report": {
+    "lens": "obligation-reduction",
+    "objections": [
+      {
+        "ground": {
+          "reason": "TAX-A2 covers a zero-rate change for one region and the reference-corpus orders. It does not establish D3 for other rate changes, regions or orders.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "Checkout can pass every criterion while continuing to use copied rates for cases outside TAX-A2's zero-rate scenario.",
+        "obligation": "O3.2",
+        "scenario": {
+          "expect": "Every criterion passes, but checkout returns tax calculated using the old nonzero rate instead of the changed shared-library rate, violating D3.",
+          "given": "Checkout preserves the captured results and required refusals, and honors the shared library's zero rate for TAX-A2's selected region, but otherwise uses copied pre-change rates.",
+          "when": "The CI checks run, followed by replaying a taxable order against a test library with its region's rate changed to a different nonzero rate."
+        },
+        "target_ac": "none"
+      }
+    ],
+    "report": "objections",
+    "workings": {
+      "obligations": [
+        {
+          "id": "O1",
+          "kind": "guarantee",
+          "statement": "Preserve the captured tax and total, to the cent, for every reference-corpus order.",
+          "source": "D1: \"For each order in the reference corpus, checkout returns the same tax and total, to the cent, as the pre-change service returned for it.\"",
+          "parts": [
+            {
+              "id": "O1.1",
+              "statement": "Every captured request returns its captured tax and total, to the cent.",
+              "discharged_by": [
+                "TAX-A1"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "O2",
+          "kind": "failure",
+          "statement": "Refuse every reference-corpus request when its shipping region is replaced by any two-letter code absent from the tax tables, returning HTTP 422 and unknown_tax_region.",
+          "source": "D2: \"Each reference-corpus request, with its shipping region replaced by a two-letter code that the tax tables do not hold, is still refused with HTTP 422 and the error code `unknown_tax_region`.\"",
+          "parts": [
+            {
+              "id": "O2.1",
+              "statement": "Every reference-corpus request with each unsupported two-letter shipping-region code returns HTTP 422 and unknown_tax_region.",
+              "discharged_by": [
+                "TAX-A3"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "O3",
+          "kind": "result",
+          "statement": "Checkout's tax follows the shared pricing library's tax tables, including reflecting changed regional rates without changing checkout.",
+          "source": "D3: \"Checkout's tax follows the shared pricing library's tax tables. A rate changed in those tables changes the tax checkout returns for orders shipped to that region, with no change to checkout itself.\"",
+          "parts": [
+            {
+              "id": "O3.1",
+              "statement": "Setting TAX-A2's selected region's shared-library rate to zero produces tax of 0.00 for every reference-corpus order shipped there, without changing checkout.",
+              "discharged_by": [
+                "TAX-A2"
+              ]
+            },
+            {
+              "id": "O3.2",
+              "statement": "Checkout follows the shared tax tables in all remaining cases, including other rate changes, changes in other regions, and orders outside the reference corpus.",
+              "discharged_by": []
+            }
+          ]
+        }
+      ],
+      "criteria": [
+        "TAX-A1",
+        "TAX-A2",
+        "TAX-A3"
+      ]
+    }
+  },
+  "run": {
+    "transport": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "response_id": "01a16db6-7fc4-70b2-9543-fb3c3dab23f3",
+    "started": "2026-10-24T11:40:39Z",
+    "isolation": {
+      "cwd": "/private/tmp/codex-cwd-iso.V9JrVg",
+      "agents_md": {},
+      "agents_md_injections": 0
+    }
+  },
+  "decision": {
+    "verdict": "accept",
+    "digests": {
+      "control.md": "c61e304b075eaf19bad4b5ee352172939820689d37683e8fcff449e36443f897",
+      "defective.md": "208dca6073310196813f54dbc4456d0abdef4fb6cedb25a9a72f4fe724edaba2"
+    },
+    "rejected": [
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "Checkout can pass every criterion while continuing to use copied rates for cases outside TAX-A2's zero-rate scenario.",
+        "reason": "TAX-A2 runs the case of a test build of the shared pricing library whose tables set one region's rate to zero, replaying every reference-corpus order shipped to that region and expecting a tax of 0.00. That is D3's stated outcome, the tax checkout returns following the library's tables, checked under that input. The objection's scenario is the same outcome under another input, a nonzero rate in another region, and is a variant of TAX-A2's case. The criteria fix the cases the check runs, so the objection is rejected."
+      }
+    ]
+  },
+  "digests": {
+    "control.md": "c61e304b075eaf19bad4b5ee352172939820689d37683e8fcff449e36443f897",
+    "defective.md": "208dca6073310196813f54dbc4456d0abdef4fb6cedb25a9a72f4fe724edaba2"
+  }
+}
