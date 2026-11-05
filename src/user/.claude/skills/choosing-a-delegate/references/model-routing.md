@@ -13,7 +13,8 @@ and accepted efforts, which is machine-readable and authoritative; `agy models`
 for the Google ids and effort levels, with the context taken from OpenRouter's
 catalog entry for the same model; the Codex CLI's own model list for the OpenAI
 ids, context and effort levels; each vendor's published API list price for the Anthropic and
-OpenAI rows. Vendors reprice and retire models without notice. Refresh the
+OpenAI rows; the Claude API reference for the Anthropic rows' context and effort
+levels. Vendors reprice and retire models without notice. Refresh the
 whole table from those sources and re-date it; never patch one row from memory.
 OpenRouter's listed price for the Kimi and GLM rows is a routed price that
 moves from day to day, so those rows are rounded to the cent and are a guide to
