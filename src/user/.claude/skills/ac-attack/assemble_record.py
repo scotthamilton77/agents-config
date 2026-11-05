@@ -361,11 +361,8 @@ def lens_entry(lens: str, report: dict[str, Any], declared: dict[str, Any] | Non
     return entry
 
 
-def union_lens(lens: str, text: str, declared: dict[str, Any] | None,
-               repairs: list[dict[str, Any]], dropped: list[dict[str, Any]]
-               ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """One lens's entry and its numbered objections, read off its raw output."""
-    report = parse_report(lens, text)
+def report_shape(lens: str, report: dict[str, Any]) -> tuple[str, list[Any]]:
+    """A report's verdict and objections list, refused where the two disagree or name another lens."""
     if "lens" in report and report["lens"] != lens:
         raise drift(lens, f"names itself the {report['lens']!r} lens")
     items = report.get("objections", [])
@@ -375,6 +372,15 @@ def union_lens(lens: str, text: str, declared: dict[str, Any] | None,
         raise drift(lens, "does not say whether it reports objections or reports empty")
     if (verdict == "empty") != (not items):
         raise drift(lens, f"reports {verdict!r} and carries {len(items)} objection(s)")
+    return verdict, items
+
+
+def union_lens(lens: str, text: str, declared: dict[str, Any] | None,
+               repairs: list[dict[str, Any]], dropped: list[dict[str, Any]]
+               ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """One lens's entry and its numbered objections, read off its raw output."""
+    report = parse_report(lens, text)
+    verdict, items = report_shape(lens, report)
     repairs += [{"lens": lens, "change": f"dropped the undeclared report key {key!r}"}
                 for key in sorted(set(report) - set(REPORT_KEYS))]
     if "lens" not in report:
