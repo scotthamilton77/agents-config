@@ -34,8 +34,7 @@ way unless the caller names one. Naming it is this skill's whole job, and the
 name comes from the `choosing-a-delegate` skill's model routing table: take the
 task's tier from its `openai` column. Ask for an effort in the dispatch as
 well, chosen for the task from the model's accepted list: the runtime leaves
-effort unset unless the request states one, and one OpenAI model serves two
-tiers that differ only by the effort you pick. Those rows are captured from the
+effort unset unless the request states one. Those rows are captured from the
 Codex CLI's own model list, which is the authority for which ids exist and
 which effort levels each accepts.
 

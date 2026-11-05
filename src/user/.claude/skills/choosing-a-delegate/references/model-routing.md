@@ -40,7 +40,7 @@ subscription quota is a reason to ask, not a reason to reroute.
 |---|---|---|---|---|
 | `top` | `fable` | `gpt-6-astra` | | |
 | `frontier` | `opus` | `gpt-6.1-sol` | `gemini-4-argon` | `moonshotai/kimi-k3` |
-| `mid` | `sonnet` | `gpt-6.1-sol` | `gemini-3.8-flash` | `z-ai/glm-5.3` |
+| `mid` | `sonnet` | `gpt-6.1-terra` | `gemini-3.8-flash` | `z-ai/glm-5.3` |
 | `cheap` | `haiku` | `gpt-6-luna` | `gemini-3.8-flash` | `z-ai/glm-5.3-flash` |
 
 The tiers are the vocabulary every dispatching skill and rule uses. `top` is
@@ -62,6 +62,7 @@ name one model, the dispatching skill's effort is what separates them.
 | `anthropic` | `haiku` (Claude Haiku 5.5) | $0.10 / $0.50 to 100K input; $0.50 / $2.50 beyond | 1M | `low` `medium` `high` `xhigh` `max` |
 | `openai` | `gpt-6-astra` | $10.00 / $50.00 | 272K | `low` `medium` `high` `xhigh` `max` `ultra` |
 | `openai` | `gpt-6.1-sol` | $2.00 / $10.00 to 272K input; $4.00 / $15.00 beyond | 500K | `low` `medium` `high` `xhigh` `max` `ultra` |
+| `openai` | `gpt-6.1-terra` | $1.00 / $5.00 to 272K input; $2.00 / $7.50 beyond | 500K | `low` `medium` `high` `xhigh` `max` `ultra` |
 | `openai` | `gpt-6-luna` | $0.10 / $0.50 | 272K | `low` `medium` `high` `xhigh` `max` |
 | `google` | `gemini-4-argon` | subscription | 1M | `low` `medium` `high` |
 | `google` | `gemini-3.8-flash` | subscription | 1M | `low` `medium` `high` |
