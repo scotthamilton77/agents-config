@@ -1,0 +1,52 @@
+{
+  "report": {
+    "lens": "what-if",
+    "objections": [
+      {
+        "ground": {
+          "reason": "The failure-path question asked of a killed build: SLS-A3 covers every kill point, but it asserts only on the state after a successful rebuild. SLS-A2 and SLS-A7 assert reports/ stays clean for their own failure modes, yet no criterion checks what reports/ contains in the interval between a kill and the next build. D2 promises a reader sees the old report or the new one, never part of one, and the purpose says finance must never find a partial or mixed report; a kill after the last row but before the atomic replace can leave a staged temp file in reports/, and nothing tests that it is absent or unreadable as a report.",
+          "rule": "what-if-questions"
+        },
+        "lens": "what-if",
+        "objection": "The criteria let through an implementation whose killed build leaves a partial or temp file visible in reports/ until the next rebuild, so finance can find a stray partial artifact for that day, contradicting the stated purpose, with every criterion still passing.",
+        "scenario": {
+          "given": "an existing report for 2026-10-01 and the stub answering normally",
+          "when": "a build for 2026-10-01 is killed after the last row is written but before the report is replaced, and no rebuild has run yet",
+          "expect": "reports/ holds only the old report and no temp or partial file, which no criterion checks"
+        },
+        "target_ac": "SLS-A3"
+      }
+    ],
+    "report": "objections"
+  },
+  "run": {
+    "transport": "openrouter",
+    "model": "moonshotai/kimi-k3",
+    "effort": "low",
+    "response_id": "183b0be1-a7e7-4753-8e34-676fb5e5c37a",
+    "started": "2026-10-24T22:40:06Z",
+    "isolation": {
+      "tools_declared": "",
+      "tool_use_events": 0
+    }
+  },
+  "decision": {
+    "verdict": "accept",
+    "digests": {
+      "control.md": "33de11d0acca05b63b85301e87a1b44979db16c8e88f5c54f0f3beb40991ff23",
+      "defective.md": "f921f3d7d2d788d064779189f94ca4afa95a9b664a8c8b31647a65b8f88c1166"
+    },
+    "rejected": [
+      {
+        "lens": "what-if",
+        "target_ac": "SLS-A3",
+        "objection": "The criteria let through an implementation whose killed build leaves a partial or temp file visible in reports/ until the next rebuild, so finance can find a stray partial artifact for that day, contradicting the stated purpose, with every criterion still passing.",
+        "reason": "SLS-A3 runs the case of a build killed after the last row but before the report was replaced, followed by a new build for that date, with the stated outcome that `reports/` holds the report and no other new file; SLS-A2 runs the write-failure case with the stated outcome that no other file appears in `reports/`. The objection's scenario is SLS-A3's killed build observed at an earlier moment, between the kill and the rebuild, which is a variant in timing of that case. The criteria fix the cases the check runs, so the objection is rejected."
+      }
+    ]
+  },
+  "digests": {
+    "control.md": "33de11d0acca05b63b85301e87a1b44979db16c8e88f5c54f0f3beb40991ff23",
+    "defective.md": "f921f3d7d2d788d064779189f94ca4afa95a9b664a8c8b31647a65b8f88c1166"
+  }
+}

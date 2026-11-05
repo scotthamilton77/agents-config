@@ -236,6 +236,16 @@ def test_a_complete_well_formed_validated_catalogue_passes(evals, catalogue, cap
     assert run(evals, capsys) == (0, {"errors": [], "passed": True})
 
 
+def test_the_committed_catalogue_passes_the_case_check(capsys):
+    """The catalogue beside the check is the one the evaluation runs, so it is held to every check here.
+
+    A document edited after its validation moves off its digests, and this test is what turns that
+    into a red gate rather than a case the scorer later finds unvalidated.
+    """
+    code = check.main([])
+    assert (code, json.loads(capsys.readouterr().out)) == (0, {"errors": [], "passed": True})
+
+
 def test_a_case_the_table_does_not_list_is_held_to_every_other_check(evals, catalogue, capsys):
     harvested = {**manifest_entry(TABLE[0]), "id": "H1", "serves": [], "child": "none",
                  "source_revision": "abc1234"}

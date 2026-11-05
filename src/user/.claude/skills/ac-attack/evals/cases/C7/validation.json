@@ -1,0 +1,415 @@
+{
+  "report": {
+    "lens": "obligation-reduction",
+    "objections": [
+      {
+        "ground": {
+          "reason": "The sampled ages and fixtures do not cover every eligible page. The promise is: \"An archiving run archives every stale page.\"",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "A run can process at most seven pages and pass every criterion while leaving additional stale pages unarchived.",
+        "obligation": "O1.2",
+        "scenario": {
+          "expect": "The eighth stale page remains searchable without an archive banner, while every criterion passes on its smaller fixture.",
+          "given": "An implementation processes at most seven pages per run; a wiki contains eight stale pages.",
+          "when": "The archiving run runs."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "Two search probes do not cover every query. D2 promises: \"An archived page appears in no search result, whether the query matches its title or its content\".",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "Archived pages can leak through a search query that the criteria do not exercise.",
+        "obligation": "O2.2",
+        "scenario": {
+          "expect": "The archived page appears in the results, although every criterion's title and selected content-phrase searches pass.",
+          "given": "An implementation excludes archived pages for the tested queries but omits that filter for another matching content query.",
+          "when": "A reader searches using that other query."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "The URL probes cover the seeded pages. D2 promises that an archived page's \"URL returns HTTP 200 with the banner \\\"This page is archived and may be out of date.\\\" above its content\".",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "Other archived pages can become unreadable while all tested pages remain readable.",
+        "obligation": "O3.2",
+        "scenario": {
+          "expect": "The URL returns HTTP 404; every criterion passes because its seeded pages are below the size limit.",
+          "given": "An implementation's archived-page handler fails for content larger than any seeded test page.",
+          "when": "A reader opens the URL of such an archived page."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "The checks cover particular nonarchived pages and queries. D2 promises: \"A page that is not archived appears in search for its title and its content, and its URL shows no banner.\"",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "Nonarchived pages outside the fixtures can fail to appear in matching searches.",
+        "obligation": "O4.2",
+        "scenario": {
+          "expect": "The nonarchived page is absent from a matching content search, while all seeded search checks pass.",
+          "given": "An implementation indexes content only up to a length exceeding every seeded page's content; a nonarchived page contains matching text beyond that limit.",
+          "when": "A reader searches for that text."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "One restore scenario does not cover every archived page and restoration time. D3 promises: \"Pressing Restore on an archived page makes it not archived\".",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "Restore can stop working after a page has been archived longer than the tested fixture.",
+        "obligation": "O5.2",
+        "scenario": {
+          "expect": "The page remains archived after Restore is pressed; every criterion passes because the tested restoration occurs before the timeout.",
+          "given": "An implementation refuses restoration after an elapsed-time limit longer than the interval exercised by WIK-A3.",
+          "when": "An editor presses Restore on a page archived beyond that limit."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "The two post-restore run times establish only two consequences. D3 promises: \"the restore counts as an edit of the page at that moment for D1\".",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "An implementation can reproduce the tested restore deadlines without treating the restore as an edit for other archiving times.",
+        "obligation": "O6.2",
+        "scenario": {
+          "expect": "The page is archived one day after restoration, violating D1; all criteria pass, including WIK-A3's two specified deadlines.",
+          "given": "An implementation restores immediately but subsequently uses the old last-edit time, with special handling that produces the required outcomes exactly 365 days and 365 days plus one second after restoration.",
+          "when": "An archiving run occurs one day after restoration."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "WIK-A2 checks URL preservation for its initial two-page run. D4 promises: \"Archiving a page leaves its URL ... unchanged\" without limiting the page or run.",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "A later archiving run can change a page's URL while every criterion passes.",
+        "obligation": "O7.2",
+        "scenario": {
+          "expect": "The page's URL changes during the later run; all criteria pass because their immediate reruns do not trigger the change.",
+          "given": "An implementation rewrites an archived page's URL when another archiving run occurs at least a day later, preserving its content and revisions.",
+          "when": "The later archiving run runs."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "The preservation check covers pages with one and five revisions. D4 promises: \"Archiving a page leaves ... its content and its revision list unchanged\".",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "Archiving can corrupt revision histories with an untested revision count.",
+        "obligation": "O8.2",
+        "scenario": {
+          "expect": "The older revision disappears, while every criterion passes because preservation is checked only for the one-revision and five-revision pages.",
+          "given": "An implementation drops the oldest revision when initially archiving a page with exactly two revisions, but preserves its content and archive behaviour.",
+          "when": "The archiving run archives that page."
+        },
+        "target_ac": "none"
+      },
+      {
+        "ground": {
+          "reason": "An immediate second run does not cover later runs at other times. D4 promises: \"a later archiving run over a page already archived leaves its content and its revision list unchanged\".",
+          "rule": "sufficiency"
+        },
+        "lens": "obligation-reduction",
+        "objection": "A delayed rerun can modify an already archived page's revision list.",
+        "obligation": "O9.2",
+        "scenario": {
+          "expect": "An audit revision is appended, violating preservation; every criterion passes because the preservation reruns are immediate.",
+          "given": "An implementation leaves immediate reruns unchanged but appends a revision when an already archived page is processed on a later day.",
+          "when": "An archiving run processes that page the following day."
+        },
+        "target_ac": "none"
+      }
+    ],
+    "report": "objections",
+    "workings": {
+      "obligations": [
+        {
+          "id": "O1",
+          "kind": "result",
+          "statement": "Archiving applies archived treatment to every page whose last edit is more than 365 days before the run, preserves nonarchived treatment for pages at or below that boundary, and does not treat viewing as an edit.",
+          "source": "\"An archiving run archives every stale page.\" D1: \"A page is stale when its last edit is more than 365 days before the archiving run. Viewing a page is not an edit, so a page viewed recently but not edited is still stale.\"",
+          "parts": [
+            {
+              "id": "O1.1",
+              "statement": "The seven-page age fixture, including its recently viewed stale page, produces the specified eligibility outcomes under the title-search, content-phrase-search and URL probes on the initial and immediate second runs; the restored-page fixture produces those outcomes at the two specified post-restore boundaries.",
+              "discharged_by": [
+                "WIK-A1",
+                "WIK-A3"
+              ]
+            },
+            {
+              "id": "O1.2",
+              "statement": "The same eligibility rule holds in all remaining cases, including other ages, edit and viewing histories, wiki sizes and run intervals.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O2",
+          "kind": "guarantee",
+          "statement": "An archived page appears in no search result for any query matching its title or content.",
+          "source": "D2: \"An archived page appears in no search result, whether the query matches its title or its content\".",
+          "parts": [
+            {
+              "id": "O2.1",
+              "statement": "Archived pages exercised by WIK-A1 and WIK-A3 are absent from the specified title and selected content-phrase searches at the checked times.",
+              "discharged_by": [
+                "WIK-A1",
+                "WIK-A3"
+              ]
+            },
+            {
+              "id": "O2.2",
+              "statement": "Archived pages are absent from all remaining matching searches, including other queries against tested pages and searches against other archived pages.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O3",
+          "kind": "guarantee",
+          "statement": "An archived page remains readable at its URL, which returns HTTP 200 and displays the exact archive banner above its content.",
+          "source": "\"An archived page drops out of search and stays readable at its URL under a banner.\" D2: \"its URL returns HTTP 200 with the banner \\\"This page is archived and may be out of date.\\\" above its content\".",
+          "parts": [
+            {
+              "id": "O3.1",
+              "statement": "Archived pages exercised by WIK-A1 and WIK-A3 return HTTP 200 with readable content and the exact banner above it at the checked times.",
+              "discharged_by": [
+                "WIK-A1",
+                "WIK-A3"
+              ]
+            },
+            {
+              "id": "O3.2",
+              "statement": "The same archived-URL behaviour holds for all other archived pages and access times.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O4",
+          "kind": "guarantee",
+          "statement": "A nonarchived page appears in searches matching its title and content and shows no archive banner at its URL.",
+          "source": "D2: \"A page that is not archived appears in search for its title and its content, and its URL shows no banner.\"",
+          "parts": [
+            {
+              "id": "O4.1",
+              "statement": "Nonarchived pages exercised by WIK-A1 and WIK-A3 appear in the specified title and selected content-phrase searches and show no archive banner at the checked times.",
+              "discharged_by": [
+                "WIK-A1",
+                "WIK-A3"
+              ]
+            },
+            {
+              "id": "O4.2",
+              "statement": "The same nonarchived search and banner behaviour holds for all remaining pages, matching queries and access times.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O5",
+          "kind": "result",
+          "statement": "An editor can press an archived page's Restore button to make the page nonarchived.",
+          "source": "\"An editor restores an archived page with its Restore button.\" D3: \"Pressing Restore on an archived page makes it not archived\".",
+          "parts": [
+            {
+              "id": "O5.1",
+              "statement": "Pressing Restore in WIK-A3's archived-page fixture immediately produces nonarchived outcomes under the specified search and URL probes.",
+              "discharged_by": [
+                "WIK-A3"
+              ]
+            },
+            {
+              "id": "O5.2",
+              "statement": "Restore produces nonarchived treatment in all remaining restoration cases and for D2 observations beyond the tested probes.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O6",
+          "kind": "result",
+          "statement": "Restoration counts as a page edit at the moment of restoration when determining staleness.",
+          "source": "D3: \"the restore counts as an edit of the page at that moment for D1\".",
+          "parts": [
+            {
+              "id": "O6.1",
+              "statement": "For WIK-A3's restored-page fixture, an archiving run exactly 365 days after restoration leaves the page nonarchived under the specified probes, and a run 365 days plus one second after restoration produces archived outcomes under those probes.",
+              "discharged_by": [
+                "WIK-A3"
+              ]
+            },
+            {
+              "id": "O6.2",
+              "statement": "Restoration acts as an edit at its actual moment for every remaining staleness determination, including other elapsed times and subsequent edit histories.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O7",
+          "kind": "guarantee",
+          "statement": "Archiving preserves the page's URL.",
+          "source": "D4: \"Archiving a page leaves its URL ... unchanged\".",
+          "parts": [
+            {
+              "id": "O7.1",
+              "statement": "The initial archiving run preserves the URLs of WIK-A2's two 366-day-old pages with one and five revisions.",
+              "discharged_by": [
+                "WIK-A2"
+              ]
+            },
+            {
+              "id": "O7.2",
+              "statement": "URL preservation holds for every remaining archiving case, including later runs over already archived pages.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O8",
+          "kind": "guarantee",
+          "statement": "Initially archiving a page preserves its content and revision list.",
+          "source": "D4: \"Archiving a page leaves ... its content and its revision list unchanged\".",
+          "parts": [
+            {
+              "id": "O8.1",
+              "statement": "Initially archiving WIK-A2's two 366-day-old pages with one and five revisions leaves their content and revision lists byte-identical through the page API.",
+              "discharged_by": [
+                "WIK-A2"
+              ]
+            },
+            {
+              "id": "O8.2",
+              "statement": "Initial archiving preserves content and revision lists for all other pages and histories.",
+              "discharged_by": []
+            }
+          ]
+        },
+        {
+          "id": "O9",
+          "kind": "guarantee",
+          "statement": "An archiving run over an already archived page preserves its content and revision list.",
+          "source": "D4: \"a later archiving run over a page already archived leaves its content and its revision list unchanged\".",
+          "parts": [
+            {
+              "id": "O9.1",
+              "statement": "The immediate second run over WIK-A2's two archived pages leaves their content and revision lists byte-identical through the page API.",
+              "discharged_by": [
+                "WIK-A2"
+              ]
+            },
+            {
+              "id": "O9.2",
+              "statement": "Content and revision-list preservation holds for all other runs over already archived pages, including delayed reruns.",
+              "discharged_by": []
+            }
+          ]
+        }
+      ],
+      "criteria": [
+        "WIK-A1",
+        "WIK-A2",
+        "WIK-A3"
+      ]
+    }
+  },
+  "run": {
+    "transport": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "response_id": "01a12df1-264a-7680-9a85-835703710c1c",
+    "started": "2026-10-12T02:29:01Z",
+    "isolation": {
+      "cwd": "/private/tmp/codex-cwd-iso.TpO2SZ",
+      "agents_md": {},
+      "agents_md_injections": 0
+    }
+  },
+  "decision": {
+    "verdict": "accept",
+    "digests": {
+      "control.md": "ce528a98e23680ed210e94724c3a9327ee85e502cfc202c0d2d544dac03a01fe",
+      "defective.md": "3ffe19cbd14055a05fee68bd29ce2e9c48abe19f8b5763eecde605719aa0840a"
+    },
+    "rejected": [
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "A run can process at most seven pages and pass every criterion while leaving additional stale pages unarchived.",
+        "reason": "WIK-A1 runs one archiving run, then a second, over a seven-page wiki, checking each page by a title search, a search for one content phrase and an open of its URL. The objection's scenario is a variant of that case, another population member: an eighth stale page, whose specified outcome under D1 and D2 is the same, archived. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "Archived pages can leak through a search query that the criteria do not exercise.",
+        "reason": "WIK-A1 runs one archiving run, then a second, over a seven-page wiki, checking each page by a title search, a search for one content phrase and an open of its URL. The objection's scenario is a variant of that case, another input: another query matching an archived page, whose specified outcome under D2 is the same, no result. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "Other archived pages can become unreadable while all tested pages remain readable.",
+        "reason": "WIK-A1 runs one archiving run, then a second, over a seven-page wiki, checking each page by a title search, a search for one content phrase and an open of its URL. The objection's scenario is a variant of that case, another population member: an archived page with larger content, whose specified outcome under D2 is the same, HTTP 200 with the banner. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "Nonarchived pages outside the fixtures can fail to appear in matching searches.",
+        "reason": "WIK-A1 runs one archiving run, then a second, over a seven-page wiki, checking each page by a title search, a search for one content phrase and an open of its URL. The objection's scenario is a variant of that case, another population member: an unarchived page with matching text beyond the seeded lengths, whose specified outcome under D2 is the same, found by a search for its content. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "Restore can stop working after a page has been archived longer than the tested fixture.",
+        "reason": "WIK-A3 restores one page archived by a run, then runs archiving runs exactly 365 days and 365 days and one second after the restore. The objection's scenario is a variant of that case, another elapsed time: a restore after the page has been archived longer, whose specified outcome under D3 is the same, not archived. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "An implementation can reproduce the tested restore deadlines without treating the restore as an edit for other archiving times.",
+        "reason": "WIK-A3 restores one page archived by a run, then runs archiving runs exactly 365 days and 365 days and one second after the restore. The objection's scenario is a variant of that case, another elapsed time: a run one day after the restore, whose specified outcome under D1 and D3 is the same, not archived. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "A later archiving run can change a page's URL while every criterion passes.",
+        "reason": "WIK-A2 archives pages with one revision and with five, then runs a second archiving run immediately afterwards. The objection's scenario turns on a URL change on a later run, while D4 states the later-run outcome only for content and revision list, for which no decision states an outcome, so it names no stated outcome left unchecked and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "Archiving can corrupt revision histories with an untested revision count.",
+        "reason": "WIK-A2 archives pages with one revision and with five, then runs a second archiving run immediately afterwards. The objection's scenario is a variant of that case, another population member: a page with two revisions, whose specified outcome under D4 is the same, content and revision list unchanged. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      },
+      {
+        "lens": "obligation-reduction",
+        "target_ac": "none",
+        "objection": "A delayed rerun can modify an already archived page's revision list.",
+        "reason": "WIK-A2 archives pages with one revision and with five, then runs a second archiving run immediately afterwards. The objection's scenario is a variant of that case, another elapsed time: a repeat run on a later day, whose specified outcome under D4 is the same, content and revision list unchanged. The criteria fix the cases the check runs, so the objection is a variant and is rejected."
+      }
+    ]
+  },
+  "digests": {
+    "control.md": "ce528a98e23680ed210e94724c3a9327ee85e502cfc202c0d2d544dac03a01fe",
+    "defective.md": "3ffe19cbd14055a05fee68bd29ce2e9c48abe19f8b5763eecde605719aa0840a"
+  }
+}

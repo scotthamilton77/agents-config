@@ -1,0 +1,52 @@
+{
+  "report": {
+    "lens": "what-if",
+    "objections": [
+      {
+        "ground": {
+          "reason": "what-if-it-fails: the failing-audit path (exit 1) pins stdout and exit status, but the integration suite asserts on stderr for every criterion and no criterion or decision states what stderr holds when advisories are found. The document neither requires stderr to be empty nor permits content, leaving the test to encode an arbitrary choice.",
+          "rule": "what-if-questions"
+        },
+        "lens": "what-if",
+        "objection": "The criteria let through a command that prints diagnostics to stderr on the exit-1 path (or one that must keep stderr silent there), with nothing deciding which behaviour is correct even though every test asserts on stderr.",
+        "scenario": {
+          "expect": "stderr's expected content for the exit-1 outcome, which no criterion states, so the test's assertion on stderr is undetermined by the document",
+          "given": "a deps.lock pinning left-pad@1.0.0 and the stub answering one high advisory ADV-17",
+          "when": "deps audit runs and finds the advisory"
+        },
+        "target_ac": "AUD-A1"
+      }
+    ],
+    "report": "objections"
+  },
+  "run": {
+    "transport": "openrouter",
+    "model": "moonshotai/kimi-k3",
+    "effort": "low",
+    "response_id": "e0ce6757-09e6-4997-92dc-53f970f7d5ff",
+    "started": "2026-10-24T22:41:58Z",
+    "isolation": {
+      "tools_declared": "",
+      "tool_use_events": 0
+    }
+  },
+  "decision": {
+    "verdict": "accept",
+    "digests": {
+      "control.md": "f8d5fb3cdd0a3a94686118de0c765cef656af81d3e2723a1bee5b41db93cf239",
+      "defective.md": "255173e6dc9ad742848855236166e245d4e1c6efbd1bd837772401fc8c5a5a86"
+    },
+    "rejected": [
+      {
+        "lens": "what-if",
+        "target_ac": "AUD-A1",
+        "objection": "The criteria let through a command that prints diagnostics to stderr on the exit-1 path (or one that must keep stderr silent there), with nothing deciding which behaviour is correct even though every test asserts on stderr.",
+        "reason": "No decision in the document promises anything about stderr when advisories are found: D1 fixes the exit status and D2 fixes stdout, and AUD-A1 observes both under one high advisory. The sentence that the suite asserts on stderr describes the tests' method, not an outcome the command commits to. The objection names no decision's stated outcome that a criterion leaves unobserved; it asks for a criterion on a behaviour the document does not promise, which the standard does not require, and is rejected."
+      }
+    ]
+  },
+  "digests": {
+    "control.md": "f8d5fb3cdd0a3a94686118de0c765cef656af81d3e2723a1bee5b41db93cf239",
+    "defective.md": "255173e6dc9ad742848855236166e245d4e1c6efbd1bd837772401fc8c5a5a86"
+  }
+}
