@@ -17,7 +17,9 @@ import importlib.util
 import json
 import os
 import signal
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -290,6 +292,30 @@ class TestExecute:
         assert fake.calls == ["r1"]
         assert reports(plan) == {}
 
+    def test_a_launcher_signalled_from_outside_stops_the_walk(self, attempt):
+        plan = attempt(planned("r1", transport="openrouter"))
+        signalled = {**DEAD, "exit": 75, "stderr": "[run] reason=signal\n", "capped": False}
+        with pytest.raises(run_plan.TransportDown):
+            run_plan.execute(plan, Fake(signalled, GOOD))
+        assert reports(plan) == {}
+
+    def test_a_launcher_ended_by_the_executors_own_cap_spends_a_repeat(self, attempt):
+        plan = attempt(planned("r1", transport="openrouter"))
+        capped = {**DEAD, "exit": 75, "stderr": "[run] reason=signal\nkilled at the cap\n",
+                  "capped": True}
+        fake = Fake(capped, GOOD)
+        run_plan.execute(plan, fake)
+        assert fake.calls == ["r1", "r1"]
+        assert reports(plan)["r1.1.json"]["usable"] is False
+
+    def test_a_model_the_launcher_refused_stops_the_walk(self, attempt):
+        plan = attempt(planned("r1", transport="openrouter"))
+        denied = {**DEAD, "stderr": "[proxy] model-ledger POST /api/v1/messages "
+                                    "model=vendor/model decision=deny-pin\n"}
+        with pytest.raises(run_plan.TransportDown):
+            run_plan.execute(plan, Fake(denied, GOOD))
+        assert reports(plan) == {}
+
     def test_a_refused_launcher_invocation_stops_the_walk(self, attempt):
         plan = attempt(planned("r1", transport="openrouter"))
         refused = {**DEAD, "exit": 78, "stderr": "[run] OPENROUTER_API_KEY is not set\n"}
@@ -470,6 +496,7 @@ class TestCap:
         result = run_plan.run_capped(["sh", "-c", script], tmp_path, dict(os.environ), None,
                                      cap=0.5, grace=0.2)
         assert result["exit"] != 0
+        assert result["capped"] is True
         assert "cap" in result["stderr"]
         for pid in map(int, pids.read_text().split()):
             with pytest.raises(ProcessLookupError):
@@ -495,14 +522,47 @@ class TestCap:
             with pytest.raises(ProcessLookupError):
                 os.kill(pid, 0)
 
-    def test_the_command_line_turns_the_term_signal_into_an_exit_that_cleans_up(self):
-        previous = signal.getsignal(signal.SIGTERM)
+    def test_an_interrupt_during_the_grace_period_still_kills_the_transport(self, tmp_path):
+        pids = tmp_path / "pids"
+        script = f"trap '' TERM; sleep 30 & echo $$ $! > {pids}; wait; sleep 30"
+
+        def interrupt(*_):
+            raise KeyboardInterrupt
+
+        previous = signal.signal(signal.SIGALRM, interrupt)
+        # The cap ends at 0.3 seconds, and the interrupt lands inside the five-second grace period.
+        signal.setitimer(signal.ITIMER_REAL, 1.0)
         try:
-            run_plan.exit_on_term()
-            with pytest.raises(SystemExit):
-                signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+            with pytest.raises(KeyboardInterrupt):
+                run_plan.run_capped(["sh", "-c", script], tmp_path, dict(os.environ), None,
+                                    cap=0.3, grace=5)
         finally:
-            signal.signal(signal.SIGTERM, previous)
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+        for pid in map(int, pids.read_text().split()):
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)
+
+    def test_a_term_signal_to_the_executor_kills_the_transport_before_it_exits(self, tmp_path):
+        pids = tmp_path / "pids"
+        script = f"sleep 30 & echo $$ $! > {pids}; wait"
+        driver = (
+            "import os, sys, importlib.util\n"
+            f"spec = importlib.util.spec_from_file_location('run_plan', {str(HERE / 'run_plan.py')!r})\n"
+            "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n"
+            "module.exit_on_term()\n"
+            f"module.run_capped(['sh', '-c', {script!r}], {str(tmp_path)!r}, dict(os.environ), None, cap=60, grace=1)\n"
+        )
+        child = subprocess.Popen([sys.executable, "-c", driver])
+        deadline = time.monotonic() + 30
+        while not pids.exists() or not pids.read_text().strip():
+            assert time.monotonic() < deadline and child.poll() is None
+            time.sleep(0.05)
+        child.send_signal(signal.SIGTERM)
+        assert child.wait(timeout=30) == 128 + signal.SIGTERM
+        for pid in map(int, pids.read_text().split()):
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)
 
     def test_a_run_at_the_cap_gets_the_term_signal_first(self, tmp_path):
         script = "trap 'echo closing; exit 0' TERM; sleep 30 & wait"
@@ -514,6 +574,7 @@ class TestCap:
         result = run_plan.run_capped(["sh", "-c", "echo out; echo err >&2; exit 4"], tmp_path,
                                      dict(os.environ), None, cap=30)
         assert (result["output"], result["stderr"], result["exit"]) == ("out\n", "err\n", 4)
+        assert result["capped"] is False
         assert result["started"].endswith("Z") and result["ended"].endswith("Z")
 
 

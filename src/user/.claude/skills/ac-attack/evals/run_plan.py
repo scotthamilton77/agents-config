@@ -53,10 +53,13 @@ REQUIRED_KEYS = ("run_id", "case", "document", "lens", "transport", "model", "ef
 # capacity, and the launcher's proxy with a line about the upstream: spent credits, a refused
 # connection, a timeout or a stream cut short. Only the tail of stderr is read, since Codex echoes
 # the whole prompt there and a document may hold these words.
-DOWN = re.compile(r"usage limit|at capacity|\[proxy\] (WARNING: )?upstream")
-# The launcher exits with this status when it refuses the invocation itself, such as a missing key.
-# Another dispatch would be refused the same way, so it stops the walk too.
+DOWN = re.compile(r"usage limit|at capacity|\[proxy\] (WARNING: )?upstream|decision=deny-")
+# The launcher exits 78 when it refuses the invocation itself, such as a missing key, and another
+# dispatch would be refused the same way. It exits 75 when it was signalled. The executor passes it
+# no clock, so a signal that is not the executor's own cap came from outside, and the operator who
+# sent it is the one to say when the walk goes on. Both stop the walk.
 LAUNCHER_REFUSED = 78
+LAUNCHER_SIGNALLED = 75
 STDERR_TAIL_LINES = 20
 # A lens run takes minutes on either transport, so a run past these is dead rather than slow. The
 # next dispatch of the run is what recovers it.
@@ -215,6 +218,14 @@ def _stderr_tail(stderr: str) -> str:
     return "\n".join(stderr.splitlines()[-STDERR_TAIL_LINES:])
 
 
+def _not_served(result: dict[str, Any]) -> bool:
+    """Whether the transport, rather than the lens, is why this dispatch has no report."""
+    if result["exit"] == 0 or result.get("capped"):
+        return False
+    return (result["exit"] in (LAUNCHER_REFUSED, LAUNCHER_SIGNALLED)
+            or bool(DOWN.search(_stderr_tail(result["stderr"]))))
+
+
 def report_of(run: dict[str, Any], number: int, result: dict[str, Any]) -> dict[str, Any]:
     """The report one dispatch leaves: the planned run, the lens's report and the transport's run."""
     parsed = read_report(run["lens"], result["output"])
@@ -264,7 +275,7 @@ def execute(plan: Path, dispatch: Dispatch | None = None) -> dict[str, list[str]
                 prompt = emit_prompt(run, Path(workspace))
                 result = (dispatch or TRANSPORTS[run["transport"]])(run, prompt)
             tail = _stderr_tail(result["stderr"])
-            if result["exit"] == LAUNCHER_REFUSED or (result["exit"] != 0 and DOWN.search(tail)):
+            if _not_served(result):
                 raise TransportDown(f"{run['transport']} is down at run {name!r}: {tail}")
             report = report_of(run, number, result)
             _write_report(reports / f"{name}.{number}.json", report)
@@ -299,35 +310,40 @@ def run_capped(command: list[str], cwd: Path, env: dict[str, str], stdin: Path |
                                    start_new_session=True)
         capped = False
         try:
-            process.wait(timeout=cap)
-        except subprocess.TimeoutExpired:
-            capped = True
+            try:
+                process.wait(timeout=cap)
+            except subprocess.TimeoutExpired:
+                capped = True
+        finally:
+            # Also reached on an interrupt, and after a clean exit, where it ends any child the
+            # transport left behind in its group.
             _stop(process, grace)
-        except BaseException:
-            _stop(process, grace)
-            raise
         out.seek(0)
         err.seek(0)
         output = out.read().decode("utf-8", errors="replace")
         stderr = err.read().decode("utf-8", errors="replace")
     if capped:
         stderr += f"\nkilled at the cap of {cap} seconds\n"
-    return {"output": output, "stderr": stderr, "exit": process.returncode, "started": started,
-            "ended": _now()}
+    return {"output": output, "stderr": stderr, "exit": process.returncode, "capped": capped,
+            "started": started, "ended": _now()}
 
 
 def _stop(process: subprocess.Popen, grace: float) -> None:
-    """Ask the process group to end, give it the grace period, then kill whatever is left."""
-    for sent in (signal.SIGTERM, signal.SIGKILL):
+    """Ask the process group to end, give it the grace period, then kill whatever is left.
+
+    The kill sits in a `finally`, so an interrupt arriving during the grace period still reaches it.
+    """
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=grace)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        pass
+    finally:
         try:
-            os.killpg(process.pid, sent)
+            os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
-            break
-        try:
-            process.wait(timeout=grace)
-        except subprocess.TimeoutExpired:
             pass
-    process.wait()
+        process.wait()
 
 
 def exit_on_term() -> None:
