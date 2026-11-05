@@ -1,0 +1,42 @@
+{
+  "request_sha256": "80e77009d030e04c649f356f151aab550b1ee29fc4c99c006d0009a0e3269a41",
+  "response_schema_findings": [],
+  "raw_proposed_count": 6,
+  "actual_replacement_count": 6,
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the caveat that the map's unreachable escalation rules remain in the code."
+    }
+  ],
+  "raw_count_matches": true,
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "necessary_edit": {
+    "field": "/risk/rows/0/evidence",
+    "original": "Six new unit tests cover the change, and four of them failed before it.",
+    "replacement": "Six new unit tests cover the change. Before the change, four of them failed."
+  },
+  "control": {
+    "field": "/risk/rows/0/recovery",
+    "original": "Revert.",
+    "replacement": null,
+    "textually_unchanged": true
+  },
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": [],
+  "usage": [
+    {
+      "input_tokens": 19333,
+      "cached_input_tokens": 9216,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 1591,
+      "reasoning_output_tokens": 481
+    }
+  ]
+}

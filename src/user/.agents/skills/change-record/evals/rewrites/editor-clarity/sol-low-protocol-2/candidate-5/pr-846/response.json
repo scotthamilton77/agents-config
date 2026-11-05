@@ -1,0 +1,66 @@
+{
+  "record_digest": "186f0cecef65c31066357ccd801a25e9bcab52dee0265bb349f61a6f9a87b8e4",
+  "proposed": 12,
+  "replacements": [
+    {
+      "field": "/pr/title",
+      "section_digest": "bf67921d1d87e27cbdef30018bdcf6c1474a61fb4fa887b033fb9918b640d1f4",
+      "text": "feat(acceptance-criteria): the attack panel (the reviewers) files coverage gaps under one rule only [9k9.405.14]"
+    },
+    {
+      "field": "/summary",
+      "section_digest": "bc04e2befc036f1fed9d4a4dd17f28dc4249794a3e50e56a47121eb9d3d526bd",
+      "text": "The acceptance-criteria standard's coverage rule asks whether a commitment has a criterion at all. Another rule's opening sentence with the same question caused that rule's reviewer to have filed coverage gaps under it. That rule now asks only about the check a criterion names. On the corrected control document, 9 of 10 panel runs now return an empty report, up from 2 of 10. All 10 runs on the defective document still object to the planted criterion."
+    },
+    {
+      "field": "/heads_up/1",
+      "section_digest": "1cccd827f65136d48b202c4a0030b5191a618b44669efc0e92c0bf55e6d25a6f",
+      "text": "The rule text is part of each emitted prompt. Therefore, every existing attack record's fingerprint changes."
+    },
+    {
+      "field": "/risk/rows/1/exposed",
+      "section_digest": "d1643dcfe81b2730e138a8d08ec53ffe49cabd00421aa1eb4116842f38fcccc6",
+      "text": "The owner would believe the panel is quieter than it is."
+    },
+    {
+      "field": "/risk/rows/1/evidence",
+      "section_digest": "2f217f97454d1918a93f26923dc81015d05e8b7d488bae30137db545f1a10741",
+      "text": "Ten runs per document used the same model and effort. The one remaining control objection cites a flaw present in both versions of the document."
+    },
+    {
+      "field": "/changes/0/text",
+      "section_digest": "6d06f1528f7f1d6fcb3e728ef8edc08a50938fbd0703f3ca6111914635f352ea",
+      "text": "The `verification-contract` rule (the rule for judging a criterion's check) opened with a sentence containing the coverage rule's question. It now opens by judging each criterion's own check. It sends the other question to coverage."
+    },
+    {
+      "field": "/changes/1/text",
+      "section_digest": "45df2e71f277fcf45d3a28473b73654e3b69b3f7adaf3f2de0d56875ab9f17ff",
+      "text": "The attack skill's table gains a column naming each reviewer's reading unit. That unit decides who owns a rule."
+    },
+    {
+      "field": "/design_notes",
+      "section_digest": "3f7532a53be745a18cc8c4190934a61d3c57ed3db4f705570739bb007d38b476",
+      "text": "The `verification-contract` rule opened with a requirement for every material commitment to have a feasible check. That sentence holds the coverage rule's question. Therefore, the reviewer responsible for `verification-contract` filed coverage gaps under it. On the pilot's second case, 18 of 20 runs raised such objections under the rule as it was.\n\nEach reviewer in the attack panel is defined by its reading unit. One reads a single criterion on its own shape. One reads the set against the document's promises. One reads the set against itself. One asks a single criterion what it leaves untested. That unit decides rule ownership. Two reviewers may share ground when one asks about a criterion and the other about the set.\n\nThe measurement used the pilot's second case, a realistic document of eight criteria with one planted defect, and a corrected control. Ten fresh runs per document read prompts emitted from each version of the standard. Before the change and after it, 10 of 10 defective runs objected to the planted criterion under the planted rule. Elsewhere, 1 of 10 defective runs objected, down from 10 of 10. On the control, 9 of 10 runs returned an empty report, up from 2 of 10. The one remaining control objection cites a contradiction present in both versions of the test document.\n\nNo reviewer prompt changed. The record check binds to the document's revision and never to the rule text. Therefore, no existing attack record is reopened. Other sentences in the attack skill were shortened to keep its body under the size cap."
+    },
+    {
+      "field": "/criteria/0/promise",
+      "section_digest": "9007654180519ee3a3a3d147086f1f174e61511ef0fe938860342ac410e53d01",
+      "text": "The `verification-contract` rule judges whether each criterion names a feasible and complete check. It sends the question of whether a commitment has a criterion to coverage."
+    },
+    {
+      "field": "/criteria/2/promise",
+      "section_digest": "9312fecf16d3ade84eff17b67346c16d5158f56f5c37b10af74ba1d685aaaf5e",
+      "text": "At least 8 of 10 control runs come back empty. At least 8 of 10 defective runs object to the planted criterion."
+    },
+    {
+      "field": "/commit/why",
+      "section_digest": "535bef9dbf1ac64ce3dc0c72ee19e001344c067f37218c49da672b038cfd7390",
+      "text": "One rule in the acceptance-criteria standard opened with a sentence containing the coverage rule's question. Therefore, that rule's reviewer filed coverage gaps under it. On the corrected control document only 2 of 10 runs came back empty."
+    },
+    {
+      "field": "/commit/change",
+      "section_digest": "c6ca01b6e3614a53d5f2cb2a2447af762bbf908e7c3305f8ad0f5e19e9952e44",
+      "text": "The verification-contract rule (the rule for judging a criterion's check) now opens by judging the check each criterion names. Whether a commitment has a criterion at all stays with the coverage rule. The attack skill's table of reviewers names each one's reading unit. That unit decides who owns a rule."
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "record_digest": "bb68ae43bd55975505d92d7537d72db488d1443f853c2406528c043c1caeadd3",
+  "proposed": 12,
+  "replacements": [
+    {
+      "field": "/summary",
+      "section_digest": "c688dc7904ae053a51f3da21dcb4a53df594f927b231b2c33ad31cd11e74cab4",
+      "text": "The routing table in the delegation skill is meant to be the only inventory of model ids. Nothing enforced that. A new test suite now reads the Markdown files under `src/`, except those under an `evals` or `node_modules` directory. The suite fails `make ci` on a model id the table does not list. Anthropic aliases such as `sonnet` are not caught."
+    },
+    {
+      "field": "/risk/rows/0/failure",
+      "section_digest": "14dae3b25507ce6f19322c825a1daf4061a7b8b0cfbdddacdbe6db1dcdbfb01d",
+      "text": "The lint rejects a word that is not a model id. That rejection blocks every pull request."
+    },
+    {
+      "field": "/risk/rows/0/evidence",
+      "section_digest": "e4e652706a0bc54e694c87f612e4805a9018744afef1b98e8fc30b1c144cb299",
+      "text": "The patterns are case-sensitive. The real tree of 94 files lints clean."
+    },
+    {
+      "field": "/risk/rows/0/recovery",
+      "section_digest": "57b5ef5e6827a9b71e8f96369b02f3e8408d26d2ce2984b702fdd98272670c27",
+      "text": "Nothing ships from the test file. Therefore, delete it."
+    },
+    {
+      "field": "/risk/rows/1/evidence",
+      "section_digest": "f8f61279cd5d60333f44df5d322dab50ab5a8a15d6cabd5d4922a3667a78ebec",
+      "text": "An unlisted id appended to a skill made `make content-tests` exit 2. That run named the line."
+    },
+    {
+      "field": "/changes/1/text",
+      "section_digest": "2e0def8823310cda9fc7988c8fccc0496ef15cc5edc3ee2511ab7a01e67658fe",
+      "text": "Each vendor naming scheme has one case-sensitive pattern. Therefore, a family name in prose is not an id."
+    },
+    {
+      "field": "/changes/2/text",
+      "section_digest": "7106267a4b7c81e14fc67720ad37266acbe9b056d06647abe57c748106e782f6",
+      "text": "The lint allows two tables in the routing file. Therefore, the routing file's Providers table became a list."
+    },
+    {
+      "field": "/discovered/rows/0/reason",
+      "section_digest": "868e4313ef1bbdd9195ded714c62962f17282afe029401f0e4c13348830a975d",
+      "text": "The spec defines ids by vendor naming scheme. An alias is not one."
+    },
+    {
+      "field": "/criteria/5/promise",
+      "section_digest": "75cc808240ee9324f5b1196c94e21c6c9b6b2021f51d4f960cd3d198fc72d5f0",
+      "text": "A table row elsewhere that names a listed id fails. The same id in prose passes."
+    },
+    {
+      "field": "/commit/change",
+      "section_digest": "1fc1557208855e5f2bda009d4ab0e68f9de71602b90f5f83375fc14970b8e452",
+      "text": "A pytest suite beside the delegation skill reads every Markdown file under src/, except those under an evals or node_modules directory. It fails on a model id the routing table does not list and on a table row elsewhere that names one. It also fails on a routing table that has changed shape. The lint's limit of two tables in the routing file causes the Providers table to become a list."
+    },
+    {
+      "field": "/commit/verification",
+      "section_digest": "e18309e147af46095ddceabe921bbbe68910073084ebb3968b73cc2a9",
+      "text": "make ci exits 0 at the head. 20 content suites pass. All 34 cases fail against a stub lint. Every case passes at the head. One unlisted id appended to a skill made the gate exit 2. That run named the line. Anthropic aliases are not caught. No review round ran."
+    },
+    {
+      "field": "/criteria/4/promise",
+      "section_digest": "4285235cade12787cf824747a95e9a2cf67d64a4b932a7531452c1a094808ef0",
+      "text": "An absent or empty routing table fails with its name."
+    }
+  ],
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the caveat that Anthropic aliases such as `sonnet` are not caught; the existing Heads-up row covers only the missing review round."
+    },
+    {
+      "field": "/design_notes",
+      "question": "What does PEP 723 mean, and what is the tier grid? The record does not supply meanings for their first-use explanations."
+    }
+  ]
+}

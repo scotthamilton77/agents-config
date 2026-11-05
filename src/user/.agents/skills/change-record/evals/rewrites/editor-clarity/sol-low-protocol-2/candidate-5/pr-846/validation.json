@@ -1,0 +1,37 @@
+{
+  "request_sha256": "40d13064ed3279bc71511c0a9ad67d0b5badaa5a1a2ffe93113f0f3500353745",
+  "response_schema_findings": [],
+  "raw_proposed_count": 12,
+  "actual_replacement_count": 12,
+  "questions": [],
+  "raw_count_matches": true,
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "necessary_edit": {
+    "field": "/changes/1/text",
+    "original": "The attack skill's table gains a column naming what each reviewer reads, which decides who owns a rule.",
+    "replacement": "The attack skill's table gains a column naming each reviewer's reading unit. That unit decides who owns a rule."
+  },
+  "control": {
+    "field": "/risk/rows/0/recovery",
+    "original": "Revert.",
+    "replacement": null,
+    "textually_unchanged": true
+  },
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": [],
+  "usage": [
+    {
+      "input_tokens": 18711,
+      "cached_input_tokens": 9216,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 1742,
+      "reasoning_output_tokens": 179
+    }
+  ]
+}
