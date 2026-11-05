@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -72,7 +73,13 @@ class TestReadReport:
         ("I could not finish.", "no JSON report"),
         (findings(BLANK_SCENARIO), "every objection"),
         (findings({"objection": "no ground"}), "every objection"),
-        (json.dumps({"lens": "what-if", "objections": [], "report": "objections"}), "none"),
+        (json.dumps({"lens": "what-if", "objections": [], "report": "objections"}), "carries 0"),
+        (json.dumps({"lens": "what-if", "objections": [OBJECTION], "report": "empty"}),
+         "carries 1"),
+        (json.dumps({"lens": "set-consistency", "objections": [], "report": "empty"}),
+         "set-consistency"),
+        (json.dumps({"lens": "what-if", "objections": "none", "report": "objections"}),
+         "whether it reports"),
     ])
     def test_a_missing_or_wholly_malformed_report_is_not_usable(self, text, word):
         parsed = run_plan.read_report("what-if", text)
@@ -269,6 +276,27 @@ class TestExecute:
         assert fake.calls == ["r1", "r2"]
         assert sorted(reports(plan)) == ["r1.1.json"]
 
+    @pytest.mark.parametrize("line", [
+        "[proxy] upstream 402 POST /api/v1/messages — Insufficient credits",
+        "[proxy] upstream request error: connect ECONNREFUSED",
+        "[proxy] upstream request timeout",
+        "[proxy] WARNING: upstream stream ended without message_stop — forwarding as incomplete",
+    ])
+    def test_a_provider_that_did_not_serve_the_run_stops_the_walk(self, attempt, line):
+        plan = attempt(planned("r1", transport="openrouter"))
+        fake = Fake({**DEAD, "stderr": f"[run] proxy listening\n{line}\n"}, GOOD)
+        with pytest.raises(run_plan.TransportDown):
+            run_plan.execute(plan, fake)
+        assert fake.calls == ["r1"]
+        assert reports(plan) == {}
+
+    def test_a_refused_launcher_invocation_stops_the_walk(self, attempt):
+        plan = attempt(planned("r1", transport="openrouter"))
+        refused = {**DEAD, "exit": 78, "stderr": "[run] OPENROUTER_API_KEY is not set\n"}
+        with pytest.raises(run_plan.TransportDown):
+            run_plan.execute(plan, Fake(refused, GOOD))
+        assert reports(plan) == {}
+
     def test_a_clean_exit_that_mentions_a_limit_is_a_finished_run(self, attempt):
         plan = attempt(planned("r1"))
         run_plan.execute(plan, Fake({**GOOD, "stderr": "you are near your usage limit"}))
@@ -447,6 +475,35 @@ class TestCap:
             with pytest.raises(ProcessLookupError):
                 os.kill(pid, 0)
 
+    def test_an_interrupted_executor_leaves_no_transport_running(self, tmp_path):
+        pids = tmp_path / "pids"
+        script = f"sleep 30 & echo $$ $! > {pids}; wait"
+
+        def interrupt(*_):
+            raise KeyboardInterrupt
+
+        previous = signal.signal(signal.SIGALRM, interrupt)
+        signal.setitimer(signal.ITIMER_REAL, 0.5)
+        try:
+            with pytest.raises(KeyboardInterrupt):
+                run_plan.run_capped(["sh", "-c", script], tmp_path, dict(os.environ), None,
+                                    cap=30, grace=1)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+        for pid in map(int, pids.read_text().split()):
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)
+
+    def test_the_command_line_turns_the_term_signal_into_an_exit_that_cleans_up(self):
+        previous = signal.getsignal(signal.SIGTERM)
+        try:
+            run_plan.exit_on_term()
+            with pytest.raises(SystemExit):
+                signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+
     def test_a_run_at_the_cap_gets_the_term_signal_first(self, tmp_path):
         script = "trap 'echo closing; exit 0' TERM; sleep 30 & wait"
         result = run_plan.run_capped(["sh", "-c", script], tmp_path, dict(os.environ), None,
@@ -469,7 +526,12 @@ class TestCommandLine:
 
     def test_a_refused_plan_exits_two_and_names_the_fault(self, attempt, capsys):
         plan = attempt(planned("r1", case="C999"))
-        assert run_plan.main([str(plan)]) == 2
+        previous = signal.getsignal(signal.SIGTERM)
+        try:
+            assert run_plan.main([str(plan)]) == 2
+            assert signal.getsignal(signal.SIGTERM) is not previous
+        finally:
+            signal.signal(signal.SIGTERM, previous)
         assert "C999" in json.loads(capsys.readouterr().out)["refused"]
 
     def test_a_down_transport_exits_three_and_quotes_the_transport(self, attempt, monkeypatch, capsys):

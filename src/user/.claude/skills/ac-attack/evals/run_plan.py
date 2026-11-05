@@ -48,10 +48,15 @@ CASES = HERE / "cases"
 DOCUMENTS = ("control", "defective")
 MAX_DISPATCHES = 3
 REQUIRED_KEYS = ("run_id", "case", "document", "lens", "transport", "model", "effort")
-# A transport out of capacity is not a lens that failed. The evaluation waits for it, so such a
-# death writes no report and spends no repeat. Only the tail of stderr is read, since Codex echoes
+# A provider that did not serve the run is not a lens that failed. The evaluation waits for it, so
+# such a death writes no report and spends no repeat. Codex says so with a usage limit or a model at
+# capacity, and the launcher's proxy with a line about the upstream: spent credits, a refused
+# connection, a timeout or a stream cut short. Only the tail of stderr is read, since Codex echoes
 # the whole prompt there and a document may hold these words.
-DOWN = re.compile(r"usage limit|at capacity")
+DOWN = re.compile(r"usage limit|at capacity|\[proxy\] (WARNING: )?upstream")
+# The launcher exits with this status when it refuses the invocation itself, such as a missing key.
+# Another dispatch would be refused the same way, so it stops the walk too.
+LAUNCHER_REFUSED = 78
 STDERR_TAIL_LINES = 20
 # A lens run takes minutes on either transport, so a run past these is dead rather than slow. The
 # next dispatch of the run is what recovers it.
@@ -86,13 +91,14 @@ def read_report(lens: str, text: str) -> dict[str, Any]:
         reason = "the output holds no JSON report" if exc.code == "unparseable-lens-output" \
             else exc.args[0]
         return {"report": None, "malformed_objections": [], "fault": reason}
-    items = report.get("objections") or []
+    try:
+        _, items = assemble_record.report_shape(lens, report)
+    except assemble_record.Refusal as exc:
+        return {"report": report, "malformed_objections": [], "fault": exc.args[0]}
     malformed = [position for position, item in enumerate(items, 1)
                  if _malformed(lens, position, item)]
     fault = None
-    if not items and report.get("report") != "empty":
-        fault = "the report claims objections and holds none"
-    elif items and len(malformed) == len(items):
+    if items and len(malformed) == len(items):
         fault = "every objection in the report is malformed"
     return {"report": report, "malformed_objections": malformed, "fault": fault}
 
@@ -258,7 +264,7 @@ def execute(plan: Path, dispatch: Dispatch | None = None) -> dict[str, list[str]
                 prompt = emit_prompt(run, Path(workspace))
                 result = (dispatch or TRANSPORTS[run["transport"]])(run, prompt)
             tail = _stderr_tail(result["stderr"])
-            if result["exit"] != 0 and DOWN.search(tail):
+            if result["exit"] == LAUNCHER_REFUSED or (result["exit"] != 0 and DOWN.search(tail)):
                 raise TransportDown(f"{run['transport']} is down at run {name!r}: {tail}")
             report = report_of(run, number, result)
             _write_report(reports / f"{name}.{number}.json", report)
@@ -281,8 +287,10 @@ def run_capped(command: list[str], cwd: Path, env: dict[str, str], stdin: Path |
     """Run one command in its own process group, and kill the whole group at the cap.
 
     A launcher can survive the term signal, so the kill signal always follows it, and it goes to
-    the group because the launcher's children outlive a signal sent to the launcher alone. Output
-    goes to files, since a pipe a surviving child still holds would block the read past the cap.
+    the group because the launcher's children outlive a signal sent to the launcher alone. The
+    group runs in a session of its own, so an interrupt at the terminal never reaches it, and the
+    executor stops it the same way when it is itself interrupted. Output goes to files, since a
+    pipe a surviving child still holds would block the read past the cap.
     """
     started = _now()
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err, \
@@ -294,16 +302,10 @@ def run_capped(command: list[str], cwd: Path, env: dict[str, str], stdin: Path |
             process.wait(timeout=cap)
         except subprocess.TimeoutExpired:
             capped = True
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=grace)
-            except subprocess.TimeoutExpired:
-                pass
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait()
+            _stop(process, grace)
+        except BaseException:
+            _stop(process, grace)
+            raise
         out.seek(0)
         err.seek(0)
         output = out.read().decode("utf-8", errors="replace")
@@ -312,6 +314,25 @@ def run_capped(command: list[str], cwd: Path, env: dict[str, str], stdin: Path |
         stderr += f"\nkilled at the cap of {cap} seconds\n"
     return {"output": output, "stderr": stderr, "exit": process.returncode, "started": started,
             "ended": _now()}
+
+
+def _stop(process: subprocess.Popen, grace: float) -> None:
+    """Ask the process group to end, give it the grace period, then kill whatever is left."""
+    for sent in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(process.pid, sent)
+        except ProcessLookupError:
+            break
+        try:
+            process.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            pass
+    process.wait()
+
+
+def exit_on_term() -> None:
+    """Make the term signal end the executor through its cleanup, as an interrupt does."""
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(128 + signal.SIGTERM))
 
 
 def dispatch_codex(run: dict[str, Any], prompt: Path) -> dict[str, Any]:
@@ -361,6 +382,7 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Dispatch the runs an evaluation plan names.")
     parser.add_argument("plan", type=Path)
     plan = parser.parse_args(argv).plan
+    exit_on_term()
     try:
         outcome, status = execute(plan), EXIT_OK
     except PlanRefused as exc:
