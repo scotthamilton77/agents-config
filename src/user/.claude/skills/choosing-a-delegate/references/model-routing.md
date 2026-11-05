@@ -1,6 +1,6 @@
 # Model routing table
 
-Captured **2026-10-03**. This is the one model table for every provider this
+Captured **2026-11-05**. This is the one model table for every provider this
 harness delegates to. It answers two questions and no other: which model a
 provider offers at each tier, and what each model costs and accepts. The
 effort a run uses, the tools it is granted, and whether it reads a whole
@@ -10,8 +10,9 @@ task from the accepted efforts listed here.
 Sources, all re-read on the capture date: OpenRouter's catalog endpoint
 `https://openrouter.ai/api/v1/models` for every OpenRouter row's price, context
 and accepted efforts, which is machine-readable and authoritative; `agy models`
-for the Google ids; the Codex CLI's own model list for the OpenAI ids and their
-effort levels; each vendor's published API list price for the Anthropic and
+for the Google ids and effort levels, with the context taken from OpenRouter's
+catalog entry for the same model; the Codex CLI's own model list for the OpenAI
+ids, context and effort levels; each vendor's published API list price for the Anthropic and
 OpenAI rows. Vendors reprice and retire models without notice. Refresh the
 whole table from those sources and re-date it; never patch one row from memory.
 OpenRouter's listed price for the Kimi and GLM rows is a routed price that
@@ -37,9 +38,9 @@ subscription quota is a reason to ask, not a reason to reroute.
 | Tier | `anthropic` | `openai` | `google` | `openrouter` |
 |---|---|---|---|---|
 | `top` | `fable` | `gpt-6-astra` | | |
-| `frontier` | `opus` | `gpt-6.1-sol` | `gemini-3.1-pro` | `moonshotai/kimi-k3` |
+| `frontier` | `opus` | `gpt-6.1-sol` | `gemini-4-argon` | `moonshotai/kimi-k3` |
 | `mid` | `sonnet` | `gpt-6.1-sol` | `gemini-3.8-flash` | `z-ai/glm-5.3` |
-| `cheap` | `haiku` | `gpt-6-luna` | `gemini-3.7-flash` | `z-ai/glm-5.3-flash` |
+| `cheap` | `haiku` | `gpt-6-luna` | `gemini-3.8-flash` | `z-ai/glm-5.3-flash` |
 
 The tiers are the vocabulary every dispatching skill and rule uses. `top` is
 a vendor's strongest and most expensive model, spawned only after consulting
@@ -57,18 +58,17 @@ name one model, the dispatching skill's effort is what separates them.
 | `anthropic` | `fable` (Claude Fable 5.1) | $10.00 / $50.00 | 1M | `low` `medium` `high` `xhigh` `max` |
 | `anthropic` | `opus` (Claude Opus 5.5) | $4.00 / $20.00 | 1M | `low` `medium` `high` `xhigh` `max` |
 | `anthropic` | `sonnet` (Claude Sonnet 5.5) | $2.00 / $10.00 | 1M | `low` `medium` `high` `xhigh` `max` |
-| `anthropic` | `haiku` (Claude Haiku 4.5) | $1.00 / $5.00 | 200K | none |
+| `anthropic` | `haiku` (Claude Haiku 5.5) | $0.10 / $0.50 to 100K input; $0.50 / $2.50 beyond | 1M | `low` `medium` `high` `xhigh` `max` |
 | `openai` | `gpt-6-astra` | $10.00 / $50.00 | 272K | `low` `medium` `high` `xhigh` `max` `ultra` |
-| `openai` | `gpt-6.1-sol` | $2.00 / $10.00 | 272K | `low` `medium` `high` `xhigh` `max` `ultra` |
-| `openai` | `gpt-6-luna` | $0.20 / $1.20 | 272K | `low` `medium` `high` `xhigh` `max` |
-| `google` | `gemini-3.1-pro` | subscription | 1M | `low` `high` |
+| `openai` | `gpt-6.1-sol` | $2.00 / $10.00 to 272K input; $4.00 / $15.00 beyond | 500K | `low` `medium` `high` `xhigh` `max` `ultra` |
+| `openai` | `gpt-6-luna` | $0.10 / $0.50 | 272K | `low` `medium` `high` `xhigh` `max` |
+| `google` | `gemini-4-argon` | subscription | 1M | `low` `medium` `high` |
 | `google` | `gemini-3.8-flash` | subscription | 1M | `low` `medium` `high` |
-| `google` | `gemini-3.7-flash` | subscription | 1M | `low` `medium` `high` |
-| `openrouter` | `moonshotai/kimi-k3` | $0.70 / $10.00 | 1M | `low` `high` `max` |
-| `openrouter` | `z-ai/glm-5.3` | $0.22 / $4.40 | 1M | `low` `high` `max` |
-| `openrouter` | `moonshotai/kimi-k2.6` | $0.43 / $1.83 | 262K | none: reasoning on or off, no level |
+| `openrouter` | `moonshotai/kimi-k3` | $0.19 / $16.00 | 1M | `low` `high` `max` |
+| `openrouter` | `z-ai/glm-5.3` | $0.07 / $1.40 | 1M | `low` `high` `max` |
+| `openrouter` | `moonshotai/kimi-k2.6` | $0.65 / $3.41 | 262K | none: reasoning on or off, no level |
 | `openrouter` | `z-ai/glm-5.3-flash` | $0.15 / $0.50 | 1M | `low` `high` `max` |
-| `openrouter` | `google/gemini-3.8-flash` | $0.75 / $3.75 | 1M | `low` `medium` `high`; on the user's explicit instruction only |
+| `openrouter` | `google/gemini-3.8-flash` | $0.825 / $4.125 | 1M | `low` `medium` `high`; on the user's explicit instruction only |
 
 How an effort reaches each provider is the launcher's business, and each
 launcher skill says so: the Agent tool takes no effort and a Workflow
