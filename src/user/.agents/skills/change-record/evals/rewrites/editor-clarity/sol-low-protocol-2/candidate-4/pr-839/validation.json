@@ -1,0 +1,46 @@
+{
+  "request_sha256": "f4a53fe9450c5e02ea19e138ba705a418539ec83688d132da49b9753b8bb80f3",
+  "response_schema_findings": [],
+  "raw_proposed_count": 18,
+  "actual_replacement_count": 18,
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the uncaught Anthropic aliases and a row for the excluded `evals` and `node_modules` directories. Check 7 requires caveats to have their own rows; the existing Heads-up row covers only the missing review round. Keep these qualifications in the summary as well."
+    },
+    {
+      "field": "/design_notes",
+      "question": "What do PEP 723 and the tier grid mean here? The record does not supply their meanings. Please provide parenthetical explanations so this section can be edited faithfully."
+    }
+  ],
+  "raw_count_matches": true,
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "necessary_edit": {
+    "field": "/risk/rows/0/evidence",
+    "original": "The patterns are case-sensitive, and the real tree of 94 files lints clean.",
+    "replacement": "The patterns are case-sensitive. 94 files in the real repository tree pass the test."
+  },
+  "control": {
+    "field": "/risk/rows/1/recovery",
+    "original": "Add the missing pattern.",
+    "replacement": null,
+    "textually_unchanged": true
+  },
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": [],
+  "usage": [
+    {
+      "input_tokens": 18298,
+      "cached_input_tokens": 9216,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 2339,
+      "reasoning_output_tokens": 481
+    }
+  ]
+}

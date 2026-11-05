@@ -1,0 +1,74 @@
+{
+  "request_sha256": "19207b75900cfaccd03fe1f32848edea42876eb30b3cb844b7fc10c55a93fb71",
+  "response_schema_findings": [],
+  "raw_proposed_count": 38,
+  "actual_replacement_count": 38,
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the caveat that the panel does not yet check whether a run used its pinned effort. The existing Heads-up rows do not cover it; the caveat must also remain in the summary."
+    },
+    {
+      "field": "/design_notes",
+      "question": "What do the staffing recommender, trend checkpoint, frontier and mid tiers, and artifact classes mean here? The record names them without supplying their meanings."
+    },
+    {
+      "field": "/replies/2/change",
+      "question": "A faithful split needs four sentences: nothing changes in this pull request; the verdict schema lives in another skill; it is outside this change; the work-item notes carry the missing halt reason for a follow-on item. The limit is two sentences. Which named claim will you move?"
+    },
+    {
+      "field": "/replies/4/change",
+      "question": "What does a reviewer's tier mean, and what distinguishes a sweep from another review round? The record does not define those terms."
+    },
+    {
+      "field": "/replies/5/change",
+      "question": "Which five files are meant by 'the five named files'? This reply is read alone, and the record does not supply the complete five-file list."
+    },
+    {
+      "field": "/replies/6/change",
+      "question": "A faithful split needs two sentences, but together with the required explanation of change_diffs it can fit the reply limit. May the explanation identify change_diffs as the function computing reviewer diff files? The record describes its behavior but does not explicitly identify its kind."
+    },
+    {
+      "field": "/replies/9/change",
+      "question": "A faithful split of the independent assertions needs three sentences: the watchdog-killed attempt leaves no output; it is a run that died; the message assigns dead-run for that case and transport-error otherwise. The limit is two sentences. Which named claim will you move?"
+    },
+    {
+      "field": "/replies/10/change",
+      "question": "A faithful split needs three sentences: the MAX_ATTEMPTS comment no longer argues for another model on the same vendor; it now explains the transport and model declarations; the same argument is gone from check_route's docstring. The limit is two sentences. Which named claim will you move?"
+    },
+    {
+      "field": "/replies/15/change",
+      "question": "A faithful split needs four sentences: harvest.md identifies the attempts-exhausted refusal as carrying halt guidance; the off-ladder sentence is unchanged; each case has one sentence; the cases no longer overlap. The limit is two sentences. Which named claim will you move?"
+    }
+  ],
+  "raw_count_matches": true,
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "necessary_edit": {
+    "field": "/criteria/0/promise",
+    "original": "Every slot has a pin, the round record carries it, a missing pin refuses the round, and no grant can write.",
+    "replacement": "Every slot has a pin. The round record carries it. A missing pin refuses the round. No grant can write."
+  },
+  "control": {
+    "field": "/risk/rows/1/recovery",
+    "original": "Revert.",
+    "replacement": null,
+    "textually_unchanged": true
+  },
+  "baseline_lint": [],
+  "structural_findings": [],
+  "raw_result_lint": [],
+  "introduced_lint": [],
+  "resolved_lint": [],
+  "full_apply": "accepted",
+  "tool_calls": [],
+  "usage": [
+    {
+      "input_tokens": 33363,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 5606,
+      "reasoning_output_tokens": 250
+    }
+  ]
+}

@@ -1,0 +1,197 @@
+{
+  "record_digest": "1165715bd587917d3883d1864962e626853ca4c562a6ba059523098e07034edc",
+  "proposed": 33,
+  "replacements": [
+    {
+      "field": "/heads_up/0",
+      "section_digest": "5a68f3c5f8b5035ab2171bd122fb8005a4567ae7f96d8732eec2af8f387ecbc8",
+      "text": "The Homebrew bash hangs one hook test. Therefore, the gates ran with the system bash first on PATH."
+    },
+    {
+      "field": "/heads_up/1",
+      "section_digest": "21e9779c8d1e09bb0ba059b9347151975a50aa9ce2beb7d1e3c2f963209d5159",
+      "text": "The code reviewers last judged commit e399db1d. Four prose-only commits followed it."
+    },
+    {
+      "field": "/risk/rows/0/evidence",
+      "section_digest": "55cac077808522b6ae172673602b608c8c4210feb7f668ce0fae95306dd19b21",
+      "text": "Tests check that every slot has a pin (configured effort and tools)."
+    },
+    {
+      "field": "/risk/rows/1/failure",
+      "section_digest": "c22d259511a6fb3eabe978c439f12df7f452ecdf73f8df170865ecfa514317d6",
+      "text": "Possible failures include retrying a run that dies outside the sequence or never stopping the round."
+    },
+    {
+      "field": "/changes/0/text",
+      "section_digest": "fe3a06d2886a43191103568f220f801afdc9dddec944e4942eb560e09b467300",
+      "text": "contracts.json pins effort and tools for every reviewer slot. No reviewer gets a shell."
+    },
+    {
+      "field": "/changes/2/text",
+      "section_digest": "a5c6b9e783b6abb443a0d862f249994abd59728b88603eea46ea62f52160e805",
+      "text": "A run that died is retried one effort step lower. The next retry uses the other provider. The round halts when that attempt dies too."
+    },
+    {
+      "field": "/criteria/0/promise",
+      "section_digest": "ff77018d52c9d14de1d4a9fe5baf53693a9b94ab0e30c31abfc2be196c07d4af",
+      "text": "Every slot has a pin. The round record carries it. A missing pin refuses the round. No grant can write."
+    },
+    {
+      "field": "/criteria/2/promise",
+      "section_digest": "21c5420ebaa0854c9efceaa789f770de2f894240f0a7e1ef9cfa6a337a4bad27",
+      "text": "The recovery sequence is one step down, then the other provider, then halt. A claim outside it is refused at no cost."
+    },
+    {
+      "field": "/commit/why",
+      "section_digest": "9303aff3727b9360082d73aaf455bc0855ffd7fd8187f64fefc898714ce1253d",
+      "text": "The agent running a review round chose each reviewer's effort and tool access itself. It avoided one model for whole-document reads on a belief no run record supported. Review cost and coverage were unpredictable."
+    },
+    {
+      "field": "/commit/change",
+      "section_digest": "a51226cfdf3f7d0f096a25a23494f565efcb9ad1504b7a6b5ba941feebb73afd",
+      "text": "Effort and tools for every reviewer slot appear in the panel's configuration and in each round's record as copies from that slot's pin (configured effort and tools). Every reviewer receives the change as a diff file. Recovery for a run that dies mid-reasoning follows one effort step lower, then the other provider, then a halt of the round. Models still come from the shared routing table."
+    },
+    {
+      "field": "/replies/0/verification",
+      "section_digest": "1d1338108e25da294468f9f00a2855bfb79548610692b32ca21e7d26d8807ee3",
+      "text": "test_a17_a_dead_run_past_the_bound_is_out_of_attempts_not_off_ladder failed before the change. It passes after. Restoring the old unconditional refusal makes only that test fail."
+    },
+    {
+      "field": "/replies/1/change",
+      "section_digest": "ca070441a91525f4cc1daac8a11fd3a2ad956634d5f38e016474bf3e360f827d",
+      "text": "The restated design deletes both the scope-keyed tier rule this finding challenged and its tests. The tier rule on main stands unchanged."
+    },
+    {
+      "field": "/replies/2/change",
+      "section_digest": "d535f5be4024c75005f12507203010215050e903bbf2ff8688803c37982d2a3d",
+      "text": "Nothing changes in this pull request because the verdict schema's location in another skill puts it outside this change. The notes on agents-config-9k9.408 (this pull request's work item) carry the missing halt reason for a follow-on item."
+    },
+    {
+      "field": "/replies/2/verification",
+      "section_digest": "f7ce29beb58c3301f28d60b12bd021230849b2649ec2ef833491ec5fc9fbd111",
+      "text": "The finding is advisory. It does not block. The schema is not edited. Therefore, it still reads transport-failure for a halt caused by runs that died."
+    },
+    {
+      "field": "/replies/3/verification",
+      "section_digest": "fb8cd13f16fbaee4f1736e6c98d475bc717232e93b6776d92301871afa997d0c",
+      "text": "test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output failed before the change, with no halt key in the refusal. It passes after. Restoring the old check of every failure makes only that test fail."
+    },
+    {
+      "field": "/replies/5/change",
+      "section_digest": "0fb308be4895b1a214dd70af6274e1441340c02ba29cec488f96d4155ce9ae6a",
+      "text": "All 27 scenario reads were run again on isolated readers that can reach only copies of the five named files. The scenario file now supplies that reader's identity and the reason an Agent-tool subagent does not qualify."
+    },
+    {
+      "field": "/replies/5/verification",
+      "section_digest": "5708a0a6061f1086dfeebcc8107d1b3ce12dd50feb881f8716521e07daf25120",
+      "text": "An isolation trial showed that the isolated reader sees no instruction file. The trial showed that a reader with default settings sees the global ones. The isolated readers gave the keyed answer in 27 of 27 reads. No unit test exercises a doctrine evaluation."
+    },
+    {
+      "field": "/replies/6/change",
+      "section_digest": "95e8e7de5c8d610df6347a2c18d2364f3e179cee31c221780ee2687acc45c8a4",
+      "text": "change_diffs now computes the diff for each distinct start revision once. It reuses its bytes for every reviewer that shares the revision pair."
+    },
+    {
+      "field": "/replies/6/verification",
+      "section_digest": "5e824ae1e1b4a9b6be12d11a85b624c1cde4bf352a0aeaac3d8256efc81c0e4e",
+      "text": "An instrumented run had counted five git diff calls for one typed-code emission. test_a18_lenses_sharing_a_revision_pair_share_one_diff failed before the change. It passes after. The file-content, empty-change and unknown-revision tests still pass."
+    },
+    {
+      "field": "/replies/7/verification",
+      "section_digest": "7c04d3f82babeb2ec9b1a7bd59caffe89bd2a95498409e9587693e225c2def8a",
+      "text": "The failover slot in that example is the OpenRouter frontier slot for a whole-document read. contracts.json pins it at low effort. test_a6_every_lens_pin_has_its_stated_effort holds that value. No test runs an example command. Therefore, the example was read against the pin."
+    },
+    {
+      "field": "/replies/8/change",
+      "section_digest": "3c0945ae586b9c002d352f22367983efbda81e623282359bee7dcb13424ea6a3",
+      "text": "harvest.md now says that only an `attempts-exhausted` refusal ends a reviewer's run. A claim refused as `off-ladder`, or for a missing or malformed flag, permits correction and another claim at no attempt cost."
+    },
+    {
+      "field": "/replies/8/verification",
+      "section_digest": "dd968578cd6e53887ea6a22c0785168fae4bb023f18015cfd9aae677b7359db2",
+      "text": "The gate raises those refusals before it writes the ledger. Therefore, they spend no attempt. test_a_refused_claim_rewrites_nothing_and_grants_no_attempt holds that behaviour."
+    },
+    {
+      "field": "/replies/9/change",
+      "section_digest": "93470a3f0c012a0323699719d41053090983164522b585e41834fc1fa45bb75a",
+      "text": "harvest.md now describes an attempt the watchdog killed for silence as a run that died with no output. The gate's no-output message names `dead-run` for that case and `transport-error` otherwise."
+    },
+    {
+      "field": "/replies/9/verification",
+      "section_digest": "72dcf908b5a720c1eab6ce27ec621b9db0bafa3543a6f01a3c2a6295bce50db4",
+      "text": "test_a_claimed_path_holding_no_file_is_a_transport_failure gained an assertion that the message names `dead-run`. The test failed before the change. It passes after."
+    },
+    {
+      "field": "/replies/11/verification",
+      "section_digest": "50bfd6fe6b002fe0b7fcd7a5372735710707cd77893e5342891f2a8d2b48e5f0",
+      "text": "No test exercises a docstring. Therefore, it was read against the code it describes. It states the rule that test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output holds in dispatch_gate_test.py."
+    },
+    {
+      "field": "/replies/12/change",
+      "section_digest": "6056cc5d4a380fc2834fde0beba9977b69b96e23312d4c4f42a6fad2cbc87f44",
+      "text": "The gate now accepts only failover onto the other provider of the Codex and OpenRouter pair or a lower-effort retry on the starting transport. A claim on any third transport receives a refusal at no attempt cost."
+    },
+    {
+      "field": "/replies/12/verification",
+      "section_digest": "74f2d489cb94116816b34a2d1553b46a960bff05a77013ac52cbf515d68ff113",
+      "text": "test_a17_a_transport_that_is_not_the_failover_seat_is_refused failed before the change because the gate authorised the claim. It passes after. A mutant that drops the same-transport guard from the lower-effort branch also fails it."
+    },
+    {
+      "field": "/replies/13/verification",
+      "section_digest": "9d9021464eff80c6149439f7bebb66db48c6ff0f37c92bf731d46276f2d6b979",
+      "text": "Against the reviewer's mutant, the two starting-transport cases failed. The other two passed. Against the unchanged gate all four cases pass."
+    },
+    {
+      "field": "/replies/15/verification",
+      "section_digest": "053c586954b5e21bbfcf8faf97ec006ffa1755fa528ae16584e16449b4307a2d",
+      "text": "The gate attaches halt guidance only to an `attempts-exhausted` refusal. It raises an `off-ladder` refusal without it. No test exercises prose. Therefore, the sentences were checked against that code."
+    },
+    {
+      "field": "/replies/16/verification",
+      "section_digest": "447eb6878bbf57c552418077963acc955726bd064a190554bad67c9ec42619f8",
+      "text": "The new sentences restate the gate's own no-output message. They agree with the section on runs that died. No test exercises prose. Another reviewer reported the same defect. This one change answers both findings."
+    },
+    {
+      "field": "/replies/17/verification",
+      "section_digest": "3b461bafd864605132e6b4d96f22f472a44964c16f41c577c012db0b9d7f1525",
+      "text": "No test exercises prose. Another reviewer reported the same defect. One change answers both findings."
+    },
+    {
+      "field": "/replies/18/verification",
+      "section_digest": "c95057bf92003d28f619ee842f8e20c115eef91a4d99f3704f8a51d9c410dc15",
+      "text": "The finding was advisory. It was fixed because the fix is cheap and right. The keyed answers did not change. No test exercises prose."
+    },
+    {
+      "field": "/replies/20/change",
+      "section_digest": "6871d50860c13d33952923604d39c14543251983b618dd41b1aa68dc9592acfa",
+      "text": "The section of harvest.md on symmetric transport now attributes neither direction's exceptional status to the possibility of either transport being down while the other works. The outages it used to narrate are gone."
+    }
+  ],
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the caveat that the panel does not yet check whether a run actually used its pinned effort. Keep the caveat in the summary too."
+    },
+    {
+      "field": "/design_notes",
+      "question": "What do the staffing recommender, trend checkpoint and criteria attack panel mean? Which files does 'only those files' refer to in the nine-scenario claim? These references need definitions before this section can be rewritten faithfully."
+    },
+    {
+      "field": "/commit/verification",
+      "question": "What does 'clean sweep' mean here? The commit needs a standalone definition."
+    },
+    {
+      "field": "/replies/4/verification",
+      "question": "What does a 'sweep' mean here, including the prose, spec and typed-code sweeps?"
+    },
+    {
+      "field": "/replies/10/change",
+      "question": "A faithful split needs three sentences: the MAX_ATTEMPTS comment no longer argues for another model on the same vendor; it now explains why each attempt declares transport and model; the same argument is gone from check_route's docstring. Which named claim will you move to meet the two-sentence limit?"
+    },
+    {
+      "field": "/replies/15/change",
+      "question": "A faithful split needs four sentences: harvest.md identifies an `attempts-exhausted` refusal as carrying halt guidance; the `off-ladder` sentence is unchanged; therefore each case has one sentence; therefore the cases no longer overlap. Which named claims will you move to meet the two-sentence limit?"
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "request_sha256": "40d13064ed3279bc71511c0a9ad67d0b5badaa5a1a2ffe93113f0f3500353745",
+  "response_schema_findings": [],
+  "raw_proposed_count": 18,
+  "actual_replacement_count": 18,
+  "questions": [
+    {
+      "field": "/heads_up/1",
+      "question": "What does an attack record's fingerprint mean? The record explains why it changes but does not define it."
+    },
+    {
+      "field": "/changes/1/text",
+      "question": "What is the attack skill? The record describes its table and contents but does not define this house term."
+    },
+    {
+      "field": "/risk/rows/1/evidence",
+      "question": "Please add a separate Heads-up row for the caveat that the remaining control objection cites a flaw present in both document versions."
+    }
+  ],
+  "raw_count_matches": true,
+  "questions_outside_sections": [],
+  "no_op_replacements": [],
+  "necessary_edit": {
+    "field": "/changes/1/text",
+    "original": "The attack skill's table gains a column naming what each reviewer reads, which decides who owns a rule.",
+    "replacement": "The attack skill's table of reviewers gains a column naming each reviewer's reading unit. That unit decides rule ownership."
+  },
+  "control": {
+    "field": "/risk/rows/0/recovery",
+    "original": "Revert.",
+    "replacement": null,
+    "textually_unchanged": true
+  },
+  "baseline_lint": [],
+  "structural_findings": [
+    {
+      "code": "protected-value",
+      "path": "/summary",
+      "message": "the replacement drops or changes `filed`, which this section holds; a fact is never reworded"
+    },
+    {
+      "code": "protected-value",
+      "path": "/design_notes",
+      "message": "the replacement drops or changes `filed`, which this section holds; a fact is never reworded"
+    },
+    {
+      "code": "protected-value",
+      "path": "/commit/why",
+      "message": "the replacement drops or changes `filed`, which this section holds; a fact is never reworded"
+    }
+  ],
+  "raw_result_lint": [
+    {
+      "code": "commit-subject",
+      "path": "/commit/subject",
+      "message": "the subject is 101 characters long, and it takes at most 100"
+    }
+  ],
+  "introduced_lint": [
+    {
+      "code": "commit-subject",
+      "path": "/commit/subject",
+      "message": "the subject is 101 characters long, and it takes at most 100"
+    }
+  ],
+  "resolved_lint": [],
+  "full_apply": "refused",
+  "full_apply_findings": [
+    {
+      "code": "protected-value",
+      "path": "/summary",
+      "message": "the replacement drops or changes `filed`, which this section holds; a fact is never reworded"
+    },
+    {
+      "code": "protected-value",
+      "path": "/design_notes",
+      "message": "the replacement drops or changes `filed`, which this section holds; a fact is never reworded"
+    },
+    {
+      "code": "protected-value",
+      "path": "/commit/why",
+      "message": "the replacement drops or changes `filed`, which this section holds; a fact is never reworded"
+    }
+  ],
+  "tool_calls": [],
+  "usage": [
+    {
+      "input_tokens": 18565,
+      "cached_input_tokens": 9216,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 3094,
+      "reasoning_output_tokens": 890
+    }
+  ]
+}

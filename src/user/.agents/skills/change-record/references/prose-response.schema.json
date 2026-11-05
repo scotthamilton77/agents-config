@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agents.local/schemas/change-record-prose-response/1",
   "title": "Prose response",
-  "description": "What an editor returns for a request to rewrite a change record's wording: a replacement for each section it rewrote, and a question for each section it could not rewrite without inventing a fact. The author takes out each replacement they do not accept before the response is applied.",
+  "description": "What an editor returns for a request to rewrite a change record's wording: replacements and questions about missing facts or structural changes the author must make. The author resolves questions and takes out each replacement they do not accept before the response is applied.",
   "type": "object",
   "additionalProperties": false,
   "required": ["record_digest", "proposed", "replacements"],
@@ -39,7 +39,7 @@
     },
     "questions": {
       "type": "array",
-      "description": "One entry per section the editor could not rewrite without inventing a fact.",
+      "description": "Questions about missing facts or author actions. A structural question may accompany a replacement for the same section.",
       "items": {
         "type": "object",
         "additionalProperties": false,

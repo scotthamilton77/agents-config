@@ -1,0 +1,234 @@
+{
+  "record_digest": "1165715bd587917d3883d1864962e626853ca4c562a6ba059523098e07034edc",
+  "proposed": 38,
+  "replacements": [
+    {
+      "field": "/summary",
+      "section_digest": "e62e3f99c6fca99e1d1f9f582b693c30678aa4b458561c30770cb9ca27cac06a",
+      "text": "The agent running a review round used to choose each reviewer's effort and tools itself. The panel's configuration file now holds both for every reviewer slot. Every reviewer receives the change as a diff file (a file showing the changes). A run that dies follows a fixed recovery sequence. The panel does not yet check that a run actually used its pinned effort (the effort set in the configuration)."
+    },
+    {
+      "field": "/heads_up/0",
+      "section_digest": "5a68f3c5f8b5035ab2171bd122fb8005a4567ae7f96d8732eec2af8f387ecbc8",
+      "text": "The Homebrew bash hangs one hook test. The gates ran with the system bash first on PATH (the command search path) for that reason."
+    },
+    {
+      "field": "/heads_up/1",
+      "section_digest": "21e9779c8d1e09bb0ba059b9347151975a50aa9ce2beb7d1e3c2f963209d5159",
+      "text": "The code reviewers last judged commit e399db1d (the last commit reviewed for code). four prose-only commits followed it."
+    },
+    {
+      "field": "/heads_up/2",
+      "section_digest": "f44806195d9bacecc553ba9121e8cd2e82f0b8f7dbceee1b89205e5176ad83c8",
+      "text": "27 raw answers testing the written dispatch rules remain on the author's machine outside the repository."
+    },
+    {
+      "field": "/risk/rows/0/evidence",
+      "section_digest": "55cac077808522b6ae172673602b608c8c4210feb7f668ce0fae95306dd19b21",
+      "text": "Tests check whether every reviewer slot has a pin (configured effort and tools)."
+    },
+    {
+      "field": "/risk/rows/1/failure",
+      "section_digest": "c22d259511a6fb3eabe978c439f12df7f452ecdf73f8df170865ecfa514317d6",
+      "text": "A run that dies is retried outside the recovery sequence. Alternatively, the round never stops."
+    },
+    {
+      "field": "/changes/0/text",
+      "section_digest": "fe3a06d2886a43191103568f220f801afdc9dddec944e4942eb560e09b467300",
+      "text": "contracts.json sets effort and tools for every reviewer slot. No reviewer gets a shell."
+    },
+    {
+      "field": "/changes/1/text",
+      "section_digest": "0c3c9ba3af82826efbf14ea2a0eb3d70c1415af08c9d6d491da98b7d67d1e1b1",
+      "text": "The emitter (the prompt-writing component) writes one diff file beside each prompt."
+    },
+    {
+      "field": "/changes/2/text",
+      "section_digest": "a5c6b9e783b6abb443a0d862f249994abd59728b88603eea46ea62f52160e805",
+      "text": "A run that died is retried one effort step lower. The next retry uses the other provider. The round halts when that attempt dies too."
+    },
+    {
+      "field": "/design_notes",
+      "section_digest": "58296140e5ada203f2b3f6238072c41b4a316df247a4f09571a60b1ef404afb8",
+      "text": "The earlier design routed the OpenRouter mid-tier model away from whole-document reads. That constraint had no run record behind it. The only recorded reads of that shape on that model had finished. A constraint stated without its variables cannot be scoped or falsified. The design no longer encodes it for that reason. A slot that names a model runs that model. The recovery sequence handles a run's death when one happens. It records every attempt. 20 of 20 whole-document reads by that model finished during this pull request's own review.\n\nLetting the dispatcher (the agent assigning reviewers) pick a fallback model freely was rejected. Vendors reprice and retire models under a remembered pick. Nobody can audit an improvised rule afterwards. A shell grant restricted by a command prefix was rejected. Both `git diff` and `git log` accept `--output`. A prefix pattern therefore does not restrict access to reading.\n\ncontracts.json holds eight slots by provider, tier and read scope, plus the staffing recommender and the trend checkpoint. OpenRouter uses low effort for whole-document reads and high effort for diffs. Codex uses high effort for frontier slots and medium effort for mid slots. No pin names a model. The routing table supplies the model instead. Every tool grant is the Codex read-only sandbox or a list drawn from Read, Grep and Glob. `git diff --output=<path>` writes a file. No reviewer gets a shell pattern for that reason.\n\nThe emitter writes each diff file over that reviewer's scope for the round. A reviewer with no shell can therefore still read the change. Reviewers sharing a revision pair share one computed diff. Each reviewer entry in the round record gains effort and tools copied from its pin. A slot with no pin refuses the round without writing anything.\n\nEach artifact class keeps exactly one OpenRouter reviewer. Four reviewers move to Codex. Declared tiers do not change.\n\nThe gate's claim command records effort supplied through `--effort`. A run that died may be claimed again only as the same model one effort step lower, or as the other provider at the same tier and scope. Anything else is refused at no attempt cost. A reviewer gets three attempts. Once it is out of attempts, the round halts only when the last failure on every route it ran on was a run that died or a transport error. A reviewer that runs out of attempts any other way is left without a report. The round is incomplete in that case. A revert restarts a round in flight because its attempts ledger (the record of attempts) gained a field.\n\nharvest.md states the sequence, the failover slot (the slot on the other provider), the diff file and the claim form. Nine scenarios with expected answers check that a reader holding only those files reaches the right dispatch.\n\nThe criteria attack panel (the separate skill for reviewing acceptance criteria) needs the same pins as slice B of this work item. It has its own configuration file.\n\nThe round record copies each pin. Tests check that too. This pull request's own first round ran every reviewer at its pin on two vendors with no substitution. Both recovery failures were real bugs found in review. Each was reproduced and fixed with a failing-then-passing test. A stuck round also costs coverage because it can look finished with one reviewer never having read the change.\n\nThe written doctrine (the dispatch rules) could send whoever runs a round by hand down the wrong path. Nine written situations were answered by a model given only the doctrine files. All 27 answers, three runs each, matched the expected dispatch. A reviewer without a shell could miss the change if its diff file were missing or covered the wrong scope. Tests cover the diff file's content, an empty change and an unknown revision. A diff git cannot compute refuses the round before anything is dispatched."
+    },
+    {
+      "field": "/discovered/rows/0/reason",
+      "section_digest": "3a872f93c8d5cf545d200c2acd2ee7287f66f727cdcd7c8ffdd1bd0269cf9fa6",
+      "text": "No consumer asks for a comparison of used effort against pinned effort yet."
+    },
+    {
+      "field": "/discovered/rows/1/reason",
+      "section_digest": "5f6deb7370269c6a0a69d2e3addda6d0c77c68ac693403ba39f4b1249d97c026",
+      "text": "The read-evidence gate checks whether a reviewer read what it was handed."
+    },
+    {
+      "field": "/discovered/rows/2/reason",
+      "section_digest": "6e5ce9676abe5527befa060fa310abc7a5eb5f347559af3aa70b9fb25c46a24a",
+      "text": "The skill file is at its size cap."
+    },
+    {
+      "field": "/discovered/rows/3/reason",
+      "section_digest": "6dd297ab8a9b2baa157d45011873277644591ccf52d4dd23fe7a87a8f123582e",
+      "text": "Each advisory review finding needs a change outside this skill."
+    },
+    {
+      "field": "/criteria/0/promise",
+      "section_digest": "ff77018d52c9d14de1d4a9fe5baf53693a9b94ab0e30c31abfc2be196c07d4af",
+      "text": "Every slot has a pin. The round record carries it. A missing pin refuses the round. No grant can write."
+    },
+    {
+      "field": "/criteria/1/promise",
+      "section_digest": "c3b3d0c49578fa4b5c485571b49423345faafa4a9bbedf2dc1c2ce631baa3fbc",
+      "text": "A reader holding only the doctrine files (the files stating the dispatch rules) reaches the pinned dispatch, the failover slot and each recovery step."
+    },
+    {
+      "field": "/criteria/2/promise",
+      "section_digest": "21c5420ebaa0854c9efceaa789f770de2f894240f0a7e1ef9cfa6a337a4bad27",
+      "text": "The recovery sequence is one effort step down, then the other provider, then halt. A claim outside it is refused at no cost."
+    },
+    {
+      "field": "/commit/why",
+      "section_digest": "9303aff3727b9360082d73aaf455bc0855ffd7fd8187f64fefc898714ce1253d",
+      "text": "Review cost and coverage were unpredictable. The agent running a review round chose each reviewer's effort and tool access itself. It avoided one model for whole-document reads on a belief unsupported by any run record."
+    },
+    {
+      "field": "/commit/change",
+      "section_digest": "a51226cfdf3f7d0f096a25a23494f565efcb9ad1504b7a6b5ba941feebb73afd",
+      "text": "Each round's record copies every reviewer slot's configuration-held effort and tools from its pin (its configured settings). Every reviewer receives the change as a diff file (a file showing the changes). A run that dies mid-reasoning follows retries one effort step lower and then on the other provider before halting the round. Models still come from the shared routing table."
+    },
+    {
+      "field": "/commit/verification",
+      "section_digest": "305c5bacd4db6d4b894825167f7bfb948f7a6cfca53d5a4414f3cd24e6d5f805",
+      "text": "make ci, doc-lint and content-lint exit 0 at 5bc9e856 (the reviewed branch's terminal commit). 27 of 27 isolated reads of the dispatch rules matched the expected answers. Both code and prose review rounds reached a round with no findings. The gate does not yet check a run used its pinned effort."
+    },
+    {
+      "field": "/replies/0/verification",
+      "section_digest": "1d1338108e25da294468f9f00a2855bfb79548610692b32ca21e7d26d8807ee3",
+      "text": "test_a17_a_dead_run_past_the_bound_is_out_of_attempts_not_off_ladder (the test of refusal past the attempt limit) failed before the change. It passes after the change. Restoring the old unconditional refusal makes only that test fail."
+    },
+    {
+      "field": "/replies/1/change",
+      "section_digest": "ca070441a91525f4cc1daac8a11fd3a2ad956634d5f38e016474bf3e360f827d",
+      "text": "The restated design deletes both the scope-keyed tier rule (the tier rule based on read scope) challenged by this finding and its tests. The tier rule on main stands unchanged."
+    },
+    {
+      "field": "/replies/2/verification",
+      "section_digest": "f7ce29beb58c3301f28d60b12bd021230849b2649ec2ef833491ec5fc9fbd111",
+      "text": "The finding is advisory. It does not block. The schema is not edited. It therefore still reads transport-failure (the schema's reason for a dispatch dying on its route) for a halt caused by runs that died."
+    },
+    {
+      "field": "/replies/3/verification",
+      "section_digest": "fb8cd13f16fbaee4f1736e6c98d475bc717232e93b6776d92301871afa997d0c",
+      "text": "test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output (the test of halting after an earlier unusable output) failed before the change with no halt key in the refusal. It passes after the change. Restoring the old check of every failure makes only that test fail."
+    },
+    {
+      "field": "/replies/4/verification",
+      "section_digest": "7f7c92af3cb30d2c812dfdb88f553940f269e4a449e526415bf1499e39ab6d58",
+      "text": "A mutant (a deliberately altered version) that dispatched every reviewer at its declared tier in a sweep had passed all 219 emitter tests. That mutant now fails this test for the prose, spec and typed-code sweeps. The branch passes it."
+    },
+    {
+      "field": "/replies/5/verification",
+      "section_digest": "5708a0a6061f1086dfeebcc8107d1b3ce12dd50feb881f8716521e07daf25120",
+      "text": "An isolation trial showed no instruction file visible to the isolated reader. It showed the global instruction files visible to a reader with default settings. 27 of 27 reads by the isolated readers gave the expected answer. No unit test exercises an evaluation of the written dispatch rules."
+    },
+    {
+      "field": "/replies/6/verification",
+      "section_digest": "5e824ae1e1b4a9b6be12d11a85b624c1cde4bf352a0aeaac3d8256efc81c0e4e",
+      "text": "An instrumented run had counted five git diff calls for one typed-code emission. test_a18_lenses_sharing_a_revision_pair_share_one_diff (the test of sharing a computed diff) failed before the change. It passes after the change. The file-content, empty-change and unknown-revision tests still pass."
+    },
+    {
+      "field": "/replies/7/verification",
+      "section_digest": "7c04d3f82babeb2ec9b1a7bd59caffe89bd2a95498409e9587693e225c2def8a",
+      "text": "The failover slot in that example is the OpenRouter frontier slot for a whole-document read. contracts.json pins it at low effort. test_a6_every_lens_pin_has_its_stated_effort (the test of stated effort pins) holds that value. No test runs an example command. The example was therefore read against the pin."
+    },
+    {
+      "field": "/replies/8/change",
+      "section_digest": "3c0945ae586b9c002d352f22367983efbda81e623282359bee7dcb13424ea6a3",
+      "text": "harvest.md now says that only an `attempts-exhausted` refusal (a refusal at the attempt limit) ends a reviewer's run. A claim refused as `off-ladder` (outside the recovery sequence), or for a missing or malformed flag, remains correctable and claimable again at no attempt cost."
+    },
+    {
+      "field": "/replies/8/verification",
+      "section_digest": "dd968578cd6e53887ea6a22c0785168fae4bb023f18015cfd9aae677b7359db2",
+      "text": "The gate raises those refusals before it writes the ledger. They therefore spend no attempt. test_a_refused_claim_rewrites_nothing_and_grants_no_attempt (the test of refusal without a ledger write or attempt grant) holds that behaviour."
+    },
+    {
+      "field": "/replies/9/verification",
+      "section_digest": "72dcf908b5a720c1eab6ce27ec621b9db0bafa3543a6f01a3c2a6295bce50db4",
+      "text": "test_a_claimed_path_holding_no_file_is_a_transport_failure (the test of a claimed path with no output file) gained an assertion that the message names `dead-run`. The test failed before the change. It passes after the change."
+    },
+    {
+      "field": "/replies/10/verification",
+      "section_digest": "27aea08cf6621406fc9f349362103146c7eb88360d7bd002338daabd58c5b1bb",
+      "text": "No test exercises a comment. Both texts were therefore read against the doctrine (the written dispatch rules). The only recovery they describe is the failover slot (the slot on the other provider) fixed by the routing table and required by harvest.md."
+    },
+    {
+      "field": "/replies/11/verification",
+      "section_digest": "50bfd6fe6b002fe0b7fcd7a5372735710707cd77893e5342891f2a8d2b48e5f0",
+      "text": "No test exercises a docstring. It was therefore read against the code it describes. It states the rule held by test_a17_a_dead_run_on_the_failover_seat_halts_after_an_earlier_unusable_output (the test of halting after an earlier unusable output) in dispatch_gate_test.py."
+    },
+    {
+      "field": "/replies/12/change",
+      "section_digest": "6056cc5d4a380fc2834fde0beba9977b69b96e23312d4c4f42a6fad2cbc87f44",
+      "text": "The gate now restricts failover to the other provider of the Codex and OpenRouter pair and lower-effort retries to the starting transport (the provider route). A claim on any third transport is refused at no attempt cost."
+    },
+    {
+      "field": "/replies/12/verification",
+      "section_digest": "74f2d489cb94116816b34a2d1553b46a960bff05a77013ac52cbf515d68ff113",
+      "text": "test_a17_a_transport_that_is_not_the_failover_seat_is_refused (the test of refusing a third provider) failed before the change because the gate authorised the claim. It passes after the change. A mutant (a deliberately altered version) that drops the same-transport guard from the lower-effort branch also fails it."
+    },
+    {
+      "field": "/replies/13/verification",
+      "section_digest": "9d9021464eff80c6149439f7bebb66db48c6ff0f37c92bf731d46276f2d6b979",
+      "text": "Against the reviewer's mutant (a deliberately altered version), the two starting-transport cases failed. The other two cases passed against that mutant. All four cases pass against the unchanged gate."
+    },
+    {
+      "field": "/replies/17/verification",
+      "section_digest": "3b461bafd864605132e6b4d96f22f472a44964c16f41c577c012db0b9d7f1525",
+      "text": "No test exercises prose. Another reviewer reported the same defect. One change answers both findings."
+    },
+    {
+      "field": "/replies/18/verification",
+      "section_digest": "c95057bf92003d28f619ee842f8e20c115eef91a4d99f3704f8a51d9c410dc15",
+      "text": "The finding was advisory. It was fixed because the fix is cheap and right. The keyed answers did not change. No test exercises prose."
+    }
+  ],
+  "questions": [
+    {
+      "field": "/summary",
+      "question": "Please add a separate Heads-up row for the caveat that the panel does not yet check whether a run used its pinned effort. The existing Heads-up rows do not cover it; the caveat must also remain in the summary."
+    },
+    {
+      "field": "/design_notes",
+      "question": "What do the staffing recommender, trend checkpoint, frontier and mid tiers, and artifact classes mean here? The record names them without supplying their meanings."
+    },
+    {
+      "field": "/replies/2/change",
+      "question": "A faithful split needs four sentences: nothing changes in this pull request; the verdict schema lives in another skill; it is outside this change; the work-item notes carry the missing halt reason for a follow-on item. The limit is two sentences. Which named claim will you move?"
+    },
+    {
+      "field": "/replies/4/change",
+      "question": "What does a reviewer's tier mean, and what distinguishes a sweep from another review round? The record does not define those terms."
+    },
+    {
+      "field": "/replies/5/change",
+      "question": "Which five files are meant by 'the five named files'? This reply is read alone, and the record does not supply the complete five-file list."
+    },
+    {
+      "field": "/replies/6/change",
+      "question": "A faithful split needs two sentences, but together with the required explanation of change_diffs it can fit the reply limit. May the explanation identify change_diffs as the function computing reviewer diff files? The record describes its behavior but does not explicitly identify its kind."
+    },
+    {
+      "field": "/replies/9/change",
+      "question": "A faithful split of the independent assertions needs three sentences: the watchdog-killed attempt leaves no output; it is a run that died; the message assigns dead-run for that case and transport-error otherwise. The limit is two sentences. Which named claim will you move?"
+    },
+    {
+      "field": "/replies/10/change",
+      "question": "A faithful split needs three sentences: the MAX_ATTEMPTS comment no longer argues for another model on the same vendor; it now explains the transport and model declarations; the same argument is gone from check_route's docstring. The limit is two sentences. Which named claim will you move?"
+    },
+    {
+      "field": "/replies/15/change",
+      "question": "A faithful split needs four sentences: harvest.md identifies the attempts-exhausted refusal as carrying halt guidance; the off-ladder sentence is unchanged; each case has one sentence; the cases no longer overlap. The limit is two sentences. Which named claim will you move?"
+    }
+  ]
+}

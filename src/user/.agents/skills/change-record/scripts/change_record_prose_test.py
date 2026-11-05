@@ -48,6 +48,12 @@ PIN = SKILL / "references" / "editor-pin.json"
 # settings the model was run at.
 RUNS = {name: SKILL / "evals" / "rewrites" / f"pr-{name}" for name in FIXTURES}
 
+# One recorded run for each fixture at the pin file's model and effort. The runs
+# beside each request were made on another model and stay as the baseline that
+# the editor evaluations compare against.
+CONTRAST = SKILL / "evals" / "rewrites" / "editor-clarity" / "model-contrast-sol-low"
+PINNED_RUNS = {name: CONTRAST / f"pr-{name}" for name in FIXTURES}
+
 # The example with a row a generator wrote at the head of its heads-up list,
 # and a filed row closing its discovered work.
 SEEDED = copy.deepcopy(EXAMPLE)
@@ -580,7 +586,7 @@ class TestCrW11Dispatch:
     @pytest.mark.parametrize("name", list(FIXTURES))
     def test_cr_w11_the_recorded_run_was_made_at_the_pin_files_model_and_effort(self, name: str):
         pin = json.loads(PIN.read_text(encoding="utf-8"))
-        settings = json.loads((RUNS[name] / "settings.json").read_text(encoding="utf-8"))
+        settings = json.loads((PINNED_RUNS[name] / "settings.json").read_text(encoding="utf-8"))
         assert {key: settings.get(key) for key in pin} == pin
 
     @pytest.mark.parametrize(
