@@ -94,6 +94,9 @@ def count_run(case: dict[str, Any], report: dict[str, Any], verdicts: dict[str, 
     both detects with no judgment. On a control run, every counted objection goes to the judge,
     because citing the rule at the site does not say the objection describes the defect. P1 has
     no rule, so every objection of a P1 run goes to the judge, and a match fails the run.
+
+    One match decides the run, and a decided run owes nothing further, because no verdict on
+    another of its objections can change its outcome.
     """
     defective = report["document"] == "defective"
     panel = case["rule"] == NO_RULE
@@ -117,7 +120,10 @@ def count_run(case: dict[str, Any], report: dict[str, Any], verdicts: dict[str, 
         outcome = "owed"
     counted: dict[str, Any] = {"outcome": outcome, "owed": owed}
     if not defective:
-        counted["empty"] = report["usable"] and report["report"]["report"] == "empty"
+        # A usable report may leave its verdict unstated, which the reader takes from its
+        # objections list.
+        counted["empty"] = report["usable"] and assemble_record.report_shape(
+            report["lens"], report["report"])[0] == "empty"
     return counted
 
 

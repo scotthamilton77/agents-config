@@ -145,6 +145,18 @@ class TestControlRun:
         assert score.count_run(C1, built, {}, RULES) == {
             "outcome": "silent", "owed": [], "empty": True}
 
+    @pytest.mark.parametrize("written,empty", [
+        ({"lens": "behavioural-outcome", "objections": []}, True),
+        ({"lens": "behavioural-outcome",
+          "objections": [objection("coverage", "EXP-A9")]}, False),
+    ])
+    def test_a_report_that_leaves_its_verdict_unstated_is_read_off_its_objections(
+            self, written, empty):
+        built = report(C1, "control", [])
+        built["report"] = written
+        assert score.count_run(C1, built, {}, RULES) == {
+            "outcome": "silent", "owed": [], "empty": empty}
+
     def test_a_match_decides_the_run_while_another_objection_is_still_owed(self):
         built = report(C1, "control", [objection("observable-obligation", "EXP-A9"),
                                        objection("observable-obligation", "EXP-A4")])
