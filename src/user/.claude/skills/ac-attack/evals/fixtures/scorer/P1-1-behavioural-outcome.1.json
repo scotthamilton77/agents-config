@@ -1,0 +1,32 @@
+{
+  "attempt": 1,
+  "case": "P1",
+  "document": "control",
+  "effort": "high",
+  "fault": null,
+  "lens": "behavioural-outcome",
+  "malformed_objections": [],
+  "model": "gpt-6.1-sol",
+  "panel_run": 1,
+  "report": {
+    "lens": "behavioural-outcome",
+    "objections": [],
+    "report": "empty"
+  },
+  "run": {
+    "effort": "high",
+    "ended": "2026-11-05T17:57:13Z",
+    "isolation": {
+      "agents_md": {},
+      "agents_md_injections": 0,
+      "cwd": "/private/var/folders/vs/2p2chnkd2zn_km_r8qtydg580000gn/T/tmp1hb5r27x"
+    },
+    "model": "gpt-6.1-sol",
+    "response_id": "resp_0c07464815b557b7016aecc3674c2c87d192be6c627ccfd763",
+    "started": "2026-11-05T17:56:52Z",
+    "transport": "codex"
+  },
+  "run_id": "P1-1-behavioural-outcome",
+  "transport": "codex",
+  "usable": true
+}
