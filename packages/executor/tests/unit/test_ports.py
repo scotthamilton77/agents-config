@@ -708,8 +708,21 @@ def test_a_partially_applied_facade_failure_still_owes_its_sync() -> None:
 
 @pytest.mark.parametrize(
     "version",
-    ["1.13", "2.22", "4.0", "", None, 1, "x.1"],
-    ids=["major-1", "major-2", "major-4", "empty", "null", "int", "unparseable"],
+    ["1.13", "2.22", "4.0", "", None, 1, "x.1", "3", "3.", "3.x", "3..2", "3.2.1"],
+    ids=[
+        "major-1",
+        "major-2",
+        "major-4",
+        "empty",
+        "null",
+        "int",
+        "unparseable",
+        "major-3-no-minor",
+        "major-3-empty-minor",
+        "major-3-garbage-minor",
+        "major-3-extra-dot",
+        "major-3-extra-component",
+    ],
 )
 def test_a_facade_speaking_another_protocol_major_is_refused_before_any_verb(
     version: object,
