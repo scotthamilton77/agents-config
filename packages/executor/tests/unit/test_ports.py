@@ -42,7 +42,7 @@ def _facade(answers: dict[tuple[str, ...], CommandResult]) -> ScriptedRunner:
     Every `WorkTracker` verb pins the protocol first, so a runner without this
     would fail on the handshake rather than on the behaviour under test.
     """
-    return ScriptedRunner({_HANDSHAKE: _ok({"ok": True, "data": {"protocol": "2.0"}}), **answers})
+    return ScriptedRunner({_HANDSHAKE: _ok({"ok": True, "data": {"protocol": "3.2"}}), **answers})
 
 
 def _state_reply() -> CommandResult:
@@ -266,7 +266,7 @@ def test_a_nonzero_exit_from_the_facade_is_a_failure_whatever_it_says() -> None:
     No facade verb carries a verdict in its exit code, so the tolerance never
     applies on this side at all.
     """
-    runner = _facade({("work", "claim"): _ok({"protocol": "2.0", "ok": True}, 1)})
+    runner = _facade({("work", "claim"): _ok({"protocol": "3.2", "ok": True}, 1)})
 
     with pytest.raises(ExecutorError) as raised:
         WorkTracker(runner).claim("w-1")
@@ -393,7 +393,7 @@ def test_each_tracker_verb_maps_to_its_facade_invocation(
     `work`, and a park's reason reaches `--reason` unchanged.
     """
     runner = _facade(
-        {argv[:2]: _ok({"protocol": "2.0", "ok": True, "data": {"reason": "ci-failure"}})}
+        {argv[:2]: _ok({"protocol": "3.2", "ok": True, "data": {"reason": "ci-failure"}})}
     )
 
     call(WorkTracker(runner))
@@ -708,8 +708,21 @@ def test_a_partially_applied_facade_failure_still_owes_its_sync() -> None:
 
 @pytest.mark.parametrize(
     "version",
-    ["1.13", "3.0", "", None, 1, "x.1"],
-    ids=["major-1", "major-3", "empty", "null", "int", "unparseable"],
+    ["1.13", "2.22", "4.0", "", None, 1, "x.1", "3", "3.", "3.x", "3..2", "3.2.1"],
+    ids=[
+        "major-1",
+        "major-2",
+        "major-4",
+        "empty",
+        "null",
+        "int",
+        "unparseable",
+        "major-3-no-minor",
+        "major-3-empty-minor",
+        "major-3-garbage-minor",
+        "major-3-extra-dot",
+        "major-3-extra-component",
+    ],
 )
 def test_a_facade_speaking_another_protocol_major_is_refused_before_any_verb(
     version: object,
