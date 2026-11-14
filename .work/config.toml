@@ -12,7 +12,7 @@
 # discovery states its scope and its anchor.
 
 [workcli]
-config-schema = 1
+config-schema = 2
 
 [tracks]
 names = ["installer", "prgroom", "review-and-merge", "pipeline-discipline", "grind-runtime", "ops-meta", "grilling"]
@@ -53,10 +53,9 @@ container-types = ["epic", "milestone"]
 # already reserved by name; this reserves the whole prefix, so a caller cannot
 # mint `shape-` state for a noun you have not declared.
 reserved-label-prefixes = ["shape-"]
-# The type stamped on the design child and placeholder a spec container mints
-# for itself. Those two are not nouns -- no caller creates one -- but they are
-# stored items someone will read, so they get a word here too.
-structural-child-type = "task"
+# Labels that marked a spec container before a spec became a leaf task. Items
+# carrying one still exist, so the label stays reserved and `lint` can report them.
+legacy-container-labels = ["shape-spec"]
 
 # Three fixed rules need to know which noun they are about. Rename a noun below
 # and rename it here too, or the rule silently stops matching. The
@@ -65,8 +64,7 @@ structural-child-type = "task"
 # so a second noun sharing it would turn every item of that noun into an anchor.
 [taxonomy.roles]
 roadmap-anchor = "milestone"   # never auto-closes; track-exempt; what `lint` looks for overhead
-spec-container = "spec"        # creating one instantiates a design child and a placeholder
-promotable-leaf = "feat"       # what `work promote` turns into a spec container
+specification = "spec"         # the leaf task that specifies its parent; delivering it runs the breakdown
 
 [taxonomy.aliases]
 bug = "bugfix"                 # 'bug' names the thing found; 'bugfix' names the remedy
@@ -103,8 +101,8 @@ expects-evidence = true
 
 [taxonomy.nouns.spec]
 type = "feature"
-shape-label = "shape-spec"
-container = true
+shape-label = "shape-spec-task"
+container = false
 expects-evidence = false
 
 [taxonomy.nouns.epic]
@@ -143,8 +141,3 @@ hatches = ["externally-blocked", "blast-radius", "own-cycle"]
 # organization is your call, not the tool's; `lint-exempt:no-milestone` exempts
 # one item while the rule is on.
 require-anchor-ancestor = true
-
-[deliver]
-# The heading `work deliver --spec` reads a spec's continuations manifest
-# under. The bullet grammar beneath it is fixed.
-continuations-heading = "## Continuations"
