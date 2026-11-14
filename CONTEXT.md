@@ -169,22 +169,23 @@ not a later step — a spec is not ready until it is sliced.
 A dated design document under `docs/specs/`, describing a change's full intent
 and carrying its acceptance criteria and slice list.
 
-**Spec document** is the explicit name when distinguishing it from a spec
-container in the tracker.
+**Spec document** is the explicit name when distinguishing it from the spec
+task in the tracker.
 
 A spec is a point-in-time proposal, not a progress report. One describing
 behaviour nobody has implemented yet is the normal case, not a defect. Where
 a spec and the code disagree about what exists, the code wins; where they
 disagree about what was decided, the spec does.
 
-## Spec container
+## Spec task
 
-A work item that groups the design and implementation work for a proposed
-change. Its design child produces a spec document. Its implementation work
-delivers the document's slices. The container carries tracker status; the
-document carries the design contract.
+A leaf work item, filed under the feature or epic it specifies, whose
+deliverable is a spec document. Delivering it breaks its parent down into the
+items the document's breakdown block lists. The task carries tracker status;
+the document carries the design contract.
 
-Contract: the `spec` noun in `.work/config.toml` and the `work` facade.
+Contract: the `spec` noun in `.work/config.toml` and the `work` facade's
+`breakdown` verb.
 
 ## Track
 

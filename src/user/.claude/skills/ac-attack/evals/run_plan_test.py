@@ -489,6 +489,26 @@ class TestDispatchers:
         assert run_plan.dispatch_codex(planned(), prompt)["metadata"]["response_id"] is None
 
 
+def ended(pid: int, within: float = 5.0) -> bool:
+    """Whether the process has ended, waiting up to `within` seconds for it to leave the table.
+
+    A killed grandchild of the executor is an orphan, and it stays in the process table as a
+    zombie until its new parent reaps it. A signal probe of a zombie succeeds, so the probe is
+    repeated, and a zombie counts as ended on a host whose first process reaps nothing.
+    """
+    deadline = time.monotonic() + within
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                               capture_output=True, text=True).stdout.strip()
+        if state.startswith("Z") or time.monotonic() >= deadline:
+            return state.startswith("Z")
+        time.sleep(0.05)
+
+
 class TestCap:
     def test_a_run_that_ignores_the_term_signal_is_killed_with_its_children(self, tmp_path):
         pids = tmp_path / "pids"
@@ -499,8 +519,7 @@ class TestCap:
         assert result["capped"] is True
         assert "cap" in result["stderr"]
         for pid in map(int, pids.read_text().split()):
-            with pytest.raises(ProcessLookupError):
-                os.kill(pid, 0)
+            assert ended(pid)
 
     def test_an_interrupted_executor_leaves_no_transport_running(self, tmp_path):
         pids = tmp_path / "pids"
@@ -519,8 +538,7 @@ class TestCap:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
         for pid in map(int, pids.read_text().split()):
-            with pytest.raises(ProcessLookupError):
-                os.kill(pid, 0)
+            assert ended(pid)
 
     def test_an_interrupt_during_the_grace_period_still_kills_the_transport(self, tmp_path):
         pids = tmp_path / "pids"
@@ -540,8 +558,7 @@ class TestCap:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
         for pid in map(int, pids.read_text().split()):
-            with pytest.raises(ProcessLookupError):
-                os.kill(pid, 0)
+            assert ended(pid)
 
     def test_a_term_signal_to_the_executor_kills_the_transport_before_it_exits(self, tmp_path):
         pids = tmp_path / "pids"
@@ -561,8 +578,7 @@ class TestCap:
         child.send_signal(signal.SIGTERM)
         assert child.wait(timeout=30) == 128 + signal.SIGTERM
         for pid in map(int, pids.read_text().split()):
-            with pytest.raises(ProcessLookupError):
-                os.kill(pid, 0)
+            assert ended(pid)
 
     def test_a_run_at_the_cap_gets_the_term_signal_first(self, tmp_path):
         script = "trap 'echo closing; exit 0' TERM; sleep 30 & wait"

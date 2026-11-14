@@ -13,6 +13,7 @@ testable without a real `grind` or `work`.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -49,7 +50,8 @@ _NOT_FOUND = 127
 # mismatch rather than risk mis-parsing mid-run -- and for a mutating consumer
 # the timing is the point: checking a reply is too late, because an
 # incompatible facade may already have acted.
-_TRACKER_PROTOCOL_MAJOR = "2"
+_TRACKER_PROTOCOL_MAJOR = "3"
+_PROTOCOL_VERSION = re.compile(r"([0-9]+)\.[0-9]+")
 # The one exit code that carries a verdict rather than an outcome: `grind
 # check` exits 1 on a stale grind while emitting `ok: true`.
 _STALE_EXIT = 1
@@ -396,7 +398,11 @@ class WorkTracker:
         )
         data = reply.get("data")
         version = data.get("protocol") if isinstance(data, dict) else None
-        major = version.split(".")[0] if isinstance(version, str) and version != "" else None
+        # The facade's protocol is exactly MAJOR.MINOR. Splitting on the first
+        # dot alone would read "3.x" or "3." as major 3 and let a garbled
+        # handshake through to a mutating verb.
+        parsed = _PROTOCOL_VERSION.fullmatch(version) if isinstance(version, str) else None
+        major = parsed.group(1) if parsed else None
         if major != _TRACKER_PROTOCOL_MAJOR:
             # Unreadable and mismatched land together on purpose: neither
             # establishes that the facade speaks a protocol this executor can
